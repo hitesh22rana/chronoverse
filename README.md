@@ -1,2 +1,2 @@
-# chronoverse
-Universal Task Scheduler &amp; Orchestrator
+# Chronoverse ⏳🌌  
+**Universal Task Scheduler & Orchestrator**  

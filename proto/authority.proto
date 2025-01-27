@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package authority;
+
+option go_package = "github.com/hitesh22rana/chronoverse/proto/authority;authority";
+
+
+// RegisterRequest contains the details needed to register a new user.
+message RegisterRequest {
+    string email    = 1;    // User's email address
+    string password = 2;    // User's password}
+}
+
+// RegisterResponse contains the result of a registration attempt.
+message RegisterResponse {
+    string user_id = 1;     // ID of the newly registered user
+}
+
+// LoginRequest contains the credentials for logging in.
+message LoginRequest {
+    string email    = 1;    // User's email address
+    string password = 2;    // User's password
+}
+
+// LoginResponse contains the result of a login attempt.
+message LoginResponse {
+    string token = 1;   // Authentication token (e.g., JWT or PAT)
+}
+
+// ValidateTokenRequest contains the token to validate.
+message ValidateTokenRequest {
+    string token = 1;   // Token to validate
+}
+
+// ValidateTokenResponse contains the result of token validation.
+message ValidateTokenResponse {}
+
+// LogoutRequest contains the token to invalidate.
+message LogoutRequest {
+    string token = 1;   // Token to invalidate
+}
+
+// LogoutResponse contains the result of a logout attempt.
+message LogoutResponse {}
+
+// AuthorityService handles user authentication and authorization.
+service AuthorityService {
+    // Register a new user.
+    rpc Register(RegisterRequest) returns (RegisterResponse);
+
+    // Login with email and password.
+    rpc Login(LoginRequest) returns (LoginResponse);
+
+    // Validate a user's token (e.g., JWT or PAT).
+    rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+    // Logout a user (invalidate their token).
+    rpc Logout(LogoutRequest) returns (LogoutResponse);
+}

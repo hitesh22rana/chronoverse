@@ -84,40 +84,16 @@ func (mr *MockRepositoryMockRecorder) Register(ctx, email, password any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockRepository)(nil).Register), ctx, email, password)
 }
 
-// MockValidator is a mock of Validator interface.
-type MockValidator struct {
-	ctrl     *gomock.Controller
-	recorder *MockValidatorMockRecorder
-	isgomock struct{}
-}
-
-// MockValidatorMockRecorder is the mock recorder for MockValidator.
-type MockValidatorMockRecorder struct {
-	mock *MockValidator
-}
-
-// NewMockValidator creates a new mock instance.
-func NewMockValidator(ctrl *gomock.Controller) *MockValidator {
-	mock := &MockValidator{ctrl: ctrl}
-	mock.recorder = &MockValidatorMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockValidator) EXPECT() *MockValidatorMockRecorder {
-	return m.recorder
-}
-
-// ValidateStruct mocks base method.
-func (m *MockValidator) ValidateStruct(s any) error {
+// ValidateToken mocks base method.
+func (m *MockRepository) ValidateToken(ctx context.Context, token string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ValidateStruct", s)
+	ret := m.ctrl.Call(m, "ValidateToken", ctx, token)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// ValidateStruct indicates an expected call of ValidateStruct.
-func (mr *MockValidatorMockRecorder) ValidateStruct(s any) *gomock.Call {
+// ValidateToken indicates an expected call of ValidateToken.
+func (mr *MockRepositoryMockRecorder) ValidateToken(ctx, token any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateStruct", reflect.TypeOf((*MockValidator)(nil).ValidateStruct), s)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateToken", reflect.TypeOf((*MockRepository)(nil).ValidateToken), ctx, token)
 }

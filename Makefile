@@ -21,3 +21,11 @@ lint: dependencies
 PHONY: test
 test: dependencies
 	@go test ./...
+
+.PHONY: build/auth-service
+build/auth-service: dependencies
+	@CGO_ENABLED=0 go build -o ./bin/auth-service ./cmd/auth-service 
+
+.PHONY: run/auth-service
+run/auth-service: build/auth-service
+	@./bin/auth-service

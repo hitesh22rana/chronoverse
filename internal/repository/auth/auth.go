@@ -18,11 +18,13 @@ const (
 	defaultTimeout = 5 * time.Second
 )
 
+// AuthRepository provides authentication operations
 type AuthRepository struct {
 	tokenIssuer   *pat.Pat
 	postgresStore *postgres.Postgres
 }
 
+// New creates a new auth repository
 func New(tokenIssuer *pat.Pat, postgresStore *postgres.Postgres) *AuthRepository {
 	return &AuthRepository{
 		tokenIssuer:   tokenIssuer,
@@ -30,6 +32,7 @@ func New(tokenIssuer *pat.Pat, postgresStore *postgres.Postgres) *AuthRepository
 	}
 }
 
+// Register a new user
 func (a *AuthRepository) Register(ctx context.Context, email string, password string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -80,6 +83,7 @@ func (a *AuthRepository) Register(ctx context.Context, email string, password st
 	return token, nil
 }
 
+// Login user
 func (a *AuthRepository) Login(ctx context.Context, email string, pass string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -113,6 +117,7 @@ func (a *AuthRepository) Login(ctx context.Context, email string, pass string) (
 	return token, nil
 }
 
+// Logout user
 func (a *AuthRepository) Logout(ctx context.Context, token string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -120,6 +125,19 @@ func (a *AuthRepository) Logout(ctx context.Context, token string) error {
 	// Revoke the token
 	if err := a.tokenIssuer.RevokePat(ctx, token); err != nil {
 		return status.Errorf(codes.Internal, "failed to revoke token: %v", err)
+	}
+
+	return nil
+}
+
+// ValidateToken validates the token
+func (a *AuthRepository) ValidateToken(ctx context.Context, token string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	// Validate the token
+	if _, err := a.tokenIssuer.ValidatePat(ctx, token); err != nil {
+		return status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
 	}
 
 	return nil

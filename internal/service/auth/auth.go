@@ -13,6 +13,7 @@ type Repository interface {
 	Login(ctx context.Context, email, password string) (string, error)
 	Register(ctx context.Context, email, password string) (string, error)
 	Logout(ctx context.Context, token string) error
+	ValidateToken(ctx context.Context, token string) error
 }
 
 // Service provides user authentication operations
@@ -53,6 +54,7 @@ func (s *Service) Register(ctx context.Context, email string, password string) (
 	return pat, nil
 }
 
+// LoginRequest holds the request parameters for logging in a user
 type LoginRequest struct {
 	Email    string `validate:"required,email"`
 	Password string `validate:"required,min=8"`
@@ -90,6 +92,27 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 	}
 
 	if err := s.repo.Logout(ctx, token); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ValidateTokenRequest holds the request parameters for validating a token
+type ValidateTokenRequest struct {
+	Token string `validate:"required"`
+}
+
+// Validate Token
+func (s *Service) ValidateToken(ctx context.Context, token string) error {
+	// Validate the request
+	if err := s.validator.Struct(&ValidateTokenRequest{
+		Token: token,
+	}); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	if err := s.repo.ValidateToken(ctx, token); err != nil {
 		return err
 	}
 

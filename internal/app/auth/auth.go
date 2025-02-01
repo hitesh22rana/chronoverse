@@ -15,6 +15,7 @@ type Service interface {
 	Register(ctx context.Context, email string, password string) (string, error)
 	Login(ctx context.Context, email string, password string) (string, error)
 	Logout(ctx context.Context, token string) error
+	ValidateToken(ctx context.Context, token string) error
 }
 
 type Application struct {
@@ -65,4 +66,15 @@ func (a *Application) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.Lo
 
 	a.log.Info("user logged out successfully", zap.String("token", req.GetToken()))
 	return &pb.LogoutResponse{}, nil
+}
+
+func (a *Application) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
+	err := a.svc.ValidateToken(ctx, req.GetToken())
+	if err != nil {
+		a.log.Error("failed to validate token", zap.Error(err))
+		return nil, err
+	}
+
+	a.log.Info("token validated successfully", zap.String("token", req.GetToken()))
+	return &pb.ValidateTokenResponse{}, nil
 }

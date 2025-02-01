@@ -16,8 +16,8 @@ const (
 	Production = "production"
 )
 
-// NewLogger initializes the logger
-func NewLogger(environment string) (*zap.Logger, error) {
+// New initializes the logger
+func New(environment string) (*zap.Logger, error) {
 	var logger *zap.Logger
 	var err error
 

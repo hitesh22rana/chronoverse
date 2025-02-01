@@ -136,8 +136,8 @@ func (a *AuthRepository) ValidateToken(ctx context.Context, token string) error 
 	defer cancel()
 
 	// Validate the token
-	if _, err := a.tokenIssuer.ValidatePat(ctx, token); err != nil {
-		return status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+	if ok := a.tokenIssuer.IsValidPat(ctx, token); !ok {
+		return status.Errorf(codes.Unauthenticated, "invalid token %s", token)
 	}
 
 	return nil

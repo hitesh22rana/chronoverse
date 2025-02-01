@@ -112,8 +112,19 @@ func (p *Pat) RevokePat(ctx context.Context, pat string) error {
 	return nil
 }
 
-// IsValidPat provides a simple validity check
+// IsValidPat checks if a pat is valid by comparing the token with the metadata ID
 func (p *Pat) IsValidPat(ctx context.Context, token string) bool {
-	_, err := p.ValidatePat(ctx, token)
-	return err == nil
+	metadata, err := p.ValidatePat(ctx, token)
+	if err != nil {
+		return false
+	}
+
+	// Decode the base64 encoded token
+	decodedToken, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		return false
+	}
+
+	// Check if the token is valid
+	return string(decodedToken)[20:56] == metadata.ID
 }

@@ -7,7 +7,9 @@ import (
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
 )
@@ -43,7 +45,11 @@ func New(log *zap.Logger, svc Service) *grpc.Server {
 func (a *Auth) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
 	userID, pat, err := a.svc.Register(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
-		a.log.Error("failed to register user", zap.Error(err))
+		if status.Code(err) == codes.Internal {
+			a.log.Error("failed to register user", zap.Error(err))
+		} else {
+			a.log.Warn("failed to register user", zap.Error(err))
+		}
 		return nil, err
 	}
 
@@ -55,7 +61,11 @@ func (a *Auth) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Regis
 func (a *Auth) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
 	userID, pat, err := a.svc.Login(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
-		a.log.Error("failed to login user", zap.Error(err))
+		if status.Code(err) == codes.Internal {
+			a.log.Error("failed to login user", zap.Error(err))
+		} else {
+			a.log.Warn("failed to login user", zap.Error(err))
+		}
 		return nil, err
 	}
 
@@ -67,7 +77,11 @@ func (a *Auth) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginRespon
 func (a *Auth) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutResponse, error) {
 	err := a.svc.Logout(ctx, req.GetPat())
 	if err != nil {
-		a.log.Error("failed to logout user", zap.Error(err))
+		if status.Code(err) == codes.Internal {
+			a.log.Error("failed to logout user", zap.Error(err))
+		} else {
+			a.log.Warn("failed to logout user", zap.Error(err))
+		}
 		return nil, err
 	}
 
@@ -79,7 +93,11 @@ func (a *Auth) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutRes
 func (a *Auth) Validate(ctx context.Context, req *pb.ValidateRequest) (*pb.ValidateResponse, error) {
 	err := a.svc.Validate(ctx, req.GetPat())
 	if err != nil {
-		a.log.Error("failed to validate token", zap.Error(err))
+		if status.Code(err) == codes.Internal {
+			a.log.Error("failed to validate token", zap.Error(err))
+		} else {
+			a.log.Warn("failed to validate token", zap.Error(err))
+		}
 		return nil, err
 	}
 

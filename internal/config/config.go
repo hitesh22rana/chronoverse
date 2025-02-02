@@ -27,7 +27,7 @@ type Environment struct {
 type Redis struct {
 	Host                     string        `envconfig:"REDIS_HOST" default:"localhost"`
 	Port                     int           `envconfig:"REDIS_PORT" default:"6379"`
-	Password                 string        `envconfig:"REDIS_PASSWORD" default:"chronoverse"`
+	Password                 string        `envconfig:"REDIS_PASSWORD" default:""`
 	DB                       int           `envconfig:"REDIS_DB" default:"0"`
 	PoolSize                 int           `envconfig:"REDIS_POOL_SIZE" default:"10"`
 	MinIdleConns             int           `envconfig:"REDIS_MIN_IDLE_CONNS" default:"5"`

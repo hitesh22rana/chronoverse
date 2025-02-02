@@ -50,7 +50,11 @@ func healthCheck(ctx context.Context, client *redis.Client) error {
 		}
 	}
 
-	return fmt.Errorf("failed to connect to redis: %w", err)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
+
+	return nil
 }
 
 // New creates a new Redis store instance.

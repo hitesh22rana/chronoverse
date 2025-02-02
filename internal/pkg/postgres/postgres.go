@@ -50,7 +50,11 @@ func healthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 
-	return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
+
+	return nil
 }
 
 // New creates a new PostgreSQL connection pool.

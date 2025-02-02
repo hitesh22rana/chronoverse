@@ -8,11 +8,24 @@ ARG SERVICE_NAME
 WORKDIR /app
 
 # Install protoc and required packages
-RUN apt-get update && apt-get install -y protobuf-compiler
+RUN apt-get update && BIN="/usr/local/bin" && \
+    VERSION="1.50.0" && \
+    curl -sSL \
+    "https://github.com/bufbuild/buf/releases/download/v${VERSION}/buf-$(uname -s)-$(uname -m)" \
+    -o "${BIN}/buf" && \
+    chmod +x "${BIN}/buf"
 
 # Install protoc-gen-go and protoc-gen-go-grpc
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+RUN go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@latest
+RUN go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@latest
+
+# Add the Go binaries to the PATH
+RUN export GOROOT=/usr/local/go
+RUN export GOPATH=$HOME/go
+RUN export GOBIN=$GOPATH/bin
+RUN export PATH=$PATH:$GOROOT:$GOPATH:$GOBIN
 
 # Copy the Go module files
 COPY go.mod .
@@ -25,14 +38,7 @@ RUN go mod download
 COPY . .
 
 # Compile the protocol buffer files and generate the Go files
-RUN rm -rf ./pkg/proto/ && mkdir -p ./pkg/proto && \
-    for file in proto/*.proto; do \
-    base=$(basename $file); \
-    name=${base%.*}; \
-    mkdir -p ./pkg/proto/$name; \
-    protoc --go_out=paths=source_relative:./pkg/proto/$name --go-grpc_out=paths=source_relative:./pkg/proto/$name \
-    --proto_path=proto $file; \
-    done
+RUN rm -rf pkg/proto && rm -rf pkg/openapiv2 && buf dep update && buf generate
 
 # Build the service
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -o /go/bin/service cmd/${SERVICE_NAME}/main.go

@@ -1,31 +1,37 @@
-SHELL := /bin/bash -o pipefail
+GO_BIN?=$(shell pwd)/.bin
+SHELL:=env PATH=$(GO_BIN):$(PATH) $(SHELL)
 
 .PHONY: generate
 generate:
-	@rm -rf ./pkg/proto/ && mkdir -p ./pkg/proto && for file in proto/*.proto; do \
-		base=$$(basename $$file); \
-		name=$${base%.*}; \
-		mkdir -p ./pkg/proto/$$name; \
-		protoc --go_out=paths=source_relative:./pkg/proto/$$name --go-grpc_out=paths=source_relative:./pkg/proto/$$name \
-		--proto_path=proto $$file; \
-	done
+	@buf --version > /dev/null 2>&1 || (echo "buf is not installed. Please install buf by referring to https://docs.buf.build/installation" && exit 1)
+	@rm -rf pkg/proto && rm -rf pkg/openapiv2 && buf dep update && buf generate
 
 .PHONY: dependencies
 dependencies: generate
-	@go mod tidy
+	@go mod tidy -v
 
 .PHONY: lint
 lint: dependencies
 	@golangci-lint run
 
+.PHONY: lint-fix
+lint-fix: dependencies
+	@golangci-lint run --fix
+
 PHONY: test
 test: dependencies
 	@go test ./...
 
+.PHONY: tools
+tools:
+	@mkdir -p ${GO_BIN}
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GO_BIN} v1.63.4
+	@cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % sh -c 'GOBIN=${GO_BIN} go install %'
+
 .PHONY: build/auth-service
 build/auth-service: dependencies
-	@CGO_ENABLED=0 go build -o ./bin/auth-service ./cmd/auth-service 
+	@CGO_ENABLED=0 go build -o ./.bin/auth-service ./cmd/auth-service 
 
 .PHONY: run/auth-service
 run/auth-service: build/auth-service
-	@./bin/auth-service
+	@./.bin/auth-service

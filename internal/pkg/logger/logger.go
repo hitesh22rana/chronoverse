@@ -10,13 +10,13 @@ import (
 )
 
 const (
-	// Development is the development environment
+	// Development is the development environment.
 	Development = "development"
-	// Production is the production environment
+	// Production is the production environment.
 	Production = "production"
 )
 
-// New initializes the logger
+// New initializes the logger.
 func New(environment string) (*zap.Logger, error) {
 	var logger *zap.Logger
 	var err error
@@ -31,20 +31,20 @@ func New(environment string) (*zap.Logger, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %v", err)
+		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
 	return logger, nil
 }
 
-// developmentLogger creates a development logger
+// developmentLogger creates a development logger.
 func developmentLogger() (*zap.Logger, error) {
 	config := zap.NewDevelopmentConfig()
 	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	return config.Build()
 }
 
-// productionLogger creates a production logger
+// productionLogger creates a production logger.
 func productionLogger() (*zap.Logger, error) {
 	config := zap.NewProductionConfig()
 	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder

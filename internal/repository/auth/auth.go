@@ -18,22 +18,22 @@ const (
 	defaultTimeout = 5 * time.Second
 )
 
-// AuthRepository provides authentication operations
-type AuthRepository struct {
+// Repository provides authentication operations.
+type Repository struct {
 	tokenIssuer   *pat.Pat
 	postgresStore *postgres.Postgres
 }
 
-// New creates a new auth repository
-func New(tokenIssuer *pat.Pat, postgresStore *postgres.Postgres) *AuthRepository {
-	return &AuthRepository{
+// New creates a new auth repository.
+func New(tokenIssuer *pat.Pat, postgresStore *postgres.Postgres) *Repository {
+	return &Repository{
 		tokenIssuer:   tokenIssuer,
 		postgresStore: postgresStore,
 	}
 }
 
-// Register a new user
-func (a *AuthRepository) Register(ctx context.Context, email string, password string) (string, error) {
+// Register a new user.
+func (r *Repository) Register(ctx context.Context, email, password string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -44,12 +44,14 @@ func (a *AuthRepository) Register(ctx context.Context, email string, password st
 	}
 
 	// Start transaction
-	tx, err := a.postgresStore.BeginTx(ctx)
+	tx, err := r.postgresStore.BeginTx(ctx)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "failed to start transaction: %v", err)
 	}
 	// rollback if not committed
-	defer tx.Rollback(ctx)
+	defer func() {
+		err = tx.Rollback(ctx)
+	}()
 
 	// Insert user into database
 	query := fmt.Sprintf(`
@@ -59,10 +61,9 @@ func (a *AuthRepository) Register(ctx context.Context, email string, password st
 
 	var ID string
 	err = tx.QueryRow(ctx, query, email, string(hashedPassword), time.Now()).Scan(&ID)
-
 	if err != nil {
 		// Check if the user already exists
-		if a.postgresStore.IsUniqueViolation(err) {
+		if r.postgresStore.IsUniqueViolation(err) {
 			return "", status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
 		}
 
@@ -70,7 +71,7 @@ func (a *AuthRepository) Register(ctx context.Context, email string, password st
 	}
 
 	// Generate PAT
-	token, err := a.tokenIssuer.GeneratePat(ctx, ID)
+	token, err := r.tokenIssuer.GeneratePat(ctx, ID)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "failed to generate token: %v", err)
 	}
@@ -83,8 +84,8 @@ func (a *AuthRepository) Register(ctx context.Context, email string, password st
 	return token, nil
 }
 
-// Login user
-func (a *AuthRepository) Login(ctx context.Context, email string, pass string) (string, error) {
+// Login user.
+func (r *Repository) Login(ctx context.Context, email, pass string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -94,9 +95,9 @@ func (a *AuthRepository) Login(ctx context.Context, email string, pass string) (
 		password string
 	)
 	query := fmt.Sprintf(`SELECT id, password FROM %s WHERE email = $1`, userTable)
-	err := a.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
+	err := r.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
 	if err != nil {
-		if a.postgresStore.IsNoRows(err) {
+		if r.postgresStore.IsNoRows(err) {
 			return "", status.Errorf(codes.NotFound, "user not found: %v", err)
 		}
 
@@ -104,12 +105,12 @@ func (a *AuthRepository) Login(ctx context.Context, email string, pass string) (
 	}
 
 	// Validate password
-	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(pass)); err != nil {
+	if err = bcrypt.CompareHashAndPassword([]byte(password), []byte(pass)); err != nil {
 		return "", status.Errorf(codes.FailedPrecondition, "invalid password: %v", err)
 	}
 
 	// Generate PAT
-	token, err := a.tokenIssuer.GeneratePat(ctx, ID)
+	token, err := r.tokenIssuer.GeneratePat(ctx, ID)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "failed to generate token: %v", err)
 	}
@@ -117,26 +118,26 @@ func (a *AuthRepository) Login(ctx context.Context, email string, pass string) (
 	return token, nil
 }
 
-// Logout user
-func (a *AuthRepository) Logout(ctx context.Context, token string) error {
+// Logout user.
+func (r *Repository) Logout(ctx context.Context, token string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Revoke the token
-	if err := a.tokenIssuer.RevokePat(ctx, token); err != nil {
+	if err := r.tokenIssuer.RevokePat(ctx, token); err != nil {
 		return status.Errorf(codes.Internal, "failed to revoke token: %v", err)
 	}
 
 	return nil
 }
 
-// ValidateToken validates the token
-func (a *AuthRepository) ValidateToken(ctx context.Context, token string) error {
+// ValidateToken validates the token.
+func (r *Repository) ValidateToken(ctx context.Context, token string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Validate the token
-	if ok := a.tokenIssuer.IsValidPat(ctx, token); !ok {
+	if ok := r.tokenIssuer.IsValidPat(ctx, token); !ok {
 		return status.Errorf(codes.Unauthenticated, "invalid token %s", token)
 	}
 

@@ -16,29 +16,29 @@ const (
 	defaultExpiry = 24 * time.Hour
 )
 
-// PatMetaData stores essential pat information
-type PatMetaData struct {
+// MetaData stores essential pat information.
+type MetaData struct {
 	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// PatOptions contains options for the Pat
-type PatOptions struct {
+// Options contains options for the Pat.
+type Options struct {
 	Expiry time.Duration
 }
 
-// Pat is a simple token-based authentication system
+// Pat is a simple token-based authentication system.
 type Pat struct {
-	options    *PatOptions
-	redisStore *redis.RedisStore
+	options    *Options
+	redisStore *redis.Store
 }
 
-// New creates a new Pat instance
-func New(options *PatOptions, redisStore *redis.RedisStore) *Pat {
+// New creates a new Pat instance.
+func New(options *Options, redisStore *redis.Store) *Pat {
 	// Validate options
 	if options == nil {
-		options = &PatOptions{}
+		options = &Options{}
 	}
 
 	if options.Expiry == 0 {
@@ -51,7 +51,7 @@ func New(options *PatOptions, redisStore *redis.RedisStore) *Pat {
 	}
 }
 
-// GeneratePat creates a new pat and stores it in the store
+// GeneratePat creates a new pat and stores it in the store.
 func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
 	// Create seed from current time and ID
 	seed := fmt.Sprintf("%d:%s", time.Now().UnixNano(), id)
@@ -59,7 +59,7 @@ func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
 	// Generate random bytes
 	tokenBytes := make([]byte, tokenLength)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("failed to generate token: %v", err)
+		return "", fmt.Errorf("failed to generate token: %w", err)
 	}
 
 	// Combine seed and random bytes
@@ -69,7 +69,7 @@ func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
 	pat := base64.URLEncoding.EncodeToString(combined)
 
 	// Create metadata
-	metadata := PatMetaData{
+	metadata := MetaData{
 		ID:        id,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(defaultExpiry),
@@ -78,19 +78,19 @@ func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
 	// Store in Redis
 	key := fmt.Sprintf("%s%s", patPrefix, pat)
 	if err := p.redisStore.Set(ctx, key, metadata, defaultExpiry); err != nil {
-		return "", fmt.Errorf("failed to store pat: %v", err)
+		return "", fmt.Errorf("failed to store pat: %w", err)
 	}
 
 	return pat, nil
 }
 
-// ValidatePat checks if a pat is valid and returns its metadata
-func (p *Pat) ValidatePat(ctx context.Context, pat string) (*PatMetaData, error) {
+// ValidatePat checks if a pat is valid and returns its metadata.
+func (p *Pat) ValidatePat(ctx context.Context, pat string) (*MetaData, error) {
 	// Get metadata
 	key := fmt.Sprintf("%s%s", patPrefix, pat)
-	var metadata PatMetaData
+	var metadata MetaData
 	if err := p.redisStore.Get(ctx, key, &metadata); err != nil {
-		return nil, fmt.Errorf("invalid pat: %v", err)
+		return nil, fmt.Errorf("invalid pat: %w", err)
 	}
 
 	// Check expiration
@@ -101,18 +101,18 @@ func (p *Pat) ValidatePat(ctx context.Context, pat string) (*PatMetaData, error)
 	return &metadata, nil
 }
 
-// RevokePat invalidates a pat
+// RevokePat invalidates a pat.
 func (p *Pat) RevokePat(ctx context.Context, pat string) error {
 	// Remove pat metadata
 	key := fmt.Sprintf("%s%s", patPrefix, pat)
 	if err := p.redisStore.Delete(ctx, key); err != nil {
-		return fmt.Errorf("failed to delete pat: %v", err)
+		return fmt.Errorf("failed to delete pat: %w", err)
 	}
 
 	return nil
 }
 
-// IsValidPat checks if a pat is valid by comparing the token with the metadata ID
+// IsValidPat checks if a pat is valid by comparing the token with the metadata ID.
 func (p *Pat) IsValidPat(ctx context.Context, token string) bool {
 	metadata, err := p.ValidatePat(ctx, token)
 	if err != nil {

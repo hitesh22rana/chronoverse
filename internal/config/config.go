@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
@@ -8,6 +9,7 @@ import (
 
 const envPrefix = ""
 
+// Configuration holds the application configuration.
 type Configuration struct {
 	Environment
 	Redis
@@ -16,9 +18,12 @@ type Configuration struct {
 	AuthServer
 }
 
+// Environment holds the environment configuration.
 type Environment struct {
 	Env string `envconfig:"ENV" default:"development"`
 }
+
+// Redis holds the Redis configuration.
 type Redis struct {
 	Host                     string        `envconfig:"REDIS_HOST" default:"localhost"`
 	Port                     int           `envconfig:"REDIS_PORT" default:"6379"`
@@ -33,6 +38,7 @@ type Redis struct {
 	EvictionPolicySampleSize int           `envconfig:"REDIS_EVICTION_POLICY_SAMPLE_SIZE" default:"5"`
 }
 
+// Postgres holds the PostgreSQL configuration.
 type Postgres struct {
 	Host        string        `envconfig:"POSTGRES_HOST" default:"localhost"`
 	Port        int           `envconfig:"POSTGRES_PORT" default:"5432"`
@@ -47,19 +53,22 @@ type Postgres struct {
 	SSLMode     string        `envconfig:"POSTGRES_SSL_MODE" default:"disable"`
 }
 
+// Pat holds the Personal Access Token configuration.
 type Pat struct {
 	DefaultExpiry time.Duration `envconfig:"PAT_DEFAULT_EXPIRY" default:"24h"`
 }
 
+// AuthServer holds the authentication server configuration.
 type AuthServer struct {
 	Port int `envconfig:"AUTH_SERVER_PORT" default:"50051"`
 }
 
+// Load loads the application configuration.
 func Load() (*Configuration, error) {
 	var cfg Configuration
 	err := envconfig.Process(envPrefix, &cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	return &cfg, nil

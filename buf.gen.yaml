@@ -1,0 +1,20 @@
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: pkg/proto/go
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: pkg/proto/go
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false
+  - local: protoc-gen-grpc-gateway
+    out: pkg/proto/go
+    opt:
+      - paths=source_relative
+      - allow_repeated_fields_in_body=true
+  - local: protoc-gen-openapiv2
+    out: pkg/openapiv2
+    opt:
+      - allow_repeated_fields_in_body=true

@@ -19,12 +19,12 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes
+	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors
+	// ExitError is the exit code for errors.
 	ExitError
 
-	// ServiceName is the name of the service
+	// ServiceName is the name of the service.
 	ServiceName = "auth-service"
 )
 
@@ -50,7 +50,11 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		return ExitError
 	}
-	defer log.Sync()
+	defer func() {
+		if err = log.Sync(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to flush logger: %v\n", err)
+		}
+	}()
 
 	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
@@ -93,14 +97,14 @@ func run() int {
 	defer pdb.Close()
 
 	// Initialize the token issuer
-	tokenIssuer := pat.New(&pat.PatOptions{
+	tokenIssuer := pat.New(&pat.Options{
 		Expiry: cfg.Pat.DefaultExpiry,
 	}, rdb)
 
 	// Initialize the auth repository
 	repo := authRepo.New(tokenIssuer, pdb)
 
-	// Intialize the validator utility
+	// Initialize the validator utility
 	validator := validator.New()
 
 	// Initialize the auth service

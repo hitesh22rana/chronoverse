@@ -11,11 +11,11 @@ import (
 )
 
 const (
-	// MaxHealthCheckRetries is the maximum number of retries for the health check
+	// MaxHealthCheckRetries is the maximum number of retries for the health check.
 	MaxHealthCheckRetries = 3
 )
 
-// Config holds PostgreSQL connection configuration
+// Config holds PostgreSQL connection configuration.
 type Config struct {
 	Host        string
 	Port        int
@@ -30,12 +30,12 @@ type Config struct {
 	SSLMode     string
 }
 
-// Postgres represents a PostgreSQL connection pool
+// Postgres represents a PostgreSQL connection pool.
 type Postgres struct {
 	pool *pgxpool.Pool
 }
 
-// healthCheck is used to check the health of the PostgreSQL connection
+// healthCheck is used to check the health of the PostgreSQL connection.
 func healthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 	var err error
 
@@ -50,10 +50,10 @@ func healthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 
-	return err
+	return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 }
 
-// New creates a new PostgreSQL connection pool
+// New creates a new PostgreSQL connection pool.
 func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	if cfg.MaxConns == 0 {
 		cfg.MaxConns = 10
@@ -112,41 +112,41 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	}, nil
 }
 
-// Close closes the connection pool
+// Close closes the connection pool.
 func (db *Postgres) Close() {
 	db.pool.Close()
 }
 
-// BeginTx starts a new transaction
+// BeginTx starts a new transaction.
 func (db *Postgres) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return db.pool.Begin(ctx)
 }
 
-// QueryRow executes a query that returns a single row
+// QueryRow executes a query that returns a single row.
 func (db *Postgres) QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row {
 	return db.pool.QueryRow(ctx, query, args...)
 }
 
-// Query executes a query that returns multiple rows
+// Query executes a query that returns multiple rows.
 func (db *Postgres) Query(ctx context.Context, query string, args ...interface{}) (pgx.Rows, error) {
 	return db.pool.Query(ctx, query, args...)
 }
 
-// Exec executes a query that doesn't return rows
+// Exec executes a query that doesn't return rows.
 func (db *Postgres) Exec(ctx context.Context, query string, args ...interface{}) (pgconn.CommandTag, error) {
 	return db.pool.Exec(ctx, query, args...)
 }
 
-// ExecBatch executes multiple queries in a batch
+// ExecBatch executes multiple queries in a batch.
 func (db *Postgres) ExecBatch(ctx context.Context, batch *pgx.Batch) error {
 	br := db.pool.SendBatch(ctx, batch)
 	defer br.Close()
 
 	_, err := br.Exec()
-	return err
+	return fmt.Errorf("failed to execute batch: %w", err)
 }
 
-// Stats returns connection pool statistics
+// Stats returns connection pool statistics.
 func (db *Postgres) Stats() *pgxpool.Stat {
 	return db.pool.Stat()
 }

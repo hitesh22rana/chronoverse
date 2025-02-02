@@ -2,21 +2,7 @@ syntax = "proto3";
 
 package auth;
 
-import "google/api/annotations.proto";
-import "protoc-gen-openapiv2/options/annotations.proto";
-
 option go_package = "github.com/hitesh22rana/chronoverse/proto/auth;auth";
-option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
-    info: {
-        title: "Chronoverse Auth Service"
-        version: "v1"
-        description: "Chronoverse Auth Service"
-    }
-    schemes: HTTP
-    schemes: HTTPS
-    consumes: "application/json"
-    produces: "application/json"
-};
 
 // RegisterRequest contains the details needed to register a new user.
 message RegisterRequest {
@@ -26,7 +12,8 @@ message RegisterRequest {
 
 // RegisterResponse contains the result of a registration attempt.
 message RegisterResponse {
-    string token = 1;   // Authentication token
+    string user_id = 1; // User's unique identifier
+    string pat = 2;     // User's personal access token
 }
 
 // LoginRequest contains the credentials for logging in.
@@ -37,76 +24,37 @@ message LoginRequest {
 
 // LoginResponse contains the result of a login attempt.
 message LoginResponse {
-    string token = 1;   // Authentication token
+    string user_id = 1; // User's unique identifier
+    string pat = 2;     // User's personal access token
 }
 
 // LogoutRequest contains the token to invalidate.
 message LogoutRequest {
-    string token = 1;   // Token to invalidate
+    string pat = 1; // User's personal access token
 }
 
 // LogoutResponse contains the result of a logout attempt.
 message LogoutResponse {}
 
-// ValidateTokenRequest contains the token to validate.
-message ValidateTokenRequest {
-    string token = 1;   // Token to validate
+// ValidateRequest contains the token to validate.
+message ValidateRequest {
+    string pat = 1; // User's personal access token
 }
 
-// ValidateTokenResponse contains the result of a token validation attempt.
-message ValidateTokenResponse {}
+// ValidateResponse contains the result of a token validation attempt.
+message ValidateResponse {}
 
 // AuthService handles user authentication and authorization.
 service AuthService {
     // Register a new user.
-    rpc Register(RegisterRequest) returns (RegisterResponse) {
-        option (google.api.http) = {
-            post: "/auth/register"
-            body: "*"
-        };
-        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
-            tags: ["auth"]
-            summary: "Register a new user"
-            description: "Register a new user with the given email and password."
-        };
-    };
+    rpc Register(RegisterRequest) returns (RegisterResponse) {};
 
     // Login with email and password.
-    rpc Login(LoginRequest) returns (LoginResponse) {
-        option (google.api.http) = {
-            post: "/auth/login"
-            body: "*"
-        };
-        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
-            tags: ["auth"]
-            summary: "Login with email and password"
-            description: "Login with the given email and password."
-        };
-    };
+    rpc Login(LoginRequest) returns (LoginResponse) {};
 
     // Logout a user (invalidate their token).
-    rpc Logout(LogoutRequest) returns (LogoutResponse) {
-        option (google.api.http) = {
-            post: "/auth/logout"
-            body: "*"
-        };
-        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
-            tags: ["auth"]
-            summary: "Logout a user"
-            description: "Logout a user by invalidating their token."
-        };
-    };
+    rpc Logout(LogoutRequest) returns (LogoutResponse) {};
 
     // Validate a given token.
-    rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse) {
-        option (google.api.http) = {
-            post: "/auth/validate"
-            body: "*"
-        };
-        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
-            tags: ["auth"]
-            summary: "Validate a token"
-            description: "Validate a given token."
-        };
-    };
+    rpc Validate(ValidateRequest) returns (ValidateResponse) {};
 }

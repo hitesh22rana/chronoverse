@@ -40,14 +40,14 @@ func run() int {
 	// Load the service configuration
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load configuration: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
 	// Initialize logger
 	log, err := logger.New(cfg.Environment.Env)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer func() {
@@ -71,7 +71,7 @@ func run() int {
 		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize redis store: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer rdb.Close()
@@ -91,7 +91,7 @@ func run() int {
 		SSLMode:     cfg.Postgres.SSLMode,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize postgres store: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer pdb.Close()

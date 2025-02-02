@@ -1,10 +1,11 @@
 package config
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const envPrefix = ""
@@ -68,7 +69,7 @@ func Load() (*Configuration, error) {
 	var cfg Configuration
 	err := envconfig.Process(envPrefix, &cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to load configuration: %v", err)
 	}
 
 	return &cfg, nil

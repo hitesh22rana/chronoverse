@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -50,11 +52,7 @@ func healthCheck(ctx context.Context, client *redis.Client) error {
 		}
 	}
 
-	if err != nil {
-		return fmt.Errorf("%w", err)
-	}
-
-	return nil
+	return err
 }
 
 // New creates a new Redis store instance.
@@ -71,21 +69,21 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 
 	// Set the max memory
 	if err := client.ConfigSet(ctx, "maxmemory", cfg.MaxMemory).Err(); err != nil {
-		return nil, fmt.Errorf("failed to set max memory: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to set max memory: %v", err)
 	}
 
 	// Set the eviction policy
 	if err := client.ConfigSet(ctx, "maxmemory-policy", cfg.EvictionPolicy).Err(); err != nil {
-		return nil, fmt.Errorf("failed to set eviction policy: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to set eviction policy: %v", err)
 	}
 
 	// Set sample size for eviction policy
 	if err := client.ConfigSet(ctx, "maxmemory-samples", fmt.Sprintf("%d", cfg.EvictionPolicySampleSize)).Err(); err != nil {
-		return nil, fmt.Errorf("failed to set eviction policy sample size (maxmemory-samples): %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to set eviction policy sample size: %v", err)
 	}
 
 	if err := healthCheck(ctx, client); err != nil {
-		return nil, fmt.Errorf("failed to connect to redis: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to connect to Redis: %v", err)
 	}
 
 	return &Store{client: client}, nil
@@ -100,11 +98,11 @@ func (s *Store) Close() error {
 func (s *Store) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("failed to marshal value: %w", err)
+		return status.Errorf(codes.Internal, "failed to marshal value: %v", err)
 	}
 
 	if err := s.client.Set(ctx, key, data, expiration).Err(); err != nil {
-		return fmt.Errorf("failed to set value in redis: %w", err)
+		return status.Errorf(codes.Internal, "failed to set value in redis: %v", err)
 	}
 
 	return nil
@@ -115,13 +113,13 @@ func (s *Store) Get(ctx context.Context, key string, dest interface{}) error {
 	data, err := s.client.Get(ctx, key).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return fmt.Errorf("key not found: %s", key)
+			return status.Errorf(codes.NotFound, "key not found: %s", key)
 		}
-		return fmt.Errorf("failed to get value from redis: %w", err)
+		return status.Errorf(codes.Internal, "failed to get value from redis: %v", err)
 	}
 
 	if err := json.Unmarshal(data, dest); err != nil {
-		return fmt.Errorf("failed to unmarshal value: %w", err)
+		return status.Errorf(codes.Internal, "failed to unmarshal value: %v", err)
 	}
 
 	return nil
@@ -129,9 +127,15 @@ func (s *Store) Get(ctx context.Context, key string, dest interface{}) error {
 
 // Delete removes a key.
 func (s *Store) Delete(ctx context.Context, key string) error {
-	if err := s.client.Del(ctx, key).Err(); err != nil {
-		return fmt.Errorf("failed to delete key: %w", err)
+	val, err := s.client.Del(ctx, key).Result()
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to delete key: %v", err)
 	}
+
+	if val == 0 {
+		return status.Errorf(codes.NotFound, "key not found: %s", key)
+	}
+
 	return nil
 }
 
@@ -139,7 +143,7 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 func (s *Store) Exists(ctx context.Context, key string) (bool, error) {
 	result, err := s.client.Exists(ctx, key).Result()
 	if err != nil {
-		return false, fmt.Errorf("failed to check if key exists: %w", err)
+		return false, status.Errorf(codes.Internal, "failed to check if key exists: %v", err)
 	}
 	return result > 0, nil
 }
@@ -148,12 +152,12 @@ func (s *Store) Exists(ctx context.Context, key string) (bool, error) {
 func (s *Store) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return false, fmt.Errorf("failed to marshal value: %w", err)
+		return false, status.Errorf(codes.Internal, "failed to marshal value: %v", err)
 	}
 
 	success, err := s.client.SetNX(ctx, key, data, expiration).Result()
 	if err != nil {
-		return false, fmt.Errorf("failed to set value in redis: %w", err)
+		return false, status.Errorf(codes.Internal, "failed to set value in redis: %v", err)
 	}
 
 	return success, nil
@@ -163,12 +167,12 @@ func (s *Store) SetNX(ctx context.Context, key string, value interface{}, expira
 func (s *Store) Pipeline(ctx context.Context, fn func(redis.Pipeliner) error) error {
 	pipe := s.client.Pipeline()
 	if err := fn(pipe); err != nil {
-		return fmt.Errorf("failed to execute pipeline function: %w", err)
+		return status.Errorf(codes.Internal, "failed to execute pipeline: %v", err)
 	}
 
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to execute pipeline: %w", err)
+		return status.Errorf(codes.Internal, "failed to execute pipeline: %v", err)
 	}
 
 	return nil

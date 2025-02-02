@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -50,11 +52,7 @@ func healthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 
-	if err != nil {
-		return fmt.Errorf("%w", err)
-	}
-
-	return nil
+	return err
 }
 
 // New creates a new PostgreSQL connection pool.
@@ -90,7 +88,7 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 
 	poolConfig, err := pgxpool.ParseConfig(connString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse connection string: %w", err)
+		return nil, status.Errorf(codes.InvalidArgument, "failed to parse connection string: %v", err)
 	}
 
 	// Configure pool settings
@@ -103,12 +101,12 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	// Create connection pool
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create connection pool: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to create PostgreSQL pool: %v", err)
 	}
 
 	// Check the health of the connection
 	if err := healthCheck(ctx, pool); err != nil {
-		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to check PostgreSQL health: %v", err)
 	}
 
 	return &Postgres{
@@ -146,8 +144,11 @@ func (db *Postgres) ExecBatch(ctx context.Context, batch *pgx.Batch) error {
 	br := db.pool.SendBatch(ctx, batch)
 	defer br.Close()
 
-	_, err := br.Exec()
-	return fmt.Errorf("failed to execute batch: %w", err)
+	if _, err := br.Exec(); err != nil {
+		return status.Errorf(codes.Internal, "failed to execute batch: %v", err)
+	}
+
+	return nil
 }
 
 // Stats returns connection pool statistics.

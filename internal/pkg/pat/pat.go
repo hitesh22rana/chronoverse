@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
@@ -59,7 +62,7 @@ func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
 	// Generate random bytes
 	tokenBytes := make([]byte, tokenLength)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+		return "", status.Errorf(codes.Internal, "failed to generate random bytes: %v", err)
 	}
 
 	// Combine seed and random bytes
@@ -77,11 +80,7 @@ func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
 
 	// Store in Redis
 	key := fmt.Sprintf("%s%s", patPrefix, pat)
-	if err := p.redisStore.Set(ctx, key, metadata, defaultExpiry); err != nil {
-		return "", fmt.Errorf("failed to store pat: %w", err)
-	}
-
-	return pat, nil
+	return pat, p.redisStore.Set(ctx, key, metadata, defaultExpiry)
 }
 
 // ValidatePat checks if a pat is valid and returns its metadata.
@@ -90,12 +89,12 @@ func (p *Pat) ValidatePat(ctx context.Context, pat string) (*MetaData, error) {
 	key := fmt.Sprintf("%s%s", patPrefix, pat)
 	var metadata MetaData
 	if err := p.redisStore.Get(ctx, key, &metadata); err != nil {
-		return nil, fmt.Errorf("invalid pat: %w", err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid pat: %v", err)
 	}
 
 	// Check expiration
 	if time.Now().After(metadata.ExpiresAt) {
-		return nil, fmt.Errorf("pat expired")
+		return nil, status.Errorf(codes.Unauthenticated, "pat expired")
 	}
 
 	return &metadata, nil
@@ -105,26 +104,26 @@ func (p *Pat) ValidatePat(ctx context.Context, pat string) (*MetaData, error) {
 func (p *Pat) RevokePat(ctx context.Context, pat string) error {
 	// Remove pat metadata
 	key := fmt.Sprintf("%s%s", patPrefix, pat)
-	if err := p.redisStore.Delete(ctx, key); err != nil {
-		return fmt.Errorf("failed to delete pat: %w", err)
-	}
-
-	return nil
+	return p.redisStore.Delete(ctx, key)
 }
 
 // IsValidPat checks if a pat is valid by comparing the token with the metadata ID.
-func (p *Pat) IsValidPat(ctx context.Context, token string) bool {
+func (p *Pat) IsValidPat(ctx context.Context, token string) error {
 	metadata, err := p.ValidatePat(ctx, token)
 	if err != nil {
-		return false
+		return err
 	}
 
 	// Decode the base64 encoded token
 	decodedToken, err := base64.URLEncoding.DecodeString(token)
 	if err != nil {
-		return false
+		return status.Errorf(codes.Internal, "failed to decode token: %v", err)
 	}
 
 	// Check if the token is valid
-	return string(decodedToken)[20:56] == metadata.ID
+	if string(decodedToken)[20:56] != metadata.ID {
+		return status.Errorf(codes.Unauthenticated, "invalid token")
+	}
+
+	return nil
 }

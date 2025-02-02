@@ -33,20 +33,20 @@ func New(tokenIssuer *pat.Pat, postgresStore *postgres.Postgres) *Repository {
 }
 
 // Register a new user.
-func (r *Repository) Register(ctx context.Context, email, password string) (string, error) {
+func (r *Repository) Register(ctx context.Context, email, password string) (userID, pat string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to hash password: %v", err)
+		return "", "", status.Errorf(codes.Internal, "failed to hash password: %v", err)
 	}
 
 	// Start transaction
 	tx, err := r.postgresStore.BeginTx(ctx)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to start transaction: %v", err)
+		return "", "", status.Errorf(codes.Internal, "failed to start transaction: %v", err)
 	}
 	// rollback if not committed
 	defer func() {
@@ -64,28 +64,28 @@ func (r *Repository) Register(ctx context.Context, email, password string) (stri
 	if err != nil {
 		// Check if the user already exists
 		if r.postgresStore.IsUniqueViolation(err) {
-			return "", status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
+			return "", "", status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
 		}
 
-		return "", status.Errorf(codes.Internal, "failed to insert user: %v", err)
+		return "", "", status.Errorf(codes.Internal, "failed to insert user: %v", err)
 	}
 
 	// Generate PAT
 	token, err := r.tokenIssuer.GeneratePat(ctx, ID)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to generate token: %v", err)
+		return "", "", err
 	}
 
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
-		return "", status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
+		return "", "", status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
 	}
 
-	return token, nil
+	return ID, token, nil
 }
 
 // Login user.
-func (r *Repository) Login(ctx context.Context, email, pass string) (string, error) {
+func (r *Repository) Login(ctx context.Context, email, pass string) (userID, pat string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -95,27 +95,27 @@ func (r *Repository) Login(ctx context.Context, email, pass string) (string, err
 		password string
 	)
 	query := fmt.Sprintf(`SELECT id, password FROM %s WHERE email = $1`, userTable)
-	err := r.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
+	err = r.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
 	if err != nil {
 		if r.postgresStore.IsNoRows(err) {
-			return "", status.Errorf(codes.NotFound, "user not found: %v", err)
+			return "", "", status.Errorf(codes.NotFound, "user not found: %v", err)
 		}
 
-		return "", status.Errorf(codes.Internal, "failed to fetch user: %v", err)
+		return "", "", status.Errorf(codes.Internal, "failed to fetch user: %v", err)
 	}
 
 	// Validate password
 	if err = bcrypt.CompareHashAndPassword([]byte(password), []byte(pass)); err != nil {
-		return "", status.Errorf(codes.FailedPrecondition, "invalid password: %v", err)
+		return "", "", status.Errorf(codes.FailedPrecondition, "invalid password: %v", err)
 	}
 
 	// Generate PAT
 	token, err := r.tokenIssuer.GeneratePat(ctx, ID)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to generate token: %v", err)
+		return "", "", err
 	}
 
-	return token, nil
+	return ID, token, nil
 }
 
 // Logout user.
@@ -124,22 +124,14 @@ func (r *Repository) Logout(ctx context.Context, token string) error {
 	defer cancel()
 
 	// Revoke the token
-	if err := r.tokenIssuer.RevokePat(ctx, token); err != nil {
-		return status.Errorf(codes.Internal, "failed to revoke token: %v", err)
-	}
-
-	return nil
+	return r.tokenIssuer.RevokePat(ctx, token)
 }
 
-// ValidateToken validates the token.
-func (r *Repository) ValidateToken(ctx context.Context, token string) error {
+// Validate validates the token.
+func (r *Repository) Validate(ctx context.Context, token string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Validate the token
-	if ok := r.tokenIssuer.IsValidPat(ctx, token); !ok {
-		return status.Errorf(codes.Unauthenticated, "invalid token %s", token)
-	}
-
-	return nil
+	return r.tokenIssuer.IsValidPat(ctx, token)
 }

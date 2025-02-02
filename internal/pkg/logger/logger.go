@@ -3,10 +3,10 @@
 package logger
 
 import (
-	"fmt"
-
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -27,11 +27,11 @@ func New(environment string) (*zap.Logger, error) {
 	case Development:
 		logger, err = developmentLogger()
 	default:
-		return nil, fmt.Errorf("unknown environment %s", environment)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid environment: %s", environment)
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to create logger: %v", err)
 	}
 
 	return logger, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -97,6 +98,7 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	poolConfig.MaxConnLifetime = cfg.MaxConnLife
 	poolConfig.MaxConnIdleTime = cfg.MaxConnIdle
 	poolConfig.ConnConfig.ConnectTimeout = cfg.DialTimeout
+	poolConfig.ConnConfig.Tracer = otelpgx.NewTracer()
 
 	// Create connection pool
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
@@ -107,6 +109,11 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	// Check the health of the connection
 	if err := healthCheck(ctx, pool); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to check PostgreSQL health: %v", err)
+	}
+
+	// Enable OpenTelemetry instrumentation for postgres
+	if err := otelpgx.RecordStats(pool); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to record PostgreSQL stats: %v", err)
 	}
 
 	return &Postgres{

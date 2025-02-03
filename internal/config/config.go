@@ -17,6 +17,7 @@ type Configuration struct {
 	Postgres
 	Pat
 	AuthServer
+	Otel
 }
 
 // Environment holds the environment configuration.
@@ -62,6 +63,11 @@ type Pat struct {
 // AuthServer holds the authentication server configuration.
 type AuthServer struct {
 	Port int `envconfig:"AUTH_SERVER_PORT" default:"50051"`
+}
+
+// Otel holds the OpenTelemetry configuration.
+type Otel struct {
+	ExporterOtlpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://jaeger:4317"`
 }
 
 // Load loads the application configuration.

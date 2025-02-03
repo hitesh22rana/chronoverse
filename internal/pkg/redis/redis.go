@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -82,8 +83,19 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 		return nil, status.Errorf(codes.Internal, "failed to set eviction policy sample size: %v", err)
 	}
 
+	// Check the health of the connection
 	if err := healthCheck(ctx, client); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to connect to Redis: %v", err)
+	}
+
+	// Enable tracing instrumentation for Redis
+	if err := redisotel.InstrumentTracing(client); err != nil {
+		panic(err)
+	}
+
+	// Enable metrics instrumentation for Redis
+	if err := redisotel.InstrumentMetrics(client); err != nil {
+		panic(err)
 	}
 
 	return &Store{client: client}, nil

@@ -5,6 +5,7 @@ package auth
 import (
 	"context"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,7 +32,9 @@ type Auth struct {
 
 // New creates a new authentication server.
 func New(log *zap.Logger, svc Service) *grpc.Server {
-	server := grpc.NewServer()
+	server := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+	)
 	pb.RegisterAuthServiceServer(server, &Auth{
 		log: log,
 		svc: svc,

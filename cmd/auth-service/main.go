@@ -11,6 +11,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/auth"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/pat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
@@ -36,6 +37,37 @@ func run() int {
 	// Context to cancel the execution
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize the OpenTelemetry Resource
+	res, err := otelpkg.InitResource(ctx, ServiceName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
+	// Initialize the OpenTelemetry TracerProvider
+	shutdownTracerProvider, err := otelpkg.InitTracerProvider(ctx, res)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer func() {
+		if err = shutdownTracerProvider(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to shutdown tracer provider: %v\n", err)
+		}
+	}()
+
+	// Initialize the OpenTelemetry MeterProvider
+	shutdownMeterProvider, err := otelpkg.InitMeterProvider(ctx, res)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer func() {
+		if err = shutdownMeterProvider(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to shutdown meter provider: %v\n", err)
+		}
+	}()
 
 	// Load the service configuration
 	cfg, err := config.Load()

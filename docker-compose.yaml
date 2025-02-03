@@ -22,6 +22,7 @@ services:
 
   migrate:
       image: migrate/migrate:latest
+      container_name: migrate
       profiles: ['tools']
       volumes:
           - ./internal/pkg/postgres/migrations:/migrations
@@ -63,6 +64,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     build:
       context: .
       dockerfile: Dockerfile
@@ -74,6 +76,21 @@ services:
     depends_on:
       - postgres
       - redis
+    networks:
+      - chronoverse
+
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    container_name: jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - '16686:16686'
+      - '4317:4317'
+      - '4318:4318'
+    restart: on-failure
+    depends_on:
+      - auth-service
     networks:
       - chronoverse
 

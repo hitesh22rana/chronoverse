@@ -38,6 +38,25 @@ func run() int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Load the service configuration
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
+	// Initialize logger
+	log, err := logger.Init(cfg.Environment.Env)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer func() {
+		if err = log.Sync(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to flush logger: %v\n", err)
+		}
+	}()
+
 	// Initialize the OpenTelemetry Resource
 	res, err := otelpkg.InitResource(ctx, ServiceName)
 	if err != nil {
@@ -66,25 +85,6 @@ func run() int {
 	defer func() {
 		if err = shutdownMeterProvider(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to shutdown meter provider: %v\n", err)
-		}
-	}()
-
-	// Load the service configuration
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	// Initialize logger
-	log, err := logger.New(cfg.Environment.Env)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = log.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to flush logger: %v\n", err)
 		}
 	}()
 

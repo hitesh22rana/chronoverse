@@ -65,11 +65,13 @@ services:
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - ENV=production
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        - SERVICE_NAME=auth-service
+        - VERSION=v0.0.1
+        - NAME=auth-service
     ports:
       - '50051:50051'
     restart: on-failure

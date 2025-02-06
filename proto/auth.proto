@@ -34,7 +34,9 @@ message LogoutRequest {
 }
 
 // LogoutResponse contains the result of a logout attempt.
-message LogoutResponse {}
+message LogoutResponse {
+    string user_id = 1; // User's unique identifier
+}
 
 // ValidateRequest contains the token to validate.
 message ValidateRequest {
@@ -42,7 +44,9 @@ message ValidateRequest {
 }
 
 // ValidateResponse contains the result of a token validation attempt.
-message ValidateResponse {}
+message ValidateResponse {
+    string user_id = 1; // User's unique identifier
+}
 
 // AuthService handles user authentication and authorization.
 service AuthService {

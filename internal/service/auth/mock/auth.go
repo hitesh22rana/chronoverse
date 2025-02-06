@@ -57,11 +57,12 @@ func (mr *MockRepositoryMockRecorder) Login(ctx, email, password any) *gomock.Ca
 }
 
 // Logout mocks base method.
-func (m *MockRepository) Logout(ctx context.Context, token string) error {
+func (m *MockRepository) Logout(ctx context.Context, token string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Logout", ctx, token)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Logout indicates an expected call of Logout.
@@ -87,11 +88,12 @@ func (mr *MockRepositoryMockRecorder) Register(ctx, email, password any) *gomock
 }
 
 // Validate mocks base method.
-func (m *MockRepository) Validate(ctx context.Context, token string) error {
+func (m *MockRepository) Validate(ctx context.Context, token string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Validate", ctx, token)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Validate indicates an expected call of Validate.

@@ -54,8 +54,23 @@ func New(options *Options, redisStore *redis.Store) *Pat {
 	}
 }
 
-// GeneratePat creates a new pat and stores it in the store.
-func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
+// userFromPat extracts the user ID from a pat.
+func userFromPat(pat string) (string, error) {
+	// Decode the base64 encoded pat
+	decodedPat, err := base64.URLEncoding.DecodeString(pat)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to decode token: %v", err)
+	}
+
+	if len(decodedPat) < 56 {
+		return "", status.Errorf(codes.Internal, "invalid token")
+	}
+
+	return string(decodedPat)[20:56], nil
+}
+
+// IssuePat issues a new pat and stores it in the store.
+func (p *Pat) IssuePat(ctx context.Context, id string) (string, error) {
 	// Create seed from current time and ID
 	seed := fmt.Sprintf("%d:%s", time.Now().UnixNano(), id)
 
@@ -83,47 +98,47 @@ func (p *Pat) GeneratePat(ctx context.Context, id string) (string, error) {
 	return pat, p.redisStore.Set(ctx, key, metadata, defaultExpiry)
 }
 
-// ValidatePat checks if a pat is valid and returns its metadata.
-func (p *Pat) ValidatePat(ctx context.Context, pat string) (*MetaData, error) {
-	// Get metadata
+// RevokePat invalidates a pat.
+func (p *Pat) RevokePat(ctx context.Context, pat string) (string, error) {
+	// Extract the user ID from the token
+	userID, err := userFromPat(pat)
+	if err != nil {
+		return "", err
+	}
+
+	// Remove pat metadata
+	key := fmt.Sprintf("%s%s", patPrefix, pat)
+	err = p.redisStore.Delete(ctx, key)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to delete pat: %v", err)
+	}
+
+	return userID, nil
+}
+
+// IsValidPat checks if a pat is valid.
+func (p *Pat) IsValidPat(ctx context.Context, pat string) (string, error) {
 	key := fmt.Sprintf("%s%s", patPrefix, pat)
 	var metadata MetaData
 	if err := p.redisStore.Get(ctx, key, &metadata); err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "invalid pat: %v", err)
+		return "", status.Errorf(codes.Unauthenticated, "invalid pat: %v", err)
 	}
 
 	// Check expiration
 	if time.Now().After(metadata.ExpiresAt) {
-		return nil, status.Errorf(codes.Unauthenticated, "pat expired")
+		return "", status.Errorf(codes.Unauthenticated, "pat expired")
 	}
 
-	return &metadata, nil
-}
-
-// RevokePat invalidates a pat.
-func (p *Pat) RevokePat(ctx context.Context, pat string) error {
-	// Remove pat metadata
-	key := fmt.Sprintf("%s%s", patPrefix, pat)
-	return p.redisStore.Delete(ctx, key)
-}
-
-// IsValidPat checks if a pat is valid by comparing the token with the metadata ID.
-func (p *Pat) IsValidPat(ctx context.Context, token string) error {
-	metadata, err := p.ValidatePat(ctx, token)
+	// Extract the user ID from the token
+	userID, err := userFromPat(pat)
 	if err != nil {
-		return err
-	}
-
-	// Decode the base64 encoded token
-	decodedToken, err := base64.URLEncoding.DecodeString(token)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to decode token: %v", err)
+		return "", err
 	}
 
 	// Check if the token is valid
-	if string(decodedToken)[20:56] != metadata.ID {
-		return status.Errorf(codes.Unauthenticated, "invalid token")
+	if userID != metadata.ID {
+		return "", status.Errorf(codes.Unauthenticated, "invalid token")
 	}
 
-	return nil
+	return userID, nil
 }

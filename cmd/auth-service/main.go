@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/go-playground/validator/v10"
+	"go.uber.org/zap"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/auth"
 	"github.com/hitesh22rana/chronoverse/internal/config"
@@ -15,8 +16,9 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/pat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
-	authRepo "github.com/hitesh22rana/chronoverse/internal/repository/auth"
-	authSvc "github.com/hitesh22rana/chronoverse/internal/service/auth"
+	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	authrepo "github.com/hitesh22rana/chronoverse/internal/repository/auth"
+	authsvc "github.com/hitesh22rana/chronoverse/internal/service/auth"
 )
 
 const (
@@ -24,9 +26,14 @@ const (
 	ExitOk = iota
 	// ExitError is the exit code for errors.
 	ExitError
+)
 
-	// ServiceName is the name of the service.
-	ServiceName = "auth-service"
+var (
+	// version is the service version.
+	version string
+
+	// name is the name of the service.
+	name string
 )
 
 func main() {
@@ -37,6 +44,9 @@ func run() int {
 	// Context to cancel the execution
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize the service information
+	initSvcInfo()
 
 	// Load the service configuration
 	cfg, err := config.Load()
@@ -58,7 +68,7 @@ func run() int {
 	}()
 
 	// Initialize the OpenTelemetry Resource
-	res, err := otelpkg.InitResource(ctx, ServiceName)
+	res, err := otelpkg.InitResource(ctx, name)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -134,13 +144,13 @@ func run() int {
 	}, rdb)
 
 	// Initialize the auth repository
-	repo := authRepo.New(tokenIssuer, pdb)
+	repo := authrepo.New(tokenIssuer, pdb)
 
 	// Initialize the validator utility
 	validator := validator.New()
 
 	// Initialize the auth service
-	svc := authSvc.New(validator, repo)
+	svc := authsvc.New(validator, repo)
 
 	// Initialize the auth app
 	app := auth.New(log, svc)
@@ -152,6 +162,22 @@ func run() int {
 		return ExitError
 	}
 
+	// Graceful shutdown
+	go func() {
+		<-ctx.Done()
+		if err := listener.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to close listener: %v\n", err)
+		}
+	}()
+
+	// Log the service information
+	log.Info("Starting service",
+		zap.String("name", svcpkg.Info().Name),
+		zap.String("version", svcpkg.Info().Version),
+		zap.String("address", listener.Addr().String()),
+		zap.String("environment", cfg.Environment.Env),
+	)
+
 	// Start the gRPC server
 	if err := app.Serve(listener); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to start gRPC server: %v\n", err)
@@ -159,4 +185,10 @@ func run() int {
 	}
 
 	return ExitOk
+}
+
+// initSvcInfo initializes the service information.
+func initSvcInfo() {
+	svcpkg.SetVersion(version)
+	svcpkg.SetName(name)
 }

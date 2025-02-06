@@ -30,7 +30,7 @@ tools:
 
 .PHONY: build/auth-service
 build/auth-service: dependencies
-	@CGO_ENABLED=0 go build -o ./.bin/auth-service ./cmd/auth-service 
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=auth-service'" -o ./.bin/auth-service ./cmd/auth-service
 
 .PHONY: run/auth-service
 run/auth-service: build/auth-service

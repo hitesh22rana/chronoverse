@@ -6,37 +6,42 @@ import (
 	"context"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 
 	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
+
+	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Service provides user authentication operations.
 type Service interface {
 	Register(ctx context.Context, email, password string) (string, string, error)
 	Login(ctx context.Context, email, password string) (string, string, error)
-	Logout(ctx context.Context, token string) error
-	Validate(ctx context.Context, token string) error
+	Logout(ctx context.Context, token string) (string, error)
+	Validate(ctx context.Context, token string) (string, error)
 }
 
 // Auth represents the authentication application.
 type Auth struct {
 	pb.UnimplementedAuthServiceServer
 	log *zap.Logger
+	tp  trace.Tracer
 	svc Service
 }
 
 // New creates a new authentication server.
 func New(log *zap.Logger, svc Service) *grpc.Server {
+	serviceName := svcpkg.Info().GetName()
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	pb.RegisterAuthServiceServer(server, &Auth{
 		log: log,
+		tp:  otel.Tracer(serviceName),
 		svc: svc,
 	})
 
@@ -46,13 +51,12 @@ func New(log *zap.Logger, svc Service) *grpc.Server {
 
 // Register registers a new user.
 func (a *Auth) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+	ctx, span := a.tp.Start(ctx, "App.Register")
+	defer span.End()
+
 	userID, pat, err := a.svc.Register(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
-		if status.Code(err) == codes.Internal {
-			a.log.Error("failed to register user", zap.Error(err))
-		} else {
-			a.log.Warn("failed to register user", zap.Error(err))
-		}
+		a.log.Error("failed to register user", zap.Error(err))
 		return nil, err
 	}
 
@@ -64,11 +68,7 @@ func (a *Auth) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Regis
 func (a *Auth) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
 	userID, pat, err := a.svc.Login(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
-		if status.Code(err) == codes.Internal {
-			a.log.Error("failed to login user", zap.Error(err))
-		} else {
-			a.log.Warn("failed to login user", zap.Error(err))
-		}
+		a.log.Error("failed to login user", zap.Error(err))
 		return nil, err
 	}
 
@@ -78,32 +78,24 @@ func (a *Auth) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginRespon
 
 // Logout logs out the user.
 func (a *Auth) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutResponse, error) {
-	err := a.svc.Logout(ctx, req.GetPat())
+	userID, err := a.svc.Logout(ctx, req.GetPat())
 	if err != nil {
-		if status.Code(err) == codes.Internal {
-			a.log.Error("failed to logout user", zap.Error(err))
-		} else {
-			a.log.Warn("failed to logout user", zap.Error(err))
-		}
+		a.log.Error("failed to logout user", zap.Error(err))
 		return nil, err
 	}
 
-	a.log.Info("user logged out successfully", zap.String("token", req.GetPat()))
+	a.log.Info("user logged out successfully", zap.String("user_id", userID))
 	return &pb.LogoutResponse{}, nil
 }
 
 // Validate validates the token.
 func (a *Auth) Validate(ctx context.Context, req *pb.ValidateRequest) (*pb.ValidateResponse, error) {
-	err := a.svc.Validate(ctx, req.GetPat())
+	userID, err := a.svc.Validate(ctx, req.GetPat())
 	if err != nil {
-		if status.Code(err) == codes.Internal {
-			a.log.Error("failed to validate token", zap.Error(err))
-		} else {
-			a.log.Warn("failed to validate token", zap.Error(err))
-		}
+		a.log.Error("failed to validate token", zap.Error(err))
 		return nil, err
 	}
 
-	a.log.Info("token validated successfully", zap.String("token", req.GetPat()))
+	a.log.Info("token validated successfully", zap.String("user_id", userID))
 	return &pb.ValidateResponse{}, nil
 }

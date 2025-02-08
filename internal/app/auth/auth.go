@@ -61,7 +61,7 @@ func (a *Auth) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Regis
 	}
 
 	a.log.Info("user registered successfully", zap.String("user_id", userID))
-	return &pb.RegisterResponse{UserId: userID, Pat: pat}, nil
+	return &pb.RegisterResponse{Pat: pat}, nil
 }
 
 // Login logs in the user.
@@ -73,7 +73,7 @@ func (a *Auth) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginRespon
 	}
 
 	a.log.Info("user logged in successfully", zap.String("user_id", userID))
-	return &pb.LoginResponse{UserId: userID, Pat: pat}, nil
+	return &pb.LoginResponse{Pat: pat}, nil
 }
 
 // Logout logs out the user.

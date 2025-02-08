@@ -26,12 +26,12 @@ const (
 // Repository provides authentication operations.
 type Repository struct {
 	tp            trace.Tracer
-	tokenIssuer   *pat.Pat
+	tokenIssuer   pat.TokenIssuer
 	postgresStore *postgres.Postgres
 }
 
 // New creates a new auth repository.
-func New(tokenIssuer *pat.Pat, postgresStore *postgres.Postgres) *Repository {
+func New(tokenIssuer pat.TokenIssuer, postgresStore *postgres.Postgres) *Repository {
 	serviceName := svcpkg.Info().GetName()
 	return &Repository{
 		tp:            otel.Tracer(serviceName),

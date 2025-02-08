@@ -58,6 +58,7 @@ type Postgres struct {
 // Pat holds the Personal Access Token configuration.
 type Pat struct {
 	DefaultExpiry time.Duration `envconfig:"PAT_DEFAULT_EXPIRY" default:"24h"`
+	JWTSecret     string        `envconfig:"PAT_JWT_SECRET" default:"abcdefghijklmnopqrstuvwxyz123456"`
 }
 
 // AuthServer holds the authentication server configuration.

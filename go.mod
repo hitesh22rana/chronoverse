@@ -5,6 +5,7 @@ go 1.23.3
 require (
 	github.com/exaring/otelpgx v0.9.0
 	github.com/go-playground/validator/v10 v10.24.0
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/redis/go-redis/extra/redisotel/v9 v9.7.0

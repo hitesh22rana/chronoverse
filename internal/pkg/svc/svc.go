@@ -22,6 +22,11 @@ func (s Svc) GetName() string {
 	return s.Name
 }
 
+// GetServiceInfo returns the complete service name.
+func (s Svc) GetServiceInfo() string {
+	return s.Name + ":" + s.Version
+}
+
 // SetVersion sets the service version.
 func SetVersion(version string) {
 	if svc.Version != "" {

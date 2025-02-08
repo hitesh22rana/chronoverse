@@ -26,6 +26,9 @@ const (
 	ExitOk = iota
 	// ExitError is the exit code for errors.
 	ExitError
+
+	// audience is the audience for the JWT token.
+	audience = "users"
 )
 
 var (
@@ -68,7 +71,7 @@ func run() int {
 	}()
 
 	// Initialize the OpenTelemetry Resource
-	res, err := otelpkg.InitResource(ctx, name)
+	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetServiceInfo())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -140,7 +143,10 @@ func run() int {
 
 	// Initialize the token issuer
 	tokenIssuer := pat.New(&pat.Options{
-		Expiry: cfg.Pat.DefaultExpiry,
+		Issuer:    svcpkg.Info().GetServiceInfo(),
+		Audience:  audience,
+		JWTSecret: cfg.Pat.JWTSecret,
+		Expiry:    cfg.Pat.DefaultExpiry,
 	}, rdb)
 
 	// Initialize the auth repository

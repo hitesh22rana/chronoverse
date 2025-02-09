@@ -10,10 +10,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
 
+	patpkg "github.com/hitesh22rana/chronoverse/internal/pkg/pat"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -33,11 +37,31 @@ type Auth struct {
 	svc Service
 }
 
+// audienceInterceptor sets the audience in the context.
+func audienceInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Extract the audience from metadata.
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.InvalidArgument, "metadata is required")
+		}
+
+		audience := md.Get("audience")
+		if len(audience) == 0 {
+			return nil, status.Error(codes.InvalidArgument, "audience is required")
+		}
+
+		ctx = patpkg.WithAudience(ctx, audience[0])
+		return handler(ctx, req)
+	}
+}
+
 // New creates a new authentication server.
 func New(log *zap.Logger, svc Service) *grpc.Server {
 	serviceName := svcpkg.Info().GetName()
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.UnaryInterceptor(audienceInterceptor()),
 	)
 	pb.RegisterAuthServiceServer(server, &Auth{
 		log: log,

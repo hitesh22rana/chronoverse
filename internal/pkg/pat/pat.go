@@ -29,6 +29,26 @@ var (
 	once    sync.Once
 )
 
+type AudienceContextKey struct{}
+
+func AudienceFromContext(ctx context.Context) (string, error) {
+	value := ctx.Value(AudienceContextKey{})
+	if value == nil {
+		return "", status.Error(codes.FailedPrecondition, "audience is required")
+	}
+
+	audience, ok := value.(string)
+	if !ok || audience == "" {
+		return "", status.Error(codes.FailedPrecondition, "audience is required")
+	}
+
+	return audience, nil
+}
+
+func WithAudience(ctx context.Context, audience string) context.Context {
+	return context.WithValue(ctx, AudienceContextKey{}, audience)
+}
+
 func init() {
 	once.Do(func() {
 		randSrc = rand.NewSource(time.Now().UnixNano())
@@ -45,7 +65,6 @@ type TokenIssuer interface {
 // Options contains options for the pat issuer.
 type Options struct {
 	Issuer    string
-	Audience  string
 	JWTSecret string
 	Expiry    time.Duration
 }
@@ -108,7 +127,12 @@ func (p *Pat) getClaims(pat string) (*Claims, error) {
 }
 
 // IssuePat issues a new pat and stores it in the store.
-func (p *Pat) IssuePat(_ context.Context, userID string) (string, error) {
+func (p *Pat) IssuePat(ctx context.Context, userID string) (string, error) {
+	audience, err := AudienceFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	id := p.generateClaimsID()
 	now := time.Now()
 
@@ -116,7 +140,7 @@ func (p *Pat) IssuePat(_ context.Context, userID string) (string, error) {
 		ID: id,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    p.options.Issuer,
-			Audience:  jwt.ClaimStrings{p.options.Audience},
+			Audience:  jwt.ClaimStrings{audience},
 			ExpiresAt: jwt.NewNumericDate(now.Add(p.options.Expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			Subject:   userID,

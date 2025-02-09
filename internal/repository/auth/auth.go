@@ -14,7 +14,6 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/pat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
-
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -27,11 +26,11 @@ const (
 type Repository struct {
 	tp            trace.Tracer
 	tokenIssuer   pat.TokenIssuer
-	postgresStore *postgres.Postgres
+	postgresStore postgres.PostgresStore
 }
 
 // New creates a new auth repository.
-func New(tokenIssuer pat.TokenIssuer, postgresStore *postgres.Postgres) *Repository {
+func New(tokenIssuer pat.TokenIssuer, postgresStore postgres.PostgresStore) *Repository {
 	serviceName := svcpkg.Info().GetName()
 	return &Repository{
 		tp:            otel.Tracer(serviceName),

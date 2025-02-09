@@ -1,5 +1,3 @@
-//go:generate go run go.uber.org/mock/mockgen@v0.5.0 -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
-
 package pat
 
 import (

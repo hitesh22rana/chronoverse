@@ -33,6 +33,18 @@ type Config struct {
 	SSLMode     string
 }
 
+// PostgresStore is the interface for the postgres store.
+type PostgresStore interface {
+	Close()
+	BeginTx(ctx context.Context) (pgx.Tx, error)
+	QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row
+	Query(ctx context.Context, query string, args ...interface{}) (pgx.Rows, error)
+	Exec(ctx context.Context, query string, args ...interface{}) (pgconn.CommandTag, error)
+	ExecBatch(ctx context.Context, batch *pgx.Batch) error
+	IsUniqueViolation(err error) bool
+	IsNoRows(err error) bool
+}
+
 // Postgres represents a PostgreSQL connection pool.
 type Postgres struct {
 	pool *pgxpool.Pool

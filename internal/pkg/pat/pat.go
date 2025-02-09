@@ -29,10 +29,11 @@ var (
 	once    sync.Once
 )
 
-type AudienceContextKey struct{}
+type audienceContextKey struct{}
 
+// AudienceFromContext extracts the audience from the context.
 func AudienceFromContext(ctx context.Context) (string, error) {
-	value := ctx.Value(AudienceContextKey{})
+	value := ctx.Value(audienceContextKey{})
 	if value == nil {
 		return "", status.Error(codes.FailedPrecondition, "audience is required")
 	}
@@ -45,8 +46,9 @@ func AudienceFromContext(ctx context.Context) (string, error) {
 	return audience, nil
 }
 
+// WithAudience sets the audience in the context.
 func WithAudience(ctx context.Context, audience string) context.Context {
-	return context.WithValue(ctx, AudienceContextKey{}, audience)
+	return context.WithValue(ctx, audienceContextKey{}, audience)
 }
 
 func init() {

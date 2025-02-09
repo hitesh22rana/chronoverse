@@ -48,8 +48,8 @@ func run() int {
 	// Initialize the service information
 	initSvcInfo()
 
-	// Load the service configuration
-	cfg, err := config.Load()
+	// Load the auth service configuration
+	cfg, err := config.InitAuthServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

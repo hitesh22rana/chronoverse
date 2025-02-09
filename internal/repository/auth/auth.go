@@ -41,7 +41,7 @@ func New(tokenIssuer pat.TokenIssuer, postgresStore *postgres.Postgres) *Reposit
 }
 
 // Register a new user.
-func (r *Repository) Register(ctx context.Context, email, password string) (userID, pat string, err error) {
+func (r *Repository) Register(ctx context.Context, email, password string) (_, _ string, _ error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Register", trace.WithAttributes(attribute.String("email", email)))
 	defer span.End()
 
@@ -82,7 +82,7 @@ func (r *Repository) Register(ctx context.Context, email, password string) (user
 	}
 
 	// Generate PAT
-	token, err := r.tokenIssuer.IssuePat(ctx, ID)
+	pat, err := r.tokenIssuer.IssuePat(ctx, ID)
 	if err != nil {
 		return "", "", err
 	}
@@ -92,11 +92,11 @@ func (r *Repository) Register(ctx context.Context, email, password string) (user
 		return "", "", status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
 	}
 
-	return ID, token, nil
+	return ID, pat, nil
 }
 
 // Login user.
-func (r *Repository) Login(ctx context.Context, email, pass string) (userID, pat string, err error) {
+func (r *Repository) Login(ctx context.Context, email, pass string) (_, _ string, _ error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Login", trace.WithAttributes(attribute.String("email", email)))
 	defer span.End()
 
@@ -109,7 +109,7 @@ func (r *Repository) Login(ctx context.Context, email, pass string) (userID, pat
 		password string
 	)
 	query := fmt.Sprintf(`SELECT id, password FROM %s WHERE email = $1`, userTable)
-	err = r.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
+	err := r.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
 	if err != nil {
 		if r.postgresStore.IsNoRows(err) {
 			return "", "", status.Errorf(codes.NotFound, "user not found: %v", err)
@@ -124,16 +124,16 @@ func (r *Repository) Login(ctx context.Context, email, pass string) (userID, pat
 	}
 
 	// Generate PAT
-	token, err := r.tokenIssuer.IssuePat(ctx, ID)
+	pat, err := r.tokenIssuer.IssuePat(ctx, ID)
 	if err != nil {
 		return "", "", err
 	}
 
-	return ID, token, nil
+	return ID, pat, nil
 }
 
 // Logout user.
-func (r *Repository) Logout(ctx context.Context, token string) (userID string, err error) {
+func (r *Repository) Logout(ctx context.Context, token string) (string, error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Logout", trace.WithAttributes(attribute.String("token", token)))
 	defer span.End()
 
@@ -145,7 +145,7 @@ func (r *Repository) Logout(ctx context.Context, token string) (userID string, e
 }
 
 // Validate validates the token.
-func (r *Repository) Validate(ctx context.Context, token string) (userID string, err error) {
+func (r *Repository) Validate(ctx context.Context, token string) (string, error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Validate", trace.WithAttributes(attribute.String("token", token)))
 	defer span.End()
 

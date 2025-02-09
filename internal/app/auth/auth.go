@@ -39,7 +39,7 @@ type Auth struct {
 
 // audienceInterceptor sets the audience in the context.
 func audienceInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// Extract the audience from metadata.
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {

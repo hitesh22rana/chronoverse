@@ -54,14 +54,21 @@ func (s *Service) Register(ctx context.Context, email, password string) (userID,
 	}()
 
 	// Validate the request
-	if err := s.validator.Struct(&RegisterRequest{
+	err = s.validator.Struct(&RegisterRequest{
 		Email:    email,
 		Password: password,
-	}); err != nil {
-		return "", "", status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return "", "", err
 	}
 
-	return s.repo.Register(ctx, email, password)
+	userID, pat, err = s.repo.Register(ctx, email, password)
+	if err != nil {
+		return "", "", err
+	}
+
+	return userID, pat, nil
 }
 
 // LoginRequest holds the request parameters for logging in a user.
@@ -79,14 +86,21 @@ func (s *Service) Login(ctx context.Context, email, password string) (userID, pa
 	}()
 
 	// Validate the request
-	if err := s.validator.Struct(&LoginRequest{
+	err = s.validator.Struct(&LoginRequest{
 		Email:    email,
 		Password: password,
-	}); err != nil {
-		return "", "", status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return "", "", err
 	}
 
-	return s.repo.Login(ctx, email, password)
+	userID, pat, err = s.repo.Login(ctx, email, password)
+	if err != nil {
+		return "", "", err
+	}
+
+	return userID, pat, nil
 }
 
 // LogoutRequest holds the request parameters for logging out a user.
@@ -103,13 +117,20 @@ func (s *Service) Logout(ctx context.Context, token string) (userID string, err 
 	}()
 
 	// Validate the request
-	if err := s.validator.Struct(&LogoutRequest{
+	err = s.validator.Struct(&LogoutRequest{
 		Token: token,
-	}); err != nil {
-		return "", status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return "", err
 	}
 
-	return s.repo.Logout(ctx, token)
+	userID, err = s.repo.Logout(ctx, token)
+	if err != nil {
+		return "", err
+	}
+
+	return userID, nil
 }
 
 // ValidateRequest holds the request parameters for validating a token.
@@ -126,11 +147,18 @@ func (s *Service) Validate(ctx context.Context, token string) (userID string, er
 	}()
 
 	// Validate the request
-	if err := s.validator.Struct(&ValidateRequest{
+	err = s.validator.Struct(&ValidateRequest{
 		Token: token,
-	}); err != nil {
-		return "", status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return "", err
 	}
 
-	return s.repo.Validate(ctx, token)
+	userID, err = s.repo.Validate(ctx, token)
+	if err != nil {
+		return "", err
+	}
+
+	return userID, nil
 }

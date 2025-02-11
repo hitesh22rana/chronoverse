@@ -31,7 +31,7 @@ type Repository struct {
 
 // New creates a new auth repository.
 func New(tokenIssuer pat.TokenIssuer, postgresStore postgres.Store) *Repository {
-	serviceName := svcpkg.Info().GetName()
+	serviceName := svcpkg.Info().GetServiceInfo()
 	return &Repository{
 		tp:            otel.Tracer(serviceName),
 		tokenIssuer:   tokenIssuer,

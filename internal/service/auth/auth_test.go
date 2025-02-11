@@ -264,8 +264,10 @@ func TestLogout(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name:  "error: invalid token",
-			mock:  func() {},
+			name: "error: invalid token",
+			mock: func() {
+				repo.EXPECT().Logout(gomock.Any()).Return("", status.Errorf(codes.InvalidArgument, "invalid token"))
+			},
 			want:  want{},
 			isErr: true,
 		},
@@ -323,8 +325,10 @@ func TestValidate(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name:  "error: invalid token",
-			mock:  func() {},
+			name: "error: invalid token",
+			mock: func() {
+				repo.EXPECT().Validate(gomock.Any()).Return("", status.Errorf(codes.InvalidArgument, "invalid token"))
+			},
 			want:  want{},
 			isErr: true,
 		},

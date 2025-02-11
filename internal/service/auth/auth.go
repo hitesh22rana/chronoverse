@@ -31,7 +31,7 @@ type Service struct {
 
 // New creates a new auth service.
 func New(validator *validator.Validate, repo Repository) *Service {
-	serviceName := svcpkg.Info().GetName()
+	serviceName := svcpkg.Info().GetServiceInfo()
 	return &Service{
 		validator: validator,
 		tp:        otel.Tracer(serviceName),

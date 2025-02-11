@@ -6,14 +6,15 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-// AuthService holds the configuration for the auth-service.
-type AuthService struct {
+// AuthConfig holds the configuration for the auth service.
+type AuthConfig struct {
 	Configuration
 
 	Redis
 	Postgres
 	Pat
-	AuthServer
+	Auth
+	Otel
 }
 
 // Redis holds the Redis configuration.
@@ -52,14 +53,20 @@ type Pat struct {
 	JWTSecret     string        `envconfig:"PAT_JWT_SECRET" default:"abcdefghijklmnopqrstuvwxyz123456"`
 }
 
-// AuthServer holds the authentication server configuration.
-type AuthServer struct {
-	Port int `envconfig:"AUTH_SERVER_PORT" default:"50051"`
+// Auth holds the configuration for the auth service.
+type Auth struct {
+	Host string `envconfig:"AUTH_HOST" default:"localhost"`
+	Port int    `envconfig:"AUTH_PORT" default:"50051"`
+}
+
+// Otel holds the OpenTelemetry configuration.
+type Otel struct {
+	ExporterOtlpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://jaeger:4317"`
 }
 
 // InitAuthServiceConfig initializes the application configuration.
-func InitAuthServiceConfig() (*AuthService, error) {
-	var cfg AuthService
+func InitAuthServiceConfig() (*AuthConfig, error) {
+	var cfg AuthConfig
 	err := envconfig.Process(envPrefix, &cfg)
 	if err != nil {
 		return nil, err

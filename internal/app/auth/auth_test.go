@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -40,8 +41,8 @@ func initClient(server *grpc.Server) (client pb.AuthServiceClient, _close func()
 
 	errChan := make(chan error, 1)
 	go func() {
-		if err = server.Serve(listener); err != nil && err != grpc.ErrServerStopped {
-			errChan <- fmt.Errorf("failed to serve: %v", err)
+		if err = server.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			errChan <- status.Errorf(codes.Internal, "failed to serve: %v", err)
 		}
 		close(errChan)
 	}()
@@ -79,18 +80,31 @@ func TestRegister(t *testing.T) {
 	client, _close := initClient(auth.New(logger, svc))
 	defer _close()
 
+	type args struct {
+		getCtx func() context.Context
+		req    *pb.RegisterRequest
+	}
+
 	tests := []struct {
 		name  string
-		req   *pb.RegisterRequest
+		args  args
 		mock  func(*pb.RegisterRequest)
 		res   *pb.RegisterResponse
 		isErr bool
 	}{
 		{
 			name: "success",
-			req: &pb.RegisterRequest{
-				Email:    "test@gmail.com",
-				Password: "password12345",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.RegisterRequest{
+					Email:    "test@gmail.com",
+					Password: "password12345",
+				},
 			},
 			mock: func(req *pb.RegisterRequest) {
 				svc.EXPECT().Register(
@@ -106,9 +120,17 @@ func TestRegister(t *testing.T) {
 		},
 		{
 			name: "error: email and password are required",
-			req: &pb.RegisterRequest{
-				Email:    "",
-				Password: "",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.RegisterRequest{
+					Email:    "",
+					Password: "",
+				},
 			},
 			mock: func(req *pb.RegisterRequest) {
 				svc.EXPECT().Register(
@@ -122,9 +144,17 @@ func TestRegister(t *testing.T) {
 		},
 		{
 			name: "error: user already exists",
-			req: &pb.RegisterRequest{
-				Email:    "test@gmail.com",
-				Password: "password12345",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.RegisterRequest{
+					Email:    "test@gmail.com",
+					Password: "password12345",
+				},
 			},
 			mock: func(req *pb.RegisterRequest) {
 				svc.EXPECT().Register(
@@ -138,9 +168,17 @@ func TestRegister(t *testing.T) {
 		},
 		{
 			name: "error: internal server error",
-			req: &pb.RegisterRequest{
-				Email:    "test@gmail.com",
-				Password: "password12345",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.RegisterRequest{
+					Email:    "test@gmail.com",
+					Password: "password12345",
+				},
 			},
 			mock: func(req *pb.RegisterRequest) {
 				svc.EXPECT().Register(
@@ -152,20 +190,28 @@ func TestRegister(t *testing.T) {
 			res:   nil,
 			isErr: true,
 		},
+		{
+			name: "error: missing audience in context",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+					)
+				},
+				req: &pb.RegisterRequest{},
+			},
+			mock:  func(_ *pb.RegisterRequest) {},
+			res:   nil,
+			isErr: true,
+		},
 	}
 
 	defer ctrl.Finish()
 
-	ctx := context.Background()
 	for _, tt := range tests {
-		tt.mock(tt.req)
+		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			ctx = metadata.AppendToOutgoingContext(
-				ctx,
-				"audience", "auth-test",
-			)
-
-			out, err := client.Register(ctx, tt.req)
+			out, err := client.Register(tt.args.getCtx(), tt.args.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -189,18 +235,31 @@ func TestLogin(t *testing.T) {
 	client, _close := initClient(auth.New(logger, svc))
 	defer _close()
 
+	type args struct {
+		getCtx func() context.Context
+		req    *pb.LoginRequest
+	}
+
 	tests := []struct {
 		name  string
-		req   *pb.LoginRequest
+		args  args
 		mock  func(*pb.LoginRequest)
 		res   *pb.LoginResponse
 		isErr bool
 	}{
 		{
 			name: "success",
-			req: &pb.LoginRequest{
-				Email:    "test@gmail.com",
-				Password: "password12345",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.LoginRequest{
+					Email:    "test@gmail.com",
+					Password: "password12345",
+				},
 			},
 			mock: func(req *pb.LoginRequest) {
 				svc.EXPECT().Login(
@@ -216,9 +275,17 @@ func TestLogin(t *testing.T) {
 		},
 		{
 			name: "error: email and password are required",
-			req: &pb.LoginRequest{
-				Email:    "",
-				Password: "",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.LoginRequest{
+					Email:    "",
+					Password: "",
+				},
 			},
 			mock: func(req *pb.LoginRequest) {
 				svc.EXPECT().Login(
@@ -232,9 +299,17 @@ func TestLogin(t *testing.T) {
 		},
 		{
 			name: "error: user does not exist",
-			req: &pb.LoginRequest{
-				Email:    "test1@gmail.com",
-				Password: "password123451",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.LoginRequest{
+					Email:    "test1@gmail.com",
+					Password: "password123451",
+				},
 			},
 			mock: func(req *pb.LoginRequest) {
 				svc.EXPECT().Login(
@@ -248,9 +323,17 @@ func TestLogin(t *testing.T) {
 		},
 		{
 			name: "error: internal server error",
-			req: &pb.LoginRequest{
-				Email:    "test@gmail.com",
-				Password: "password12345",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.LoginRequest{
+					Email:    "test@gmail.com",
+					Password: "password12345",
+				},
 			},
 			mock: func(req *pb.LoginRequest) {
 				svc.EXPECT().Login(
@@ -262,20 +345,28 @@ func TestLogin(t *testing.T) {
 			res:   nil,
 			isErr: true,
 		},
+		{
+			name: "error: missing audience in context",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+					)
+				},
+				req: &pb.LoginRequest{},
+			},
+			mock:  func(_ *pb.LoginRequest) {},
+			res:   nil,
+			isErr: true,
+		},
 	}
 
 	defer ctrl.Finish()
 
-	ctx := context.Background()
 	for _, tt := range tests {
-		tt.mock(tt.req)
+		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			ctx = metadata.AppendToOutgoingContext(
-				ctx,
-				"audience", "auth-test",
-			)
-
-			out, err := client.Login(ctx, tt.req)
+			out, err := client.Login(tt.args.getCtx(), tt.args.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -299,22 +390,30 @@ func TestLogout(t *testing.T) {
 	client, _close := initClient(auth.New(logger, svc))
 	defer _close()
 
+	type args struct {
+		getCtx func() context.Context
+		req    *pb.LogoutRequest
+	}
+
 	tests := []struct {
 		name  string
-		ctx   context.Context
-		req   *pb.LogoutRequest
+		args  args
 		mock  func()
 		res   *pb.LogoutResponse
 		isErr bool
 	}{
 		{
 			name: "success",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-				"pat", "pat",
-			),
-			req: &pb.LogoutRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+						"pat", "pat",
+					)
+				},
+				req: &pb.LogoutRequest{},
+			},
 			mock: func() {
 				svc.EXPECT().Logout(
 					gomock.Any(),
@@ -325,23 +424,31 @@ func TestLogout(t *testing.T) {
 		},
 		{
 			name: "error: pat is required",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-			),
-			req:   &pb.LogoutRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.LogoutRequest{},
+			},
 			mock:  func() {},
 			res:   nil,
 			isErr: true,
 		},
 		{
 			name: "error: pat is already revoked",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-				"pat", "revoked-pat",
-			),
-			req: &pb.LogoutRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+						"pat", "revoked-pat",
+					)
+				},
+				req: &pb.LogoutRequest{},
+			},
 			mock: func() {
 				svc.EXPECT().Logout(
 					gomock.Any(),
@@ -352,12 +459,16 @@ func TestLogout(t *testing.T) {
 		},
 		{
 			name: "error: internal server error",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-				"pat", "pat",
-			),
-			req: &pb.LogoutRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+						"pat", "pat",
+					)
+				},
+				req: &pb.LogoutRequest{},
+			},
 			mock: func() {
 				svc.EXPECT().Logout(
 					gomock.Any(),
@@ -373,7 +484,7 @@ func TestLogout(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock()
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := client.Logout(tt.ctx, tt.req)
+			res, err := client.Logout(tt.args.getCtx(), tt.args.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -399,22 +510,30 @@ func TestValidate(t *testing.T) {
 	client, _close := initClient(auth.New(logger, svc))
 	defer _close()
 
+	type args struct {
+		getCtx func() context.Context
+		req    *pb.ValidateRequest
+	}
+
 	tests := []struct {
 		name  string
-		ctx   context.Context
-		req   *pb.ValidateRequest
+		args  args
 		mock  func()
 		res   *pb.ValidateResponse
 		isErr bool
 	}{
 		{
 			name: "success",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-				"pat", "pat",
-			),
-			req: &pb.ValidateRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+						"pat", "pat",
+					)
+				},
+				req: &pb.ValidateRequest{},
+			},
 			mock: func() {
 				svc.EXPECT().Validate(gomock.Any()).Return("user1", nil)
 			},
@@ -423,23 +542,31 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "error: pat is required",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-			),
-			req:   &pb.ValidateRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+					)
+				},
+				req: &pb.ValidateRequest{},
+			},
 			mock:  func() {},
 			res:   nil,
 			isErr: true,
 		},
 		{
 			name: "error: pat is already revoked",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-				"pat", "revoked-pat",
-			),
-			req: &pb.ValidateRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+						"pat", "revoked-pat",
+					)
+				},
+				req: &pb.ValidateRequest{},
+			},
 			mock: func() {
 				svc.EXPECT().Validate(
 					gomock.Any(),
@@ -450,12 +577,16 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "error: internal server error",
-			ctx: metadata.AppendToOutgoingContext(
-				context.Background(),
-				"audience", "auth-test",
-				"pat", "pat",
-			),
-			req: &pb.ValidateRequest{},
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+						"audience", "auth-test",
+						"pat", "pat",
+					)
+				},
+				req: &pb.ValidateRequest{},
+			},
 			mock: func() {
 				svc.EXPECT().Validate(
 					gomock.Any(),
@@ -471,7 +602,7 @@ func TestValidate(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock()
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := client.Validate(tt.ctx, tt.req)
+			res, err := client.Validate(tt.args.getCtx(), tt.args.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")

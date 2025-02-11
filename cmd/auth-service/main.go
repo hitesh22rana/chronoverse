@@ -158,7 +158,7 @@ func run() int {
 	app := auth.New(log, svc)
 
 	// Create TCP listener
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.AuthServer.Port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Auth.Port))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create listener: %v\n", err)
 		return ExitError

@@ -41,12 +41,13 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 }
 
 // Login mocks base method.
-func (m *MockService) Login(ctx context.Context, email, password string) (string, error) {
+func (m *MockService) Login(ctx context.Context, email, password string) (string, string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Login", ctx, email, password)
 	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Login indicates an expected call of Login.
@@ -71,12 +72,13 @@ func (mr *MockServiceMockRecorder) Logout(ctx any) *gomock.Call {
 }
 
 // Register mocks base method.
-func (m *MockService) Register(ctx context.Context, email, password string) (string, error) {
+func (m *MockService) Register(ctx context.Context, email, password string) (string, string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Register", ctx, email, password)
 	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Register indicates an expected call of Register.

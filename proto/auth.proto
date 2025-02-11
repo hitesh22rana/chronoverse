@@ -27,17 +27,13 @@ message LoginResponse {
 }
 
 // LogoutRequest contains the token to invalidate.
-message LogoutRequest {
-    string pat = 1; // User's personal access token
-}
+message LogoutRequest {}
 
 // LogoutResponse contains the result of a logout attempt.
 message LogoutResponse {}
 
 // ValidateRequest contains the token to validate.
-message ValidateRequest {
-    string pat = 1; // User's personal access token
-}
+message ValidateRequest {}
 
 // ValidateResponse contains the result of a token validation attempt.
 message ValidateResponse {}

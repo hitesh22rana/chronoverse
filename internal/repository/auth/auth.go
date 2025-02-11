@@ -26,11 +26,11 @@ const (
 type Repository struct {
 	tp            trace.Tracer
 	tokenIssuer   pat.TokenIssuer
-	postgresStore postgres.PostgresStore
+	postgresStore postgres.Store
 }
 
 // New creates a new auth repository.
-func New(tokenIssuer pat.TokenIssuer, postgresStore postgres.PostgresStore) *Repository {
+func New(tokenIssuer pat.TokenIssuer, postgresStore postgres.Store) *Repository {
 	serviceName := svcpkg.Info().GetName()
 	return &Repository{
 		tp:            otel.Tracer(serviceName),
@@ -132,25 +132,25 @@ func (r *Repository) Login(ctx context.Context, email, pass string) (_, _ string
 }
 
 // Logout user.
-func (r *Repository) Logout(ctx context.Context, token string) (string, error) {
-	ctx, span := r.tp.Start(ctx, "Repository.Logout", trace.WithAttributes(attribute.String("token", token)))
+func (r *Repository) Logout(ctx context.Context) (string, error) {
+	ctx, span := r.tp.Start(ctx, "Repository.Logout")
 	defer span.End()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Revoke the token
-	return r.tokenIssuer.RevokePat(ctx, token)
+	return r.tokenIssuer.RevokePat(ctx)
 }
 
 // Validate validates the token.
-func (r *Repository) Validate(ctx context.Context, token string) (string, error) {
-	ctx, span := r.tp.Start(ctx, "Repository.Validate", trace.WithAttributes(attribute.String("token", token)))
+func (r *Repository) Validate(ctx context.Context) (string, error) {
+	ctx, span := r.tp.Start(ctx, "Repository.Validate")
 	defer span.End()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Validate the token
-	return r.tokenIssuer.IsValidPat(ctx, token)
+	return r.tokenIssuer.IsValidPat(ctx)
 }

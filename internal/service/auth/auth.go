@@ -18,8 +18,8 @@ import (
 type Repository interface {
 	Login(ctx context.Context, email, password string) (string, string, error)
 	Register(ctx context.Context, email, password string) (string, string, error)
-	Logout(ctx context.Context, token string) (string, error)
-	Validate(ctx context.Context, token string) (string, error)
+	Logout(ctx context.Context) (string, error)
+	Validate(ctx context.Context) (string, error)
 }
 
 // Service provides user authentication operations.
@@ -103,29 +103,15 @@ func (s *Service) Login(ctx context.Context, email, password string) (userID, pa
 	return userID, pat, nil
 }
 
-// LogoutRequest holds the request parameters for logging out a user.
-type LogoutRequest struct {
-	Token string `validate:"required"`
-}
-
 // Logout user.
-func (s *Service) Logout(ctx context.Context, token string) (userID string, err error) {
+func (s *Service) Logout(ctx context.Context) (userID string, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.Logout")
 	defer func() {
 		span.RecordError(err)
 		span.End()
 	}()
 
-	// Validate the request
-	err = s.validator.Struct(&LogoutRequest{
-		Token: token,
-	})
-	if err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-		return "", err
-	}
-
-	userID, err = s.repo.Logout(ctx, token)
+	userID, err = s.repo.Logout(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -133,29 +119,15 @@ func (s *Service) Logout(ctx context.Context, token string) (userID string, err 
 	return userID, nil
 }
 
-// ValidateRequest holds the request parameters for validating a token.
-type ValidateRequest struct {
-	Token string `validate:"required"`
-}
-
 // Validate checks if a token is valid.
-func (s *Service) Validate(ctx context.Context, token string) (userID string, err error) {
+func (s *Service) Validate(ctx context.Context) (userID string, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.Validate")
 	defer func() {
 		span.RecordError(err)
 		span.End()
 	}()
 
-	// Validate the request
-	err = s.validator.Struct(&ValidateRequest{
-		Token: token,
-	})
-	if err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-		return "", err
-	}
-
-	userID, err = s.repo.Validate(ctx, token)
+	userID, err = s.repo.Validate(ctx)
 	if err != nil {
 		return "", err
 	}

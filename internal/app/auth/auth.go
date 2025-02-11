@@ -4,6 +4,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -21,12 +22,20 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+const (
+	// audienceMetadataKey is the key for the audience in the context.
+	audienceMetadataKey = "audience"
+
+	// patMetadataKey is the key for the PAT in the context.
+	patMetadataKey = "pat"
+)
+
 // Service provides user authentication operations.
 type Service interface {
 	Register(ctx context.Context, email, password string) (string, string, error)
 	Login(ctx context.Context, email, password string) (string, string, error)
-	Logout(ctx context.Context, token string) (string, error)
-	Validate(ctx context.Context, token string) (string, error)
+	Logout(ctx context.Context) (string, error)
+	Validate(ctx context.Context) (string, error)
 }
 
 // Auth represents the authentication application.
@@ -43,15 +52,39 @@ func audienceInterceptor() grpc.UnaryServerInterceptor {
 		// Extract the audience from metadata.
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
-			return nil, status.Error(codes.InvalidArgument, "metadata is required")
+			return nil, status.Error(codes.NotFound, "metadata is required")
 		}
 
-		audience := md.Get("audience")
+		audience := md.Get(audienceMetadataKey)
 		if len(audience) == 0 {
-			return nil, status.Error(codes.InvalidArgument, "audience is required")
+			return nil, status.Error(codes.FailedPrecondition, "audience is required")
 		}
 
 		ctx = patpkg.WithAudience(ctx, audience[0])
+		return handler(ctx, req)
+	}
+}
+
+// patInterceptor sets the PAT in the context.
+func patInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Skip the interceptor for the login and register methods.
+		if strings.Contains(info.FullMethod, "Register") || strings.Contains(info.FullMethod, "Login") {
+			return handler(ctx, req)
+		}
+
+		// Extract the audience from metadata.
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return "", status.Error(codes.NotFound, "metadata is required")
+		}
+
+		pat := md.Get(patMetadataKey)
+		if len(pat) == 0 {
+			return "", status.Error(codes.PermissionDenied, "pat is required")
+		}
+
+		ctx = patpkg.WithPat(ctx, pat[0])
 		return handler(ctx, req)
 	}
 }
@@ -61,7 +94,10 @@ func New(log *zap.Logger, svc Service) *grpc.Server {
 	serviceName := svcpkg.Info().GetName()
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.UnaryInterceptor(audienceInterceptor()),
+		grpc.ChainUnaryInterceptor(
+			audienceInterceptor(),
+			patInterceptor(),
+		),
 	)
 	pb.RegisterAuthServiceServer(server, &Auth{
 		log: log,
@@ -90,6 +126,9 @@ func (a *Auth) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Regis
 
 // Login logs in the user.
 func (a *Auth) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
+	ctx, span := a.tp.Start(ctx, "App.Login")
+	defer span.End()
+
 	userID, pat, err := a.svc.Login(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
 		a.log.Error("failed to login user", zap.Error(err))
@@ -101,8 +140,11 @@ func (a *Auth) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginRespon
 }
 
 // Logout logs out the user.
-func (a *Auth) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutResponse, error) {
-	userID, err := a.svc.Logout(ctx, req.GetPat())
+func (a *Auth) Logout(ctx context.Context, _ *pb.LogoutRequest) (*pb.LogoutResponse, error) {
+	ctx, span := a.tp.Start(ctx, "App.Logout")
+	defer span.End()
+
+	userID, err := a.svc.Logout(ctx)
 	if err != nil {
 		a.log.Error("failed to logout user", zap.Error(err))
 		return nil, err
@@ -113,8 +155,11 @@ func (a *Auth) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutRes
 }
 
 // Validate validates the token.
-func (a *Auth) Validate(ctx context.Context, req *pb.ValidateRequest) (*pb.ValidateResponse, error) {
-	userID, err := a.svc.Validate(ctx, req.GetPat())
+func (a *Auth) Validate(ctx context.Context, _ *pb.ValidateRequest) (*pb.ValidateResponse, error) {
+	ctx, span := a.tp.Start(ctx, "App.Validate")
+	defer span.End()
+
+	userID, err := a.svc.Validate(ctx)
 	if err != nil {
 		a.log.Error("failed to validate token", zap.Error(err))
 		return nil, err

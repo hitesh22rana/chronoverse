@@ -41,13 +41,12 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 }
 
 // Login mocks base method.
-func (m *MockService) Login(ctx context.Context, email, password string) (string, string, error) {
+func (m *MockService) Login(ctx context.Context, email, password string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Login", ctx, email, password)
 	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(string)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Login indicates an expected call of Login.
@@ -57,28 +56,27 @@ func (mr *MockServiceMockRecorder) Login(ctx, email, password any) *gomock.Call 
 }
 
 // Logout mocks base method.
-func (m *MockService) Logout(ctx context.Context, token string) (string, error) {
+func (m *MockService) Logout(ctx context.Context) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Logout", ctx, token)
+	ret := m.ctrl.Call(m, "Logout", ctx)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Logout indicates an expected call of Logout.
-func (mr *MockServiceMockRecorder) Logout(ctx, token any) *gomock.Call {
+func (mr *MockServiceMockRecorder) Logout(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Logout", reflect.TypeOf((*MockService)(nil).Logout), ctx, token)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Logout", reflect.TypeOf((*MockService)(nil).Logout), ctx)
 }
 
 // Register mocks base method.
-func (m *MockService) Register(ctx context.Context, email, password string) (string, string, error) {
+func (m *MockService) Register(ctx context.Context, email, password string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Register", ctx, email, password)
 	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(string)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Register indicates an expected call of Register.
@@ -88,16 +86,16 @@ func (mr *MockServiceMockRecorder) Register(ctx, email, password any) *gomock.Ca
 }
 
 // Validate mocks base method.
-func (m *MockService) Validate(ctx context.Context, token string) (string, error) {
+func (m *MockService) Validate(ctx context.Context) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Validate", ctx, token)
+	ret := m.ctrl.Call(m, "Validate", ctx)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Validate indicates an expected call of Validate.
-func (mr *MockServiceMockRecorder) Validate(ctx, token any) *gomock.Call {
+func (mr *MockServiceMockRecorder) Validate(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockService)(nil).Validate), ctx, token)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockService)(nil).Validate), ctx)
 }

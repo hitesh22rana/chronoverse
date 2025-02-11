@@ -27,10 +27,14 @@ var (
 	once    sync.Once
 )
 
+// audienceContextKey is the key for the audience in the context.
 type audienceContextKey struct{}
 
-// AudienceFromContext extracts the audience from the context.
-func AudienceFromContext(ctx context.Context) (string, error) {
+// patContextKey is the key for the pat in the context.
+type patContextKey struct{}
+
+// audienceFromContext extracts the audience from the context.
+func audienceFromContext(ctx context.Context) (string, error) {
 	value := ctx.Value(audienceContextKey{})
 	if value == nil {
 		return "", status.Error(codes.FailedPrecondition, "audience is required")
@@ -44,9 +48,29 @@ func AudienceFromContext(ctx context.Context) (string, error) {
 	return audience, nil
 }
 
+// patFromContext extracts the pat from the context.
+func patFromContext(ctx context.Context) (string, error) {
+	value := ctx.Value(patContextKey{})
+	if value == nil {
+		return "", status.Error(codes.FailedPrecondition, "pat is required")
+	}
+
+	pat, ok := value.(string)
+	if !ok || pat == "" {
+		return "", status.Error(codes.FailedPrecondition, "pat is required")
+	}
+
+	return pat, nil
+}
+
 // WithAudience sets the audience in the context.
 func WithAudience(ctx context.Context, audience string) context.Context {
 	return context.WithValue(ctx, audienceContextKey{}, audience)
+}
+
+// WithPat sets the pat in the context.
+func WithPat(ctx context.Context, pat string) context.Context {
+	return context.WithValue(ctx, patContextKey{}, pat)
 }
 
 func init() {
@@ -58,8 +82,8 @@ func init() {
 // TokenIssuer is the interface for issuing and validating pats.
 type TokenIssuer interface {
 	IssuePat(ctx context.Context, userID string) (string, error)
-	RevokePat(ctx context.Context, pat string) (string, error)
-	IsValidPat(ctx context.Context, pat string) (string, error)
+	RevokePat(ctx context.Context) (string, error)
+	IsValidPat(ctx context.Context) (string, error)
 }
 
 // Options contains options for the pat issuer.
@@ -128,7 +152,7 @@ func (p *Pat) getClaims(pat string) (*Claims, error) {
 
 // IssuePat issues a new pat and stores it in the store.
 func (p *Pat) IssuePat(ctx context.Context, userID string) (string, error) {
-	audience, err := AudienceFromContext(ctx)
+	audience, err := audienceFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -157,7 +181,13 @@ func (p *Pat) IssuePat(ctx context.Context, userID string) (string, error) {
 }
 
 // RevokePat invalidates a pat.
-func (p *Pat) RevokePat(ctx context.Context, pat string) (string, error) {
+func (p *Pat) RevokePat(ctx context.Context) (string, error) {
+	// Extract the pat from the context
+	pat, err := patFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	// Add the pat to the blacklist with the expiration time
 	// If the pat is valid, it will be invalidated when it expires
 	// This is to prevent the pat from being used after it is revoked
@@ -167,7 +197,7 @@ func (p *Pat) RevokePat(ctx context.Context, pat string) (string, error) {
 	}
 
 	// check expiry
-	if claims.RegisteredClaims.ExpiresAt.Time.Before(time.Now()) {
+	if claims.ExpiresAt.Time.Before(time.Now()) {
 		return "", status.Error(codes.Unauthenticated, "pat expired")
 	}
 
@@ -196,14 +226,20 @@ func (p *Pat) RevokePat(ctx context.Context, pat string) (string, error) {
 }
 
 // IsValidPat checks if a pat is valid.
-func (p *Pat) IsValidPat(ctx context.Context, pat string) (string, error) {
+func (p *Pat) IsValidPat(ctx context.Context) (string, error) {
+	// Extract the pat from the context
+	pat, err := patFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	claims, err := p.getClaims(pat)
 	if err != nil {
 		return "", err
 	}
 
 	// check expiry
-	if claims.RegisteredClaims.ExpiresAt.Time.Before(time.Now()) {
+	if claims.ExpiresAt.Time.Before(time.Now()) {
 		return "", status.Error(codes.Unauthenticated, "pat expired")
 	}
 
@@ -214,7 +250,7 @@ func (p *Pat) IsValidPat(ctx context.Context, pat string) (string, error) {
 	if err != nil {
 		// If the pat is not in the store, it is valid
 		if status.Code(err) == codes.NotFound {
-			return claims.RegisteredClaims.Subject, nil
+			return claims.Subject, nil
 		}
 
 		return "", status.Errorf(codes.Internal, "failed to validate pat: %v", err)

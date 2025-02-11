@@ -242,10 +242,6 @@ func TestLogout(t *testing.T) {
 	// Create a new service
 	s := auth.New(validator.New(), repo)
 
-	type args struct {
-		pat string
-	}
-
 	type want struct {
 		userID string
 	}
@@ -253,21 +249,14 @@ func TestLogout(t *testing.T) {
 	// Test cases
 	tests := []struct {
 		name  string
-		args  args
-		mock  func(a args)
+		mock  func()
 		want  want
 		isErr bool
 	}{
 		{
 			name: "success",
-			args: args{
-				pat: "token",
-			},
-			mock: func(a args) {
-				repo.EXPECT().Logout(
-					gomock.Any(),
-					a.pat,
-				).Return("1", nil)
+			mock: func() {
+				repo.EXPECT().Logout(gomock.Any()).Return("1", nil)
 			},
 			want: want{
 				userID: "1",
@@ -275,11 +264,8 @@ func TestLogout(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name: "error: invalid token",
-			args: args{
-				pat: "",
-			},
-			mock:  func(_ args) {},
+			name:  "error: invalid token",
+			mock:  func() {},
 			want:  want{},
 			isErr: true,
 		},
@@ -288,12 +274,9 @@ func TestLogout(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args)
+		tt.mock()
 		t.Run(tt.name, func(t *testing.T) {
-			userID, err := s.Logout(
-				context.Background(),
-				tt.args.pat,
-			)
+			userID, err := s.Logout(context.Background())
 
 			if (err != nil) != tt.isErr {
 				t.Errorf("Logout() error = %v, wantErr %v", err, tt.isErr)
@@ -316,10 +299,6 @@ func TestValidate(t *testing.T) {
 	// Create a new service
 	s := auth.New(validator.New(), repo)
 
-	type args struct {
-		pat string
-	}
-
 	type want struct {
 		userID string
 	}
@@ -327,20 +306,15 @@ func TestValidate(t *testing.T) {
 	// Test cases
 	tests := []struct {
 		name  string
-		args  args
-		mock  func(a args)
+		mock  func()
 		want  want
 		isErr bool
 	}{
 		{
 			name: "success",
-			args: args{
-				pat: "token",
-			},
-			mock: func(a args) {
+			mock: func() {
 				repo.EXPECT().Validate(
 					gomock.Any(),
-					a.pat,
 				).Return("1", nil)
 			},
 			want: want{
@@ -349,11 +323,8 @@ func TestValidate(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name: "error: invalid token",
-			args: args{
-				pat: "",
-			},
-			mock:  func(_ args) {},
+			name:  "error: invalid token",
+			mock:  func() {},
 			want:  want{},
 			isErr: true,
 		},
@@ -362,12 +333,9 @@ func TestValidate(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args)
+		tt.mock()
 		t.Run(tt.name, func(t *testing.T) {
-			userID, err := s.Validate(
-				context.Background(),
-				tt.args.pat,
-			)
+			userID, err := s.Validate(context.Background())
 
 			if (err != nil) != tt.isErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.isErr)

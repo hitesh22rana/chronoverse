@@ -33,8 +33,8 @@ type Config struct {
 	SSLMode     string
 }
 
-// PostgresStore is the interface for the postgres store.
-type PostgresStore interface {
+// Store is the interface for the postgres store.
+type Store interface {
 	Close()
 	BeginTx(ctx context.Context) (pgx.Tx, error)
 	QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row

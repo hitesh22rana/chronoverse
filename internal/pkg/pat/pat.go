@@ -8,10 +8,14 @@ import (
 	"unsafe"
 
 	"github.com/golang-jwt/jwt/v5"
+	"go.opentelemetry.io/otel"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
+	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -101,13 +105,16 @@ type Claims struct {
 
 // Pat is responsible for issuing and validating pats.
 type Pat struct {
+	tp         trace.Tracer
 	options    *Options
 	redisStore *redis.Store
 }
 
 // New creates a new Pat instance.
 func New(options *Options, redisStore *redis.Store) *Pat {
+	serviceName := svcpkg.Info().GetServiceInfo()
 	return &Pat{
+		tp:         otel.Tracer(serviceName),
 		options:    options,
 		redisStore: redisStore,
 	}
@@ -151,7 +158,16 @@ func (p *Pat) getClaims(pat string) (*Claims, error) {
 }
 
 // IssuePat issues a new pat and stores it in the store.
-func (p *Pat) IssuePat(ctx context.Context, userID string) (string, error) {
+func (p *Pat) IssuePat(ctx context.Context, userID string) (pat string, err error) {
+	ctx, span := p.tp.Start(ctx, "Pat.IssuePat")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
 	audience, err := audienceFromContext(ctx)
 	if err != nil {
 		return "", err
@@ -171,17 +187,27 @@ func (p *Pat) IssuePat(ctx context.Context, userID string) (string, error) {
 		},
 	}
 
-	pat := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedPat, err := pat.SignedString([]byte(p.options.JWTSecret))
+	_pat := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedPat, err := _pat.SignedString([]byte(p.options.JWTSecret))
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to sign pat: %v", err)
+		err = status.Errorf(codes.Internal, "failed to sign pat: %v", err)
+		return "", err
 	}
 
 	return signedPat, nil
 }
 
 // RevokePat invalidates a pat.
-func (p *Pat) RevokePat(ctx context.Context) (string, error) {
+func (p *Pat) RevokePat(ctx context.Context) (userID string, err error) {
+	ctx, span := p.tp.Start(ctx, "Pat.RevokePat")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
 	// Extract the pat from the context
 	pat, err := patFromContext(ctx)
 	if err != nil {
@@ -198,7 +224,8 @@ func (p *Pat) RevokePat(ctx context.Context) (string, error) {
 
 	// check expiry
 	if claims.ExpiresAt.Time.Before(time.Now()) {
-		return "", status.Error(codes.Unauthenticated, "pat expired")
+		err = status.Error(codes.Unauthenticated, "pat expired")
+		return "", err
 	}
 
 	// Check if the pat is already in the store
@@ -210,7 +237,8 @@ func (p *Pat) RevokePat(ctx context.Context) (string, error) {
 
 	if err == nil {
 		// If the pat is already in the store, it is already revoked
-		return "", status.Error(codes.Unauthenticated, "pat is already revoked")
+		err = status.Error(codes.Unauthenticated, "pat is already revoked")
+		return "", err
 	}
 
 	// Add one second to the expiry time to ensure the pat is invalidated
@@ -219,14 +247,24 @@ func (p *Pat) RevokePat(ctx context.Context) (string, error) {
 	// Set the pat in the store
 	err = p.redisStore.Set(ctx, claims.ID, claims, expiry)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to add revoked pat to store: %v", err)
+		err = status.Errorf(codes.Internal, "failed to add revoked pat to store: %v", err)
+		return "", err
 	}
 
 	return claims.Subject, nil
 }
 
 // IsValidPat checks if a pat is valid.
-func (p *Pat) IsValidPat(ctx context.Context) (string, error) {
+func (p *Pat) IsValidPat(ctx context.Context) (userID string, err error) {
+	ctx, span := p.tp.Start(ctx, "Pat.IsValidPat")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
 	// Extract the pat from the context
 	pat, err := patFromContext(ctx)
 	if err != nil {
@@ -240,7 +278,8 @@ func (p *Pat) IsValidPat(ctx context.Context) (string, error) {
 
 	// check expiry
 	if claims.ExpiresAt.Time.Before(time.Now()) {
-		return "", status.Error(codes.Unauthenticated, "pat expired")
+		err = status.Error(codes.Unauthenticated, "pat expired")
+		return "", err
 	}
 
 	var c Claims
@@ -253,9 +292,11 @@ func (p *Pat) IsValidPat(ctx context.Context) (string, error) {
 			return claims.Subject, nil
 		}
 
-		return "", status.Errorf(codes.Internal, "failed to validate pat: %v", err)
+		err = status.Errorf(codes.Internal, "failed to validate pat: %v", err)
+		return "", err
 	}
 
 	// Since the pat is in the store, it is revoked
-	return "", status.Error(codes.Unauthenticated, "pat is already revoked")
+	err = status.Error(codes.Unauthenticated, "pat is revoked")
+	return "", err
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc/codes"
@@ -40,9 +40,15 @@ func New(tokenIssuer pat.TokenIssuer, postgresStore postgres.Store) *Repository 
 }
 
 // Register a new user.
-func (r *Repository) Register(ctx context.Context, email, password string) (_, _ string, _ error) {
-	ctx, span := r.tp.Start(ctx, "Repository.Register", trace.WithAttributes(attribute.String("email", email)))
-	defer span.End()
+func (r *Repository) Register(ctx context.Context, email, password string) (_, _ string, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.Register")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -50,13 +56,15 @@ func (r *Repository) Register(ctx context.Context, email, password string) (_, _
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return "", "", status.Errorf(codes.Internal, "failed to hash password: %v", err)
+		err = status.Errorf(codes.Internal, "failed to hash password: %v", err)
+		return "", "", err
 	}
 
 	// Start transaction
 	tx, err := r.postgresStore.BeginTx(ctx)
 	if err != nil {
-		return "", "", status.Errorf(codes.Internal, "failed to start transaction: %v", err)
+		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
+		return "", "", err
 	}
 	// rollback if not committed
 	defer func() {
@@ -74,10 +82,12 @@ func (r *Repository) Register(ctx context.Context, email, password string) (_, _
 	if err != nil {
 		// Check if the user already exists
 		if r.postgresStore.IsUniqueViolation(err) {
-			return "", "", status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
+			err = status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
+			return "", "", err
 		}
 
-		return "", "", status.Errorf(codes.Internal, "failed to insert user: %v", err)
+		err = status.Errorf(codes.Internal, "failed to insert user: %v", err)
+		return "", "", err
 	}
 
 	// Generate PAT
@@ -88,16 +98,23 @@ func (r *Repository) Register(ctx context.Context, email, password string) (_, _
 
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
-		return "", "", status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
+		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
+		return "", "", err
 	}
 
 	return ID, pat, nil
 }
 
 // Login user.
-func (r *Repository) Login(ctx context.Context, email, pass string) (_, _ string, _ error) {
-	ctx, span := r.tp.Start(ctx, "Repository.Login", trace.WithAttributes(attribute.String("email", email)))
-	defer span.End()
+func (r *Repository) Login(ctx context.Context, email, pass string) (_, _ string, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.Login")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -108,18 +125,21 @@ func (r *Repository) Login(ctx context.Context, email, pass string) (_, _ string
 		password string
 	)
 	query := fmt.Sprintf(`SELECT id, password FROM %s WHERE email = $1`, userTable)
-	err := r.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
+	err = r.postgresStore.QueryRow(ctx, query, email).Scan(&ID, &password)
 	if err != nil {
 		if r.postgresStore.IsNoRows(err) {
-			return "", "", status.Errorf(codes.NotFound, "user not found: %v", err)
+			err = status.Errorf(codes.NotFound, "user not found: %v", err)
+			return "", "", err
 		}
 
-		return "", "", status.Errorf(codes.Internal, "failed to fetch user: %v", err)
+		err = status.Errorf(codes.Internal, "failed to fetch user: %v", err)
+		return "", "", err
 	}
 
 	// Validate password
 	if err = bcrypt.CompareHashAndPassword([]byte(password), []byte(pass)); err != nil {
-		return "", "", status.Errorf(codes.FailedPrecondition, "invalid password: %v", err)
+		err = status.Errorf(codes.InvalidArgument, "invalid password: %v", err)
+		return "", "", err
 	}
 
 	// Generate PAT
@@ -132,25 +152,47 @@ func (r *Repository) Login(ctx context.Context, email, pass string) (_, _ string
 }
 
 // Logout user.
-func (r *Repository) Logout(ctx context.Context) (string, error) {
+func (r *Repository) Logout(ctx context.Context) (userID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Logout")
-	defer span.End()
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Revoke the token
-	return r.tokenIssuer.RevokePat(ctx)
+	userID, err = r.tokenIssuer.RevokePat(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return userID, nil
 }
 
 // Validate validates the token.
-func (r *Repository) Validate(ctx context.Context) (string, error) {
+func (r *Repository) Validate(ctx context.Context) (userID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Validate")
-	defer span.End()
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	// Validate the token
-	return r.tokenIssuer.IsValidPat(ctx)
+	userID, err = r.tokenIssuer.IsValidPat(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return userID, nil
 }

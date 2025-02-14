@@ -11,7 +11,7 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/app/auth"
 	"github.com/hitesh22rana/chronoverse/internal/config"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/pat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -55,46 +55,54 @@ func run() int {
 		return ExitError
 	}
 
-	// Initialize logger
-	log, err := logger.Init(cfg.Environment.Env)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = log.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to flush logger: %v\n", err)
-		}
-	}()
-
 	// Initialize the OpenTelemetry Resource
-	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetServiceInfo())
+	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
 	// Initialize the OpenTelemetry TracerProvider
-	shutdownTracerProvider, err := otelpkg.InitTracerProvider(ctx, res)
+	tp, err := otelpkg.InitTracerProvider(ctx, res)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer func() {
-		if err = shutdownTracerProvider(ctx); err != nil {
+		if err = tp.Shutdown(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to shutdown tracer provider: %v\n", err)
 		}
 	}()
 
 	// Initialize the OpenTelemetry MeterProvider
-	shutdownMeterProvider, err := otelpkg.InitMeterProvider(ctx, res)
+	mp, err := otelpkg.InitMeterProvider(ctx, res)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer func() {
-		if err = shutdownMeterProvider(ctx); err != nil {
+		if err = mp.Shutdown(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to shutdown meter provider: %v\n", err)
+		}
+	}()
+
+	// Initialize the OpenTelemetry LoggerProvider
+	lp, err := otelpkg.InitLogProvider(ctx, res)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer func() {
+		if err = lp.Shutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to shutdown logger provider: %v\n", err)
+		}
+	}()
+
+	// Initialize and set the logger in the context
+	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetServiceInfo(), lp)
+	defer func() {
+		if err = logger.Sync(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
 		}
 	}()
 
@@ -155,7 +163,9 @@ func run() int {
 	svc := authsvc.New(validator, repo)
 
 	// Initialize the auth app
-	app := auth.New(log, svc)
+	app := auth.New(ctx, &auth.Config{
+		Deadline: cfg.Auth.RequestTimeout,
+	}, svc)
 
 	// Create TCP listener
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Auth.Port))
@@ -173,7 +183,9 @@ func run() int {
 	}()
 
 	// Log the service information
-	log.Info("Starting service",
+	logger.Info(
+		"Starting service",
+		zap.Any("ctx", ctx),
 		zap.String("name", svcpkg.Info().Name),
 		zap.String("version", svcpkg.Info().Version),
 		zap.String("address", listener.Addr().String()),
@@ -182,7 +194,7 @@ func run() int {
 
 	// Start the gRPC server
 	if err := app.Serve(listener); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start gRPC server: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 

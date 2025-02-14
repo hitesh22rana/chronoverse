@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
+	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -49,7 +50,10 @@ type RegisterRequest struct {
 func (s *Service) Register(ctx context.Context, email, password string) (userID, pat string, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.Register")
 	defer func() {
-		span.RecordError(err)
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
 		span.End()
 	}()
 
@@ -81,7 +85,10 @@ type LoginRequest struct {
 func (s *Service) Login(ctx context.Context, email, password string) (userID, pat string, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.Login")
 	defer func() {
-		span.RecordError(err)
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
 		span.End()
 	}()
 
@@ -107,7 +114,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (userID, pa
 func (s *Service) Logout(ctx context.Context) (userID string, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.Logout")
 	defer func() {
-		span.RecordError(err)
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
 		span.End()
 	}()
 
@@ -123,7 +133,10 @@ func (s *Service) Logout(ctx context.Context) (userID string, err error) {
 func (s *Service) Validate(ctx context.Context) (userID string, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.Validate")
 	defer func() {
-		span.RecordError(err)
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
 		span.End()
 	}()
 

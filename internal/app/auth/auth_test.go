@@ -7,9 +7,9 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,10 +25,11 @@ import (
 func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	logger := zap.NewNop()
 	svc := authmock.NewMockService(ctrl)
 
-	server := auth.New(logger, svc)
+	server := auth.New(context.Background(), &auth.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc)
 
 	_ = server
 }
@@ -74,10 +75,11 @@ func initClient(server *grpc.Server) (client pb.AuthServiceClient, _close func()
 func TestRegister(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	logger := zap.NewNop()
 	svc := authmock.NewMockService(ctrl)
 
-	client, _close := initClient(auth.New(logger, svc))
+	client, _close := initClient(auth.New(context.Background(), &auth.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
 	defer _close()
 
 	type args struct {
@@ -229,10 +231,11 @@ func TestRegister(t *testing.T) {
 func TestLogin(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	logger := zap.NewNop()
 	svc := authmock.NewMockService(ctrl)
 
-	client, _close := initClient(auth.New(logger, svc))
+	client, _close := initClient(auth.New(context.Background(), &auth.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
 	defer _close()
 
 	type args struct {
@@ -384,10 +387,11 @@ func TestLogin(t *testing.T) {
 func TestLogout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	logger := zap.NewNop()
 	svc := authmock.NewMockService(ctrl)
 
-	client, _close := initClient(auth.New(logger, svc))
+	client, _close := initClient(auth.New(context.Background(), &auth.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
 	defer _close()
 
 	type args struct {
@@ -504,10 +508,11 @@ func TestLogout(t *testing.T) {
 func TestValidate(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	logger := zap.NewNop()
 	svc := authmock.NewMockService(ctrl)
 
-	client, _close := initClient(auth.New(logger, svc))
+	client, _close := initClient(auth.New(context.Background(), &auth.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
 	defer _close()
 
 	type args struct {

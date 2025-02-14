@@ -58,13 +58,37 @@ services:
     networks:
       - chronoverse
 
+  lgtm:
+    image: grafana/otel-lgtm
+    container_name: lgtm
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    restart: on-failure
+    volumes:
+      - lgtm:/data
+      - otel-lgtm:/otel-lgtm
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+      - '3000:3000'
+    networks:
+      - chronoverse
+
   auth-service:
     image: auth-service
     container_name: auth-service
     environment:
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - AUTH_REQUEST_TIMEOUT=200ms
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
+      - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_METRIC_EXPORT_INTERVAL=500
+      - OTEL_BSP_SCHEDULE_DELAY=500
       - ENV=production
     build:
       context: .
@@ -78,27 +102,15 @@ services:
     depends_on:
       - postgres
       - redis
-    networks:
-      - chronoverse
-
-  jaeger:
-    image: jaegertracing/jaeger:latest
-    container_name: jaeger
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    ports:
-      - '16686:16686'
-      - '4317:4317'
-      - '4318:4318'
-    restart: on-failure
-    depends_on:
-      - auth-service
+      - lgtm
     networks:
       - chronoverse
 
 volumes:
   postgres:
   redis:
+  lgtm:
+  otel-lgtm:
 
 networks:
   chronoverse:

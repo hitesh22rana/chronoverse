@@ -14,7 +14,6 @@ type AuthConfig struct {
 	Postgres
 	Pat
 	Auth
-	Otel
 }
 
 // Redis holds the Redis configuration.
@@ -55,13 +54,9 @@ type Pat struct {
 
 // Auth holds the configuration for the auth service.
 type Auth struct {
-	Host string `envconfig:"AUTH_HOST" default:"localhost"`
-	Port int    `envconfig:"AUTH_PORT" default:"50051"`
-}
-
-// Otel holds the OpenTelemetry configuration.
-type Otel struct {
-	ExporterOtlpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://jaeger:4317"`
+	Host           string        `envconfig:"AUTH_HOST" default:"localhost"`
+	Port           int           `envconfig:"AUTH_PORT" default:"50051"`
+	RequestTimeout time.Duration `envconfig:"AUTH_REQUEST_TIMEOUT" default:"500ms"`
 }
 
 // InitAuthServiceConfig initializes the application configuration.

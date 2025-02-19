@@ -28,10 +28,10 @@ tools:
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GO_BIN} v1.63.4
 	@cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % sh -c 'GOBIN=${GO_BIN} go install %'
 
-.PHONY: build/auth-service
-build/auth-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=auth-service'" -o ./.bin/auth-service ./cmd/auth-service
+.PHONY: build/users-service
+build/users-service: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=users-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/users-service ./cmd/users-service
 
-.PHONY: run/auth-service
-run/auth-service: build/auth-service
-	@./.bin/auth-service
+.PHONY: run/users-service
+run/users-service: build/users-service
+	@./.bin/users-service

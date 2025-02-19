@@ -40,13 +40,16 @@ COPY . .
 RUN rm -rf pkg/proto && rm -rf pkg/openapiv2 && buf dep update && buf generate
 
 # Build the service with ldflags
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -ldflags "-X 'main.version=${VERSION}' -X 'main.name=${NAME}'" -o /go/bin/service cmd/${NAME}/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -ldflags "-X 'main.version=${VERSION}' -X 'main.name=${NAME}' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o /go/bin/service cmd/${NAME}/main.go
 
 # Final stage
 FROM scratch
 
 # Set the build arguments
 ARG NAME
+
+# Copy certificates
+COPY --from=build /app/certs /certs
 
 # Copy binary
 COPY --from=build /go/bin/service /bin/service

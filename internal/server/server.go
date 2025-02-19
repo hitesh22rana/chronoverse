@@ -9,18 +9,28 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
-)
-
-const (
-	defaultShutdownTimeout = 10 * time.Second
 )
 
 // Server implements the HTTP server.
 type Server struct {
-	client           pb.AuthServiceClient
-	httpServer       *http.Server
-	requestBodyLimit int64
+	auth          *auth.Auth
+	crypto        *crypto.Crypto
+	rdb           *redis.Store
+	usersClient   pb.UsersServiceClient
+	httpServer    *http.Server
+	validationCfg *ValidationConfig
+}
+
+// ValidationConfig represents the configuration of the validation.
+type ValidationConfig struct {
+	SessionExpiry    time.Duration
+	CSRFExpiry       time.Duration
+	RequestBodyLimit int64
+	CSRFHMACSecret   string
 }
 
 // Config represents the configuration of the HTTP server.
@@ -32,13 +42,16 @@ type Config struct {
 	ReadHeaderTimeout time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
-	RequestBodyLimit  int64
+	ValidationConfig  *ValidationConfig
 }
 
 // New creates a new HTTP server.
-func New(cfg *Config, client pb.AuthServiceClient) *Server {
+func New(cfg *Config, auth *auth.Auth, crypto *crypto.Crypto, rdb *redis.Store, usersClient pb.UsersServiceClient) *Server {
 	srv := &Server{
-		client: client,
+		auth:        auth,
+		crypto:      crypto,
+		rdb:         rdb,
+		usersClient: usersClient,
 		httpServer: &http.Server{
 			Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 			ReadTimeout:       cfg.ReadTimeout,
@@ -46,7 +59,7 @@ func New(cfg *Config, client pb.AuthServiceClient) *Server {
 			WriteTimeout:      cfg.WriteTimeout,
 			IdleTimeout:       cfg.IdleTimeout,
 		},
-		requestBodyLimit: cfg.RequestBodyLimit,
+		validationCfg: cfg.ValidationConfig,
 	}
 
 	router := http.NewServeMux()
@@ -59,18 +72,17 @@ func New(cfg *Config, client pb.AuthServiceClient) *Server {
 func (s *Server) registerRoutes(router *http.ServeMux) {
 	router.HandleFunc(
 		"/healthz",
-		withMethodMiddleware(
+		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.handleHealthz,
 		),
 	)
 	router.HandleFunc(
 		"/auth/register",
-		withMethodMiddleware(
+		s.withAllowedMethodMiddleware(
 			http.MethodPost,
-			withRequestBodyLimitMiddleware(
-				s.requestBodyLimit,
-				withAttachAudienceInContextMiddleware(
+			withAttachAudienceInMetadataHeaderMiddleware(
+				withAttachRoleInMetadataHeaderMiddleware(
 					s.handleRegister,
 				),
 			),
@@ -78,11 +90,10 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 	)
 	router.HandleFunc(
 		"/auth/login",
-		withMethodMiddleware(
+		s.withAllowedMethodMiddleware(
 			http.MethodPost,
-			withRequestBodyLimitMiddleware(
-				s.requestBodyLimit,
-				withAttachAudienceInContextMiddleware(
+			withAttachAudienceInMetadataHeaderMiddleware(
+				withAttachRoleInMetadataHeaderMiddleware(
 					s.handleLogin,
 				),
 			),
@@ -90,13 +101,12 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 	)
 	router.HandleFunc(
 		"/auth/logout",
-		withMethodMiddleware(
+		s.withAllowedMethodMiddleware(
 			http.MethodPost,
-			withRequestBodyLimitMiddleware(
-				s.requestBodyLimit,
-				withVerifyCSRFMiddleware(
-					withAttachPatInContextMiddleware(
-						withAttachAudienceInContextMiddleware(
+			s.withVerifyCSRFMiddleware(
+				s.withVerifySessionMiddleware(
+					withAttachAudienceInMetadataHeaderMiddleware(
+						withAttachRoleInMetadataHeaderMiddleware(
 							s.handleLogout,
 						),
 					),
@@ -106,13 +116,12 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 	)
 	router.HandleFunc(
 		"/auth/validate",
-		withMethodMiddleware(
+		s.withAllowedMethodMiddleware(
 			http.MethodPost,
-			withRequestBodyLimitMiddleware(
-				s.requestBodyLimit,
-				withVerifyCSRFMiddleware(
-					withAttachPatInContextMiddleware(
-						withAttachAudienceInContextMiddleware(
+			s.withVerifyCSRFMiddleware(
+				s.withVerifySessionMiddleware(
+					withAttachAudienceInMetadataHeaderMiddleware(
+						withAttachRoleInMetadataHeaderMiddleware(
 							s.handleValidate,
 						),
 					),
@@ -137,7 +146,7 @@ func (s *Server) Start() error {
 	sig := <-sigChan
 	fmt.Fprintf(os.Stdout, "Received signal: %v\n", sig)
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	defer cancel()
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {

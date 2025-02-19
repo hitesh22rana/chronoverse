@@ -3,10 +3,14 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
 )
 
@@ -20,34 +24,51 @@ type registerRequest struct {
 	Password string `json:"password"`
 }
 
-//nolint:dupl //handleRegister handles the register request.
+// handleRegister handles the register request.
+//
+//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	res, err := s.client.Register(r.Context(), &pb.RegisterRequest{
+	var header metadata.MD
+	_, err := s.usersClient.Register(r.Context(), &pb.RegisterRequest{
 		Email:    req.Email,
 		Password: req.Password,
-	})
+	}, grpc.Header(&header))
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, "failed to register user")
 		return
 	}
 
-	csrfToken, err := generateCSRFToken()
+	authToken, err := auth.AuthorizationTokenFromHeaders(header)
 	if err != nil {
-		http.Error(w, "Failed to generate CSRF token", http.StatusInternalServerError)
+		handleError(w, err, "failed to get authorization token from headers")
 		return
 	}
 
-	// Set CSRF token as cookie
-	setCookie(w, csrfCookieName, csrfToken, csrfExpiry)
+	session, err := s.crypto.Encrypt(authToken)
+	if err != nil {
+		handleError(w, err, "failed to encrypt session")
+		return
+	}
 
-	// Set PAT as cookie
-	setCookie(w, patCookieName, res.GetPat(), patExpiry)
+	if err = s.rdb.Set(r.Context(), session, authToken, s.validationCfg.SessionExpiry); err != nil {
+		handleError(w, err, "failed to set session")
+		return
+	}
+
+	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
+	if err != nil {
+		handleError(w, err, "failed to generate CSRF token")
+		return
+	}
+
+	setCookie(w, csrfCookieName, csrfToken, s.validationCfg.CSRFExpiry)
+	setCookie(w, sessionCookieName, session, s.validationCfg.SessionExpiry)
 
 	// Return only user ID in response
 	w.Header().Set("Content-Type", "application/json")
@@ -59,31 +80,51 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-//nolint:dupl //handleLogin handles the login request.
+// handleLogin handles the login request.
+//
+//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	res, err := s.client.Login(r.Context(), &pb.LoginRequest{
+	var header metadata.MD
+	_, err := s.usersClient.Login(r.Context(), &pb.LoginRequest{
 		Email:    req.Email,
 		Password: req.Password,
-	})
+	}, grpc.Header(&header))
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, "failed to login user")
 		return
 	}
 
-	csrfToken, err := generateCSRFToken()
+	authToken, err := auth.AuthorizationTokenFromHeaders(header)
 	if err != nil {
-		http.Error(w, "Failed to generate CSRF token", http.StatusInternalServerError)
+		handleError(w, err, "failed to get authorization token from headers")
 		return
 	}
 
-	setCookie(w, csrfCookieName, csrfToken, csrfExpiry)
-	setCookie(w, patCookieName, res.GetPat(), patExpiry)
+	session, err := s.crypto.Encrypt(authToken)
+	if err != nil {
+		handleError(w, err, "failed to encrypt session")
+		return
+	}
+
+	if err = s.rdb.Set(r.Context(), session, authToken, s.validationCfg.SessionExpiry); err != nil {
+		handleError(w, err, "failed to set session")
+		return
+	}
+
+	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
+	if err != nil {
+		handleError(w, err, "failed to generate CSRF token")
+		return
+	}
+
+	setCookie(w, csrfCookieName, csrfToken, s.validationCfg.CSRFExpiry)
+	setCookie(w, sessionCookieName, session, s.validationCfg.SessionExpiry)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -91,14 +132,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleLogout handles the logout request.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	// Clear the CSRF cookie
+	// Delete the csrf and session cookies
 	setCookie(w, csrfCookieName, "", -1)
+	setCookie(w, sessionCookieName, "", -1)
 
-	// Clear the PAT cookie
-	setCookie(w, patCookieName, "", -1)
+	// Get the session from the context
+	session, err := sessionFromContext(r.Context())
+	if err != nil {
+		http.Error(w, "session not found in context", http.StatusUnauthorized)
+		return
+	}
 
-	if _, err := s.client.Logout(r.Context(), &pb.LogoutRequest{}); err != nil {
-		handleError(w, err)
+	// Delete the session associated with the user
+	if err = s.rdb.Delete(r.Context(), session); err != nil {
+		http.Error(w, "failed to delete session", http.StatusInternalServerError)
 		return
 	}
 
@@ -106,55 +153,51 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleValidate handles the validate request.
-func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.client.Validate(r.Context(), &pb.ValidateRequest{}); err != nil {
-		// Clear the CSRF and PAT cookies
-		setCookie(w, csrfCookieName, "", -1)
-		setCookie(w, patCookieName, "", -1)
-
-		handleError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+func (s *Server) handleValidate(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
-//nolint:gocyclo //handleErrors is a helper function to handle gRPC errors.
-func handleError(w http.ResponseWriter, err error) {
+//nolint:gocyclo // handleErrors is a helper function to handle gRPC errors.
+func handleError(w http.ResponseWriter, err error, message ...string) {
+	msg := err.Error()
+	if len(message) > 0 {
+		msg = strings.Join(message, " ")
+	}
+
 	switch status.Code(err) {
 	case codes.OK:
 		return
 	case codes.Unauthenticated:
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		http.Error(w, msg, http.StatusUnauthorized)
 	case codes.PermissionDenied:
-		http.Error(w, "Permission denied", http.StatusForbidden)
+		http.Error(w, msg, http.StatusForbidden)
 	case codes.NotFound:
-		http.Error(w, "Resource not found", http.StatusNotFound)
+		http.Error(w, msg, http.StatusNotFound)
 	case codes.AlreadyExists:
-		http.Error(w, "Resource already exists", http.StatusConflict)
+		http.Error(w, msg, http.StatusConflict)
 	case codes.InvalidArgument:
-		http.Error(w, "Invalid argument", http.StatusBadRequest)
+		http.Error(w, msg, http.StatusBadRequest)
 	case codes.Unimplemented:
-		http.Error(w, "Unimplemented", http.StatusNotImplemented)
+		http.Error(w, msg, http.StatusNotImplemented)
 	case codes.Unavailable:
-		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
+		http.Error(w, msg, http.StatusServiceUnavailable)
 	case codes.FailedPrecondition:
-		http.Error(w, "Failed precondition", http.StatusPreconditionFailed)
+		http.Error(w, msg, http.StatusPreconditionFailed)
 	case codes.ResourceExhausted:
-		http.Error(w, "Resource exhausted", http.StatusTooManyRequests)
+		http.Error(w, msg, http.StatusTooManyRequests)
 	case codes.Canceled:
-		http.Error(w, "Request canceled", http.StatusRequestTimeout)
+		http.Error(w, msg, http.StatusRequestTimeout)
 	case codes.DeadlineExceeded:
-		http.Error(w, "Deadline exceeded", http.StatusGatewayTimeout)
+		http.Error(w, msg, http.StatusGatewayTimeout)
 	case codes.Internal:
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		http.Error(w, msg, http.StatusInternalServerError)
 	case codes.DataLoss:
-		http.Error(w, "Data loss", http.StatusInternalServerError)
+		http.Error(w, msg, http.StatusInternalServerError)
 	case codes.Aborted:
-		http.Error(w, "Aborted", http.StatusInternalServerError)
+		http.Error(w, msg, http.StatusInternalServerError)
 	case codes.OutOfRange:
-		http.Error(w, "Out of range", http.StatusInternalServerError)
+		http.Error(w, msg, http.StatusInternalServerError)
 	case codes.Unknown:
-		http.Error(w, "Unknown error", http.StatusInternalServerError)
+		http.Error(w, msg, http.StatusInternalServerError)
 	}
 }

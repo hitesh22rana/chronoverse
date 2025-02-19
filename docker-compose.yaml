@@ -75,13 +75,11 @@ services:
     networks:
       - chronoverse
 
-  auth-service:
-    image: auth-service
-    container_name: auth-service
+  users-service:
+    image: users-service
+    container_name: users-service
     environment:
-      - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
-      - AUTH_REQUEST_TIMEOUT=200ms
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
       - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
@@ -95,14 +93,36 @@ services:
       dockerfile: Dockerfile
       args:
         - VERSION=v0.0.1
-        - NAME=auth-service
+        - NAME=users-service
     ports:
       - '50051:50051'
     restart: on-failure
     depends_on:
       - postgres
-      - redis
       - lgtm
+    networks:
+      - chronoverse
+
+  server:
+    image: server
+    container_name: server
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - USERS_SERVICE_HOST=users-service
+      - REDIS_HOST=redis
+      - ENV=production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=server
+    ports:
+      - '8080:8080'
+    restart: on-failure
+    depends_on:
+      - users-service
+      - redis
     networks:
       - chronoverse
 

@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package auth;
+package users;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/auth;auth";
+option go_package = "github.com/hitesh22rana/chronoverse/proto/users;users";
 
 // RegisterRequest contains the details needed to register a new user.
 message RegisterRequest {
@@ -11,9 +11,7 @@ message RegisterRequest {
 }
 
 // RegisterResponse contains the result of a registration attempt.
-message RegisterResponse {
-    string pat = 1;     // User's personal access token
-}
+message RegisterResponse {}
 
 // LoginRequest contains the credentials for logging in.
 message LoginRequest {
@@ -22,9 +20,7 @@ message LoginRequest {
 }
 
 // LoginResponse contains the result of a login attempt.
-message LoginResponse {
-    string pat = 1;     // User's personal access token
-}
+message LoginResponse {}
 
 // LogoutRequest contains the token to invalidate.
 message LogoutRequest {}
@@ -38,17 +34,11 @@ message ValidateRequest {}
 // ValidateResponse contains the result of a token validation attempt.
 message ValidateResponse {}
 
-// AuthService handles user authentication and authorization.
-service AuthService {
+// UsersService handles user related operations.
+service UsersService {
     // Register a new user.
     rpc Register(RegisterRequest) returns (RegisterResponse) {};
 
     // Login with email and password.
     rpc Login(LoginRequest) returns (LoginResponse) {};
-
-    // Logout a user (invalidate their token).
-    rpc Logout(LogoutRequest) returns (LogoutResponse) {};
-
-    // Validate a given token.
-    rpc Validate(ValidateRequest) returns (ValidateResponse) {};
 }

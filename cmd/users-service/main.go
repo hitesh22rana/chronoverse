@@ -9,16 +9,15 @@ import (
 	"github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
 
-	"github.com/hitesh22rana/chronoverse/internal/app/auth"
+	"github.com/hitesh22rana/chronoverse/internal/app/users"
 	"github.com/hitesh22rana/chronoverse/internal/config"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/pat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
-	authrepo "github.com/hitesh22rana/chronoverse/internal/repository/auth"
-	authsvc "github.com/hitesh22rana/chronoverse/internal/service/auth"
+	usersrepo "github.com/hitesh22rana/chronoverse/internal/repository/users"
+	userssvc "github.com/hitesh22rana/chronoverse/internal/service/users"
 )
 
 const (
@@ -34,6 +33,12 @@ var (
 
 	// name is the name of the service.
 	name string
+
+	// authPrivateKeyPath is the path to the private key.
+	authPrivateKeyPath string
+
+	// authPublicKeyPath is the path to the public key.
+	authPublicKeyPath string
 )
 
 func main() {
@@ -41,15 +46,15 @@ func main() {
 }
 
 func run() int {
-	// Context to cancel the execution
+	// Global context to cancel the execution
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Initialize the service information
 	initSvcInfo()
 
-	// Load the auth service configuration
-	cfg, err := config.InitAuthServiceConfig()
+	// Load the users service configuration
+	cfg, err := config.InitUsersServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -99,32 +104,19 @@ func run() int {
 	}()
 
 	// Initialize and set the logger in the context
-	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetServiceInfo(), lp)
+	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetName(), lp)
 	defer func() {
 		if err = logger.Sync(); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
 		}
 	}()
 
-	// Initialize the redis store
-	rdb, err := redis.New(ctx, &redis.Config{
-		Host:                     cfg.Redis.Host,
-		Port:                     cfg.Redis.Port,
-		Password:                 cfg.Redis.Password,
-		DB:                       cfg.Redis.DB,
-		PoolSize:                 cfg.Redis.PoolSize,
-		MinIdleConns:             cfg.Redis.MinIdleConns,
-		ReadTimeout:              cfg.Redis.ReadTimeout,
-		WriteTimeout:             cfg.Redis.WriteTimeout,
-		MaxMemory:                cfg.Redis.MaxMemory,
-		EvictionPolicy:           cfg.Redis.EvictionPolicy,
-		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
-	})
+	// Initialize the auth issuer
+	auth, err := auth.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-	defer rdb.Close()
 
 	// Initialize the postgres store
 	pdb, err := postgres.New(ctx, &postgres.Config{
@@ -146,29 +138,22 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the token issuer
-	tokenIssuer := pat.New(&pat.Options{
-		Issuer:    svcpkg.Info().GetServiceInfo(),
-		JWTSecret: cfg.Pat.JWTSecret,
-		Expiry:    cfg.Pat.DefaultExpiry,
-	}, rdb)
-
-	// Initialize the auth repository
-	repo := authrepo.New(tokenIssuer, pdb)
+	// Initialize the users repository
+	repo := usersrepo.New(auth, pdb)
 
 	// Initialize the validator utility
 	validator := validator.New()
 
-	// Initialize the auth service
-	svc := authsvc.New(validator, repo)
+	// Initialize the users service
+	svc := userssvc.New(validator, repo)
 
-	// Initialize the auth app
-	app := auth.New(ctx, &auth.Config{
-		Deadline: cfg.Auth.RequestTimeout,
+	// Initialize the users app
+	app := users.New(ctx, &users.Config{
+		Deadline: cfg.Grpc.RequestTimeout,
 	}, svc)
 
 	// Create TCP listener
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Auth.Port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Grpc.Port))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create listener: %v\n", err)
 		return ExitError
@@ -205,4 +190,6 @@ func run() int {
 func initSvcInfo() {
 	svcpkg.SetVersion(version)
 	svcpkg.SetName(name)
+	svcpkg.SetAuthPrivateKeyPath(authPrivateKeyPath)
+	svcpkg.SetAuthPublicKeyPath(authPublicKeyPath)
 }

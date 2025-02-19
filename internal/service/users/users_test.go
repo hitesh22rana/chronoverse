@@ -1,4 +1,4 @@
-package auth_test
+package users_test
 
 import (
 	"context"
@@ -9,15 +9,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/hitesh22rana/chronoverse/internal/service/auth"
-	authmock "github.com/hitesh22rana/chronoverse/internal/service/auth/mock"
+	auth "github.com/hitesh22rana/chronoverse/internal/service/users"
+	usersmock "github.com/hitesh22rana/chronoverse/internal/service/users/mock"
 )
 
 func TestRegister(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	// Create a mock repository
-	repo := authmock.NewMockRepository(ctrl)
+	repo := usersmock.NewMockRepository(ctrl)
 
 	// Create a new service
 	s := auth.New(validator.New(), repo)
@@ -127,7 +127,7 @@ func TestLogin(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	// Create a mock repository
-	repo := authmock.NewMockRepository(ctrl)
+	repo := usersmock.NewMockRepository(ctrl)
 
 	// Create a new service
 	s := auth.New(validator.New(), repo)
@@ -228,126 +228,6 @@ func TestLogin(t *testing.T) {
 			}
 			if pat != tt.want.pat {
 				t.Errorf("Login() pat = %v, want %v", pat, tt.want.pat)
-			}
-		})
-	}
-}
-
-func TestLogout(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	// Create a mock repository
-	repo := authmock.NewMockRepository(ctrl)
-
-	// Create a new service
-	s := auth.New(validator.New(), repo)
-
-	type want struct {
-		userID string
-	}
-
-	// Test cases
-	tests := []struct {
-		name  string
-		mock  func()
-		want  want
-		isErr bool
-	}{
-		{
-			name: "success",
-			mock: func() {
-				repo.EXPECT().Logout(gomock.Any()).Return("1", nil)
-			},
-			want: want{
-				userID: "1",
-			},
-			isErr: false,
-		},
-		{
-			name: "error: invalid token",
-			mock: func() {
-				repo.EXPECT().Logout(gomock.Any()).Return("", status.Errorf(codes.InvalidArgument, "invalid token"))
-			},
-			want:  want{},
-			isErr: true,
-		},
-	}
-
-	defer ctrl.Finish()
-
-	for _, tt := range tests {
-		tt.mock()
-		t.Run(tt.name, func(t *testing.T) {
-			userID, err := s.Logout(context.Background())
-
-			if (err != nil) != tt.isErr {
-				t.Errorf("Logout() error = %v, wantErr %v", err, tt.isErr)
-				return
-			}
-
-			if userID != tt.want.userID {
-				t.Errorf("Logout() userID = %v, want %v", userID, tt.want.userID)
-			}
-		})
-	}
-}
-
-func TestValidate(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	// Create a mock repository
-	repo := authmock.NewMockRepository(ctrl)
-
-	// Create a new service
-	s := auth.New(validator.New(), repo)
-
-	type want struct {
-		userID string
-	}
-
-	// Test cases
-	tests := []struct {
-		name  string
-		mock  func()
-		want  want
-		isErr bool
-	}{
-		{
-			name: "success",
-			mock: func() {
-				repo.EXPECT().Validate(
-					gomock.Any(),
-				).Return("1", nil)
-			},
-			want: want{
-				userID: "1",
-			},
-			isErr: false,
-		},
-		{
-			name: "error: invalid token",
-			mock: func() {
-				repo.EXPECT().Validate(gomock.Any()).Return("", status.Errorf(codes.InvalidArgument, "invalid token"))
-			},
-			want:  want{},
-			isErr: true,
-		},
-	}
-
-	defer ctrl.Finish()
-
-	for _, tt := range tests {
-		tt.mock()
-		t.Run(tt.name, func(t *testing.T) {
-			userID, err := s.Validate(context.Background())
-
-			if (err != nil) != tt.isErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.isErr)
-				return
-			}
-
-			if userID != tt.want.userID {
-				t.Errorf("Validate() userID = %v, want %v", userID, tt.want.userID)
 			}
 		})
 	}

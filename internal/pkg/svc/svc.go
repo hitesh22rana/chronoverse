@@ -7,6 +7,12 @@ type Svc struct {
 
 	// Name is the name of the service.
 	Name string
+
+	// AuthPrivateKeyPath is the path to the private key.
+	AuthPrivateKeyPath string
+
+	// AuthPublicKeyPath is the path to the public key.
+	AuthPublicKeyPath string
 }
 
 // Svc represents the service.
@@ -22,9 +28,14 @@ func (s Svc) GetName() string {
 	return s.Name
 }
 
-// GetServiceInfo returns the complete service name.
-func (s Svc) GetServiceInfo() string {
-	return s.Name + ":" + s.Version
+// GetAuthPrivateKeyPath returns the path to the private key.
+func (s Svc) GetAuthPrivateKeyPath() string {
+	return s.AuthPrivateKeyPath
+}
+
+// GetAuthPublicKeyPath returns the path to the public key.
+func (s Svc) GetAuthPublicKeyPath() string {
+	return s.AuthPublicKeyPath
 }
 
 // SetVersion sets the service version.
@@ -41,6 +52,22 @@ func SetName(name string) {
 		return
 	}
 	svc.Name = name
+}
+
+// SetAuthPrivateKeyPath sets the path to the private key.
+func SetAuthPrivateKeyPath(path string) {
+	if svc.AuthPrivateKeyPath != "" {
+		return
+	}
+	svc.AuthPrivateKeyPath = path
+}
+
+// SetAuthPublicKeyPath sets the path to the public key.
+func SetAuthPublicKeyPath(path string) {
+	if svc.AuthPublicKeyPath != "" {
+		return
+	}
+	svc.AuthPublicKeyPath = path
 }
 
 // Info returns the service information.

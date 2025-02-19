@@ -32,6 +32,14 @@ tools:
 build/users-service: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=users-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/users-service ./cmd/users-service
 
+.PHONY: build/server
+build/server: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=server' -X 'main.authPublicKeyPath=certs/auth.ed.pub' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/server ./cmd/server
+
 .PHONY: run/users-service
 run/users-service: build/users-service
 	@./.bin/users-service
+
+.PHONY: run/server
+run/server: build/server
+	@./.bin/server

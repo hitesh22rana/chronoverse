@@ -13,34 +13,50 @@ services:
     volumes:
       - postgres:/var/lib/postgresql/data
     healthcheck:
-        test: ['CMD-SHELL', 'pg_isready -q -d chronoverse -U postgres']
-        timeout: 10s
-        interval: 5s
-        retries: 10
+      test: ['CMD-SHELL', 'pg_isready -q -d chronoverse -U postgres']
+      timeout: 10s
+      interval: 5s
+      retries: 10
     networks:
       - chronoverse
 
   migrate:
-      image: migrate/migrate:latest
-      container_name: migrate
-      profiles: ['tools']
-      volumes:
-          - ./internal/pkg/postgres/migrations:/migrations
-      entrypoint:
-          [
-              'migrate',
-              '-path',
-              '/migrations',
-              '-database',
-              'postgresql://postgres:postgres@postgres:5432/chronoverse?sslmode=disable',
-          ]
-      command: ['up']
-      restart: on-failure
-      depends_on:
-          postgres:
-              condition: service_healthy
-      networks:
-          - chronoverse
+    image: migrate/migrate:latest
+    container_name: migrate
+    profiles: ['tools']
+    volumes:
+      - ./internal/pkg/postgres/migrations:/migrations
+    entrypoint: [
+      "migrate",
+      "-path",
+      "/migrations",
+      "-database",
+      "postgresql://postgres:postgres@postgres:5432/chronoverse?sslmode=disable",
+    ]
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - chronoverse
+
+  certs:
+    image: alpine:latest
+    container_name: certs
+    profiles: ['tools']
+    volumes:
+      - ./certs:/certs
+    entrypoint: [
+      "sh",
+      "-c",
+      "apk update && \
+        apk add --no-cache openssl && \
+        openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed && \
+        openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub",
+    ]
+    restart: on-failure
+    networks:
+      - chronoverse
 
   redis:
     image: redis:alpine
@@ -51,10 +67,10 @@ services:
     volumes:
       - redis:/data
     healthcheck:
-        test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
-        interval: 10s
-        timeout: 5s
-        retries: 10
+      test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - chronoverse
 

@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/users"
 	usersmock "github.com/hitesh22rana/chronoverse/internal/app/users/mock"
@@ -35,7 +35,7 @@ func TestMain(t *testing.T) {
 	_ = server
 }
 
-func initClient(server *grpc.Server) (client pb.UsersServiceClient, _close func()) {
+func initClient(server *grpc.Server) (client userpb.UsersServiceClient, _close func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -71,7 +71,7 @@ func initClient(server *grpc.Server) (client pb.UsersServiceClient, _close func(
 		server.Stop()
 	}
 
-	return pb.NewUsersServiceClient(conn), _close
+	return userpb.NewUsersServiceClient(conn), _close
 }
 
 func TestRegister(t *testing.T) {
@@ -86,14 +86,14 @@ func TestRegister(t *testing.T) {
 
 	type args struct {
 		getCtx func() context.Context
-		req    *pb.RegisterRequest
+		req    *userpb.RegisterRequest
 	}
 
 	tests := []struct {
 		name  string
 		args  args
-		mock  func(*pb.RegisterRequest)
-		res   *pb.RegisterResponse
+		mock  func(*userpb.RegisterRequest)
+		res   *userpb.RegisterResponse
 		isErr bool
 	}{
 		{
@@ -107,19 +107,19 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.RegisterRequest{
+				req: &userpb.RegisterRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *pb.RegisterRequest) {
+			mock: func(req *userpb.RegisterRequest) {
 				svc.EXPECT().Register(
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
 				).Return("user1", "pat1", nil)
 			},
-			res:   &pb.RegisterResponse{},
+			res:   &userpb.RegisterResponse{},
 			isErr: false,
 		},
 		{
@@ -133,12 +133,12 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.RegisterRequest{
+				req: &userpb.RegisterRequest{
 					Email:    "",
 					Password: "",
 				},
 			},
-			mock: func(req *pb.RegisterRequest) {
+			mock: func(req *userpb.RegisterRequest) {
 				svc.EXPECT().Register(
 					gomock.Any(),
 					req.GetEmail(),
@@ -159,12 +159,12 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.RegisterRequest{
+				req: &userpb.RegisterRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *pb.RegisterRequest) {
+			mock: func(req *userpb.RegisterRequest) {
 				svc.EXPECT().Register(
 					gomock.Any(),
 					req.GetEmail(),
@@ -185,12 +185,12 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.RegisterRequest{
+				req: &userpb.RegisterRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *pb.RegisterRequest) {
+			mock: func(req *userpb.RegisterRequest) {
 				svc.EXPECT().Register(
 					gomock.Any(),
 					req.GetEmail(),
@@ -208,9 +208,9 @@ func TestRegister(t *testing.T) {
 						context.Background(),
 					)
 				},
-				req: &pb.RegisterRequest{},
+				req: &userpb.RegisterRequest{},
 			},
-			mock:  func(_ *pb.RegisterRequest) {},
+			mock:  func(_ *userpb.RegisterRequest) {},
 			res:   nil,
 			isErr: true,
 		},
@@ -244,14 +244,14 @@ func TestLogin(t *testing.T) {
 
 	type args struct {
 		getCtx func() context.Context
-		req    *pb.LoginRequest
+		req    *userpb.LoginRequest
 	}
 
 	tests := []struct {
 		name  string
 		args  args
-		mock  func(*pb.LoginRequest)
-		res   *pb.LoginResponse
+		mock  func(*userpb.LoginRequest)
+		res   *userpb.LoginResponse
 		isErr bool
 	}{
 		{
@@ -265,19 +265,19 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.LoginRequest{
+				req: &userpb.LoginRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *pb.LoginRequest) {
+			mock: func(req *userpb.LoginRequest) {
 				svc.EXPECT().Login(
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
 				).Return("user1", "pat1", nil)
 			},
-			res:   &pb.LoginResponse{},
+			res:   &userpb.LoginResponse{},
 			isErr: false,
 		},
 		{
@@ -291,12 +291,12 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.LoginRequest{
+				req: &userpb.LoginRequest{
 					Email:    "",
 					Password: "",
 				},
 			},
-			mock: func(req *pb.LoginRequest) {
+			mock: func(req *userpb.LoginRequest) {
 				svc.EXPECT().Login(
 					gomock.Any(),
 					req.GetEmail(),
@@ -317,12 +317,12 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.LoginRequest{
+				req: &userpb.LoginRequest{
 					Email:    "test1@gmail.com",
 					Password: "password123451",
 				},
 			},
-			mock: func(req *pb.LoginRequest) {
+			mock: func(req *userpb.LoginRequest) {
 				svc.EXPECT().Login(
 					gomock.Any(),
 					req.GetEmail(),
@@ -343,12 +343,12 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &pb.LoginRequest{
+				req: &userpb.LoginRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *pb.LoginRequest) {
+			mock: func(req *userpb.LoginRequest) {
 				svc.EXPECT().Login(
 					gomock.Any(),
 					req.GetEmail(),
@@ -366,9 +366,9 @@ func TestLogin(t *testing.T) {
 						context.Background(),
 					)
 				},
-				req: &pb.LoginRequest{},
+				req: &userpb.LoginRequest{},
 			},
-			mock:  func(_ *pb.LoginRequest) {},
+			mock:  func(_ *userpb.LoginRequest) {},
 			res:   nil,
 			isErr: true,
 		},

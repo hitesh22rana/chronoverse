@@ -2,16 +2,18 @@ syntax = "proto3";
 
 package users;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/users;users";
+option go_package = "github.com/hitesh22rana/chronoverse/proto/go/users;users";
 
 // RegisterRequest contains the details needed to register a new user.
 message RegisterRequest {
     string email    = 1;    // User's email address
-    string password = 2;    // User's password}
+    string password = 2;    // User's password
 }
 
 // RegisterResponse contains the result of a registration attempt.
-message RegisterResponse {}
+message RegisterResponse {
+    string user_id = 1;    // ID of the newly registered user
+}
 
 // LoginRequest contains the credentials for logging in.
 message LoginRequest {
@@ -20,19 +22,9 @@ message LoginRequest {
 }
 
 // LoginResponse contains the result of a login attempt.
-message LoginResponse {}
-
-// LogoutRequest contains the token to invalidate.
-message LogoutRequest {}
-
-// LogoutResponse contains the result of a logout attempt.
-message LogoutResponse {}
-
-// ValidateRequest contains the token to validate.
-message ValidateRequest {}
-
-// ValidateResponse contains the result of a token validation attempt.
-message ValidateResponse {}
+message LoginResponse {
+    string user_id = 1;    // ID of the logged in user
+}
 
 // UsersService handles user related operations.
 service UsersService {

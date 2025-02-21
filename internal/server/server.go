@@ -9,10 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
-	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
 )
 
 // Server implements the HTTP server.
@@ -20,7 +22,8 @@ type Server struct {
 	auth          *auth.Auth
 	crypto        *crypto.Crypto
 	rdb           *redis.Store
-	usersClient   pb.UsersServiceClient
+	usersClient   userpb.UsersServiceClient
+	jobsClient    jobspb.JobsServiceClient
 	httpServer    *http.Server
 	validationCfg *ValidationConfig
 }
@@ -46,12 +49,20 @@ type Config struct {
 }
 
 // New creates a new HTTP server.
-func New(cfg *Config, auth *auth.Auth, crypto *crypto.Crypto, rdb *redis.Store, usersClient pb.UsersServiceClient) *Server {
+func New(
+	cfg *Config,
+	auth *auth.Auth,
+	crypto *crypto.Crypto,
+	rdb *redis.Store,
+	usersClient userpb.UsersServiceClient,
+	jobsClient jobspb.JobsServiceClient,
+) *Server {
 	srv := &Server{
 		auth:        auth,
 		crypto:      crypto,
 		rdb:         rdb,
 		usersClient: usersClient,
+		jobsClient:  jobsClient,
 		httpServer: &http.Server{
 			Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 			ReadTimeout:       cfg.ReadTimeout,
@@ -74,17 +85,17 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		"/healthz",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
-			s.handleHealthz,
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
 		),
 	)
 	router.HandleFunc(
 		"/auth/register",
 		s.withAllowedMethodMiddleware(
 			http.MethodPost,
-			withAttachAudienceInMetadataHeaderMiddleware(
-				withAttachRoleInMetadataHeaderMiddleware(
-					s.handleRegister,
-				),
+			withAttachBasicMetadataHeaderMiddleware(
+				s.handleRegister,
 			),
 		),
 	)
@@ -92,10 +103,8 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		"/auth/login",
 		s.withAllowedMethodMiddleware(
 			http.MethodPost,
-			withAttachAudienceInMetadataHeaderMiddleware(
-				withAttachRoleInMetadataHeaderMiddleware(
-					s.handleLogin,
-				),
+			withAttachBasicMetadataHeaderMiddleware(
+				s.handleLogin,
 			),
 		),
 	)
@@ -105,10 +114,8 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			http.MethodPost,
 			s.withVerifyCSRFMiddleware(
 				s.withVerifySessionMiddleware(
-					withAttachAudienceInMetadataHeaderMiddleware(
-						withAttachRoleInMetadataHeaderMiddleware(
-							s.handleLogout,
-						),
+					withAttachBasicMetadataHeaderMiddleware(
+						s.handleLogout,
 					),
 				),
 			),
@@ -120,9 +127,22 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			http.MethodPost,
 			s.withVerifyCSRFMiddleware(
 				s.withVerifySessionMiddleware(
-					withAttachAudienceInMetadataHeaderMiddleware(
-						withAttachRoleInMetadataHeaderMiddleware(
-							s.handleValidate,
+					withAttachBasicMetadataHeaderMiddleware(
+						s.handleValidate,
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
+		"/jobs",
+		s.withAllowedMethodMiddleware(
+			http.MethodPost,
+			s.withVerifyCSRFMiddleware(
+				s.withVerifySessionMiddleware(
+					withAttachBasicMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.handleCreateJob,
 						),
 					),
 				),

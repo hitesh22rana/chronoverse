@@ -1,4 +1,4 @@
-//go:generate go run go.uber.org/mock/mockgen@v0.5.0 -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
+//go:generate mockgen -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
 
 package users
 
@@ -16,14 +16,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
-// Service provides user authentication operations.
+// Service provides user related operations.
 type Service interface {
 	Register(ctx context.Context, email, password string) (string, string, error)
 	Login(ctx context.Context, email, password string) (string, string, error)
@@ -36,7 +36,7 @@ type Config struct {
 
 // Users represents the users-service.
 type Users struct {
-	pb.UnimplementedUsersServiceServer
+	userpb.UnimplementedUsersServiceServer
 	logger *zap.Logger
 	tp     trace.Tracer
 	cfg    *Config
@@ -47,12 +47,25 @@ type Users struct {
 func audienceInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// Extract the audience from metadata.
-		audience, err := auth.AudienceFromMetadata(ctx)
+		audience, err := auth.ExtractAudienceFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
 
 		return handler(auth.WithAudience(ctx, audience), req)
+	}
+}
+
+// roleInterceptor sets the role in the context.
+func roleInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Extract the role from metadata.
+		role, err := auth.ExtractRoleFromMetadata(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		return handler(auth.WithRole(ctx, role), req)
 	}
 }
 
@@ -66,7 +79,7 @@ func tokenInterceptor() grpc.UnaryServerInterceptor {
 		}
 
 		// Extract the token from metadata.
-		token, err := auth.AuthorizationTokenFromMetadata(ctx)
+		token, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -75,30 +88,17 @@ func tokenInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// roleInterceptor sets the role in the context.
-func roleInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// Extract the role from metadata.
-		role, err := auth.RoleFromMetadata(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		return handler(auth.WithRole(ctx, role), req)
-	}
-}
-
-// New creates a new authentication server.
+// New creates a new users-service.
 func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			audienceInterceptor(),
-			tokenInterceptor(),
 			roleInterceptor(),
+			tokenInterceptor(),
 		),
 	)
-	pb.RegisterUsersServiceServer(server, &Users{
+	userpb.RegisterUsersServiceServer(server, &Users{
 		logger: loggerpkg.FromContext(ctx),
 		tp:     otel.Tracer(svcpkg.Info().GetName()),
 		cfg:    cfg,
@@ -112,7 +112,7 @@ func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 // Register registers a new user.
 //
 //nolint:dupl // It's okay to have similar code for different methods.
-func (u *Users) Register(ctx context.Context, req *pb.RegisterRequest) (res *pb.RegisterResponse, err error) {
+func (u *Users) Register(ctx context.Context, req *userpb.RegisterRequest) (res *userpb.RegisterResponse, err error) {
 	ctx, span := u.tp.Start(
 		ctx,
 		"App.Register",
@@ -140,7 +140,7 @@ func (u *Users) Register(ctx context.Context, req *pb.RegisterRequest) (res *pb.
 	}
 
 	// Append the token in the headers.
-	if err = grpc.SendHeader(ctx, auth.WithAuthorizationTokenAsHeaders(token)); err != nil {
+	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(token)); err != nil {
 		u.logger.Error(
 			"failed to send token in headers",
 			zap.Any("ctx", ctx),
@@ -154,13 +154,13 @@ func (u *Users) Register(ctx context.Context, req *pb.RegisterRequest) (res *pb.
 		zap.Any("ctx", ctx),
 		zap.String("user_id", userID),
 	)
-	return &pb.RegisterResponse{}, nil
+	return &userpb.RegisterResponse{UserId: userID}, nil
 }
 
 // Login logs in the user.
 //
 //nolint:dupl // It's okay to have similar code for different methods.
-func (u *Users) Login(ctx context.Context, req *pb.LoginRequest) (res *pb.LoginResponse, err error) {
+func (u *Users) Login(ctx context.Context, req *userpb.LoginRequest) (res *userpb.LoginResponse, err error) {
 	ctx, span := u.tp.Start(
 		ctx,
 		"App.Login",
@@ -188,7 +188,7 @@ func (u *Users) Login(ctx context.Context, req *pb.LoginRequest) (res *pb.LoginR
 	}
 
 	// Append the token in the headers.
-	if err = grpc.SendHeader(ctx, auth.WithAuthorizationTokenAsHeaders(token)); err != nil {
+	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(token)); err != nil {
 		u.logger.Error(
 			"failed to send token in headers",
 			zap.Any("ctx", ctx),
@@ -202,5 +202,5 @@ func (u *Users) Login(ctx context.Context, req *pb.LoginRequest) (res *pb.LoginR
 		zap.Any("ctx", ctx),
 		zap.String("user_id", userID),
 	)
-	return &pb.LoginResponse{}, nil
+	return &userpb.LoginResponse{UserId: userID}, nil
 }

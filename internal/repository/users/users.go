@@ -3,7 +3,6 @@ package users
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -21,7 +20,7 @@ const (
 	userTable = "users"
 )
 
-// Repository provides authentication operations.
+// Repository provides users repository.
 type Repository struct {
 	tp   trace.Tracer
 	auth *auth.Auth
@@ -59,11 +58,11 @@ func (r *Repository) Register(ctx context.Context, email, password string) (ID, 
 
 	// Insert user into database
 	query := fmt.Sprintf(`
-		INSERT INTO %s (email, password, created_at, updated_at) 
-		VALUES ($1, $2, $3, $3)
+		INSERT INTO %s (email, password) 
+		VALUES ($1, $2)
 		RETURNING id`, userTable)
 
-	err = r.pg.QueryRow(ctx, query, email, string(hashedPassword), time.Now()).Scan(&ID)
+	err = r.pg.QueryRow(ctx, query, email, string(hashedPassword)).Scan(&ID)
 	if err != nil {
 		// Check if the user already exists
 		if r.pg.IsUniqueViolation(err) {

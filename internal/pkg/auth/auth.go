@@ -124,13 +124,18 @@ func WithRoleInMetadata(ctx context.Context, role Role) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, roleMetadataKey, string(role))
 }
 
-// WithAuthorizationTokenAsHeaders sets the authorization token in the headers for clients.
-func WithAuthorizationTokenAsHeaders(token string) metadata.MD {
+// WithAuthorizationTokenInMetadata sets the authorization token in the metadata for incoming requests.
+func WithAuthorizationTokenInMetadata(ctx context.Context, token string) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, authorizationMetadataKey, "Bearer "+token)
+}
+
+// WithSetAuthorizationTokenInHeaders sets the authorization token in the headers for clients.
+func WithSetAuthorizationTokenInHeaders(token string) metadata.MD {
 	return metadata.Pairs(authorizationMetadataKey, "Bearer "+token)
 }
 
-// AudienceFromMetadata extracts the audience from the metadata.
-func AudienceFromMetadata(ctx context.Context) (string, error) {
+// ExtractAudienceFromMetadata extracts the audience from the metadata.
+func ExtractAudienceFromMetadata(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Error(codes.NotFound, "metadata is required")
@@ -144,8 +149,8 @@ func AudienceFromMetadata(ctx context.Context) (string, error) {
 	return audience[0], nil
 }
 
-// AuthorizationTokenFromMetadata extracts the authorization token from the metadata.
-func AuthorizationTokenFromMetadata(ctx context.Context) (string, error) {
+// ExtractAuthorizationTokenFromMetadata extracts the authorization token from the metadata.
+func ExtractAuthorizationTokenFromMetadata(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Error(codes.NotFound, "metadata is required")
@@ -164,8 +169,8 @@ func AuthorizationTokenFromMetadata(ctx context.Context) (string, error) {
 	return parts[1], nil
 }
 
-// RoleFromMetadata extracts the role from the metadata.
-func RoleFromMetadata(ctx context.Context) (string, error) {
+// ExtractRoleFromMetadata extracts the role from the metadata.
+func ExtractRoleFromMetadata(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Error(codes.NotFound, "metadata is required")
@@ -179,8 +184,8 @@ func RoleFromMetadata(ctx context.Context) (string, error) {
 	return role[0], nil
 }
 
-// AuthorizationTokenFromHeaders extracts the authorization token from the headers.
-func AuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
+// ExtractAuthorizationTokenFromHeaders extracts the authorization token from the headers.
+func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
 	data := headers.Get(authorizationMetadataKey)
 	if len(data) == 0 {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")

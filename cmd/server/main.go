@@ -9,13 +9,15 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	"github.com/hitesh22rana/chronoverse/internal/server"
-	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
 )
 
 const (
@@ -72,6 +74,7 @@ func run() int {
 		return ExitError
 	}
 
+	// Load the users service credentials
 	var creds credentials.TransportCredentials
 	if cfg.UsersService.Secure {
 		creds, err = loadTLSCredentials(cfg.UsersService.CertFile)
@@ -94,6 +97,28 @@ func run() int {
 	}
 	defer usersConn.Close()
 
+	// Load the jobs service credentials
+	if cfg.JobsService.Secure {
+		creds, err = loadTLSCredentials(cfg.JobsService.CertFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
+			return ExitError
+		}
+	} else {
+		creds = insecure.NewCredentials()
+	}
+
+	// Connect to the jobs service
+	jobsConn, err := grpc.NewClient(
+		fmt.Sprintf("%s:%d", cfg.JobsService.Host, cfg.JobsService.Port),
+		grpc.WithTransportCredentials(creds),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to jobs gRPC server: %v\n", err)
+		return ExitError
+	}
+	defer jobsConn.Close()
+
 	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
@@ -114,7 +139,8 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	client := pb.NewUsersServiceClient(usersConn)
+	userServiceClient := userpb.NewUsersServiceClient(usersConn)
+	jobsServiceClient := jobspb.NewJobsServiceClient(jobsConn)
 	srv := server.New(&server.Config{
 		Host:              cfg.Server.Host,
 		Port:              cfg.Server.Port,
@@ -129,7 +155,7 @@ func run() int {
 			RequestBodyLimit: cfg.Server.RequestBodyLimit,
 			CSRFHMACSecret:   cfg.Server.CSRFHMACSecret,
 		},
-	}, auth, crypto, rdb, client)
+	}, auth, crypto, rdb, userServiceClient, jobsServiceClient)
 
 	fmt.Fprintln(os.Stdout, "Starting HTTP server on port 8080",
 		fmt.Sprintf("name: %s, version: %s",

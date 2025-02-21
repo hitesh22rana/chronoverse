@@ -1,4 +1,4 @@
-//go:generate go run go.uber.org/mock/mockgen@v0.5.0 -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
+//go:generate mockgen -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
 
 package users
 
@@ -15,20 +15,20 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
-// Repository provides user authentication operations.
+// Repository provides user related operations.
 type Repository interface {
 	Register(ctx context.Context, email, password string) (string, string, error)
 	Login(ctx context.Context, email, password string) (string, string, error)
 }
 
-// Service provides user authentication operations.
+// Service provides user related operations.
 type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
 }
 
-// New creates a new auth service.
+// New creates a new users-service.
 func New(validator *validator.Validate, repo Repository) *Service {
 	return &Service{
 		validator: validator,

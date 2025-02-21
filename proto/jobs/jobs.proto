@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package jobs;
+
+option go_package = "github.com/hitesh22rana/chronoverse/proto/go/jobs;jobs";
+
+// CreateRequest contains the details needed to create a new job.
+message CreateRequest {
+    string user_id      = 1; // ID of the user
+    string name         = 2; // Name of the job
+    string payload      = 3; // JSON string for payload
+    string kind         = 4; // Kind of job
+    int32 interval      = 5; // Interval measured in minutes
+    int32 max_retry     = 6; // Maximum number of retries
+}
+
+// CreateResponse contains the result of a job creation attempt.
+message CreateResponse {
+    string job_id = 1; // ID of the job
+}
+
+// JobsService handles job related operations.
+service JobsService {
+    // Create a new job.
+    rpc Create(CreateRequest) returns (CreateResponse) {}
+}

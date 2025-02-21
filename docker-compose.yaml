@@ -96,6 +96,7 @@ services:
     container_name: users-service
     environment:
       - POSTGRES_HOST=postgres
+      - GRPC_PORT=50051
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
       - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
@@ -119,12 +120,44 @@ services:
     networks:
       - chronoverse
 
+  jobs-service:
+    image: jobs-service
+    container_name: jobs-service
+    environment:
+      - POSTGRES_HOST=postgres
+      - GRPC_PORT=50052
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
+      - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_METRIC_EXPORT_INTERVAL=500
+      - OTEL_BSP_SCHEDULE_DELAY=500
+      - ENV=production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=jobs-service
+    ports:
+      - '50052:50052'
+    restart: on-failure
+    depends_on:
+      - postgres
+      - lgtm
+    networks:
+      - chronoverse
+
   server:
     image: server
     container_name: server
     environment:
       - SERVER_HOST=0.0.0.0
       - USERS_SERVICE_HOST=users-service
+      - USERS_SERVICE_PORT=50051
+      - JOBS_SERVICE_HOST=jobs-service
+      - JOBS_SERVICE_PORT=50052
       - REDIS_HOST=redis
       - ENV=production
     build:

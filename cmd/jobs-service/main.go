@@ -9,15 +9,15 @@ import (
 	"github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
 
-	"github.com/hitesh22rana/chronoverse/internal/app/users"
+	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
-	usersrepo "github.com/hitesh22rana/chronoverse/internal/repository/users"
-	userssvc "github.com/hitesh22rana/chronoverse/internal/service/users"
+	jobsrepo "github.com/hitesh22rana/chronoverse/internal/repository/jobs"
+	jobssvc "github.com/hitesh22rana/chronoverse/internal/service/jobs"
 )
 
 const (
@@ -53,8 +53,8 @@ func run() int {
 	// Initialize the service information
 	initSvcInfo()
 
-	// Load the users service configuration
-	cfg, err := config.InitUsersServiceConfig()
+	// Load the jobs service configuration
+	cfg, err := config.InitJobsServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -118,7 +118,7 @@ func run() int {
 		return ExitError
 	}
 
-	// Initialize the postgres store
+	// Initialize the PostgreSQL database
 	pdb, err := postgres.New(ctx, &postgres.Config{
 		Host:        cfg.Postgres.Host,
 		Port:        cfg.Postgres.Port,
@@ -138,17 +138,17 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the users repository
-	repo := usersrepo.New(auth, pdb)
+	// Initialize the jobs repository
+	repo := jobsrepo.New(auth, pdb)
 
 	// Initialize the validator utility
 	validator := validator.New()
 
-	// Initialize the users service
-	svc := userssvc.New(validator, repo)
+	// Initialize the jobs service
+	svc := jobssvc.New(validator, repo)
 
-	// Initialize the users application
-	app := users.New(ctx, &users.Config{
+	// Initialize the jobs application
+	app := jobs.New(ctx, &jobs.Config{
 		Deadline: cfg.Grpc.RequestTimeout,
 	}, svc)
 
@@ -159,7 +159,7 @@ func run() int {
 		return ExitError
 	}
 
-	// Graceful shutdown the service
+	// Gracefully shutdown the service
 	go func() {
 		<-ctx.Done()
 		if err := listener.Close(); err != nil {
@@ -177,7 +177,7 @@ func run() int {
 		zap.String("environment", cfg.Environment.Env),
 	)
 
-	// Start the gRPC server
+	// Serve the gRPC service
 	if err := app.Serve(listener); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

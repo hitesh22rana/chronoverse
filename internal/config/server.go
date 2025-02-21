@@ -13,6 +13,7 @@ type ServerConfig struct {
 	Crypto
 	Redis
 	UsersService
+	JobsService
 	Server
 }
 
@@ -38,10 +39,18 @@ type Redis struct {
 
 // UsersService holds the configuration for the users service.
 type UsersService struct {
-	Host     string `envconfig:"USERS_SERVICE_HOST" default:"localhost"`
-	Port     int    `envconfig:"USERS_SERVICE_PORT" default:"50051"`
+	Host     string `envconfig:"USERS_SERVICE_HOST" required:"true"`
+	Port     int    `envconfig:"USERS_SERVICE_PORT" required:"true"`
 	Secure   bool   `envconfig:"USERS_SERVICE_SECURE" default:"false"`
 	CertFile string `envconfig:"USERS_SERVICE_CERT_FILE" default:""`
+}
+
+// JobsService holds the configuration for the jobs service.
+type JobsService struct {
+	Host     string `envconfig:"JOBS_SERVICE_HOST" required:"true"`
+	Port     int    `envconfig:"JOBS_SERVICE_PORT" required:"true"`
+	Secure   bool   `envconfig:"JOBS_SERVICE_SECURE" default:"false"`
+	CertFile string `envconfig:"JOBS_SERVICE_CERT_FILE" default:""`
 }
 
 // Server holds the configuration for the server.

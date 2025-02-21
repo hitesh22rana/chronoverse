@@ -12,6 +12,7 @@ import (
 )
 
 // withAllowedMethodMiddleware is a middleware that only allows specific HTTP methods.
+// It also limits the request body size for [POST, PUT, PATCH] methods.
 func (s *Server) withAllowedMethodMiddleware(allowedMethod string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != allowedMethod {
@@ -84,38 +85,61 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 			return
 		}
 
-		// Get the corresponding auth token
-		var _authToken string
-		if err = s.rdb.Get(r.Context(), session, &_authToken); err != nil {
+		// Get the corresponding user ID from the session
+		var userID string
+		if err = s.rdb.Get(r.Context(), session, &userID); err != nil {
 			http.Error(w, "invalid auth token", http.StatusUnauthorized)
 			return
 		}
 
-		if _authToken != authToken {
-			http.Error(w, "auth token mismatch", http.StatusUnauthorized)
+		// Attach the required information to the context
+		ctx = context.WithValue(ctx, sessionKey{}, session)
+		ctx = context.WithValue(ctx, userIDKey{}, userID)
+
+		// Call the next handler
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// withAttachBasicMetadataHeaderMiddleware is a middleware that attaches the basic metadata to the context.
+// This middleware should only be called after the withVerifySessionMiddleware middleware.
+// Basic metadata includes the following:
+// - Audience.
+// - Role.
+func withAttachBasicMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Attach the audience and role to the context
+		ctx := auth.WithAudience(r.Context(), svcpkg.Info().GetName())
+		ctx = auth.WithRole(ctx, string(auth.RoleUser))
+
+		// Attach the audience and role to the metadata for outgoing requests and call the next handler
+		ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
+		ctx = auth.WithRoleInMetadata(ctx, auth.RoleUser)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// withAttachAuthorizationTokenInMetadataHeaderMiddleware is a middleware that attaches the authorization token to the context.
+// This middleware should only be called after the withVerifySessionMiddleware and withAttachBasicMetadataHeaderMiddleware middlewares.
+func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// There might be chances that the auth token is expired but the session is still valid, since the auth token is short-lived and the session is long-lived.
+		// So, we need to re-issue the auth token.
+		userID, ok := r.Context().Value(userIDKey{}).(string)
+		if !ok {
+			http.Error(w, "user ID not found in context", http.StatusUnauthorized)
 			return
 		}
 
-		// Either the token is valid or it is expired but still valid
-		// Call the next handler
-		// Attach the session to the context
-		ctx = context.WithValue(r.Context(), sessionKey{}, session)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	}
-}
+		// Issue a new token
+		authToken, err := s.auth.IssueToken(r.Context(), userID)
+		if err != nil {
+			http.Error(w, "failed to issue token", http.StatusInternalServerError)
+			return
+		}
 
-// withAttachAudienceInMetadataHeaderMiddleware is a middleware that attaches the audience to the context.
-func withAttachAudienceInMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := auth.WithAudienceInMetadata(r.Context(), svcpkg.Info().GetName())
-		next.ServeHTTP(w, r.WithContext(ctx))
-	}
-}
-
-// withAttachRoleInMetadataHeaderMiddleware is a middleware that attaches the role to the context.
-func withAttachRoleInMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := auth.WithRoleInMetadata(r.Context(), auth.RoleUser)
+		// Attach the token to the metadata for outgoing requests and call the next handler
+		ctx := auth.WithAuthorizationTokenInMetadata(r.Context(), authToken)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

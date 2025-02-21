@@ -3,21 +3,13 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
-	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
-
-// handleHealthz handles the health check request.
-func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-}
 
 type registerRequest struct {
 	Email    string `json:"email"`
@@ -35,7 +27,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var header metadata.MD
-	_, err := s.usersClient.Register(r.Context(), &pb.RegisterRequest{
+	res, err := s.usersClient.Register(r.Context(), &userpb.RegisterRequest{
 		Email:    req.Email,
 		Password: req.Password,
 	}, grpc.Header(&header))
@@ -44,7 +36,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authToken, err := auth.AuthorizationTokenFromHeaders(header)
+	authToken, err := auth.ExtractAuthorizationTokenFromHeaders(header)
 	if err != nil {
 		handleError(w, err, "failed to get authorization token from headers")
 		return
@@ -56,7 +48,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = s.rdb.Set(r.Context(), session, authToken, s.validationCfg.SessionExpiry); err != nil {
+	if err = s.rdb.Set(r.Context(), session, res.GetUserId(), s.validationCfg.SessionExpiry); err != nil {
 		handleError(w, err, "failed to set session")
 		return
 	}
@@ -91,7 +83,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var header metadata.MD
-	_, err := s.usersClient.Login(r.Context(), &pb.LoginRequest{
+	res, err := s.usersClient.Login(r.Context(), &userpb.LoginRequest{
 		Email:    req.Email,
 		Password: req.Password,
 	}, grpc.Header(&header))
@@ -100,7 +92,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authToken, err := auth.AuthorizationTokenFromHeaders(header)
+	authToken, err := auth.ExtractAuthorizationTokenFromHeaders(header)
 	if err != nil {
 		handleError(w, err, "failed to get authorization token from headers")
 		return
@@ -112,7 +104,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = s.rdb.Set(r.Context(), session, authToken, s.validationCfg.SessionExpiry); err != nil {
+	if err = s.rdb.Set(r.Context(), session, res.GetUserId(), s.validationCfg.SessionExpiry); err != nil {
 		handleError(w, err, "failed to set session")
 		return
 	}
@@ -155,49 +147,4 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // handleValidate handles the validate request.
 func (s *Server) handleValidate(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-}
-
-//nolint:gocyclo // handleErrors is a helper function to handle gRPC errors.
-func handleError(w http.ResponseWriter, err error, message ...string) {
-	msg := err.Error()
-	if len(message) > 0 {
-		msg = strings.Join(message, " ")
-	}
-
-	switch status.Code(err) {
-	case codes.OK:
-		return
-	case codes.Unauthenticated:
-		http.Error(w, msg, http.StatusUnauthorized)
-	case codes.PermissionDenied:
-		http.Error(w, msg, http.StatusForbidden)
-	case codes.NotFound:
-		http.Error(w, msg, http.StatusNotFound)
-	case codes.AlreadyExists:
-		http.Error(w, msg, http.StatusConflict)
-	case codes.InvalidArgument:
-		http.Error(w, msg, http.StatusBadRequest)
-	case codes.Unimplemented:
-		http.Error(w, msg, http.StatusNotImplemented)
-	case codes.Unavailable:
-		http.Error(w, msg, http.StatusServiceUnavailable)
-	case codes.FailedPrecondition:
-		http.Error(w, msg, http.StatusPreconditionFailed)
-	case codes.ResourceExhausted:
-		http.Error(w, msg, http.StatusTooManyRequests)
-	case codes.Canceled:
-		http.Error(w, msg, http.StatusRequestTimeout)
-	case codes.DeadlineExceeded:
-		http.Error(w, msg, http.StatusGatewayTimeout)
-	case codes.Internal:
-		http.Error(w, msg, http.StatusInternalServerError)
-	case codes.DataLoss:
-		http.Error(w, msg, http.StatusInternalServerError)
-	case codes.Aborted:
-		http.Error(w, msg, http.StatusInternalServerError)
-	case codes.OutOfRange:
-		http.Error(w, msg, http.StatusInternalServerError)
-	case codes.Unknown:
-		http.Error(w, msg, http.StatusInternalServerError)
-	}
 }

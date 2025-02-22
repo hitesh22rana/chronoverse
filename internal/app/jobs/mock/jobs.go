@@ -13,6 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
+	model "github.com/hitesh22rana/chronoverse/internal/model"
+	jobs "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -40,17 +42,32 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 	return m.recorder
 }
 
-// Create mocks base method.
-func (m *MockService) Create(ctx context.Context, userID, name, payload, kind string, interval, maxRetries int32) (string, error) {
+// CreateJob mocks base method.
+func (m *MockService) CreateJob(ctx context.Context, req *jobs.CreateJobRequest) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Create", ctx, userID, name, payload, kind, interval, maxRetries)
+	ret := m.ctrl.Call(m, "CreateJob", ctx, req)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Create indicates an expected call of Create.
-func (mr *MockServiceMockRecorder) Create(ctx, userID, name, payload, kind, interval, maxRetries any) *gomock.Call {
+// CreateJob indicates an expected call of CreateJob.
+func (mr *MockServiceMockRecorder) CreateJob(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockService)(nil).Create), ctx, userID, name, payload, kind, interval, maxRetries)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateJob", reflect.TypeOf((*MockService)(nil).CreateJob), ctx, req)
+}
+
+// GetJobByID mocks base method.
+func (m *MockService) GetJobByID(ctx context.Context, req *jobs.GetJobByIDRequest) (*model.GetJobByIDResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetJobByID", ctx, req)
+	ret0, _ := ret[0].(*model.GetJobByIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetJobByID indicates an expected call of GetJobByID.
+func (mr *MockServiceMockRecorder) GetJobByID(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobByID", reflect.TypeOf((*MockService)(nil).GetJobByID), ctx, req)
 }

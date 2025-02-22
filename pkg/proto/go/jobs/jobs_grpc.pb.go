@@ -19,7 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	JobsService_Create_FullMethodName = "/jobs.JobsService/Create"
+	JobsService_CreateJob_FullMethodName                = "/jobs.JobsService/CreateJob"
+	JobsService_GetJobByID_FullMethodName               = "/jobs.JobsService/GetJobByID"
+	JobsService_ListAllJobsByUserID_FullMethodName      = "/jobs.JobsService/ListAllJobsByUserID"
+	JobsService_ListAllScheduledJobsByID_FullMethodName = "/jobs.JobsService/ListAllScheduledJobsByID"
 )
 
 // JobsServiceClient is the client API for JobsService service.
@@ -28,8 +31,14 @@ const (
 //
 // JobsService handles job related operations.
 type JobsServiceClient interface {
-	// Create a new job.
-	Create(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*CreateResponse, error)
+	// CreateJob a new job.
+	CreateJob(ctx context.Context, in *CreateJobRequest, opts ...grpc.CallOption) (*CreateJobResponse, error)
+	// GetJobByID a job by ID.
+	GetJobByID(ctx context.Context, in *GetJobByIDRequest, opts ...grpc.CallOption) (*GetJobByIDResponse, error)
+	// ListAllJobsByUserID returns a stream of all jobs.
+	ListAllJobsByUserID(ctx context.Context, in *ListAllJobsByUserIDRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ListAllJobsByUserIDResponse], error)
+	// ListAllScheduledJobsByID returns a stream of all scheduled jobs for a job_id.
+	ListAllScheduledJobsByID(ctx context.Context, in *ListAllScheduledJobsByIDRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ListAllScheduledJobsByIDResponse], error)
 }
 
 type jobsServiceClient struct {
@@ -40,15 +49,63 @@ func NewJobsServiceClient(cc grpc.ClientConnInterface) JobsServiceClient {
 	return &jobsServiceClient{cc}
 }
 
-func (c *jobsServiceClient) Create(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*CreateResponse, error) {
+func (c *jobsServiceClient) CreateJob(ctx context.Context, in *CreateJobRequest, opts ...grpc.CallOption) (*CreateJobResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateResponse)
-	err := c.cc.Invoke(ctx, JobsService_Create_FullMethodName, in, out, cOpts...)
+	out := new(CreateJobResponse)
+	err := c.cc.Invoke(ctx, JobsService_CreateJob_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
+
+func (c *jobsServiceClient) GetJobByID(ctx context.Context, in *GetJobByIDRequest, opts ...grpc.CallOption) (*GetJobByIDResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetJobByIDResponse)
+	err := c.cc.Invoke(ctx, JobsService_GetJobByID_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ListAllJobsByUserID(ctx context.Context, in *ListAllJobsByUserIDRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ListAllJobsByUserIDResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &JobsService_ServiceDesc.Streams[0], JobsService_ListAllJobsByUserID_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ListAllJobsByUserIDRequest, ListAllJobsByUserIDResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type JobsService_ListAllJobsByUserIDClient = grpc.ServerStreamingClient[ListAllJobsByUserIDResponse]
+
+func (c *jobsServiceClient) ListAllScheduledJobsByID(ctx context.Context, in *ListAllScheduledJobsByIDRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ListAllScheduledJobsByIDResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &JobsService_ServiceDesc.Streams[1], JobsService_ListAllScheduledJobsByID_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ListAllScheduledJobsByIDRequest, ListAllScheduledJobsByIDResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type JobsService_ListAllScheduledJobsByIDClient = grpc.ServerStreamingClient[ListAllScheduledJobsByIDResponse]
 
 // JobsServiceServer is the server API for JobsService service.
 // All implementations should embed UnimplementedJobsServiceServer
@@ -56,8 +113,14 @@ func (c *jobsServiceClient) Create(ctx context.Context, in *CreateRequest, opts 
 //
 // JobsService handles job related operations.
 type JobsServiceServer interface {
-	// Create a new job.
-	Create(context.Context, *CreateRequest) (*CreateResponse, error)
+	// CreateJob a new job.
+	CreateJob(context.Context, *CreateJobRequest) (*CreateJobResponse, error)
+	// GetJobByID a job by ID.
+	GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error)
+	// ListAllJobsByUserID returns a stream of all jobs.
+	ListAllJobsByUserID(*ListAllJobsByUserIDRequest, grpc.ServerStreamingServer[ListAllJobsByUserIDResponse]) error
+	// ListAllScheduledJobsByID returns a stream of all scheduled jobs for a job_id.
+	ListAllScheduledJobsByID(*ListAllScheduledJobsByIDRequest, grpc.ServerStreamingServer[ListAllScheduledJobsByIDResponse]) error
 }
 
 // UnimplementedJobsServiceServer should be embedded to have
@@ -67,8 +130,17 @@ type JobsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedJobsServiceServer struct{}
 
-func (UnimplementedJobsServiceServer) Create(context.Context, *CreateRequest) (*CreateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
+func (UnimplementedJobsServiceServer) CreateJob(context.Context, *CreateJobRequest) (*CreateJobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateJob not implemented")
+}
+func (UnimplementedJobsServiceServer) GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetJobByID not implemented")
+}
+func (UnimplementedJobsServiceServer) ListAllJobsByUserID(*ListAllJobsByUserIDRequest, grpc.ServerStreamingServer[ListAllJobsByUserIDResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method ListAllJobsByUserID not implemented")
+}
+func (UnimplementedJobsServiceServer) ListAllScheduledJobsByID(*ListAllScheduledJobsByIDRequest, grpc.ServerStreamingServer[ListAllScheduledJobsByIDResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method ListAllScheduledJobsByID not implemented")
 }
 func (UnimplementedJobsServiceServer) testEmbeddedByValue() {}
 
@@ -90,23 +162,63 @@ func RegisterJobsServiceServer(s grpc.ServiceRegistrar, srv JobsServiceServer) {
 	s.RegisterService(&JobsService_ServiceDesc, srv)
 }
 
-func _JobsService_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateRequest)
+func _JobsService_CreateJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateJobRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(JobsServiceServer).Create(ctx, in)
+		return srv.(JobsServiceServer).CreateJob(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: JobsService_Create_FullMethodName,
+		FullMethod: JobsService_CreateJob_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(JobsServiceServer).Create(ctx, req.(*CreateRequest))
+		return srv.(JobsServiceServer).CreateJob(ctx, req.(*CreateJobRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _JobsService_GetJobByID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetJobByIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).GetJobByID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_GetJobByID_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).GetJobByID(ctx, req.(*GetJobByIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ListAllJobsByUserID_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ListAllJobsByUserIDRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(JobsServiceServer).ListAllJobsByUserID(m, &grpc.GenericServerStream[ListAllJobsByUserIDRequest, ListAllJobsByUserIDResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type JobsService_ListAllJobsByUserIDServer = grpc.ServerStreamingServer[ListAllJobsByUserIDResponse]
+
+func _JobsService_ListAllScheduledJobsByID_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ListAllScheduledJobsByIDRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(JobsServiceServer).ListAllScheduledJobsByID(m, &grpc.GenericServerStream[ListAllScheduledJobsByIDRequest, ListAllScheduledJobsByIDResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type JobsService_ListAllScheduledJobsByIDServer = grpc.ServerStreamingServer[ListAllScheduledJobsByIDResponse]
 
 // JobsService_ServiceDesc is the grpc.ServiceDesc for JobsService service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -116,10 +228,25 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*JobsServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Create",
-			Handler:    _JobsService_Create_Handler,
+			MethodName: "CreateJob",
+			Handler:    _JobsService_CreateJob_Handler,
+		},
+		{
+			MethodName: "GetJobByID",
+			Handler:    _JobsService_GetJobByID_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ListAllJobsByUserID",
+			Handler:       _JobsService_ListAllJobsByUserID_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ListAllScheduledJobsByID",
+			Handler:       _JobsService_ListAllScheduledJobsByID_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "jobs/jobs.proto",
 }

@@ -11,6 +11,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/hitesh22rana/chronoverse/internal/model"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -37,9 +40,9 @@ func New(auth *auth.Auth, pg *postgres.Postgres) *Repository {
 	}
 }
 
-// Create a new job.
-func (r *Repository) Create(ctx context.Context, userID, name, payload, kind string, interval, maxRetry int32) (jobID string, err error) {
-	ctx, span := r.tp.Start(ctx, "Repository.Create")
+// CreateJob creates a new job.
+func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind string, interval, maxRetry int32) (jobID string, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.CreateJob")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -91,4 +94,32 @@ func (r *Repository) Create(ctx context.Context, userID, name, payload, kind str
 	}
 
 	return jobID, nil
+}
+
+// GetJobByID returns the job details by ID.
+func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.GetJobByIDResponse, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.GetJobByID")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		SELECT user_id, name, payload, kind, interval, created_at, updated_at, terminated_at
+		FROM %s
+		WHERE id = $1
+	`, jobsTable)
+
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, jobID)
+	data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[model.GetJobByIDResponse])
+	if err != nil {
+		err = status.Errorf(codes.Internal, "failed to get job: %v", err)
+		return nil, err
+	}
+
+	return &data, nil
 }

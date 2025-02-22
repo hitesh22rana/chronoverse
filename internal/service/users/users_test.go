@@ -11,9 +11,10 @@ import (
 
 	auth "github.com/hitesh22rana/chronoverse/internal/service/users"
 	usersmock "github.com/hitesh22rana/chronoverse/internal/service/users/mock"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
-func TestRegister(t *testing.T) {
+func TestRegisterUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	// Create a mock repository
@@ -21,11 +22,6 @@ func TestRegister(t *testing.T) {
 
 	// Create a new service
 	s := auth.New(validator.New(), repo)
-
-	type args struct {
-		email    string
-		password string
-	}
 
 	type want struct {
 		userID string
@@ -35,22 +31,22 @@ func TestRegister(t *testing.T) {
 	// Test cases
 	tests := []struct {
 		name  string
-		args  args
-		mock  func(a args)
+		req   *userpb.RegisterUserRequest
+		mock  func(req *userpb.RegisterUserRequest)
 		want  want
 		isErr bool
 	}{
 		{
 			name: "success",
-			args: args{
-				email:    "test@gamil.com",
-				password: "password12345",
+			req: &userpb.RegisterUserRequest{
+				Email:    "test@gmail.com",
+				Password: "password12345",
 			},
-			mock: func(a args) {
-				repo.EXPECT().Register(
+			mock: func(req *userpb.RegisterUserRequest) {
+				repo.EXPECT().RegisterUser(
 					gomock.Any(),
-					a.email,
-					a.password,
+					req.GetEmail(),
+					req.GetPassword(),
 				).Return("1", "token", nil)
 			},
 			want: want{
@@ -61,35 +57,35 @@ func TestRegister(t *testing.T) {
 		},
 		{
 			name: "error: invalid email",
-			args: args{
-				email:    "test",
-				password: "password12345",
+			req: &userpb.RegisterUserRequest{
+				Email:    "test",
+				Password: "password12345",
 			},
-			mock:  func(_ args) {},
+			mock:  func(_ *userpb.RegisterUserRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
 			name: "error: password too short",
-			args: args{
-				email:    "test@gamil.com",
-				password: "pass",
+			req: &userpb.RegisterUserRequest{
+				Email:    "test@gmail.com",
+				Password: "pass",
 			},
-			mock:  func(_ args) {},
+			mock:  func(_ *userpb.RegisterUserRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
 			name: "error: already exists",
-			args: args{
-				email:    "test@gamil.com",
-				password: "password12345",
+			req: &userpb.RegisterUserRequest{
+				Email:    "test@gmail.com",
+				Password: "password12345",
 			},
-			mock: func(a args) {
-				repo.EXPECT().Register(
+			mock: func(req *userpb.RegisterUserRequest) {
+				repo.EXPECT().RegisterUser(
 					gomock.Any(),
-					a.email,
-					a.password,
+					req.GetEmail(),
+					req.GetPassword(),
 				).Return("", "", status.Errorf(codes.AlreadyExists, "user already exists"))
 			},
 			want:  want{},
@@ -100,30 +96,26 @@ func TestRegister(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args)
+		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			userID, pat, err := s.Register(
-				context.Background(),
-				tt.args.email,
-				tt.args.password,
-			)
+			userID, pat, err := s.RegisterUser(context.Background(), tt.req)
 
 			if (err != nil) != tt.isErr {
-				t.Errorf("Register() error = %v, wantErr %v", err, tt.isErr)
+				t.Errorf("RegisterUser() error = %v, wantErr %v", err, tt.isErr)
 				return
 			}
 
 			if userID != tt.want.userID {
-				t.Errorf("Register() userID = %v, want %v", userID, tt.want.userID)
+				t.Errorf("RegisterUser() userID = %v, want %v", userID, tt.want.userID)
 			}
 			if pat != tt.want.pat {
-				t.Errorf("Register() pat = %v, want %v", pat, tt.want.pat)
+				t.Errorf("RegisterUser() pat = %v, want %v", pat, tt.want.pat)
 			}
 		})
 	}
 }
 
-func TestLogin(t *testing.T) {
+func TestLoginUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	// Create a mock repository
@@ -131,11 +123,6 @@ func TestLogin(t *testing.T) {
 
 	// Create a new service
 	s := auth.New(validator.New(), repo)
-
-	type args struct {
-		email    string
-		password string
-	}
 
 	type want struct {
 		userID string
@@ -145,22 +132,22 @@ func TestLogin(t *testing.T) {
 	// Test cases
 	tests := []struct {
 		name  string
-		args  args
-		mock  func(a args)
+		req   *userpb.LoginUserRequest
+		mock  func(req *userpb.LoginUserRequest)
 		want  want
 		isErr bool
 	}{
 		{
 			name: "success",
-			args: args{
-				email:    "test@gamil.com",
-				password: "password12345",
+			req: &userpb.LoginUserRequest{
+				Email:    "test@gmail.com",
+				Password: "password12345",
 			},
-			mock: func(a args) {
-				repo.EXPECT().Login(
+			mock: func(req *userpb.LoginUserRequest) {
+				repo.EXPECT().LoginUser(
 					gomock.Any(),
-					a.email,
-					a.password,
+					req.GetEmail(),
+					req.GetPassword(),
 				).Return("1", "token", nil)
 			},
 			want: want{
@@ -171,35 +158,35 @@ func TestLogin(t *testing.T) {
 		},
 		{
 			name: "error: invalid email",
-			args: args{
-				email:    "test",
-				password: "password12345",
+			req: &userpb.LoginUserRequest{
+				Email:    "test@",
+				Password: "password12345",
 			},
-			mock:  func(_ args) {},
+			mock:  func(_ *userpb.LoginUserRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
 			name: "error: password too short",
-			args: args{
-				email:    "test@gamil.com",
-				password: "pass",
+			req: &userpb.LoginUserRequest{
+				Email:    "test@gmail.com",
+				Password: "pass",
 			},
-			mock:  func(_ args) {},
+			mock:  func(_ *userpb.LoginUserRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
 			name: "error: user not found",
-			args: args{
-				email:    "test@gamil.com",
-				password: "password12345",
+			req: &userpb.LoginUserRequest{
+				Email:    "test@gmail.com",
+				Password: "password12345",
 			},
-			mock: func(a args) {
-				repo.EXPECT().Login(
+			mock: func(req *userpb.LoginUserRequest) {
+				repo.EXPECT().LoginUser(
 					gomock.Any(),
-					a.email,
-					a.password,
+					req.GetEmail(),
+					req.GetPassword(),
 				).Return("", "", status.Errorf(codes.NotFound, "user not found"))
 			},
 			want:  want{},
@@ -210,24 +197,20 @@ func TestLogin(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args)
+		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			userID, pat, err := s.Login(
-				context.Background(),
-				tt.args.email,
-				tt.args.password,
-			)
+			userID, pat, err := s.LoginUser(context.Background(), tt.req)
 
 			if (err != nil) != tt.isErr {
-				t.Errorf("Login() error = %v, wantErr %v", err, tt.isErr)
+				t.Errorf("LoginUser() error = %v, wantErr %v", err, tt.isErr)
 				return
 			}
 
 			if userID != tt.want.userID {
-				t.Errorf("Login() userID = %v, want %v", userID, tt.want.userID)
+				t.Errorf("LoginUser() userID = %v, want %v", userID, tt.want.userID)
 			}
 			if pat != tt.want.pat {
-				t.Errorf("Login() pat = %v, want %v", pat, tt.want.pat)
+				t.Errorf("LoginUser() pat = %v, want %v", pat, tt.want.pat)
 			}
 		})
 	}

@@ -36,11 +36,11 @@ func New(auth *auth.Auth, pg *postgres.Postgres) *Repository {
 	}
 }
 
-// Register a new user.
+// RegisterUser a new user.
 //
-//nolint:gocritic // ID and token are returned as a tuple.
-func (r *Repository) Register(ctx context.Context, email, password string) (ID, token string, err error) {
-	ctx, span := r.tp.Start(ctx, "Repository.Register")
+//nolint:gocritic // ID and authToken are returned.
+func (r *Repository) RegisterUser(ctx context.Context, email, password string) (ID, authToken string, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.RegisterUser")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -74,20 +74,20 @@ func (r *Repository) Register(ctx context.Context, email, password string) (ID, 
 		return "", "", err
 	}
 
-	// Issue token
-	token, err = r.auth.IssueToken(ctx, ID)
+	// Issue authToken
+	authToken, err = r.auth.IssueToken(ctx, ID)
 	if err != nil {
 		return "", "", err
 	}
 
-	return ID, token, nil
+	return ID, authToken, nil
 }
 
-// Login user.
+// LoginUser user.
 //
-//nolint:gocritic // ID and token are returned as a tuple.
-func (r *Repository) Login(ctx context.Context, email, pass string) (ID, token string, err error) {
-	ctx, span := r.tp.Start(ctx, "Repository.Login")
+//nolint:gocritic // ID and authToken are returned.
+func (r *Repository) LoginUser(ctx context.Context, email, pass string) (ID, authToken string, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.LoginUser")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -116,11 +116,11 @@ func (r *Repository) Login(ctx context.Context, email, pass string) (ID, token s
 		return "", "", err
 	}
 
-	// Issue token
-	token, err = r.auth.IssueToken(ctx, ID)
+	// Issue authToken
+	authToken, err = r.auth.IssueToken(ctx, ID)
 	if err != nil {
 		return "", "", err
 	}
 
-	return ID, token, nil
+	return ID, authToken, nil
 }

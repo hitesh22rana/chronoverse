@@ -74,7 +74,7 @@ func initClient(server *grpc.Server) (client userpb.UsersServiceClient, _close f
 	return userpb.NewUsersServiceClient(conn), _close
 }
 
-func TestRegister(t *testing.T) {
+func TestRegisterUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := usersmock.NewMockService(ctrl)
@@ -86,14 +86,14 @@ func TestRegister(t *testing.T) {
 
 	type args struct {
 		getCtx func() context.Context
-		req    *userpb.RegisterRequest
+		req    *userpb.RegisterUserRequest
 	}
 
 	tests := []struct {
 		name  string
 		args  args
-		mock  func(*userpb.RegisterRequest)
-		res   *userpb.RegisterResponse
+		mock  func(*userpb.RegisterUserRequest)
+		res   *userpb.RegisterUserResponse
 		isErr bool
 	}{
 		{
@@ -107,23 +107,24 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.RegisterRequest{
+				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *userpb.RegisterRequest) {
-				svc.EXPECT().Register(
+			mock: func(_ *userpb.RegisterUserRequest) {
+				svc.EXPECT().RegisterUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("user1", "pat1", nil)
 			},
-			res:   &userpb.RegisterResponse{},
+			res: &userpb.RegisterUserResponse{
+				UserId: "user1",
+			},
 			isErr: false,
 		},
 		{
-			name: "error: email and password are required",
+			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
@@ -133,16 +134,15 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.RegisterRequest{
+				req: &userpb.RegisterUserRequest{
 					Email:    "",
 					Password: "",
 				},
 			},
-			mock: func(req *userpb.RegisterRequest) {
-				svc.EXPECT().Register(
+			mock: func(_ *userpb.RegisterUserRequest) {
+				svc.EXPECT().RegisterUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("", "", status.Errorf(codes.InvalidArgument, "email and password are required"))
 			},
 			res:   nil,
@@ -159,16 +159,15 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.RegisterRequest{
+				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *userpb.RegisterRequest) {
-				svc.EXPECT().Register(
+			mock: func(_ *userpb.RegisterUserRequest) {
+				svc.EXPECT().RegisterUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("", "", status.Errorf(codes.AlreadyExists, "user already exists"))
 			},
 			res:   nil,
@@ -185,32 +184,34 @@ func TestRegister(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.RegisterRequest{
+				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *userpb.RegisterRequest) {
-				svc.EXPECT().Register(
+			mock: func(_ *userpb.RegisterUserRequest) {
+				svc.EXPECT().RegisterUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("", "", status.Errorf(codes.Internal, "internal server error"))
 			},
 			res:   nil,
 			isErr: true,
 		},
 		{
-			name: "error: missing audience in context",
+			name: "error: missing required headers in metadata",
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
 						context.Background(),
 					)
 				},
-				req: &userpb.RegisterRequest{},
+				req: &userpb.RegisterUserRequest{
+					Email:    "test@gmail.com",
+					Password: "password12345",
+				},
 			},
-			mock:  func(_ *userpb.RegisterRequest) {},
+			mock:  func(_ *userpb.RegisterUserRequest) {},
 			res:   nil,
 			isErr: true,
 		},
@@ -221,7 +222,8 @@ func TestRegister(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.Register(tt.args.getCtx(), tt.args.req)
+			var headers metadata.MD
+			_, err := client.RegisterUser(tt.args.getCtx(), tt.args.req, grpc.Header(&headers))
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -232,7 +234,7 @@ func TestRegister(t *testing.T) {
 	}
 }
 
-func TestLogin(t *testing.T) {
+func TestLoginUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := usersmock.NewMockService(ctrl)
@@ -244,14 +246,14 @@ func TestLogin(t *testing.T) {
 
 	type args struct {
 		getCtx func() context.Context
-		req    *userpb.LoginRequest
+		req    *userpb.LoginUserRequest
 	}
 
 	tests := []struct {
 		name  string
 		args  args
-		mock  func(*userpb.LoginRequest)
-		res   *userpb.LoginResponse
+		mock  func(*userpb.LoginUserRequest)
+		res   *userpb.LoginUserResponse
 		isErr bool
 	}{
 		{
@@ -265,23 +267,22 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.LoginRequest{
+				req: &userpb.LoginUserRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *userpb.LoginRequest) {
-				svc.EXPECT().Login(
+			mock: func(_ *userpb.LoginUserRequest) {
+				svc.EXPECT().LoginUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("user1", "pat1", nil)
 			},
-			res:   &userpb.LoginResponse{},
+			res:   &userpb.LoginUserResponse{},
 			isErr: false,
 		},
 		{
-			name: "error: email and password are required",
+			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
@@ -291,16 +292,15 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.LoginRequest{
+				req: &userpb.LoginUserRequest{
 					Email:    "",
 					Password: "",
 				},
 			},
-			mock: func(req *userpb.LoginRequest) {
-				svc.EXPECT().Login(
+			mock: func(_ *userpb.LoginUserRequest) {
+				svc.EXPECT().LoginUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("", "", status.Errorf(codes.InvalidArgument, "email and password are required"))
 			},
 			res:   nil,
@@ -317,16 +317,15 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.LoginRequest{
+				req: &userpb.LoginUserRequest{
 					Email:    "test1@gmail.com",
 					Password: "password123451",
 				},
 			},
-			mock: func(req *userpb.LoginRequest) {
-				svc.EXPECT().Login(
+			mock: func(_ *userpb.LoginUserRequest) {
+				svc.EXPECT().LoginUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("", "", status.Errorf(codes.AlreadyExists, "user already exists"))
 			},
 			res:   nil,
@@ -343,32 +342,31 @@ func TestLogin(t *testing.T) {
 						auth.RoleUser,
 					)
 				},
-				req: &userpb.LoginRequest{
+				req: &userpb.LoginUserRequest{
 					Email:    "test@gmail.com",
 					Password: "password12345",
 				},
 			},
-			mock: func(req *userpb.LoginRequest) {
-				svc.EXPECT().Login(
+			mock: func(_ *userpb.LoginUserRequest) {
+				svc.EXPECT().LoginUser(
 					gomock.Any(),
-					req.GetEmail(),
-					req.GetPassword(),
+					gomock.Any(),
 				).Return("", "", status.Errorf(codes.Internal, "internal server error"))
 			},
 			res:   nil,
 			isErr: true,
 		},
 		{
-			name: "error: missing audience in context",
+			name: "error: missing required headers in metadata",
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
 						context.Background(),
 					)
 				},
-				req: &userpb.LoginRequest{},
+				req: &userpb.LoginUserRequest{},
 			},
-			mock:  func(_ *userpb.LoginRequest) {},
+			mock:  func(_ *userpb.LoginUserRequest) {},
 			res:   nil,
 			isErr: true,
 		},
@@ -380,7 +378,7 @@ func TestLogin(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			var headers metadata.MD
-			_, err := client.Login(tt.args.getCtx(), tt.args.req, grpc.Header(&headers))
+			_, err := client.LoginUser(tt.args.getCtx(), tt.args.req, grpc.Header(&headers))
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")

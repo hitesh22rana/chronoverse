@@ -4,23 +4,84 @@ package jobs;
 
 option go_package = "github.com/hitesh22rana/chronoverse/proto/go/jobs;jobs";
 
-// CreateRequest contains the details needed to create a new job.
-message CreateRequest {
-    string user_id      = 1; // ID of the user
-    string name         = 2; // Name of the job
-    string payload      = 3; // JSON string for payload
-    string kind         = 4; // Kind of job
-    int32 interval      = 5; // Interval measured in minutes
-    int32 max_retry     = 6; // Maximum number of retries
+// CreateJobRequest contains the details needed to create a new job.
+message CreateJobRequest {
+    string user_id  = 1; // ID of the user
+    string name     = 2; // Name of the job
+    string payload  = 3; // JSON string for payload
+    string kind     = 4; // Kind of job
+    int32 interval  = 5; // Interval measured in minutes
+    int32 max_retry = 6; // Maximum number of retries
 }
 
-// CreateResponse contains the result of a job creation attempt.
-message CreateResponse {
+// CreateJobResponse contains the result of a job creation attempt.
+message CreateJobResponse {
     string job_id = 1; // ID of the job
+}
+
+// GetJobByIDRequest contains the details needed to get a job by job_id.
+message GetJobByIDRequest {
+    string id = 1; // ID of the job
+}
+
+// GetJobByIDResponse contains the result of a job retrieval attempt.
+message GetJobByIDResponse {
+    string user_id       = 1; // ID of the user
+    string name          = 2; // Name of the job
+    string payload       = 3; // JSON string for payload
+    string kind          = 4; // Kind of job
+    int32 interval       = 5; // Interval measured in minutes
+    string created_at    = 6; // Time the job was created
+    string updated_at    = 7; // Time the job was last updated
+    string terminated_at = 8; // Time the job was terminated
+}
+
+// ListAllJobsByUserIDRequest contains the details needed to list all jobs.
+message ListAllJobsByUserIDRequest {
+    string user_id = 1; // ID of the user
+}
+
+// ListAllJobsByUserIDResponse contains the result of a job listing attempt.
+message ListAllJobsByUserIDResponse {
+    string id            = 1; // ID of the job
+    string name          = 2; // Name of the job
+    string payload       = 3; // JSON string for payload
+    string kind          = 4; // Kind of job
+    int32 interval       = 5; // Interval measured in minutes
+    string created_at    = 6; // Time the job was created
+    string updated_at    = 7; // Time the job was last updated
+    string terminated_at = 8; // Time the job was terminated
+}
+
+// ListAllScheduledJobsByIDRequest contains the details needed to list all scheduled jobs for a job_id.
+message ListAllScheduledJobsByIDRequest {
+    string id = 1; // ID of the job
+}
+
+// ListAllScheduledJobsByIDResponse contains the result of a scheduled job listing attempt.
+message ListAllScheduledJobsByIDResponse {
+    string id           = 1; // ID of the scheduled job
+    string status       = 2; // Status of the scheduled job
+    string scheduled_at = 3; // Time the job is scheduled to run
+    string retry_count  = 4; // Number of retries
+    string max_retry    = 5; // Maximum number of retries
+    string started_at   = 6; // Time the job was started
+    string completed_at = 7; // Time the job was completed
+    string created_at   = 8; // Time the job was created
+    string updated_at   = 9; // Time the job was last updated
 }
 
 // JobsService handles job related operations.
 service JobsService {
-    // Create a new job.
-    rpc Create(CreateRequest) returns (CreateResponse) {}
+    // CreateJob a new job.
+    rpc CreateJob(CreateJobRequest) returns (CreateJobResponse) {}
+
+    // GetJobByID a job by ID.
+    rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
+
+    // ListAllJobsByUserID returns a stream of all jobs.
+    rpc ListAllJobsByUserID(ListAllJobsByUserIDRequest) returns (stream ListAllJobsByUserIDResponse) {}
+
+    // ListAllScheduledJobsByID returns a stream of all scheduled jobs for a job_id.
+    rpc ListAllScheduledJobsByID(ListAllScheduledJobsByIDRequest) returns (stream ListAllScheduledJobsByIDResponse) {}
 }

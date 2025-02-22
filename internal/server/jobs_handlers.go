@@ -36,8 +36,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create the job
-	res, err := s.jobsClient.Create(r.Context(), &jobspb.CreateRequest{
+	// CreateJob creates a new job.
+	res, err := s.jobsClient.CreateJob(r.Context(), &jobspb.CreateJobRequest{
 		UserId:   userID,
 		Name:     req.Name,
 		Payload:  req.Payload,
@@ -53,6 +53,31 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(res)
+}
+
+// handleGetJobByID handles the get job by ID request.
+func (s *Server) handleGetJobByID(w http.ResponseWriter, r *http.Request) {
+	// Get the job ID from the path	parameters
+	jobID := r.PathValue("id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// GetJob gets the job by ID.
+	res, err := s.jobsClient.GetJobByID(r.Context(), &jobspb.GetJobByIDRequest{
+		Id: jobID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to get job")
+		return
+	}
+
+	// Write the response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
 }

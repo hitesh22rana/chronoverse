@@ -4,33 +4,33 @@ package users;
 
 option go_package = "github.com/hitesh22rana/chronoverse/proto/go/users;users";
 
-// RegisterRequest contains the details needed to register a new user.
-message RegisterRequest {
+// RegisterUserRequest contains the details needed to register a new user.
+message RegisterUserRequest {
     string email    = 1;    // User's email address
     string password = 2;    // User's password
 }
 
-// RegisterResponse contains the result of a registration attempt.
-message RegisterResponse {
+// RegisterUserResponse contains the result of a registration attempt.
+message RegisterUserResponse {
     string user_id = 1;    // ID of the newly registered user
 }
 
-// LoginRequest contains the credentials for logging in.
-message LoginRequest {
+// LoginUserRequest contains the credentials for logging in.
+message LoginUserRequest {
     string email    = 1;    // User's email address
     string password = 2;    // User's password
 }
 
-// LoginResponse contains the result of a login attempt.
-message LoginResponse {
+// LoginUserResponse contains the result of a login attempt.
+message LoginUserResponse {
     string user_id = 1;    // ID of the logged in user
 }
 
 // UsersService handles user related operations.
 service UsersService {
-    // Register a new user.
-    rpc Register(RegisterRequest) returns (RegisterResponse) {};
+    // RegisterUser a new user.
+    rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse) {};
 
-    // Login with email and password.
-    rpc Login(LoginRequest) returns (LoginResponse) {};
+    // LoginUser with email and password.
+    rpc LoginUser(LoginUserRequest) returns (LoginUserResponse) {};
 }

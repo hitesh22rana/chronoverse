@@ -25,8 +25,8 @@ import (
 
 // Service provides user related operations.
 type Service interface {
-	Register(ctx context.Context, email, password string) (string, string, error)
-	Login(ctx context.Context, email, password string) (string, string, error)
+	RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (string, string, error)
+	LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (string, string, error)
 }
 
 // Config represents the users-service configuration.
@@ -43,7 +43,7 @@ type Users struct {
 	svc    Service
 }
 
-// audienceInterceptor sets the audience in the context.
+// audienceInterceptor sets the audience from the metadata and adds it to the context.
 func audienceInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// Extract the audience from metadata.
@@ -56,7 +56,7 @@ func audienceInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// roleInterceptor sets the role in the context.
+// roleInterceptor extracts the role from the metadata and adds it to the context.
 func roleInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// Extract the role from metadata.
@@ -69,22 +69,22 @@ func roleInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// tokenInterceptor sets the token in the context.
-func tokenInterceptor() grpc.UnaryServerInterceptor {
+// authTokenInterceptor extracts the authToken from metadata and adds it to the context.
+func authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// Skip the interceptor for Register and Login methods.
-		if strings.Contains(info.FullMethod, "Register") ||
-			strings.Contains(info.FullMethod, "Login") {
+		// Skip the interceptor for RegisterUser and LoginUser methods.
+		if strings.Contains(info.FullMethod, "RegisterUser") ||
+			strings.Contains(info.FullMethod, "LoginUser") {
 			return handler(ctx, req)
 		}
 
-		// Extract the token from metadata.
-		token, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
+		// Extract the authToken from metadata.
+		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
 
-		return handler(auth.WithAuthorizationToken(ctx, token), req)
+		return handler(auth.WithAuthorizationToken(ctx, authToken), req)
 	}
 }
 
@@ -95,7 +95,7 @@ func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 		grpc.ChainUnaryInterceptor(
 			audienceInterceptor(),
 			roleInterceptor(),
-			tokenInterceptor(),
+			authTokenInterceptor(),
 		),
 	)
 	userpb.RegisterUsersServiceServer(server, &Users{
@@ -109,13 +109,13 @@ func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 	return server
 }
 
-// Register registers a new user.
+// RegisterUser registers a new user.
 //
 //nolint:dupl // It's okay to have similar code for different methods.
-func (u *Users) Register(ctx context.Context, req *userpb.RegisterRequest) (res *userpb.RegisterResponse, err error) {
+func (u *Users) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (res *userpb.RegisterUserResponse, err error) {
 	ctx, span := u.tp.Start(
 		ctx,
-		"App.Register",
+		"App.RegisterUser",
 		trace.WithAttributes(attribute.String("email", req.GetEmail())),
 	)
 	defer func() {
@@ -129,7 +129,7 @@ func (u *Users) Register(ctx context.Context, req *userpb.RegisterRequest) (res 
 	ctx, cancel := context.WithTimeout(ctx, u.cfg.Deadline)
 	defer cancel()
 
-	userID, token, err := u.svc.Register(ctx, req.GetEmail(), req.GetPassword())
+	userID, authToken, err := u.svc.RegisterUser(ctx, req)
 	if err != nil {
 		u.logger.Error(
 			"failed to register user",
@@ -139,10 +139,10 @@ func (u *Users) Register(ctx context.Context, req *userpb.RegisterRequest) (res 
 		return nil, err
 	}
 
-	// Append the token in the headers.
-	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(token)); err != nil {
+	// Append the authToken in the headers.
+	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(authToken)); err != nil {
 		u.logger.Error(
-			"failed to send token in headers",
+			"failed to send authToken in headers",
 			zap.Any("ctx", ctx),
 			zap.Error(err),
 		)
@@ -154,16 +154,16 @@ func (u *Users) Register(ctx context.Context, req *userpb.RegisterRequest) (res 
 		zap.Any("ctx", ctx),
 		zap.String("user_id", userID),
 	)
-	return &userpb.RegisterResponse{UserId: userID}, nil
+	return &userpb.RegisterUserResponse{UserId: userID}, nil
 }
 
-// Login logs in the user.
+// LoginUser logs in the user.
 //
 //nolint:dupl // It's okay to have similar code for different methods.
-func (u *Users) Login(ctx context.Context, req *userpb.LoginRequest) (res *userpb.LoginResponse, err error) {
+func (u *Users) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (res *userpb.LoginUserResponse, err error) {
 	ctx, span := u.tp.Start(
 		ctx,
-		"App.Login",
+		"App.LoginUser",
 		trace.WithAttributes(attribute.String("email", req.GetEmail())),
 	)
 	defer func() {
@@ -177,7 +177,7 @@ func (u *Users) Login(ctx context.Context, req *userpb.LoginRequest) (res *userp
 	ctx, cancel := context.WithTimeout(ctx, u.cfg.Deadline)
 	defer cancel()
 
-	userID, token, err := u.svc.Login(ctx, req.GetEmail(), req.GetPassword())
+	userID, authToken, err := u.svc.LoginUser(ctx, req)
 	if err != nil {
 		u.logger.Error(
 			"failed to login user",
@@ -187,10 +187,10 @@ func (u *Users) Login(ctx context.Context, req *userpb.LoginRequest) (res *userp
 		return nil, err
 	}
 
-	// Append the token in the headers.
-	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(token)); err != nil {
+	// Append the authToken in the headers.
+	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(authToken)); err != nil {
 		u.logger.Error(
-			"failed to send token in headers",
+			"failed to send authToken in headers",
 			zap.Any("ctx", ctx),
 			zap.Error(err),
 		)
@@ -202,5 +202,5 @@ func (u *Users) Login(ctx context.Context, req *userpb.LoginRequest) (res *userp
 		zap.Any("ctx", ctx),
 		zap.String("user_id", userID),
 	)
-	return &userpb.LoginResponse{UserId: userID}, nil
+	return &userpb.LoginUserResponse{UserId: userID}, nil
 }

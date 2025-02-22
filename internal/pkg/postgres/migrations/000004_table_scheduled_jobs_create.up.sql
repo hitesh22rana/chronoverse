@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     retry_count INTEGER DEFAULT 0 NOT NULL CHECK (retry_count >= 0),
     max_retry INTEGER DEFAULT 0 NOT NULL CHECK (max_retry >= 0 AND max_retry >= retry_count),
     started_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
-    finished_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
+    completed_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
     created_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     updated_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL
 );

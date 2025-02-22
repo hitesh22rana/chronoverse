@@ -12,13 +12,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Repository provides user related operations.
 type Repository interface {
-	Register(ctx context.Context, email, password string) (string, string, error)
-	Login(ctx context.Context, email, password string) (string, string, error)
+	RegisterUser(ctx context.Context, email, password string) (string, string, error)
+	LoginUser(ctx context.Context, email, password string) (string, string, error)
 }
 
 // Service provides user related operations.
@@ -37,15 +39,15 @@ func New(validator *validator.Validate, repo Repository) *Service {
 	}
 }
 
-// RegisterRequest holds the request parameters for registering a new user.
-type RegisterRequest struct {
+// RegisterUserRequest holds the request parameters for registering a new user.
+type RegisterUserRequest struct {
 	Email    string `validate:"required,email"`
 	Password string `validate:"required,min=8"`
 }
 
-// Register a new user.
-func (s *Service) Register(ctx context.Context, email, password string) (userID, pat string, err error) {
-	ctx, span := s.tp.Start(ctx, "Service.Register")
+// RegisterUser a new user.
+func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (userID, authToken string, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.RegisterUser")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -55,32 +57,32 @@ func (s *Service) Register(ctx context.Context, email, password string) (userID,
 	}()
 
 	// Validate the request
-	err = s.validator.Struct(&RegisterRequest{
-		Email:    email,
-		Password: password,
+	err = s.validator.Struct(&RegisterUserRequest{
+		Email:    req.GetEmail(),
+		Password: req.GetPassword(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		return "", "", err
 	}
 
-	userID, pat, err = s.repo.Register(ctx, email, password)
+	userID, authToken, err = s.repo.RegisterUser(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
 		return "", "", err
 	}
 
-	return userID, pat, nil
+	return userID, authToken, nil
 }
 
-// LoginRequest holds the request parameters for logging in a user.
-type LoginRequest struct {
+// LoginUserRequest holds the request parameters for logging in a user.
+type LoginUserRequest struct {
 	Email    string `validate:"required,email"`
 	Password string `validate:"required,min=8"`
 }
 
-// Login user.
-func (s *Service) Login(ctx context.Context, email, password string) (userID, pat string, err error) {
-	ctx, span := s.tp.Start(ctx, "Service.Login")
+// LoginUser user.
+func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (userID, authToken string, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.LoginUser")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -90,19 +92,19 @@ func (s *Service) Login(ctx context.Context, email, password string) (userID, pa
 	}()
 
 	// Validate the request
-	err = s.validator.Struct(&LoginRequest{
-		Email:    email,
-		Password: password,
+	err = s.validator.Struct(&LoginUserRequest{
+		Email:    req.GetEmail(),
+		Password: req.GetPassword(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		return "", "", err
 	}
 
-	userID, pat, err = s.repo.Login(ctx, email, password)
+	userID, authToken, err = s.repo.LoginUser(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
 		return "", "", err
 	}
 
-	return userID, pat, nil
+	return userID, authToken, nil
 }

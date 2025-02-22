@@ -95,7 +95,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodPost,
 			withAttachBasicMetadataHeaderMiddleware(
-				s.handleRegister,
+				s.handleRegisterUser,
 			),
 		),
 	)
@@ -104,7 +104,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodPost,
 			withAttachBasicMetadataHeaderMiddleware(
-				s.handleLogin,
+				s.handleLoginUser,
 			),
 		),
 	)
@@ -144,6 +144,19 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
 							s.handleCreateJob,
 						),
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
+		"/jobs/{id}",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleGetJobByID,
 					),
 				),
 			),

@@ -17,6 +17,7 @@ import (
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
+	"github.com/hitesh22rana/chronoverse/internal/model"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -24,7 +25,8 @@ import (
 
 // Service provides job related operations.
 type Service interface {
-	Create(ctx context.Context, userID, name, payload, kind string, interval, maxRetry int32) (string, error)
+	CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (string, error)
+	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*model.GetJobByIDResponse, error)
 }
 
 // Config represents the jobs-service configuration.
@@ -41,7 +43,7 @@ type Jobs struct {
 	svc    Service
 }
 
-// audienceInterceptor sets the audience in the context.
+// audienceInterceptor sets the audience from the metadata and adds it to the context.
 func audienceInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// Extract the audience from metadata.
@@ -54,7 +56,7 @@ func audienceInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// roleInterceptor sets the role in the context.
+// roleInterceptor extracts the role from the metadata and adds it to the context.
 func roleInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// Extract the role from metadata.
@@ -67,16 +69,16 @@ func roleInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// tokenInterceptor sets the token in the context.
-func tokenInterceptor() grpc.UnaryServerInterceptor {
+// authTokenInterceptor extracts the authToken from metadata and adds it to the context.
+func authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// Extract the token from metadata.
-		token, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
+		// Extract the authToken from metadata.
+		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
 
-		return handler(auth.WithAuthorizationToken(ctx, token), req)
+		return handler(auth.WithAuthorizationToken(ctx, authToken), req)
 	}
 }
 
@@ -86,7 +88,7 @@ func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			audienceInterceptor(),
-			tokenInterceptor(),
+			authTokenInterceptor(),
 			roleInterceptor(),
 		),
 	)
@@ -101,11 +103,11 @@ func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 	return server
 }
 
-// Create creates a new job.
-func (j *Jobs) Create(ctx context.Context, req *jobspb.CreateRequest) (res *jobspb.CreateResponse, err error) {
+// CreateJob creates a new job.
+func (j *Jobs) CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (res *jobspb.CreateJobResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
-		"App.Create",
+		"App.CreateJob",
 		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("name", req.GetName()),
@@ -126,7 +128,7 @@ func (j *Jobs) Create(ctx context.Context, req *jobspb.CreateRequest) (res *jobs
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	jobID, err := j.svc.Create(ctx, req.GetUserId(), req.GetName(), req.GetPayload(), req.GetKind(), req.GetInterval(), req.GetMaxRetry())
+	jobID, err := j.svc.CreateJob(ctx, req)
 	if err != nil {
 		j.logger.Error(
 			"failed to create job",
@@ -141,5 +143,43 @@ func (j *Jobs) Create(ctx context.Context, req *jobspb.CreateRequest) (res *jobs
 		zap.Any("ctx", ctx),
 		zap.String("job_id", jobID),
 	)
-	return &jobspb.CreateResponse{JobId: jobID}, nil
+	return &jobspb.CreateJobResponse{JobId: jobID}, nil
+}
+
+// GetJobByID returns the job details by ID.
+func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (res *jobspb.GetJobByIDResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.GetJobByID",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	job, err := j.svc.GetJobByID(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to fetch job details",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job details fetched successfully",
+		zap.Any("ctx", ctx),
+		zap.Any("job", job),
+	)
+	return job.ToProto(), nil
 }

@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	users "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -40,34 +41,34 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 	return m.recorder
 }
 
-// Login mocks base method.
-func (m *MockService) Login(ctx context.Context, email, password string) (string, string, error) {
+// LoginUser mocks base method.
+func (m *MockService) LoginUser(ctx context.Context, req *users.LoginUserRequest) (string, string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Login", ctx, email, password)
+	ret := m.ctrl.Call(m, "LoginUser", ctx, req)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }
 
-// Login indicates an expected call of Login.
-func (mr *MockServiceMockRecorder) Login(ctx, email, password any) *gomock.Call {
+// LoginUser indicates an expected call of LoginUser.
+func (mr *MockServiceMockRecorder) LoginUser(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Login", reflect.TypeOf((*MockService)(nil).Login), ctx, email, password)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoginUser", reflect.TypeOf((*MockService)(nil).LoginUser), ctx, req)
 }
 
-// Register mocks base method.
-func (m *MockService) Register(ctx context.Context, email, password string) (string, string, error) {
+// RegisterUser mocks base method.
+func (m *MockService) RegisterUser(ctx context.Context, req *users.RegisterUserRequest) (string, string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Register", ctx, email, password)
+	ret := m.ctrl.Call(m, "RegisterUser", ctx, req)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }
 
-// Register indicates an expected call of Register.
-func (mr *MockServiceMockRecorder) Register(ctx, email, password any) *gomock.Call {
+// RegisterUser indicates an expected call of RegisterUser.
+func (mr *MockServiceMockRecorder) RegisterUser(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockService)(nil).Register), ctx, email, password)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterUser", reflect.TypeOf((*MockService)(nil).RegisterUser), ctx, req)
 }

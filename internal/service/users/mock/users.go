@@ -40,34 +40,34 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
 }
 
-// Login mocks base method.
-func (m *MockRepository) Login(ctx context.Context, email, password string) (string, string, error) {
+// LoginUser mocks base method.
+func (m *MockRepository) LoginUser(ctx context.Context, email, password string) (string, string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Login", ctx, email, password)
+	ret := m.ctrl.Call(m, "LoginUser", ctx, email, password)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }
 
-// Login indicates an expected call of Login.
-func (mr *MockRepositoryMockRecorder) Login(ctx, email, password any) *gomock.Call {
+// LoginUser indicates an expected call of LoginUser.
+func (mr *MockRepositoryMockRecorder) LoginUser(ctx, email, password any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Login", reflect.TypeOf((*MockRepository)(nil).Login), ctx, email, password)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoginUser", reflect.TypeOf((*MockRepository)(nil).LoginUser), ctx, email, password)
 }
 
-// Register mocks base method.
-func (m *MockRepository) Register(ctx context.Context, email, password string) (string, string, error) {
+// RegisterUser mocks base method.
+func (m *MockRepository) RegisterUser(ctx context.Context, email, password string) (string, string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Register", ctx, email, password)
+	ret := m.ctrl.Call(m, "RegisterUser", ctx, email, password)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }
 
-// Register indicates an expected call of Register.
-func (mr *MockRepositoryMockRecorder) Register(ctx, email, password any) *gomock.Call {
+// RegisterUser indicates an expected call of RegisterUser.
+func (mr *MockRepositoryMockRecorder) RegisterUser(ctx, email, password any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockRepository)(nil).Register), ctx, email, password)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterUser", reflect.TypeOf((*MockRepository)(nil).RegisterUser), ctx, email, password)
 }

@@ -16,10 +16,10 @@ type registerRequest struct {
 	Password string `json:"password"`
 }
 
-// handleRegister handles the register request.
+// handleRegisterUser handles the register request.
 //
 //nolint:dupl // it's okay to have similar code for different handlers
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -27,7 +27,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var header metadata.MD
-	res, err := s.usersClient.Register(r.Context(), &userpb.RegisterRequest{
+	res, err := s.usersClient.RegisterUser(r.Context(), &userpb.RegisterUserRequest{
 		Email:    req.Email,
 		Password: req.Password,
 	}, grpc.Header(&header))
@@ -72,10 +72,10 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// handleLogin handles the login request.
+// handleLoginUser handles the login request.
 //
 //nolint:dupl // it's okay to have similar code for different handlers
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -83,7 +83,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var header metadata.MD
-	res, err := s.usersClient.Login(r.Context(), &userpb.LoginRequest{
+	res, err := s.usersClient.LoginUser(r.Context(), &userpb.LoginUserRequest{
 		Email:    req.Email,
 		Password: req.Password,
 	}, grpc.Header(&header))

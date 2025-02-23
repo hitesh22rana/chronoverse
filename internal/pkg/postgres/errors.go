@@ -21,3 +21,13 @@ func (db *Postgres) IsUniqueViolation(err error) bool {
 func (db *Postgres) IsNoRows(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
 }
+
+// IsInvalidTextRepresentation checks if the error is an invalid text representation error.
+func (db *Postgres) IsInvalidTextRepresentation(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+
+	return pgErr.Code == "22P02"
+}

@@ -117,6 +117,14 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 	rows, _ := r.pg.Query(ctx, query, jobID)
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[model.GetJobByIDResponse])
 	if err != nil {
+		if r.pg.IsNoRows(err) {
+			err = status.Errorf(codes.NotFound, "job not found: %v", err)
+			return nil, err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
+			return nil, err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to get job: %v", err)
 		return nil, err
 	}
@@ -125,6 +133,8 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 }
 
 // ListJobsByUserID returns jobs by user ID.
+//
+//nolint:dupl // The error handling is different for each function.
 func (r *Repository) ListJobsByUserID(ctx context.Context, userID string) (res *model.ListJobsByUserIDResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobsByUserID")
 	defer func() {
@@ -145,6 +155,11 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID string) (res *
 	rows, _ := r.pg.Query(ctx, query, userID)
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.JobByUserIDResponse])
 	if err != nil {
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+			return nil, err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to list all jobs: %v", err)
 		return nil, err
 	}
@@ -153,6 +168,8 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID string) (res *
 }
 
 // ListScheduledJobsByJobID returns scheduled jobs by job ID.
+//
+//nolint:dupl // The error handling is different for each function.
 func (r *Repository) ListScheduledJobsByJobID(ctx context.Context, jobID string) (res *model.ListScheduledJobsByJobIDResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListScheduledJobsByJobID")
 	defer func() {
@@ -173,6 +190,11 @@ func (r *Repository) ListScheduledJobsByJobID(ctx context.Context, jobID string)
 	rows, _ := r.pg.Query(ctx, query, jobID)
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.ScheduledJobByJobIDResponse])
 	if err != nil {
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
+			return nil, err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to list all scheduled jobs: %v", err)
 		return nil, err
 	}

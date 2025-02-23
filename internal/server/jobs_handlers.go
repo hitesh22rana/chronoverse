@@ -81,3 +81,59 @@ func (s *Server) handleGetJobByID(w http.ResponseWriter, r *http.Request) {
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
 }
+
+// handleListJobsByUserID handles the list jobs by user ID request.
+func (s *Server) handleListJobsByUserID(w http.ResponseWriter, r *http.Request) {
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// ListJobsByUserID lists the jobs by user ID.
+	res, err := s.jobsClient.ListJobsByUserID(r.Context(), &jobspb.ListJobsByUserIDRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to list jobs")
+		return
+	}
+
+	// Write the response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(res)
+}
+
+// handleListScheduledJobsByJobID handles the list scheduled jobs by job ID request.
+func (s *Server) handleListScheduledJobsByJobID(w http.ResponseWriter, r *http.Request) {
+	// Get the job ID from the path	parameters
+	jobID := r.PathValue("id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// ListScheduledJobsByJobID lists the scheduled jobs by job ID.
+	res, err := s.jobsClient.ListScheduledJobsByJobID(r.Context(), &jobspb.ListScheduledJobsByJobIDRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to list scheduled jobs")
+		return
+	}
+
+	// Write the response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(res)
+}

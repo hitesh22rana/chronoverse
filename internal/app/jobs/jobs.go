@@ -27,6 +27,8 @@ import (
 type Service interface {
 	CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (string, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*model.GetJobByIDResponse, error)
+	ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserIDRequest) (*model.ListJobsByUserIDResponse, error)
+	ListScheduledJobsByJobID(ctx context.Context, req *jobspb.ListScheduledJobsByJobIDRequest) (*model.ListScheduledJobsByJobIDResponse, error)
 }
 
 // Config represents the jobs-service configuration.
@@ -147,6 +149,8 @@ func (j *Jobs) CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (res
 }
 
 // GetJobByID returns the job details by ID.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (res *jobspb.GetJobByIDResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
@@ -182,4 +186,84 @@ func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (r
 		zap.Any("job", job),
 	)
 	return job.ToProto(), nil
+}
+
+// ListJobsByUserID returns the jobs by user ID.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (j *Jobs) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserIDRequest) (res *jobspb.ListJobsByUserIDResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.ListJobsByUserID",
+		trace.WithAttributes(
+			attribute.String("user_id", req.GetUserId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	jobs, err := j.svc.ListJobsByUserID(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to fetch all jobs by user ID",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"jobs details fetched successfully",
+		zap.Any("ctx", ctx),
+		zap.Any("jobs", jobs),
+	)
+	return jobs.ToProto(), nil
+}
+
+// ListScheduledJobsByJobID returns the scheduled jobs by job ID.
+//
+//nolint:dupl,lll // It's okay to have similar code for different methods.
+func (j *Jobs) ListScheduledJobsByJobID(ctx context.Context, req *jobspb.ListScheduledJobsByJobIDRequest) (res *jobspb.ListScheduledJobsByJobIDResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.ListScheduledJobsByJobID",
+		trace.WithAttributes(
+			attribute.String("job_id", req.GetJobId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	scheduledJobs, err := j.svc.ListScheduledJobsByJobID(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to fetch scheduled jobs by JobID",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"scheduled jobs fetched successfully",
+		zap.Any("ctx", ctx),
+		zap.Any("scheduled_jobs", scheduledJobs),
+	)
+	return scheduledJobs.ToProto(), nil
 }

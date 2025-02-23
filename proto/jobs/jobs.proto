@@ -36,13 +36,13 @@ message GetJobByIDResponse {
     string terminated_at = 8; // Time the job was terminated
 }
 
-// ListAllJobsByUserIDRequest contains the details needed to list all jobs.
-message ListAllJobsByUserIDRequest {
+// ListJobsByUserIDRequest contains the details needed to list all jobs.
+message ListJobsByUserIDRequest {
     string user_id = 1; // ID of the user
 }
 
-// ListAllJobsByUserIDResponse contains the result of a job listing attempt.
-message ListAllJobsByUserIDResponse {
+// JobsByUserIDResponse contains the result of a job listing attempt.
+message JobsByUserIDResponse {
     string id            = 1; // ID of the job
     string name          = 2; // Name of the job
     string payload       = 3; // JSON string for payload
@@ -53,22 +53,31 @@ message ListAllJobsByUserIDResponse {
     string terminated_at = 8; // Time the job was terminated
 }
 
-// ListAllScheduledJobsByIDRequest contains the details needed to list all scheduled jobs for a job_id.
-message ListAllScheduledJobsByIDRequest {
-    string id = 1; // ID of the job
+// ListJobsByUserIDResponse contains the result of a job listing attempt.
+message ListJobsByUserIDResponse {
+    repeated JobsByUserIDResponse jobs = 1;
 }
 
-// ListAllScheduledJobsByIDResponse contains the result of a scheduled job listing attempt.
-message ListAllScheduledJobsByIDResponse {
+// ListScheduledJobsByJobIDRequest contains the details needed to list all scheduled jobs for a job_id.
+message ListScheduledJobsByJobIDRequest {
+    string job_id = 1; // ID of the job
+}
+
+// ScheduledJobsByIDResponse contains the result of a scheduled job listing attempt.
+message ScheduledJobsByIDResponse {
     string id           = 1; // ID of the scheduled job
     string status       = 2; // Status of the scheduled job
     string scheduled_at = 3; // Time the job is scheduled to run
-    string retry_count  = 4; // Number of retries
-    string max_retry    = 5; // Maximum number of retries
+    int32 retry_count   = 4; // Number of retries
+    int32 max_retry     = 5; // Maximum number of retries
     string started_at   = 6; // Time the job was started
     string completed_at = 7; // Time the job was completed
     string created_at   = 8; // Time the job was created
     string updated_at   = 9; // Time the job was last updated
+}
+
+message ListScheduledJobsByJobIDResponse {
+    repeated ScheduledJobsByIDResponse scheduled_jobs = 1;
 }
 
 // JobsService handles job related operations.
@@ -79,9 +88,9 @@ service JobsService {
     // GetJobByID a job by ID.
     rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
 
-    // ListAllJobsByUserID returns a stream of all jobs.
-    rpc ListAllJobsByUserID(ListAllJobsByUserIDRequest) returns (stream ListAllJobsByUserIDResponse) {}
+    // ListJobsByUserID returns a list of all jobs for a user_id.
+    rpc ListJobsByUserID(ListJobsByUserIDRequest) returns (ListJobsByUserIDResponse) {}
 
-    // ListAllScheduledJobsByID returns a stream of all scheduled jobs for a job_id.
-    rpc ListAllScheduledJobsByID(ListAllScheduledJobsByIDRequest) returns (stream ListAllScheduledJobsByIDResponse) {}
+    // ListScheduledJobsByJobID returns a list of all scheduled jobs for a job_id.
+    rpc ListScheduledJobsByJobID(ListScheduledJobsByJobIDRequest) returns (ListScheduledJobsByJobIDResponse) {}
 }

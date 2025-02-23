@@ -70,3 +70,33 @@ func (mr *MockRepositoryMockRecorder) GetJobByID(ctx, jobID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobByID", reflect.TypeOf((*MockRepository)(nil).GetJobByID), ctx, jobID)
 }
+
+// ListJobsByUserID mocks base method.
+func (m *MockRepository) ListJobsByUserID(ctx context.Context, userID string) (*model.ListJobsByUserIDResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListJobsByUserID", ctx, userID)
+	ret0, _ := ret[0].(*model.ListJobsByUserIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListJobsByUserID indicates an expected call of ListJobsByUserID.
+func (mr *MockRepositoryMockRecorder) ListJobsByUserID(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListJobsByUserID", reflect.TypeOf((*MockRepository)(nil).ListJobsByUserID), ctx, userID)
+}
+
+// ListScheduledJobsByJobID mocks base method.
+func (m *MockRepository) ListScheduledJobsByJobID(ctx context.Context, jobID string) (*model.ListScheduledJobsByJobIDResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListScheduledJobsByJobID", ctx, jobID)
+	ret0, _ := ret[0].(*model.ListScheduledJobsByJobIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListScheduledJobsByJobID indicates an expected call of ListScheduledJobsByJobID.
+func (mr *MockRepositoryMockRecorder) ListScheduledJobsByJobID(ctx, jobID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListScheduledJobsByJobID", reflect.TypeOf((*MockRepository)(nil).ListScheduledJobsByJobID), ctx, jobID)
+}

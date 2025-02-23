@@ -115,11 +115,67 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 
 	//nolint:errcheck // The error is handled in the next line
 	rows, _ := r.pg.Query(ctx, query, jobID)
-	data, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[model.GetJobByIDResponse])
+	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[model.GetJobByIDResponse])
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to get job: %v", err)
 		return nil, err
 	}
 
-	return &data, nil
+	return res, nil
+}
+
+// ListJobsByUserID returns jobs by user ID.
+func (r *Repository) ListJobsByUserID(ctx context.Context, userID string) (res *model.ListJobsByUserIDResponse, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.ListJobsByUserID")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		SELECT id, name, payload, kind, interval, created_at, updated_at, terminated_at
+		FROM %s
+		WHERE user_id = $1
+	`, jobsTable)
+
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, userID)
+	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.JobByUserIDResponse])
+	if err != nil {
+		err = status.Errorf(codes.Internal, "failed to list all jobs: %v", err)
+		return nil, err
+	}
+
+	return &model.ListJobsByUserIDResponse{Jobs: data}, nil
+}
+
+// ListScheduledJobsByJobID returns scheduled jobs by job ID.
+func (r *Repository) ListScheduledJobsByJobID(ctx context.Context, jobID string) (res *model.ListScheduledJobsByJobIDResponse, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.ListScheduledJobsByJobID")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		SELECT id, status, scheduled_at, retry_count, max_retry, started_at, completed_at, created_at, updated_at
+		FROM %s
+		WHERE job_id = $1
+	`, scheduledJobsTable)
+
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, jobID)
+	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.ScheduledJobByJobIDResponse])
+	if err != nil {
+		err = status.Errorf(codes.Internal, "failed to list all scheduled jobs: %v", err)
+		return nil, err
+	}
+
+	return &model.ListScheduledJobsByJobIDResponse{ScheduledJobs: data}, nil
 }

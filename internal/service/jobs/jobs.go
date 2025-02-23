@@ -23,6 +23,8 @@ import (
 type Repository interface {
 	CreateJob(ctx context.Context, userID, name, payload, kind string, interval, maxRetries int32) (string, error)
 	GetJobByID(ctx context.Context, jobID string) (*model.GetJobByIDResponse, error)
+	ListJobsByUserID(ctx context.Context, userID string) (*model.ListJobsByUserIDResponse, error)
+	ListScheduledJobsByJobID(ctx context.Context, jobID string) (*model.ListScheduledJobsByJobIDResponse, error)
 }
 
 // Service provides job related operations.
@@ -127,6 +129,76 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 
 	// Get the job details
 	res, err = s.repo.GetJobByID(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// ListJobsByUserIDRequest holds the request parameters for listing jobs by user ID.
+type ListJobsByUserIDRequest struct {
+	UserID string `validate:"required"`
+}
+
+// ListJobsByUserID returns jobs by user ID.
+func (s *Service) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserIDRequest) (res *model.ListJobsByUserIDResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.ListJobsByUserID")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&ListJobsByUserIDRequest{
+		UserID: req.GetUserId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// List all jobs by user ID
+	res, err = s.repo.ListJobsByUserID(ctx, req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// ListScheduledJobsByJobIDRequest holds the request parameters for listing scheduled jobs by job ID.
+type ListScheduledJobsByJobIDRequest struct {
+	JobID string `validate:"required"`
+}
+
+// ListScheduledJobsByJobID returns scheduled jobs by job ID.
+//
+//nolint:lll // It's okay to have big function signature.
+func (s *Service) ListScheduledJobsByJobID(ctx context.Context, req *jobspb.ListScheduledJobsByJobIDRequest) (res *model.ListScheduledJobsByJobIDResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.ListScheduledJobsByJobID")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&ListScheduledJobsByJobIDRequest{
+		JobID: req.GetJobId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// List all scheduled jobs by job ID
+	res, err = s.repo.ListScheduledJobsByJobID(ctx, req.GetJobId())
 	if err != nil {
 		return nil, err
 	}

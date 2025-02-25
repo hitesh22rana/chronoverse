@@ -128,7 +128,7 @@ func TestCreateJob(t *testing.T) {
 				).Return("job_id", nil)
 			},
 			res: &jobspb.CreateJobResponse{
-				JobId: "job_id",
+				Id: "job_id",
 			},
 			isErr: false,
 		},
@@ -171,6 +171,14 @@ func TestCreateJob(t *testing.T) {
 					return metadata.AppendToOutgoingContext(
 						context.Background(),
 					)
+				},
+				req: &jobspb.CreateJobRequest{
+					UserId:   "user1",
+					Name:     "job1",
+					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:     "HEARTBEAT",
+					Interval: 1,
+					MaxRetry: 3,
 				},
 			},
 			mock:  func(_ *jobspb.CreateJobRequest) {},
@@ -225,6 +233,335 @@ func TestCreateJob(t *testing.T) {
 			if tt.isErr {
 				if err == nil {
 					t.Error("CreateJob() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestUpdateJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+
+	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.UpdateJobRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.UpdateJobRequest)
+		res   *jobspb.UpdateJobResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								context.Background(), "users-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateJobRequest{
+					Id:       "job_id",
+					UserId:   "user1",
+					Name:     "job1",
+					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:     "HEARTBEAT",
+					Interval: 1,
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobRequest) {
+				svc.EXPECT().UpdateJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil)
+			},
+			res:   &jobspb.UpdateJobResponse{},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								context.Background(), "users-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateJobRequest{
+					Id:       "",
+					UserId:   "",
+					Name:     "",
+					Payload:  "",
+					Kind:     "",
+					Interval: 0,
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobRequest) {
+				svc.EXPECT().UpdateJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.InvalidArgument, "id, user_id, name, payload, kind, interval, and max_retry are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+					)
+				},
+				req: &jobspb.UpdateJobRequest{
+					Id:       "job_id",
+					UserId:   "user1",
+					Name:     "job1",
+					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:     "HEARTBEAT",
+					Interval: 1,
+				},
+			},
+			mock:  func(_ *jobspb.UpdateJobRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								context.Background(), "users-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateJobRequest{
+					Id:       "job_id",
+					UserId:   "user1",
+					Name:     "job1",
+					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:     "HEARTBEAT",
+					Interval: 1,
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobRequest) {
+				svc.EXPECT().UpdateJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.UpdateJob(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("UpdateJob() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("UpdateJob() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestGetJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+
+	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.GetJobRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.GetJobRequest)
+		res   *jobspb.GetJobResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								context.Background(), "users-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.GetJobRequest) {
+				svc.EXPECT().GetJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(&model.GetJobResponse{
+					ID:        "job_id",
+					Name:      "job1",
+					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:      "HEARTBEAT",
+					Interval:  1,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+				}, nil)
+			},
+			res: &jobspb.GetJobResponse{
+				Id:           "job_id",
+				Name:         "job1",
+				Payload:      `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:         "HEARTBEAT",
+				Interval:     1,
+				CreatedAt:    time.Now().Format(time.RFC3339),
+				UpdatedAt:    time.Now().Format(time.RFC3339),
+				TerminatedAt: time.Now().Format(time.RFC3339),
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								context.Background(), "users-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetJobRequest{
+					Id:     "",
+					UserId: "",
+				},
+			},
+			mock: func(_ *jobspb.GetJobRequest) {
+				svc.EXPECT().GetJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.InvalidArgument, "user_id and name are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						context.Background(),
+					)
+				},
+				req: &jobspb.GetJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock:  func(_ *jobspb.GetJobRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								context.Background(), "users-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.GetJobRequest) {
+				svc.EXPECT().GetJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.GetJob(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("GetJob() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("GetJob() error = nil, want error")
 				}
 				return
 			}
@@ -336,6 +673,9 @@ func TestGetJobByID(t *testing.T) {
 					return metadata.AppendToOutgoingContext(
 						context.Background(),
 					)
+				},
+				req: &jobspb.GetJobByIDRequest{
+					Id: "job_id",
 				},
 			},
 			mock:  func(_ *jobspb.GetJobByIDRequest) {},
@@ -505,6 +845,9 @@ func TestListJobsByUserID(t *testing.T) {
 						context.Background(),
 					)
 				},
+				req: &jobspb.ListJobsByUserIDRequest{
+					UserId: "user1",
+				},
 			},
 			mock:  func(_ *jobspb.ListJobsByUserIDRequest) {},
 			res:   nil,
@@ -560,7 +903,7 @@ func TestListJobsByUserID(t *testing.T) {
 	}
 }
 
-func TestListScheduledJobsByJobID(t *testing.T) {
+func TestListScheduledJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
@@ -572,14 +915,14 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 
 	type args struct {
 		getCtx func() context.Context
-		req    *jobspb.ListScheduledJobsByJobIDRequest
+		req    *jobspb.ListScheduledJobsRequest
 	}
 
 	tests := []struct {
 		name  string
 		args  args
-		mock  func(*jobspb.ListScheduledJobsByJobIDRequest)
-		res   *jobspb.ListScheduledJobsByJobIDResponse
+		mock  func(*jobspb.ListScheduledJobsRequest)
+		res   *jobspb.ListScheduledJobsResponse
 		isErr bool
 	}{
 		{
@@ -596,15 +939,16 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 						"token",
 					)
 				},
-				req: &jobspb.ListScheduledJobsByJobIDRequest{
-					JobId: "job_id",
+				req: &jobspb.ListScheduledJobsRequest{
+					JobId:  "job_id",
+					UserId: "user_id",
 				},
 			},
-			mock: func(_ *jobspb.ListScheduledJobsByJobIDRequest) {
-				svc.EXPECT().ListScheduledJobsByJobID(
+			mock: func(_ *jobspb.ListScheduledJobsRequest) {
+				svc.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					gomock.Any(),
-				).Return(&model.ListScheduledJobsByJobIDResponse{
+				).Return(&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
 							ID:          "scheduled_job_id",
@@ -626,8 +970,8 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 					},
 				}, nil)
 			},
-			res: &jobspb.ListScheduledJobsByJobIDResponse{
-				ScheduledJobs: []*jobspb.ScheduledJobsByIDResponse{
+			res: &jobspb.ListScheduledJobsResponse{
+				ScheduledJobs: []*jobspb.ScheduledJobsResponse{
 					{
 						Id:          "scheduled_job_id",
 						Status:      "PENDING",
@@ -657,12 +1001,13 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 						"token",
 					)
 				},
-				req: &jobspb.ListScheduledJobsByJobIDRequest{
-					JobId: "",
+				req: &jobspb.ListScheduledJobsRequest{
+					JobId:  "",
+					UserId: "user_id",
 				},
 			},
-			mock: func(_ *jobspb.ListScheduledJobsByJobIDRequest) {
-				svc.EXPECT().ListScheduledJobsByJobID(
+			mock: func(_ *jobspb.ListScheduledJobsRequest) {
+				svc.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil, status.Error(codes.InvalidArgument, "job_id is required"))
@@ -678,8 +1023,12 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 						context.Background(),
 					)
 				},
+				req: &jobspb.ListScheduledJobsRequest{
+					JobId:  "job_id",
+					UserId: "user_id",
+				},
 			},
-			mock:  func(_ *jobspb.ListScheduledJobsByJobIDRequest) {},
+			mock:  func(_ *jobspb.ListScheduledJobsRequest) {},
 			res:   nil,
 			isErr: true,
 		},
@@ -697,12 +1046,13 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 						"token",
 					)
 				},
-				req: &jobspb.ListScheduledJobsByJobIDRequest{
-					JobId: "job_id",
+				req: &jobspb.ListScheduledJobsRequest{
+					JobId:  "job_id",
+					UserId: "user_id",
 				},
 			},
-			mock: func(_ *jobspb.ListScheduledJobsByJobIDRequest) {
-				svc.EXPECT().ListScheduledJobsByJobID(
+			mock: func(_ *jobspb.ListScheduledJobsRequest) {
+				svc.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
@@ -717,15 +1067,15 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.ListScheduledJobsByJobID(tt.args.getCtx(), tt.args.req)
+			_, err := client.ListScheduledJobs(tt.args.getCtx(), tt.args.req)
 			if (err != nil) != tt.isErr {
-				t.Errorf("ListScheduledJobsByJobID() error = %v, wantErr %v", err, tt.isErr)
+				t.Errorf("ListScheduledJobs() error = %v, wantErr %v", err, tt.isErr)
 				return
 			}
 
 			if tt.isErr {
 				if err == nil {
-					t.Error("ListScheduledJobsByJobID() error = nil, want error")
+					t.Error("ListScheduledJobs() error = nil, want error")
 				}
 				return
 			}

@@ -168,16 +168,36 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		})
 	router.HandleFunc(
 		"/jobs/{id}",
-		s.withAllowedMethodMiddleware(
-			http.MethodGet,
-			s.withVerifySessionMiddleware(
-				withAttachBasicMetadataHeaderMiddleware(
-					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-						s.handleGetJobByID,
+		func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				s.withAllowedMethodMiddleware(
+					http.MethodGet,
+					s.withVerifySessionMiddleware(
+						withAttachBasicMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+								s.handleGetJob,
+							),
+						),
 					),
-				),
-			),
-		),
+				).ServeHTTP(w, r)
+			case http.MethodPut:
+				s.withAllowedMethodMiddleware(
+					http.MethodPut,
+					s.withVerifyCSRFMiddleware(
+						s.withVerifySessionMiddleware(
+							withAttachBasicMetadataHeaderMiddleware(
+								s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+									s.handleUpdateJob,
+								),
+							),
+						),
+					),
+				).ServeHTTP(w, r)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		},
 	)
 	router.HandleFunc(
 		"/jobs/{id}/scheduled",
@@ -186,7 +206,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			s.withVerifySessionMiddleware(
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-						s.handleListScheduledJobsByJobID,
+						s.handleListScheduledJobs,
 					),
 				),
 			),

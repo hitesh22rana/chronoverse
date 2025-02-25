@@ -143,6 +143,320 @@ func TestCreateJob(t *testing.T) {
 	}
 }
 
+func TestUpdateJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := jobsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := auth.New(validator.New(), repo)
+
+	type want struct {
+		jobID string
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *jobspb.UpdateJobRequest
+		mock  func(req *jobspb.UpdateJobRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &jobspb.UpdateJobRequest{
+				Id:       "job_id",
+				UserId:   "user1",
+				Name:     "job1",
+				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:     "HEARTBEAT",
+				Interval: 1,
+			},
+			mock: func(req *jobspb.UpdateJobRequest) {
+				repo.EXPECT().UpdateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+				).Return(nil)
+			},
+			want: want{
+				jobID: "job_id",
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			req: &jobspb.UpdateJobRequest{
+				Id:       "",
+				UserId:   "user1",
+				Name:     "job1",
+				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:     "",
+				Interval: 1,
+			},
+			mock:  func(_ *jobspb.UpdateJobRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: invalid payload",
+			req: &jobspb.UpdateJobRequest{
+				Id:       "job_id",
+				UserId:   "user1",
+				Name:     "job1",
+				Payload:  `invalid json`,
+				Kind:     "HEARTBEAT",
+				Interval: 1,
+			},
+			mock:  func(_ *jobspb.UpdateJobRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: job not found",
+			req: &jobspb.UpdateJobRequest{
+				Id:       "invalid_job_id",
+				UserId:   "user1",
+				Name:     "job1",
+				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:     "HEARTBEAT",
+				Interval: 1,
+			},
+			mock: func(req *jobspb.UpdateJobRequest) {
+				repo.EXPECT().UpdateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+				).Return(status.Error(codes.NotFound, "job not found"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: job not owned by user",
+			req: &jobspb.UpdateJobRequest{
+				Id:       "job_id",
+				UserId:   "invalid_user_id",
+				Name:     "job1",
+				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:     "HEARTBEAT",
+				Interval: 1,
+			},
+			mock: func(req *jobspb.UpdateJobRequest) {
+				repo.EXPECT().UpdateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+				).Return(status.Error(codes.NotFound, "job not found or not owned by user"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &jobspb.UpdateJobRequest{
+				Id:       "job_id",
+				UserId:   "user1",
+				Name:     "job1",
+				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:     "HEARTBEAT",
+				Interval: 1,
+			},
+			mock: func(req *jobspb.UpdateJobRequest) {
+				repo.EXPECT().UpdateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.UpdateJob(context.Background(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+		})
+	}
+}
+
+func TestGetJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := jobsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := auth.New(validator.New(), repo)
+
+	type want struct {
+		*model.GetJobResponse
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *jobspb.GetJobRequest
+		mock  func(req *jobspb.GetJobRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &jobspb.GetJobRequest{
+				Id:     "job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.GetJobRequest) {
+				repo.EXPECT().GetJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(&model.GetJobResponse{
+					ID:        "job_id",
+					Name:      "job1",
+					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:      "HEARTBEAT",
+					Interval:  1,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+				}, nil)
+			},
+			want: want{
+				&model.GetJobResponse{
+					ID:        "job_id",
+					Name:      "job1",
+					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:      "HEARTBEAT",
+					Interval:  1,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			req: &jobspb.GetJobRequest{
+				Id:     "",
+				UserId: "user_id",
+			},
+			mock:  func(_ *jobspb.GetJobRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: invalid user",
+			req: &jobspb.GetJobRequest{
+				Id:     "job_id",
+				UserId: "invalid_user_id",
+			},
+			mock: func(req *jobspb.GetJobRequest) {
+				repo.EXPECT().GetJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.NotFound, "job not found or not owned by user"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: job not found",
+			req: &jobspb.GetJobRequest{
+				Id:     "invalid_job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.GetJobRequest) {
+				repo.EXPECT().GetJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &jobspb.GetJobRequest{
+				Id:     "job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.GetJobRequest) {
+				repo.EXPECT().GetJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := s.GetJob(context.Background(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+		})
+	}
+}
+
 func TestGetJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -393,7 +707,7 @@ func TestListJobsByUserID(t *testing.T) {
 	}
 }
 
-func TestListScheduledJobsByJobID(t *testing.T) {
+func TestListScheduledJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	// Create a mock repository
@@ -403,27 +717,29 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 	s := auth.New(validator.New(), repo)
 
 	type want struct {
-		*model.ListScheduledJobsByJobIDResponse
+		*model.ListScheduledJobsResponse
 	}
 
 	// Test cases
 	tests := []struct {
 		name  string
-		req   *jobspb.ListScheduledJobsByJobIDRequest
-		mock  func(req *jobspb.ListScheduledJobsByJobIDRequest)
+		req   *jobspb.ListScheduledJobsRequest
+		mock  func(req *jobspb.ListScheduledJobsRequest)
 		want  want
 		isErr bool
 	}{
 		{
 			name: "success",
-			req: &jobspb.ListScheduledJobsByJobIDRequest{
-				JobId: "job_id",
+			req: &jobspb.ListScheduledJobsRequest{
+				JobId:  "job_id",
+				UserId: "user_id",
 			},
-			mock: func(req *jobspb.ListScheduledJobsByJobIDRequest) {
-				repo.EXPECT().ListScheduledJobsByJobID(
+			mock: func(req *jobspb.ListScheduledJobsRequest) {
+				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
-				).Return(&model.ListScheduledJobsByJobIDResponse{
+					req.GetUserId(),
+				).Return(&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
 							ID:          "scheduled_job_id",
@@ -446,7 +762,7 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 				}, nil)
 			},
 			want: want{
-				&model.ListScheduledJobsByJobIDResponse{
+				&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
 							ID:          "scheduled_job_id",
@@ -472,22 +788,25 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 		},
 		{
 			name: "error: missing job ID",
-			req: &jobspb.ListScheduledJobsByJobIDRequest{
-				JobId: "",
+			req: &jobspb.ListScheduledJobsRequest{
+				JobId:  "",
+				UserId: "user_id",
 			},
-			mock:  func(_ *jobspb.ListScheduledJobsByJobIDRequest) {},
+			mock:  func(_ *jobspb.ListScheduledJobsRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
 			name: "error: job not found",
-			req: &jobspb.ListScheduledJobsByJobIDRequest{
-				JobId: "invalid_job_id",
+			req: &jobspb.ListScheduledJobsRequest{
+				JobId:  "invalid_job_id",
+				UserId: "user_id",
 			},
-			mock: func(req *jobspb.ListScheduledJobsByJobIDRequest) {
-				repo.EXPECT().ListScheduledJobsByJobID(
+			mock: func(req *jobspb.ListScheduledJobsRequest) {
+				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
+					req.GetUserId(),
 				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
@@ -495,13 +814,15 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 		},
 		{
 			name: "error: internal server error",
-			req: &jobspb.ListScheduledJobsByJobIDRequest{
-				JobId: "job_id",
+			req: &jobspb.ListScheduledJobsRequest{
+				JobId:  "job_id",
+				UserId: "user_id",
 			},
-			mock: func(req *jobspb.ListScheduledJobsByJobIDRequest) {
-				repo.EXPECT().ListScheduledJobsByJobID(
+			mock: func(req *jobspb.ListScheduledJobsRequest) {
+				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
+					req.GetUserId(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -514,7 +835,7 @@ func TestListScheduledJobsByJobID(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.ListScheduledJobsByJobID(context.Background(), tt.req)
+			_, err := s.ListScheduledJobs(context.Background(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")

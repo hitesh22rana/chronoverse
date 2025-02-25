@@ -21,10 +21,12 @@ import (
 
 // Repository provides job related operations.
 type Repository interface {
-	CreateJob(ctx context.Context, userID, name, payload, kind string, interval, maxRetries int32) (string, error)
+	CreateJob(ctx context.Context, userID, name, payload, kind string, interval, maxRetry int32) (string, error)
+	UpdateJob(ctx context.Context, jobID, userID, name, payload, kind string, interval int32) error
+	GetJob(ctx context.Context, jobID, userID string) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*model.GetJobByIDResponse, error)
 	ListJobsByUserID(ctx context.Context, userID string) (*model.ListJobsByUserIDResponse, error)
-	ListScheduledJobsByJobID(ctx context.Context, jobID string) (*model.ListScheduledJobsByJobIDResponse, error)
+	ListScheduledJobs(ctx context.Context, jobID, userID string) (*model.ListScheduledJobsResponse, error)
 }
 
 // Service provides job related operations.
@@ -102,6 +104,98 @@ func (s *Service) CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (
 	return jobID, nil
 }
 
+// UpdateJobRequest holds the request parameters for updating a job.
+type UpdateJobRequest struct {
+	ID       string `validate:"required"`
+	UserID   string `validate:"required"`
+	Name     string `validate:"required"`
+	Payload  string `validate:"required"`
+	Kind     string `validate:"required"`
+	Interval int32  `validate:"required"`
+}
+
+// UpdateJob updates the job details.
+func (s *Service) UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.UpdateJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	if err = s.validator.Struct(&UpdateJobRequest{
+		ID:       req.GetId(),
+		UserID:   req.GetUserId(),
+		Name:     req.GetName(),
+		Payload:  req.GetPayload(),
+		Kind:     req.GetKind(),
+		Interval: req.GetInterval(),
+	}); err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return err
+	}
+
+	// Validate the JSON payload
+	var _payload map[string]interface{}
+	if err = json.Unmarshal([]byte(req.GetPayload()), &_payload); err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
+		return err
+	}
+
+	// Update the job details
+	err = s.repo.UpdateJob(
+		ctx,
+		req.GetId(),
+		req.GetUserId(),
+		req.GetName(),
+		req.GetPayload(),
+		req.GetKind(),
+		req.GetInterval(),
+	)
+	return err
+}
+
+// GetJobRequest holds the request parameters for getting a job.
+type GetJobRequest struct {
+	ID     string `validate:"required"`
+	UserID string `validate:"required"`
+}
+
+// GetJob returns the job details by ID and user ID.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (s *Service) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *model.GetJobResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.GetJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&GetJobRequest{
+		ID:     req.GetId(),
+		UserID: req.GetUserId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Get the job details
+	res, err = s.repo.GetJob(ctx, req.GetId(), req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
 // GetJobByIDRequest holds the request parameters for getting a job by ID.
 type GetJobByIDRequest struct {
 	ID string `validate:"required"`
@@ -170,16 +264,17 @@ func (s *Service) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUs
 	return res, nil
 }
 
-// ListScheduledJobsByJobIDRequest holds the request parameters for listing scheduled jobs by job ID.
-type ListScheduledJobsByJobIDRequest struct {
-	JobID string `validate:"required"`
+// ListScheduledJobsRequest holds the request parameters for listing scheduled jobs by job ID.
+type ListScheduledJobsRequest struct {
+	JobID  string `validate:"required"`
+	UserID string `validate:"required"`
 }
 
-// ListScheduledJobsByJobID returns scheduled jobs by job ID.
+// ListScheduledJobs returns scheduled jobs by job ID.
 //
-//nolint:lll // It's okay to have big function signature.
-func (s *Service) ListScheduledJobsByJobID(ctx context.Context, req *jobspb.ListScheduledJobsByJobIDRequest) (res *model.ListScheduledJobsByJobIDResponse, err error) {
-	ctx, span := s.tp.Start(ctx, "Service.ListScheduledJobsByJobID")
+//nolint:dupl // It's okay to have similar code for different methods.
+func (s *Service) ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJobsRequest) (res *model.ListScheduledJobsResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.ListScheduledJobs")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -189,8 +284,9 @@ func (s *Service) ListScheduledJobsByJobID(ctx context.Context, req *jobspb.List
 	}()
 
 	// Validate the request
-	err = s.validator.Struct(&ListScheduledJobsByJobIDRequest{
-		JobID: req.GetJobId(),
+	err = s.validator.Struct(&ListScheduledJobsRequest{
+		JobID:  req.GetJobId(),
+		UserID: req.GetUserId(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -198,7 +294,7 @@ func (s *Service) ListScheduledJobsByJobID(ctx context.Context, req *jobspb.List
 	}
 
 	// List all scheduled jobs by job ID
-	res, err = s.repo.ListScheduledJobsByJobID(ctx, req.GetJobId())
+	res, err = s.repo.ListScheduledJobs(ctx, req.GetJobId(), req.GetUserId())
 	if err != nil {
 		return nil, err
 	}

@@ -26,9 +26,11 @@ import (
 // Service provides job related operations.
 type Service interface {
 	CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (string, error)
+	UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) error
+	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*model.GetJobByIDResponse, error)
 	ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserIDRequest) (*model.ListJobsByUserIDResponse, error)
-	ListScheduledJobsByJobID(ctx context.Context, req *jobspb.ListScheduledJobsByJobIDRequest) (*model.ListScheduledJobsByJobIDResponse, error)
+	ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJobsRequest) (*model.ListScheduledJobsResponse, error)
 }
 
 // Config represents the jobs-service configuration.
@@ -47,7 +49,7 @@ type Jobs struct {
 
 // audienceInterceptor sets the audience from the metadata and adds it to the context.
 func audienceInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the audience from metadata.
 		audience, err := auth.ExtractAudienceFromMetadata(ctx)
 		if err != nil {
@@ -60,7 +62,7 @@ func audienceInterceptor() grpc.UnaryServerInterceptor {
 
 // roleInterceptor extracts the role from the metadata and adds it to the context.
 func roleInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the role from metadata.
 		role, err := auth.ExtractRoleFromMetadata(ctx)
 		if err != nil {
@@ -73,7 +75,7 @@ func roleInterceptor() grpc.UnaryServerInterceptor {
 
 // authTokenInterceptor extracts the authToken from metadata and adds it to the context.
 func authTokenInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the authToken from metadata.
 		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
@@ -145,10 +147,94 @@ func (j *Jobs) CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (res
 		zap.Any("ctx", ctx),
 		zap.String("job_id", jobID),
 	)
-	return &jobspb.CreateJobResponse{JobId: jobID}, nil
+	return &jobspb.CreateJobResponse{Id: jobID}, nil
+}
+
+// UpdateJob updates the job details.
+func (j *Jobs) UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) (res *jobspb.UpdateJobResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.UpdateJob",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
+			attribute.String("name", req.GetName()),
+			attribute.String("payload", req.GetPayload()),
+			attribute.String("kind", req.GetKind()),
+			attribute.Int("interval", int(req.GetInterval())),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	err = j.svc.UpdateJob(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to update job",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job updated successfully",
+		zap.Any("ctx", ctx),
+	)
+	return &jobspb.UpdateJobResponse{}, nil
+}
+
+// GetJob returns the job details by ID and user ID.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobspb.GetJobResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.GetJob",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	job, err := j.svc.GetJob(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to fetch job details",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job details fetched successfully",
+		zap.Any("ctx", ctx),
+		zap.Any("job", job),
+	)
+	return job.ToProto(), nil
 }
 
 // GetJobByID returns the job details by ID.
+// This is an internal method used by internal services, and it should not be exposed to the public.
 //
 //nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (res *jobspb.GetJobByIDResponse, err error) {
@@ -228,15 +314,16 @@ func (j *Jobs) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserI
 	return jobs.ToProto(), nil
 }
 
-// ListScheduledJobsByJobID returns the scheduled jobs by job ID.
+// ListScheduledJobs returns the scheduled jobs by job ID.
 //
-//nolint:dupl,lll // It's okay to have similar code for different methods.
-func (j *Jobs) ListScheduledJobsByJobID(ctx context.Context, req *jobspb.ListScheduledJobsByJobIDRequest) (res *jobspb.ListScheduledJobsByJobIDResponse, err error) {
+//nolint:dupl // It's okay to have similar code for different methods.
+func (j *Jobs) ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJobsRequest) (res *jobspb.ListScheduledJobsResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
-		"App.ListScheduledJobsByJobID",
+		"App.ListScheduledJobs",
 		trace.WithAttributes(
 			attribute.String("job_id", req.GetJobId()),
+			attribute.String("user_id", req.GetUserId()),
 		),
 	)
 	defer func() {
@@ -250,7 +337,7 @@ func (j *Jobs) ListScheduledJobsByJobID(ctx context.Context, req *jobspb.ListSch
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	scheduledJobs, err := j.svc.ListScheduledJobsByJobID(ctx, req)
+	scheduledJobs, err := j.svc.ListScheduledJobs(ctx, req)
 	if err != nil {
 		j.logger.Error(
 			"failed to fetch scheduled jobs by JobID",

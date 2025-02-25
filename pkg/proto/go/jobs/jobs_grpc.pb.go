@@ -19,10 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	JobsService_CreateJob_FullMethodName                = "/jobs.JobsService/CreateJob"
-	JobsService_GetJobByID_FullMethodName               = "/jobs.JobsService/GetJobByID"
-	JobsService_ListJobsByUserID_FullMethodName         = "/jobs.JobsService/ListJobsByUserID"
-	JobsService_ListScheduledJobsByJobID_FullMethodName = "/jobs.JobsService/ListScheduledJobsByJobID"
+	JobsService_CreateJob_FullMethodName         = "/jobs.JobsService/CreateJob"
+	JobsService_UpdateJob_FullMethodName         = "/jobs.JobsService/UpdateJob"
+	JobsService_GetJob_FullMethodName            = "/jobs.JobsService/GetJob"
+	JobsService_GetJobByID_FullMethodName        = "/jobs.JobsService/GetJobByID"
+	JobsService_ListJobsByUserID_FullMethodName  = "/jobs.JobsService/ListJobsByUserID"
+	JobsService_ListScheduledJobs_FullMethodName = "/jobs.JobsService/ListScheduledJobs"
 )
 
 // JobsServiceClient is the client API for JobsService service.
@@ -33,12 +35,17 @@ const (
 type JobsServiceClient interface {
 	// CreateJob a new job.
 	CreateJob(ctx context.Context, in *CreateJobRequest, opts ...grpc.CallOption) (*CreateJobResponse, error)
+	// UpdateJob an existing job.
+	UpdateJob(ctx context.Context, in *UpdateJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error)
+	// GetJob a job by ID and user_id.
+	GetJob(ctx context.Context, in *GetJobRequest, opts ...grpc.CallOption) (*GetJobResponse, error)
 	// GetJobByID a job by ID.
+	// This is an internal API and should not be exposed to the public.
 	GetJobByID(ctx context.Context, in *GetJobByIDRequest, opts ...grpc.CallOption) (*GetJobByIDResponse, error)
 	// ListJobsByUserID returns a list of all jobs for a user_id.
 	ListJobsByUserID(ctx context.Context, in *ListJobsByUserIDRequest, opts ...grpc.CallOption) (*ListJobsByUserIDResponse, error)
-	// ListScheduledJobsByJobID returns a list of all scheduled jobs for a job_id.
-	ListScheduledJobsByJobID(ctx context.Context, in *ListScheduledJobsByJobIDRequest, opts ...grpc.CallOption) (*ListScheduledJobsByJobIDResponse, error)
+	// ListScheduledJobs returns a list of all scheduled jobs for a job_id.
+	ListScheduledJobs(ctx context.Context, in *ListScheduledJobsRequest, opts ...grpc.CallOption) (*ListScheduledJobsResponse, error)
 }
 
 type jobsServiceClient struct {
@@ -53,6 +60,26 @@ func (c *jobsServiceClient) CreateJob(ctx context.Context, in *CreateJobRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateJobResponse)
 	err := c.cc.Invoke(ctx, JobsService_CreateJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) UpdateJob(ctx context.Context, in *UpdateJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateJobResponse)
+	err := c.cc.Invoke(ctx, JobsService_UpdateJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) GetJob(ctx context.Context, in *GetJobRequest, opts ...grpc.CallOption) (*GetJobResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetJobResponse)
+	err := c.cc.Invoke(ctx, JobsService_GetJob_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -79,10 +106,10 @@ func (c *jobsServiceClient) ListJobsByUserID(ctx context.Context, in *ListJobsBy
 	return out, nil
 }
 
-func (c *jobsServiceClient) ListScheduledJobsByJobID(ctx context.Context, in *ListScheduledJobsByJobIDRequest, opts ...grpc.CallOption) (*ListScheduledJobsByJobIDResponse, error) {
+func (c *jobsServiceClient) ListScheduledJobs(ctx context.Context, in *ListScheduledJobsRequest, opts ...grpc.CallOption) (*ListScheduledJobsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListScheduledJobsByJobIDResponse)
-	err := c.cc.Invoke(ctx, JobsService_ListScheduledJobsByJobID_FullMethodName, in, out, cOpts...)
+	out := new(ListScheduledJobsResponse)
+	err := c.cc.Invoke(ctx, JobsService_ListScheduledJobs_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -97,12 +124,17 @@ func (c *jobsServiceClient) ListScheduledJobsByJobID(ctx context.Context, in *Li
 type JobsServiceServer interface {
 	// CreateJob a new job.
 	CreateJob(context.Context, *CreateJobRequest) (*CreateJobResponse, error)
+	// UpdateJob an existing job.
+	UpdateJob(context.Context, *UpdateJobRequest) (*UpdateJobResponse, error)
+	// GetJob a job by ID and user_id.
+	GetJob(context.Context, *GetJobRequest) (*GetJobResponse, error)
 	// GetJobByID a job by ID.
+	// This is an internal API and should not be exposed to the public.
 	GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error)
 	// ListJobsByUserID returns a list of all jobs for a user_id.
 	ListJobsByUserID(context.Context, *ListJobsByUserIDRequest) (*ListJobsByUserIDResponse, error)
-	// ListScheduledJobsByJobID returns a list of all scheduled jobs for a job_id.
-	ListScheduledJobsByJobID(context.Context, *ListScheduledJobsByJobIDRequest) (*ListScheduledJobsByJobIDResponse, error)
+	// ListScheduledJobs returns a list of all scheduled jobs for a job_id.
+	ListScheduledJobs(context.Context, *ListScheduledJobsRequest) (*ListScheduledJobsResponse, error)
 }
 
 // UnimplementedJobsServiceServer should be embedded to have
@@ -115,14 +147,20 @@ type UnimplementedJobsServiceServer struct{}
 func (UnimplementedJobsServiceServer) CreateJob(context.Context, *CreateJobRequest) (*CreateJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateJob not implemented")
 }
+func (UnimplementedJobsServiceServer) UpdateJob(context.Context, *UpdateJobRequest) (*UpdateJobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateJob not implemented")
+}
+func (UnimplementedJobsServiceServer) GetJob(context.Context, *GetJobRequest) (*GetJobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetJob not implemented")
+}
 func (UnimplementedJobsServiceServer) GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetJobByID not implemented")
 }
 func (UnimplementedJobsServiceServer) ListJobsByUserID(context.Context, *ListJobsByUserIDRequest) (*ListJobsByUserIDResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListJobsByUserID not implemented")
 }
-func (UnimplementedJobsServiceServer) ListScheduledJobsByJobID(context.Context, *ListScheduledJobsByJobIDRequest) (*ListScheduledJobsByJobIDResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListScheduledJobsByJobID not implemented")
+func (UnimplementedJobsServiceServer) ListScheduledJobs(context.Context, *ListScheduledJobsRequest) (*ListScheduledJobsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListScheduledJobs not implemented")
 }
 func (UnimplementedJobsServiceServer) testEmbeddedByValue() {}
 
@@ -158,6 +196,42 @@ func _JobsService_CreateJob_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(JobsServiceServer).CreateJob(ctx, req.(*CreateJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_UpdateJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).UpdateJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_UpdateJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).UpdateJob(ctx, req.(*UpdateJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_GetJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).GetJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_GetJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).GetJob(ctx, req.(*GetJobRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -198,20 +272,20 @@ func _JobsService_ListJobsByUserID_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _JobsService_ListScheduledJobsByJobID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListScheduledJobsByJobIDRequest)
+func _JobsService_ListScheduledJobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListScheduledJobsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(JobsServiceServer).ListScheduledJobsByJobID(ctx, in)
+		return srv.(JobsServiceServer).ListScheduledJobs(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: JobsService_ListScheduledJobsByJobID_FullMethodName,
+		FullMethod: JobsService_ListScheduledJobs_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(JobsServiceServer).ListScheduledJobsByJobID(ctx, req.(*ListScheduledJobsByJobIDRequest))
+		return srv.(JobsServiceServer).ListScheduledJobs(ctx, req.(*ListScheduledJobsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -228,6 +302,14 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _JobsService_CreateJob_Handler,
 		},
 		{
+			MethodName: "UpdateJob",
+			Handler:    _JobsService_UpdateJob_Handler,
+		},
+		{
+			MethodName: "GetJob",
+			Handler:    _JobsService_GetJob_Handler,
+		},
+		{
 			MethodName: "GetJobByID",
 			Handler:    _JobsService_GetJobByID_Handler,
 		},
@@ -236,8 +318,8 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _JobsService_ListJobsByUserID_Handler,
 		},
 		{
-			MethodName: "ListScheduledJobsByJobID",
-			Handler:    _JobsService_ListScheduledJobsByJobID_Handler,
+			MethodName: "ListScheduledJobs",
+			Handler:    _JobsService_ListScheduledJobs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

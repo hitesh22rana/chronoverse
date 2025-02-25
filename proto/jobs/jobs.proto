@@ -16,17 +16,31 @@ message CreateJobRequest {
 
 // CreateJobResponse contains the result of a job creation attempt.
 message CreateJobResponse {
-    string job_id = 1; // ID of the job
-}
-
-// GetJobByIDRequest contains the details needed to get a job by job_id.
-message GetJobByIDRequest {
     string id = 1; // ID of the job
 }
 
-// GetJobByIDResponse contains the result of a job retrieval attempt.
-message GetJobByIDResponse {
-    string user_id       = 1; // ID of the user
+// UpdateJobRequest contains the details needed to update a job.
+message UpdateJobRequest {
+    string id        = 1; // ID of the job
+    string user_id   = 2; // ID of the user
+    string name      = 3; // Name of the job
+    string payload   = 4; // JSON string for payload
+    string kind      = 5; // Kind of job
+    int32 interval   = 6; // Interval measured in minutes
+}
+
+// UpdateJobResponse contains the result of a job update attempt.
+message UpdateJobResponse {}
+
+// GetJobRequest contains the details needed to get a job.
+message GetJobRequest {
+    string id      = 1; // ID of the job
+    string user_id = 2; // ID of the user
+}
+
+// GetJobResponse contains the result of a job retrieval attempt.
+message GetJobResponse {
+    string id            = 1; // ID of the job
     string name          = 2; // Name of the job
     string payload       = 3; // JSON string for payload
     string kind          = 4; // Kind of job
@@ -34,6 +48,25 @@ message GetJobByIDResponse {
     string created_at    = 6; // Time the job was created
     string updated_at    = 7; // Time the job was last updated
     string terminated_at = 8; // Time the job was terminated
+}
+
+// GetJobByIDRequest contains the details needed to get a job by job_id.
+// This is an internal API and should not be exposed to the public.
+message GetJobByIDRequest {
+    string id = 1; // ID of the job
+}
+
+// GetJobByIDResponse contains the result of a job retrieval attempt.
+message GetJobByIDResponse {
+    string id            = 1; // ID of the job
+    string user_id       = 2; // ID of the user
+    string name          = 3; // Name of the job
+    string payload       = 4; // JSON string for payload
+    string kind          = 5; // Kind of job
+    int32 interval       = 6; // Interval measured in minutes
+    string created_at    = 7; // Time the job was created
+    string updated_at    = 8; // Time the job was last updated
+    string terminated_at = 9; // Time the job was terminated
 }
 
 // ListJobsByUserIDRequest contains the details needed to list all jobs.
@@ -58,13 +91,14 @@ message ListJobsByUserIDResponse {
     repeated JobsByUserIDResponse jobs = 1;
 }
 
-// ListScheduledJobsByJobIDRequest contains the details needed to list all scheduled jobs for a job_id.
-message ListScheduledJobsByJobIDRequest {
-    string job_id = 1; // ID of the job
+// ListScheduledJobsRequest contains the details needed to list all scheduled jobs for a job_id.
+message ListScheduledJobsRequest {
+    string job_id  = 1; // ID of the job
+    string user_id = 2; // ID of the user
 }
 
-// ScheduledJobsByIDResponse contains the result of a scheduled job listing attempt.
-message ScheduledJobsByIDResponse {
+// ScheduledJobsResponse contains the result of a scheduled job listing attempt.
+message ScheduledJobsResponse {
     string id           = 1; // ID of the scheduled job
     string status       = 2; // Status of the scheduled job
     string scheduled_at = 3; // Time the job is scheduled to run
@@ -76,8 +110,8 @@ message ScheduledJobsByIDResponse {
     string updated_at   = 9; // Time the job was last updated
 }
 
-message ListScheduledJobsByJobIDResponse {
-    repeated ScheduledJobsByIDResponse scheduled_jobs = 1;
+message ListScheduledJobsResponse {
+    repeated ScheduledJobsResponse scheduled_jobs = 1;
 }
 
 // JobsService handles job related operations.
@@ -85,12 +119,19 @@ service JobsService {
     // CreateJob a new job.
     rpc CreateJob(CreateJobRequest) returns (CreateJobResponse) {}
 
+    // UpdateJob an existing job.
+    rpc UpdateJob(UpdateJobRequest) returns (UpdateJobResponse) {}
+
+    // GetJob a job by ID and user_id.
+    rpc GetJob(GetJobRequest) returns (GetJobResponse) {}
+
     // GetJobByID a job by ID.
+    // This is an internal API and should not be exposed to the public.
     rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
 
     // ListJobsByUserID returns a list of all jobs for a user_id.
     rpc ListJobsByUserID(ListJobsByUserIDRequest) returns (ListJobsByUserIDResponse) {}
 
-    // ListScheduledJobsByJobID returns a list of all scheduled jobs for a job_id.
-    rpc ListScheduledJobsByJobID(ListScheduledJobsByJobIDRequest) returns (ListScheduledJobsByJobIDResponse) {}
+    // ListScheduledJobs returns a list of all scheduled jobs for a job_id.
+    rpc ListScheduledJobs(ListScheduledJobsRequest) returns (ListScheduledJobsResponse) {}
 }

@@ -602,12 +602,14 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "success",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId: "user1",
+				UserId:        "user1",
+				NextPageToken: "",
 			},
 			mock: func(req *jobspb.ListJobsByUserIDRequest) {
 				repo.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					req.GetUserId(),
+					req.GetNextPageToken(),
 				).Return(&model.ListJobsByUserIDResponse{
 					Jobs: []*model.JobByUserIDResponse{
 						{
@@ -624,6 +626,7 @@ func TestListJobsByUserID(t *testing.T) {
 							},
 						},
 					},
+					NextPageToken: "",
 				}, nil)
 			},
 			want: want{
@@ -643,6 +646,7 @@ func TestListJobsByUserID(t *testing.T) {
 							},
 						},
 					},
+					NextPageToken: "",
 				},
 			},
 			isErr: false,
@@ -650,7 +654,8 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "error: missing user ID",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId: "",
+				UserId:        "",
+				NextPageToken: "",
 			},
 			mock:  func(_ *jobspb.ListJobsByUserIDRequest) {},
 			want:  want{},
@@ -659,12 +664,14 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "error: user not found",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId: "invalid_user_id",
+				UserId:        "invalid_user_id",
+				NextPageToken: "",
 			},
 			mock: func(req *jobspb.ListJobsByUserIDRequest) {
 				repo.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					req.GetUserId(),
+					req.GetNextPageToken(),
 				).Return(nil, status.Error(codes.NotFound, "user not found"))
 			},
 			want:  want{},
@@ -673,12 +680,14 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId: "user1",
+				UserId:        "user1",
+				NextPageToken: "",
 			},
 			mock: func(req *jobspb.ListJobsByUserIDRequest) {
 				repo.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					req.GetUserId(),
+					req.GetNextPageToken(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -731,14 +740,16 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "success",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:  "job_id",
-				UserId: "user_id",
+				JobId:         "job_id",
+				UserId:        "user_id",
+				NextPageToken: "",
 			},
 			mock: func(req *jobspb.ListScheduledJobsRequest) {
 				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
 					req.GetUserId(),
+					req.GetNextPageToken(),
 				).Return(&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
@@ -759,6 +770,7 @@ func TestListScheduledJobs(t *testing.T) {
 							UpdatedAt: time.Now(),
 						},
 					},
+					NextPageToken: "",
 				}, nil)
 			},
 			want: want{
@@ -782,6 +794,7 @@ func TestListScheduledJobs(t *testing.T) {
 							UpdatedAt: time.Now(),
 						},
 					},
+					NextPageToken: "",
 				},
 			},
 			isErr: false,
@@ -789,8 +802,9 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "error: missing job ID",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:  "",
-				UserId: "user_id",
+				JobId:         "",
+				UserId:        "user_id",
+				NextPageToken: "",
 			},
 			mock:  func(_ *jobspb.ListScheduledJobsRequest) {},
 			want:  want{},
@@ -799,14 +813,16 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "error: job not found",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:  "invalid_job_id",
-				UserId: "user_id",
+				JobId:         "invalid_job_id",
+				UserId:        "user_id",
+				NextPageToken: "",
 			},
 			mock: func(req *jobspb.ListScheduledJobsRequest) {
 				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
 					req.GetUserId(),
+					req.GetNextPageToken(),
 				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
@@ -815,14 +831,16 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:  "job_id",
-				UserId: "user_id",
+				JobId:         "job_id",
+				UserId:        "user_id",
+				NextPageToken: "",
 			},
 			mock: func(req *jobspb.ListScheduledJobsRequest) {
 				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
 					req.GetUserId(),
+					req.GetNextPageToken(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},

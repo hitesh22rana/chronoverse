@@ -235,8 +235,6 @@ func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobs
 
 // GetJobByID returns the job details by ID.
 // This is an internal method used by internal services, and it should not be exposed to the public.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (res *jobspb.GetJobByIDResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
@@ -283,6 +281,7 @@ func (j *Jobs) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserI
 		"App.ListJobsByUserID",
 		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
+			attribute.String("next_page_token", req.GetNextPageToken()),
 		),
 	)
 	defer func() {
@@ -315,8 +314,6 @@ func (j *Jobs) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserI
 }
 
 // ListScheduledJobs returns the scheduled jobs by job ID.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJobsRequest) (res *jobspb.ListScheduledJobsResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
@@ -324,6 +321,7 @@ func (j *Jobs) ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJ
 		trace.WithAttributes(
 			attribute.String("job_id", req.GetJobId()),
 			attribute.String("user_id", req.GetUserId()),
+			attribute.String("next_page_token", req.GetNextPageToken()),
 		),
 	)
 	defer func() {

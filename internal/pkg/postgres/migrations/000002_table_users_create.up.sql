@@ -7,7 +7,7 @@ CREATE TYPE NOTIFICATION_CHANNEL AS ENUM ('EMAIL', 'SMS', 'PUSH');  -- Delivery 
 CREATE TYPE NOTIFICATION_PREFERENCE AS ENUM ('ALERTS', 'ALL', 'NONE');  -- Notification frequency/preference
 
 CREATE TABLE IF NOT EXISTS users (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
     email VARCHAR(100) UNIQUE NOT NULL,
     password VARCHAR(100) NOT NULL,
     status USER_STATUS DEFAULT 'UNVERIFIED' NOT NULL,

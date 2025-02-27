@@ -112,8 +112,6 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetJob handles the get job by ID and user ID request.
-//
-//nolint:dupl // It's okay to have similar code for different handlers.
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	// Get the job ID from the path	parameters
 	jobID := r.PathValue("id")
@@ -167,9 +165,13 @@ func (s *Server) handleListJobsByUserID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Get next page token from the query parameters
+	nextPageToken := r.URL.Query().Get("next")
+
 	// ListJobsByUserID lists the jobs by user ID.
 	res, err := s.jobsClient.ListJobsByUserID(r.Context(), &jobspb.ListJobsByUserIDRequest{
-		UserId: userID,
+		UserId:        userID,
+		NextPageToken: nextPageToken,
 	})
 	if err != nil {
 		handleError(w, err, "failed to list jobs")
@@ -184,8 +186,6 @@ func (s *Server) handleListJobsByUserID(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleListScheduledJobs handles the list scheduled jobs by job ID request.
-//
-//nolint:dupl // It's okay to have similar code for different handlers.
 func (s *Server) handleListScheduledJobs(w http.ResponseWriter, r *http.Request) {
 	// Get the job ID from the path	parameters
 	jobID := r.PathValue("id")
@@ -207,10 +207,14 @@ func (s *Server) handleListScheduledJobs(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Get next page token from the query parameters
+	nextPageToken := r.URL.Query().Get("next")
+
 	// ListScheduledJobs lists the scheduled jobs by job ID.
 	res, err := s.jobsClient.ListScheduledJobs(r.Context(), &jobspb.ListScheduledJobsRequest{
-		JobId:  jobID,
-		UserId: userID,
+		JobId:         jobID,
+		UserId:        userID,
+		NextPageToken: nextPageToken,
 	})
 	if err != nil {
 		handleError(w, err, "failed to list scheduled jobs")

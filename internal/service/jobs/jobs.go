@@ -4,6 +4,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 
 	"github.com/go-playground/validator/v10"
@@ -25,8 +26,8 @@ type Repository interface {
 	UpdateJob(ctx context.Context, jobID, userID, name, payload, kind string, interval int32) error
 	GetJob(ctx context.Context, jobID, userID string) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*model.GetJobByIDResponse, error)
-	ListJobsByUserID(ctx context.Context, userID string) (*model.ListJobsByUserIDResponse, error)
-	ListScheduledJobs(ctx context.Context, jobID, userID string) (*model.ListScheduledJobsResponse, error)
+	ListJobsByUserID(ctx context.Context, userID, nextPageToken string) (*model.ListJobsByUserIDResponse, error)
+	ListScheduledJobs(ctx context.Context, jobID, userID, nextPageToken string) (*model.ListScheduledJobsResponse, error)
 }
 
 // Service provides job related operations.
@@ -165,8 +166,6 @@ type GetJobRequest struct {
 }
 
 // GetJob returns the job details by ID and user ID.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
 func (s *Service) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *model.GetJobResponse, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.GetJob")
 	defer func() {
@@ -232,7 +231,8 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 
 // ListJobsByUserIDRequest holds the request parameters for listing jobs by user ID.
 type ListJobsByUserIDRequest struct {
-	UserID string `validate:"required"`
+	UserID        string `validate:"required"`
+	NextPageToken string `validate:"omitempty"`
 }
 
 // ListJobsByUserID returns jobs by user ID.
@@ -255,8 +255,18 @@ func (s *Service) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUs
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	// Validate the next page token
+	var nextPageToken string
+	if req.GetNextPageToken() != "" {
+		nextPageToken, err = decodeNextPageToken(req.GetNextPageToken())
+		if err != nil {
+			err = status.Errorf(codes.InvalidArgument, "invalid next page token: %v", err)
+			return nil, err
+		}
+	}
+
 	// List all jobs by user ID
-	res, err = s.repo.ListJobsByUserID(ctx, req.GetUserId())
+	res, err = s.repo.ListJobsByUserID(ctx, req.GetUserId(), nextPageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -264,15 +274,14 @@ func (s *Service) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUs
 	return res, nil
 }
 
-// ListScheduledJobsRequest holds the request parameters for listing scheduled jobs by job ID.
+// ListScheduledJobsRequest holds the request parameters for listing scheduled jobs.
 type ListScheduledJobsRequest struct {
-	JobID  string `validate:"required"`
-	UserID string `validate:"required"`
+	JobID         string `validate:"required"`
+	UserID        string `validate:"required"`
+	NextPageToken string `validate:"omitempty"`
 }
 
-// ListScheduledJobs returns scheduled jobs by job ID.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
+// ListScheduledJobs returns scheduled jobs.
 func (s *Service) ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJobsRequest) (res *model.ListScheduledJobsResponse, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.ListScheduledJobs")
 	defer func() {
@@ -285,19 +294,39 @@ func (s *Service) ListScheduledJobs(ctx context.Context, req *jobspb.ListSchedul
 
 	// Validate the request
 	err = s.validator.Struct(&ListScheduledJobsRequest{
-		JobID:  req.GetJobId(),
-		UserID: req.GetUserId(),
+		JobID:         req.GetJobId(),
+		UserID:        req.GetUserId(),
+		NextPageToken: req.GetNextPageToken(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	// Validate the next page token
+	var nextPageToken string
+	if req.GetNextPageToken() != "" {
+		nextPageToken, err = decodeNextPageToken(req.GetNextPageToken())
+		if err != nil {
+			err = status.Errorf(codes.InvalidArgument, "invalid next page token: %v", err)
+			return nil, err
+		}
+	}
+
 	// List all scheduled jobs by job ID
-	res, err = s.repo.ListScheduledJobs(ctx, req.GetJobId(), req.GetUserId())
+	res, err = s.repo.ListScheduledJobs(ctx, req.GetJobId(), req.GetUserId(), nextPageToken)
 	if err != nil {
 		return nil, err
 	}
 
 	return res, nil
+}
+
+func decodeNextPageToken(token string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return "", err
+	}
+
+	return string(decoded), nil
 }

@@ -71,7 +71,8 @@ message GetJobByIDResponse {
 
 // ListJobsByUserIDRequest contains the details needed to list all jobs.
 message ListJobsByUserIDRequest {
-    string user_id = 1; // ID of the user
+    string user_id         = 1; // ID of the user
+    string next_page_token = 2; // Token for pagination
 }
 
 // JobsByUserIDResponse contains the result of a job listing attempt.
@@ -88,13 +89,15 @@ message JobsByUserIDResponse {
 
 // ListJobsByUserIDResponse contains the result of a job listing attempt.
 message ListJobsByUserIDResponse {
-    repeated JobsByUserIDResponse jobs = 1;
+    repeated JobsByUserIDResponse jobs = 1; // List of jobs
+    string next_page_token             = 2; // Token for pagination
 }
 
 // ListScheduledJobsRequest contains the details needed to list all scheduled jobs for a job_id.
 message ListScheduledJobsRequest {
-    string job_id  = 1; // ID of the job
-    string user_id = 2; // ID of the user
+    string job_id          = 1; // ID of the job
+    string user_id         = 2; // ID of the user
+    string next_page_token = 3; // Token for pagination
 }
 
 // ScheduledJobsResponse contains the result of a scheduled job listing attempt.
@@ -111,7 +114,8 @@ message ScheduledJobsResponse {
 }
 
 message ListScheduledJobsResponse {
-    repeated ScheduledJobsResponse scheduled_jobs = 1;
+    repeated ScheduledJobsResponse scheduled_jobs = 1; // List of scheduled jobs
+    string next_page_token                        = 2; // Token for pagination
 }
 
 // JobsService handles job related operations.

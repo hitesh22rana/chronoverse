@@ -3,7 +3,7 @@ DROP TYPE IF EXISTS SCHEDULED_JOB_STATUS;
 CREATE TYPE SCHEDULED_JOB_STATUS AS ENUM ('PENDING', 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'RETRYING', 'CANCELLED');
 
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
     job_id uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE, -- Foreign key constraint
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
     status SCHEDULED_JOB_STATUS DEFAULT 'PENDING' NOT NULL,

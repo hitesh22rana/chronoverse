@@ -3,7 +3,7 @@ DROP TYPE IF EXISTS KIND;
 CREATE TYPE KIND AS ENUM ('HEARTBEAT');
 
 CREATE TABLE IF NOT EXISTS jobs (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
     name VARCHAR(255) NOT NULL,
     payload JSONB,

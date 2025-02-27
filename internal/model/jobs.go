@@ -85,7 +85,8 @@ type JobByUserIDResponse struct {
 
 // ListJobsByUserIDResponse represents the response of ListJobsByUserID.
 type ListJobsByUserIDResponse struct {
-	Jobs []*JobByUserIDResponse
+	Jobs          []*JobByUserIDResponse
+	NextPageToken string
 }
 
 // ToProto converts the ListJobsByUserIDResponse to its protobuf representation.
@@ -111,7 +112,10 @@ func (r *ListJobsByUserIDResponse) ToProto() *jobspb.ListJobsByUserIDResponse {
 		}
 	}
 
-	return &jobspb.ListJobsByUserIDResponse{Jobs: jobs}
+	return &jobspb.ListJobsByUserIDResponse{
+		Jobs:          jobs,
+		NextPageToken: r.NextPageToken,
+	}
 }
 
 // ScheduledJobByJobIDResponse represents the response of ListScheduledJobsByID.
@@ -130,6 +134,7 @@ type ScheduledJobByJobIDResponse struct {
 // ListScheduledJobsResponse represents the response of ListScheduledJobsByID.
 type ListScheduledJobsResponse struct {
 	ScheduledJobs []*ScheduledJobByJobIDResponse
+	NextPageToken string
 }
 
 // ToProto converts the ListScheduledJobsResponse to its protobuf representation.
@@ -159,5 +164,8 @@ func (r *ListScheduledJobsResponse) ToProto() *jobspb.ListScheduledJobsResponse 
 		}
 	}
 
-	return &jobspb.ListScheduledJobsResponse{ScheduledJobs: scheduledJobs}
+	return &jobspb.ListScheduledJobsResponse{
+		ScheduledJobs: scheduledJobs,
+		NextPageToken: r.NextPageToken,
+	}
 }

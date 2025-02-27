@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 const (
 	jobsTable          = "jobs"
 	scheduledJobsTable = "scheduled_jobs"
+	limit              = 10
 )
 
 // Repository provides jobs repository.
@@ -206,7 +208,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 }
 
 // ListJobsByUserID returns jobs by user ID.
-func (r *Repository) ListJobsByUserID(ctx context.Context, userID string) (res *model.ListJobsByUserIDResponse, err error) {
+func (r *Repository) ListJobsByUserID(ctx context.Context, userID, nextPageToken string) (res *model.ListJobsByUserIDResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobsByUserID")
 	defer func() {
 		if err != nil {
@@ -221,9 +223,17 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID string) (res *
 		FROM %s
 		WHERE user_id = $1
 	`, jobsTable)
+	args := []any{userID}
+
+	if nextPageToken != "" {
+		query += ` AND id <= $2`
+		args = append(args, nextPageToken)
+	}
+
+	query += fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, limit+1)
 
 	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, userID)
+	rows, _ := r.pg.Query(ctx, query, args...)
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.JobByUserIDResponse])
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
@@ -235,11 +245,21 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID string) (res *
 		return nil, err
 	}
 
-	return &model.ListJobsByUserIDResponse{Jobs: data}, nil
+	// Check if there are more jobs
+	nextPageToken = ""
+	if len(data) > limit {
+		nextPageToken = data[limit].ID
+		data = data[:limit]
+	}
+
+	return &model.ListJobsByUserIDResponse{
+		Jobs:          data,
+		NextPageToken: encodeNextPageToken(nextPageToken),
+	}, nil
 }
 
-// ListScheduledJobs returns scheduled jobs by job ID.
-func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID string) (res *model.ListScheduledJobsResponse, err error) {
+// ListScheduledJobs returns scheduled jobs.
+func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, nextPageToken string) (res *model.ListScheduledJobsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListScheduledJobs")
 	defer func() {
 		if err != nil {
@@ -249,15 +269,23 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID string
 		span.End()
 	}()
 
+	// Add the next page token to the query
 	query := fmt.Sprintf(`
 		SELECT id, status, scheduled_at, retry_count, max_retry, started_at, completed_at, created_at, updated_at
 		FROM %s
 		WHERE job_id = $1 AND user_id = $2
-		ORDER BY scheduled_at ASC
 	`, scheduledJobsTable)
+	args := []any{jobID, userID}
+
+	if nextPageToken != "" {
+		query += ` AND id <= $3`
+		args = append(args, nextPageToken)
+	}
+
+	query += fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, limit+1)
 
 	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, jobID, userID)
+	rows, _ := r.pg.Query(ctx, query, args...)
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.ScheduledJobByJobIDResponse])
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
@@ -269,5 +297,19 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID string
 		return nil, err
 	}
 
-	return &model.ListScheduledJobsResponse{ScheduledJobs: data}, nil
+	// Check if there are more scheduled jobs
+	nextPageToken = ""
+	if len(data) > limit {
+		nextPageToken = data[limit].ID
+		data = data[:limit]
+	}
+
+	return &model.ListScheduledJobsResponse{
+		ScheduledJobs: data,
+		NextPageToken: encodeNextPageToken(nextPageToken),
+	}, nil
+}
+
+func encodeNextPageToken(id string) string {
+	return base64.StdEncoding.EncodeToString([]byte(id))
 }

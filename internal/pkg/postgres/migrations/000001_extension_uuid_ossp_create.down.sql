@@ -1,1 +1,3 @@
 DROP EXTENSION IF EXISTS "uuid-ossp";
+
+DROP FUNCTION IF EXISTS uuid_generate_v7;

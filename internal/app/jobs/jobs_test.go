@@ -769,7 +769,8 @@ func TestListJobsByUserID(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId: "user1",
+					UserId:        "user1",
+					NextPageToken: "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
@@ -792,6 +793,7 @@ func TestListJobsByUserID(t *testing.T) {
 							},
 						},
 					},
+					NextPageToken: "",
 				}, nil)
 			},
 			res: &jobspb.ListJobsByUserIDResponse{
@@ -807,6 +809,7 @@ func TestListJobsByUserID(t *testing.T) {
 						TerminatedAt: time.Now().Format(time.RFC3339),
 					},
 				},
+				NextPageToken: "",
 			},
 			isErr: false,
 		},
@@ -825,7 +828,8 @@ func TestListJobsByUserID(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId: "",
+					UserId:        "",
+					NextPageToken: "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
@@ -846,7 +850,8 @@ func TestListJobsByUserID(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId: "user1",
+					UserId:        "user1",
+					NextPageToken: "",
 				},
 			},
 			mock:  func(_ *jobspb.ListJobsByUserIDRequest) {},
@@ -868,7 +873,8 @@ func TestListJobsByUserID(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId: "user1",
+					UserId:        "user1",
+					NextPageToken: "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
@@ -940,8 +946,9 @@ func TestListScheduledJobs(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:  "job_id",
-					UserId: "user_id",
+					JobId:         "job_id",
+					UserId:        "user_id",
+					NextPageToken: "",
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {
@@ -984,6 +991,7 @@ func TestListScheduledJobs(t *testing.T) {
 						UpdatedAt:   time.Now().Format(time.RFC3339),
 					},
 				},
+				NextPageToken: "",
 			},
 			isErr: false,
 		},
@@ -1002,8 +1010,9 @@ func TestListScheduledJobs(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:  "",
-					UserId: "user_id",
+					JobId:         "",
+					UserId:        "user_id",
+					NextPageToken: "",
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {
@@ -1024,8 +1033,9 @@ func TestListScheduledJobs(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:  "job_id",
-					UserId: "user_id",
+					JobId:         "job_id",
+					UserId:        "user_id",
+					NextPageToken: "",
 				},
 			},
 			mock:  func(_ *jobspb.ListScheduledJobsRequest) {},
@@ -1047,8 +1057,9 @@ func TestListScheduledJobs(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:  "job_id",
-					UserId: "user_id",
+					JobId:         "job_id",
+					UserId:        "user_id",
+					NextPageToken: "",
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {

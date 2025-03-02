@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -24,6 +25,7 @@ const (
 	jobsTable          = "jobs"
 	scheduledJobsTable = "scheduled_jobs"
 	limit              = 10
+	delimiter          = '$'
 )
 
 // Repository provides jobs repository.
@@ -208,7 +210,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 }
 
 // ListJobsByUserID returns jobs by user ID.
-func (r *Repository) ListJobsByUserID(ctx context.Context, userID, nextPageToken string) (res *model.ListJobsByUserIDResponse, err error) {
+func (r *Repository) ListJobsByUserID(ctx context.Context, userID, cursor string) (res *model.ListJobsByUserIDResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobsByUserID")
 	defer func() {
 		if err != nil {
@@ -225,12 +227,18 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID, nextPageToken
 	`, jobsTable)
 	args := []any{userID}
 
-	if nextPageToken != "" {
-		query += ` AND id <= $2`
-		args = append(args, nextPageToken)
+	if cursor != "" {
+		id, createdAt, _err := extractDataFromCursor(cursor)
+		if _err != nil {
+			err = _err
+			return nil, err
+		}
+
+		query += ` AND (created_at, id) <= ($2, $3)`
+		args = append(args, createdAt, id)
 	}
 
-	query += fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, limit+1)
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d`, limit+1)
 
 	//nolint:errcheck // The error is handled in the next line
 	rows, _ := r.pg.Query(ctx, query, args...)
@@ -246,20 +254,24 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID, nextPageToken
 	}
 
 	// Check if there are more jobs
-	nextPageToken = ""
+	cursor = ""
 	if len(data) > limit {
-		nextPageToken = data[limit].ID
+		cursor = fmt.Sprintf(
+			"%s%c%s",
+			data[limit].ID,
+			delimiter, data[limit].CreatedAt.Format(time.RFC3339Nano),
+		)
 		data = data[:limit]
 	}
 
 	return &model.ListJobsByUserIDResponse{
-		Jobs:          data,
-		NextPageToken: encodeNextPageToken(nextPageToken),
+		Jobs:   data,
+		Cursor: encodeCursor(cursor),
 	}, nil
 }
 
 // ListScheduledJobs returns scheduled jobs.
-func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, nextPageToken string) (res *model.ListScheduledJobsResponse, err error) {
+func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, cursor string) (res *model.ListScheduledJobsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListScheduledJobs")
 	defer func() {
 		if err != nil {
@@ -277,12 +289,18 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, nextP
 	`, scheduledJobsTable)
 	args := []any{jobID, userID}
 
-	if nextPageToken != "" {
-		query += ` AND id <= $3`
-		args = append(args, nextPageToken)
+	if cursor != "" {
+		id, createdAt, _err := extractDataFromCursor(cursor)
+		if _err != nil {
+			err = _err
+			return nil, err
+		}
+
+		query += ` AND (created_at, id) <= ($2, $3)`
+		args = append(args, createdAt, id)
 	}
 
-	query += fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, limit+1)
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d`, limit+1)
 
 	//nolint:errcheck // The error is handled in the next line
 	rows, _ := r.pg.Query(ctx, query, args...)
@@ -298,18 +316,36 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, nextP
 	}
 
 	// Check if there are more scheduled jobs
-	nextPageToken = ""
+	cursor = ""
 	if len(data) > limit {
-		nextPageToken = data[limit].ID
+		cursor = fmt.Sprintf(
+			"%s%c%s",
+			data[limit].ID,
+			delimiter, data[limit].CreatedAt.Format(time.RFC3339Nano),
+		)
 		data = data[:limit]
 	}
 
 	return &model.ListScheduledJobsResponse{
 		ScheduledJobs: data,
-		NextPageToken: encodeNextPageToken(nextPageToken),
+		Cursor:        encodeCursor(cursor),
 	}, nil
 }
 
-func encodeNextPageToken(id string) string {
-	return base64.StdEncoding.EncodeToString([]byte(id))
+func encodeCursor(cursor string) string {
+	return base64.StdEncoding.EncodeToString([]byte(cursor))
+}
+
+func extractDataFromCursor(cursor string) (string, time.Time, error) {
+	parts := bytes.Split([]byte(cursor), []byte{delimiter})
+	if len(parts) != 2 {
+		return "", time.Time{}, status.Error(codes.InvalidArgument, "invalid cursor: expected two parts")
+	}
+
+	createdAt, err := time.Parse(time.RFC3339Nano, string(parts[1]))
+	if err != nil {
+		return "", time.Time{}, status.Errorf(codes.InvalidArgument, "invalid timestamp: %v", err)
+	}
+
+	return string(parts[0]), createdAt, nil
 }

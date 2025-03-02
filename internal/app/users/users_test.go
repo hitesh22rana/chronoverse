@@ -28,7 +28,7 @@ func TestMain(t *testing.T) {
 
 	svc := usersmock.NewMockService(ctrl)
 
-	server := users.New(context.Background(), &users.Config{
+	server := users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc)
 
@@ -79,7 +79,7 @@ func TestRegisterUser(t *testing.T) {
 
 	svc := usersmock.NewMockService(ctrl)
 
-	client, _close := initClient(users.New(context.Background(), &users.Config{
+	client, _close := initClient(users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -102,7 +102,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -129,7 +129,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -154,7 +154,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -179,7 +179,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -203,7 +203,7 @@ func TestRegisterUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &userpb.RegisterUserRequest{
@@ -239,7 +239,7 @@ func TestLoginUser(t *testing.T) {
 
 	svc := usersmock.NewMockService(ctrl)
 
-	client, _close := initClient(users.New(context.Background(), &users.Config{
+	client, _close := initClient(users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -262,7 +262,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -287,7 +287,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -312,7 +312,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -337,7 +337,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							context.Background(), "users-test",
+							t.Context(), "users-test",
 						),
 						auth.RoleUser,
 					)
@@ -361,7 +361,7 @@ func TestLoginUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &userpb.LoginUserRequest{},

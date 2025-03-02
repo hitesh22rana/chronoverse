@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_job_id ON scheduled_jobs (job_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_user_id ON scheduled_jobs (user_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_scheduled_at ON scheduled_jobs (scheduled_at) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_created_at_desc_id_desc ON scheduled_jobs (created_at DESC, id DESC);
 
 -- Auto-update updated_at on row updates
 CREATE OR REPLACE FUNCTION update_updated_at()

@@ -281,7 +281,7 @@ func (j *Jobs) ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserI
 		"App.ListJobsByUserID",
 		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
-			attribute.String("next_page_token", req.GetNextPageToken()),
+			attribute.String("cursor", req.GetCursor()),
 		),
 	)
 	defer func() {
@@ -321,7 +321,7 @@ func (j *Jobs) ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJ
 		trace.WithAttributes(
 			attribute.String("job_id", req.GetJobId()),
 			attribute.String("user_id", req.GetUserId()),
-			attribute.String("next_page_token", req.GetNextPageToken()),
+			attribute.String("cursor", req.GetCursor()),
 		),
 	)
 	defer func() {

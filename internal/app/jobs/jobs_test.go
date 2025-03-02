@@ -30,7 +30,7 @@ func TestMain(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 
-	server := jobs.New(context.Background(), &jobs.Config{
+	server := jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc)
 
@@ -81,7 +81,7 @@ func TestCreateJob(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 
-	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -105,7 +105,7 @@ func TestCreateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -139,7 +139,7 @@ func TestCreateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -169,7 +169,7 @@ func TestCreateJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &jobspb.CreateJobRequest{
@@ -192,7 +192,7 @@ func TestCreateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -245,7 +245,7 @@ func TestUpdateJob(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 
-	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -269,7 +269,7 @@ func TestUpdateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -301,7 +301,7 @@ func TestUpdateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -331,7 +331,7 @@ func TestUpdateJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &jobspb.UpdateJobRequest{
@@ -354,7 +354,7 @@ func TestUpdateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -407,7 +407,7 @@ func TestGetJob(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 
-	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -431,7 +431,7 @@ func TestGetJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -480,7 +480,7 @@ func TestGetJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -506,7 +506,7 @@ func TestGetJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &jobspb.GetJobRequest{
@@ -525,7 +525,7 @@ func TestGetJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -574,7 +574,7 @@ func TestGetJobByID(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 
-	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -598,7 +598,7 @@ func TestGetJobByID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -646,7 +646,7 @@ func TestGetJobByID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -671,7 +671,7 @@ func TestGetJobByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &jobspb.GetJobByIDRequest{
@@ -689,7 +689,7 @@ func TestGetJobByID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -737,7 +737,7 @@ func TestListJobsByUserID(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 
-	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -761,7 +761,7 @@ func TestListJobsByUserID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -769,8 +769,8 @@ func TestListJobsByUserID(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId:        "user1",
-					NextPageToken: "",
+					UserId: "user1",
+					Cursor: "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
@@ -793,7 +793,7 @@ func TestListJobsByUserID(t *testing.T) {
 							},
 						},
 					},
-					NextPageToken: "",
+					Cursor: "",
 				}, nil)
 			},
 			res: &jobspb.ListJobsByUserIDResponse{
@@ -809,7 +809,7 @@ func TestListJobsByUserID(t *testing.T) {
 						TerminatedAt: time.Now().Format(time.RFC3339),
 					},
 				},
-				NextPageToken: "",
+				Cursor: "",
 			},
 			isErr: false,
 		},
@@ -820,7 +820,7 @@ func TestListJobsByUserID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -828,8 +828,8 @@ func TestListJobsByUserID(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId:        "",
-					NextPageToken: "",
+					UserId: "",
+					Cursor: "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
@@ -846,12 +846,12 @@ func TestListJobsByUserID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId:        "user1",
-					NextPageToken: "",
+					UserId: "user1",
+					Cursor: "",
 				},
 			},
 			mock:  func(_ *jobspb.ListJobsByUserIDRequest) {},
@@ -865,7 +865,7 @@ func TestListJobsByUserID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -873,8 +873,8 @@ func TestListJobsByUserID(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListJobsByUserIDRequest{
-					UserId:        "user1",
-					NextPageToken: "",
+					UserId: "user1",
+					Cursor: "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
@@ -914,7 +914,7 @@ func TestListScheduledJobs(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 
-	client, _close := initClient(jobs.New(context.Background(), &jobs.Config{
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
 	}, svc))
 	defer _close()
@@ -938,7 +938,7 @@ func TestListScheduledJobs(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -946,9 +946,9 @@ func TestListScheduledJobs(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:         "job_id",
-					UserId:        "user_id",
-					NextPageToken: "",
+					JobId:  "job_id",
+					UserId: "user_id",
+					Cursor: "",
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {
@@ -991,7 +991,7 @@ func TestListScheduledJobs(t *testing.T) {
 						UpdatedAt:   time.Now().Format(time.RFC3339),
 					},
 				},
-				NextPageToken: "",
+				Cursor: "",
 			},
 			isErr: false,
 		},
@@ -1002,7 +1002,7 @@ func TestListScheduledJobs(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -1010,9 +1010,9 @@ func TestListScheduledJobs(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:         "",
-					UserId:        "user_id",
-					NextPageToken: "",
+					JobId:  "",
+					UserId: "user_id",
+					Cursor: "",
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {
@@ -1029,13 +1029,13 @@ func TestListScheduledJobs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return metadata.AppendToOutgoingContext(
-						context.Background(),
+						t.Context(),
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:         "job_id",
-					UserId:        "user_id",
-					NextPageToken: "",
+					JobId:  "job_id",
+					UserId: "user_id",
+					Cursor: "",
 				},
 			},
 			mock:  func(_ *jobspb.ListScheduledJobsRequest) {},
@@ -1049,7 +1049,7 @@ func TestListScheduledJobs(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								context.Background(), "users-test",
+								t.Context(), "users-test",
 							),
 							auth.RoleUser,
 						),
@@ -1057,9 +1057,9 @@ func TestListScheduledJobs(t *testing.T) {
 					)
 				},
 				req: &jobspb.ListScheduledJobsRequest{
-					JobId:         "job_id",
-					UserId:        "user_id",
-					NextPageToken: "",
+					JobId:  "job_id",
+					UserId: "user_id",
+					Cursor: "",
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {

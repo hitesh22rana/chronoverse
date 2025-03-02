@@ -1,7 +1,6 @@
 package jobs_test
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -123,7 +122,7 @@ func TestCreateJob(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			jobID, err := s.CreateJob(context.Background(), tt.req)
+			jobID, err := s.CreateJob(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -297,7 +296,7 @@ func TestUpdateJob(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			err := s.UpdateJob(context.Background(), tt.req)
+			err := s.UpdateJob(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -441,7 +440,7 @@ func TestGetJob(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.GetJob(context.Background(), tt.req)
+			_, err := s.GetJob(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -562,7 +561,7 @@ func TestGetJobByID(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.GetJobByID(context.Background(), tt.req)
+			_, err := s.GetJobByID(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -602,14 +601,14 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "success",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId:        "user1",
-				NextPageToken: "",
+				UserId: "user1",
+				Cursor: "",
 			},
 			mock: func(req *jobspb.ListJobsByUserIDRequest) {
 				repo.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					req.GetUserId(),
-					req.GetNextPageToken(),
+					req.GetCursor(),
 				).Return(&model.ListJobsByUserIDResponse{
 					Jobs: []*model.JobByUserIDResponse{
 						{
@@ -626,7 +625,7 @@ func TestListJobsByUserID(t *testing.T) {
 							},
 						},
 					},
-					NextPageToken: "",
+					Cursor: "",
 				}, nil)
 			},
 			want: want{
@@ -646,7 +645,7 @@ func TestListJobsByUserID(t *testing.T) {
 							},
 						},
 					},
-					NextPageToken: "",
+					Cursor: "",
 				},
 			},
 			isErr: false,
@@ -654,8 +653,8 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "error: missing user ID",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId:        "",
-				NextPageToken: "",
+				UserId: "",
+				Cursor: "",
 			},
 			mock:  func(_ *jobspb.ListJobsByUserIDRequest) {},
 			want:  want{},
@@ -664,14 +663,14 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "error: user not found",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId:        "invalid_user_id",
-				NextPageToken: "",
+				UserId: "invalid_user_id",
+				Cursor: "",
 			},
 			mock: func(req *jobspb.ListJobsByUserIDRequest) {
 				repo.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					req.GetUserId(),
-					req.GetNextPageToken(),
+					req.GetCursor(),
 				).Return(nil, status.Error(codes.NotFound, "user not found"))
 			},
 			want:  want{},
@@ -680,14 +679,14 @@ func TestListJobsByUserID(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &jobspb.ListJobsByUserIDRequest{
-				UserId:        "user1",
-				NextPageToken: "",
+				UserId: "user1",
+				Cursor: "",
 			},
 			mock: func(req *jobspb.ListJobsByUserIDRequest) {
 				repo.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					req.GetUserId(),
-					req.GetNextPageToken(),
+					req.GetCursor(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -700,7 +699,7 @@ func TestListJobsByUserID(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.ListJobsByUserID(context.Background(), tt.req)
+			_, err := s.ListJobsByUserID(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -740,16 +739,16 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "success",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:         "job_id",
-				UserId:        "user_id",
-				NextPageToken: "",
+				JobId:  "job_id",
+				UserId: "user_id",
+				Cursor: "",
 			},
 			mock: func(req *jobspb.ListScheduledJobsRequest) {
 				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
 					req.GetUserId(),
-					req.GetNextPageToken(),
+					req.GetCursor(),
 				).Return(&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
@@ -770,7 +769,7 @@ func TestListScheduledJobs(t *testing.T) {
 							UpdatedAt: time.Now(),
 						},
 					},
-					NextPageToken: "",
+					Cursor: "",
 				}, nil)
 			},
 			want: want{
@@ -794,7 +793,7 @@ func TestListScheduledJobs(t *testing.T) {
 							UpdatedAt: time.Now(),
 						},
 					},
-					NextPageToken: "",
+					Cursor: "",
 				},
 			},
 			isErr: false,
@@ -802,9 +801,9 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "error: missing job ID",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:         "",
-				UserId:        "user_id",
-				NextPageToken: "",
+				JobId:  "",
+				UserId: "user_id",
+				Cursor: "",
 			},
 			mock:  func(_ *jobspb.ListScheduledJobsRequest) {},
 			want:  want{},
@@ -813,16 +812,16 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "error: job not found",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:         "invalid_job_id",
-				UserId:        "user_id",
-				NextPageToken: "",
+				JobId:  "invalid_job_id",
+				UserId: "user_id",
+				Cursor: "",
 			},
 			mock: func(req *jobspb.ListScheduledJobsRequest) {
 				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
 					req.GetUserId(),
-					req.GetNextPageToken(),
+					req.GetCursor(),
 				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
@@ -831,16 +830,16 @@ func TestListScheduledJobs(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &jobspb.ListScheduledJobsRequest{
-				JobId:         "job_id",
-				UserId:        "user_id",
-				NextPageToken: "",
+				JobId:  "job_id",
+				UserId: "user_id",
+				Cursor: "",
 			},
 			mock: func(req *jobspb.ListScheduledJobsRequest) {
 				repo.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					req.GetJobId(),
 					req.GetUserId(),
-					req.GetNextPageToken(),
+					req.GetCursor(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -853,7 +852,7 @@ func TestListScheduledJobs(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.ListScheduledJobs(context.Background(), tt.req)
+			_, err := s.ListScheduledJobs(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")

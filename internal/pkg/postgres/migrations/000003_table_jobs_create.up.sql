@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs (user_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_interval ON jobs (interval);
+CREATE INDEX IF NOT EXISTS idx_jobs_created_at_desc_id_desc ON jobs (created_at DESC, id DESC);
 
 -- Auto-update updated_at on row updates
 CREATE OR REPLACE FUNCTION update_jobs_updated_at()

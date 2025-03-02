@@ -128,7 +128,7 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - stylecheck
-    - tenv
+    - usetesting
     - testpackage
     - thelper
     - tparallel

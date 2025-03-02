@@ -165,13 +165,13 @@ func (s *Server) handleListJobsByUserID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get next page token from the query parameters
-	nextPageToken := r.URL.Query().Get("next")
+	// Get cursor from the query parameters
+	cursor := r.URL.Query().Get("cursor")
 
 	// ListJobsByUserID lists the jobs by user ID.
 	res, err := s.jobsClient.ListJobsByUserID(r.Context(), &jobspb.ListJobsByUserIDRequest{
-		UserId:        userID,
-		NextPageToken: nextPageToken,
+		UserId: userID,
+		Cursor: cursor,
 	})
 	if err != nil {
 		handleError(w, err, "failed to list jobs")
@@ -207,14 +207,14 @@ func (s *Server) handleListScheduledJobs(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Get next page token from the query parameters
-	nextPageToken := r.URL.Query().Get("next")
+	// Get cursor from the query parameters
+	cursor := r.URL.Query().Get("cursor")
 
 	// ListScheduledJobs lists the scheduled jobs by job ID.
 	res, err := s.jobsClient.ListScheduledJobs(r.Context(), &jobspb.ListScheduledJobsRequest{
-		JobId:         jobID,
-		UserId:        userID,
-		NextPageToken: nextPageToken,
+		JobId:  jobID,
+		UserId: userID,
+		Cursor: cursor,
 	})
 	if err != nil {
 		handleError(w, err, "failed to list scheduled jobs")

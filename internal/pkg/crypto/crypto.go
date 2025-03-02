@@ -50,9 +50,9 @@ func (c *Crypto) Encrypt(data string) (string, error) {
 	}
 
 	plainText := []byte(data)
-	cfb := cipher.NewCFBEncrypter(block, bytes)
+	stream := cipher.NewCTR(block, bytes)
 	cipherText := make([]byte, len(plainText))
-	cfb.XORKeyStream(cipherText, plainText)
+	stream.XORKeyStream(cipherText, plainText)
 	return c.encode(cipherText), nil
 }
 
@@ -69,7 +69,7 @@ func (c *Crypto) Decrypt(data string) (string, error) {
 	}
 
 	plainText := make([]byte, len(cipherText))
-	cfb := cipher.NewCFBDecrypter(block, bytes)
+	cfb := cipher.NewCTR(block, bytes)
 	cfb.XORKeyStream(plainText, cipherText)
 	return string(plainText), nil
 }

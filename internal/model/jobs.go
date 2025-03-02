@@ -23,7 +23,7 @@ type GetJobResponse struct {
 func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 	var terminatedAt string
 	if r.TerminatedAt.Valid {
-		terminatedAt = r.TerminatedAt.Time.Format(time.RFC3339)
+		terminatedAt = r.TerminatedAt.Time.Format(time.RFC3339Nano)
 	}
 
 	return &jobspb.GetJobResponse{
@@ -32,8 +32,8 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 		Payload:      r.Payload,
 		Kind:         r.Kind,
 		Interval:     r.Interval,
-		CreatedAt:    r.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:    r.UpdatedAt.Format(time.RFC3339),
+		CreatedAt:    r.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:    r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt: terminatedAt,
 	}
 }
@@ -55,7 +55,7 @@ type GetJobByIDResponse struct {
 func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	var terminatedAt string
 	if r.TerminatedAt.Valid {
-		terminatedAt = r.TerminatedAt.Time.Format(time.RFC3339)
+		terminatedAt = r.TerminatedAt.Time.Format(time.RFC3339Nano)
 	}
 
 	return &jobspb.GetJobByIDResponse{
@@ -65,8 +65,8 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 		Payload:      r.Payload,
 		Kind:         r.Kind,
 		Interval:     r.Interval,
-		CreatedAt:    r.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:    r.UpdatedAt.Format(time.RFC3339),
+		CreatedAt:    r.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:    r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt: terminatedAt,
 	}
 }
@@ -85,8 +85,8 @@ type JobByUserIDResponse struct {
 
 // ListJobsByUserIDResponse represents the response of ListJobsByUserID.
 type ListJobsByUserIDResponse struct {
-	Jobs          []*JobByUserIDResponse
-	NextPageToken string
+	Jobs   []*JobByUserIDResponse
+	Cursor string
 }
 
 // ToProto converts the ListJobsByUserIDResponse to its protobuf representation.
@@ -97,7 +97,7 @@ func (r *ListJobsByUserIDResponse) ToProto() *jobspb.ListJobsByUserIDResponse {
 
 		var terminatedAt string
 		if j.TerminatedAt.Valid {
-			terminatedAt = j.TerminatedAt.Time.Format(time.RFC3339)
+			terminatedAt = j.TerminatedAt.Time.Format(time.RFC3339Nano)
 		}
 
 		jobs[i] = &jobspb.JobsByUserIDResponse{
@@ -106,15 +106,15 @@ func (r *ListJobsByUserIDResponse) ToProto() *jobspb.ListJobsByUserIDResponse {
 			Payload:      j.Payload,
 			Kind:         j.Kind,
 			Interval:     j.Interval,
-			CreatedAt:    j.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:    j.UpdatedAt.Format(time.RFC3339),
+			CreatedAt:    j.CreatedAt.Format(time.RFC3339Nano),
+			UpdatedAt:    j.UpdatedAt.Format(time.RFC3339Nano),
 			TerminatedAt: terminatedAt,
 		}
 	}
 
 	return &jobspb.ListJobsByUserIDResponse{
-		Jobs:          jobs,
-		NextPageToken: r.NextPageToken,
+		Jobs:   jobs,
+		Cursor: r.Cursor,
 	}
 }
 
@@ -134,7 +134,7 @@ type ScheduledJobByJobIDResponse struct {
 // ListScheduledJobsResponse represents the response of ListScheduledJobsByID.
 type ListScheduledJobsResponse struct {
 	ScheduledJobs []*ScheduledJobByJobIDResponse
-	NextPageToken string
+	Cursor        string
 }
 
 // ToProto converts the ListScheduledJobsResponse to its protobuf representation.
@@ -145,27 +145,27 @@ func (r *ListScheduledJobsResponse) ToProto() *jobspb.ListScheduledJobsResponse 
 
 		var startedAt, completedAt string
 		if j.StartedAt.Valid {
-			startedAt = j.StartedAt.Time.Format(time.RFC3339)
+			startedAt = j.StartedAt.Time.Format(time.RFC3339Nano)
 		}
 		if j.CompletedAt.Valid {
-			completedAt = j.CompletedAt.Time.Format(time.RFC3339)
+			completedAt = j.CompletedAt.Time.Format(time.RFC3339Nano)
 		}
 
 		scheduledJobs[i] = &jobspb.ScheduledJobsResponse{
 			Id:          j.ID,
 			Status:      j.Status,
-			ScheduledAt: j.ScheduledAt.Format(time.RFC3339),
+			ScheduledAt: j.ScheduledAt.Format(time.RFC3339Nano),
 			RetryCount:  j.RetryCount,
 			MaxRetry:    j.MaxRetry,
 			StartedAt:   startedAt,
 			CompletedAt: completedAt,
-			CreatedAt:   j.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:   j.UpdatedAt.Format(time.RFC3339),
+			CreatedAt:   j.CreatedAt.Format(time.RFC3339Nano),
+			UpdatedAt:   j.UpdatedAt.Format(time.RFC3339Nano),
 		}
 	}
 
 	return &jobspb.ListScheduledJobsResponse{
 		ScheduledJobs: scheduledJobs,
-		NextPageToken: r.NextPageToken,
+		Cursor:        r.Cursor,
 	}
 }

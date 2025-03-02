@@ -1,7 +1,6 @@
 package users_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -98,7 +97,7 @@ func TestRegisterUser(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			userID, pat, err := s.RegisterUser(context.Background(), tt.req)
+			userID, pat, err := s.RegisterUser(t.Context(), tt.req)
 
 			if (err != nil) != tt.isErr {
 				t.Errorf("RegisterUser() error = %v, wantErr %v", err, tt.isErr)
@@ -199,7 +198,7 @@ func TestLoginUser(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			userID, pat, err := s.LoginUser(context.Background(), tt.req)
+			userID, pat, err := s.LoginUser(t.Context(), tt.req)
 
 			if (err != nil) != tt.isErr {
 				t.Errorf("LoginUser() error = %v, wantErr %v", err, tt.isErr)

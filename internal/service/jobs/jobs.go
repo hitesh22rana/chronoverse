@@ -17,7 +17,7 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	"github.com/hitesh22rana/chronoverse/internal/model"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Repository provides job related operations.
@@ -41,7 +41,7 @@ type Service struct {
 func New(validator *validator.Validate, repo Repository) *Service {
 	return &Service{
 		validator: validator,
-		tp:        otel.Tracer(svc.Info().GetName()),
+		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		repo:      repo,
 	}
 }

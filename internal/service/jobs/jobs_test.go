@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/model"
-	auth "github.com/hitesh22rana/chronoverse/internal/service/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/service/jobs"
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/service/jobs/mock"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
@@ -23,7 +23,7 @@ func TestCreateJob(t *testing.T) {
 	repo := jobsmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		jobID string
@@ -149,7 +149,7 @@ func TestUpdateJob(t *testing.T) {
 	repo := jobsmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		jobID string
@@ -319,7 +319,7 @@ func TestGetJob(t *testing.T) {
 	repo := jobsmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*model.GetJobResponse
@@ -463,7 +463,7 @@ func TestGetJobByID(t *testing.T) {
 	repo := jobsmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*model.GetJobByIDResponse
@@ -584,7 +584,7 @@ func TestListJobsByUserID(t *testing.T) {
 	repo := jobsmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*model.ListJobsByUserIDResponse
@@ -722,7 +722,7 @@ func TestListScheduledJobs(t *testing.T) {
 	repo := jobsmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*model.ListScheduledJobsResponse

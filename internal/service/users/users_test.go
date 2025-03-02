@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	auth "github.com/hitesh22rana/chronoverse/internal/service/users"
+	"github.com/hitesh22rana/chronoverse/internal/service/users"
 	usersmock "github.com/hitesh22rana/chronoverse/internal/service/users/mock"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
@@ -20,7 +20,7 @@ func TestRegisterUser(t *testing.T) {
 	repo := usersmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := users.New(validator.New(), repo)
 
 	type want struct {
 		userID string
@@ -121,7 +121,7 @@ func TestLoginUser(t *testing.T) {
 	repo := usersmock.NewMockRepository(ctrl)
 
 	// Create a new service
-	s := auth.New(validator.New(), repo)
+	s := users.New(validator.New(), repo)
 
 	type want struct {
 		userID string

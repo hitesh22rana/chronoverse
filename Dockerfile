@@ -4,6 +4,8 @@ FROM golang:latest AS build
 # Build arguments
 ARG VERSION
 ARG NAME
+ARG PRIVATE_KEY_PATH
+ARG PUBLIC_KEY_PATH
 
 # Set working directory
 WORKDIR /app
@@ -40,7 +42,7 @@ COPY . .
 RUN rm -rf pkg/proto && rm -rf pkg/openapiv2 && buf dep update && buf generate
 
 # Build the service with ldflags
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -ldflags "-X 'main.version=${VERSION}' -X 'main.name=${NAME}' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o /go/bin/service cmd/${NAME}/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -ldflags "-X 'main.version=${VERSION}' -X 'main.name=${NAME}' -X 'main.authPrivateKeyPath=${PRIVATE_KEY_PATH}' -X 'main.authPublicKeyPath=${PUBLIC_KEY_PATH}'" -o /go/bin/service cmd/${NAME}/main.go
 
 # Final stage
 FROM scratch

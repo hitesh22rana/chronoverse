@@ -111,6 +111,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=users-service
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
       - '50051:50051'
     restart: on-failure
@@ -140,8 +142,36 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=jobs-service
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
       - '50052:50052'
+    restart: on-failure
+    depends_on:
+      - postgres
+      - lgtm
+    networks:
+      - chronoverse
+
+  scheduler:
+    image: scheduler
+    container_name: scheduler
+    environment:
+      - POSTGRES_HOST=postgres
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
+      - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_METRIC_EXPORT_INTERVAL=500
+      - OTEL_BSP_SCHEDULE_DELAY=500
+      - ENV=production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=scheduler
     restart: on-failure
     depends_on:
       - postgres
@@ -166,6 +196,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=server
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
       - '8080:8080'
     restart: on-failure

@@ -36,6 +36,10 @@ build/users-service: dependencies
 build/jobs-service: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=jobs-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/jobs-service ./cmd/jobs-service
 
+.PHONY: build/scheduler
+build/scheduler: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=scheduler'" -o ./.bin/scheduler ./cmd/scheduler
+
 .PHONY: build/server
 build/server: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=server' -X 'main.authPublicKeyPath=certs/auth.ed.pub' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/server ./cmd/server
@@ -47,6 +51,10 @@ run/users-service: build/users-service
 .PHONY: run/jobs-service
 run/jobs-service: build/jobs-service
 	@./.bin/jobs-service
+
+.PHONY: run/scheduler
+run/scheduler: build/scheduler
+	@./.bin/scheduler
 
 .PHONY: run/server
 run/server: build/server

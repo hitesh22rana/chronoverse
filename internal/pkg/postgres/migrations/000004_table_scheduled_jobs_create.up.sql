@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     status SCHEDULED_JOB_STATUS DEFAULT 'PENDING' NOT NULL,
     scheduled_at timestamp WITHOUT TIME ZONE NOT NULL,
     retry_count INTEGER DEFAULT 0 NOT NULL CHECK (retry_count >= 0 AND retry_count <= max_retry),
-    max_retry INTEGER DEFAULT 0 NOT NULL CHECK (max_retry >= 0),
+    max_retry INTEGER DEFAULT 0 NOT NULL CHECK (max_retry >= 0 AND max_retry >= retry_count),
     started_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
     completed_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
     created_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_job_id ON scheduled_jobs (job_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_user_id ON scheduled_jobs (user_id);
-CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_scheduled_at ON scheduled_jobs (scheduled_at) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_scheduled_at_status_pending ON scheduled_jobs (scheduled_at) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_scheduled_at_status_failed ON scheduled_jobs (scheduled_at) WHERE status = 'FAILED';
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_created_at_desc_id_desc ON scheduled_jobs (created_at DESC, id DESC);
 
 -- Auto-update updated_at on row updates

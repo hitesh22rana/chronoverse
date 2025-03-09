@@ -4,9 +4,9 @@ services:
     image: postgres:alpine
     container_name: postgres
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=chronoverse
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chronoverse
     ports:
       - '5432:5432'
     restart: on-failure
@@ -17,6 +17,193 @@ services:
       timeout: 10s
       interval: 5s
       retries: 10
+    networks:
+      - chronoverse
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - '6379:6379'
+    restart: on-failure
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - chronoverse
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - '9092:9092'
+      - '9093:9093'
+    restart: on-failure
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_DURABILITY_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_TIER_METADATA_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: chronoverse
+    volumes:
+      - kafka:/var/lib/kafka/data
+    networks:
+      - chronoverse
+
+  lgtm:
+    image: grafana/otel-lgtm
+    container_name: lgtm
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: true
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    restart: on-failure
+    volumes:
+      - lgtm:/data
+      - otel-lgtm:/otel-lgtm
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+      - '3000:3000'
+    networks:
+      - chronoverse
+
+  users-service:
+    image: users-service
+    container_name: users-service
+    environment:
+      POSTGRES_HOST: postgres
+      GRPC_PORT: 50051
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=users-service
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    ports:
+      - '50051:50051'
+    restart: on-failure
+    depends_on:
+      - postgres
+      - lgtm
+    networks:
+      - chronoverse
+
+  jobs-service:
+    image: jobs-service
+    container_name: jobs-service
+    environment:
+      POSTGRES_HOST: postgres
+      GRPC_PORT: 50052
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=jobs-service
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    ports:
+      - '50052:50052'
+    restart: on-failure
+    depends_on:
+      - postgres
+      - lgtm
+    networks:
+      - chronoverse
+
+  scheduler:
+    image: scheduler
+    container_name: scheduler
+    environment:
+      POSTGRES_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_PRODUCER_TOPIC: jobs
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=scheduler
+    restart: on-failure
+    depends_on:
+      - postgres
+      - kafka
+      - lgtm
+    networks:
+      - chronoverse
+
+  server:
+    image: server
+    container_name: server
+    environment:
+      SERVER_HOST: 0.0.0.0
+      USERS_SERVICE_HOST: users-service
+      USERS_SERVICE_PORT: 50051
+      JOBS_SERVICE_HOST: jobs-service
+      JOBS_SERVICE_PORT: 50052
+      REDIS_HOST: redis
+      ENV: production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=server
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    ports:
+      - '8080:8080'
+    restart: on-failure
+    depends_on:
+      - users-service
+      - redis
     networks:
       - chronoverse
 
@@ -58,158 +245,10 @@ services:
     networks:
       - chronoverse
 
-  redis:
-    image: redis:alpine
-    container_name: redis
-    ports:
-      - '6379:6379'
-    restart: on-failure
-    volumes:
-      - redis:/data
-    healthcheck:
-      test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - chronoverse
-
-  lgtm:
-    image: grafana/otel-lgtm
-    container_name: lgtm
-    environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    restart: on-failure
-    volumes:
-      - lgtm:/data
-      - otel-lgtm:/otel-lgtm
-    ports:
-      - '4317:4317'
-      - '4318:4318'
-      - '3000:3000'
-    networks:
-      - chronoverse
-
-  users-service:
-    image: users-service
-    container_name: users-service
-    environment:
-      - POSTGRES_HOST=postgres
-      - GRPC_PORT=50051
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
-      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
-      - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-      - OTEL_LOGS_EXPORTER=otlp
-      - OTEL_METRIC_EXPORT_INTERVAL=500
-      - OTEL_BSP_SCHEDULE_DELAY=500
-      - ENV=production
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - VERSION=v0.0.1
-        - NAME=users-service
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
-    ports:
-      - '50051:50051'
-    restart: on-failure
-    depends_on:
-      - postgres
-      - lgtm
-    networks:
-      - chronoverse
-
-  jobs-service:
-    image: jobs-service
-    container_name: jobs-service
-    environment:
-      - POSTGRES_HOST=postgres
-      - GRPC_PORT=50052
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
-      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
-      - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-      - OTEL_LOGS_EXPORTER=otlp
-      - OTEL_METRIC_EXPORT_INTERVAL=500
-      - OTEL_BSP_SCHEDULE_DELAY=500
-      - ENV=production
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - VERSION=v0.0.1
-        - NAME=jobs-service
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
-    ports:
-      - '50052:50052'
-    restart: on-failure
-    depends_on:
-      - postgres
-      - lgtm
-    networks:
-      - chronoverse
-
-  scheduler:
-    image: scheduler
-    container_name: scheduler
-    environment:
-      - POSTGRES_HOST=postgres
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4317
-      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://lgtm:4317
-      - OTEL_EXPORTER_OTLP_LOGS_INSECURE=true
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-      - OTEL_LOGS_EXPORTER=otlp
-      - OTEL_METRIC_EXPORT_INTERVAL=500
-      - OTEL_BSP_SCHEDULE_DELAY=500
-      - ENV=production
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - VERSION=v0.0.1
-        - NAME=scheduler
-    restart: on-failure
-    depends_on:
-      - postgres
-      - lgtm
-    networks:
-      - chronoverse
-
-  server:
-    image: server
-    container_name: server
-    environment:
-      - SERVER_HOST=0.0.0.0
-      - USERS_SERVICE_HOST=users-service
-      - USERS_SERVICE_PORT=50051
-      - JOBS_SERVICE_HOST=jobs-service
-      - JOBS_SERVICE_PORT=50052
-      - REDIS_HOST=redis
-      - ENV=production
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - VERSION=v0.0.1
-        - NAME=server
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
-    ports:
-      - '8080:8080'
-    restart: on-failure
-    depends_on:
-      - users-service
-      - redis
-    networks:
-      - chronoverse
-
 volumes:
   postgres:
   redis:
+  kafka:
   lgtm:
   otel-lgtm:
 

@@ -12,11 +12,20 @@ type SchedulerConfig struct {
 
 	Postgres
 	Scheduler
+	Kafka
 }
 
 // Scheduler holds the configuration for the scheduler.
 type Scheduler struct {
 	PollInterval time.Duration `envconfig:"SCHEDULER_POLL_INTERVAL" default:"10s"`
+}
+
+// Kafka holds the configuration for Kafka.
+type Kafka struct {
+	Brokers       []string `envconfig:"KAFKA_BROKERS" required:"true"`
+	ProducerTopic string   `envconfig:"KAFKA_PRODUCER_TOPIC"`
+	ConsumeTopics []string `envconfig:"KAFKA_CONSUME_TOPICS"`
+	ConsumerGroup string   `envconfig:"KAFKA_CONSUMER_GROUP"`
 }
 
 // InitSchedulerConfig initializes the scheduler configuration.

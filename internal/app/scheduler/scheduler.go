@@ -6,14 +6,9 @@ import (
 	"context"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcodes "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Service provides scheduler related operations.
@@ -29,7 +24,6 @@ type Config struct {
 // Scheduler represents the scheduler.
 type Scheduler struct {
 	logger *zap.Logger
-	tp     trace.Tracer
 	cfg    *Config
 	svc    Service
 }
@@ -38,7 +32,6 @@ type Scheduler struct {
 func New(ctx context.Context, cfg *Config, svc Service) *Scheduler {
 	return &Scheduler{
 		logger: loggerpkg.FromContext(ctx),
-		tp:     otel.Tracer(svcpkg.Info().GetName()),
 		cfg:    cfg,
 		svc:    svc,
 	}
@@ -46,25 +39,23 @@ func New(ctx context.Context, cfg *Config, svc Service) *Scheduler {
 
 // Run starts the scheduler.
 func (s *Scheduler) Run(ctx context.Context) error {
-	ctx, span := s.tp.Start(ctx, "App.Run", trace.WithAttributes(
-		attribute.String("poll_interval", s.cfg.PollInterval.String()),
-	))
-	defer span.End()
-
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			total, err := s.svc.Run(ctx)
-			if err != nil {
-				span.SetStatus(otelcodes.Error, err.Error())
-				span.RecordError(err)
-				s.logger.Error("failed to run the scheduler", zap.Error(err))
-			}
+			ctxTimeout, cancel := context.WithTimeout(ctx, s.cfg.PollInterval/2)
 
-			s.logger.Info("successfully scheduled jobs", zap.Int("total", total))
+			total, err := s.svc.Run(ctxTimeout)
+			// The context is canceled, so we don't need to call cancel.
+			cancel()
+
+			if err != nil {
+				s.logger.Error("failed to run the scheduler", zap.Error(err))
+			} else {
+				s.logger.Info("successfully scheduled jobs", zap.Int("total", total))
+			}
 		case <-ctx.Done():
 			s.logger.Info("stopping the scheduler")
 			return nil

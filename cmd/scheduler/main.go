@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"go.uber.org/zap"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/scheduler"
 	"github.com/hitesh22rana/chronoverse/internal/config"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -131,8 +133,20 @@ func run() int {
 	}
 	defer pdb.Close()
 
+	// Initialize the kafka client
+	kfk, err := kafka.New(ctx,
+		kafka.WithBrokers(cfg.Kafka.Brokers...),
+		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
+		kafka.WithTransactionalID(strconv.FormatInt(int64(os.Getpid()), 10)),
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer kfk.Close()
+
 	// Initialize scheduler components
-	repo := schedulerrepo.New(pdb)
+	repo := schedulerrepo.New(pdb, kfk)
 	svc := schedulersvc.New(repo)
 	app := scheduler.New(ctx, &scheduler.Config{
 		PollInterval: cfg.Scheduler.PollInterval,

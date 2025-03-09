@@ -8,6 +8,12 @@ type JobsConfig struct {
 
 	Postgres
 	Grpc
+	Jobs
+}
+
+// Jobs holds the configuration for the jobs service.
+type Jobs struct {
+	FetchLimit int `envconfig:"JOBS_FETCH_LIMIT" default:"10"`
 }
 
 // InitJobsServiceConfig initializes the jobs service configuration.

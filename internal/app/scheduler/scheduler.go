@@ -18,7 +18,8 @@ type Service interface {
 
 // Config represents the jobs-service configuration.
 type Config struct {
-	PollInterval time.Duration
+	PollInterval   time.Duration
+	ContextTimeout time.Duration
 }
 
 // Scheduler represents the scheduler.
@@ -45,7 +46,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			ctxTimeout, cancel := context.WithTimeout(ctx, s.cfg.PollInterval/2)
+			ctxTimeout, cancel := context.WithTimeout(ctx, s.cfg.ContextTimeout)
 
 			total, err := s.svc.Run(ctxTimeout)
 			// The context is canceled, so we don't need to call cancel.

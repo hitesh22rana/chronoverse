@@ -45,7 +45,7 @@ type Users struct {
 
 // audienceInterceptor sets the audience from the metadata and adds it to the context.
 func audienceInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the audience from metadata.
 		audience, err := auth.ExtractAudienceFromMetadata(ctx)
 		if err != nil {
@@ -58,7 +58,7 @@ func audienceInterceptor() grpc.UnaryServerInterceptor {
 
 // roleInterceptor extracts the role from the metadata and adds it to the context.
 func roleInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the role from metadata.
 		role, err := auth.ExtractRoleFromMetadata(ctx)
 		if err != nil {
@@ -71,7 +71,7 @@ func roleInterceptor() grpc.UnaryServerInterceptor {
 
 // authTokenInterceptor extracts the authToken from metadata and adds it to the context.
 func authTokenInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor for RegisterUser and LoginUser methods.
 		if strings.Contains(info.FullMethod, "RegisterUser") ||
 			strings.Contains(info.FullMethod, "LoginUser") {

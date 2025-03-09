@@ -146,10 +146,14 @@ func run() int {
 	defer kfk.Close()
 
 	// Initialize scheduler components
-	repo := schedulerrepo.New(pdb, kfk)
+	repo := schedulerrepo.New(&schedulerrepo.Config{
+		FetchLimit: cfg.Scheduler.FetchLimit,
+		BatchSize:  cfg.Scheduler.BatchSize,
+	}, pdb, kfk)
 	svc := schedulersvc.New(repo)
 	app := scheduler.New(ctx, &scheduler.Config{
-		PollInterval: cfg.Scheduler.PollInterval,
+		PollInterval:   cfg.Scheduler.PollInterval,
+		ContextTimeout: cfg.Scheduler.ContextTimeout,
 	}, svc)
 
 	// Log the service information

@@ -17,7 +17,10 @@ type SchedulerConfig struct {
 
 // Scheduler holds the configuration for the scheduler.
 type Scheduler struct {
-	PollInterval time.Duration `envconfig:"SCHEDULER_POLL_INTERVAL" default:"10s"`
+	PollInterval   time.Duration `envconfig:"SCHEDULER_POLL_INTERVAL" default:"10s"`
+	ContextTimeout time.Duration `envconfig:"SCHEDULER_CONTEXT_TIMEOUT" default:"5s"`
+	FetchLimit     int           `envconfig:"SCHEDULER_FETCH_LIMIT" default:"1000"`
+	BatchSize      int           `envconfig:"SCHEDULER_BATCH_SIZE" default:"100"`
 }
 
 // Kafka holds the configuration for Kafka.

@@ -24,21 +24,27 @@ import (
 const (
 	jobsTable          = "jobs"
 	scheduledJobsTable = "scheduled_jobs"
-	limit              = 10
 	delimiter          = '$'
 )
+
+// Config represents the repository constants configuration.
+type Config struct {
+	FetchLimit int
+}
 
 // Repository provides jobs repository.
 type Repository struct {
 	tp   trace.Tracer
+	cfg  *Config
 	auth *auth.Auth
 	pg   *postgres.Postgres
 }
 
 // New creates a new jobs repository.
-func New(auth *auth.Auth, pg *postgres.Postgres) *Repository {
+func New(cfg *Config, auth *auth.Auth, pg *postgres.Postgres) *Repository {
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		cfg:  cfg,
 		auth: auth,
 		pg:   pg,
 	}
@@ -68,7 +74,7 @@ func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind 
 	query := fmt.Sprintf(`
 		INSERT INTO %s (user_id, name, payload, kind, interval)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
+		RETURNING id;
 	`, jobsTable)
 
 	row := tx.QueryRow(ctx, query, userID, name, payload, kind, interval)
@@ -83,7 +89,7 @@ func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind 
 	// Add job to scheduled jobs
 	query = fmt.Sprintf(`
 		INSERT INTO %s (job_id, user_id, scheduled_at, max_retry)
-		VALUES ($1, $2, $3, $4)
+		VALUES ($1, $2, $3, $4);
 	`, scheduledJobsTable)
 
 	if _, err = tx.Exec(ctx, query, jobID, userID, scheduledAt, maxRetry); err != nil {
@@ -114,7 +120,7 @@ func (r *Repository) UpdateJob(ctx context.Context, jobID, userID, name, payload
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET name = $1, payload = $2, kind = $3, interval = $4
-		WHERE id = $5 AND user_id = $6
+		WHERE id = $5 AND user_id = $6;
 	`, jobsTable)
 
 	// Execute the query
@@ -151,7 +157,7 @@ func (r *Repository) GetJob(ctx context.Context, jobID, userID string) (res *mod
 	query := fmt.Sprintf(`
 		SELECT id, name, payload, kind, interval, created_at, updated_at, terminated_at
 		FROM %s
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1 AND user_id = $2;
 	`, jobsTable)
 
 	//nolint:errcheck // The error is handled in the next line
@@ -187,7 +193,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 	query := fmt.Sprintf(`
 		SELECT user_id, name, payload, kind, interval, created_at, updated_at, terminated_at
 		FROM %s
-		WHERE id = $1
+		WHERE id = $1;
 	`, jobsTable)
 
 	//nolint:errcheck // The error is handled in the next line
@@ -238,7 +244,7 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID, cursor string
 		args = append(args, createdAt, id)
 	}
 
-	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d`, limit+1)
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	//nolint:errcheck // The error is handled in the next line
 	rows, _ := r.pg.Query(ctx, query, args...)
@@ -255,13 +261,13 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID, cursor string
 
 	// Check if there are more jobs
 	cursor = ""
-	if len(data) > limit {
+	if len(data) > r.cfg.FetchLimit {
 		cursor = fmt.Sprintf(
 			"%s%c%s",
-			data[limit].ID,
-			delimiter, data[limit].CreatedAt.Format(time.RFC3339Nano),
+			data[r.cfg.FetchLimit].ID,
+			delimiter, data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
 		)
-		data = data[:limit]
+		data = data[:r.cfg.FetchLimit]
 	}
 
 	return &model.ListJobsByUserIDResponse{
@@ -300,7 +306,7 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, curso
 		args = append(args, createdAt, id)
 	}
 
-	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d`, limit+1)
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	//nolint:errcheck // The error is handled in the next line
 	rows, _ := r.pg.Query(ctx, query, args...)
@@ -317,13 +323,13 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, curso
 
 	// Check if there are more scheduled jobs
 	cursor = ""
-	if len(data) > limit {
+	if len(data) > r.cfg.FetchLimit {
 		cursor = fmt.Sprintf(
 			"%s%c%s",
-			data[limit].ID,
-			delimiter, data[limit].CreatedAt.Format(time.RFC3339Nano),
+			data[r.cfg.FetchLimit].ID,
+			delimiter, data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
 		)
-		data = data[:limit]
+		data = data[:r.cfg.FetchLimit]
 	}
 
 	return &model.ListScheduledJobsResponse{

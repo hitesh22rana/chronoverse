@@ -139,7 +139,9 @@ func run() int {
 	defer pdb.Close()
 
 	// Initialize the jobs repository
-	repo := jobsrepo.New(auth, pdb)
+	repo := jobsrepo.New(&jobsrepo.Config{
+		FetchLimit: cfg.Jobs.FetchLimit,
+	}, auth, pdb)
 
 	// Initialize the validator utility
 	validator := validator.New()

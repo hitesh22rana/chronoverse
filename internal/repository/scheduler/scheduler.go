@@ -18,21 +18,28 @@ import (
 )
 
 const (
-	size  = 100
-	limit = 1000
+	scheduledJobsTable = "scheduled_jobs"
 )
+
+// Config represents the repository constants configuration.
+type Config struct {
+	FetchLimit int
+	BatchSize  int
+}
 
 // Repository provides jobs repository.
 type Repository struct {
 	tp  trace.Tracer
+	cfg *Config
 	pg  *postgres.Postgres
 	kfk *kgo.Client
 }
 
 // New creates a new jobs repository.
-func New(pg *postgres.Postgres, kfk *kgo.Client) *Repository {
+func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
+		cfg: cfg,
 		pg:  pg,
 		kfk: kfk,
 	}
@@ -59,19 +66,18 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	query := `
-		UPDATE scheduled_jobs
+	query := fmt.Sprintf(`
+		UPDATE %s
 		SET status = 'QUEUED', updated_at = NOW()
 		WHERE id IN (
 			SELECT id
-			FROM scheduled_jobs
+			FROM %s
 			WHERE status = 'PENDING' AND scheduled_at <= NOW()
 			FOR UPDATE SKIP LOCKED
 			LIMIT %d
 		)
 		RETURNING id, job_id, scheduled_at;
-	`
-	query = fmt.Sprintf(query, limit)
+	`, scheduledJobsTable, scheduledJobsTable, r.cfg.FetchLimit)
 
 	// Execute query
 	rows, err := tx.Query(ctx, query)
@@ -108,7 +114,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	}
 
 	// Divide the records into batches
-	recordsBatch := batch(records, size)
+	recordsBatch := batch(records, r.cfg.BatchSize)
 	if len(recordsBatch) == 0 {
 		return 0, nil
 	}

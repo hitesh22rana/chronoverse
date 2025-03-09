@@ -60,7 +60,8 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 	query := fmt.Sprintf(`
 		INSERT INTO %s (email, password) 
 		VALUES ($1, $2)
-		RETURNING id`, userTable)
+		RETURNING id;
+	`, userTable)
 
 	err = r.pg.QueryRow(ctx, query, email, string(hashedPassword)).Scan(&ID)
 	if err != nil {
@@ -98,7 +99,7 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (ID, aut
 
 	// Fetch user from database
 	var password string
-	query := fmt.Sprintf(`SELECT id, password FROM %s WHERE email = $1`, userTable)
+	query := fmt.Sprintf(`SELECT id, password FROM %s WHERE email = $1;`, userTable)
 	err = r.pg.QueryRow(ctx, query, email).Scan(&ID, &password)
 	if err != nil {
 		if r.pg.IsNoRows(err) {

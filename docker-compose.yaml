@@ -150,9 +150,9 @@ services:
     networks:
       - chronoverse
 
-  scheduler:
-    image: scheduler
-    container_name: scheduler
+  scheduling-service:
+    image: scheduling-service
+    container_name: scheduling-service
     environment:
       POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
@@ -170,10 +170,43 @@ services:
       dockerfile: Dockerfile
       args:
         - VERSION=v0.0.1
-        - NAME=scheduler
+        - NAME=scheduling-service
     restart: on-failure
     depends_on:
       - postgres
+      - kafka
+      - lgtm
+    networks:
+      - chronoverse
+
+  execution-service:
+    image: execution-service
+    container_name: execution-service
+    environment:
+      POSTGRES_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CONSUME_TOPICS: jobs
+      KAFKA_CONSUMER_GROUP: execution-service
+      JOBS_SERVICE_HOST: jobs-service
+      JOBS_SERVICE_PORT: 50052
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=execution-service
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    restart: on-failure
+    depends_on:
       - kafka
       - lgtm
     networks:

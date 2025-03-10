@@ -53,7 +53,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			cancel()
 
 			if err != nil {
-				s.logger.Error("failed to run the scheduler", zap.Error(err))
+				s.logger.Error("error occurred while running the scheduler", zap.Error(err))
 			} else {
 				s.logger.Info("successfully scheduled jobs", zap.Int("total", total))
 			}

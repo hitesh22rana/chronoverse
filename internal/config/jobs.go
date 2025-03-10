@@ -4,10 +4,10 @@ import "github.com/kelseyhightower/envconfig"
 
 // JobsConfig holds the jobs service configuration.
 type JobsConfig struct {
-	Configuration
-
+	Environment
 	Postgres
 	Grpc
+
 	Jobs
 }
 

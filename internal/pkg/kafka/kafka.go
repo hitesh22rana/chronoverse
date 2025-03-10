@@ -9,17 +9,26 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// IsolationLevel represents the Kafka isolation level.
+type IsolationLevel string
+
 const (
 	initTimeout time.Duration = 10 * time.Second
+
+	// ReadUncommitted means that the consumer will read all messages, even those that are in the process of being written.
+	ReadUncommitted IsolationLevel = "read_uncommitted"
+	// ReadCommitted means that the consumer will only read messages that have been committed.
+	ReadCommitted IsolationLevel = "read_committed"
 )
 
 // Config represents the configuration for a Kafka client.
 type Config struct {
-	Brokers         []string
-	ProducerTopic   string
-	ConsumeTopics   []string
-	ConsumerGroup   string
-	TransactionalID string
+	Brokers             []string
+	ProducerTopic       string
+	ConsumeTopics       []string
+	ConsumerGroup       string
+	TransactionalID     string
+	FetchIsolationLevel IsolationLevel
 }
 
 // Option is a functional option type that allows us to configure the Kafka client.
@@ -60,6 +69,18 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 		opts = append(opts, kgo.TransactionalID(c.TransactionalID))
 	}
 
+	if c.FetchIsolationLevel != "" {
+		// Default to read uncommitted if not set
+		var fetchIsolationLevel kgo.IsolationLevel
+		if c.FetchIsolationLevel == ReadCommitted {
+			fetchIsolationLevel = kgo.ReadCommitted()
+		} else {
+			fetchIsolationLevel = kgo.ReadUncommitted()
+		}
+
+		opts = append(opts, kgo.FetchIsolationLevel(fetchIsolationLevel))
+	}
+
 	return kgo.NewClient(opts...)
 }
 
@@ -95,5 +116,12 @@ func WithConsumerGroup(group string) Option {
 func WithTransactionalID(id string) Option {
 	return func(c *Config) {
 		c.TransactionalID = id
+	}
+}
+
+// WithFetchIsolationLevel sets the Kafka fetch isolation level.
+func WithFetchIsolationLevel(isolationLevel IsolationLevel) Option {
+	return func(c *Config) {
+		c.FetchIsolationLevel = isolationLevel
 	}
 }

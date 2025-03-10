@@ -27,7 +27,7 @@ type Config struct {
 	BatchSize  int
 }
 
-// Repository provides jobs repository.
+// Repository provides scheduler repository.
 type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
@@ -35,7 +35,7 @@ type Repository struct {
 	kfk *kgo.Client
 }
 
-// New creates a new jobs repository.
+// New creates a new scheduler repository.
 func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),

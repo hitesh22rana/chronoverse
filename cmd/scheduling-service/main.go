@@ -13,8 +13,8 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/scheduler"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/otel"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	schedulerrepo "github.com/hitesh22rana/chronoverse/internal/repository/scheduler"
@@ -55,22 +55,22 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the jobs service configuration
-	cfg, err := config.InitSchedulerConfig()
+	// Load the scheduling service configuration
+	cfg, err := config.InitSchedulingServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
 	// Initialize OTel Resource
-	res, err := otel.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
+	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to init OTel resource: %v\n", err)
 		return ExitError
 	}
 
 	// Initialize TracerProvider
-	tp, err := otel.InitTracerProvider(ctx, res)
+	tp, err := otelpkg.InitTracerProvider(ctx, res)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to init tracer provider: %v\n", err)
 		return ExitError
@@ -82,7 +82,7 @@ func run() int {
 	}()
 
 	// Initialize MeterProvider (optional for metrics)
-	mp, err := otel.InitMeterProvider(ctx, res)
+	mp, err := otelpkg.InitMeterProvider(ctx, res)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to init meter provider: %v\n", err)
 		return ExitError
@@ -94,7 +94,7 @@ func run() int {
 	}()
 
 	// Initialize LoggerProvider
-	lp, err := otel.InitLogProvider(ctx, res)
+	lp, err := otelpkg.InitLogProvider(ctx, res)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to init log provider: %v\n", err)
 		return ExitError
@@ -106,7 +106,7 @@ func run() int {
 	}()
 
 	// Set up logger
-	ctx, logger := logger.Init(ctx, svcpkg.Info().GetName(), lp)
+	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetName(), lp)
 	defer func() {
 		if err = logger.Sync(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
@@ -145,7 +145,7 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize scheduler components
+	// Initialize the scheduling service components
 	repo := schedulerrepo.New(&schedulerrepo.Config{
 		FetchLimit: cfg.Scheduler.FetchLimit,
 		BatchSize:  cfg.Scheduler.BatchSize,
@@ -165,7 +165,7 @@ func run() int {
 		zap.String("environment", cfg.Environment.Env),
 	)
 
-	// Run the scheduler
+	// Run the scheduling service
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

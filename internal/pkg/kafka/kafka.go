@@ -29,6 +29,7 @@ type Config struct {
 	ConsumerGroup       string
 	TransactionalID     string
 	FetchIsolationLevel IsolationLevel
+	DisableAutoCommit   bool
 }
 
 // Option is a functional option type that allows us to configure the Kafka client.
@@ -81,6 +82,10 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 		opts = append(opts, kgo.FetchIsolationLevel(fetchIsolationLevel))
 	}
 
+	if c.DisableAutoCommit {
+		opts = append(opts, kgo.DisableAutoCommit())
+	}
+
 	return kgo.NewClient(opts...)
 }
 
@@ -123,5 +128,12 @@ func WithTransactionalID(id string) Option {
 func WithFetchIsolationLevel(isolationLevel IsolationLevel) Option {
 	return func(c *Config) {
 		c.FetchIsolationLevel = isolationLevel
+	}
+}
+
+// WithDisableAutoCommit disables the Kafka auto commit.
+func WithDisableAutoCommit() Option {
+	return func(c *Config) {
+		c.DisableAutoCommit = true
 	}
 }

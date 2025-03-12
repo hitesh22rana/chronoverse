@@ -29,6 +29,9 @@ type Service interface {
 	UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) error
 	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*model.GetJobByIDResponse, error)
+	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
+	UpdateScheduledJobStatus(ctx context.Context, req *jobspb.UpdateScheduledJobStatusRequest) error
+	GetScheduledJobByID(ctx context.Context, req *jobspb.GetScheduledJobByIDRequest) (*model.GetScheduledJobByIDResponse, error)
 	ListJobsByUserID(ctx context.Context, req *jobspb.ListJobsByUserIDRequest) (*model.ListJobsByUserIDResponse, error)
 	ListScheduledJobs(ctx context.Context, req *jobspb.ListScheduledJobsRequest) (*model.ListScheduledJobsResponse, error)
 }
@@ -118,7 +121,6 @@ func (j *Jobs) CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (res
 			attribute.String("payload", req.GetPayload()),
 			attribute.String("kind", req.GetKind()),
 			attribute.Int("interval", int(req.GetInterval())),
-			attribute.Int("max_retry", int(req.GetMaxRetry())),
 		),
 	)
 	defer func() {
@@ -160,7 +162,6 @@ func (j *Jobs) UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) (res
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("name", req.GetName()),
 			attribute.String("payload", req.GetPayload()),
-			attribute.String("kind", req.GetKind()),
 			attribute.Int("interval", int(req.GetInterval())),
 		),
 	)
@@ -235,6 +236,8 @@ func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobs
 
 // GetJobByID returns the job details by ID.
 // This is an internal method used by internal services, and it should not be exposed to the public.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (res *jobspb.GetJobByIDResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
@@ -270,6 +273,133 @@ func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (r
 		zap.Any("job", job),
 	)
 	return job.ToProto(), nil
+}
+
+// ScheduleJob schedules a job.
+// This is an internal method used by internal services, and it should not be exposed to the public.
+func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (res *jobspb.ScheduleJobResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.ScheduleJob",
+		trace.WithAttributes(
+			attribute.String("job_id", req.GetJobId()),
+			attribute.String("user_id", req.GetUserId()),
+			attribute.String("scheduled_at", req.GetScheduledAt()),
+		),
+	)
+
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	scheduledJobID, err := j.svc.ScheduleJob(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to schedule job",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job scheduled successfully",
+		zap.Any("ctx", ctx),
+		zap.String("scheduled_job_id", scheduledJobID),
+	)
+	return &jobspb.ScheduleJobResponse{Id: scheduledJobID}, nil
+}
+
+// UpdateScheduledJobStatus updates the scheduled job status.
+// This is an internal method used by internal services, and it should not be exposed to the public.
+func (j *Jobs) UpdateScheduledJobStatus(
+	ctx context.Context,
+	req *jobspb.UpdateScheduledJobStatusRequest,
+) (res *jobspb.UpdateScheduledJobStatusResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.UpdateScheduledJobStatus",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("status", req.GetStatus()),
+		),
+	)
+
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	err = j.svc.UpdateScheduledJobStatus(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to update scheduled job status",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"scheduled job status updated successfully",
+		zap.Any("ctx", ctx),
+	)
+	return &jobspb.UpdateScheduledJobStatusResponse{}, nil
+}
+
+// GetScheduledJobByID returns the scheduled job details by ID.
+// This is an internal method used by internal services, and it should not be exposed to the public.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (j *Jobs) GetScheduledJobByID(ctx context.Context, req *jobspb.GetScheduledJobByIDRequest) (res *jobspb.GetScheduledJobByIDResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.GetScheduledJobByID",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	scheduledJob, err := j.svc.GetScheduledJobByID(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to fetch scheduled job details",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"scheduled job details fetched successfully",
+		zap.Any("ctx", ctx),
+		zap.Any("scheduled_job", scheduledJob),
+	)
+
+	return scheduledJob.ToProto(), nil
 }
 
 // ListJobsByUserID returns the jobs by user ID.

@@ -1,6 +1,6 @@
 DROP TYPE IF EXISTS SCHEDULED_JOB_STATUS;
 
-CREATE TYPE SCHEDULED_JOB_STATUS AS ENUM ('PENDING', 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'RETRYING', 'CANCELLED');
+CREATE TYPE SCHEDULED_JOB_STATUS AS ENUM ('PENDING', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED');
 
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
@@ -8,8 +8,6 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
     status SCHEDULED_JOB_STATUS DEFAULT 'PENDING' NOT NULL,
     scheduled_at timestamp WITHOUT TIME ZONE NOT NULL,
-    retry_count INTEGER DEFAULT 0 NOT NULL CHECK (retry_count >= 0 AND retry_count <= max_retry),
-    max_retry INTEGER DEFAULT 0 NOT NULL CHECK (max_retry >= 0 AND max_retry >= retry_count),
     started_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
     completed_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
     created_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,

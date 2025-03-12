@@ -12,7 +12,6 @@ type createJobRequest struct {
 	Payload  string `json:"payload"`
 	Kind     string `json:"kind"`
 	Interval int32  `json:"interval"`
-	MaxRetry int32  `json:"max_retry"`
 }
 
 // handleCreateJob handles the create job request.
@@ -43,7 +42,6 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		Payload:  req.Payload,
 		Kind:     req.Kind,
 		Interval: req.Interval,
-		MaxRetry: req.MaxRetry,
 	})
 	if err != nil {
 		handleError(w, err, "failed to create job")
@@ -60,7 +58,6 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 type updateJobRequest struct {
 	Name     string `json:"name"`
 	Payload  string `json:"payload"`
-	Kind     string `json:"kind"`
 	Interval int32  `json:"interval"`
 }
 
@@ -98,7 +95,6 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		UserId:   userID,
 		Name:     req.Name,
 		Payload:  req.Payload,
-		Kind:     req.Kind,
 		Interval: req.Interval,
 	})
 	if err != nil {

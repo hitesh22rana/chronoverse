@@ -7,6 +7,23 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
+// Status represents the status of the scheduled job.
+type Status string
+
+// Statuses for the scheduled job.
+const (
+	StatusPending   Status = "PENDING"
+	StatusQueued    Status = "QUEUED"
+	StatusRunning   Status = "RUNNING"
+	StatusCompleted Status = "COMPLETED"
+	StatusFailed    Status = "FAILED"
+)
+
+// ToString converts the Status to its string representation.
+func (s Status) ToString() string {
+	return string(s)
+}
+
 // GetJobResponse represents the response of GetJob.
 type GetJobResponse struct {
 	ID           string       `db:"id"`
@@ -71,6 +88,42 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	}
 }
 
+// GetScheduledJobByIDResponse represents the response of GetScheduledJobByID.
+type GetScheduledJobByIDResponse struct {
+	ID          string       `db:"id"`
+	JobID       string       `db:"job_id"`
+	UserID      string       `db:"user_id"`
+	Status      string       `db:"status"`
+	ScheduledAt time.Time    `db:"scheduled_at"`
+	StartedAt   sql.NullTime `db:"started_at,omitempty"`
+	CompletedAt sql.NullTime `db:"completed_at,omitempty"`
+	CreatedAt   time.Time    `db:"created_at"`
+	UpdatedAt   time.Time    `db:"updated_at"`
+}
+
+// ToProto converts the GetScheduledJobByIDResponse to its protobuf representation.
+func (r *GetScheduledJobByIDResponse) ToProto() *jobspb.GetScheduledJobByIDResponse {
+	var startedAt, completedAt string
+	if r.StartedAt.Valid {
+		startedAt = r.StartedAt.Time.Format(time.RFC3339Nano)
+	}
+	if r.CompletedAt.Valid {
+		completedAt = r.CompletedAt.Time.Format(time.RFC3339Nano)
+	}
+
+	return &jobspb.GetScheduledJobByIDResponse{
+		Id:          r.ID,
+		JobId:       r.JobID,
+		UserId:      r.UserID,
+		Status:      r.Status,
+		ScheduledAt: r.ScheduledAt.Format(time.RFC3339Nano),
+		StartedAt:   startedAt,
+		CompletedAt: completedAt,
+		CreatedAt:   r.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:   r.UpdatedAt.Format(time.RFC3339Nano),
+	}
+}
+
 // JobByUserIDResponse represents the response of ListJobsByUserID.
 type JobByUserIDResponse struct {
 	ID           string       `db:"id"`
@@ -123,8 +176,6 @@ type ScheduledJobByJobIDResponse struct {
 	ID          string       `db:"id"`
 	Status      string       `db:"status"`
 	ScheduledAt time.Time    `db:"scheduled_at"`
-	RetryCount  int32        `db:"retry_count"`
-	MaxRetry    int32        `db:"max_retry"`
 	StartedAt   sql.NullTime `db:"started_at,omitempty"`
 	CompletedAt sql.NullTime `db:"completed_at,omitempty"`
 	CreatedAt   time.Time    `db:"created_at"`
@@ -155,8 +206,6 @@ func (r *ListScheduledJobsResponse) ToProto() *jobspb.ListScheduledJobsResponse 
 			Id:          j.ID,
 			Status:      j.Status,
 			ScheduledAt: j.ScheduledAt.Format(time.RFC3339Nano),
-			RetryCount:  j.RetryCount,
-			MaxRetry:    j.MaxRetry,
 			StartedAt:   startedAt,
 			CompletedAt: completedAt,
 			CreatedAt:   j.CreatedAt.Format(time.RFC3339Nano),

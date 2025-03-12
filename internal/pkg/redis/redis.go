@@ -107,7 +107,7 @@ func (s *Store) Close() error {
 }
 
 // Set stores a value with optional expiration.
-func (s *Store) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+func (s *Store) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to marshal value: %v", err)
@@ -121,7 +121,7 @@ func (s *Store) Set(ctx context.Context, key string, value interface{}, expirati
 }
 
 // Get retrieves a value by key.
-func (s *Store) Get(ctx context.Context, key string, dest interface{}) error {
+func (s *Store) Get(ctx context.Context, key string, dest any) error {
 	data, err := s.client.Get(ctx, key).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -161,7 +161,7 @@ func (s *Store) Exists(ctx context.Context, key string) (bool, error) {
 }
 
 // SetNX sets a value if it does not exist (atomic operation).
-func (s *Store) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
+func (s *Store) SetNX(ctx context.Context, key string, value any, expiration time.Duration) (bool, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return false, status.Errorf(codes.Internal, "failed to marshal value: %v", err)

@@ -18,6 +18,7 @@ import (
 )
 
 const (
+	delimiter          = '$'
 	scheduledJobsTable = "scheduled_jobs"
 )
 
@@ -99,9 +100,11 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			return 0, err
 		}
 		record := fmt.Sprintf(
-			"%s|%s|%s",
+			"%s%c%s%c%s",
 			id,
+			delimiter,
 			jobID,
+			delimiter,
 			scheduledAt.Format(time.RFC3339Nano),
 		)
 		records = append(records, kgo.StringRecord(record))

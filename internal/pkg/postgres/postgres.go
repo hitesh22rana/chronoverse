@@ -132,17 +132,17 @@ func (db *Postgres) BeginTx(ctx context.Context) (pgx.Tx, error) {
 }
 
 // QueryRow executes a query that returns a single row.
-func (db *Postgres) QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row {
+func (db *Postgres) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
 	return db.pool.QueryRow(ctx, query, args...)
 }
 
 // Query executes a query that returns multiple rows.
-func (db *Postgres) Query(ctx context.Context, query string, args ...interface{}) (pgx.Rows, error) {
+func (db *Postgres) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
 	return db.pool.Query(ctx, query, args...)
 }
 
 // Exec executes a query that doesn't return rows.
-func (db *Postgres) Exec(ctx context.Context, query string, args ...interface{}) (pgconn.CommandTag, error) {
+func (db *Postgres) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	return db.pool.Exec(ctx, query, args...)
 }
 

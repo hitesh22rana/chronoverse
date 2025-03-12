@@ -51,7 +51,7 @@ func New(cfg *Config, auth *auth.Auth, pg *postgres.Postgres) *Repository {
 }
 
 // CreateJob creates a new job.
-func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind string, interval, maxRetry int32) (jobID string, err error) {
+func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind string, interval int32) (jobID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CreateJob")
 	defer func() {
 		if err != nil {
@@ -84,15 +84,15 @@ func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind 
 	}
 
 	// Calculate the next run time for the job (interval in minutes)
-	scheduledAt := time.Now().Add(time.Duration(interval) * time.Minute)
+	scheduleAtTime := time.Now().Add(time.Duration(interval) * time.Minute)
 
 	// Add job to scheduled jobs
 	query = fmt.Sprintf(`
-		INSERT INTO %s (job_id, user_id, scheduled_at, max_retry)
-		VALUES ($1, $2, $3, $4);
+		INSERT INTO %s (job_id, user_id, scheduled_at)
+		VALUES ($1, $2, $3);
 	`, scheduledJobsTable)
 
-	if _, err = tx.Exec(ctx, query, jobID, userID, scheduledAt, maxRetry); err != nil {
+	if _, err = tx.Exec(ctx, query, jobID, userID, scheduleAtTime); err != nil {
 		err = status.Errorf(codes.Internal, "failed to insert scheduled job: %v", err)
 		return "", err
 	}
@@ -107,7 +107,7 @@ func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind 
 }
 
 // UpdateJob updates the job details.
-func (r *Repository) UpdateJob(ctx context.Context, jobID, userID, name, payload, kind string, interval int32) (err error) {
+func (r *Repository) UpdateJob(ctx context.Context, jobID, userID, name, payload string, interval int32) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateJob")
 	defer func() {
 		if err != nil {
@@ -119,12 +119,12 @@ func (r *Repository) UpdateJob(ctx context.Context, jobID, userID, name, payload
 
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET name = $1, payload = $2, kind = $3, interval = $4
-		WHERE id = $5 AND user_id = $6;
+		SET name = $1, payload = $2, interval = $3
+		WHERE id = $4 AND user_id = $5;
 	`, jobsTable)
 
 	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, name, payload, kind, interval, jobID, userID)
+	ct, err := r.pg.Exec(ctx, query, name, payload, interval, jobID, userID)
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
@@ -180,6 +180,8 @@ func (r *Repository) GetJob(ctx context.Context, jobID, userID string) (res *mod
 }
 
 // GetJobByID returns the job details by ID.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
 func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.GetJobByIDResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJobByID")
 	defer func() {
@@ -191,7 +193,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT user_id, name, payload, kind, interval, created_at, updated_at, terminated_at
+		SELECT id, user_id, name, payload, kind, interval, created_at, updated_at, terminated_at
 		FROM %s
 		WHERE id = $1;
 	`, jobsTable)
@@ -209,6 +211,124 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 		}
 
 		err = status.Errorf(codes.Internal, "failed to get job: %v", err)
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// ScheduleJob schedules a job.
+func (r Repository) ScheduleJob(ctx context.Context, jobID, userID, scheduledAt string) (scheduledJobID string, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.ScheduleJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	scheduledAtTime, err := parseTime(scheduledAt)
+
+	// Insert scheduled job into database
+	query := fmt.Sprintf(`
+		INSERT INTO %s (job_id, user_id, scheduled_at)
+		VALUES ($1, $2, $3)
+		RETURNING id;
+	`, scheduledJobsTable)
+
+	row := r.pg.QueryRow(ctx, query, jobID, userID, scheduledAtTime)
+	if err = row.Scan(&scheduledJobID); err != nil {
+		err = status.Errorf(codes.Internal, "failed to insert scheduled job: %v", err)
+		return "", err
+	}
+
+	return scheduledJobID, nil
+}
+
+// UpdateScheduledJobStatus updates the scheduled job details.
+func (r *Repository) UpdateScheduledJobStatus(ctx context.Context, scheduledJobID, scheduledJobStatus string) (err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.UpdateScheduledJobStatus")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+	UPDATE %s
+	SET status = $1`, scheduledJobsTable)
+	args := []any{scheduledJobStatus}
+
+	switch scheduledJobStatus {
+	case model.StatusRunning.ToString():
+		query += `, started_at = $2
+		WHERE id = $3;`
+		args = append(args, time.Now(), scheduledJobID)
+	case model.StatusCompleted.ToString(), model.StatusFailed.ToString():
+		query += `, completed_at = $2
+		WHERE id = $3;`
+		args = append(args, time.Now(), scheduledJobID)
+	default:
+		query += ` WHERE id = $2;`
+		args = append(args, scheduledJobID)
+	}
+
+	// Execute the query
+	ct, err := r.pg.Exec(ctx, query, args...)
+	if err != nil {
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid scheduled job ID: %v", err)
+
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to update scheduled job: %v", err)
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		err = status.Errorf(codes.NotFound, "scheduled job not found")
+		return err
+	}
+
+	return nil
+}
+
+// GetScheduledJobByID returns the scheduled job details by ID.
+//
+//nolint:dupl // It's okay to have similar code in the same file.
+func (r *Repository) GetScheduledJobByID(ctx context.Context, scheduledJobID string) (res *model.GetScheduledJobByIDResponse, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.GetScheduledJobByID")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		SELECT id, job_id, user_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+		FROM %s
+		WHERE id = $1;
+	`, scheduledJobsTable)
+
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, scheduledJobID)
+	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[model.GetScheduledJobByIDResponse])
+	if err != nil {
+		if r.pg.IsNoRows(err) {
+			err = status.Errorf(codes.NotFound, "scheduled job not found: %v", err)
+			return nil, err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid scheduled job ID: %v", err)
+			return nil, err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to get scheduled job: %v", err)
 		return nil, err
 	}
 
@@ -289,7 +409,7 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, curso
 
 	// Add the next page token to the query
 	query := fmt.Sprintf(`
-		SELECT id, status, scheduled_at, retry_count, max_retry, started_at, completed_at, created_at, updated_at
+		SELECT id, status, scheduled_at, started_at, completed_at, created_at, updated_at
 		FROM %s
 		WHERE job_id = $1 AND user_id = $2
 	`, scheduledJobsTable)
@@ -302,7 +422,7 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, curso
 			return nil, err
 		}
 
-		query += ` AND (created_at, id) <= ($2, $3)`
+		query += ` AND (created_at, id) <= ($3, $4)`
 		args = append(args, createdAt, id)
 	}
 
@@ -336,6 +456,10 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, curso
 		ScheduledJobs: data,
 		Cursor:        encodeCursor(cursor),
 	}, nil
+}
+
+func parseTime(t string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, t)
 }
 
 func encodeCursor(cursor string) string {

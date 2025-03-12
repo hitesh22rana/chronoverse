@@ -118,7 +118,6 @@ func TestCreateJob(t *testing.T) {
 					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
 					Kind:     "HEARTBEAT",
 					Interval: 1,
-					MaxRetry: 3,
 				},
 			},
 			mock: func(_ *jobspb.CreateJobRequest) {
@@ -152,7 +151,6 @@ func TestCreateJob(t *testing.T) {
 					Payload:  "",
 					Kind:     "",
 					Interval: 0,
-					MaxRetry: 0,
 				},
 			},
 			mock: func(_ *jobspb.CreateJobRequest) {
@@ -178,7 +176,6 @@ func TestCreateJob(t *testing.T) {
 					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
 					Kind:     "HEARTBEAT",
 					Interval: 1,
-					MaxRetry: 3,
 				},
 			},
 			mock:  func(_ *jobspb.CreateJobRequest) {},
@@ -205,7 +202,6 @@ func TestCreateJob(t *testing.T) {
 					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
 					Kind:     "HEARTBEAT",
 					Interval: 1,
-					MaxRetry: 3,
 				},
 			},
 			mock: func(_ *jobspb.CreateJobRequest) {
@@ -281,7 +277,6 @@ func TestUpdateJob(t *testing.T) {
 					UserId:   "user1",
 					Name:     "job1",
 					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:     "HEARTBEAT",
 					Interval: 1,
 				},
 			},
@@ -313,7 +308,6 @@ func TestUpdateJob(t *testing.T) {
 					UserId:   "",
 					Name:     "",
 					Payload:  "",
-					Kind:     "",
 					Interval: 0,
 				},
 			},
@@ -339,7 +333,6 @@ func TestUpdateJob(t *testing.T) {
 					UserId:   "user1",
 					Name:     "job1",
 					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:     "HEARTBEAT",
 					Interval: 1,
 				},
 			},
@@ -366,7 +359,6 @@ func TestUpdateJob(t *testing.T) {
 					UserId:   "user1",
 					Name:     "job1",
 					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:     "HEARTBEAT",
 					Interval: 1,
 				},
 			},
@@ -600,7 +592,7 @@ func TestGetJobByID(t *testing.T) {
 							auth.WithAudienceInMetadata(
 								t.Context(), "users-test",
 							),
-							auth.RoleUser,
+							auth.RoleAdmin,
 						),
 						"token",
 					)
@@ -648,7 +640,7 @@ func TestGetJobByID(t *testing.T) {
 							auth.WithAudienceInMetadata(
 								t.Context(), "users-test",
 							),
-							auth.RoleUser,
+							auth.RoleAdmin,
 						),
 						"token",
 					)
@@ -691,7 +683,7 @@ func TestGetJobByID(t *testing.T) {
 							auth.WithAudienceInMetadata(
 								t.Context(), "users-test",
 							),
-							auth.RoleUser,
+							auth.RoleAdmin,
 						),
 						"token",
 					)
@@ -725,6 +717,472 @@ func TestGetJobByID(t *testing.T) {
 			if tt.isErr {
 				if err == nil {
 					t.Error("GetJobByID() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestScheduleJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.ScheduleJobRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.ScheduleJobRequest)
+		res   *jobspb.ScheduleJobResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.ScheduleJobRequest{
+					JobId:       "job_id",
+					UserId:      "user1",
+					ScheduledAt: time.Now().Format(time.RFC3339Nano),
+				},
+			},
+			mock: func(_ *jobspb.ScheduleJobRequest) {
+				svc.EXPECT().ScheduleJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return("scheduled_job_id", nil)
+			},
+			res: &jobspb.ScheduleJobResponse{
+				Id: "scheduled_job_id",
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.ScheduleJobRequest{
+					JobId:       "",
+					UserId:      "",
+					ScheduledAt: "",
+				},
+			},
+			mock: func(_ *jobspb.ScheduleJobRequest) {
+				svc.EXPECT().ScheduleJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return("", status.Error(codes.InvalidArgument, "job_id, user_id, and scheduled_at are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.ScheduleJobRequest{
+					JobId:       "job_id",
+					UserId:      "user1",
+					ScheduledAt: time.Now().Format(time.RFC3339Nano),
+				},
+			},
+			mock:  func(_ *jobspb.ScheduleJobRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.ScheduleJobRequest{
+					JobId:       "job_id",
+					UserId:      "user1",
+					ScheduledAt: time.Now().Format(time.RFC3339Nano),
+				},
+			},
+			mock: func(_ *jobspb.ScheduleJobRequest) {
+				svc.EXPECT().ScheduleJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return("", status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.ScheduleJob(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("ScheduleJob() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("ScheduleJob() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestUpdateScheduledJobStatus(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.UpdateScheduledJobStatusRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.UpdateScheduledJobStatusRequest)
+		res   *jobspb.UpdateScheduledJobStatusResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateScheduledJobStatusRequest{
+					Id:     "scheduled_job_id",
+					Status: "QUEUED",
+				},
+			},
+			mock: func(_ *jobspb.UpdateScheduledJobStatusRequest) {
+				svc.EXPECT().UpdateScheduledJobStatus(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil)
+			},
+			res:   &jobspb.UpdateScheduledJobStatusResponse{},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateScheduledJobStatusRequest{
+					Id:     "",
+					Status: "",
+				},
+			},
+			mock: func(_ *jobspb.UpdateScheduledJobStatusRequest) {
+				svc.EXPECT().UpdateScheduledJobStatus(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.InvalidArgument, "id and status are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.UpdateScheduledJobStatusRequest{
+					Id:     "scheduled_job_id",
+					Status: "QUEUED",
+				},
+			},
+			mock:  func(_ *jobspb.UpdateScheduledJobStatusRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateScheduledJobStatusRequest{
+					Id:     "scheduled_job_id",
+					Status: "QUEUED",
+				},
+			},
+			mock: func(_ *jobspb.UpdateScheduledJobStatusRequest) {
+				svc.EXPECT().UpdateScheduledJobStatus(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.UpdateScheduledJobStatus(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("UpdateScheduledJobStatus() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("UpdateScheduledJobStatus() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestGetScheduledJobByID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.GetScheduledJobByIDRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.GetScheduledJobByIDRequest)
+		res   *jobspb.GetScheduledJobByIDResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetScheduledJobByIDRequest{
+					Id: "job_id",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobByIDRequest) {
+				svc.EXPECT().GetScheduledJobByID(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(&model.GetScheduledJobByIDResponse{
+					ID:          "scheduled_job_id",
+					JobID:       "job_id",
+					UserID:      "user1",
+					Status:      "QUEUED",
+					ScheduledAt: time.Now(),
+					StartedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					CompletedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}, nil)
+			},
+			res: &jobspb.GetScheduledJobByIDResponse{
+				Id:          "scheduled_job_id",
+				JobId:       "job_id",
+				UserId:      "user1",
+				Status:      "PENDING",
+				ScheduledAt: time.Now().Format(time.RFC3339Nano),
+				StartedAt:   time.Now().Format(time.RFC3339Nano),
+				CompletedAt: time.Now().Format(time.RFC3339Nano),
+				CreatedAt:   time.Now().Format(time.RFC3339Nano),
+				UpdatedAt:   time.Now().Format(time.RFC3339Nano),
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetScheduledJobByIDRequest{
+					Id: "",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobByIDRequest) {
+				svc.EXPECT().GetScheduledJobByID(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.InvalidArgument, "id is required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.GetScheduledJobByIDRequest{
+					Id: "job_id",
+				},
+			},
+			mock:  func(_ *jobspb.GetScheduledJobByIDRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "users-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetScheduledJobByIDRequest{
+					Id: "job_id",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobByIDRequest) {
+				svc.EXPECT().GetScheduledJobByID(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.GetScheduledJobByID(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("GetScheduledJobByID() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("GetScheduledJobByID() error = nil, want error")
 				}
 				return
 			}
@@ -961,8 +1419,6 @@ func TestListScheduledJobs(t *testing.T) {
 							ID:          "scheduled_job_id",
 							Status:      "PENDING",
 							ScheduledAt: time.Now(),
-							RetryCount:  0,
-							MaxRetry:    3,
 							StartedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: true,
@@ -983,8 +1439,6 @@ func TestListScheduledJobs(t *testing.T) {
 						Id:          "scheduled_job_id",
 						Status:      "PENDING",
 						ScheduledAt: time.Now().Format(time.RFC3339Nano),
-						RetryCount:  0,
-						MaxRetry:    3,
 						StartedAt:   time.Now().Format(time.RFC3339Nano),
 						CompletedAt: time.Now().Format(time.RFC3339Nano),
 						CreatedAt:   time.Now().Format(time.RFC3339Nano),

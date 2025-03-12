@@ -104,14 +104,14 @@ func WithAudience(ctx context.Context, audience string) context.Context {
 	return context.WithValue(ctx, audienceContextKey{}, audience)
 }
 
-// WithAuthorizationToken sets the authorization token in the context.
-func WithAuthorizationToken(ctx context.Context, token string) context.Context {
-	return context.WithValue(ctx, tokenContextKey{}, token)
-}
-
 // WithRole sets the role in the context.
 func WithRole(ctx context.Context, role string) context.Context {
 	return context.WithValue(ctx, roleContextKey{}, role)
+}
+
+// WithAuthorizationToken sets the authorization token in the context.
+func WithAuthorizationToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, tokenContextKey{}, token)
 }
 
 // WithAudienceInMetadata sets the audience in the metadata for incoming requests.
@@ -299,7 +299,7 @@ func (a *Auth) ValidateToken(ctx context.Context) (token *jwt.Token, err error) 
 
 	token, err = jwt.Parse(
 		tokenString,
-		func(token *jwt.Token) (interface{}, error) {
+		func(token *jwt.Token) (any, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
 			}

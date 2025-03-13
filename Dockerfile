@@ -45,7 +45,7 @@ RUN rm -rf pkg/proto && rm -rf pkg/openapiv2 && buf dep update && buf generate
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -ldflags "-X 'main.version=${VERSION}' -X 'main.name=${NAME}' -X 'main.authPrivateKeyPath=${PRIVATE_KEY_PATH}' -X 'main.authPublicKeyPath=${PUBLIC_KEY_PATH}'" -o /go/bin/service cmd/${NAME}/main.go
 
 # Final stage
-FROM scratch
+FROM alpine:latest
 
 # Set the build arguments
 ARG NAME

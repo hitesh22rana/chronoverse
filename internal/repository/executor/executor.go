@@ -163,11 +163,11 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 	}
 
 	// Error group for running multiple goroutines
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, groupCtx := errgroup.WithContext(ctx)
 
 	// Schedule a new job based on the last scheduled time and interval
 	eg.Go(func() error {
-		if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+		if _, _err := r.svc.Jobs.ScheduleJob(groupCtx, &jobspb.ScheduleJobRequest{
 			JobId:       jobID,
 			UserId:      job.GetUserId(),
 			ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(job.GetInterval())).Format(time.RFC3339Nano),
@@ -180,7 +180,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 
 	// Update the scheduled job status from QUEUED to RUNNING
 	eg.Go(func() error {
-		if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
+		if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(groupCtx, &jobspb.UpdateScheduledJobStatusRequest{
 			Id:     scheduledJobID,
 			Status: statusRunning,
 		}); _err != nil {
@@ -201,10 +201,9 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return err
 	}
 
-	err = retryOnce(func() error {
+	if workflowErr := retryOnce(func() error {
 		return workflow.Execute(ctx)
-	})
-	if err != nil {
+	}); workflowErr != nil {
 		// Update the scheduled job status to FAILED
 		if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
 			Id:     scheduledJobID,
@@ -217,11 +216,11 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 	}
 
 	// Update the scheduled job status to COMPLETED
-	if _, err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
+	if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
 		Id:     scheduledJobID,
 		Status: statusCompleted,
-	}); err != nil {
-		return err
+	}); _err != nil {
+		return _err
 	}
 
 	return nil

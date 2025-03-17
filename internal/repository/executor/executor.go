@@ -35,7 +35,7 @@ const (
 	workflowHeartBeat = "HEARTBEAT"
 )
 
-// Workflow represents the executor workflow.
+// Workflow represents a workflow that can be executed.
 type Workflow interface {
 	Execute(ctx context.Context) error
 }

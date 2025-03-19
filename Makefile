@@ -36,13 +36,17 @@ build/users-service: dependencies
 build/jobs-service: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=jobs-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/jobs-service ./cmd/jobs-service
 
-.PHONY: build/scheduling-service
-build/scheduling-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=scheduling-service'" -o ./.bin/scheduling-service ./cmd/scheduling-service
+.PHONY: build/scheduling-job
+build/scheduling-job: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=scheduling-job'" -o ./.bin/scheduling-job ./cmd/scheduling-job
 
-.PHONY: build/execution-service
-build/execution-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=execution-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/execution-service ./cmd/execution-service
+.PHONY: build/workflow-job
+build/workflow-job: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=workflow-job' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/workflow-job ./cmd/workflow-job
+
+.PHONY: build/execution-job
+build/execution-job: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=execution-job' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/execution-job ./cmd/execution-job
 
 .PHONY: build/server
 build/server: dependencies
@@ -56,13 +60,17 @@ run/users-service: build/users-service
 run/jobs-service: build/jobs-service
 	@./.bin/jobs-service
 
-.PHONY: run/scheduling-service
-run/scheduling-service: build/scheduling-service
-	@./.bin/scheduling-service
+.PHONY: run/scheduling-job
+run/scheduling-job: build/scheduling-job
+	@./.bin/scheduling-job
 
-.PHONY: run/execution-service
-run/execution-service: build/execution-service
-	@./.bin/execution-service
+.PHONY: run/workflow-job
+run/workflow-job: build/workflow-job
+	@./.bin/workflow-job
+
+.PHONY: run/execution-job
+run/execution-job: build/execution-job
+	@./.bin/execution-job
 
 .PHONY: run/server
 run/server: build/server

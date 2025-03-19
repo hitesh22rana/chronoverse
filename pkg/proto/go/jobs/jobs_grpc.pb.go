@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	JobsService_CreateJob_FullMethodName                = "/jobs.JobsService/CreateJob"
 	JobsService_UpdateJob_FullMethodName                = "/jobs.JobsService/UpdateJob"
+	JobsService_UpdateJobBuildStatus_FullMethodName     = "/jobs.JobsService/UpdateJobBuildStatus"
 	JobsService_GetJob_FullMethodName                   = "/jobs.JobsService/GetJob"
 	JobsService_GetJobByID_FullMethodName               = "/jobs.JobsService/GetJobByID"
 	JobsService_ScheduleJob_FullMethodName              = "/jobs.JobsService/ScheduleJob"
@@ -40,6 +41,9 @@ type JobsServiceClient interface {
 	CreateJob(ctx context.Context, in *CreateJobRequest, opts ...grpc.CallOption) (*CreateJobResponse, error)
 	// UpdateJob an existing job.
 	UpdateJob(ctx context.Context, in *UpdateJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error)
+	// UpdateJobBuildStatus updates the build status of a job.
+	// This is an internal API and should not be exposed to the public.
+	UpdateJobBuildStatus(ctx context.Context, in *UpdateJobBuildStatusRequest, opts ...grpc.CallOption) (*UpdateJobBuildStatusResponse, error)
 	// GetJob gets a job by ID and user_id.
 	GetJob(ctx context.Context, in *GetJobRequest, opts ...grpc.CallOption) (*GetJobResponse, error)
 	// GetJobByID a job by ID.
@@ -82,6 +86,16 @@ func (c *jobsServiceClient) UpdateJob(ctx context.Context, in *UpdateJobRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateJobResponse)
 	err := c.cc.Invoke(ctx, JobsService_UpdateJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) UpdateJobBuildStatus(ctx context.Context, in *UpdateJobBuildStatusRequest, opts ...grpc.CallOption) (*UpdateJobBuildStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateJobBuildStatusResponse)
+	err := c.cc.Invoke(ctx, JobsService_UpdateJobBuildStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +182,9 @@ type JobsServiceServer interface {
 	CreateJob(context.Context, *CreateJobRequest) (*CreateJobResponse, error)
 	// UpdateJob an existing job.
 	UpdateJob(context.Context, *UpdateJobRequest) (*UpdateJobResponse, error)
+	// UpdateJobBuildStatus updates the build status of a job.
+	// This is an internal API and should not be exposed to the public.
+	UpdateJobBuildStatus(context.Context, *UpdateJobBuildStatusRequest) (*UpdateJobBuildStatusResponse, error)
 	// GetJob gets a job by ID and user_id.
 	GetJob(context.Context, *GetJobRequest) (*GetJobResponse, error)
 	// GetJobByID a job by ID.
@@ -200,6 +217,9 @@ func (UnimplementedJobsServiceServer) CreateJob(context.Context, *CreateJobReque
 }
 func (UnimplementedJobsServiceServer) UpdateJob(context.Context, *UpdateJobRequest) (*UpdateJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateJob not implemented")
+}
+func (UnimplementedJobsServiceServer) UpdateJobBuildStatus(context.Context, *UpdateJobBuildStatusRequest) (*UpdateJobBuildStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateJobBuildStatus not implemented")
 }
 func (UnimplementedJobsServiceServer) GetJob(context.Context, *GetJobRequest) (*GetJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetJob not implemented")
@@ -274,6 +294,24 @@ func _JobsService_UpdateJob_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(JobsServiceServer).UpdateJob(ctx, req.(*UpdateJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_UpdateJobBuildStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateJobBuildStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).UpdateJobBuildStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_UpdateJobBuildStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).UpdateJobBuildStatus(ctx, req.(*UpdateJobBuildStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -418,6 +456,10 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateJob",
 			Handler:    _JobsService_UpdateJob_Handler,
+		},
+		{
+			MethodName: "UpdateJobBuildStatus",
+			Handler:    _JobsService_UpdateJobBuildStatus_Handler,
 		},
 		{
 			MethodName: "GetJob",

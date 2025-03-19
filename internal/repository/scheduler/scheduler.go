@@ -69,7 +69,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET status = 'QUEUED', updated_at = NOW()
+		SET status = 'QUEUED'
 		WHERE id IN (
 			SELECT id
 			FROM %s

@@ -11,8 +11,8 @@ type SchedulerConfig struct {
 	Environment
 
 	Postgres
-	Scheduler
 	Kafka
+	Scheduler
 }
 
 // Scheduler holds the configuration for the scheduler.
@@ -23,8 +23,8 @@ type Scheduler struct {
 	BatchSize      int           `envconfig:"SCHEDULER_BATCH_SIZE" default:"100"`
 }
 
-// InitSchedulingServiceConfig initializes the scheduler service configuration.
-func InitSchedulingServiceConfig() (*SchedulerConfig, error) {
+// InitSchedulingJobConfig initializes the scheduler service configuration.
+func InitSchedulingJobConfig() (*SchedulerConfig, error) {
 	var cfg SchedulerConfig
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
 		return nil, err

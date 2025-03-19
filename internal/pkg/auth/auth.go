@@ -1,3 +1,5 @@
+//go:generate mockgen -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
+
 package auth
 
 import (
@@ -44,6 +46,10 @@ const (
 	// RoleUser is the user role.
 	RoleUser Role = "user"
 )
+
+func (r Role) String() string {
+	return string(r)
+}
 
 // audienceContextKey is the key for the audience in the context.
 type audienceContextKey struct{}
@@ -197,6 +203,12 @@ func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
 	}
 
 	return parts[1], nil
+}
+
+// IAuth is the interface for the Auth service.
+type IAuth interface {
+	IssueToken(ctx context.Context, subject string) (token string, err error)
+	ValidateToken(ctx context.Context) (token *jwt.Token, err error)
 }
 
 // Auth is responsible for issuing and validating jwt tokens.

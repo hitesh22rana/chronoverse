@@ -14,9 +14,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/hitesh22rana/chronoverse/internal/model"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -34,19 +34,19 @@ type Config struct {
 
 // Repository provides jobs repository.
 type Repository struct {
-	tp   trace.Tracer
-	cfg  *Config
-	auth *auth.Auth
-	pg   *postgres.Postgres
+	tp  trace.Tracer
+	cfg *Config
+	pg  *postgres.Postgres
+	kfk *kgo.Client
 }
 
 // New creates a new jobs repository.
-func New(cfg *Config, auth *auth.Auth, pg *postgres.Postgres) *Repository {
+func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
 	return &Repository{
-		tp:   otel.Tracer(svcpkg.Info().GetName()),
-		cfg:  cfg,
-		auth: auth,
-		pg:   pg,
+		tp:  otel.Tracer(svcpkg.Info().GetName()),
+		cfg: cfg,
+		pg:  pg,
+		kfk: kfk,
 	}
 }
 
@@ -70,31 +70,48 @@ func (r *Repository) CreateJob(ctx context.Context, userID, name, payload, kind 
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	// Insert job into database
-	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, payload, kind, interval)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id;
-	`, jobsTable)
+	// Build status based on the kind of job
+	var jobBuildStatus string
+	if !isBuildStepRequired(kind) {
+		jobBuildStatus = model.JobBuildStatusCompleted.ToString()
+	} else {
+		jobBuildStatus = model.JobBuildStatusQueued.ToString()
+	}
 
-	row := tx.QueryRow(ctx, query, userID, name, payload, kind, interval)
+	query := fmt.Sprintf(`
+		INSERT INTO %s (user_id, name, payload, kind, build_status, interval)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id;
+		`, jobsTable)
+
+	row := tx.QueryRow(ctx, query, userID, name, payload, kind, jobBuildStatus, interval)
 	if err = row.Scan(&jobID); err != nil {
 		err = status.Errorf(codes.Internal, "failed to insert job: %v", err)
 		return "", err
 	}
 
-	// Calculate the next run time for the job (interval in minutes)
-	scheduleAtTime := time.Now().Add(time.Duration(interval) * time.Minute)
+	// Check if the build step is required
+	// If not (no build step required), schedule the job directly
+	if !isBuildStepRequired(kind) {
+		// Calculate the next run time for the job (interval in minutes)
+		scheduleAtTime := time.Now().Add(time.Duration(interval) * time.Minute)
 
-	// Add job to scheduled jobs
-	query = fmt.Sprintf(`
-		INSERT INTO %s (job_id, user_id, scheduled_at)
-		VALUES ($1, $2, $3);
-	`, scheduledJobsTable)
+		// Add job to scheduled jobs
+		query = fmt.Sprintf(`
+			INSERT INTO %s (job_id, user_id, scheduled_at)
+			VALUES ($1, $2, $3);
+		`, scheduledJobsTable)
 
-	if _, err = tx.Exec(ctx, query, jobID, userID, scheduleAtTime); err != nil {
-		err = status.Errorf(codes.Internal, "failed to insert scheduled job: %v", err)
-		return "", err
+		if _, err = tx.Exec(ctx, query, jobID, userID, scheduleAtTime); err != nil {
+			err = status.Errorf(codes.Internal, "failed to insert scheduled job: %v", err)
+			return "", err
+		}
+	} else {
+		// Publish the jobID to the Kafka topic for the build step
+		if err = r.kfk.ProduceSync(ctx, kgo.StringRecord(jobID)).FirstErr(); err != nil {
+			err = status.Errorf(codes.Internal, "failed to publish job ID to Kafka: %v", err)
+			return "", err
+		}
 	}
 
 	// Commit transaction
@@ -143,6 +160,43 @@ func (r *Repository) UpdateJob(ctx context.Context, jobID, userID, name, payload
 	return nil
 }
 
+// UpdateJobBuildStatus updates the job build status.
+func (r *Repository) UpdateJobBuildStatus(ctx context.Context, jobID, buildStatus string) (err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.UpdateJobBuildStatus")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET build_status = $1
+		WHERE id = $2
+	`, jobsTable)
+
+	// Execute the query
+	ct, err := r.pg.Exec(ctx, query, buildStatus, jobID)
+	if err != nil {
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to update job build status: %v", err)
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		err = status.Errorf(codes.NotFound, "job was not found")
+		return err
+	}
+
+	return nil
+}
+
 // GetJob returns the job details by ID and user ID.
 func (r *Repository) GetJob(ctx context.Context, jobID, userID string) (res *model.GetJobResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJob")
@@ -155,7 +209,7 @@ func (r *Repository) GetJob(ctx context.Context, jobID, userID string) (res *mod
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, interval, created_at, updated_at, terminated_at
+		SELECT id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
 		FROM %s
 		WHERE id = $1 AND user_id = $2;
 	`, jobsTable)
@@ -193,7 +247,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, payload, kind, interval, created_at, updated_at, terminated_at
+		SELECT id, user_id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
 		FROM %s
 		WHERE id = $1;
 	`, jobsTable)
@@ -263,11 +317,11 @@ func (r *Repository) UpdateScheduledJobStatus(ctx context.Context, scheduledJobI
 	args := []any{scheduledJobStatus}
 
 	switch scheduledJobStatus {
-	case model.StatusRunning.ToString():
+	case model.ScheduledJobStatusRunning.ToString():
 		query += `, started_at = $2
 		WHERE id = $3;`
 		args = append(args, time.Now(), scheduledJobID)
-	case model.StatusCompleted.ToString(), model.StatusFailed.ToString():
+	case model.ScheduledJobStatusCompleted.ToString(), model.ScheduledJobStatusFailed.ToString():
 		query += `, completed_at = $2
 		WHERE id = $3;`
 		args = append(args, time.Now(), scheduledJobID)
@@ -347,7 +401,7 @@ func (r *Repository) ListJobsByUserID(ctx context.Context, userID, cursor string
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, interval, created_at, updated_at, terminated_at
+		SELECT id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
 		FROM %s
 		WHERE user_id = $1
 	`, jobsTable)
@@ -456,6 +510,15 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, curso
 		ScheduledJobs: data,
 		Cursor:        encodeCursor(cursor),
 	}, nil
+}
+
+func isBuildStepRequired(kind string) bool {
+	switch kind {
+	case model.KindHeartbeat.ToString():
+		return false
+	default:
+		return true
+	}
 }
 
 func parseTime(t string) (time.Time, error) {

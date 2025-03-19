@@ -5,9 +5,10 @@ import "github.com/kelseyhightower/envconfig"
 // JobsConfig holds the jobs service configuration.
 type JobsConfig struct {
 	Environment
+
 	Postgres
 	Grpc
-
+	Kafka
 	Jobs
 }
 

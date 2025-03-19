@@ -7,6 +7,7 @@ import (
 // UsersConfig holds the configuration for the users service.
 type UsersConfig struct {
 	Environment
+
 	Postgres
 	Grpc
 }

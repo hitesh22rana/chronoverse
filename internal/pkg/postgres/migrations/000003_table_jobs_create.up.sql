@@ -1,13 +1,14 @@
-DROP TYPE IF EXISTS KIND;
+DROP TYPE IF EXISTS JOB_BUILD_STATUS;
 
-CREATE TYPE KIND AS ENUM ('HEARTBEAT');
+CREATE TYPE JOB_BUILD_STATUS AS ENUM ('QUEUED', 'STARTED', 'COMPLETED', 'FAILED', 'CANCELED');
 
 CREATE TABLE IF NOT EXISTS jobs (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
     name VARCHAR(255) NOT NULL,
     payload JSONB,
-    kind KIND NOT NULL,
+    kind TEXT NOT NULL,
+    build_status JOB_BUILD_STATUS DEFAULT 'QUEUED' NOT NULL,
     interval INTEGER NOT NULL CHECK (interval >= 1), -- (in minutes)
     created_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     updated_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,

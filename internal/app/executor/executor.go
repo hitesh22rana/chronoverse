@@ -33,9 +33,9 @@ func New(ctx context.Context, svc Service) *Executor {
 func (e *Executor) Run(ctx context.Context) error {
 	err := e.svc.Run(ctx)
 	if err != nil {
-		e.logger.Error("error occurred while running the executor", zap.Error(err))
+		e.logger.Error("error occurred while running the executor job", zap.Error(err))
 	} else {
-		e.logger.Info("successfully executed jobs")
+		e.logger.Info("successfully exicted the executor job")
 	}
 
 	return nil

@@ -23,12 +23,12 @@ const (
 // Repository provides users repository.
 type Repository struct {
 	tp   trace.Tracer
-	auth *auth.Auth
+	auth auth.IAuth
 	pg   *postgres.Postgres
 }
 
 // New creates a new auth repository.
-func New(auth *auth.Auth, pg *postgres.Postgres) *Repository {
+func New(auth auth.IAuth, pg *postgres.Postgres) *Repository {
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		auth: auth,

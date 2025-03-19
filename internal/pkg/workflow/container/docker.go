@@ -1,23 +1,25 @@
-package docker
+package container
 
 import (
 	"context"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// Workflow represents a Docker workflow.
-type Workflow struct {
+// DockerWorkflow represents a Docker workflow.
+type DockerWorkflow struct {
 	*client.Client
 }
 
-// New creates a new Workflow.
-func New() (*Workflow, error) {
+// NewDockerWorkflow creates a new DockerWorkflow.
+func NewDockerWorkflow() (*DockerWorkflow, error) {
 	cli, err := client.NewClientWithOpts(
 		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
@@ -26,7 +28,7 @@ func New() (*Workflow, error) {
 		return nil, status.Errorf(codes.Internal, "failed to initialize docker client: %v", err)
 	}
 
-	w := &Workflow{
+	w := &DockerWorkflow{
 		Client: cli,
 	}
 
@@ -37,7 +39,7 @@ func New() (*Workflow, error) {
 	return w, nil
 }
 
-func (w *Workflow) healthCheck(ctx context.Context) error {
+func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
 	// Health check the Docker client
 	if _, err := w.Client.Ping(ctx); err != nil {
 		return status.Errorf(codes.Internal, "failed to ping docker client: %v", err)
@@ -49,7 +51,7 @@ func (w *Workflow) healthCheck(ctx context.Context) error {
 // Execute runs a command in a new container and streams the logs.
 //
 //nolint:gocyclo, gocritic // This function is not complex enough to warrant a refactor
-func (w *Workflow) Execute(
+func (w *DockerWorkflow) Execute(
 	ctx context.Context,
 	timeout time.Duration,
 	image string,
@@ -167,4 +169,25 @@ func (w *Workflow) Execute(
 	}()
 
 	return logs, errs, nil
+}
+
+// Build pulls an image from the registry, required for the image to be available locally.
+func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
+	if err := w.healthCheck(ctx); err != nil {
+		return err
+	}
+
+	out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
+	if err != nil {
+		return status.Errorf(codes.NotFound, "failed to pull image: %v", err)
+	}
+	defer out.Close()
+
+	// Read the output to completion, required to properly register the image in Docker desktop
+	_, err = io.Copy(io.Discard, out)
+	if err != nil {
+		return status.Errorf(codes.FailedPrecondition, "failed to read image pull output: %v", err)
+	}
+
+	return nil
 }

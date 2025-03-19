@@ -160,6 +160,20 @@ func (mr *MockRepositoryMockRecorder) UpdateJob(ctx, jobID, userID, name, payloa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJob", reflect.TypeOf((*MockRepository)(nil).UpdateJob), ctx, jobID, userID, name, payload, interval)
 }
 
+// UpdateJobBuildStatus mocks base method.
+func (m *MockRepository) UpdateJobBuildStatus(ctx context.Context, jobID, buildStatus string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateJobBuildStatus", ctx, jobID, buildStatus)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateJobBuildStatus indicates an expected call of UpdateJobBuildStatus.
+func (mr *MockRepositoryMockRecorder) UpdateJobBuildStatus(ctx, jobID, buildStatus any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobBuildStatus", reflect.TypeOf((*MockRepository)(nil).UpdateJobBuildStatus), ctx, jobID, buildStatus)
+}
+
 // UpdateScheduledJobStatus mocks base method.
 func (m *MockRepository) UpdateScheduledJobStatus(ctx context.Context, scheduledJobID, scheduledJobStatus string) error {
 	m.ctrl.T.Helper()

@@ -15,39 +15,45 @@ const (
 )
 
 // HeartBeat represents the HEARTBEAT workflow.
-type HeartBeat struct {
-	Payload map[string]any
-}
+type HeartBeat struct{}
 
 // New creates a new HEARTBEAT workflow.
-func New(data string) (*HeartBeat, error) {
+func New() *HeartBeat {
+	return &HeartBeat{}
+}
+
+func validatePayload(data string) (map[string]any, error) {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(data), &payload); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to unmarshal payload: %v", err)
 	}
 
-	return &HeartBeat{
-		Payload: payload,
-	}, nil
+	return payload, nil
 }
 
 // Execute executes the HEARTBEAT workflow.
 //
 //nolint:gocyclo // This function is not complex enough to warrant a refactor.
-func (h *HeartBeat) Execute(ctx context.Context) error {
+func (h *HeartBeat) Execute(ctx context.Context, payload string) error {
+	// Validate payload
+	data, err := validatePayload(payload)
+	if err != nil {
+		return err
+	}
+
 	// Validate endpoint
-	if h.Payload["endpoint"] == nil {
+	if data["endpoint"] == nil {
 		return status.Errorf(codes.InvalidArgument, "missing endpoint")
 	}
-	endpoint, ok := h.Payload["endpoint"].(string)
+	endpoint, ok := data["endpoint"].(string)
 	if !ok {
-		return status.Errorf(codes.InvalidArgument, "invalid endpoint: %v", h.Payload["endpoint"])
+		return status.Errorf(codes.InvalidArgument, "invalid endpoint: %v", data["endpoint"])
 	}
 
 	// Parse headers
 	var headers map[string][]string
-	if h.Payload["headers"] != nil {
-		headersRaw, ok := h.Payload["headers"].(map[string]any)
+	if data["headers"] != nil {
+		headersRaw, ok := data["headers"].(map[string]any)
 		if !ok {
 			return status.Errorf(codes.InvalidArgument, "invalid headers format")
 		}

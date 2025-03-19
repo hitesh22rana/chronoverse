@@ -8,16 +8,18 @@ import (
 type ExecutorConfig struct {
 	Environment
 
-	Executor
 	Kafka
 	JobsService
+	Executor
 }
 
 // Executor holds the configuration for the executor.
-type Executor struct{}
+type Executor struct {
+	ParallelismLimit int `envconfig:"EXECUTOR_PARALLELISM_LIMIT" default:"5"`
+}
 
-// InitExecutionServiceConfig initializes the executor configuration.
-func InitExecutionServiceConfig() (*ExecutorConfig, error) {
+// InitExecutionJobConfig initializes the executor configuration.
+func InitExecutionJobConfig() (*ExecutorConfig, error) {
 	var cfg ExecutorConfig
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
 		return nil, err

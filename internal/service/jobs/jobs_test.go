@@ -296,6 +296,117 @@ func TestUpdateJob(t *testing.T) {
 	}
 }
 
+func TestUpdateJobBuildStatus(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := jobsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := jobs.New(validator.New(), repo)
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *jobspb.UpdateJobBuildStatusRequest
+		mock  func(req *jobspb.UpdateJobBuildStatusRequest)
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &jobspb.UpdateJobBuildStatusRequest{
+				Id:          "job_id",
+				BuildStatus: "COMPLETED",
+			},
+			mock: func(req *jobspb.UpdateJobBuildStatusRequest) {
+				repo.EXPECT().UpdateJobBuildStatus(
+					gomock.Any(),
+					req.GetId(),
+					req.GetBuildStatus(),
+				).Return(nil)
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing job ID",
+			req: &jobspb.UpdateJobBuildStatusRequest{
+				Id:          "",
+				BuildStatus: "COMPLETED",
+			},
+			mock:  func(_ *jobspb.UpdateJobBuildStatusRequest) {},
+			isErr: true,
+		},
+		{
+			name: "error: missing build status",
+			req: &jobspb.UpdateJobBuildStatusRequest{
+				Id:          "job_id",
+				BuildStatus: "",
+			},
+			mock:  func(_ *jobspb.UpdateJobBuildStatusRequest) {},
+			isErr: true,
+		},
+		{
+			name: "error: invalid build status",
+			req: &jobspb.UpdateJobBuildStatusRequest{
+				Id:          "job_id",
+				BuildStatus: "INVALID",
+			},
+			mock:  func(_ *jobspb.UpdateJobBuildStatusRequest) {},
+			isErr: true,
+		},
+		{
+			name: "error: job not found",
+			req: &jobspb.UpdateJobBuildStatusRequest{
+				Id:          "invalid_job_id",
+				BuildStatus: "COMPLETED",
+			},
+			mock: func(req *jobspb.UpdateJobBuildStatusRequest) {
+				repo.EXPECT().UpdateJobBuildStatus(
+					gomock.Any(),
+					req.GetId(),
+					req.GetBuildStatus(),
+				).Return(status.Error(codes.NotFound, "job not found"))
+			},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &jobspb.UpdateJobBuildStatusRequest{
+				Id:          "job_id",
+				BuildStatus: "COMPLETED",
+			},
+			mock: func(req *jobspb.UpdateJobBuildStatusRequest) {
+				repo.EXPECT().UpdateJobBuildStatus(
+					gomock.Any(),
+					req.GetId(),
+					req.GetBuildStatus(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.UpdateJobBuildStatus(t.Context(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+		})
+	}
+}
+
 func TestGetJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -329,13 +440,14 @@ func TestGetJob(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 				).Return(&model.GetJobResponse{
-					ID:        "job_id",
-					Name:      "job1",
-					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:      "HEARTBEAT",
-					Interval:  1,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					ID:             "job_id",
+					Name:           "job1",
+					Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:           "HEARTBEAT",
+					JobBuildStatus: "COMPLETED",
+					Interval:       1,
+					CreatedAt:      time.Now(),
+					UpdatedAt:      time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -344,13 +456,14 @@ func TestGetJob(t *testing.T) {
 			},
 			want: want{
 				&model.GetJobResponse{
-					ID:        "job_id",
-					Name:      "job1",
-					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:      "HEARTBEAT",
-					Interval:  1,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					ID:             "job_id",
+					Name:           "job1",
+					Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:           "HEARTBEAT",
+					JobBuildStatus: "COMPLETED",
+					Interval:       1,
+					CreatedAt:      time.Now(),
+					UpdatedAt:      time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -471,13 +584,14 @@ func TestGetJobByID(t *testing.T) {
 					gomock.Any(),
 					req.GetId(),
 				).Return(&model.GetJobByIDResponse{
-					UserID:    "user1",
-					Name:      "job1",
-					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:      "HEARTBEAT",
-					Interval:  1,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					UserID:         "user1",
+					Name:           "job1",
+					Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:           "HEARTBEAT",
+					JobBuildStatus: "COMPLETED",
+					Interval:       1,
+					CreatedAt:      time.Now(),
+					UpdatedAt:      time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -486,13 +600,14 @@ func TestGetJobByID(t *testing.T) {
 			},
 			want: want{
 				&model.GetJobByIDResponse{
-					UserID:    "user1",
-					Name:      "job1",
-					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:      "HEARTBEAT",
-					Interval:  1,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					UserID:         "user1",
+					Name:           "job1",
+					Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:           "HEARTBEAT",
+					JobBuildStatus: "COMPLETED",
+					Interval:       1,
+					CreatedAt:      time.Now(),
+					UpdatedAt:      time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -847,10 +962,10 @@ func TestGetScheduledJobByID(t *testing.T) {
 					gomock.Any(),
 					req.GetId(),
 				).Return(&model.GetScheduledJobByIDResponse{
-					JobID:       "job_id",
-					UserID:      "user1",
-					Status:      "PENDING",
-					ScheduledAt: time.Now().Add(time.Minute),
+					JobID:              "job_id",
+					UserID:             "user1",
+					ScheduledJobStatus: "PENDING",
+					ScheduledAt:        time.Now().Add(time.Minute),
 					StartedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: false,
@@ -865,10 +980,10 @@ func TestGetScheduledJobByID(t *testing.T) {
 			},
 			want: want{
 				&model.GetScheduledJobByIDResponse{
-					JobID:       "job_id",
-					UserID:      "user1",
-					Status:      "PENDING",
-					ScheduledAt: time.Now().Add(time.Minute),
+					JobID:              "job_id",
+					UserID:             "user1",
+					ScheduledJobStatus: "PENDING",
+					ScheduledAt:        time.Now().Add(time.Minute),
 					StartedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: false,
@@ -978,13 +1093,14 @@ func TestListJobsByUserID(t *testing.T) {
 				).Return(&model.ListJobsByUserIDResponse{
 					Jobs: []*model.JobByUserIDResponse{
 						{
-							ID:        "job_id",
-							Name:      "job1",
-							Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-							Kind:      "HEARTBEAT",
-							Interval:  1,
-							CreatedAt: time.Now(),
-							UpdatedAt: time.Now(),
+							ID:             "job_id",
+							Name:           "job1",
+							Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:           "HEARTBEAT",
+							JobBuildStatus: "COMPLETED",
+							Interval:       1,
+							CreatedAt:      time.Now(),
+							UpdatedAt:      time.Now(),
 							TerminatedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: true,
@@ -998,13 +1114,14 @@ func TestListJobsByUserID(t *testing.T) {
 				&model.ListJobsByUserIDResponse{
 					Jobs: []*model.JobByUserIDResponse{
 						{
-							ID:        "job_id",
-							Name:      "job1",
-							Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-							Kind:      "HEARTBEAT",
-							Interval:  1,
-							CreatedAt: time.Now(),
-							UpdatedAt: time.Now(),
+							ID:             "job_id",
+							Name:           "job1",
+							Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:           "HEARTBEAT",
+							JobBuildStatus: "COMPLETED",
+							Interval:       1,
+							CreatedAt:      time.Now(),
+							UpdatedAt:      time.Now(),
 							TerminatedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: true,
@@ -1118,9 +1235,9 @@ func TestListScheduledJobs(t *testing.T) {
 				).Return(&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
-							ID:          "scheduled_job_id",
-							Status:      "PENDING",
-							ScheduledAt: time.Now().Add(time.Minute),
+							ID:                 "scheduled_job_id",
+							ScheduledJobStatus: "PENDING",
+							ScheduledAt:        time.Now().Add(time.Minute),
 							StartedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: false,
@@ -1140,9 +1257,9 @@ func TestListScheduledJobs(t *testing.T) {
 				&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
-							ID:          "scheduled_job_id",
-							Status:      "PENDING",
-							ScheduledAt: time.Now().Add(time.Minute),
+							ID:                 "scheduled_job_id",
+							ScheduledJobStatus: "PENDING",
+							ScheduledAt:        time.Now().Add(time.Minute),
 							StartedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: false,

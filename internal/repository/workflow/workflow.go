@@ -1,9 +1,8 @@
-package executor
+package workflow
 
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -22,42 +21,25 @@ import (
 )
 
 const (
-	delimiter    = '$'
-	authSubject  = "internal/executor"
+	authSubject  = "internal/workflow"
 	retryBackoff = time.Second
 
-	// Statuses for the scheduled job.
-	statusRunning   = "RUNNING"
+	// Statuses for the job build status.
+	statusQueued    = "QUEUED"
+	statusStarted   = "STARTED"
 	statusCompleted = "COMPLETED"
 	statusFailed    = "FAILED"
-
-	// Workflow names.
-	workflowHeartBeat = "HEARTBEAT"
-	workflowContainer = "CONTAINER"
-
-	containerWorkflowExecutionTimeout = 10 * time.Second
 )
-
-// Workflow represents a workflow that can be executed.
-type Workflow interface {
-	Execute(ctx context.Context) error
-}
 
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
-	Execute(ctx context.Context, timeout time.Duration, image string, cmd []string) (<-chan string, <-chan error, error)
+	Build(ctx context.Context, imageName string) error
 }
 
-// HeartBeatSvc represents the heartbeat service.
-type HeartBeatSvc interface {
-	Execute(ctx context.Context, payload string) error
-}
-
-// Services represents the services used by the executor.
+// Services represents the services used by the workflow.
 type Services struct {
 	Jobs jobspb.JobsServiceClient
 	Csvc ContainerSvc
-	Hsvc HeartBeatSvc
 }
 
 // Config represents the repository constants configuration.
@@ -65,16 +47,16 @@ type Config struct {
 	ParallelismLimit int
 }
 
-// Repository provides executor repository.
+// Repository provides workflow repository.
 type Repository struct {
 	tp   trace.Tracer
 	cfg  *Config
-	kfk  *kgo.Client
 	auth auth.IAuth
 	svc  *Services
+	kfk  *kgo.Client
 }
 
-// New creates a new executor repository.
+// New creates a new workflow repository.
 func New(cfg *Config, auth auth.IAuth, svc *Services, kfk *kgo.Client) *Repository {
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
@@ -85,7 +67,7 @@ func New(cfg *Config, auth auth.IAuth, svc *Services, kfk *kgo.Client) *Reposito
 	}
 }
 
-// Run starts the executor.
+// Run start the workflow execution.
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
 
@@ -125,13 +107,13 @@ func (r *Repository) Run(ctx context.Context) error {
 			// Process the record in a separate goroutine
 			eg.Go(func(record *kgo.Record) func() error {
 				return func() error {
-					ctxWithTrace, span := r.tp.Start(groupCtx, "executor.Run")
+					ctxWithTrace, span := r.tp.Start(groupCtx, "workflow.Run")
 					defer span.End()
 
-					// Execute the run workflow
-					if err := r.runWorkflow(ctxWithTrace, string(record.Value)); err != nil {
+					// Execute the build workflow
+					if err := r.buildWorkflow(ctxWithTrace, string(record.Value)); err != nil {
 						logger.Error(
-							"run workflow execution failed",
+							"build workflow execution failed",
 							zap.Any("ctx", ctxWithTrace),
 							zap.Error(err),
 						)
@@ -170,10 +152,9 @@ func (r *Repository) Run(ctx context.Context) error {
 	}
 }
 
-// runWorkflow runs the executor workflow.
-func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error {
-	// Extract the data from the record value
-	scheduledJobID, jobID, lastScheduledAt, err := extractDataFromRecordValue(recordValue)
+// buildWorkflow executes the build workflow.
+func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) error {
+	jobID, err := extractDataFromRecordValue(recordValue)
 	if err != nil {
 		return err
 	}
@@ -193,9 +174,9 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 	}
 
 	// Early return idempotency checks
-	// Ensure the job build status is COMPLETED
-	if job.GetBuildStatus() != statusCompleted {
-		return status.Error(codes.FailedPrecondition, "job build status is not COMPLETED")
+	// Ensure the build process is not already started
+	if job.GetBuildStatus() != statusQueued {
+		return nil
 	}
 
 	// Ensure the job is not already terminated
@@ -204,55 +185,20 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return status.Error(codes.FailedPrecondition, "job is already terminated")
 	}
 
-	// Schedule a new job based on the last scheduled time and interval
-	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		JobId:       jobID,
-		UserId:      job.GetUserId(),
-		ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(job.GetInterval())).Format(time.RFC3339Nano),
-	}); _err != nil {
-		return _err
+	// Extract the image from the job
+	imageName, err := extractImageName(job.GetPayload())
+	if err != nil {
+		return err
 	}
 
-	// Update the scheduled job status from QUEUED to RUNNING
-	if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
-		Id:     scheduledJobID,
-		Status: statusRunning,
-	}); _err != nil {
-		return _err
-	}
-
-	var workflowErr error
-	switch job.Kind {
-	// Execute the HEARTBEAT workflow
-	case workflowHeartBeat:
-		workflowErr = retryOnce(func() error {
-			return r.svc.Hsvc.Execute(ctx, job.GetPayload())
-		})
-	// Execute the CONTAINER workflow
-	case workflowContainer:
-		imageName, cmd, err := extractContainerDetails(job.GetPayload())
-		if err != nil {
-			return err
-		}
-
-		workflowErr = retryOnce(func() error {
-			_, _, _err := r.svc.Csvc.Execute(
-				ctx,
-				containerWorkflowExecutionTimeout,
-				imageName,
-				cmd,
-			)
-			return _err
-		})
-	default:
-		return status.Error(codes.InvalidArgument, "invalid job kind")
-	}
-
-	if workflowErr != nil {
-		// Update the scheduled job status from RUNNING to FAILED
-		if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
-			Id:     scheduledJobID,
-			Status: statusFailed,
+	// Execute the build process
+	if workflowErr := retryOnce(func() error {
+		return r.svc.Csvc.Build(ctx, imageName)
+	}); workflowErr != nil {
+		// Update the job status from QUEUED to FAILED
+		if _, _err := r.svc.Jobs.UpdateJobBuildStatus(ctx, &jobspb.UpdateJobBuildStatusRequest{
+			Id:          jobID,
+			BuildStatus: statusFailed,
 		}); _err != nil {
 			return _err
 		}
@@ -260,10 +206,19 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return workflowErr
 	}
 
-	// Update the scheduled job status from RUNNING to COMPLETED
-	if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
-		Id:     scheduledJobID,
-		Status: statusCompleted,
+	// Update the job status from QUEUED to COMPLETED
+	if _, _err := r.svc.Jobs.UpdateJobBuildStatus(ctx, &jobspb.UpdateJobBuildStatusRequest{
+		Id:          jobID,
+		BuildStatus: statusCompleted,
+	}); _err != nil {
+		return _err
+	}
+
+	// Schedule the job for the run
+	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+		JobId:       jobID,
+		UserId:      job.GetUserId(),
+		ScheduledAt: time.Now().Add(time.Minute * time.Duration(job.GetInterval())).Format(time.RFC3339Nano),
 	}); _err != nil {
 		return _err
 	}
@@ -272,18 +227,12 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 }
 
 // extractDataFromRecordValue extracts the data from the record value.
-func extractDataFromRecordValue(recordValue string) (scheduledJobID, jobID string, lastScheduledAt time.Time, err error) {
-	parts := strings.Split(recordValue, string(delimiter))
-	if len(parts) != 3 {
-		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid data format")
+func extractDataFromRecordValue(recordValue string) (string, error) {
+	if recordValue == "" {
+		return "", status.Error(codes.InvalidArgument, "record value is empty")
 	}
 
-	lastScheduledAt, err = time.Parse(time.RFC3339Nano, parts[2])
-	if err != nil {
-		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid scheduled at time")
-	}
-
-	return parts[0], parts[1], lastScheduledAt, nil
+	return recordValue, nil
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
@@ -326,31 +275,17 @@ func retryOnce(fn func() error) error {
 	return fn()
 }
 
-// extractContainerDetails extracts the container details from the job payload.
-func extractContainerDetails(payload string) (imageName string, cmdStr []string, err error) {
+// extractImageName extracts the image name from the job payload.
+func extractImageName(payload string) (string, error) {
 	var data map[string]any
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		return "", nil, status.Error(codes.InvalidArgument, "invalid payload format")
+		return "", status.Error(codes.InvalidArgument, "invalid payload format")
 	}
 
 	imageName, ok := data["image"].(string)
-	if !ok {
-		return "", nil, status.Error(codes.InvalidArgument, "image is missing or invalid")
+	if !ok || imageName == "" {
+		return "", status.Error(codes.InvalidArgument, "invalid image name")
 	}
 
-	cmd, ok := data["cmd"].([]any)
-	if !ok {
-		return "", nil, status.Error(codes.InvalidArgument, "cmd is missing or invalid")
-	}
-
-	for _, c := range cmd {
-		c, err := c.(string)
-		if !err {
-			return "", nil, status.Error(codes.InvalidArgument, "cmd is invalid")
-		}
-
-		cmdStr = append(cmdStr, c)
-	}
-
-	return imageName, cmdStr, nil
+	return imageName, nil
 }

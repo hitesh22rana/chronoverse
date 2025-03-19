@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/hitesh22rana/chronoverse/internal/repository/executor/workflows/heartbeat"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/heartbeat"
 )
 
 func TestNew(t *testing.T) {
@@ -15,12 +15,10 @@ func TestNew(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		data    string
 		wantErr bool
 	}{
 		{
 			name:    "success",
-			data:    `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 			wantErr: false,
 		},
 	}
@@ -29,11 +27,7 @@ func TestNew(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := heartbeat.New(tt.data)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			_ = heartbeat.New()
 		})
 	}
 }
@@ -83,13 +77,8 @@ func TestHeartBeat_Execute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h, err := heartbeat.New(tt.data)
-			if err != nil {
-				t.Errorf("New() error = %v", err)
-				return
-			}
-
-			gotErr := h.Execute(t.Context())
+			h := heartbeat.New()
+			gotErr := h.Execute(t.Context(), tt.data)
 			assert.Equal(t, tt.wantErr, gotErr)
 		})
 	}

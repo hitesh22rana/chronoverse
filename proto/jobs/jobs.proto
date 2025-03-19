@@ -30,6 +30,15 @@ message UpdateJobRequest {
 // UpdateJobResponse contains the result of a job update attempt.
 message UpdateJobResponse {}
 
+// UpdateJobBuildStatusRequest contains the details needed to update the build status of a job.
+message UpdateJobBuildStatusRequest {
+    string id          = 1; // ID of the job
+    string build_status = 2; // Status of the job
+}
+
+// UpdateJobBuildStatusResponse contains the result of a job build status update attempt.
+message UpdateJobBuildStatusResponse {}
+
 // GetJobRequest contains the details needed to get a job.
 message GetJobRequest {
     string id      = 1; // ID of the job
@@ -42,10 +51,11 @@ message GetJobResponse {
     string name          = 2; // Name of the job
     string payload       = 3; // JSON string for payload
     string kind          = 4; // Kind of job
-    int32 interval       = 5; // Interval measured in minutes
-    string created_at    = 6; // Time the job was created
-    string updated_at    = 7; // Time the job was last updated
-    string terminated_at = 8; // Time the job was terminated
+    string build_status  = 5; // Status of the job
+    int32 interval       = 6; // Interval measured in minutes
+    string created_at    = 7; // Time the job was created
+    string updated_at    = 8; // Time the job was last updated
+    string terminated_at = 9; // Time the job was terminated
 }
 
 // GetJobByIDRequest contains the details needed to get a job by job_id.
@@ -60,10 +70,11 @@ message GetJobByIDResponse {
     string name          = 3; // Name of the job
     string payload       = 4; // JSON string for payload
     string kind          = 5; // Kind of job
-    int32 interval       = 6; // Interval measured in minutes
-    string created_at    = 7; // Time the job was created
-    string updated_at    = 8; // Time the job was last updated
-    string terminated_at = 9; // Time the job was terminated
+    string build_status  = 6; // Status of the job
+    int32 interval       = 7; // Interval measured in minutes
+    string created_at    = 8; // Time the job was created
+    string updated_at    = 9; // Time the job was last updated
+    string terminated_at = 10; // Time the job was terminated
 }
 
 // GetScheduledJobByIDRequest contains the details needed to get a scheduled job by ID.
@@ -117,10 +128,11 @@ message JobsByUserIDResponse {
     string name          = 2; // Name of the job
     string payload       = 3; // JSON string for payload
     string kind          = 4; // Kind of job
-    int32 interval       = 5; // Interval measured in minutes
-    string created_at    = 6; // Time the job was created
-    string updated_at    = 7; // Time the job was last updated
-    string terminated_at = 8; // Time the job was terminated
+    string build_status  = 5; // Status of the job
+    int32 interval       = 6; // Interval measured in minutes
+    string created_at    = 7; // Time the job was created
+    string updated_at    = 8; // Time the job was last updated
+    string terminated_at = 9; // Time the job was terminated
 }
 
 // ListJobsByUserIDResponse contains the result of a job listing attempt.
@@ -159,6 +171,10 @@ service JobsService {
 
     // UpdateJob an existing job.
     rpc UpdateJob(UpdateJobRequest) returns (UpdateJobResponse) {}
+
+    // UpdateJobBuildStatus updates the build status of a job.
+    // This is an internal API and should not be exposed to the public.
+    rpc UpdateJobBuildStatus(UpdateJobBuildStatusRequest) returns (UpdateJobBuildStatusResponse) {}
 
     // GetJob gets a job by ID and user_id.
     rpc GetJob(GetJobRequest) returns (GetJobResponse) {}

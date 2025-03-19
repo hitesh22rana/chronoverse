@@ -19,7 +19,7 @@ import (
 
 // Server implements the HTTP server.
 type Server struct {
-	auth          *auth.Auth
+	auth          auth.IAuth
 	crypto        *crypto.Crypto
 	rdb           *redis.Store
 	usersClient   userpb.UsersServiceClient
@@ -51,7 +51,7 @@ type Config struct {
 // New creates a new HTTP server.
 func New(
 	cfg *Config,
-	auth *auth.Auth,
+	auth auth.IAuth,
 	crypto *crypto.Crypto,
 	rdb *redis.Store,
 	usersClient userpb.UsersServiceClient,

@@ -3,22 +3,28 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+
+	"github.com/hitesh22rana/chronoverse/internal/app/executor"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
-	jobsrepo "github.com/hitesh22rana/chronoverse/internal/repository/jobs"
-	jobssvc "github.com/hitesh22rana/chronoverse/internal/service/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/heartbeat"
+	executorrepo "github.com/hitesh22rana/chronoverse/internal/repository/executor"
+	executorsvc "github.com/hitesh22rana/chronoverse/internal/service/executor"
 )
 
 const (
@@ -55,8 +61,16 @@ func run() int {
 	// Initialize the service information
 	initSvcInfo()
 
-	// Load the jobs service configuration
-	cfg, err := config.InitJobsServiceConfig()
+	// Handle OS signals for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		cancel()
+	}()
+
+	// Load the execution service configuration
+	cfg, err := config.InitExecutionJobConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -120,30 +134,12 @@ func run() int {
 		return ExitError
 	}
 
-	// Initialize the PostgreSQL database
-	pdb, err := postgres.New(ctx, &postgres.Config{
-		Host:        cfg.Postgres.Host,
-		Port:        cfg.Postgres.Port,
-		User:        cfg.Postgres.User,
-		Password:    cfg.Postgres.Password,
-		Database:    cfg.Postgres.Database,
-		MaxConns:    cfg.Postgres.MaxConns,
-		MinConns:    cfg.Postgres.MinConns,
-		MaxConnLife: cfg.Postgres.MaxConnLife,
-		MaxConnIdle: cfg.Postgres.MaxConnIdle,
-		DialTimeout: cfg.Postgres.DialTimeout,
-		SSLMode:     cfg.Postgres.SSLMode,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer pdb.Close()
-
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
+		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
+		kafka.WithConsumeTopics(cfg.Kafka.ConsumeTopics...),
+		kafka.WithDisableAutoCommit(),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -151,49 +147,58 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize the jobs repository
-	repo := jobsrepo.New(&jobsrepo.Config{
-		FetchLimit: cfg.Jobs.FetchLimit,
-	}, pdb, kfk)
-
-	// Initialize the validator utility
-	validator := validator.New()
-
-	// Initialize the jobs service
-	svc := jobssvc.New(validator, repo)
-
-	// Initialize the jobs application
-	app := jobs.New(ctx, &jobs.Config{
-		Deadline: cfg.Grpc.RequestTimeout,
-	}, auth, svc)
-
-	// Create a TCP listener
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Grpc.Port))
+	// Initialize the container service
+	csvc, err := container.NewDockerWorkflow()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create listener: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Gracefully shutdown the service
-	go func() {
-		<-ctx.Done()
-		if err := listener.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to close listener: %v\n", err)
+	// Load the jobs service credentials
+	var creds credentials.TransportCredentials
+	if cfg.JobsService.Secure {
+		creds, err = loadTLSCredentials(cfg.JobsService.CertFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
+			return ExitError
 		}
-	}()
+	} else {
+		creds = insecure.NewCredentials()
+	}
 
-	// Log the service information
+	// Connect to the jobs service
+	jobsConn, err := grpc.NewClient(
+		fmt.Sprintf("%s:%d", cfg.JobsService.Host, cfg.JobsService.Port),
+		grpc.WithTransportCredentials(creds),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to jobs gRPC server: %v\n", err)
+		return ExitError
+	}
+	defer jobsConn.Close()
+
+	// Initialize the execution job components
+	repo := executorrepo.New(&executorrepo.Config{
+		ParallelismLimit: cfg.ParallelismLimit,
+	}, auth, &executorrepo.Services{
+		Jobs: jobspb.NewJobsServiceClient(jobsConn),
+		Csvc: csvc,
+		Hsvc: heartbeat.New(),
+	}, kfk)
+	svc := executorsvc.New(repo)
+	app := executor.New(ctx, svc)
+
+	// Log the job information
 	logger.Info(
-		"starting service",
+		"starting job",
 		zap.Any("ctx", ctx),
 		zap.String("name", svcpkg.Info().Name),
 		zap.String("version", svcpkg.Info().Version),
-		zap.String("address", listener.Addr().String()),
 		zap.String("environment", cfg.Environment.Env),
 	)
 
-	// Serve the gRPC service
-	if err := app.Serve(listener); err != nil {
+	// Run the execution job
+	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
@@ -201,10 +206,20 @@ func run() int {
 	return ExitOk
 }
 
-// initSvcInfo initializes the service information.
+// initSvcInfo initializes the job information.
 func initSvcInfo() {
 	svcpkg.SetVersion(version)
 	svcpkg.SetName(name)
 	svcpkg.SetAuthPrivateKeyPath(authPrivateKeyPath)
 	svcpkg.SetAuthPublicKeyPath(authPublicKeyPath)
+}
+
+// loadTLSCredentials loads the TLS credentials from the certificate file.
+func loadTLSCredentials(certFile string) (credentials.TransportCredentials, error) {
+	creds, err := credentials.NewClientTLSFromFile(certFile, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
+	}
+
+	return creds, nil
 }

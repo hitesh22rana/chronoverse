@@ -4,6 +4,7 @@ package jobs
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -13,7 +14,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
@@ -27,6 +30,7 @@ import (
 type Service interface {
 	CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (string, error)
 	UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) error
+	UpdateJobBuildStatus(ctx context.Context, req *jobspb.UpdateJobBuildStatusRequest) error
 	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*model.GetJobByIDResponse, error)
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
@@ -46,6 +50,7 @@ type Jobs struct {
 	jobspb.UnimplementedJobsServiceServer
 	logger *zap.Logger
 	tp     trace.Tracer
+	auth   auth.IAuth
 	cfg    *Config
 	svc    Service
 }
@@ -65,11 +70,16 @@ func audienceInterceptor() grpc.UnaryServerInterceptor {
 
 // roleInterceptor extracts the role from the metadata and adds it to the context.
 func roleInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the role from metadata.
 		role, err := auth.ExtractRoleFromMetadata(ctx)
 		if err != nil {
 			return "", err
+		}
+
+		// Validate the role for internal APIs.
+		if isInternalAPI(info.FullMethod) && role != auth.RoleAdmin.String() {
+			return "", status.Error(codes.PermissionDenied, "unauthorized access")
 		}
 
 		return handler(auth.WithRole(ctx, role), req)
@@ -77,7 +87,7 @@ func roleInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // authTokenInterceptor extracts the authToken from metadata and adds it to the context.
-func authTokenInterceptor() grpc.UnaryServerInterceptor {
+func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the authToken from metadata.
 		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
@@ -85,26 +95,53 @@ func authTokenInterceptor() grpc.UnaryServerInterceptor {
 			return "", err
 		}
 
-		return handler(auth.WithAuthorizationToken(ctx, authToken), req)
+		ctx = auth.WithAuthorizationToken(ctx, authToken)
+		if _, err := j.auth.ValidateToken(ctx); err != nil {
+			return "", err
+		}
+
+		return handler(ctx, req)
 	}
 }
 
+// isInternalAPI checks if the full method is an internal API.
+func isInternalAPI(fullMethod string) bool {
+	internalAPIs := []string{
+		"GetJobByID",
+		"UpdateJobBuildStatus",
+		"ScheduleJob",
+		"UpdateScheduledJobStatus",
+		"GetScheduledJobByID",
+	}
+
+	for _, api := range internalAPIs {
+		if strings.Contains(fullMethod, api) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // New creates a new jobs server.
-func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
+func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
+	jobs := &Jobs{
+		logger: loggerpkg.FromContext(ctx),
+		tp:     otel.Tracer(svcpkg.Info().GetName()),
+		auth:   auth,
+		cfg:    cfg,
+		svc:    svc,
+	}
+
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			audienceInterceptor(),
-			authTokenInterceptor(),
 			roleInterceptor(),
+			jobs.authTokenInterceptor(),
 		),
 	)
-	jobspb.RegisterJobsServiceServer(server, &Jobs{
-		logger: loggerpkg.FromContext(ctx),
-		tp:     otel.Tracer(svcpkg.Info().GetName()),
-		cfg:    cfg,
-		svc:    svc,
-	})
+	jobspb.RegisterJobsServiceServer(server, jobs)
 
 	reflection.Register(server)
 	return server
@@ -191,6 +228,47 @@ func (j *Jobs) UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) (res
 		zap.Any("ctx", ctx),
 	)
 	return &jobspb.UpdateJobResponse{}, nil
+}
+
+// UpdateJobBuildStatus updates the job build status.
+// This is an internal method used by internal services, and it should not be exposed to the public.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (j *Jobs) UpdateJobBuildStatus(ctx context.Context, req *jobspb.UpdateJobBuildStatusRequest) (res *jobspb.UpdateJobBuildStatusResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.UpdateJobBuildStatus",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("build_status", req.GetBuildStatus()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	err = j.svc.UpdateJobBuildStatus(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to update job build status",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job build status updated successfully",
+		zap.Any("ctx", ctx),
+	)
+	return &jobspb.UpdateJobBuildStatusResponse{}, nil
 }
 
 // GetJob returns the job details by ID and user ID.
@@ -319,6 +397,8 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 
 // UpdateScheduledJobStatus updates the scheduled job status.
 // This is an internal method used by internal services, and it should not be exposed to the public.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) UpdateScheduledJobStatus(
 	ctx context.Context,
 	req *jobspb.UpdateScheduledJobStatusRequest,

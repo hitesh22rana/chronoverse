@@ -9,11 +9,11 @@ import (
 // ServerConfig holds the configuration for the server.
 type ServerConfig struct {
 	Environment
+
 	Crypto
 	Redis
 	UsersService
 	JobsService
-
 	Server
 }
 

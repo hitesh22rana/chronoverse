@@ -56,7 +56,7 @@ func run() int {
 	}()
 
 	// Load the scheduling service configuration
-	cfg, err := config.InitSchedulingServiceConfig()
+	cfg, err := config.InitSchedulingJobConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -145,7 +145,7 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize the scheduling service components
+	// Initialize the scheduling job components
 	repo := schedulerrepo.New(&schedulerrepo.Config{
 		FetchLimit: cfg.Scheduler.FetchLimit,
 		BatchSize:  cfg.Scheduler.BatchSize,
@@ -156,16 +156,16 @@ func run() int {
 		ContextTimeout: cfg.Scheduler.ContextTimeout,
 	}, svc)
 
-	// Log the service information
+	// Log the job information
 	logger.Info(
-		"starting service",
+		"starting job",
 		zap.Any("ctx", ctx),
 		zap.String("name", svcpkg.Info().Name),
 		zap.String("version", svcpkg.Info().Version),
 		zap.String("environment", cfg.Environment.Env),
 	)
 
-	// Run the scheduling service
+	// Run the scheduling job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -174,7 +174,7 @@ func run() int {
 	return ExitOk
 }
 
-// initSvcInfo initializes the service information.
+// initSvcInfo initializes the job information.
 func initSvcInfo() {
 	svcpkg.SetVersion(version)
 	svcpkg.SetName(name)

@@ -72,9 +72,8 @@ func roleInterceptor() grpc.UnaryServerInterceptor {
 // authTokenInterceptor extracts the authToken from metadata and adds it to the context.
 func authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Skip the interceptor for RegisterUser and LoginUser methods.
-		if strings.Contains(info.FullMethod, "RegisterUser") ||
-			strings.Contains(info.FullMethod, "LoginUser") {
+		// Skip the interceptor if the method doesn't require authentication.
+		if !isAuthRequired(info.FullMethod) {
 			return handler(ctx, req)
 		}
 
@@ -86,6 +85,22 @@ func authTokenInterceptor() grpc.UnaryServerInterceptor {
 
 		return handler(auth.WithAuthorizationToken(ctx, authToken), req)
 	}
+}
+
+// isAuthRequired checks if the method requires authentication.
+func isAuthRequired(method string) bool {
+	authNotRequired := []string{
+		"RegisterUser",
+		"LoginUser",
+	}
+
+	for _, m := range authNotRequired {
+		if strings.Contains(method, m) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // New creates a new users-service.

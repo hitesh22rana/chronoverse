@@ -14,15 +14,16 @@ import (
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
-	"github.com/hitesh22rana/chronoverse/internal/app/executor"
+	"github.com/hitesh22rana/chronoverse/internal/app/workflow"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
-	executorrepo "github.com/hitesh22rana/chronoverse/internal/repository/executor"
-	executorsvc "github.com/hitesh22rana/chronoverse/internal/service/executor"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/container"
+	workflowrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflow"
+	workflowsvc "github.com/hitesh22rana/chronoverse/internal/service/workflow"
 )
 
 const (
@@ -67,8 +68,8 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the execution service configuration
-	cfg, err := config.InitExecutionServiceConfig()
+	// Load the workflow service configuration
+	cfg, err := config.InitWorkflowServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -145,6 +146,13 @@ func run() int {
 	}
 	defer kfk.Close()
 
+	// Initialize the container service
+	csvc, err := container.NewDockerWorkflow()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
 	// Load the jobs service credentials
 	var creds credentials.TransportCredentials
 	if cfg.JobsService.Secure {
@@ -168,23 +176,26 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
-	// Initialize the execution service components
-	repo := executorrepo.New(auth, &executorrepo.Services{
+	// Initialize the workflow job components
+	repo := workflowrepo.New(&workflowrepo.Config{
+		ParallelismLimit: cfg.ParallelismLimit,
+	}, auth, &workflowrepo.Services{
 		Jobs: jobspb.NewJobsServiceClient(jobsConn),
+		Csvc: csvc,
 	}, kfk)
-	svc := executorsvc.New(repo)
-	app := executor.New(ctx, svc)
+	svc := workflowsvc.New(repo)
+	app := workflow.New(ctx, svc)
 
-	// Log the service information
+	// Log the job information
 	logger.Info(
-		"starting service",
+		"starting job",
 		zap.Any("ctx", ctx),
 		zap.String("name", svcpkg.Info().Name),
 		zap.String("version", svcpkg.Info().Version),
 		zap.String("environment", cfg.Environment.Env),
 	)
 
-	// Run the execution service
+	// Run the workflow job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -201,6 +212,7 @@ func initSvcInfo() {
 	svcpkg.SetAuthPublicKeyPath(authPublicKeyPath)
 }
 
+// loadTLSCredentials loads the TLS credentials from the certificate file.
 func loadTLSCredentials(certFile string) (credentials.TransportCredentials, error) {
 	creds, err := credentials.NewClientTLSFromFile(certFile, "")
 	if err != nil {

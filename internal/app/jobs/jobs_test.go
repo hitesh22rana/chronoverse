@@ -17,22 +17,26 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/app/jobs/mock"
 	"github.com/hitesh22rana/chronoverse/internal/model"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 )
 
 func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	server := jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc)
+	}, _auth, svc)
 
 	_ = server
 }
@@ -80,10 +84,11 @@ func TestCreateJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -121,6 +126,7 @@ func TestCreateJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.CreateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().CreateJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -130,6 +136,34 @@ func TestCreateJob(t *testing.T) {
 				Id: "job_id",
 			},
 			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.CreateJobRequest{
+					UserId:   "user1",
+					Name:     "job1",
+					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:     "HEARTBEAT",
+					Interval: 1,
+				},
+			},
+			mock: func(_ *jobspb.CreateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -154,6 +188,7 @@ func TestCreateJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.CreateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().CreateJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -205,6 +240,7 @@ func TestCreateJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.CreateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().CreateJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -240,10 +276,11 @@ func TestUpdateJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -281,6 +318,7 @@ func TestUpdateJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.UpdateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().UpdateJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -288,6 +326,34 @@ func TestUpdateJob(t *testing.T) {
 			},
 			res:   &jobspb.UpdateJobResponse{},
 			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.UpdateJobRequest{
+					Id:       "job_id",
+					UserId:   "user1",
+					Name:     "job1",
+					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+					Interval: 1,
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -312,6 +378,7 @@ func TestUpdateJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.UpdateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().UpdateJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -363,6 +430,7 @@ func TestUpdateJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.UpdateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().UpdateJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -394,14 +462,213 @@ func TestUpdateJob(t *testing.T) {
 	}
 }
 
+func TestUpdateJobBuildStatus(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.UpdateJobBuildStatusRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.UpdateJobBuildStatusRequest)
+		res   *jobspb.UpdateJobBuildStatusResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateJobBuildStatusRequest{
+					Id:          "job_id",
+					BuildStatus: "COMPLETED",
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobBuildStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().UpdateJobBuildStatus(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil)
+			},
+			res:   &jobspb.UpdateJobBuildStatusResponse{},
+			isErr: false,
+		},
+		{
+			name: "error: unauthorized access (invalid role)",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateJobBuildStatusRequest{
+					Id:          "job_id",
+					BuildStatus: "COMPLETED",
+				},
+			},
+			mock:  func(_ *jobspb.UpdateJobBuildStatusRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.UpdateJobBuildStatusRequest{
+					Id:          "job_id",
+					BuildStatus: "COMPLETED",
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobBuildStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateJobBuildStatusRequest{
+					Id:          "",
+					BuildStatus: "",
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobBuildStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().UpdateJobBuildStatus(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.InvalidArgument, "id and build_status are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.UpdateJobBuildStatusRequest{
+					Id:          "job_id",
+					BuildStatus: "COMPLETED",
+				},
+			},
+			mock:  func(_ *jobspb.UpdateJobBuildStatusRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateJobBuildStatusRequest{
+					Id:          "job_id",
+					BuildStatus: "COMPLETED",
+				},
+			},
+			mock: func(_ *jobspb.UpdateJobBuildStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().UpdateJobBuildStatus(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.UpdateJobBuildStatus(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("UpdateJobBuildStatus() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("UpdateJobBuildStatus() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
 func TestGetJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -436,17 +703,19 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&model.GetJobResponse{
-					ID:        "job_id",
-					Name:      "job1",
-					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:      "HEARTBEAT",
-					Interval:  1,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					ID:             "job_id",
+					Name:           "job1",
+					Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:           "HEARTBEAT",
+					JobBuildStatus: "COMPLETED",
+					Interval:       1,
+					CreatedAt:      time.Now(),
+					UpdatedAt:      time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -458,12 +727,38 @@ func TestGetJob(t *testing.T) {
 				Name:         "job1",
 				Payload:      `{"action": "run", "params": {"foo": "bar"}}`,
 				Kind:         "HEARTBEAT",
+				BuildStatus:  "COMPLETED",
 				Interval:     1,
 				CreatedAt:    time.Now().Format(time.RFC3339Nano),
 				UpdatedAt:    time.Now().Format(time.RFC3339Nano),
 				TerminatedAt: time.Now().Format(time.RFC3339Nano),
 			},
 			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.GetJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.GetJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -485,6 +780,7 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -530,6 +826,7 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -565,10 +862,11 @@ func TestGetJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -590,7 +888,7 @@ func TestGetJobByID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -602,17 +900,19 @@ func TestGetJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetJobByID(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&model.GetJobByIDResponse{
-					UserID:    "user1",
-					Name:      "job1",
-					Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:      "HEARTBEAT",
-					Interval:  1,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					UserID:         "user1",
+					Name:           "job1",
+					Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:           "HEARTBEAT",
+					JobBuildStatus: "COMPLETED",
+					Interval:       1,
+					CreatedAt:      time.Now(),
+					UpdatedAt:      time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -624,6 +924,7 @@ func TestGetJobByID(t *testing.T) {
 				Name:         "job1",
 				Payload:      `{"action": "run", "params": {"foo": "bar"}}`,
 				Kind:         "HEARTBEAT",
+				BuildStatus:  "COMPLETED",
 				Interval:     1,
 				CreatedAt:    time.Now().Format(time.RFC3339Nano),
 				UpdatedAt:    time.Now().Format(time.RFC3339Nano),
@@ -632,13 +933,59 @@ func TestGetJobByID(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: unauthorized access (invalid role)",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetJobByIDRequest{
+					Id: "job_id",
+				},
+			},
+			mock:  func(_ *jobspb.GetJobByIDRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.GetJobByIDRequest{
+					Id: "job_id",
+				},
+			},
+			mock: func(_ *jobspb.GetJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -650,6 +997,7 @@ func TestGetJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetJobByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -681,7 +1029,7 @@ func TestGetJobByID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -693,6 +1041,7 @@ func TestGetJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetJobByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -728,10 +1077,11 @@ func TestScheduleJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -753,7 +1103,7 @@ func TestScheduleJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -767,6 +1117,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -778,13 +1129,63 @@ func TestScheduleJob(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: unauthorized access (invalid role)",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.ScheduleJobRequest{
+					JobId:       "job_id",
+					UserId:      "user1",
+					ScheduledAt: time.Now().Format(time.RFC3339Nano),
+				},
+			},
+			mock:  func(_ *jobspb.ScheduleJobRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.ScheduleJobRequest{
+					JobId:       "job_id",
+					UserId:      "user1",
+					ScheduledAt: time.Now().Format(time.RFC3339Nano),
+				},
+			},
+			mock: func(_ *jobspb.ScheduleJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -798,6 +1199,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -831,7 +1233,7 @@ func TestScheduleJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -845,6 +1247,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -880,10 +1283,11 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -905,7 +1309,7 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -918,6 +1322,7 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.UpdateScheduledJobStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().UpdateScheduledJobStatus(
 					gomock.Any(),
 					gomock.Any(),
@@ -927,13 +1332,61 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: unauthorized access (invalid role)",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.UpdateScheduledJobStatusRequest{
+					Id:     "scheduled_job_id",
+					Status: "QUEUED",
+				},
+			},
+			mock:  func(_ *jobspb.UpdateScheduledJobStatusRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.UpdateScheduledJobStatusRequest{
+					Id:     "scheduled_job_id",
+					Status: "QUEUED",
+				},
+			},
+			mock: func(_ *jobspb.UpdateScheduledJobStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -946,6 +1399,7 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.UpdateScheduledJobStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().UpdateScheduledJobStatus(
 					gomock.Any(),
 					gomock.Any(),
@@ -978,7 +1432,7 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -991,6 +1445,7 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.UpdateScheduledJobStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().UpdateScheduledJobStatus(
 					gomock.Any(),
 					gomock.Any(),
@@ -1026,10 +1481,11 @@ func TestGetScheduledJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -1051,7 +1507,7 @@ func TestGetScheduledJobByID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -1063,15 +1519,16 @@ func TestGetScheduledJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetScheduledJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetScheduledJobByID(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&model.GetScheduledJobByIDResponse{
-					ID:          "scheduled_job_id",
-					JobID:       "job_id",
-					UserID:      "user1",
-					Status:      "QUEUED",
-					ScheduledAt: time.Now(),
+					ID:                 "scheduled_job_id",
+					JobID:              "job_id",
+					UserID:             "user1",
+					ScheduledJobStatus: "QUEUED",
+					ScheduledAt:        time.Now(),
 					StartedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -1098,13 +1555,59 @@ func TestGetScheduledJobByID(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: unauthorized access (invalid role)",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetScheduledJobByIDRequest{
+					Id: "job_id",
+				},
+			},
+			mock:  func(_ *jobspb.GetScheduledJobByIDRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.GetScheduledJobByIDRequest{
+					Id: "job_id",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -1116,6 +1619,7 @@ func TestGetScheduledJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetScheduledJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetScheduledJobByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -1147,7 +1651,7 @@ func TestGetScheduledJobByID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "internal-service",
 							),
 							auth.RoleAdmin,
 						),
@@ -1159,6 +1663,7 @@ func TestGetScheduledJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetScheduledJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().GetScheduledJobByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -1194,10 +1699,11 @@ func TestListJobsByUserID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -1232,19 +1738,21 @@ func TestListJobsByUserID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&model.ListJobsByUserIDResponse{
 					Jobs: []*model.JobByUserIDResponse{
 						{
-							ID:        "job_id",
-							Name:      "job1",
-							Payload:   `{"action": "run", "params": {"foo": "bar"}}`,
-							Kind:      "HEARTBEAT",
-							Interval:  1,
-							CreatedAt: time.Now(),
-							UpdatedAt: time.Now(),
+							ID:             "job_id",
+							Name:           "job1",
+							Payload:        `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:           "HEARTBEAT",
+							JobBuildStatus: "COMPLETED",
+							Interval:       1,
+							CreatedAt:      time.Now(),
+							UpdatedAt:      time.Now(),
 							TerminatedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: true,
@@ -1261,6 +1769,7 @@ func TestListJobsByUserID(t *testing.T) {
 						Name:         "job1",
 						Payload:      `{"action": "run", "params": {"foo": "bar"}}`,
 						Kind:         "HEARTBEAT",
+						BuildStatus:  "COMPLETED",
 						Interval:     1,
 						CreatedAt:    time.Now().Format(time.RFC3339Nano),
 						UpdatedAt:    time.Now().Format(time.RFC3339Nano),
@@ -1270,6 +1779,31 @@ func TestListJobsByUserID(t *testing.T) {
 				Cursor: "",
 			},
 			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.ListJobsByUserIDRequest{
+					UserId: "user1",
+					Cursor: "",
+				},
+			},
+			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -1291,6 +1825,7 @@ func TestListJobsByUserID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					gomock.Any(),
@@ -1336,6 +1871,7 @@ func TestListJobsByUserID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsByUserIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ListJobsByUserID(
 					gomock.Any(),
 					gomock.Any(),
@@ -1371,10 +1907,11 @@ func TestListScheduledJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -1410,15 +1947,16 @@ func TestListScheduledJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&model.ListScheduledJobsResponse{
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
-							ID:          "scheduled_job_id",
-							Status:      "PENDING",
-							ScheduledAt: time.Now(),
+							ID:                 "scheduled_job_id",
+							ScheduledJobStatus: "PENDING",
+							ScheduledAt:        time.Now(),
 							StartedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: true,
@@ -1450,6 +1988,32 @@ func TestListScheduledJobs(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.ListScheduledJobsRequest{
+					JobId:  "job_id",
+					UserId: "user_id",
+					Cursor: "",
+				},
+			},
+			mock: func(_ *jobspb.ListScheduledJobsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
@@ -1470,6 +2034,7 @@ func TestListScheduledJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1517,6 +2082,7 @@ func TestListScheduledJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListScheduledJobsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
 				svc.EXPECT().ListScheduledJobs(
 					gomock.Any(),
 					gomock.Any(),

@@ -25,6 +25,7 @@ import (
 type Repository interface {
 	CreateJob(ctx context.Context, userID, name, payload, kind string, interval int32) (string, error)
 	UpdateJob(ctx context.Context, jobID, userID, name, payload string, interval int32) error
+	UpdateJobBuildStatus(ctx context.Context, jobID, buildStatus string) error
 	GetJob(ctx context.Context, jobID, userID string) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*model.GetJobByIDResponse, error)
 	ScheduleJob(ctx context.Context, jobID, userID, scheduledAt string) (string, error)
@@ -81,6 +82,12 @@ func (s *Service) CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		return "", status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Validate the kind
+	err = validateKind(req.GetKind())
+	if err != nil {
+		return "", err
 	}
 
 	// Validate the JSON payload
@@ -153,6 +160,49 @@ func (s *Service) UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) (
 		req.GetName(),
 		req.GetPayload(),
 		req.GetInterval(),
+	)
+
+	return err
+}
+
+// UpdateJobBuildStatusRequest holds the request parameters for updating a job build status.
+type UpdateJobBuildStatusRequest struct {
+	ID          string `validate:"required"`
+	BuildStatus string `validate:"required"`
+}
+
+// UpdateJobBuildStatus updates the job build status.
+func (s *Service) UpdateJobBuildStatus(ctx context.Context, req *jobspb.UpdateJobBuildStatusRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.UpdateJobBuildStatus")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&UpdateJobBuildStatusRequest{
+		ID:          req.GetId(),
+		BuildStatus: req.GetBuildStatus(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return err
+	}
+
+	// Validate the job build status
+	err = validateJobBuildStatus(req.GetBuildStatus())
+	if err != nil {
+		return err
+	}
+
+	// Update the job build status
+	err = s.repo.UpdateJobBuildStatus(
+		ctx,
+		req.GetId(),
+		req.GetBuildStatus(),
 	)
 
 	return err
@@ -305,7 +355,7 @@ func (s *Service) UpdateScheduledJobStatus(ctx context.Context, req *jobspb.Upda
 	}
 
 	// Validate the status
-	err = validateStatus(req.GetStatus())
+	err = validateScheduledJobStatus(req.GetStatus())
 	if err != nil {
 		return err
 	}
@@ -447,6 +497,29 @@ func (s *Service) ListScheduledJobs(ctx context.Context, req *jobspb.ListSchedul
 	return res, nil
 }
 
+func validateJobBuildStatus(s string) error {
+	switch s {
+	case model.JobBuildStatusQueued.ToString(),
+		model.JobBuildStatusStarted.ToString(),
+		model.JobBuildStatusCompleted.ToString(),
+		model.JobBuildStatusFailed.ToString(),
+		model.JobBuildStatusCanceled.ToString():
+		return nil
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid build status: %s", s)
+	}
+}
+
+func validateKind(k string) error {
+	switch k {
+	case model.KindHeartbeat.ToString(),
+		model.KindContainer.ToString():
+		return nil
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid kind: %s", k)
+	}
+}
+
 func validateTime(t string) error {
 	_, err := time.Parse(time.RFC3339Nano, t)
 	if err != nil {
@@ -456,13 +529,13 @@ func validateTime(t string) error {
 	return nil
 }
 
-func validateStatus(s string) error {
+func validateScheduledJobStatus(s string) error {
 	switch s {
-	case model.StatusPending.ToString(),
-		model.StatusQueued.ToString(),
-		model.StatusRunning.ToString(),
-		model.StatusCompleted.ToString(),
-		model.StatusFailed.ToString():
+	case model.ScheduledJobStatusPending.ToString(),
+		model.ScheduledJobStatusQueued.ToString(),
+		model.ScheduledJobStatusRunning.ToString(),
+		model.ScheduledJobStatusCompleted.ToString(),
+		model.ScheduledJobStatusFailed.ToString():
 		return nil
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid status: %s", s)

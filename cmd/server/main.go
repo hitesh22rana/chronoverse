@@ -180,6 +180,7 @@ func initSvcInfo() {
 	svcpkg.SetAuthPublicKeyPath(authPublicKeyPath)
 }
 
+// loadTLSCredentials loads the TLS credentials from the certificate file.
 func loadTLSCredentials(certFile string) (credentials.TransportCredentials, error) {
 	creds, err := credentials.NewClientTLSFromFile(certFile, "")
 	if err != nil {

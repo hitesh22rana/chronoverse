@@ -1,4 +1,4 @@
-package docker_test
+package container_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/docker"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/container"
 )
 
 const (
@@ -27,7 +27,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	workflow, err := docker.New()
+	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
 	require.NotNil(t, workflow)
 
@@ -174,5 +174,55 @@ func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
 		case <-time.After(collectionTimeout):
 			return collected, context.DeadlineExceeded
 		}
+	}
+}
+
+func TestDockerWorkflow_Build(t *testing.T) {
+	t.Parallel()
+
+	// Skip if running in CI environment
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	workflow, err := container.NewDockerWorkflow()
+	require.NoError(t, err)
+	require.NotNil(t, workflow)
+
+	t.Cleanup(func() {
+		workflow.Close()
+	})
+
+	tests := []struct {
+		name  string
+		image string
+		err   error
+	}{
+		{
+			name:  "successful pull",
+			image: "ghcr.io/hitesh22rana/mq:latest",
+			err:   nil,
+		},
+		{
+			name:  "error pull (nonexistent image)",
+			image: "nonexistent:latest",
+			err:   status.Error(codes.NotFound, "failed to pull image: "),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := workflow.Build(t.Context(), tt.image)
+			if tt.err != nil {
+				require.Error(t, err)
+				assert.Equal(t, status.Code(tt.err), status.Code(err))
+				assert.Contains(t, err.Error(), status.Convert(tt.err).Message())
+				return
+			}
+
+			require.NoError(t, err)
+		})
 	}
 }

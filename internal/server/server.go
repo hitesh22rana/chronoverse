@@ -194,6 +194,19 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						),
 					),
 				).ServeHTTP(w, r)
+			case http.MethodDelete:
+				s.withAllowedMethodMiddleware(
+					http.MethodDelete,
+					s.withVerifyCSRFMiddleware(
+						s.withVerifySessionMiddleware(
+							withAttachBasicMetadataHeaderMiddleware(
+								s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+									s.handleTerminateJob,
+								),
+							),
+						),
+					),
+				).ServeHTTP(w, r)
 			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}

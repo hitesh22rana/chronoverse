@@ -146,6 +146,42 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+// handleTerminateJob handles the terminate job by ID and user ID request.
+func (s *Server) handleTerminateJob(w http.ResponseWriter, r *http.Request) {
+	// Get the job ID from the path	parameters
+	jobID := r.PathValue("id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// TerminateJob terminates the job by ID.
+	_, err := s.jobsClient.TerminateJob(r.Context(), &jobspb.TerminateJobRequest{
+		Id:     jobID,
+		UserId: userID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to terminate job")
+		return
+	}
+
+	// Write the response
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleListJobsByUserID handles the list jobs by user ID request.
 func (s *Server) handleListJobsByUserID(w http.ResponseWriter, r *http.Request) {
 	// Get the user ID from the context

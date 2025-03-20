@@ -24,6 +24,7 @@ const (
 	JobsService_UpdateJobBuildStatus_FullMethodName     = "/jobs.JobsService/UpdateJobBuildStatus"
 	JobsService_GetJob_FullMethodName                   = "/jobs.JobsService/GetJob"
 	JobsService_GetJobByID_FullMethodName               = "/jobs.JobsService/GetJobByID"
+	JobsService_TerminateJob_FullMethodName             = "/jobs.JobsService/TerminateJob"
 	JobsService_ScheduleJob_FullMethodName              = "/jobs.JobsService/ScheduleJob"
 	JobsService_UpdateScheduledJobStatus_FullMethodName = "/jobs.JobsService/UpdateScheduledJobStatus"
 	JobsService_GetScheduledJobByID_FullMethodName      = "/jobs.JobsService/GetScheduledJobByID"
@@ -49,6 +50,8 @@ type JobsServiceClient interface {
 	// GetJobByID a job by ID.
 	// This is an internal API and should not be exposed to the public.
 	GetJobByID(ctx context.Context, in *GetJobByIDRequest, opts ...grpc.CallOption) (*GetJobByIDResponse, error)
+	// TerminateJob terminates a job.
+	TerminateJob(ctx context.Context, in *TerminateJobRequest, opts ...grpc.CallOption) (*TerminateJobResponse, error)
 	// ScheduleJob schedules a job to run at a specific time.
 	// This is an internal API and should not be exposed to the public.
 	ScheduleJob(ctx context.Context, in *ScheduleJobRequest, opts ...grpc.CallOption) (*ScheduleJobResponse, error)
@@ -116,6 +119,16 @@ func (c *jobsServiceClient) GetJobByID(ctx context.Context, in *GetJobByIDReques
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetJobByIDResponse)
 	err := c.cc.Invoke(ctx, JobsService_GetJobByID_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) TerminateJob(ctx context.Context, in *TerminateJobRequest, opts ...grpc.CallOption) (*TerminateJobResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TerminateJobResponse)
+	err := c.cc.Invoke(ctx, JobsService_TerminateJob_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +203,8 @@ type JobsServiceServer interface {
 	// GetJobByID a job by ID.
 	// This is an internal API and should not be exposed to the public.
 	GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error)
+	// TerminateJob terminates a job.
+	TerminateJob(context.Context, *TerminateJobRequest) (*TerminateJobResponse, error)
 	// ScheduleJob schedules a job to run at a specific time.
 	// This is an internal API and should not be exposed to the public.
 	ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error)
@@ -226,6 +241,9 @@ func (UnimplementedJobsServiceServer) GetJob(context.Context, *GetJobRequest) (*
 }
 func (UnimplementedJobsServiceServer) GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetJobByID not implemented")
+}
+func (UnimplementedJobsServiceServer) TerminateJob(context.Context, *TerminateJobRequest) (*TerminateJobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TerminateJob not implemented")
 }
 func (UnimplementedJobsServiceServer) ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScheduleJob not implemented")
@@ -352,6 +370,24 @@ func _JobsService_GetJobByID_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _JobsService_TerminateJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminateJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).TerminateJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_TerminateJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).TerminateJob(ctx, req.(*TerminateJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _JobsService_ScheduleJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ScheduleJobRequest)
 	if err := dec(in); err != nil {
@@ -468,6 +504,10 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetJobByID",
 			Handler:    _JobsService_GetJobByID_Handler,
+		},
+		{
+			MethodName: "TerminateJob",
+			Handler:    _JobsService_TerminateJob_Handler,
 		},
 		{
 			MethodName: "ScheduleJob",

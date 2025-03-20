@@ -27,12 +27,15 @@ import (
 )
 
 // Service provides job related operations.
+//
+//nolint:interfacebloat // It's okay to have all these methods in the interface.
 type Service interface {
 	CreateJob(ctx context.Context, req *jobspb.CreateJobRequest) (string, error)
 	UpdateJob(ctx context.Context, req *jobspb.UpdateJobRequest) error
 	UpdateJobBuildStatus(ctx context.Context, req *jobspb.UpdateJobBuildStatusRequest) error
 	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*model.GetJobByIDResponse, error)
+	TerminateJob(ctx context.Context, req *jobspb.TerminateJobRequest) error
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
 	UpdateScheduledJobStatus(ctx context.Context, req *jobspb.UpdateScheduledJobStatusRequest) error
 	GetScheduledJobByID(ctx context.Context, req *jobspb.GetScheduledJobByIDRequest) (*model.GetScheduledJobByIDResponse, error)
@@ -107,8 +110,8 @@ func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
 // isInternalAPI checks if the full method is an internal API.
 func isInternalAPI(fullMethod string) bool {
 	internalAPIs := []string{
-		"GetJobByID",
 		"UpdateJobBuildStatus",
+		"GetJobByID",
 		"ScheduleJob",
 		"UpdateScheduledJobStatus",
 		"GetScheduledJobByID",
@@ -351,6 +354,47 @@ func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (r
 		zap.Any("job", job),
 	)
 	return job.ToProto(), nil
+}
+
+// TerminateJob terminates a job.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (j *Jobs) TerminateJob(ctx context.Context, req *jobspb.TerminateJobRequest) (res *jobspb.TerminateJobResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.TerminateJob",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
+		),
+	)
+
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	err = j.svc.TerminateJob(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to terminate job",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job terminated successfully",
+		zap.Any("ctx", ctx),
+	)
+	return &jobspb.TerminateJobResponse{}, nil
 }
 
 // ScheduleJob schedules a job.

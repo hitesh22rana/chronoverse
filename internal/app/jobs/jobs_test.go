@@ -110,7 +110,7 @@ func TestCreateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -172,7 +172,7 @@ func TestCreateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -224,7 +224,7 @@ func TestCreateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -302,7 +302,7 @@ func TestUpdateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -362,7 +362,7 @@ func TestUpdateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -414,7 +414,7 @@ func TestUpdateJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -690,7 +690,7 @@ func TestGetJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -767,7 +767,7 @@ func TestGetJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -813,7 +813,7 @@ func TestGetJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -1066,6 +1066,181 @@ func TestGetJobByID(t *testing.T) {
 			if tt.isErr {
 				if err == nil {
 					t.Error("GetJobByID() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestTerminateJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.TerminateJobRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.TerminateJobRequest)
+		res   *jobspb.TerminateJobResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.TerminateJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.TerminateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().TerminateJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil)
+			},
+			res:   &jobspb.TerminateJobResponse{},
+			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.TerminateJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.TerminateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.TerminateJobRequest{
+					Id:     "",
+					UserId: "",
+				},
+			},
+			mock: func(_ *jobspb.TerminateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().TerminateJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.InvalidArgument, "id and user_id are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.TerminateJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock:  func(_ *jobspb.TerminateJobRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.TerminateJobRequest{
+					Id:     "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.TerminateJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().TerminateJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.TerminateJob(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("TerminateJob() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("TerminateJob() error = nil, want error")
 				}
 				return
 			}
@@ -1725,7 +1900,7 @@ func TestListJobsByUserID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -1812,7 +1987,7 @@ func TestListJobsByUserID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -1858,7 +2033,7 @@ func TestListJobsByUserID(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -1933,7 +2108,7 @@ func TestListScheduledJobs(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -2020,7 +2195,7 @@ func TestListScheduledJobs(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -2068,7 +2243,7 @@ func TestListScheduledJobs(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "users-test",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),

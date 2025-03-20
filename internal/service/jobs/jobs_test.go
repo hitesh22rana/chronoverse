@@ -676,6 +676,108 @@ func TestGetJobByID(t *testing.T) {
 	}
 }
 
+func TestTerminateJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := jobsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := jobs.New(validator.New(), repo)
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *jobspb.TerminateJobRequest
+		mock  func(req *jobspb.TerminateJobRequest)
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &jobspb.TerminateJobRequest{
+				Id:     "job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.TerminateJobRequest) {
+				repo.EXPECT().TerminateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(nil)
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing job ID",
+			req: &jobspb.TerminateJobRequest{
+				Id: "",
+			},
+			mock:  func(_ *jobspb.TerminateJobRequest) {},
+			isErr: true,
+		},
+		{
+			name: "error: job not found",
+			req: &jobspb.TerminateJobRequest{
+				Id:     "invalid_job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.TerminateJobRequest) {
+				repo.EXPECT().TerminateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(status.Error(codes.NotFound, "job not found"))
+			},
+			isErr: true,
+		},
+		{
+			name: "error: job not owned by user",
+			req: &jobspb.TerminateJobRequest{
+				Id:     "job_id",
+				UserId: "invalid_user_id",
+			},
+			mock: func(req *jobspb.TerminateJobRequest) {
+				repo.EXPECT().TerminateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(status.Error(codes.NotFound, "job not found or not owned by user"))
+			},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &jobspb.TerminateJobRequest{
+				Id:     "job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.TerminateJobRequest) {
+				repo.EXPECT().TerminateJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.TerminateJob(t.Context(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+		})
+	}
+}
+
 func TestScheduleJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 

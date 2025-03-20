@@ -102,7 +102,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)
@@ -129,7 +129,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)
@@ -154,7 +154,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)
@@ -179,7 +179,7 @@ func TestRegisterUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)
@@ -262,7 +262,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)
@@ -287,7 +287,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)
@@ -312,7 +312,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)
@@ -337,7 +337,7 @@ func TestLoginUser(t *testing.T) {
 				getCtx: func() context.Context {
 					return auth.WithRoleInMetadata(
 						auth.WithAudienceInMetadata(
-							t.Context(), "users-test",
+							t.Context(), "server-test",
 						),
 						auth.RoleUser,
 					)

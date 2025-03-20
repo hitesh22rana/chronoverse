@@ -77,6 +77,27 @@ message GetJobByIDResponse {
     string terminated_at = 10; // Time the job was terminated
 }
 
+// TerminateJobRequest contains the details needed to terminate a job.
+message TerminateJobRequest {
+    string id      = 1; // ID of the job
+    string user_id = 2; // ID of the user
+}
+
+// TerminateJobResponse contains the result of a job termination attempt.
+message TerminateJobResponse {}
+
+// ScheduleJobRequest contains the details needed to create a new scheduled job.
+message ScheduleJobRequest {
+    string job_id       = 1; // ID of the job
+    string user_id      = 2; // ID of the user
+    string scheduled_at = 3; // Time the job is scheduled to run
+}
+
+// ScheduleJobResponse contains the result of a scheduled job creation attempt.
+message ScheduleJobResponse {
+    string id = 1; // ID of the scheduled job
+}
+
 // GetScheduledJobByIDRequest contains the details needed to get a scheduled job by ID.
 message GetScheduledJobByIDRequest {
     string id = 1; // ID of the scheduled job
@@ -93,18 +114,6 @@ message GetScheduledJobByIDResponse {
     string completed_at = 7; // Time the job was completed
     string created_at   = 8; // Time the job was created
     string updated_at   = 9; // Time the job was last updated
-}
-
-// ScheduleJobRequest contains the details needed to create a new scheduled job.
-message ScheduleJobRequest {
-    string job_id       = 1; // ID of the job
-    string user_id      = 2; // ID of the user
-    string scheduled_at = 3; // Time the job is scheduled to run
-}
-
-// ScheduleJobResponse contains the result of a scheduled job creation attempt.
-message ScheduleJobResponse {
-    string id = 1; // ID of the scheduled job
 }
 
 // UpdateScheduledJobStatusRequest contains the details needed to update the status of a scheduled job.
@@ -182,6 +191,9 @@ service JobsService {
     // GetJobByID a job by ID.
     // This is an internal API and should not be exposed to the public.
     rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
+
+    // TerminateJob terminates a job.
+    rpc TerminateJob(TerminateJobRequest) returns (TerminateJobResponse) {}
 
     // ScheduleJob schedules a job to run at a specific time.
     // This is an internal API and should not be exposed to the public.

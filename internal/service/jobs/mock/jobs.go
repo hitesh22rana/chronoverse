@@ -146,6 +146,20 @@ func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, jobID, userID, scheduledA
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockRepository)(nil).ScheduleJob), ctx, jobID, userID, scheduledAt)
 }
 
+// TerminateJob mocks base method.
+func (m *MockRepository) TerminateJob(ctx context.Context, jobID, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TerminateJob", ctx, jobID, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TerminateJob indicates an expected call of TerminateJob.
+func (mr *MockRepositoryMockRecorder) TerminateJob(ctx, jobID, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TerminateJob", reflect.TypeOf((*MockRepository)(nil).TerminateJob), ctx, jobID, userID)
+}
+
 // UpdateJob mocks base method.
 func (m *MockRepository) UpdateJob(ctx context.Context, jobID, userID, name, payload string, interval int32) error {
 	m.ctrl.T.Helper()

@@ -30,6 +30,7 @@ const (
 	statusRunning   = "RUNNING"
 	statusCompleted = "COMPLETED"
 	statusFailed    = "FAILED"
+	statusCanceled  = "CANCELED"
 
 	// Workflow names.
 	workflowHeartBeat = "HEARTBEAT"
@@ -201,6 +202,14 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 	// Ensure the job is not already terminated
 	terminatedAt := job.GetTerminatedAt()
 	if terminatedAt != "" {
+		// If the job is already terminated, do not execute the workflow and update the scheduled job status from QUEUED to CANCELED
+		if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
+			Id:     scheduledJobID,
+			Status: statusCanceled,
+		}); _err != nil {
+			return _err
+		}
+
 		return status.Error(codes.FailedPrecondition, "job is already terminated")
 	}
 

@@ -161,6 +161,8 @@ func (r *Repository) UpdateJob(ctx context.Context, jobID, userID, name, payload
 }
 
 // UpdateJobBuildStatus updates the job build status.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
 func (r *Repository) UpdateJobBuildStatus(ctx context.Context, jobID, buildStatus string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateJobBuildStatus")
 	defer func() {
@@ -269,6 +271,45 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 	}
 
 	return res, nil
+}
+
+// TerminateJob terminates a job.
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (r *Repository) TerminateJob(ctx context.Context, jobID, userID string) (err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.TerminateJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET terminated_at = NOW()
+		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
+	`, jobsTable)
+
+	// Execute the query
+	ct, err := r.pg.Exec(ctx, query, jobID, userID)
+	if err != nil {
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to terminate job: %v", err)
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		err = status.Errorf(codes.NotFound, "job not found or not owned by user")
+		return err
+	}
+
+	return nil
 }
 
 // ScheduleJob schedules a job.

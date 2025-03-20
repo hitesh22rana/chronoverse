@@ -22,12 +22,15 @@ import (
 )
 
 // Repository provides job related operations.
+//
+//nolint:interfacebloat // It's okay to have all these methods in the interface.
 type Repository interface {
 	CreateJob(ctx context.Context, userID, name, payload, kind string, interval int32) (string, error)
 	UpdateJob(ctx context.Context, jobID, userID, name, payload string, interval int32) error
 	UpdateJobBuildStatus(ctx context.Context, jobID, buildStatus string) error
 	GetJob(ctx context.Context, jobID, userID string) (*model.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*model.GetJobByIDResponse, error)
+	TerminateJob(ctx context.Context, jobID, userID string) error
 	ScheduleJob(ctx context.Context, jobID, userID, scheduledAt string) (string, error)
 	UpdateScheduledJobStatus(ctx context.Context, scheduledJobID, scheduledJobStatus string) error
 	GetScheduledJobByID(ctx context.Context, scheduledJobID string) (*model.GetScheduledJobByIDResponse, error)
@@ -283,6 +286,39 @@ type ScheduleJobRequest struct {
 	JobID       string `validate:"required"`
 	UserID      string `validate:"required"`
 	ScheduledAt string `validate:"required"`
+}
+
+// TerminateJobRequest holds the request parameters for terminating a job.
+type TerminateJobRequest struct {
+	ID     string `validate:"required"`
+	UserID string `validate:"required"`
+}
+
+// TerminateJob terminates a job.
+func (s *Service) TerminateJob(ctx context.Context, req *jobspb.TerminateJobRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.TerminateJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&TerminateJobRequest{
+		ID:     req.GetId(),
+		UserID: req.GetUserId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return err
+	}
+
+	// Terminate the job
+	err = s.repo.TerminateJob(ctx, req.GetId(), req.GetUserId())
+
+	return err
 }
 
 // ScheduleJob schedules a job.

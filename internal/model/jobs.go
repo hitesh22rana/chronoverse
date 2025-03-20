@@ -48,6 +48,7 @@ const (
 	ScheduledJobStatusRunning   ScheduledJobStatus = "RUNNING"
 	ScheduledJobStatusCompleted ScheduledJobStatus = "COMPLETED"
 	ScheduledJobStatusFailed    ScheduledJobStatus = "FAILED"
+	ScheduledJobStatusCanceled  ScheduledJobStatus = "CANCELED"
 )
 
 // ToString converts the ScheduledJobStatus to its string representation.

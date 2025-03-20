@@ -147,6 +147,20 @@ func (mr *MockServiceMockRecorder) ScheduleJob(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockService)(nil).ScheduleJob), ctx, req)
 }
 
+// TerminateJob mocks base method.
+func (m *MockService) TerminateJob(ctx context.Context, req *jobs.TerminateJobRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TerminateJob", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TerminateJob indicates an expected call of TerminateJob.
+func (mr *MockServiceMockRecorder) TerminateJob(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TerminateJob", reflect.TypeOf((*MockService)(nil).TerminateJob), ctx, req)
+}
+
 // UpdateJob mocks base method.
 func (m *MockService) UpdateJob(ctx context.Context, req *jobs.UpdateJobRequest) error {
 	m.ctrl.T.Helper()

@@ -88,6 +88,43 @@ services:
     networks:
       - chronoverse
 
+  init-migrate:
+    image: migrate/migrate:latest
+    container_name: init-migrate
+    volumes:
+      - ./internal/pkg/postgres/migrations:/migrations
+    entrypoint: |
+      migrate -path /migrations -database postgresql://postgres:postgres@postgres:5432/chronoverse?sslmode=disable
+    command: ["up"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - chronoverse
+
+  init-certs:
+    image: alpine:latest
+    container_name: init-certs
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
+        echo "Certificates already exist, skipping generation"
+      else
+        echo "Generating new certificates..."
+        apk update
+        apk add --no-cache openssl
+        openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
+        openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+        echo "Certificates generated successfully"
+      fi
+      '
+    restart: "no"
+    networks:
+      - chronoverse
+
   users-service:
     image: users-service
     container_name: users-service
@@ -113,9 +150,25 @@ services:
     ports:
       - '50051:50051'
     restart: on-failure
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
     depends_on:
-      - postgres
-      - lgtm
+      postgres:
+        condition: service_healthy
+      lgtm:
+        condition: service_started
+      init-migrate:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -146,10 +199,27 @@ services:
     ports:
       - '50052:50052'
     restart: on-failure
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
     depends_on:
-      - postgres
-      - kafka
-      - lgtm
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-migrate:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -175,10 +245,27 @@ services:
         - VERSION=v0.0.1
         - NAME=scheduling-job
     restart: on-failure
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
     depends_on:
-      - postgres
-      - kafka
-      - lgtm
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-migrate:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -210,10 +297,25 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
+      - ./certs:/certs
       - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
     depends_on:
-      - kafka
-      - lgtm
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-migrate:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -245,10 +347,25 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
+      - ./certs:/certs
       - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
     depends_on:
-      - kafka
-      - lgtm
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-migrate:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -274,47 +391,25 @@ services:
     ports:
       - '8080:8080'
     restart: on-failure
-    depends_on:
-      - users-service
-      - redis
-    networks:
-      - chronoverse
-
-  migrate:
-    image: migrate/migrate:latest
-    container_name: migrate
-    profiles: ['tools']
-    volumes:
-      - ./internal/pkg/postgres/migrations:/migrations
-    entrypoint: [
-      "migrate",
-      "-path",
-      "/migrations",
-      "-database",
-      "postgresql://postgres:postgres@postgres:5432/chronoverse?sslmode=disable",
-    ]
-    restart: on-failure
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - chronoverse
-
-  certs:
-    image: alpine:latest
-    container_name: certs
-    profiles: ['tools']
     volumes:
       - ./certs:/certs
-    entrypoint: [
-      "sh",
-      "-c",
-      "apk update && \
-        apk add --no-cache openssl && \
-        openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed && \
-        openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub",
-    ]
-    restart: on-failure
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
+    depends_on:
+      users-service:
+        condition: service_started
+      jobs-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 

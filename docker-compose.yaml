@@ -125,6 +125,36 @@ services:
     networks:
       - chronoverse
 
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: docker-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Image-related permissions
+      IMAGES: 1
+      IMAGE_CREATE: 1
+      
+      # Container-related permissions
+      CONTAINERS: 1         # Basic container operations
+      CONTAINER_CREATE: 1   # Needed for ContainerCreate
+      CONTAINER_START: 1    # Needed for ContainerStart
+      CONTAINER_LOGS: 1     # Needed for streaming logs
+      CONTAINER_ATTACH: 1   # Might be needed for log streaming
+      CONTAINER_WAIT: 1     # Needed for waiting on container exit
+      CONTAINER_DELETE: 1   # Needed for container cleanup
+      CONTAINER_STOP: 1     # Might be needed to stop containers
+      
+      # General permissions
+      POST: 1               # Allow POST requests
+      AUTH: 1               # Allow registry authentication
+      
+      # Network permissions
+      NETWORKS: 0
+      VOLUMES: 0
+    networks:
+      - chronoverse
+
   users-service:
     image: users-service
     container_name: users-service
@@ -287,6 +317,7 @@ services:
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
+      DOCKER_HOST: tcp://docker-proxy:2375
     build:
       context: .
       dockerfile: Dockerfile
@@ -298,7 +329,6 @@ services:
     restart: on-failure
     volumes:
       - ./certs:/certs
-      - /var/run/docker.sock:/var/run/docker.sock
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -308,6 +338,8 @@ services:
       exec /bin/service
       '
     depends_on:
+      docker-proxy:
+        condition: service_started
       kafka:
         condition: service_started
       lgtm:
@@ -337,6 +369,7 @@ services:
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
+      DOCKER_HOST: tcp://docker-proxy:2375
     build:
       context: .
       dockerfile: Dockerfile
@@ -358,6 +391,8 @@ services:
       exec /bin/service
       '
     depends_on:
+      docker-proxy:
+        condition: service_started
       kafka:
         condition: service_started
       lgtm:

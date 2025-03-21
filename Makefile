@@ -4,7 +4,7 @@ SHELL:=env PATH=$(GO_BIN):$(PATH) $(SHELL)
 .PHONY: generate
 generate:
 	@buf --version > /dev/null 2>&1 || (echo "buf is not installed. Please install buf by referring to https://docs.buf.build/installation" && exit 1)
-	@rm -rf pkg/proto && rm -rf pkg/openapiv2 && buf dep update && buf generate
+	@rm -rf pkg/proto && buf dep update && buf generate
 
 .PHONY: dependencies
 dependencies: generate

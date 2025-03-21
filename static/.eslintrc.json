@@ -1,14 +1,11 @@
 {
-  "extends": [
-    "next/core-web-vitals",
-    "next/typescript"
-  ],
-  "ignorePatterns": [
-    "node_modules/*",
-    ".next/*",
-    "out/*",
-    "public/*",
-    "!.eslintrc.json",
-    "components/ui/*"
-  ]
+	"extends": ["next/core-web-vitals", "next/typescript"],
+	"ignorePatterns": [
+		"node_modules/*",
+		".next/*",
+		"out/*",
+		"public/*",
+		"!.eslintrc.json",
+		"components/ui/*"
+	]
 }

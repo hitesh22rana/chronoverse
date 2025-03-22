@@ -213,7 +213,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		},
 	)
 	router.HandleFunc(
-		"/jobs/{job_id}/scheduled",
+		"/jobs/{job_id}/scheduled-jobs",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
@@ -226,7 +226,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		),
 	)
 	router.HandleFunc(
-		"/jobs/{job_id}/scheduled/{scheduled_job_id}",
+		"/jobs/{job_id}/scheduled-jobs/{scheduled_job_id}",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(

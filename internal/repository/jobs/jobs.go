@@ -213,7 +213,8 @@ func (r *Repository) GetJob(ctx context.Context, jobID, userID string) (res *mod
 	query := fmt.Sprintf(`
 		SELECT id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
 		FROM %s
-		WHERE id = $1 AND user_id = $2;
+		WHERE id = $1 AND user_id = $2
+		LIMIT 1;
 	`, jobsTable)
 
 	//nolint:errcheck // The error is handled in the next line
@@ -251,7 +252,8 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *model.G
 	query := fmt.Sprintf(`
 		SELECT id, user_id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
 		FROM %s
-		WHERE id = $1;
+		WHERE id = $1
+		LIMIT 1;
 	`, jobsTable)
 
 	//nolint:errcheck // The error is handled in the next line
@@ -445,7 +447,8 @@ func (r *Repository) GetScheduledJobByID(ctx context.Context, scheduledJobID str
 	query := fmt.Sprintf(`
 		SELECT id, job_id, user_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
 		FROM %s
-		WHERE id = $1;
+		WHERE id = $1
+		LIMIT 1;
 	`, scheduledJobsTable)
 
 	//nolint:errcheck // The error is handled in the next line

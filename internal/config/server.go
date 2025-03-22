@@ -13,6 +13,7 @@ type ServerConfig struct {
 	Crypto
 	Redis
 	UsersService
+	WorkflowsService
 	JobsService
 	Server
 }

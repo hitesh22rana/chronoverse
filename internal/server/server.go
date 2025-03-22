@@ -11,6 +11,7 @@ import (
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+	workflowpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
@@ -19,13 +20,14 @@ import (
 
 // Server implements the HTTP server.
 type Server struct {
-	auth          auth.IAuth
-	crypto        *crypto.Crypto
-	rdb           *redis.Store
-	usersClient   userpb.UsersServiceClient
-	jobsClient    jobspb.JobsServiceClient
-	httpServer    *http.Server
-	validationCfg *ValidationConfig
+	auth            auth.IAuth
+	crypto          *crypto.Crypto
+	rdb             *redis.Store
+	usersClient     userpb.UsersServiceClient
+	workflowsClient workflowpb.WorkflowsServiceClient
+	jobsClient      jobspb.JobsServiceClient
+	httpServer      *http.Server
+	validationCfg   *ValidationConfig
 }
 
 // ValidationConfig represents the configuration of the validation.
@@ -55,14 +57,16 @@ func New(
 	crypto *crypto.Crypto,
 	rdb *redis.Store,
 	usersClient userpb.UsersServiceClient,
+	workflowsClient workflowpb.WorkflowsServiceClient,
 	jobsClient jobspb.JobsServiceClient,
 ) *Server {
 	srv := &Server{
-		auth:        auth,
-		crypto:      crypto,
-		rdb:         rdb,
-		usersClient: usersClient,
-		jobsClient:  jobsClient,
+		auth:            auth,
+		crypto:          crypto,
+		rdb:             rdb,
+		usersClient:     usersClient,
+		workflowsClient: workflowsClient,
+		jobsClient:      jobsClient,
 		httpServer: &http.Server{
 			Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 			ReadTimeout:       cfg.ReadTimeout,
@@ -81,15 +85,6 @@ func New(
 
 // registerRoutes registers the HTTP routes.
 func (s *Server) registerRoutes(router *http.ServeMux) {
-	router.HandleFunc(
-		"/healthz",
-		s.withAllowedMethodMiddleware(
-			http.MethodGet,
-			func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusOK)
-			},
-		),
-	)
 	router.HandleFunc(
 		"/auth/register",
 		s.withAllowedMethodMiddleware(
@@ -135,7 +130,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		),
 	)
 	router.HandleFunc(
-		"/jobs",
+		"/workflows",
 		func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodGet:
@@ -144,7 +139,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					s.withVerifySessionMiddleware(
 						withAttachBasicMetadataHeaderMiddleware(
 							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-								s.handleListJobsByUserID,
+								s.handleListWorkflows,
 							),
 						),
 					),
@@ -156,7 +151,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						s.withVerifySessionMiddleware(
 							withAttachBasicMetadataHeaderMiddleware(
 								s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-									s.handleCreateJob,
+									s.handleCreateWorkflow,
 								),
 							),
 						),
@@ -167,7 +162,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			}
 		})
 	router.HandleFunc(
-		"/jobs/{job_id}",
+		"/workflows/{workflow_id}",
 		func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodGet:
@@ -176,7 +171,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					s.withVerifySessionMiddleware(
 						withAttachBasicMetadataHeaderMiddleware(
 							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-								s.handleGetJob,
+								s.handleGetWorkflow,
 							),
 						),
 					),
@@ -188,7 +183,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						s.withVerifySessionMiddleware(
 							withAttachBasicMetadataHeaderMiddleware(
 								s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-									s.handleUpdateJob,
+									s.handleUpdateWorkflow,
 								),
 							),
 						),
@@ -201,7 +196,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						s.withVerifySessionMiddleware(
 							withAttachBasicMetadataHeaderMiddleware(
 								s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-									s.handleTerminateJob,
+									s.handleTerminateWorkflow,
 								),
 							),
 						),
@@ -213,26 +208,26 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		},
 	)
 	router.HandleFunc(
-		"/jobs/{job_id}/scheduled-jobs",
+		"/workflows/{workflow_id}/jobs",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-						s.handleListScheduledJobs,
+						s.handleListJobs,
 					),
 				),
 			),
 		),
 	)
 	router.HandleFunc(
-		"/jobs/{job_id}/scheduled-jobs/{scheduled_job_id}",
+		"/workflows/{workflow_id}/jobs/{job_id}",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-						s.handleGetScheduledJob,
+						s.handleGetJob,
 					),
 				),
 			),

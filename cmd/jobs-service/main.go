@@ -12,7 +12,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -46,7 +45,6 @@ func main() {
 	os.Exit(run())
 }
 
-//nolint:gocyclo // This function is necessary to run the service.
 func run() int {
 	// Global context to cancel the execution
 	ctx, cancel := context.WithCancel(context.Background())
@@ -140,21 +138,10 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the kafka client
-	kfk, err := kafka.New(ctx,
-		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
-	)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer kfk.Close()
-
 	// Initialize the jobs repository
 	repo := jobsrepo.New(&jobsrepo.Config{
 		FetchLimit: cfg.Jobs.FetchLimit,
-	}, pdb, kfk)
+	}, pdb)
 
 	// Initialize the validator utility
 	validator := validator.New()

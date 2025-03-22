@@ -7,6 +7,7 @@ type WorkflowConfig struct {
 	Environment
 
 	Kafka
+	WorkflowsService
 	JobsService
 	Workflow
 }

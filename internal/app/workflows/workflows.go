@@ -1,6 +1,6 @@
 //go:generate mockgen -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
 
-package jobs
+package workflows
 
 import (
 	"context"
@@ -18,31 +18,33 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
-	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
-// Service provides job related operations.
+// Service provides workflow related operations.
 type Service interface {
-	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
-	UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest) error
-	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*jobsmodel.GetJobResponse, error)
-	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*jobsmodel.GetJobByIDResponse, error)
-	ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (*jobsmodel.ListJobsResponse, error)
+	CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (string, error)
+	UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) error
+	UpdateWorkflowBuildStatus(ctx context.Context, req *workflowspb.UpdateWorkflowBuildStatusRequest) error
+	GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (*workflowsmodel.GetWorkflowResponse, error)
+	GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (*workflowsmodel.GetWorkflowByIDResponse, error)
+	TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) error
+	ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (*workflowsmodel.ListWorkflowsResponse, error)
 }
 
-// Config represents the jobs-service configuration.
+// Config represents the workflows-service configuration.
 type Config struct {
 	Deadline time.Duration
 }
 
-// Jobs represents the jobs-service.
+// Jobs represents the workflows-service.
 type Jobs struct {
-	jobspb.UnimplementedJobsServiceServer
+	workflowspb.UnimplementedWorkflowsServiceServer
 	logger *zap.Logger
 	tp     trace.Tracer
 	auth   auth.IAuth
@@ -102,9 +104,8 @@ func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
 // isInternalAPI checks if the full method is an internal API.
 func isInternalAPI(fullMethod string) bool {
 	internalAPIs := []string{
-		"ScheduleJob",
-		"UpdateJobStatus",
-		"GetJobByID",
+		"UpdateWorkflowBuildStatus",
+		"GetWorkflowByID",
 	}
 
 	for _, api := range internalAPIs {
@@ -116,9 +117,9 @@ func isInternalAPI(fullMethod string) bool {
 	return false
 }
 
-// New creates a new jobs server.
+// New creates a new workflows server.
 func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
-	jobs := &Jobs{
+	workflows := &Jobs{
 		logger: loggerpkg.FromContext(ctx),
 		tp:     otel.Tracer(svcpkg.Info().GetName()),
 		auth:   auth,
@@ -131,28 +132,28 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 		grpc.ChainUnaryInterceptor(
 			audienceInterceptor(),
 			roleInterceptor(),
-			jobs.authTokenInterceptor(),
+			workflows.authTokenInterceptor(),
 		),
 	)
-	jobspb.RegisterJobsServiceServer(server, jobs)
+	workflowspb.RegisterWorkflowsServiceServer(server, workflows)
 
 	reflection.Register(server)
 	return server
 }
 
-// ScheduleJob schedules a job.
-// This is an internal method used by internal services, and it should not be exposed to the public.
-func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (res *jobspb.ScheduleJobResponse, err error) {
+// CreateWorkflow creates a new job.
+func (j *Jobs) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (res *workflowspb.CreateWorkflowResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
-		"App.ScheduleJob",
+		"App.CreateWorkflow",
 		trace.WithAttributes(
-			attribute.String("workflow_id", req.GetWorkflowId()),
 			attribute.String("user_id", req.GetUserId()),
-			attribute.String("scheduled_at", req.GetScheduledAt()),
+			attribute.String("name", req.GetName()),
+			attribute.String("payload", req.GetPayload()),
+			attribute.String("kind", req.GetKind()),
+			attribute.Int("interval", int(req.GetInterval())),
 		),
 	)
-
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -164,10 +165,10 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	jobID, err := j.svc.ScheduleJob(ctx, req)
+	jobID, err := j.svc.CreateWorkflow(ctx, req)
 	if err != nil {
 		j.logger.Error(
-			"failed to schedule job",
+			"failed to create job",
 			zap.Any("ctx", ctx),
 			zap.Error(err),
 		)
@@ -175,28 +176,26 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 	}
 
 	j.logger.Info(
-		"job successfully",
+		"job created successfully",
 		zap.Any("ctx", ctx),
 		zap.String("job_id", jobID),
 	)
-	return &jobspb.ScheduleJobResponse{Id: jobID}, nil
+	return &workflowspb.CreateWorkflowResponse{Id: jobID}, nil
 }
 
-// UpdateJobStatus updates the job status.
-// This is an internal method used by internal services, and it should not be exposed to the public.
-func (j *Jobs) UpdateJobStatus(
-	ctx context.Context,
-	req *jobspb.UpdateJobStatusRequest,
-) (res *jobspb.UpdateJobStatusResponse, err error) {
+// UpdateWorkflow updates the job details.
+func (j *Jobs) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (res *workflowspb.UpdateWorkflowResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
-		"App.UpdateJobStatus",
+		"App.UpdateWorkflow",
 		trace.WithAttributes(
 			attribute.String("id", req.GetId()),
-			attribute.String("status", req.GetStatus()),
+			attribute.String("user_id", req.GetUserId()),
+			attribute.String("name", req.GetName()),
+			attribute.String("payload", req.GetPayload()),
+			attribute.Int("interval", int(req.GetInterval())),
 		),
 	)
-
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -208,10 +207,10 @@ func (j *Jobs) UpdateJobStatus(
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	err = j.svc.UpdateJobStatus(ctx, req)
+	err = j.svc.UpdateWorkflow(ctx, req)
 	if err != nil {
 		j.logger.Error(
-			"failed to update job status",
+			"failed to update job",
 			zap.Any("ctx", ctx),
 			zap.Error(err),
 		)
@@ -219,22 +218,63 @@ func (j *Jobs) UpdateJobStatus(
 	}
 
 	j.logger.Info(
-		"job status updated successfully",
+		"job updated successfully",
 		zap.Any("ctx", ctx),
 	)
-	return &jobspb.UpdateJobStatusResponse{}, nil
+	return &workflowspb.UpdateWorkflowResponse{}, nil
 }
 
-// GetJob returns the job details by ID, job ID, and user ID.
+// UpdateWorkflowBuildStatus updates the job build status.
+// This is an internal method used by internal services, and it should not be exposed to the public.
 //
 //nolint:dupl // It's okay to have similar code for different methods.
-func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobspb.GetJobResponse, err error) {
+func (j *Jobs) UpdateWorkflowBuildStatus(
+	ctx context.Context,
+	req *workflowspb.UpdateWorkflowBuildStatusRequest,
+) (res *workflowspb.UpdateWorkflowBuildStatusResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
-		"App.GetJob",
+		"App.UpdateWorkflowBuildStatus",
 		trace.WithAttributes(
 			attribute.String("id", req.GetId()),
-			attribute.String("workflow_id", req.GetWorkflowId()),
+			attribute.String("build_status", req.GetBuildStatus()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	err = j.svc.UpdateWorkflowBuildStatus(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to update job build status",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job build status updated successfully",
+		zap.Any("ctx", ctx),
+	)
+	return &workflowspb.UpdateWorkflowBuildStatusResponse{}, nil
+}
+
+// GetWorkflow returns the job details by ID and user ID.
+func (j *Jobs) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowspb.GetWorkflowResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.GetWorkflow",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
 			attribute.String("user_id", req.GetUserId()),
 		),
 	)
@@ -249,7 +289,7 @@ func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobs
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	job, err := j.svc.GetJob(ctx, req)
+	job, err := j.svc.GetWorkflow(ctx, req)
 	if err != nil {
 		j.logger.Error(
 			"failed to fetch job details",
@@ -264,16 +304,15 @@ func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobs
 		zap.Any("ctx", ctx),
 		zap.Any("job", job),
 	)
-
 	return job.ToProto(), nil
 }
 
-// GetJobByID returns the job details by ID.
+// GetWorkflowByID returns the job details by ID.
 // This is an internal method used by internal services, and it should not be exposed to the public.
-func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (res *jobspb.GetJobByIDResponse, err error) {
+func (j *Jobs) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowspb.GetWorkflowByIDResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
-		"App.GetJobByID",
+		"App.GetWorkflowByID",
 		trace.WithAttributes(
 			attribute.String("id", req.GetId()),
 		),
@@ -289,7 +328,7 @@ func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (r
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	job, err := j.svc.GetJobByID(ctx, req)
+	job, err := j.svc.GetWorkflowByID(ctx, req)
 	if err != nil {
 		j.logger.Error(
 			"failed to fetch job details",
@@ -307,15 +346,53 @@ func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (r
 	return job.ToProto(), nil
 }
 
-// ListJobs returns the jobs by job ID.
+// TerminateWorkflow terminates a job.
 //
 //nolint:dupl // It's okay to have similar code for different methods.
-func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *jobspb.ListJobsResponse, err error) {
+func (j *Jobs) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (res *workflowspb.TerminateWorkflowResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
-		"App.ListJobs",
+		"App.TerminateWorkflow",
 		trace.WithAttributes(
-			attribute.String("workflow_id", req.GetWorkflowId()),
+			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
+		),
+	)
+
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	err = j.svc.TerminateWorkflow(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to terminate job",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job terminated successfully",
+		zap.Any("ctx", ctx),
+	)
+	return &workflowspb.TerminateWorkflowResponse{}, nil
+}
+
+// ListWorkflows returns the workflows by user ID.
+func (j *Jobs) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (res *workflowspb.ListWorkflowsResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.ListWorkflows",
+		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("cursor", req.GetCursor()),
 		),
@@ -331,10 +408,10 @@ func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	jobs, err := j.svc.ListJobs(ctx, req)
+	workflows, err := j.svc.ListWorkflows(ctx, req)
 	if err != nil {
 		j.logger.Error(
-			"failed to fetch jobs",
+			"failed to fetch all workflows by user ID",
 			zap.Any("ctx", ctx),
 			zap.Error(err),
 		)
@@ -342,9 +419,9 @@ func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *
 	}
 
 	j.logger.Info(
-		"jobs fetched successfully",
+		"workflows details fetched successfully",
 		zap.Any("ctx", ctx),
-		zap.Any("jobs", jobs),
+		zap.Any("workflows", workflows),
 	)
-	return jobs.ToProto(), nil
+	return workflows.ToProto(), nil
 }

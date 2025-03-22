@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/heartbeat"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 )
 
 func TestNew(t *testing.T) {

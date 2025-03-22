@@ -69,6 +69,14 @@ type UsersService struct {
 	CertFile string `envconfig:"USERS_SERVICE_CERT_FILE" default:""`
 }
 
+// WorkflowsService holds the configuration for the workflows service.
+type WorkflowsService struct {
+	Host     string `envconfig:"WORKFLOWS_SERVICE_HOST" required:"true"`
+	Port     int    `envconfig:"WORKFLOWS_SERVICE_PORT" required:"true"`
+	Secure   bool   `envconfig:"WORKFLOWS_SERVICE_SECURE" default:"false"`
+	CertFile string `envconfig:"WORKFLOWS_SERVICE_CERT_FILE" default:""`
+}
+
 // JobsService holds the configuration for the jobs service.
 type JobsService struct {
 	Host     string `envconfig:"JOBS_SERVICE_HOST" required:"true"`

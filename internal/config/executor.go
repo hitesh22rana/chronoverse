@@ -9,6 +9,7 @@ type ExecutorConfig struct {
 	Environment
 
 	Kafka
+	WorkflowsService
 	JobsService
 	Executor
 }

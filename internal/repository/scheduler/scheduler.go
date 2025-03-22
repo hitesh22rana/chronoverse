@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	delimiter          = '$'
-	scheduledJobsTable = "scheduled_jobs"
+	delimiter = '$'
+	jobsTable = "jobs"
 )
 
 // Config represents the repository constants configuration.
@@ -77,33 +77,33 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			FOR UPDATE SKIP LOCKED
 			LIMIT %d
 		)
-		RETURNING id, job_id, scheduled_at;
-	`, scheduledJobsTable, scheduledJobsTable, r.cfg.FetchLimit)
+		RETURNING id, workflow_id, scheduled_at;
+	`, jobsTable, jobsTable, r.cfg.FetchLimit)
 
 	// Execute query
 	rows, err := tx.Query(ctx, query)
 	if err != nil {
-		err = status.Errorf(codes.Internal, "failed to query scheduled jobs: %v", err)
+		err = status.Errorf(codes.Internal, "failed to query jobs: %v", err)
 		return 0, err
 	}
 	defer rows.Close()
 
-	// Iterate over the rows and collect the IDs
+	// Iterate over the rows and collect the data
 	//nolint:prealloc // We don't know the number of rows
 	var records []*kgo.Record
 	for rows.Next() {
 		var id string
-		var jobID string
+		var workflowID string
 		var scheduledAt time.Time
-		if err = rows.Scan(&id, &jobID, &scheduledAt); err != nil {
-			err = status.Errorf(codes.Internal, "failed to scan scheduled job: %v", err)
+		if err = rows.Scan(&id, &workflowID, &scheduledAt); err != nil {
+			err = status.Errorf(codes.Internal, "failed to scan job: %v", err)
 			return 0, err
 		}
 		record := fmt.Sprintf(
 			"%s%c%s%c%s",
 			id,
 			delimiter,
-			jobID,
+			workflowID,
 			delimiter,
 			scheduledAt.Format(time.RFC3339Nano),
 		)
@@ -112,7 +112,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 
 	// Handle any errors that may have occurred during iteration
 	if err = rows.Err(); err != nil {
-		err = status.Errorf(codes.Internal, "failed to iterate over scheduled jobs: %v", err)
+		err = status.Errorf(codes.Internal, "failed to iterate over jobs: %v", err)
 		return 0, err
 	}
 

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
@@ -26,7 +27,7 @@ const (
 	authSubject  = "internal/executor"
 	retryBackoff = time.Second
 
-	// Statuses for the scheduled job.
+	// Statuses for the jobs.
 	statusRunning   = "RUNNING"
 	statusCompleted = "COMPLETED"
 	statusFailed    = "FAILED"
@@ -56,9 +57,10 @@ type HeartBeatSvc interface {
 
 // Services represents the services used by the executor.
 type Services struct {
-	Jobs jobspb.JobsServiceClient
-	Csvc ContainerSvc
-	Hsvc HeartBeatSvc
+	Workflows workflowspb.WorkflowsServiceClient
+	Jobs      jobspb.JobsServiceClient
+	Csvc      ContainerSvc
+	Hsvc      HeartBeatSvc
 }
 
 // Config represents the repository constants configuration.
@@ -138,7 +140,7 @@ func (r *Repository) Run(ctx context.Context) error {
 						)
 					}
 
-					// Commit the record even if the job workflow fails to avoid reprocessing
+					// Commit the record even if the workflow workflow fails to avoid reprocessing
 					if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
 						logger.Error(
 							"failed to commit record",
@@ -174,7 +176,7 @@ func (r *Repository) Run(ctx context.Context) error {
 // runWorkflow runs the executor workflow.
 func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error {
 	// Extract the data from the record value
-	scheduledJobID, jobID, lastScheduledAt, err := extractDataFromRecordValue(recordValue)
+	jobID, workflowID, lastScheduledAt, err := extractDataFromRecordValue(recordValue)
 	if err != nil {
 		return err
 	}
@@ -185,61 +187,61 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return err
 	}
 
-	// Get the job details
-	job, err := r.svc.Jobs.GetJobByID(ctx, &jobspb.GetJobByIDRequest{
-		Id: jobID,
+	// Get the workflow details
+	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
+		Id: workflowID,
 	})
 	if err != nil {
 		return err
 	}
 
 	// Early return idempotency checks
-	// Ensure the job build status is COMPLETED
-	if job.GetBuildStatus() != statusCompleted {
-		return status.Error(codes.FailedPrecondition, "job build status is not COMPLETED")
+	// Ensure the workflow build status is COMPLETED
+	if workflow.GetBuildStatus() != statusCompleted {
+		return status.Error(codes.FailedPrecondition, "workflow build status is not COMPLETED")
 	}
 
-	// Ensure the job is not already terminated
-	terminatedAt := job.GetTerminatedAt()
+	// Ensure the workflow is not already terminated
+	terminatedAt := workflow.GetTerminatedAt()
 	if terminatedAt != "" {
-		// If the job is already terminated, do not execute the workflow and update the scheduled job status from QUEUED to CANCELED
-		if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
-			Id:     scheduledJobID,
-			Status: statusCanceled,
+		// If the workflow is already terminated, do not execute the workflow and update the workflow status from QUEUED to CANCELED
+		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
+			Id:          jobID,
+			BuildStatus: statusCanceled,
 		}); _err != nil {
 			return _err
 		}
 
-		return status.Error(codes.FailedPrecondition, "job is already terminated")
+		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
 
-	// Schedule a new job based on the last scheduled time and interval
+	// Schedule a new job based on the last scheduledAt time and interval accordingly
 	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		JobId:       jobID,
-		UserId:      job.GetUserId(),
-		ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(job.GetInterval())).Format(time.RFC3339Nano),
+		WorkflowId:  workflowID,
+		UserId:      workflow.GetUserId(),
+		ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
 	}); _err != nil {
 		return _err
 	}
 
-	// Update the scheduled job status from QUEUED to RUNNING
-	if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
-		Id:     scheduledJobID,
+	// Update the jov status from QUEUED to RUNNING
+	if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+		Id:     jobID,
 		Status: statusRunning,
 	}); _err != nil {
 		return _err
 	}
 
 	var workflowErr error
-	switch job.Kind {
+	switch workflow.Kind {
 	// Execute the HEARTBEAT workflow
 	case workflowHeartBeat:
 		workflowErr = retryOnce(func() error {
-			return r.svc.Hsvc.Execute(ctx, job.GetPayload())
+			return r.svc.Hsvc.Execute(ctx, workflow.GetPayload())
 		})
 	// Execute the CONTAINER workflow
 	case workflowContainer:
-		imageName, cmd, err := extractContainerDetails(job.GetPayload())
+		imageName, cmd, err := extractContainerDetails(workflow.GetPayload())
 		if err != nil {
 			return err
 		}
@@ -254,13 +256,13 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 			return _err
 		})
 	default:
-		return status.Error(codes.InvalidArgument, "invalid job kind")
+		return status.Error(codes.InvalidArgument, "invalid workflow kind")
 	}
 
 	if workflowErr != nil {
-		// Update the scheduled job status from RUNNING to FAILED
-		if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
-			Id:     scheduledJobID,
+		// Update the job status from RUNNING to FAILED
+		if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+			Id:     jobID,
 			Status: statusFailed,
 		}); _err != nil {
 			return _err
@@ -269,9 +271,9 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return workflowErr
 	}
 
-	// Update the scheduled job status from RUNNING to COMPLETED
-	if _, _err := r.svc.Jobs.UpdateScheduledJobStatus(ctx, &jobspb.UpdateScheduledJobStatusRequest{
-		Id:     scheduledJobID,
+	// Update the job status from RUNNING to COMPLETED
+	if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+		Id:     jobID,
 		Status: statusCompleted,
 	}); _err != nil {
 		return _err
@@ -281,7 +283,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 }
 
 // extractDataFromRecordValue extracts the data from the record value.
-func extractDataFromRecordValue(recordValue string) (scheduledJobID, jobID string, lastScheduledAt time.Time, err error) {
+func extractDataFromRecordValue(recordValue string) (jobID, workflowID string, lastScheduledAt time.Time, err error) {
 	parts := strings.Split(recordValue, string(delimiter))
 	if len(parts) != 3 {
 		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid data format")
@@ -335,7 +337,7 @@ func retryOnce(fn func() error) error {
 	return fn()
 }
 
-// extractContainerDetails extracts the container details from the job payload.
+// extractContainerDetails extracts the container details from the workflow payload.
 func extractContainerDetails(payload string) (imageName string, cmdStr []string, err error) {
 	var data map[string]any
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {

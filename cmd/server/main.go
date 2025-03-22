@@ -11,6 +11,7 @@ import (
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -97,6 +98,28 @@ func run() int {
 	}
 	defer usersConn.Close()
 
+	// Load the workflows service credentials
+	if cfg.WorkflowsService.Secure {
+		creds, err = loadTLSCredentials(cfg.WorkflowsService.CertFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
+			return ExitError
+		}
+	} else {
+		creds = insecure.NewCredentials()
+	}
+
+	// Connect to the workflows service
+	workflowsConn, err := grpc.NewClient(
+		fmt.Sprintf("%s:%d", cfg.WorkflowsService.Host, cfg.WorkflowsService.Port),
+		grpc.WithTransportCredentials(creds),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to workflows gRPC server: %v\n", err)
+		return ExitError
+	}
+	defer workflowsConn.Close()
+
 	// Load the jobs service credentials
 	if cfg.JobsService.Secure {
 		creds, err = loadTLSCredentials(cfg.JobsService.CertFile)
@@ -139,7 +162,8 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	userServiceClient := userpb.NewUsersServiceClient(usersConn)
+	usersServiceClient := userpb.NewUsersServiceClient(usersConn)
+	workflowsServiceClient := workflowspb.NewWorkflowsServiceClient(workflowsConn)
 	jobsServiceClient := jobspb.NewJobsServiceClient(jobsConn)
 	srv := server.New(&server.Config{
 		Host:              cfg.Server.Host,
@@ -155,7 +179,7 @@ func run() int {
 			RequestBodyLimit: cfg.Server.RequestBodyLimit,
 			CSRFHMACSecret:   cfg.Server.CSRFHMACSecret,
 		},
-	}, auth, crypto, rdb, userServiceClient, jobsServiceClient)
+	}, auth, crypto, rdb, usersServiceClient, workflowsServiceClient, jobsServiceClient)
 
 	fmt.Fprintln(os.Stdout, "Starting HTTP server on port 8080",
 		fmt.Sprintf("name: %s, version: %s",

@@ -14,7 +14,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -24,7 +26,7 @@ const (
 	authSubject  = "internal/workflow"
 	retryBackoff = time.Second
 
-	// Statuses for the job build status.
+	// Statuses for the workflow build status.
 	statusQueued    = "QUEUED"
 	statusStarted   = "STARTED"
 	statusCompleted = "COMPLETED"
@@ -38,8 +40,9 @@ type ContainerSvc interface {
 
 // Services represents the services used by the workflow.
 type Services struct {
-	Jobs jobspb.JobsServiceClient
-	Csvc ContainerSvc
+	Workflows workflowspb.WorkflowsServiceClient
+	Jobs      jobspb.JobsServiceClient
+	Csvc      ContainerSvc
 }
 
 // Config represents the repository constants configuration.
@@ -119,7 +122,7 @@ func (r *Repository) Run(ctx context.Context) error {
 						)
 					}
 
-					// Commit the record even if the job workflow fails to avoid reprocessing
+					// Commit the record even if the workflow workflow fails to avoid reprocessing
 					if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
 						logger.Error(
 							"failed to commit record",
@@ -154,7 +157,7 @@ func (r *Repository) Run(ctx context.Context) error {
 
 // buildWorkflow executes the build workflow.
 func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) error {
-	jobID, err := extractDataFromRecordValue(recordValue)
+	workflowID, err := extractDataFromRecordValue(recordValue)
 	if err != nil {
 		return err
 	}
@@ -165,9 +168,9 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		return err
 	}
 
-	// Get the job details
-	job, err := r.svc.Jobs.GetJobByID(ctx, &jobspb.GetJobByIDRequest{
-		Id: jobID,
+	// Get the workflow details
+	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
+		Id: workflowID,
 	})
 	if err != nil {
 		return err
@@ -175,18 +178,48 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 
 	// Early return idempotency checks
 	// Ensure the build process is not already started
-	if job.GetBuildStatus() != statusQueued {
+	if workflow.GetBuildStatus() != statusQueued {
 		return nil
 	}
 
-	// Ensure the job is not already terminated
-	terminatedAt := job.GetTerminatedAt()
+	// Ensure the workflow is not already terminated
+	terminatedAt := workflow.GetTerminatedAt()
 	if terminatedAt != "" {
-		return status.Error(codes.FailedPrecondition, "job is already terminated")
+		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
 
-	// Extract the image from the job
-	imageName, err := extractImageName(job.GetPayload())
+	// If the build step is not required, skip the build process
+	if !isBuildStepRequired(workflow.GetKind()) {
+		// Update the workflow status from QUEUED to COMPLETED
+		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
+			Id:          workflowID,
+			BuildStatus: statusCompleted,
+		}); _err != nil {
+			return _err
+		}
+
+		// Schedule the workflow for the run
+		if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+			WorkflowId:  workflowID,
+			UserId:      workflow.GetUserId(),
+			ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		}); _err != nil {
+			return _err
+		}
+
+		return nil
+	}
+
+	// Update the workflow status from QUEUED to STARTED
+	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
+		Id:          workflowID,
+		BuildStatus: statusStarted,
+	}); _err != nil {
+		return _err
+	}
+
+	// Extract the image from the workflow
+	imageName, err := extractImageName(workflow.GetPayload())
 	if err != nil {
 		return err
 	}
@@ -195,9 +228,9 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 	if workflowErr := retryOnce(func() error {
 		return r.svc.Csvc.Build(ctx, imageName)
 	}); workflowErr != nil {
-		// Update the job status from QUEUED to FAILED
-		if _, _err := r.svc.Jobs.UpdateJobBuildStatus(ctx, &jobspb.UpdateJobBuildStatusRequest{
-			Id:          jobID,
+		// Update the workflow status from QUEUED to FAILED
+		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
+			Id:          workflowID,
 			BuildStatus: statusFailed,
 		}); _err != nil {
 			return _err
@@ -206,19 +239,19 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		return workflowErr
 	}
 
-	// Update the job status from QUEUED to COMPLETED
-	if _, _err := r.svc.Jobs.UpdateJobBuildStatus(ctx, &jobspb.UpdateJobBuildStatusRequest{
-		Id:          jobID,
+	// Update the workflow status from QUEUED to COMPLETED
+	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
+		Id:          workflowID,
 		BuildStatus: statusCompleted,
 	}); _err != nil {
 		return _err
 	}
 
-	// Schedule the job for the run
+	// Schedule the workflow for the run
 	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		JobId:       jobID,
-		UserId:      job.GetUserId(),
-		ScheduledAt: time.Now().Add(time.Minute * time.Duration(job.GetInterval())).Format(time.RFC3339Nano),
+		WorkflowId:  workflowID,
+		UserId:      workflow.GetUserId(),
+		ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
 	}); _err != nil {
 		return _err
 	}
@@ -275,7 +308,7 @@ func retryOnce(fn func() error) error {
 	return fn()
 }
 
-// extractImageName extracts the image name from the job payload.
+// extractImageName extracts the image name from the workflow payload.
 func extractImageName(payload string) (string, error) {
 	var data map[string]any
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
@@ -288,4 +321,14 @@ func extractImageName(payload string) (string, error) {
 	}
 
 	return imageName, nil
+}
+
+// isBuildStepRequired checks if the build step is required for the given kind.
+func isBuildStepRequired(kind string) bool {
+	switch kind {
+	case workflowsmodel.KindHeartbeat.ToString():
+		return false
+	default:
+		return true
+	}
 }

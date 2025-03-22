@@ -202,9 +202,9 @@ services:
     networks:
       - chronoverse
 
-  jobs-service:
-    image: jobs-service
-    container_name: jobs-service
+  workflows-service:
+    image: workflows-service
+    container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
@@ -223,7 +223,7 @@ services:
       dockerfile: Dockerfile
       args:
         - VERSION=v0.0.1
-        - NAME=jobs-service
+        - NAME=workflows-service
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
@@ -253,13 +253,12 @@ services:
     networks:
       - chronoverse
 
-  scheduling-job:
-    image: scheduling-job
-    container_name: scheduling-job
+  jobs-service:
+    image: jobs-service
+    container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_PRODUCER_TOPIC: jobs
+      GRPC_PORT: 50053
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
@@ -273,7 +272,11 @@ services:
       dockerfile: Dockerfile
       args:
         - VERSION=v0.0.1
-        - NAME=scheduling-job
+        - NAME=jobs-service
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    ports:
+      - '50053:50053'
     restart: on-failure
     volumes:
       - ./certs:/certs
@@ -299,16 +302,64 @@ services:
     networks:
       - chronoverse
 
-  workflow-job:
-    image: workflow-job
-    container_name: workflow-job
+  scheduling-worker:
+    image: scheduling-worker
+    container_name: scheduling-worker
+    environment:
+      POSTGRES_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_PRODUCER_TOPIC: jobs
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=scheduling-worker
+    restart: on-failure
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-migrate:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
+    networks:
+      - chronoverse
+
+  workflow-worker:
+    image: workflow-worker
+    container_name: workflow-worker
     environment:
       POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: workflows
-      KAFKA_CONSUMER_GROUP: workflow-job
+      KAFKA_CONSUMER_GROUP: workflow-worker
+      WORKFLOWS_SERVICE_HOST: workflows-service
+      WORKFLOWS_SERVICE_PORT: 50052
       JOBS_SERVICE_HOST: jobs-service
-      JOBS_SERVICE_PORT: 50052
+      JOBS_SERVICE_PORT: 50053
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
@@ -323,7 +374,7 @@ services:
       dockerfile: Dockerfile
       args:
         - VERSION=v0.0.1
-        - NAME=workflow-job
+        - NAME=workflow-worker
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
@@ -348,19 +399,25 @@ services:
         condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
+      workflows-service:
+        condition: service_started
+      jobs-service:
+        condition: service_started
     networks:
       - chronoverse
 
-  execution-job:
-    image: execution-job
-    container_name: execution-job
+  execution-worker:
+    image: execution-worker
+    container_name: execution-worker
     environment:
       POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: jobs
-      KAFKA_CONSUMER_GROUP: execution-job
+      KAFKA_CONSUMER_GROUP: execution-worker
+      WORKFLOWS_SERVICE_HOST: workflows-service
+      WORKFLOWS_SERVICE_PORT: 50052
       JOBS_SERVICE_HOST: jobs-service
-      JOBS_SERVICE_PORT: 50052
+      JOBS_SERVICE_PORT: 50053
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
@@ -375,7 +432,7 @@ services:
       dockerfile: Dockerfile
       args:
         - VERSION=v0.0.1
-        - NAME=execution-job
+        - NAME=execution-worker
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
@@ -401,6 +458,10 @@ services:
         condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
+      workflows-service:
+        condition: service_started
+      jobs-service:
+        condition: service_started
     networks:
       - chronoverse
 
@@ -411,8 +472,10 @@ services:
       SERVER_HOST: 0.0.0.0
       USERS_SERVICE_HOST: users-service
       USERS_SERVICE_PORT: 50051
+      WORKFLOWS_SERVICE_HOST: workflows-service
+      WORKFLOWS_SERVICE_PORT: 50052
       JOBS_SERVICE_HOST: jobs-service
-      JOBS_SERVICE_PORT: 50052
+      JOBS_SERVICE_PORT: 50053
       REDIS_HOST: redis
       ENV: production
     build:
@@ -437,14 +500,18 @@ services:
       exec /bin/service
       '
     depends_on:
+      redis:
+        condition: service_healthy
+      init-migrate:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
       users-service:
+        condition: service_started
+      workflows-service:
         condition: service_started
       jobs-service:
         condition: service_started
-      redis:
-        condition: service_healthy
-      init-certs:
-        condition: service_completed_successfully
     networks:
       - chronoverse
 

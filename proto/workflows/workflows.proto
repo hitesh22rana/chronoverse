@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package workflows;
+
+option go_package = "github.com/hitesh22rana/chronoverse/proto/go/workflows;workflows";
+
+// CreateWorkflowRequest contains the details needed to create a new workflow.
+message CreateWorkflowRequest {
+    string user_id  = 1; // ID of the user
+    string name     = 2; // Name of the workflow
+    string payload  = 3; // JSON string for payload
+    string kind     = 4; // Kind of workflow
+    int32 interval  = 5; // Interval measured in minutes
+}
+
+// CreateWorkflowResponse contains the result of a workflow creation attempt.
+message CreateWorkflowResponse {
+    string id = 1; // ID of the workflow
+}
+
+// UpdateWorkflowRequest contains the details needed to update a workflow.
+message UpdateWorkflowRequest {
+    string id        = 1; // ID of the workflow
+    string user_id   = 2; // ID of the user
+    string name      = 3; // Name of the workflow
+    string payload   = 4; // JSON string for payload
+    int32 interval   = 5; // Interval measured in minutes
+}
+
+// UpdateWorkflowResponse contains the result of a workflow update attempt.
+message UpdateWorkflowResponse {}
+
+// UpdateWorkflowBuildStatusRequest contains the details needed to update the build status of a workflow.
+message UpdateWorkflowBuildStatusRequest {
+    string id          = 1; // ID of the workflow
+    string build_status = 2; // Status of the workflow
+}
+
+// UpdateWorkflowBuildStatusResponse contains the result of a workflow build status update attempt.
+message UpdateWorkflowBuildStatusResponse {}
+
+// GetWorkflowRequest contains the details needed to get a workflow.
+message GetWorkflowRequest {
+    string id      = 1; // ID of the workflow
+    string user_id = 2; // ID of the user
+}
+
+// GetWorkflowResponse contains the result of a workflow retrieval attempt.
+message GetWorkflowResponse {
+    string id            = 1; // ID of the workflow
+    string name          = 2; // Name of the workflow
+    string payload       = 3; // JSON string for payload
+    string kind          = 4; // Kind of workflow
+    string build_status  = 5; // Status of the workflow
+    int32 interval       = 6; // Interval measured in minutes
+    string created_at    = 7; // Time the workflow was created
+    string updated_at    = 8; // Time the workflow was last updated
+    string terminated_at = 9; // Time the workflow was terminated
+}
+
+// GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
+message GetWorkflowByIDRequest {
+    string id = 1; // ID of the workflow
+}
+
+// GetWorkflowByIDResponse contains the result of a workflow retrieval attempt.
+message GetWorkflowByIDResponse {
+    string id            = 1; // ID of the workflow
+    string user_id       = 2; // ID of the user
+    string name          = 3; // Name of the workflow
+    string payload       = 4; // JSON string for payload
+    string kind          = 5; // Kind of workflow
+    string build_status  = 6; // Status of the workflow
+    int32 interval       = 7; // Interval measured in minutes
+    string created_at    = 8; // Time the workflow was created
+    string updated_at    = 9; // Time the workflow was last updated
+    string terminated_at = 10; // Time the workflow was terminated
+}
+
+// TerminateWorkflowRequest contains the details needed to terminate a workflow.
+message TerminateWorkflowRequest {
+    string id      = 1; // ID of the workflow
+    string user_id = 2; // ID of the user
+}
+
+// ListWorkflowsRequest contains the details needed to list all workflows.
+message ListWorkflowsRequest {
+    string user_id = 1; // ID of the user
+    string cursor  = 2; // Token for pagination
+}
+
+// WorkflowsByUserIDResponse contains the result of a workflow listing attempt.
+message WorkflowsByUserIDResponse {
+    string id            = 1; // ID of the workflow
+    string name          = 2; // Name of the workflow
+    string payload       = 3; // JSON string for payload
+    string kind          = 4; // Kind of workflow
+    string build_status  = 5; // Status of the workflow
+    int32 interval       = 6; // Interval measured in minutes
+    string created_at    = 7; // Time the workflow was created
+    string updated_at    = 8; // Time the workflow was last updated
+    string terminated_at = 9; // Time the workflow was terminated
+}
+
+// ListWorkflowsResponse contains the result of a workflow listing attempt.
+message ListWorkflowsResponse {
+    repeated WorkflowsByUserIDResponse workflows = 1; // List of workflows
+    string cursor                                = 2; // Token for pagination
+}
+
+// TerminateWorkflowResponse contains the result of a workflow termination attempt.
+message TerminateWorkflowResponse {}
+
+// WorkflowsService contains the service definition for the Workflow service.
+service WorkflowsService {
+    // CreateWorkflow a new workflow.
+    rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse) {}
+    
+    // UpdateWorkflow an existing workflow.
+    rpc UpdateWorkflow(UpdateWorkflowRequest) returns (UpdateWorkflowResponse) {}
+
+    // UpdateWorkflowBuildStatus updates the build status of a workflow.
+    // This is an internal API and should not be exposed to the public.
+    rpc UpdateWorkflowBuildStatus(UpdateWorkflowBuildStatusRequest) returns(UpdateWorkflowBuildStatusResponse) {}
+
+    // GetWorkflow gets a workflow by ID and user_id.
+    rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse) {}
+
+    // GetWorkflowByID a workflow by ID.
+    // This is an internal API and should not be exposed to the public.
+    rpc GetWorkflowByID(GetWorkflowByIDRequest) returns (GetWorkflowByIDResponse){}
+
+    // TerminateWorkflow terminates a workflow.
+    rpc TerminateWorkflow(TerminateWorkflowRequest) returns(TerminateWorkflowResponse) {}
+
+    // ListWorkflows returns a list of all workflows owned by a user.
+    rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse) {}
+}

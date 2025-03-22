@@ -8,7 +8,6 @@ type JobsConfig struct {
 
 	Postgres
 	Grpc
-	Kafka
 	Jobs
 }
 

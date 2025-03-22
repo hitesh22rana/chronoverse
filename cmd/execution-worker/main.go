@@ -13,16 +13,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/executor"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/container"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/workflow/heartbeat"
 	executorrepo "github.com/hitesh22rana/chronoverse/internal/repository/executor"
 	executorsvc "github.com/hitesh22rana/chronoverse/internal/service/executor"
 )
@@ -154,8 +155,30 @@ func run() int {
 		return ExitError
 	}
 
-	// Load the jobs service credentials
+	// Load the workflows service credentials
 	var creds credentials.TransportCredentials
+	if cfg.WorkflowsService.Secure {
+		creds, err = loadTLSCredentials(cfg.WorkflowsService.CertFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
+			return ExitError
+		}
+	} else {
+		creds = insecure.NewCredentials()
+	}
+
+	// Connect to the workflows service
+	workflowsConn, err := grpc.NewClient(
+		fmt.Sprintf("%s:%d", cfg.WorkflowsService.Host, cfg.WorkflowsService.Port),
+		grpc.WithTransportCredentials(creds),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to workflows gRPC server: %v\n", err)
+		return ExitError
+	}
+	defer workflowsConn.Close()
+
+	// Load the jobs service credentials
 	if cfg.JobsService.Secure {
 		creds, err = loadTLSCredentials(cfg.JobsService.CertFile)
 		if err != nil {
@@ -181,9 +204,10 @@ func run() int {
 	repo := executorrepo.New(&executorrepo.Config{
 		ParallelismLimit: cfg.ParallelismLimit,
 	}, auth, &executorrepo.Services{
-		Jobs: jobspb.NewJobsServiceClient(jobsConn),
-		Csvc: csvc,
-		Hsvc: heartbeat.New(),
+		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
+		Csvc:      csvc,
+		Hsvc:      heartbeat.New(),
 	}, kfk)
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)

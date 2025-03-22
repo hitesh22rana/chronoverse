@@ -32,21 +32,25 @@ tools:
 build/users-service: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=users-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/users-service ./cmd/users-service
 
+.PHONY: build/workflows-service
+build/workflows-service: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=workflows-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/workflows-service ./cmd/workflows-service
+
 .PHONY: build/jobs-service
 build/jobs-service: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=jobs-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/jobs-service ./cmd/jobs-service
 
-.PHONY: build/scheduling-job
-build/scheduling-job: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=scheduling-job'" -o ./.bin/scheduling-job ./cmd/scheduling-job
+.PHONY: build/scheduling-worker
+build/scheduling-worker: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=scheduling-worker'" -o ./.bin/scheduling-worker ./cmd/scheduling-worker
 
-.PHONY: build/workflow-job
-build/workflow-job: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=workflow-job' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/workflow-job ./cmd/workflow-job
+.PHONY: build/workflow-worker
+build/workflow-worker: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=workflow-worker' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/workflow-worker ./cmd/workflow-worker
 
-.PHONY: build/execution-job
-build/execution-job: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=execution-job' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/execution-job ./cmd/execution-job
+.PHONY: build/execution-worker
+build/execution-worker: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=execution-worker' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/execution-worker ./cmd/execution-worker
 
 .PHONY: build/server
 build/server: dependencies
@@ -56,21 +60,25 @@ build/server: dependencies
 run/users-service: build/users-service
 	@./.bin/users-service
 
+.PHONY: run/workflows-service
+run/workflows-service: build/workflows-service
+	@./.bin/workflows-service
+
 .PHONY: run/jobs-service
 run/jobs-service: build/jobs-service
 	@./.bin/jobs-service
 
-.PHONY: run/scheduling-job
-run/scheduling-job: build/scheduling-job
-	@./.bin/scheduling-job
+.PHONY: run/scheduling-worker
+run/scheduling-worker: build/scheduling-worker
+	@./.bin/scheduling-worker
 
-.PHONY: run/workflow-job
-run/workflow-job: build/workflow-job
-	@./.bin/workflow-job
+.PHONY: run/workflow-worker
+run/workflow-worker: build/workflow-worker
+	@./.bin/workflow-worker
 
-.PHONY: run/execution-job
-run/execution-job: build/execution-job
-	@./.bin/execution-job
+.PHONY: run/execution-worker
+run/execution-worker: build/execution-worker
+	@./.bin/execution-worker
 
 .PHONY: run/server
 run/server: build/server

@@ -8,9 +8,9 @@ Chronoverse is a distributed, job scheduling and orchestration system designed f
 
 ## Features
 
-- **Job Management**: Create, update, and manage scheduled tasks
+- **Workflow Management**: Create, update, and manage scheduled tasks
 - **Flexible Scheduling**: Schedule jobs with cron expressions and precise intervals
-- **Multiple Job Types Support**: 
+- **Multiple Workflow Types Support**: 
     - `HEARTBEAT`: Simple health check jobs
     - `CONTAINER`: Execute commands in Docker containers
 - **Distributed Architecture**: Microservices-based design for scalability
@@ -22,12 +22,20 @@ Chronoverse is a distributed, job scheduling and orchestration system designed f
 
 Chronoverse follows a microservices architecture with the following components:
 
-- **users-service**: Handles user authentication and management
-- **jobs-service**: Manages job definitions and configurations
-- **scheduling-job**: Identifies jobs due for execution and schedules them
-- **workflow-job**: Prepares jobs for execution if build step is required
-- **execution-job**: Executes scheduled jobs in containers
-- **server**: API gateway for client interactions
+### Core Services
+
+- **Server**: API gateway that handles client interactions and routes requests to appropriate services
+- **Users Service**: Manages user authentication, authorization, and user profile data
+- **Workflows Service**: Enables creation, configuration, and management of workflow definitions
+- **Jobs Service**: Handles scheduled job instances and their lifecycle management
+
+### Worker Components
+
+- **Scheduling Worker**: Identifies jobs due for execution based on their schedules and initiates the execution process
+- **Workflow Worker**: Prepares jobs for execution, handling any build steps required before execution
+- **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management
+
+Each component communicates through message queuing to ensure reliability and scalability in distributed environments.
 
 ## Getting Started
 

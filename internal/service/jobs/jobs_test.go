@@ -1033,6 +1033,183 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 	}
 }
 
+func TestGetScheduledJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := jobsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := jobs.New(validator.New(), repo)
+
+	type want struct {
+		*model.GetScheduledJobResponse
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *jobspb.GetScheduledJobRequest
+		mock  func(req *jobspb.GetScheduledJobRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &jobspb.GetScheduledJobRequest{
+				Id:     "scheduled_job_id",
+				JobId:  "job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.GetScheduledJobRequest) {
+				repo.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetJobId(),
+					req.GetUserId(),
+				).Return(&model.GetScheduledJobResponse{
+					ID:                 "scheduled_job_id",
+					JobID:              "job_id",
+					ScheduledJobStatus: "PENDING",
+					ScheduledAt:        time.Now().Add(time.Minute),
+					StartedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: false,
+					},
+					CompletedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: false,
+					},
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}, nil)
+			},
+			want: want{
+				&model.GetScheduledJobResponse{
+					ID:                 "scheduled_job_id",
+					JobID:              "job_id",
+					ScheduledJobStatus: "PENDING",
+					ScheduledAt:        time.Now().Add(time.Minute),
+					StartedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: false,
+					},
+					CompletedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: false,
+					},
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			req: &jobspb.GetScheduledJobRequest{
+				Id:     "",
+				JobId:  "",
+				UserId: "",
+			},
+			mock:  func(_ *jobspb.GetScheduledJobRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: invalid user",
+			req: &jobspb.GetScheduledJobRequest{
+				Id:     "scheduled_job_id",
+				JobId:  "job_id",
+				UserId: "invalid_user_id",
+			},
+			mock: func(req *jobspb.GetScheduledJobRequest) {
+				repo.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetJobId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.NotFound, "scheduled job not found or not owned by user"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: scheduled job not found",
+			req: &jobspb.GetScheduledJobRequest{
+				Id:     "invalid_scheduled_job_id",
+				JobId:  "job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.GetScheduledJobRequest) {
+				repo.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetJobId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.NotFound, "scheduled job not found"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: job not found",
+			req: &jobspb.GetScheduledJobRequest{
+				Id:     "scheduled_job_id",
+				JobId:  "invalid_job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.GetScheduledJobRequest) {
+				repo.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetJobId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &jobspb.GetScheduledJobRequest{
+				Id:     "job_id",
+				JobId:  "job_id",
+				UserId: "user_id",
+			},
+			mock: func(req *jobspb.GetScheduledJobRequest) {
+				repo.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					req.GetId(),
+					req.GetJobId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := s.GetScheduledJob(t.Context(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+		})
+	}
+}
+
 func TestGetScheduledJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -1338,6 +1515,7 @@ func TestListScheduledJobs(t *testing.T) {
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
 							ID:                 "scheduled_job_id",
+							JobID:              "job_id",
 							ScheduledJobStatus: "PENDING",
 							ScheduledAt:        time.Now().Add(time.Minute),
 							StartedAt: sql.NullTime{
@@ -1360,6 +1538,7 @@ func TestListScheduledJobs(t *testing.T) {
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
 							ID:                 "scheduled_job_id",
+							JobID:              "job_id",
 							ScheduledJobStatus: "PENDING",
 							ScheduledAt:        time.Now().Add(time.Minute),
 							StartedAt: sql.NullTime{

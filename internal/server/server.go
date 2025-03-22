@@ -167,7 +167,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			}
 		})
 	router.HandleFunc(
-		"/jobs/{id}",
+		"/jobs/{job_id}",
 		func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodGet:
@@ -213,13 +213,26 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		},
 	)
 	router.HandleFunc(
-		"/jobs/{id}/scheduled",
+		"/jobs/{job_id}/scheduled",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
 						s.handleListScheduledJobs,
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
+		"/jobs/{job_id}/scheduled/{scheduled_job_id}",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleGetScheduledJob,
 					),
 				),
 			),

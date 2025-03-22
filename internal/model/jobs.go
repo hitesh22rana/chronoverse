@@ -124,6 +124,40 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	}
 }
 
+// GetScheduledJobResponse represents the response of GetScheduledJob.
+type GetScheduledJobResponse struct {
+	ID                 string       `db:"id"`
+	JobID              string       `db:"job_id"`
+	ScheduledJobStatus string       `db:"status"`
+	ScheduledAt        time.Time    `db:"scheduled_at"`
+	StartedAt          sql.NullTime `db:"started_at,omitempty"`
+	CompletedAt        sql.NullTime `db:"completed_at,omitempty"`
+	CreatedAt          time.Time    `db:"created_at"`
+	UpdatedAt          time.Time    `db:"updated_at"`
+}
+
+// ToProto converts the GetScheduledJobResponse to its protobuf representation.
+func (r *GetScheduledJobResponse) ToProto() *jobspb.GetScheduledJobResponse {
+	var startedAt, completedAt string
+	if r.StartedAt.Valid {
+		startedAt = r.StartedAt.Time.Format(time.RFC3339Nano)
+	}
+	if r.CompletedAt.Valid {
+		completedAt = r.CompletedAt.Time.Format(time.RFC3339Nano)
+	}
+
+	return &jobspb.GetScheduledJobResponse{
+		Id:          r.ID,
+		JobId:       r.JobID,
+		Status:      r.ScheduledJobStatus,
+		ScheduledAt: r.ScheduledAt.Format(time.RFC3339Nano),
+		StartedAt:   startedAt,
+		CompletedAt: completedAt,
+		CreatedAt:   r.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:   r.UpdatedAt.Format(time.RFC3339Nano),
+	}
+}
+
 // GetScheduledJobByIDResponse represents the response of GetScheduledJobByID.
 type GetScheduledJobByIDResponse struct {
 	ID                 string       `db:"id"`
@@ -212,6 +246,7 @@ func (r *ListJobsByUserIDResponse) ToProto() *jobspb.ListJobsByUserIDResponse {
 // ScheduledJobByJobIDResponse represents the response of ListScheduledJobsByID.
 type ScheduledJobByJobIDResponse struct {
 	ID                 string       `db:"id"`
+	JobID              string       `db:"job_id"`
 	ScheduledJobStatus string       `db:"status"`
 	ScheduledAt        time.Time    `db:"scheduled_at"`
 	StartedAt          sql.NullTime `db:"started_at,omitempty"`
@@ -242,6 +277,7 @@ func (r *ListScheduledJobsResponse) ToProto() *jobspb.ListScheduledJobsResponse 
 
 		scheduledJobs[i] = &jobspb.ScheduledJobsResponse{
 			Id:          j.ID,
+			JobId:       j.JobID,
 			Status:      j.ScheduledJobStatus,
 			ScheduledAt: j.ScheduledAt.Format(time.RFC3339Nano),
 			StartedAt:   startedAt,

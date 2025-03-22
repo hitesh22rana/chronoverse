@@ -742,7 +742,7 @@ func TestGetJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),
@@ -1652,6 +1652,208 @@ func TestUpdateScheduledJobStatus(t *testing.T) {
 	}
 }
 
+func TestGetScheduledJob(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.GetScheduledJobRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.GetScheduledJobRequest)
+		res   *jobspb.GetScheduledJobResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetScheduledJobRequest{
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(&model.GetScheduledJobResponse{
+					ID:                 "scheduled_job_id",
+					JobID:              "job_id",
+					ScheduledJobStatus: "QUEUED",
+					ScheduledAt:        time.Now(),
+					StartedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					CompletedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}, nil)
+			},
+			res: &jobspb.GetScheduledJobResponse{
+				Id:          "scheduled_job_id",
+				JobId:       "job_id",
+				Status:      "PENDING",
+				ScheduledAt: time.Now().Format(time.RFC3339Nano),
+				StartedAt:   time.Now().Format(time.RFC3339Nano),
+				CompletedAt: time.Now().Format(time.RFC3339Nano),
+				CreatedAt:   time.Now().Format(time.RFC3339Nano),
+				UpdatedAt:   time.Now().Format(time.RFC3339Nano),
+			},
+			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.GetScheduledJobRequest{
+					Id:     "scheduled_job_id",
+					JobId:  "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetScheduledJobRequest{
+					Id:     "",
+					JobId:  "",
+					UserId: "",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.InvalidArgument, "id, job_id, and user_id are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.GetScheduledJobRequest{
+					Id:     "scheduled_job_id",
+					JobId:  "job_id",
+					UserId: "user1",
+				},
+			},
+			mock:  func(_ *jobspb.GetScheduledJobRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.GetScheduledJobRequest{
+					Id:     "scheduled_job_id",
+					JobId:  "job_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *jobspb.GetScheduledJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().GetScheduledJob(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.GetScheduledJob(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("GetScheduledJob() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("GetScheduledJob() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
 func TestGetScheduledJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -2130,6 +2332,7 @@ func TestListScheduledJobs(t *testing.T) {
 					ScheduledJobs: []*model.ScheduledJobByJobIDResponse{
 						{
 							ID:                 "scheduled_job_id",
+							JobID:              "job_id",
 							ScheduledJobStatus: "PENDING",
 							ScheduledAt:        time.Now(),
 							StartedAt: sql.NullTime{
@@ -2150,6 +2353,7 @@ func TestListScheduledJobs(t *testing.T) {
 				ScheduledJobs: []*jobspb.ScheduledJobsResponse{
 					{
 						Id:          "scheduled_job_id",
+						JobId:       "job_id",
 						Status:      "PENDING",
 						ScheduledAt: time.Now().Format(time.RFC3339Nano),
 						StartedAt:   time.Now().Format(time.RFC3339Nano),

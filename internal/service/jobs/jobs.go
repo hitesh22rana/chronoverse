@@ -33,6 +33,7 @@ type Repository interface {
 	TerminateJob(ctx context.Context, jobID, userID string) error
 	ScheduleJob(ctx context.Context, jobID, userID, scheduledAt string) (string, error)
 	UpdateScheduledJobStatus(ctx context.Context, scheduledJobID, scheduledJobStatus string) error
+	GetScheduledJob(ctx context.Context, scheduledJobID, jobID, userID string) (*model.GetScheduledJobResponse, error)
 	GetScheduledJobByID(ctx context.Context, scheduledJobID string) (*model.GetScheduledJobByIDResponse, error)
 	ListJobsByUserID(ctx context.Context, userID, cursor string) (*model.ListJobsByUserIDResponse, error)
 	ListScheduledJobs(ctx context.Context, scheduledJobID, userID, cursor string) (*model.ListScheduledJobsResponse, error)
@@ -404,6 +405,44 @@ func (s *Service) UpdateScheduledJobStatus(ctx context.Context, req *jobspb.Upda
 	)
 
 	return err
+}
+
+// GetScheduledJobRequest holds the request parameters for getting a scheduled job.
+type GetScheduledJobRequest struct {
+	ID     string `validate:"required"`
+	JobID  string `validate:"required"`
+	UserID string `validate:"required"`
+}
+
+// GetScheduledJob returns the scheduled job details by ID, job ID, and user ID.
+func (s *Service) GetScheduledJob(ctx context.Context, req *jobspb.GetScheduledJobRequest) (res *model.GetScheduledJobResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.GetScheduledJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&GetScheduledJobRequest{
+		ID:     req.GetId(),
+		JobID:  req.GetJobId(),
+		UserID: req.GetUserId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Get the scheduled job details
+	res, err = s.repo.GetScheduledJob(ctx, req.GetId(), req.GetJobId(), req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }
 
 // GetScheduledJobByIDRequest holds the request parameters for getting a scheduled job by ID.

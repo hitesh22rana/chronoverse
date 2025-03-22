@@ -392,6 +392,43 @@ func (r *Repository) UpdateScheduledJobStatus(ctx context.Context, scheduledJobI
 	return nil
 }
 
+// GetScheduledJob returns the scheduled job details by ID and Job ID and user ID.
+func (r *Repository) GetScheduledJob(ctx context.Context, scheduledJobID, jobID, userID string) (res *model.GetScheduledJobResponse, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.GetScheduledJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		SELECT id, job_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+		FROM %s
+		WHERE id = $1 AND job_id = $2 AND user_id = $3
+		LIMIT 1;
+	`, scheduledJobsTable)
+
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, scheduledJobID, jobID, userID)
+	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[model.GetScheduledJobResponse])
+	if err != nil {
+		if r.pg.IsNoRows(err) {
+			err = status.Errorf(codes.NotFound, "scheduled job not found or not owned by user: %v", err)
+			return nil, err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid scheduled job ID: %v", err)
+			return nil, err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to get scheduled job: %v", err)
+		return nil, err
+	}
+
+	return res, nil
+}
+
 // GetScheduledJobByID returns the scheduled job details by ID.
 //
 //nolint:dupl // It's okay to have similar code in the same file.
@@ -504,7 +541,7 @@ func (r *Repository) ListScheduledJobs(ctx context.Context, jobID, userID, curso
 
 	// Add the next page token to the query
 	query := fmt.Sprintf(`
-		SELECT id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+		SELECT id, job_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
 		FROM %s
 		WHERE job_id = $1 AND user_id = $2
 	`, scheduledJobsTable)

@@ -70,7 +70,7 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the job ID from the path	parameters
-	jobID := r.PathValue("id")
+	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
@@ -110,7 +110,7 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 // handleGetJob handles the get job by ID and user ID request.
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	// Get the job ID from the path	parameters
-	jobID := r.PathValue("id")
+	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
@@ -149,7 +149,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 // handleTerminateJob handles the terminate job by ID and user ID request.
 func (s *Server) handleTerminateJob(w http.ResponseWriter, r *http.Request) {
 	// Get the job ID from the path	parameters
-	jobID := r.PathValue("id")
+	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
@@ -220,7 +220,7 @@ func (s *Server) handleListJobsByUserID(w http.ResponseWriter, r *http.Request) 
 // handleListScheduledJobs handles the list scheduled jobs by job ID request.
 func (s *Server) handleListScheduledJobs(w http.ResponseWriter, r *http.Request) {
 	// Get the job ID from the path	parameters
-	jobID := r.PathValue("id")
+	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
@@ -250,6 +250,53 @@ func (s *Server) handleListScheduledJobs(w http.ResponseWriter, r *http.Request)
 	})
 	if err != nil {
 		handleError(w, err, "failed to list scheduled jobs")
+		return
+	}
+
+	// Write the response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(res)
+}
+
+// handleGetScheduledJob handles the get scheduled job by job ID and scheduled job ID request.
+func (s *Server) handleGetScheduledJob(w http.ResponseWriter, r *http.Request) {
+	// Get the job ID from the path	parameters
+	jobID := r.PathValue("job_id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the scheduled job ID from the path	parameters
+	scheduledJobID := r.PathValue("scheduled_job_id")
+	if scheduledJobID == "" {
+		http.Error(w, "scheduled job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// GetScheduledJob gets the scheduled job by job ID and scheduled job ID.
+	res, err := s.jobsClient.GetScheduledJob(r.Context(), &jobspb.GetScheduledJobRequest{
+		Id:     scheduledJobID,
+		JobId:  jobID,
+		UserId: userID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to get scheduled job")
 		return
 	}
 

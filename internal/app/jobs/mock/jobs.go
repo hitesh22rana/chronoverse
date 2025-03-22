@@ -87,6 +87,21 @@ func (mr *MockServiceMockRecorder) GetJobByID(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobByID", reflect.TypeOf((*MockService)(nil).GetJobByID), ctx, req)
 }
 
+// GetScheduledJob mocks base method.
+func (m *MockService) GetScheduledJob(ctx context.Context, req *jobs.GetScheduledJobRequest) (*model.GetScheduledJobResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetScheduledJob", ctx, req)
+	ret0, _ := ret[0].(*model.GetScheduledJobResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetScheduledJob indicates an expected call of GetScheduledJob.
+func (mr *MockServiceMockRecorder) GetScheduledJob(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScheduledJob", reflect.TypeOf((*MockService)(nil).GetScheduledJob), ctx, req)
+}
+
 // GetScheduledJobByID mocks base method.
 func (m *MockService) GetScheduledJobByID(ctx context.Context, req *jobs.GetScheduledJobByIDRequest) (*model.GetScheduledJobByIDResponse, error) {
 	m.ctrl.T.Helper()

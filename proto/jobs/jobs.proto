@@ -98,6 +98,25 @@ message ScheduleJobResponse {
     string id = 1; // ID of the scheduled job
 }
 
+// GetScheduledJobRequest contains the details needed to get a scheduled job.
+message GetScheduledJobRequest {
+    string id      = 1; // ID of the scheduled job
+    string job_id  = 2; // ID of the job
+    string user_id = 3; // ID of the user
+}
+
+// GetScheduledJobResponse contains the result of a scheduled job retrieval attempt.
+message GetScheduledJobResponse {
+    string id           = 1; // ID of the scheduled job
+    string job_id       = 2; // ID of the job
+    string status       = 3; // Status of the scheduled job
+    string scheduled_at = 4; // Time the job is scheduled to run
+    string started_at   = 5; // Time the job was started
+    string completed_at = 6; // Time the job was completed
+    string created_at   = 7; // Time the job was created
+    string updated_at   = 8; // Time the job was last updated
+}
+
 // GetScheduledJobByIDRequest contains the details needed to get a scheduled job by ID.
 message GetScheduledJobByIDRequest {
     string id = 1; // ID of the scheduled job
@@ -160,12 +179,13 @@ message ListScheduledJobsRequest {
 // ScheduledJobsResponse contains the result of a scheduled job listing attempt.
 message ScheduledJobsResponse {
     string id           = 1; // ID of the scheduled job
-    string status       = 2; // Status of the scheduled job
-    string scheduled_at = 3; // Time the job is scheduled to run
-    string started_at   = 4; // Time the job was started
-    string completed_at = 5; // Time the job was completed
-    string created_at   = 6; // Time the job was created
-    string updated_at   = 7; // Time the job was last updated
+    string job_id       = 2; // ID of the job
+    string status       = 3; // Status of the scheduled job
+    string scheduled_at = 4; // Time the job is scheduled to run
+    string started_at   = 5; // Time the job was started
+    string completed_at = 6; // Time the job was completed
+    string created_at   = 7; // Time the job was created
+    string updated_at   = 8; // Time the job was last updated
 }
 
 message ListScheduledJobsResponse {
@@ -202,6 +222,9 @@ service JobsService {
     // UpdateScheduledJobStatus updates the status of a scheduled job.
     // This is an internal API and should not be exposed to the public.
     rpc UpdateScheduledJobStatus(UpdateScheduledJobStatusRequest) returns (UpdateScheduledJobStatusResponse) {}
+
+    // GetScheduledJob gets a scheduled job by ID and user_id.
+    rpc GetScheduledJob(GetScheduledJobRequest) returns (GetScheduledJobResponse) {}
 
     // GetScheduledJobByID gets a scheduled job by ID.
     // This is an internal API and should not be exposed to the public.

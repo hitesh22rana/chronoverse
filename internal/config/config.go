@@ -44,6 +44,19 @@ type Postgres struct {
 	SSLMode     string        `envconfig:"POSTGRES_SSL_MODE" default:"disable"`
 }
 
+// ClickHouse holds the ClickHouse configuration.
+type ClickHouse struct {
+	Hosts           []string      `envconfig:"CLICKHOUSE_HOSTS" default:"localhost:9000"`
+	Database        string        `envconfig:"CLICKHOUSE_DATABASE" default:"default"`
+	Username        string        `envconfig:"CLICKHOUSE_USERNAME" default:"default"`
+	Password        string        `envconfig:"CLICKHOUSE_PASSWORD" default:""`
+	MaxOpenConns    int           `envconfig:"CLICKHOUSE_MAX_OPEN_CONNS" default:"10"`
+	MaxIdleConns    int           `envconfig:"CLICKHOUSE_MAX_IDLE_CONNS" default:"5"`
+	ConnMaxLifetime time.Duration `envconfig:"CLICKHOUSE_CONN_MAX_LIFETIME" default:"1h"`
+	DialTimeout     time.Duration `envconfig:"CLICKHOUSE_DIAL_TIMEOUT" default:"5s"`
+	Debug           bool          `envconfig:"CLICKHOUSE_DEBUG" default:"false"`
+}
+
 // Grpc holds the gRPC configuration.
 type Grpc struct {
 	Host           string        `envconfig:"GRPC_HOST" default:"localhost"`

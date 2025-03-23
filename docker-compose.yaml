@@ -20,6 +20,27 @@ services:
     networks:
       - chronoverse
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    environment:
+      CLICKHOUSE_DB: chronoverse
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - '9000:9000'
+    restart: on-failure
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--host=localhost", "--query=SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - chronoverse
+
   redis:
     image: redis:alpine
     container_name: redis
@@ -88,9 +109,9 @@ services:
     networks:
       - chronoverse
 
-  init-migrate:
+  init-migrate-postgres:
     image: migrate/migrate:latest
-    container_name: init-migrate
+    container_name: init-migrate-postgres
     volumes:
       - ./internal/pkg/postgres/migrations:/migrations
     entrypoint: |
@@ -99,6 +120,22 @@ services:
     restart: "no"
     depends_on:
       postgres:
+        condition: service_healthy
+    networks:
+      - chronoverse
+
+  init-migrate-clickhouse:
+    image: migrate/migrate:latest
+    container_name: init-migrate-clickhouse
+    profiles: ["tools"]
+    volumes:
+      - ./internal/pkg/clickhouse/migrations:/migrations
+    entrypoint: |
+      migrate -path /migrations -database "clickhouse://clickhouse:9000?username=clickhouse&password=clickhouse&database=chronoverse&x-multi-statement=true"
+    command: ["up"]
+    restart: "no"
+    depends_on:
+      clickhouse:
         condition: service_healthy
     networks:
       - chronoverse
@@ -195,7 +232,7 @@ services:
         condition: service_healthy
       lgtm:
         condition: service_started
-      init-migrate:
+      init-migrate-postgres:
         condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
@@ -246,7 +283,7 @@ services:
         condition: service_started
       lgtm:
         condition: service_started
-      init-migrate:
+      init-migrate-postgres:
         condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
@@ -291,11 +328,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:
         condition: service_started
-      init-migrate:
+      init-migrate-postgres:
+        condition: service_completed_successfully
+      init-migrate-clickhouse:
         condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
@@ -341,7 +382,7 @@ services:
         condition: service_started
       lgtm:
         condition: service_started
-      init-migrate:
+      init-migrate-postgres:
         condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
@@ -352,7 +393,6 @@ services:
     image: workflow-worker
     container_name: workflow-worker
     environment:
-      POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: workflows
       KAFKA_CONSUMER_GROUP: workflow-worker
@@ -395,8 +435,6 @@ services:
         condition: service_started
       lgtm:
         condition: service_started
-      init-migrate:
-        condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
       workflows-service:
@@ -410,7 +448,6 @@ services:
     image: execution-worker
     container_name: execution-worker
     environment:
-      POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: jobs
       KAFKA_CONSUMER_GROUP: execution-worker
@@ -448,13 +485,15 @@ services:
       exec /bin/service
       '
     depends_on:
+      clickhouse:
+        condition: service_healthy
       docker-proxy:
         condition: service_started
       kafka:
         condition: service_started
       lgtm:
         condition: service_started
-      init-migrate:
+      init-migrate-clickhouse:
         condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
@@ -502,8 +541,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      init-migrate:
-        condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
       users-service:
@@ -517,6 +554,7 @@ services:
 
 volumes:
   postgres:
+  clickhouse:
   redis:
   kafka:
   lgtm:

@@ -107,14 +107,24 @@ func (r *Repository) UpdateWorkflow(ctx context.Context, workflowID, userID, nam
 		span.End()
 	}()
 
+	// Start transaction
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
+		return err
+	}
+	//nolint:errcheck // The error is handled in the next line
+	defer tx.Rollback(ctx)
+
+	// Set all workflows to QUEUED so the worker can determine what to do
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET name = $1, payload = $2, interval = $3
-		WHERE id = $4 AND user_id = $5;
-	`, workflowsTable)
+        UPDATE %s
+        SET name = $1, payload = $2, interval = $3, build_status = $4
+        WHERE id = $5 AND user_id = $6;
+    `, workflowsTable)
 
 	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, name, payload, interval, workflowID, userID)
+	ct, err := tx.Exec(ctx, query, name, payload, interval, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID)
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
@@ -127,6 +137,18 @@ func (r *Repository) UpdateWorkflow(ctx context.Context, workflowID, userID, nam
 
 	if ct.RowsAffected() == 0 {
 		err = status.Errorf(codes.NotFound, "workflow not found or not owned by user")
+		return err
+	}
+
+	// Publish the workflowID to the Kafka topic for the worker to process
+	if err = r.kfk.ProduceSync(ctx, kgo.StringRecord(workflowID)).FirstErr(); err != nil {
+		err = status.Errorf(codes.Internal, "failed to publish workflow ID to Kafka: %v", err)
+		return err
+	}
+
+	// Commit transaction
+	if err = tx.Commit(ctx); err != nil {
+		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
 		return err
 	}
 

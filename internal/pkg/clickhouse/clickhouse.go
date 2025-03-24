@@ -27,7 +27,6 @@ type Config struct {
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
 	DialTimeout     time.Duration
-	Debug           bool
 }
 
 // Client represents a ClickHouse client.
@@ -53,8 +52,8 @@ func healthCheck(ctx context.Context, conn driver.Conn) error {
 	return err
 }
 
-// NewClient creates a new ClickHouse client.
-func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
+// New creates a new ClickHouse client.
+func New(ctx context.Context, cfg *Config) (*Client, error) {
 	options := &clickhouse.Options{
 		Addr: cfg.Hosts,
 		Auth: clickhouse.Auth{
@@ -72,7 +71,6 @@ func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
 		MaxOpenConns:    cfg.MaxOpenConns,
 		MaxIdleConns:    cfg.MaxIdleConns,
 		ConnMaxLifetime: cfg.ConnMaxLifetime,
-		Debug:           cfg.Debug,
 		ClientInfo: clickhouse.ClientInfo{
 			Products: []struct {
 				Name    string

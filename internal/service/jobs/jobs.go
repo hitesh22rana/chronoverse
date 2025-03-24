@@ -26,6 +26,7 @@ type Repository interface {
 	UpdateJobStatus(ctx context.Context, jobID, jobStatus string) error
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
+	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -211,6 +212,56 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 
 	// Get the scheduled job details
 	res, err = s.repo.GetJobByID(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// GetJobLogsRequest holds the request parameters for getting scheduled job logs.
+type GetJobLogsRequest struct {
+	ID         string `validate:"required"`
+	WorkflowID string `validate:"required"`
+	UserID     string `validate:"required"`
+	Cursor     string `validate:"omitempty"`
+}
+
+// GetJobLogs returns the scheduled job logs.
+func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (res *jobsmodel.GetJobLogsResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.GetJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&GetJobLogsRequest{
+		ID:         req.GetId(),
+		WorkflowID: req.GetWorkflowId(),
+		UserID:     req.GetUserId(),
+		Cursor:     req.GetCursor(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Validate the next page token
+	var cursor string
+	if req.GetCursor() != "" {
+		cursor, err = decodeCursor(req.GetCursor())
+		if err != nil {
+			err = status.Errorf(codes.InvalidArgument, "invalid next page token: %v", err)
+			return nil, err
+		}
+	}
+
+	// Get the scheduled job logs
+	res, err = s.repo.GetJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId(), cursor)
 	if err != nil {
 		return nil, err
 	}

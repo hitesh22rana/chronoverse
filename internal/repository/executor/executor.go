@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -23,9 +24,8 @@ import (
 )
 
 const (
-	delimiter    = '$'
-	authSubject  = "internal/executor"
-	retryBackoff = time.Second
+	delimiter   = '$'
+	authSubject = "internal/executor"
 
 	// Statuses for the jobs.
 	statusRunning   = "RUNNING"
@@ -232,34 +232,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return _err
 	}
 
-	var workflowErr error
-	switch workflow.Kind {
-	// Execute the HEARTBEAT workflow
-	case workflowHeartBeat:
-		workflowErr = retryOnce(func() error {
-			return r.svc.Hsvc.Execute(ctx, workflow.GetPayload())
-		})
-	// Execute the CONTAINER workflow
-	case workflowContainer:
-		imageName, cmd, err := extractContainerDetails(workflow.GetPayload())
-		if err != nil {
-			return err
-		}
-
-		workflowErr = retryOnce(func() error {
-			_, _, _err := r.svc.Csvc.Execute(
-				ctx,
-				containerWorkflowExecutionTimeout,
-				imageName,
-				cmd,
-			)
-			return _err
-		})
-	default:
-		return status.Error(codes.InvalidArgument, "invalid workflow kind")
-	}
-
-	if workflowErr != nil {
+	if err := r.executeWorkflow(ctx, jobID, workflow); err != nil {
 		// Update the job status from RUNNING to FAILED
 		if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 			Id:     jobID,
@@ -268,7 +241,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 			return _err
 		}
 
-		return workflowErr
+		return err
 	}
 
 	// Update the job status from RUNNING to COMPLETED
@@ -317,24 +290,62 @@ func (r *Repository) withAuthorization(ctx context.Context) (context.Context, er
 	return ctx, nil
 }
 
-// retryOnce executes the given function and retries once if it fails with an error
-// other than codes.FailedPrecondition.
-func retryOnce(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
+// executeWorkflow executes the workflow.
+func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
+	workflowID := workflow.GetId()
+	userID := workflow.GetUserId()
+
+	kind := workflow.GetKind()
+	payload := workflow.GetPayload()
+
+	switch kind {
+	// Execute the HEARTBEAT workflow
+	case workflowHeartBeat:
+		return r.svc.Hsvc.Execute(ctx, payload)
+	// Execute the CONTAINER workflow
+	case workflowContainer:
+		imageName, cmd, err := extractContainerDetails(payload)
+		if err != nil {
+			return err
+		}
+
+		logs, _, workflowErr := r.svc.Csvc.Execute(
+			ctx,
+			containerWorkflowExecutionTimeout,
+			imageName,
+			cmd,
+		)
+
+		var sequenceNum uint32
+
+		// Publish the logs to the Kafka topic
+		for log := range logs {
+			currentSeq := atomic.AddUint32(&sequenceNum, 1)
+
+			logEntry := map[string]interface{}{
+				"job_id":       jobID,
+				"workflow_id":  workflowID,
+				"user_id":      userID,
+				"message":      log,
+				"timestamp":    time.Now(),
+				"sequence_num": currentSeq,
+			}
+
+			// Serialize the log entry
+			logEntryBytes, err := json.Marshal(logEntry)
+			if err != nil {
+				continue
+			}
+
+			if err := r.kfk.ProduceSync(ctx, kgo.SliceRecord(logEntryBytes)).FirstErr(); err != nil {
+				continue
+			}
+		}
+
+		return workflowErr
+	default:
+		return status.Error(codes.InvalidArgument, "invalid workflow kind")
 	}
-
-	// If the error is FailedPrecondition or InvalidArgument, do not retry
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
-		return err
-	}
-
-	// Wait for the retry backoff duration
-	time.Sleep(retryBackoff)
-
-	// Execute the function again
-	return fn()
 }
 
 // extractContainerDetails extracts the container details from the workflow payload.

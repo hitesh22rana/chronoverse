@@ -138,6 +138,7 @@ func run() int {
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
+		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
 		kafka.WithConsumeTopics(cfg.Kafka.ConsumeTopics...),
 		kafka.WithDisableAutoCommit(),

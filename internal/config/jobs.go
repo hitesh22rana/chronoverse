@@ -7,13 +7,15 @@ type JobsConfig struct {
 	Environment
 
 	Postgres
+	ClickHouse
 	Grpc
 	Jobs
 }
 
 // Jobs holds the configuration for the jobs service.
 type Jobs struct {
-	FetchLimit int `envconfig:"JOBS_FETCH_LIMIT" default:"10"`
+	FetchLimit     int `envconfig:"JOBS_FETCH_LIMIT" default:"10"`
+	LogsFetchLimit int `envconfig:"JOBS_LOGS_FETCH_LIMIT" default:"100"`
 }
 
 // InitJobsServiceConfig initializes the jobs service configuration.

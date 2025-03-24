@@ -23,6 +23,7 @@ const (
 	JobsService_UpdateJobStatus_FullMethodName = "/jobs.JobsService/UpdateJobStatus"
 	JobsService_GetJob_FullMethodName          = "/jobs.JobsService/GetJob"
 	JobsService_GetJobByID_FullMethodName      = "/jobs.JobsService/GetJobByID"
+	JobsService_GetJobLogs_FullMethodName      = "/jobs.JobsService/GetJobLogs"
 	JobsService_ListJobs_FullMethodName        = "/jobs.JobsService/ListJobs"
 )
 
@@ -43,6 +44,8 @@ type JobsServiceClient interface {
 	// GetJobByID gets a job by ID.
 	// This is an internal API and should not be exposed to the public.
 	GetJobByID(ctx context.Context, in *GetJobByIDRequest, opts ...grpc.CallOption) (*GetJobByIDResponse, error)
+	// GetJobLogs gets the logs of a job.
+	GetJobLogs(ctx context.Context, in *GetJobLogsRequest, opts ...grpc.CallOption) (*GetJobLogsResponse, error)
 	// ListJobs returns a list of all jobs for a workflow_id owned by a user.
 	ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error)
 }
@@ -95,6 +98,16 @@ func (c *jobsServiceClient) GetJobByID(ctx context.Context, in *GetJobByIDReques
 	return out, nil
 }
 
+func (c *jobsServiceClient) GetJobLogs(ctx context.Context, in *GetJobLogsRequest, opts ...grpc.CallOption) (*GetJobLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetJobLogsResponse)
+	err := c.cc.Invoke(ctx, JobsService_GetJobLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *jobsServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListJobsResponse)
@@ -122,6 +135,8 @@ type JobsServiceServer interface {
 	// GetJobByID gets a job by ID.
 	// This is an internal API and should not be exposed to the public.
 	GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error)
+	// GetJobLogs gets the logs of a job.
+	GetJobLogs(context.Context, *GetJobLogsRequest) (*GetJobLogsResponse, error)
 	// ListJobs returns a list of all jobs for a workflow_id owned by a user.
 	ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error)
 }
@@ -144,6 +159,9 @@ func (UnimplementedJobsServiceServer) GetJob(context.Context, *GetJobRequest) (*
 }
 func (UnimplementedJobsServiceServer) GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetJobByID not implemented")
+}
+func (UnimplementedJobsServiceServer) GetJobLogs(context.Context, *GetJobLogsRequest) (*GetJobLogsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetJobLogs not implemented")
 }
 func (UnimplementedJobsServiceServer) ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListJobs not implemented")
@@ -240,6 +258,24 @@ func _JobsService_GetJobByID_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _JobsService_GetJobLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetJobLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).GetJobLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_GetJobLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).GetJobLogs(ctx, req.(*GetJobLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _JobsService_ListJobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListJobsRequest)
 	if err := dec(in); err != nil {
@@ -280,6 +316,10 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetJobByID",
 			Handler:    _JobsService_GetJobByID_Handler,
+		},
+		{
+			MethodName: "GetJobLogs",
+			Handler:    _JobsService_GetJobLogs_Handler,
 		},
 		{
 			MethodName: "ListJobs",

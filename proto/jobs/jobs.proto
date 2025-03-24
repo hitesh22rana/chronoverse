@@ -63,6 +63,29 @@ message GetJobByIDResponse {
     string updated_at   = 9; // Time the job was last updated
 }
 
+// GetJobLogsRequest contains the details needed to get the logs of a job.
+message GetJobLogsRequest {
+    string id          = 1; // ID of the job
+    string workflow_id = 2; // ID of the workflow
+    string user_id     = 3; // ID of the user
+    string cursor      = 4; // Token for pagination
+}
+
+// Log contains the details of a log.
+message Log {
+    string timestamp    = 1; // Time the log was created
+    string message      = 2; // Log message
+    uint32 sequence_num = 3; // Sequence number of the log
+}
+
+// GetJobLogsResponse contains the result of a job log retrieval attempt.
+message GetJobLogsResponse {
+    string id          = 1; // ID of the job
+    string workflow_id = 2; // ID of the workflow
+    repeated Log logs  = 3; // List of log messages
+    string cursor      = 4; // Token for pagination
+}
+
 // ListJobsRequest contains the details needed to list all jobs for a workflow_id.
 message ListJobsRequest {
     string workflow_id  = 1; // ID of the workflow
@@ -103,6 +126,9 @@ service JobsService {
     // GetJobByID gets a job by ID.
     // This is an internal API and should not be exposed to the public.
     rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
+
+    // GetJobLogs gets the logs of a job.
+    rpc GetJobLogs(GetJobLogsRequest) returns (GetJobLogsResponse) {}
 
     // ListJobs returns a list of all jobs for a workflow_id owned by a user.
     rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {}

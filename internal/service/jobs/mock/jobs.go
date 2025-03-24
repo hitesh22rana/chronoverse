@@ -71,6 +71,21 @@ func (mr *MockRepositoryMockRecorder) GetJobByID(ctx, jobID any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobByID", reflect.TypeOf((*MockRepository)(nil).GetJobByID), ctx, jobID)
 }
 
+// GetJobLogs mocks base method.
+func (m *MockRepository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobs.GetJobLogsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetJobLogs", ctx, jobID, workflowID, userID, cursor)
+	ret0, _ := ret[0].(*jobs.GetJobLogsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetJobLogs indicates an expected call of GetJobLogs.
+func (mr *MockRepositoryMockRecorder) GetJobLogs(ctx, jobID, workflowID, userID, cursor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobLogs", reflect.TypeOf((*MockRepository)(nil).GetJobLogs), ctx, jobID, workflowID, userID, cursor)
+}
+
 // ListJobs mocks base method.
 func (m *MockRepository) ListJobs(ctx context.Context, workflowID, userID, cursor string) (*jobs.ListJobsResponse, error) {
 	m.ctrl.T.Helper()

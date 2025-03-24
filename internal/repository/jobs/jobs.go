@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"time"
 
@@ -16,18 +17,21 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
 	jobsTable = "jobs"
+	logsTable = "job_logs"
 	delimiter = '$'
 )
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit int
+	FetchLimit     int
+	LogsFetchLimit int
 }
 
 // Repository provides jobs repository.
@@ -35,14 +39,16 @@ type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
 	pg  *postgres.Postgres
+	ch  *clickhouse.Client
 }
 
 // New creates a new jobs repository.
-func New(cfg *Config, pg *postgres.Postgres) *Repository {
+func New(cfg *Config, pg *postgres.Postgres, ch *clickhouse.Client) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		pg:  pg,
+		ch:  ch,
 	}
 }
 
@@ -200,6 +206,75 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 	return res, nil
 }
 
+// GetJobLogs returns the job logs by ID.
+func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (res *jobsmodel.GetJobLogsResponse, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.GetJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		SELECT timestamp, message, sequence_num
+		FROM %s
+		WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
+	`, logsTable)
+	args := []any{jobID, workflowID, userID}
+
+	if cursor != "" {
+		sequenceNum, _err := extractDataFromGetJobLogsCursor(cursor)
+		if _err != nil {
+			err = _err
+			return nil, err
+		}
+
+		query += ` AND sequence_num >= $4`
+		args = append(args, sequenceNum)
+	}
+
+	query += fmt.Sprintf(` ORDER BY sequence_num ASC LIMIT %d;`, r.cfg.LogsFetchLimit+1)
+
+	rows, err := r.ch.Query(ctx, query, args...)
+	if err != nil {
+		err = status.Errorf(codes.NotFound, "no logs found for job: %v", err)
+		return nil, err
+	}
+
+	logs := make([]*jobsmodel.JobLog, 0)
+	for rows.Next() {
+		var timestamp time.Time
+		var message string
+		var sequenceNum uint32
+		if err = rows.Scan(&timestamp, &message, &sequenceNum); err != nil {
+			err = status.Errorf(codes.Internal, "failed to scan logs: %v", err)
+			return nil, err
+		}
+
+		logs = append(logs, &jobsmodel.JobLog{
+			Timestamp:   timestamp,
+			Message:     message,
+			SequenceNum: sequenceNum,
+		})
+	}
+
+	// Check if there are more logs
+	var sequenceNum uint32
+	if len(logs) > r.cfg.LogsFetchLimit {
+		sequenceNum = logs[r.cfg.LogsFetchLimit].SequenceNum
+		logs = logs[:r.cfg.LogsFetchLimit]
+	}
+
+	return &jobsmodel.GetJobLogsResponse{
+		ID:         jobID,
+		WorkflowID: workflowID,
+		JobLogs:    logs,
+		Cursor:     encodeJobLogsCursor(sequenceNum),
+	}, nil
+}
+
 // ListJobs returns jobs.
 func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor string) (res *jobsmodel.ListJobsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobs")
@@ -220,7 +295,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	args := []any{workflowID, userID}
 
 	if cursor != "" {
-		id, createdAt, _err := extractDataFromCursor(cursor)
+		id, createdAt, _err := extractDataFromListJobsCursor(cursor)
 		if _err != nil {
 			err = _err
 			return nil, err
@@ -258,19 +333,48 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 
 	return &jobsmodel.ListJobsResponse{
 		Jobs:   data,
-		Cursor: encodeCursor(cursor),
+		Cursor: encodeListJobsCursor(cursor),
 	}, nil
 }
 
+// parseTime parses the time.
 func parseTime(t string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, t)
 }
 
-func encodeCursor(cursor string) string {
+// encodeJobLogsCursor encodes the cursor.
+func encodeJobLogsCursor(sequenceNum uint32) string {
+	if sequenceNum == 0 {
+		return ""
+	}
+
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, sequenceNum)
+	return base64.StdEncoding.EncodeToString(buf)
+}
+
+// encodeListJobsCursor encodes the cursor.
+func encodeListJobsCursor(cursor string) string {
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 
-func extractDataFromCursor(cursor string) (string, time.Time, error) {
+// extractDataFromGetJobLogsCursor extracts the data from the cursor.
+func extractDataFromGetJobLogsCursor(cursor string) (uint32, error) {
+	decodedBytes, err := base64.StdEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0, status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
+	}
+
+	// Must be exactly 4 bytes for a uint32
+	if len(decodedBytes) != 4 {
+		return 0, status.Errorf(codes.InvalidArgument, "invalid cursor format")
+	}
+
+	return binary.BigEndian.Uint32(decodedBytes), nil
+}
+
+// extractDataFromListJobsCursor extracts the data from the cursor.
+func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
 	parts := bytes.Split([]byte(cursor), []byte{delimiter})
 	if len(parts) != 2 {
 		return "", time.Time{}, status.Error(codes.InvalidArgument, "invalid cursor: expected two parts")

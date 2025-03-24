@@ -95,6 +95,41 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	}
 }
 
+// JobLog represents the log of the job.
+type JobLog struct {
+	Timestamp   time.Time `db:"timestamp"`
+	Message     string    `db:"message"`
+	SequenceNum uint32    `db:"sequence_num"`
+}
+
+// GetJobLogsResponse represents the response of GetJobLogs.
+type GetJobLogsResponse struct {
+	ID         string
+	WorkflowID string
+	JobLogs    []*JobLog
+	Cursor     string
+}
+
+// ToProto converts the GetJobLogsResponse to its protobuf representation.
+func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
+	jobLogs := make([]*jobspb.Log, len(r.JobLogs))
+	for i := range r.JobLogs {
+		l := r.JobLogs[i]
+		jobLogs[i] = &jobspb.Log{
+			Timestamp:   l.Timestamp.Format(time.RFC3339Nano),
+			Message:     l.Message,
+			SequenceNum: l.SequenceNum,
+		}
+	}
+
+	return &jobspb.GetJobLogsResponse{
+		Id:         r.ID,
+		WorkflowId: r.WorkflowID,
+		Logs:       jobLogs,
+		Cursor:     r.Cursor,
+	}
+}
+
 // JobByWorkflowIDResponse represents the response of ListJobsByID.
 type JobByWorkflowIDResponse struct {
 	ID          string       `db:"id"`

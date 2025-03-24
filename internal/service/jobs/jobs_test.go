@@ -575,6 +575,154 @@ func TestGetJobByID(t *testing.T) {
 	}
 }
 
+func TestGetJobLogs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := jobsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := jobs.New(validator.New(), repo)
+
+	type want struct {
+		*jobsmodel.GetJobLogsResponse
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *jobspb.GetJobLogsRequest
+		mock  func(req *jobspb.GetJobLogsRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &jobspb.GetJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+				Cursor:     "",
+			},
+			mock: func(req *jobspb.GetJobLogsRequest) {
+				repo.EXPECT().GetJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+					req.GetCursor(),
+				).Return(&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   time.Now(),
+							Message:     "log 1",
+							SequenceNum: 1,
+						},
+						{
+							Timestamp:   time.Now(),
+							Message:     "log 2",
+							SequenceNum: 2,
+						},
+					},
+				}, nil)
+			},
+			want: want{
+				&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   time.Now(),
+							Message:     "log 1",
+							SequenceNum: 1,
+						},
+						{
+							Timestamp:   time.Now(),
+							Message:     "log 2",
+							SequenceNum: 2,
+						},
+					},
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			req: &jobspb.GetJobLogsRequest{
+				Id:         "",
+				WorkflowId: "",
+				UserId:     "",
+				Cursor:     "",
+			},
+			mock:  func(_ *jobspb.GetJobLogsRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: job not found",
+			req: &jobspb.GetJobLogsRequest{
+				Id:         "invalid_job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+				Cursor:     "",
+			},
+			mock: func(req *jobspb.GetJobLogsRequest) {
+				repo.EXPECT().GetJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+					req.GetCursor(),
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &jobspb.GetJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+				Cursor:     "",
+			},
+			mock: func(req *jobspb.GetJobLogsRequest) {
+				repo.EXPECT().GetJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+					req.GetCursor(),
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := s.GetJobLogs(t.Context(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+		})
+	}
+}
+
 func TestListJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 

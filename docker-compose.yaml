@@ -295,6 +295,10 @@ services:
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
+      CLICKHOUSE_HOSTS: clickhouse:9000
+      CLICKHOUSE_DATABASE: chronoverse
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
       GRPC_PORT: 50053
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
@@ -449,6 +453,7 @@ services:
     container_name: execution-worker
     environment:
       KAFKA_BROKERS: kafka:9092
+      KAFKA_PRODUCER_TOPIC: job_logs
       KAFKA_CONSUME_TOPICS: jobs
       KAFKA_CONSUMER_GROUP: execution-worker
       WORKFLOWS_SERVICE_HOST: workflows-service
@@ -485,16 +490,12 @@ services:
       exec /bin/service
       '
     depends_on:
-      clickhouse:
-        condition: service_healthy
       docker-proxy:
         condition: service_started
       kafka:
         condition: service_started
       lgtm:
         condition: service_started
-      init-migrate-clickhouse:
-        condition: service_completed_successfully
       init-certs:
         condition: service_completed_successfully
       workflows-service:

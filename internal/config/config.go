@@ -54,7 +54,6 @@ type ClickHouse struct {
 	MaxIdleConns    int           `envconfig:"CLICKHOUSE_MAX_IDLE_CONNS" default:"5"`
 	ConnMaxLifetime time.Duration `envconfig:"CLICKHOUSE_CONN_MAX_LIFETIME" default:"1h"`
 	DialTimeout     time.Duration `envconfig:"CLICKHOUSE_DIAL_TIMEOUT" default:"5s"`
-	Debug           bool          `envconfig:"CLICKHOUSE_DEBUG" default:"false"`
 }
 
 // Grpc holds the gRPC configuration.

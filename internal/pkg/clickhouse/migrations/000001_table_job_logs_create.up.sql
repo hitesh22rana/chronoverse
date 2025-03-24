@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS job_logs (
     user_id UUID NOT NULL COMMENT 'ID of the user who owns the workflow',
     
     timestamp DateTime64(3) DEFAULT now64(3) COMMENT 'When the log entry was created',
-    log_text String NOT NULL COMMENT 'The actual log content',
+    message String NOT NULL COMMENT 'The actual log message',
     sequence_num UInt32 NOT NULL COMMENT 'Order of log entries within a job execution',
     
     date Date DEFAULT toDate(timestamp) COMMENT 'Date for partitioning'

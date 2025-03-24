@@ -12,6 +12,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -45,6 +46,7 @@ func main() {
 	os.Exit(run())
 }
 
+//nolint:gocyclo // This function is necessary to run the service.
 func run() int {
 	// Global context to cancel the execution
 	ctx, cancel := context.WithCancel(context.Background())
@@ -138,10 +140,28 @@ func run() int {
 	}
 	defer pdb.Close()
 
+	// Initialize the ClickHouse database
+	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
+		Hosts:           cfg.ClickHouse.Hosts,
+		Database:        cfg.ClickHouse.Database,
+		Username:        cfg.ClickHouse.Username,
+		Password:        cfg.ClickHouse.Password,
+		MaxOpenConns:    cfg.ClickHouse.MaxOpenConns,
+		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
+		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
+		DialTimeout:     cfg.ClickHouse.DialTimeout,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer cdb.Close()
+
 	// Initialize the jobs repository
 	repo := jobsrepo.New(&jobsrepo.Config{
-		FetchLimit: cfg.Jobs.FetchLimit,
-	}, pdb)
+		FetchLimit:     cfg.Jobs.FetchLimit,
+		LogsFetchLimit: cfg.Jobs.LogsFetchLimit,
+	}, pdb, cdb)
 
 	// Initialize the validator utility
 	validator := validator.New()

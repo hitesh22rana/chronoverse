@@ -32,6 +32,7 @@ type Service interface {
 	UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest) error
 	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*jobsmodel.GetJobByIDResponse, error)
+	GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (*jobsmodel.GetJobLogsResponse, error)
 	ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -305,6 +306,47 @@ func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (r
 		zap.Any("job", job),
 	)
 	return job.ToProto(), nil
+}
+
+// GetJobLogs returns the logs for the job.
+func (j *Jobs) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (res *jobspb.GetJobLogsResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.GetJobLogs",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("workflow_id", req.GetWorkflowId()),
+			attribute.String("user_id", req.GetUserId()),
+			attribute.String("cursor", req.GetCursor()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	logs, err := j.svc.GetJobLogs(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to fetch job logs",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	j.logger.Info(
+		"job logs fetched successfully",
+		zap.Any("ctx", ctx),
+		zap.Any("logs", logs),
+	)
+	return logs.ToProto(), nil
 }
 
 // ListJobs returns the jobs by job ID.

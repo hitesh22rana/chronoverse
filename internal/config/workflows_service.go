@@ -9,12 +9,12 @@ type WorkflowsConfig struct {
 	Postgres
 	Grpc
 	Kafka
-	Workflows
+	WorkflowsServiceConfig
 }
 
-// Workflows holds the configuration for the workflows service.
-type Workflows struct {
-	FetchLimit int `envconfig:"WORKFLOWS_FETCH_LIMIT" default:"10"`
+// WorkflowsServiceConfig holds the configuration for the workflows service.
+type WorkflowsServiceConfig struct {
+	FetchLimit int `envconfig:"WORKFLOWS_SERVICE_CONFIG_FETCH_LIMIT" default:"10"`
 }
 
 // InitWorkflowsServiceConfig initializes the workflows service configuration.

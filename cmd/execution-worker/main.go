@@ -203,7 +203,7 @@ func run() int {
 
 	// Initialize the execution job components
 	repo := executorrepo.New(&executorrepo.Config{
-		ParallelismLimit: cfg.ParallelismLimit,
+		ParallelismLimit: cfg.ExecutionWorkerConfig.ParallelismLimit,
 	}, auth, &executorrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),

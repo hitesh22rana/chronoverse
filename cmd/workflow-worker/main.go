@@ -70,7 +70,7 @@ func run() int {
 	}()
 
 	// Load the workflow service configuration
-	cfg, err := config.InitWorkflowServiceConfig()
+	cfg, err := config.InitWorkflowWorkerConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -201,7 +201,7 @@ func run() int {
 
 	// Initialize the workflow job components
 	repo := workflowrepo.New(&workflowrepo.Config{
-		ParallelismLimit: cfg.ParallelismLimit,
+		ParallelismLimit: cfg.WorkflowWorkerConfig.ParallelismLimit,
 	}, auth, &workflowrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobpb.NewJobsServiceClient(jobsConn),

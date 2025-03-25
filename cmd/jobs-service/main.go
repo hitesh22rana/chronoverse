@@ -159,8 +159,8 @@ func run() int {
 
 	// Initialize the jobs repository
 	repo := jobsrepo.New(&jobsrepo.Config{
-		FetchLimit:     cfg.Jobs.FetchLimit,
-		LogsFetchLimit: cfg.Jobs.LogsFetchLimit,
+		FetchLimit:     cfg.JobsServiceConfig.FetchLimit,
+		LogsFetchLimit: cfg.JobsServiceConfig.LogsFetchLimit,
 	}, pdb, cdb)
 
 	// Initialize the validator utility

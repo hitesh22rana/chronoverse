@@ -95,6 +95,16 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	}
 }
 
+// JobLogEntry represents the log entry of the job.
+type JobLogEntry struct {
+	JobID       string
+	WorkflowID  string
+	UserID      string
+	Message     string
+	TimeStamp   time.Time
+	SequenceNum uint32
+}
+
 // JobLog represents the log of the job.
 type JobLog struct {
 	Timestamp   time.Time `db:"timestamp"`

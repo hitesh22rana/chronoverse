@@ -224,8 +224,8 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		return err
 	}
 
-	// Execute the build process
-	if workflowErr := retryOnce(func() error {
+	// Execute the build process with retry enabled
+	if workflowErr := withRetry(func() error {
 		return r.svc.Csvc.Build(ctx, imageName)
 	}); workflowErr != nil {
 		// Update the workflow status from QUEUED to FAILED
@@ -288,9 +288,9 @@ func (r *Repository) withAuthorization(ctx context.Context) (context.Context, er
 	return ctx, nil
 }
 
-// retryOnce executes the given function and retries once if it fails with an error
+// withRetry executes the given function and retries once if it fails with an error
 // other than codes.FailedPrecondition.
-func retryOnce(fn func() error) error {
+func withRetry(fn func() error) error {
 	err := fn()
 	if err == nil {
 		return nil

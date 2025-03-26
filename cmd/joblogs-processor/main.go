@@ -5,20 +5,19 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
 	"go.uber.org/zap"
 
-	"github.com/hitesh22rana/chronoverse/internal/app/scheduler"
+	"github.com/hitesh22rana/chronoverse/internal/app/joblogs"
 	"github.com/hitesh22rana/chronoverse/internal/config"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
-	schedulerrepo "github.com/hitesh22rana/chronoverse/internal/repository/scheduler"
-	schedulersvc "github.com/hitesh22rana/chronoverse/internal/service/scheduler"
+	joblogsrepo "github.com/hitesh22rana/chronoverse/internal/repository/joblogs"
+	joblogssvc "github.com/hitesh22rana/chronoverse/internal/service/joblogs"
 )
 
 const (
@@ -47,6 +46,7 @@ func main() {
 }
 
 func run() int {
+	// Global context to cancel the execution
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -61,89 +61,87 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the scheduling service configuration
-	cfg, err := config.InitSchedulingJobConfig()
+	// Load the joblogs service configuration
+	cfg, err := config.InitJobLogsProcessorConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize OTel Resource
+	// Initialize the OpenTelemetry Resource
 	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init OTel resource: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize TracerProvider
+	// Initialize the OpenTelemetry TracerProvider
 	tp, err := otelpkg.InitTracerProvider(ctx, res)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init tracer provider: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer func() {
 		if err = tp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to shutdown tracer provider: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to shutdown tracer provider: %v\n", err)
 		}
 	}()
 
-	// Initialize MeterProvider (optional for metrics)
+	// Initialize the OpenTelemetry MeterProvider
 	mp, err := otelpkg.InitMeterProvider(ctx, res)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init meter provider: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer func() {
 		if err = mp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to shutdown meter provider: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to shutdown meter provider: %v\n", err)
 		}
 	}()
 
-	// Initialize LoggerProvider
+	// Initialize the OpenTelemetry LoggerProvider
 	lp, err := otelpkg.InitLogProvider(ctx, res)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init log provider: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer func() {
 		if err = lp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to shutdown log provider: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to shutdown logger provider: %v\n", err)
 		}
 	}()
 
-	// Set up logger
+	// Initialize and set the logger in the context
 	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetName(), lp)
 	defer func() {
 		if err = logger.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
 		}
 	}()
 
-	// Initialize the PostgreSQL database
-	pdb, err := postgres.New(ctx, &postgres.Config{
-		Host:        cfg.Postgres.Host,
-		Port:        cfg.Postgres.Port,
-		User:        cfg.Postgres.User,
-		Password:    cfg.Postgres.Password,
-		Database:    cfg.Postgres.Database,
-		MaxConns:    cfg.Postgres.MaxConns,
-		MinConns:    cfg.Postgres.MinConns,
-		MaxConnLife: cfg.Postgres.MaxConnLife,
-		MaxConnIdle: cfg.Postgres.MaxConnIdle,
-		DialTimeout: cfg.Postgres.DialTimeout,
-		SSLMode:     cfg.Postgres.SSLMode,
+	// Initialize the ClickHouse database
+	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
+		Hosts:           cfg.ClickHouse.Hosts,
+		Database:        cfg.ClickHouse.Database,
+		Username:        cfg.ClickHouse.Username,
+		Password:        cfg.ClickHouse.Password,
+		MaxOpenConns:    cfg.ClickHouse.MaxOpenConns,
+		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
+		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
+		DialTimeout:     cfg.ClickHouse.DialTimeout,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-	defer pdb.Close()
+	defer cdb.Close()
 
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
-		kafka.WithTransactionalID(strconv.FormatInt(int64(os.Getpid()), 10)),
+		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
+		kafka.WithConsumeTopics(cfg.Kafka.ConsumeTopics...),
+		kafka.WithDisableAutoCommit(),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -151,16 +149,13 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize the scheduling job components
-	repo := schedulerrepo.New(&schedulerrepo.Config{
-		FetchLimit: cfg.SchedulingWorkerConfig.FetchLimit,
-		BatchSize:  cfg.SchedulingWorkerConfig.BatchSize,
-	}, pdb, kfk)
-	svc := schedulersvc.New(repo)
-	app := scheduler.New(ctx, &scheduler.Config{
-		PollInterval:   cfg.SchedulingWorkerConfig.PollInterval,
-		ContextTimeout: cfg.SchedulingWorkerConfig.ContextTimeout,
-	}, svc)
+	// Initialize the joblogs job components
+	repo := joblogsrepo.New(&joblogsrepo.Config{
+		BatchSizeLimit: cfg.JobLogsProcessorConfig.BatchSizeLimit,
+		BatchTimeLimit: cfg.JobLogsProcessorConfig.BatchTimeLimit,
+	}, cdb, kfk)
+	svc := joblogssvc.New(repo)
+	app := joblogs.New(ctx, svc)
 
 	// Log the job information
 	logger.Info(
@@ -171,7 +166,7 @@ func run() int {
 		zap.String("environment", cfg.Environment.Env),
 	)
 
-	// Run the scheduling job
+	// Run the joblogs job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

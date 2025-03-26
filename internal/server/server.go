@@ -233,6 +233,19 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			),
 		),
 	)
+	router.HandleFunc(
+		"/workflows/{workflow_id}/jobs/{job_id}/logs",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleGetJobLogs,
+					),
+				),
+			),
+		),
+	)
 }
 
 // Start starts the HTTP server.

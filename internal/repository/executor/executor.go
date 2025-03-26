@@ -18,6 +18,7 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -322,17 +323,15 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 		for log := range logs {
 			currentSeq := atomic.AddUint32(&sequenceNum, 1)
 
-			logEntry := map[string]interface{}{
-				"job_id":       jobID,
-				"workflow_id":  workflowID,
-				"user_id":      userID,
-				"message":      log,
-				"timestamp":    time.Now(),
-				"sequence_num": currentSeq,
-			}
-
 			// Serialize the log entry
-			logEntryBytes, err := json.Marshal(logEntry)
+			logEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
+				JobID:       jobID,
+				WorkflowID:  workflowID,
+				UserID:      userID,
+				Message:     log,
+				TimeStamp:   time.Now(),
+				SequenceNum: currentSeq,
+			})
 			if err != nil {
 				continue
 			}

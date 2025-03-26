@@ -24,9 +24,6 @@ services:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse
     environment:
-      CLICKHOUSE_DB: chronoverse
-      CLICKHOUSE_USER: clickhouse
-      CLICKHOUSE_PASSWORD: clickhouse
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
       - '9000:9000'
@@ -127,11 +124,10 @@ services:
   init-migrate-clickhouse:
     image: migrate/migrate:latest
     container_name: init-migrate-clickhouse
-    profiles: ["tools"]
     volumes:
       - ./internal/pkg/clickhouse/migrations:/migrations
     entrypoint: |
-      migrate -path /migrations -database "clickhouse://clickhouse:9000?username=clickhouse&password=clickhouse&database=chronoverse&x-multi-statement=true"
+      migrate -path /migrations -database "clickhouse://clickhouse:9000?username=default&password=&database=default&x-multi-statement=true"
     command: ["up"]
     restart: "no"
     depends_on:
@@ -296,9 +292,6 @@ services:
     environment:
       POSTGRES_HOST: postgres
       CLICKHOUSE_HOSTS: clickhouse:9000
-      CLICKHOUSE_DATABASE: chronoverse
-      CLICKHOUSE_USER: clickhouse
-      CLICKHOUSE_PASSWORD: clickhouse
       GRPC_PORT: 50053
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
@@ -368,6 +361,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=scheduling-worker
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs
@@ -502,6 +497,53 @@ services:
         condition: service_started
       jobs-service:
         condition: service_started
+    networks:
+      - chronoverse
+
+  joblogs-processor:
+    image: joblogs-processor
+    container_name: joblogs-processor
+    environment:
+      CLICKHOUSE_HOSTS: clickhouse:9000
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CONSUME_TOPICS: job_logs
+      KAFKA_CONSUMER_GROUP: joblogs-processor
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=joblogs-processor
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    restart: on-failure
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
+    depends_on:
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-migrate-clickhouse:
+        condition: service_completed_successfully
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 

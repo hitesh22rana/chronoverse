@@ -52,6 +52,10 @@ build/workflow-worker: dependencies
 build/execution-worker: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=execution-worker' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/execution-worker ./cmd/execution-worker
 
+.PHONY: build/joblogs-processor
+build/joblogs-processor: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=joblogs-processor' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/joblogs-processor ./cmd/joblogs-processor
+
 .PHONY: build/server
 build/server: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=server' -X 'main.authPublicKeyPath=certs/auth.ed.pub' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/server ./cmd/server
@@ -79,6 +83,10 @@ run/workflow-worker: build/workflow-worker
 .PHONY: run/execution-worker
 run/execution-worker: build/execution-worker
 	@./.bin/execution-worker
+
+.PHONY: run/joblogs-processor
+run/joblogs-processor: build/joblogs-processor
+	@./.bin/joblogs-processor
 
 .PHONY: run/server
 run/server: build/server

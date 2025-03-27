@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package notifications;
+
+option go_package = "github.com/hitesh22rana/chronoverse/proto/go/notifications;notifications";
+
+// CreateNotificationRequest contains the details needed to create a new notification.
+message CreateNotificationRequest {
+    string user_id  = 1; // ID of the user
+    string kind     = 2; // Kind of notification
+    string payload  = 3; // JSON string for payload
+}
+
+// CreateNotificationResponse contains the result of a notification creation attempt.
+message CreateNotificationResponse {
+    string id = 1; // ID of the notification
+}
+
+// MarkAsReadRequest contains the details needed to mark a notification as read.
+message MarkAsReadRequest {
+    string id      = 1; // ID of the notification
+    string user_id = 2; // ID of the user
+}
+
+// MarkAsReadResponse contains the result of a notification read attempt.
+message MarkAsReadResponse {}
+
+// MarkAllAsReadRequest contains the details needed to mark all notifications as read.
+message MarkAllAsReadRequest {
+    repeated string ids    = 1; // IDs of the notifications
+    string        user_id  = 2; // ID of the user
+}
+
+// MarkAllAsReadResponse contains the result of a notification read attempt.
+message MarkAllAsReadResponse {}
+
+// ListNotificationsRequest contains the details needed to list notifications.
+message ListNotificationsRequest {
+    string user_id = 1; // ID of the user
+    string kind    = 2; // Kind of notification (optional)
+    string cursor  = 3; // Cursor for pagination
+}
+
+// NotificationResponse contains the details of a notification.
+message NotificationResponse {
+    string id         = 1; // ID of the notification
+    string kind       = 2; // Kind of notification
+    string payload    = 3; // JSON string for payload
+    string read_at    = 4; // Time the notification was read
+    string created_at = 5; // Time the notification was created
+    string updated_at = 6; // Time the notification was last updated
+}
+
+// ListNotificationsResponse contains the result of a notification list attempt.
+message ListNotificationsResponse {
+    repeated NotificationResponse notifications = 1; // List of notifications
+    string cursor                               = 2; // Cursor for pagination
+}
+
+// NotificationsService contains the service definition for the Notifications service.
+service NotificationsService {
+    // CreateNotification creates a new notification.
+    // This is an internal API and should not be exposed to the public.
+    rpc CreateNotification(CreateNotificationRequest) returns (CreateNotificationResponse) {}
+
+    // MarkAsRead marks a notification as read.
+    rpc MarkAsRead(MarkAsReadRequest) returns (MarkAsReadResponse) {}
+
+    // MarkAllAsRead marks all notifications as read.
+    rpc MarkAllAsRead(MarkAllAsReadRequest) returns (MarkAllAsReadResponse) {}
+
+    // ListNotifications returns a list of notifications.
+    rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse) {}
+}

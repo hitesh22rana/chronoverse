@@ -68,7 +68,7 @@ message GetJobLogsRequest {
     string id          = 1; // ID of the job
     string workflow_id = 2; // ID of the workflow
     string user_id     = 3; // ID of the user
-    string cursor      = 4; // Token for pagination
+    string cursor      = 4; // Cursor for pagination
 }
 
 // Log contains the details of a log.
@@ -83,14 +83,14 @@ message GetJobLogsResponse {
     string id          = 1; // ID of the job
     string workflow_id = 2; // ID of the workflow
     repeated Log logs  = 3; // List of log messages
-    string cursor      = 4; // Token for pagination
+    string cursor      = 4; // Cursor for pagination
 }
 
 // ListJobsRequest contains the details needed to list all jobs for a workflow_id.
 message ListJobsRequest {
     string workflow_id  = 1; // ID of the workflow
     string user_id      = 2; // ID of the user
-    string cursor       = 3; // Token for pagination
+    string cursor       = 3; // Cursor for pagination
 }
 
 // JobsResponse contains the result of a job listing attempt.
@@ -107,7 +107,7 @@ message JobsResponse {
 
 message ListJobsResponse {
     repeated JobsResponse jobs = 1; // List of jobs
-    string cursor              = 2; // Token for pagination
+    string cursor              = 2; // Cursor for pagination
 }
 
 // JobsService handles job related operations.

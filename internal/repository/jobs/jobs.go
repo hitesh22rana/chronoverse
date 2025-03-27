@@ -355,6 +355,10 @@ func encodeJobLogsCursor(sequenceNum uint32) string {
 
 // encodeListJobsCursor encodes the cursor.
 func encodeListJobsCursor(cursor string) string {
+	if cursor == "" {
+		return ""
+	}
+
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 

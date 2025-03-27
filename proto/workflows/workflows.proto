@@ -86,7 +86,7 @@ message TerminateWorkflowRequest {
 // ListWorkflowsRequest contains the details needed to list all workflows.
 message ListWorkflowsRequest {
     string user_id = 1; // ID of the user
-    string cursor  = 2; // Token for pagination
+    string cursor  = 2; // Cursor for pagination
 }
 
 // WorkflowsByUserIDResponse contains the result of a workflow listing attempt.
@@ -105,7 +105,7 @@ message WorkflowsByUserIDResponse {
 // ListWorkflowsResponse contains the result of a workflow listing attempt.
 message ListWorkflowsResponse {
     repeated WorkflowsByUserIDResponse workflows = 1; // List of workflows
-    string cursor                                = 2; // Token for pagination
+    string cursor                                = 2; // Cursor for pagination
 }
 
 // TerminateWorkflowResponse contains the result of a workflow termination attempt.

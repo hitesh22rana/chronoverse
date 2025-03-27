@@ -728,7 +728,7 @@ func (x *TerminateWorkflowRequest) GetUserId() string {
 type ListWorkflowsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user
-	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`               // Token for pagination
+	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`               // Cursor for pagination
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -890,7 +890,7 @@ func (x *WorkflowsByUserIDResponse) GetTerminatedAt() string {
 type ListWorkflowsResponse struct {
 	state         protoimpl.MessageState       `protogen:"open.v1"`
 	Workflows     []*WorkflowsByUserIDResponse `protobuf:"bytes,1,rep,name=workflows,proto3" json:"workflows,omitempty"` // List of workflows
-	Cursor        string                       `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`       // Token for pagination
+	Cursor        string                       `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`       // Cursor for pagination
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

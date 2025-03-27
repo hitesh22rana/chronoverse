@@ -29,8 +29,8 @@ message LoginUserResponse {
 // UsersService handles user related operations.
 service UsersService {
     // RegisterUser a new user.
-    rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse) {};
+    rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse) {}
 
     // LoginUser with email and password.
-    rpc LoginUser(LoginUserRequest) returns (LoginUserResponse) {};
+    rpc LoginUser(LoginUserRequest) returns (LoginUserResponse) {}
 }

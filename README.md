@@ -15,6 +15,7 @@ Chronoverse is a distributed, job scheduling and orchestration system designed f
     - `CONTAINER`: Execute commands in Docker containers
 - **Distributed Architecture**: Microservices-based design for scalability
 - **High Availability**: Fault-tolerant operation with no single point of failure
+- **Notification System**: Real-time alerts and status updates
 - **Observability**: Built-in OpenTelemetry integration for tracing and metrics
 - **Security**: JWT-based authentication and authorization
 
@@ -28,6 +29,7 @@ Chronoverse follows a microservices architecture with the following components:
 - **Users Service**: Manages user authentication, authorization, and user profile data
 - **Workflows Service**: Enables creation, configuration, and management of workflow definitions
 - **Jobs Service**: Handles scheduled job instances and their lifecycle management
+- **Notifications Service**: Delivers real-time alerts and status updates
 
 ### Worker Components
 

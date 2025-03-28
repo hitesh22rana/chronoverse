@@ -326,7 +326,8 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		cursor = fmt.Sprintf(
 			"%s%c%s",
 			data[r.cfg.FetchLimit].ID,
-			delimiter, data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
+			delimiter,
+			data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
 		)
 		data = data[:r.cfg.FetchLimit]
 	}
@@ -358,7 +359,6 @@ func encodeListJobsCursor(cursor string) string {
 	if cursor == "" {
 		return ""
 	}
-
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 

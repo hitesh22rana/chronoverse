@@ -26,6 +26,14 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+// internalAPIs contains the list of internal APIs that require admin role.
+// These APIs are not exposed to the public and should only be used internally.
+var internalAPIs = map[string]bool{
+	"ScheduleJob":     true,
+	"UpdateJobStatus": true,
+	"GetJobByID":      true,
+}
+
 // Service provides job related operations.
 type Service interface {
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
@@ -102,19 +110,12 @@ func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
 
 // isInternalAPI checks if the full method is an internal API.
 func isInternalAPI(fullMethod string) bool {
-	internalAPIs := []string{
-		"ScheduleJob",
-		"UpdateJobStatus",
-		"GetJobByID",
+	parts := strings.Split(fullMethod, "/")
+	if len(parts) < 3 {
+		return false
 	}
 
-	for _, api := range internalAPIs {
-		if strings.Contains(fullMethod, api) {
-			return true
-		}
-	}
-
-	return false
+	return internalAPIs[parts[2]]
 }
 
 // New creates a new jobs server.

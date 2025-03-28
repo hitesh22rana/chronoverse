@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -129,9 +130,7 @@ func TestCreateWorkflow(t *testing.T) {
 				return
 			}
 
-			if workflowID != tt.want.workflowID {
-				t.Errorf("expected workflowID: %s, got: %s", tt.want.workflowID, workflowID)
-			}
+			assert.Equal(t, workflowID, tt.want.workflowID)
 		})
 	}
 }
@@ -145,16 +144,11 @@ func TestUpdateWorkflow(t *testing.T) {
 	// Create a new service
 	s := workflows.New(validator.New(), repo)
 
-	type want struct {
-		workflowID string
-	}
-
 	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.UpdateWorkflowRequest
 		mock  func(req *workflowspb.UpdateWorkflowRequest)
-		want  want
 		isErr bool
 	}{
 		{
@@ -176,9 +170,6 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetInterval(),
 				).Return(nil)
 			},
-			want: want{
-				workflowID: "workflow_id",
-			},
 			isErr: false,
 		},
 		{
@@ -191,7 +182,6 @@ func TestUpdateWorkflow(t *testing.T) {
 				Interval: 1,
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowRequest) {},
-			want:  want{},
 			isErr: true,
 		},
 		{
@@ -204,7 +194,6 @@ func TestUpdateWorkflow(t *testing.T) {
 				Interval: 1,
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowRequest) {},
-			want:  want{},
 			isErr: true,
 		},
 		{
@@ -226,29 +215,6 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetInterval(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
-			want:  want{},
-			isErr: true,
-		},
-		{
-			name: "error: workflow not owned by user",
-			req: &workflowspb.UpdateWorkflowRequest{
-				Id:       "workflow_id",
-				UserId:   "invalid_user_id",
-				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-				Interval: 1,
-			},
-			mock: func(req *workflowspb.UpdateWorkflowRequest) {
-				repo.EXPECT().UpdateWorkflow(
-					gomock.Any(),
-					req.GetId(),
-					req.GetUserId(),
-					req.GetName(),
-					req.GetPayload(),
-					req.GetInterval(),
-				).Return(status.Error(codes.NotFound, "workflow not found or not owned by user"))
-			},
-			want:  want{},
 			isErr: true,
 		},
 		{
@@ -270,7 +236,6 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetInterval(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
-			want:  want{},
 			isErr: true,
 		},
 	}
@@ -420,6 +385,15 @@ func TestGetWorkflow(t *testing.T) {
 		*workflowsmodel.GetWorkflowResponse
 	}
 
+	var (
+		createdAt    = time.Now()
+		updatedAt    = time.Now()
+		terminatedAt = sql.NullTime{
+			Time:  time.Now(),
+			Valid: true,
+		}
+	)
+
 	// Test cases
 	tests := []struct {
 		name  string
@@ -446,12 +420,9 @@ func TestGetWorkflow(t *testing.T) {
 					Kind:                "HEARTBEAT",
 					WorkflowBuildStatus: "COMPLETED",
 					Interval:            1,
-					CreatedAt:           time.Now(),
-					UpdatedAt:           time.Now(),
-					TerminatedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: true,
-					},
+					CreatedAt:           createdAt,
+					UpdatedAt:           updatedAt,
+					TerminatedAt:        terminatedAt,
 				}, nil)
 			},
 			want: want{
@@ -462,12 +433,9 @@ func TestGetWorkflow(t *testing.T) {
 					Kind:                "HEARTBEAT",
 					WorkflowBuildStatus: "COMPLETED",
 					Interval:            1,
-					CreatedAt:           time.Now(),
-					UpdatedAt:           time.Now(),
-					TerminatedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: true,
-					},
+					CreatedAt:           createdAt,
+					UpdatedAt:           updatedAt,
+					TerminatedAt:        terminatedAt,
 				},
 			},
 			isErr: false,
@@ -476,7 +444,7 @@ func TestGetWorkflow(t *testing.T) {
 			name: "error: missing required fields in request",
 			req: &workflowspb.GetWorkflowRequest{
 				Id:     "",
-				UserId: "user_id",
+				UserId: "",
 			},
 			mock:  func(_ *workflowspb.GetWorkflowRequest) {},
 			want:  want{},
@@ -493,7 +461,7 @@ func TestGetWorkflow(t *testing.T) {
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
-				).Return(nil, status.Error(codes.NotFound, "workflow not found or not owned by user"))
+				).Return(nil, status.Error(codes.NotFound, "invalid user"))
 			},
 			want:  want{},
 			isErr: true,
@@ -537,7 +505,7 @@ func TestGetWorkflow(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.GetWorkflow(t.Context(), tt.req)
+			workflow, err := s.GetWorkflow(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -549,6 +517,8 @@ func TestGetWorkflow(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
+
+			assert.Equal(t, workflow, tt.want.GetWorkflowResponse)
 		})
 	}
 }
@@ -565,6 +535,15 @@ func TestGetWorkflowByID(t *testing.T) {
 	type want struct {
 		*workflowsmodel.GetWorkflowByIDResponse
 	}
+
+	var (
+		createdAt    = time.Now()
+		updatedAt    = time.Now()
+		terminatedAt = sql.NullTime{
+			Time:  time.Now(),
+			Valid: true,
+		}
+	)
 
 	// Test cases
 	tests := []struct {
@@ -590,12 +569,9 @@ func TestGetWorkflowByID(t *testing.T) {
 					Kind:                "HEARTBEAT",
 					WorkflowBuildStatus: "COMPLETED",
 					Interval:            1,
-					CreatedAt:           time.Now(),
-					UpdatedAt:           time.Now(),
-					TerminatedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: true,
-					},
+					CreatedAt:           createdAt,
+					UpdatedAt:           updatedAt,
+					TerminatedAt:        terminatedAt,
 				}, nil)
 			},
 			want: want{
@@ -606,12 +582,9 @@ func TestGetWorkflowByID(t *testing.T) {
 					Kind:                "HEARTBEAT",
 					WorkflowBuildStatus: "COMPLETED",
 					Interval:            1,
-					CreatedAt:           time.Now(),
-					UpdatedAt:           time.Now(),
-					TerminatedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: true,
-					},
+					CreatedAt:           createdAt,
+					UpdatedAt:           updatedAt,
+					TerminatedAt:        terminatedAt,
 				},
 			},
 			isErr: false,
@@ -660,7 +633,7 @@ func TestGetWorkflowByID(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.GetWorkflowByID(t.Context(), tt.req)
+			workflow, err := s.GetWorkflowByID(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -672,6 +645,8 @@ func TestGetWorkflowByID(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
+
+			assert.Equal(t, tt.want.GetWorkflowByIDResponse, workflow)
 		})
 	}
 }
@@ -791,6 +766,15 @@ func TestListWorkflows(t *testing.T) {
 		*workflowsmodel.ListWorkflowsResponse
 	}
 
+	var (
+		createdAt    = time.Now()
+		updatedAt    = time.Now()
+		terminatedAt = sql.NullTime{
+			Time:  time.Now(),
+			Valid: true,
+		}
+	)
+
 	// Test cases
 	tests := []struct {
 		name  string
@@ -819,12 +803,9 @@ func TestListWorkflows(t *testing.T) {
 							Kind:                "HEARTBEAT",
 							WorkflowBuildStatus: "COMPLETED",
 							Interval:            1,
-							CreatedAt:           time.Now(),
-							UpdatedAt:           time.Now(),
-							TerminatedAt: sql.NullTime{
-								Time:  time.Now(),
-								Valid: true,
-							},
+							CreatedAt:           createdAt,
+							UpdatedAt:           updatedAt,
+							TerminatedAt:        terminatedAt,
 						},
 					},
 					Cursor: "",
@@ -840,12 +821,9 @@ func TestListWorkflows(t *testing.T) {
 							Kind:                "HEARTBEAT",
 							WorkflowBuildStatus: "COMPLETED",
 							Interval:            1,
-							CreatedAt:           time.Now(),
-							UpdatedAt:           time.Now(),
-							TerminatedAt: sql.NullTime{
-								Time:  time.Now(),
-								Valid: true,
-							},
+							CreatedAt:           createdAt,
+							UpdatedAt:           updatedAt,
+							TerminatedAt:        terminatedAt,
 						},
 					},
 					Cursor: "",
@@ -902,7 +880,7 @@ func TestListWorkflows(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.ListWorkflows(t.Context(), tt.req)
+			workflows, err := s.ListWorkflows(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -914,6 +892,11 @@ func TestListWorkflows(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
+
+			assert.Equal(t, len(workflows.Workflows), len(tt.want.ListWorkflowsResponse.Workflows))
+
+			assert.Equal(t, workflows.Workflows, tt.want.ListWorkflowsResponse.Workflows)
+			assert.Equal(t, workflows.Cursor, tt.want.ListWorkflowsResponse.Cursor)
 		})
 	}
 }

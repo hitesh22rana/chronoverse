@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -153,9 +154,7 @@ func TestScheduleJob(t *testing.T) {
 				return
 			}
 
-			if jobID != tt.want.jobID {
-				t.Errorf("expected orkflowID: %s, got: %s", tt.want.jobID, jobID)
-			}
+			assert.Equal(t, jobID, tt.want.jobID)
 		})
 	}
 }
@@ -284,6 +283,20 @@ func TestGetJob(t *testing.T) {
 		*jobsmodel.GetJobResponse
 	}
 
+	var (
+		createdAt   = time.Now()
+		updatedAt   = time.Now()
+		scheduledAt = time.Now().Add(time.Minute)
+		startedAt   = sql.NullTime{
+			Time:  time.Now(),
+			Valid: false,
+		}
+		completedAt = sql.NullTime{
+			Time:  time.Now(),
+			Valid: false,
+		}
+	)
+
 	// Test cases
 	tests := []struct {
 		name  string
@@ -309,17 +322,11 @@ func TestGetJob(t *testing.T) {
 					ID:          "job_id",
 					WorkflowID:  "workflow_id",
 					JobStatus:   "PENDING",
-					ScheduledAt: time.Now().Add(time.Minute),
-					StartedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CompletedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					ScheduledAt: scheduledAt,
+					StartedAt:   startedAt,
+					CompletedAt: completedAt,
+					CreatedAt:   createdAt,
+					UpdatedAt:   updatedAt,
 				}, nil)
 			},
 			want: want{
@@ -327,17 +334,11 @@ func TestGetJob(t *testing.T) {
 					ID:          "job_id",
 					WorkflowID:  "workflow_id",
 					JobStatus:   "PENDING",
-					ScheduledAt: time.Now().Add(time.Minute),
-					StartedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CompletedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					ScheduledAt: scheduledAt,
+					StartedAt:   startedAt,
+					CompletedAt: completedAt,
+					CreatedAt:   createdAt,
+					UpdatedAt:   updatedAt,
 				},
 			},
 			isErr: false,
@@ -432,7 +433,7 @@ func TestGetJob(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.GetJob(t.Context(), tt.req)
+			job, err := s.GetJob(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -444,6 +445,8 @@ func TestGetJob(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
+
+			assert.Equal(t, job, tt.want.GetJobResponse)
 		})
 	}
 }
@@ -460,6 +463,20 @@ func TestGetJobByID(t *testing.T) {
 	type want struct {
 		*jobsmodel.GetJobByIDResponse
 	}
+
+	var (
+		createdAt   = time.Now()
+		updatedAt   = time.Now()
+		scheduledAt = time.Now().Add(time.Minute)
+		startedAt   = sql.NullTime{
+			Time:  time.Now(),
+			Valid: false,
+		}
+		completedAt = sql.NullTime{
+			Time:  time.Now(),
+			Valid: false,
+		}
+	)
 
 	// Test cases
 	tests := []struct {
@@ -482,17 +499,11 @@ func TestGetJobByID(t *testing.T) {
 					WorkflowID:  "workflow_id",
 					UserID:      "user1",
 					JobStatus:   "PENDING",
-					ScheduledAt: time.Now().Add(time.Minute),
-					StartedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CompletedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					ScheduledAt: scheduledAt,
+					StartedAt:   startedAt,
+					CompletedAt: completedAt,
+					CreatedAt:   createdAt,
+					UpdatedAt:   updatedAt,
 				}, nil)
 			},
 			want: want{
@@ -500,17 +511,11 @@ func TestGetJobByID(t *testing.T) {
 					WorkflowID:  "workflow_id",
 					UserID:      "user1",
 					JobStatus:   "PENDING",
-					ScheduledAt: time.Now().Add(time.Minute),
-					StartedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CompletedAt: sql.NullTime{
-						Time:  time.Now(),
-						Valid: false,
-					},
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					ScheduledAt: scheduledAt,
+					StartedAt:   startedAt,
+					CompletedAt: completedAt,
+					CreatedAt:   createdAt,
+					UpdatedAt:   updatedAt,
 				},
 			},
 			isErr: false,
@@ -559,7 +564,7 @@ func TestGetJobByID(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.GetJobByID(t.Context(), tt.req)
+			job, err := s.GetJobByID(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -571,6 +576,8 @@ func TestGetJobByID(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
+
+			assert.Equal(t, job, tt.want.GetJobByIDResponse)
 		})
 	}
 }
@@ -587,6 +594,8 @@ func TestGetJobLogs(t *testing.T) {
 	type want struct {
 		*jobsmodel.GetJobLogsResponse
 	}
+
+	timestamp := time.Now()
 
 	// Test cases
 	tests := []struct {
@@ -616,12 +625,12 @@ func TestGetJobLogs(t *testing.T) {
 					WorkflowID: "workflow_id",
 					JobLogs: []*jobsmodel.JobLog{
 						{
-							Timestamp:   time.Now(),
+							Timestamp:   timestamp,
 							Message:     "log 1",
 							SequenceNum: 1,
 						},
 						{
-							Timestamp:   time.Now(),
+							Timestamp:   timestamp,
 							Message:     "log 2",
 							SequenceNum: 2,
 						},
@@ -634,12 +643,12 @@ func TestGetJobLogs(t *testing.T) {
 					WorkflowID: "workflow_id",
 					JobLogs: []*jobsmodel.JobLog{
 						{
-							Timestamp:   time.Now(),
+							Timestamp:   timestamp,
 							Message:     "log 1",
 							SequenceNum: 1,
 						},
 						{
-							Timestamp:   time.Now(),
+							Timestamp:   timestamp,
 							Message:     "log 2",
 							SequenceNum: 2,
 						},
@@ -707,7 +716,7 @@ func TestGetJobLogs(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.GetJobLogs(t.Context(), tt.req)
+			jobLogs, err := s.GetJobLogs(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -719,6 +728,8 @@ func TestGetJobLogs(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
+
+			assert.Equal(t, jobLogs, tt.want.GetJobLogsResponse)
 		})
 	}
 }
@@ -735,6 +746,20 @@ func TestListJobs(t *testing.T) {
 	type want struct {
 		*jobsmodel.ListJobsResponse
 	}
+
+	var (
+		createdAt   = time.Now()
+		updatedAt   = time.Now()
+		scheduledAt = time.Now().Add(time.Minute)
+		startedAt   = sql.NullTime{
+			Time:  time.Now(),
+			Valid: false,
+		}
+		completedAt = sql.NullTime{
+			Time:  time.Now(),
+			Valid: false,
+		}
+	)
 
 	// Test cases
 	tests := []struct {
@@ -763,17 +788,11 @@ func TestListJobs(t *testing.T) {
 							ID:          "job_id",
 							WorkflowID:  "workflow_id",
 							JobStatus:   "PENDING",
-							ScheduledAt: time.Now().Add(time.Minute),
-							StartedAt: sql.NullTime{
-								Time:  time.Now(),
-								Valid: false,
-							},
-							CompletedAt: sql.NullTime{
-								Time:  time.Now(),
-								Valid: false,
-							},
-							CreatedAt: time.Now(),
-							UpdatedAt: time.Now(),
+							ScheduledAt: scheduledAt,
+							StartedAt:   startedAt,
+							CompletedAt: completedAt,
+							CreatedAt:   createdAt,
+							UpdatedAt:   updatedAt,
 						},
 					},
 					Cursor: "",
@@ -786,17 +805,11 @@ func TestListJobs(t *testing.T) {
 							ID:          "job_id",
 							WorkflowID:  "workflow_id",
 							JobStatus:   "PENDING",
-							ScheduledAt: time.Now().Add(time.Minute),
-							StartedAt: sql.NullTime{
-								Time:  time.Now(),
-								Valid: false,
-							},
-							CompletedAt: sql.NullTime{
-								Time:  time.Now(),
-								Valid: false,
-							},
-							CreatedAt: time.Now(),
-							UpdatedAt: time.Now(),
+							ScheduledAt: scheduledAt,
+							StartedAt:   startedAt,
+							CompletedAt: completedAt,
+							CreatedAt:   createdAt,
+							UpdatedAt:   updatedAt,
 						},
 					},
 					Cursor: "",
@@ -858,7 +871,7 @@ func TestListJobs(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := s.ListJobs(t.Context(), tt.req)
+			jobs, err := s.ListJobs(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -870,6 +883,10 @@ func TestListJobs(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
+
+			assert.Equal(t, len(jobs.Jobs), len(tt.want.ListJobsResponse.Jobs))
+			assert.Equal(t, jobs.Jobs, tt.want.ListJobsResponse.Jobs)
+			assert.Equal(t, jobs.Cursor, tt.want.ListJobsResponse.Cursor)
 		})
 	}
 }

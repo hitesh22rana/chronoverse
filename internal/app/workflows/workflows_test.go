@@ -334,7 +334,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
+								t.Context(), "server-test",
 							),
 							auth.RoleUser,
 						),

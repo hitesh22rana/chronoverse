@@ -136,7 +136,7 @@ func (r *Repository) UpdateWorkflow(ctx context.Context, workflowID, userID, nam
 	}
 
 	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "workflow not found or not owned by user")
+		err = status.Errorf(codes.NotFound, "workflow not found")
 		return err
 	}
 
@@ -187,7 +187,7 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 	}
 
 	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "workflow was not found")
+		err = status.Errorf(codes.NotFound, "workflow not found")
 		return err
 	}
 
@@ -357,7 +357,8 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string) (
 		cursor = fmt.Sprintf(
 			"%s%c%s",
 			data[r.cfg.FetchLimit].ID,
-			delimiter, data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
+			delimiter,
+			data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
 		)
 		data = data[:r.cfg.FetchLimit]
 	}
@@ -369,6 +370,9 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string) (
 }
 
 func encodeCursor(cursor string) string {
+	if cursor == "" {
+		return ""
+	}
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 

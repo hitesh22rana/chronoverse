@@ -40,6 +40,10 @@ build/workflows-service: dependencies
 build/jobs-service: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=jobs-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/jobs-service ./cmd/jobs-service
 
+.PHONY: build/notifications-service
+build/notifications-service: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=notifications-service' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/notifications-service ./cmd/notifications-service
+
 .PHONY: build/scheduling-worker
 build/scheduling-worker: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=scheduling-worker'" -o ./.bin/scheduling-worker ./cmd/scheduling-worker
@@ -71,6 +75,10 @@ run/workflows-service: build/workflows-service
 .PHONY: run/jobs-service
 run/jobs-service: build/jobs-service
 	@./.bin/jobs-service
+
+.PHONY: run/notifications-service
+run/notifications-service: build/notifications-service
+	@./.bin/notifications-service
 
 .PHONY: run/scheduling-worker
 run/scheduling-worker: build/scheduling-worker

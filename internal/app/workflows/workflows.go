@@ -26,6 +26,13 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+// internalAPIs contains the list of internal APIs that require admin role.
+// These APIs are not exposed to the public and should only be used internally.
+var internalAPIs = map[string]bool{
+	"UpdateWorkflowBuildStatus": true,
+	"GetWorkflowByID":           true,
+}
+
 // Service provides workflow related operations.
 type Service interface {
 	CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (string, error)
@@ -103,18 +110,12 @@ func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
 
 // isInternalAPI checks if the full method is an internal API.
 func isInternalAPI(fullMethod string) bool {
-	internalAPIs := []string{
-		"UpdateWorkflowBuildStatus",
-		"GetWorkflowByID",
+	parts := strings.Split(fullMethod, "/")
+	if len(parts) < 3 {
+		return false
 	}
 
-	for _, api := range internalAPIs {
-		if strings.Contains(fullMethod, api) {
-			return true
-		}
-	}
-
-	return false
+	return internalAPIs[parts[2]]
 }
 
 // New creates a new workflows server.

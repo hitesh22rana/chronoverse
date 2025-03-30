@@ -96,3 +96,11 @@ type JobsService struct {
 	Secure   bool   `envconfig:"JOBS_SERVICE_SECURE" default:"false"`
 	CertFile string `envconfig:"JOBS_SERVICE_CERT_FILE" default:""`
 }
+
+// NotificationsService holds the configuration for the notifications service.
+type NotificationsService struct {
+	Host     string `envconfig:"NOTIFICATIONS_SERVICE_HOST" required:"true"`
+	Port     int    `envconfig:"NOTIFICATIONS_SERVICE_PORT" required:"true"`
+	Secure   bool   `envconfig:"NOTIFICATIONS_SERVICE_SECURE" default:"false"`
+	CertFile string `envconfig:"NOTIFICATIONS_SERVICE_CERT_FILE" default:""`
+}

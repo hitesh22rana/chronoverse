@@ -72,30 +72,16 @@ func (mr *MockServiceMockRecorder) ListNotifications(ctx, req any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNotifications", reflect.TypeOf((*MockService)(nil).ListNotifications), ctx, req)
 }
 
-// MarkAllAsRead mocks base method.
-func (m *MockService) MarkAllAsRead(ctx context.Context, req *notifications0.MarkAllAsReadRequest) error {
+// MarkNotificationsRead mocks base method.
+func (m *MockService) MarkNotificationsRead(ctx context.Context, req *notifications0.MarkNotificationsReadRequest) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkAllAsRead", ctx, req)
+	ret := m.ctrl.Call(m, "MarkNotificationsRead", ctx, req)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// MarkAllAsRead indicates an expected call of MarkAllAsRead.
-func (mr *MockServiceMockRecorder) MarkAllAsRead(ctx, req any) *gomock.Call {
+// MarkNotificationsRead indicates an expected call of MarkNotificationsRead.
+func (mr *MockServiceMockRecorder) MarkNotificationsRead(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkAllAsRead", reflect.TypeOf((*MockService)(nil).MarkAllAsRead), ctx, req)
-}
-
-// MarkAsRead mocks base method.
-func (m *MockService) MarkAsRead(ctx context.Context, req *notifications0.MarkAsReadRequest) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkAsRead", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// MarkAsRead indicates an expected call of MarkAsRead.
-func (mr *MockServiceMockRecorder) MarkAsRead(ctx, req any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkAsRead", reflect.TypeOf((*MockService)(nil).MarkAsRead), ctx, req)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkNotificationsRead", reflect.TypeOf((*MockService)(nil).MarkNotificationsRead), ctx, req)
 }

@@ -35,8 +35,7 @@ var internalAPIs = map[string]bool{
 // Service provides notification related operations.
 type Service interface {
 	CreateNotification(ctx context.Context, req *notificationspb.CreateNotificationRequest) (string, error)
-	MarkAsRead(ctx context.Context, req *notificationspb.MarkAsReadRequest) error
-	MarkAllAsRead(ctx context.Context, req *notificationspb.MarkAllAsReadRequest) error
+	MarkNotificationsRead(ctx context.Context, req *notificationspb.MarkNotificationsReadRequest) error
 	ListNotifications(ctx context.Context, req *notificationspb.ListNotificationsRequest) (*notificationsmodel.ListNotificationsResponse, error)
 }
 
@@ -182,49 +181,14 @@ func (n *Notifications) CreateNotification(
 	return &notificationspb.CreateNotificationResponse{Id: notificationID}, nil
 }
 
-// MarkAsRead marks a notification as read.
-func (n *Notifications) MarkAsRead(ctx context.Context, req *notificationspb.MarkAsReadRequest) (res *notificationspb.MarkAsReadResponse, err error) {
+// MarkNotificationsRead marks all notifications as read.
+func (n *Notifications) MarkNotificationsRead(
+	ctx context.Context,
+	req *notificationspb.MarkNotificationsReadRequest,
+) (res *notificationspb.MarkNotificationsReadResponse, err error) {
 	ctx, span := n.tp.Start(
 		ctx,
-		"App.MarkAsRead",
-		trace.WithAttributes(
-			attribute.String("id", req.GetId()),
-			attribute.String("user_id", req.GetUserId()),
-		),
-	)
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
-	ctx, cancel := context.WithTimeout(ctx, n.cfg.Deadline)
-	defer cancel()
-
-	err = n.svc.MarkAsRead(ctx, req)
-	if err != nil {
-		n.logger.Error(
-			"failed to mark notification as read",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
-		return nil, err
-	}
-
-	n.logger.Info(
-		"notification marked as read successfully",
-		zap.Any("ctx", ctx),
-	)
-	return &notificationspb.MarkAsReadResponse{}, nil
-}
-
-// MarkAllAsRead marks all notifications as read.
-func (n *Notifications) MarkAllAsRead(ctx context.Context, req *notificationspb.MarkAllAsReadRequest) (res *notificationspb.MarkAllAsReadResponse, err error) {
-	ctx, span := n.tp.Start(
-		ctx,
-		"App.MarkAllAsRead",
+		"App.MarkNotificationsRead",
 		trace.WithAttributes(
 			attribute.StringSlice("ids", req.GetIds()),
 			attribute.String("user_id", req.GetUserId()),
@@ -241,7 +205,7 @@ func (n *Notifications) MarkAllAsRead(ctx context.Context, req *notificationspb.
 	ctx, cancel := context.WithTimeout(ctx, n.cfg.Deadline)
 	defer cancel()
 
-	err = n.svc.MarkAllAsRead(ctx, req)
+	err = n.svc.MarkNotificationsRead(ctx, req)
 	if err != nil {
 		n.logger.Error(
 			"failed to mark all notifications as read",
@@ -251,7 +215,7 @@ func (n *Notifications) MarkAllAsRead(ctx context.Context, req *notificationspb.
 		return nil, err
 	}
 
-	return &notificationspb.MarkAllAsReadResponse{}, nil
+	return &notificationspb.MarkNotificationsReadResponse{}, nil
 }
 
 // ListNotifications returns a list of notifications.

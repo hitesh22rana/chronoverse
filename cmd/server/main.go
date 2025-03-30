@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
@@ -46,6 +47,7 @@ func main() {
 	os.Exit(run())
 }
 
+//nolint:gocyclo // This function is necessary to run the service.
 func run() int {
 	// Global context to cancel the execution
 	ctx, cancel := context.WithCancel(context.Background())
@@ -142,6 +144,28 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
+	// Load the notifications service credentials
+	if cfg.NotificationsService.Secure {
+		creds, err = loadTLSCredentials(cfg.NotificationsService.CertFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
+			return ExitError
+		}
+	} else {
+		creds = insecure.NewCredentials()
+	}
+
+	// Connect to the notifications service
+	notificationsConn, err := grpc.NewClient(
+		fmt.Sprintf("%s:%d", cfg.NotificationsService.Host, cfg.NotificationsService.Port),
+		grpc.WithTransportCredentials(creds),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to notifications gRPC server: %v\n", err)
+		return ExitError
+	}
+	defer notificationsConn.Close()
+
 	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
@@ -165,6 +189,7 @@ func run() int {
 	usersServiceClient := userpb.NewUsersServiceClient(usersConn)
 	workflowsServiceClient := workflowspb.NewWorkflowsServiceClient(workflowsConn)
 	jobsServiceClient := jobspb.NewJobsServiceClient(jobsConn)
+	notificationsServiceClient := notificationspb.NewNotificationsServiceClient(notificationsConn)
 	srv := server.New(&server.Config{
 		Host:              cfg.Server.Host,
 		Port:              cfg.Server.Port,
@@ -179,7 +204,7 @@ func run() int {
 			RequestBodyLimit: cfg.Server.RequestBodyLimit,
 			CSRFHMACSecret:   cfg.Server.CSRFHMACSecret,
 		},
-	}, auth, crypto, rdb, usersServiceClient, workflowsServiceClient, jobsServiceClient)
+	}, auth, crypto, rdb, usersServiceClient, workflowsServiceClient, jobsServiceClient, notificationsServiceClient)
 
 	fmt.Fprintln(os.Stdout, "Starting HTTP server on port 8080",
 		fmt.Sprintf("name: %s, version: %s",

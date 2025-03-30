@@ -283,7 +283,7 @@ func TestCreateNotification(t *testing.T) {
 	}
 }
 
-func TestMarkAsRead(t *testing.T) {
+func TestMarkNotificationsRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := notificationsmock.NewMockService(ctrl)
@@ -296,14 +296,14 @@ func TestMarkAsRead(t *testing.T) {
 
 	type args struct {
 		getCtx func() context.Context
-		req    *notificationspb.MarkAsReadRequest
+		req    *notificationspb.MarkNotificationsReadRequest
 	}
 
 	tests := []struct {
 		name  string
 		args  args
-		mock  func(*notificationspb.MarkAsReadRequest)
-		res   *notificationspb.MarkAsReadResponse
+		mock  func(*notificationspb.MarkNotificationsReadRequest)
+		res   *notificationspb.MarkNotificationsReadResponse
 		isErr bool
 	}{
 		{
@@ -320,19 +320,19 @@ func TestMarkAsRead(t *testing.T) {
 						"token",
 					)
 				},
-				req: &notificationspb.MarkAsReadRequest{
-					Id:     "notification-id",
+				req: &notificationspb.MarkNotificationsReadRequest{
+					Ids:    []string{"notification-id-1", "notification-id-2"},
 					UserId: "user-id",
 				},
 			},
-			mock: func(_ *notificationspb.MarkAsReadRequest) {
+			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().MarkAsRead(
+				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil)
 			},
-			res:   &notificationspb.MarkAsReadResponse{},
+			res:   &notificationspb.MarkNotificationsReadResponse{},
 			isErr: false,
 		},
 		{
@@ -349,12 +349,12 @@ func TestMarkAsRead(t *testing.T) {
 						"invalid-token",
 					)
 				},
-				req: &notificationspb.MarkAsReadRequest{
-					Id:     "notification-id",
+				req: &notificationspb.MarkNotificationsReadRequest{
+					Ids:    []string{"notification-id-1", "notification-id-2"},
 					UserId: "user-id",
 				},
 			},
-			mock: func(_ *notificationspb.MarkAsReadRequest) {
+			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
@@ -374,189 +374,14 @@ func TestMarkAsRead(t *testing.T) {
 						"token",
 					)
 				},
-				req: &notificationspb.MarkAsReadRequest{
-					Id:     "",
-					UserId: "",
-				},
-			},
-			mock: func(_ *notificationspb.MarkAsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().MarkAsRead(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(status.Error(codes.InvalidArgument, "id and user_id are required fields"))
-			},
-			res:   nil,
-			isErr: true,
-		},
-		{
-			name: "error: missing required headers in metadata",
-			args: args{
-				getCtx: func() context.Context {
-					return metadata.AppendToOutgoingContext(
-						t.Context(),
-					)
-				},
-				req: &notificationspb.MarkAsReadRequest{
-					Id:     "notification-id",
-					UserId: "user-id",
-				},
-			},
-			mock:  func(_ *notificationspb.MarkAsReadRequest) {},
-			res:   nil,
-			isErr: true,
-		},
-		{
-			name: "error: internal server error",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
-						"token",
-					)
-				},
-				req: &notificationspb.MarkAsReadRequest{
-					Id:     "notification-id",
-					UserId: "user-id",
-				},
-			},
-			mock: func(_ *notificationspb.MarkAsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().MarkAsRead(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(status.Error(codes.Internal, "internal server error"))
-			},
-			res:   nil,
-			isErr: true,
-		},
-	}
-
-	defer ctrl.Finish()
-
-	for _, tt := range tests {
-		tt.mock(tt.args.req)
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.MarkAsRead(tt.args.getCtx(), tt.args.req)
-			if (err != nil) != tt.isErr {
-				t.Errorf("MarkAsRead() error = %v, wantErr %v", err, tt.isErr)
-				return
-			}
-
-			if tt.isErr {
-				if err == nil {
-					t.Error("MarkAsRead() error = nil, want error")
-				}
-				return
-			}
-		})
-	}
-}
-
-func TestMarkAllAsRead(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	svc := notificationsmock.NewMockService(ctrl)
-	_auth := authmock.NewMockIAuth(ctrl)
-
-	client, _close := initClient(notifications.New(t.Context(), &notifications.Config{
-		Deadline: 500 * time.Millisecond,
-	}, _auth, svc))
-	defer _close()
-
-	type args struct {
-		getCtx func() context.Context
-		req    *notificationspb.MarkAllAsReadRequest
-	}
-
-	tests := []struct {
-		name  string
-		args  args
-		mock  func(*notificationspb.MarkAllAsReadRequest)
-		res   *notificationspb.MarkAllAsReadResponse
-		isErr bool
-	}{
-		{
-			name: "success",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
-						"token",
-					)
-				},
-				req: &notificationspb.MarkAllAsReadRequest{
-					Ids:    []string{"notification-id-1", "notification-id-2"},
-					UserId: "user-id",
-				},
-			},
-			mock: func(_ *notificationspb.MarkAllAsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().MarkAllAsRead(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil)
-			},
-			res:   &notificationspb.MarkAllAsReadResponse{},
-			isErr: false,
-		},
-		{
-			name: "error: invalid token",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
-						"invalid-token",
-					)
-				},
-				req: &notificationspb.MarkAllAsReadRequest{
-					Ids:    []string{"notification-id-1", "notification-id-2"},
-					UserId: "user-id",
-				},
-			},
-			mock: func(_ *notificationspb.MarkAllAsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
-			},
-			res:   nil,
-			isErr: true,
-		},
-		{
-			name: "error: missing required fields in request",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
-						"token",
-					)
-				},
-				req: &notificationspb.MarkAllAsReadRequest{
+				req: &notificationspb.MarkNotificationsReadRequest{
 					Ids:    []string{},
 					UserId: "",
 				},
 			},
-			mock: func(_ *notificationspb.MarkAllAsReadRequest) {
+			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().MarkAllAsRead(
+				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(status.Error(codes.InvalidArgument, "user_id and ids are required fields"))
@@ -572,12 +397,12 @@ func TestMarkAllAsRead(t *testing.T) {
 						t.Context(),
 					)
 				},
-				req: &notificationspb.MarkAllAsReadRequest{
+				req: &notificationspb.MarkNotificationsReadRequest{
 					Ids:    []string{"notification-id-1", "notification-id-2"},
 					UserId: "user-id",
 				},
 			},
-			mock:  func(_ *notificationspb.MarkAllAsReadRequest) {},
+			mock:  func(_ *notificationspb.MarkNotificationsReadRequest) {},
 			res:   nil,
 			isErr: true,
 		},
@@ -595,14 +420,14 @@ func TestMarkAllAsRead(t *testing.T) {
 						"token",
 					)
 				},
-				req: &notificationspb.MarkAllAsReadRequest{
+				req: &notificationspb.MarkNotificationsReadRequest{
 					Ids:    []string{"notification-id-1", "notification-id-2"},
 					UserId: "user-id",
 				},
 			},
-			mock: func(_ *notificationspb.MarkAllAsReadRequest) {
+			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().MarkAllAsRead(
+				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(status.Error(codes.Internal, "internal server error"))
@@ -617,15 +442,15 @@ func TestMarkAllAsRead(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.MarkAllAsRead(tt.args.getCtx(), tt.args.req)
+			_, err := client.MarkNotificationsRead(tt.args.getCtx(), tt.args.req)
 			if (err != nil) != tt.isErr {
-				t.Errorf("MarkAllAsRead() error = %v, wantErr %v", err, tt.isErr)
+				t.Errorf("MarkNotificationsRead() error = %v, wantErr %v", err, tt.isErr)
 				return
 			}
 
 			if tt.isErr {
 				if err == nil {
-					t.Error("MarkAllAsRead() error = nil, want error")
+					t.Error("MarkNotificationsRead() error = nil, want error")
 				}
 				return
 			}

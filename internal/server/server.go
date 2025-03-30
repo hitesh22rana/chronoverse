@@ -10,6 +10,7 @@ import (
 	"time"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 	workflowpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
@@ -20,14 +21,15 @@ import (
 
 // Server implements the HTTP server.
 type Server struct {
-	auth            auth.IAuth
-	crypto          *crypto.Crypto
-	rdb             *redis.Store
-	usersClient     userpb.UsersServiceClient
-	workflowsClient workflowpb.WorkflowsServiceClient
-	jobsClient      jobspb.JobsServiceClient
-	httpServer      *http.Server
-	validationCfg   *ValidationConfig
+	auth                auth.IAuth
+	crypto              *crypto.Crypto
+	rdb                 *redis.Store
+	usersClient         userpb.UsersServiceClient
+	workflowsClient     workflowpb.WorkflowsServiceClient
+	jobsClient          jobspb.JobsServiceClient
+	notificationsClient notificationspb.NotificationsServiceClient
+	httpServer          *http.Server
+	validationCfg       *ValidationConfig
 }
 
 // ValidationConfig represents the configuration of the validation.
@@ -59,14 +61,16 @@ func New(
 	usersClient userpb.UsersServiceClient,
 	workflowsClient workflowpb.WorkflowsServiceClient,
 	jobsClient jobspb.JobsServiceClient,
+	notificationsClient notificationspb.NotificationsServiceClient,
 ) *Server {
 	srv := &Server{
-		auth:            auth,
-		crypto:          crypto,
-		rdb:             rdb,
-		usersClient:     usersClient,
-		workflowsClient: workflowsClient,
-		jobsClient:      jobsClient,
+		auth:                auth,
+		crypto:              crypto,
+		rdb:                 rdb,
+		usersClient:         usersClient,
+		workflowsClient:     workflowsClient,
+		jobsClient:          jobsClient,
+		notificationsClient: notificationsClient,
 		httpServer: &http.Server{
 			Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 			ReadTimeout:       cfg.ReadTimeout,
@@ -241,6 +245,34 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
 						s.handleGetJobLogs,
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
+		"/notifications",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleListNotifications,
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
+		"/notifications/read",
+		s.withAllowedMethodMiddleware(
+			http.MethodPut,
+			s.withVerifyCSRFMiddleware(
+				s.withVerifySessionMiddleware(
+					withAttachBasicMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.handleMarkNotificationsRead,
+						),
 					),
 				),
 			),

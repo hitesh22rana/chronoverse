@@ -16,23 +16,14 @@ message CreateNotificationResponse {
     string id = 1; // ID of the notification
 }
 
-// MarkAsReadRequest contains the details needed to mark a notification as read.
-message MarkAsReadRequest {
-    string id      = 1; // ID of the notification
-    string user_id = 2; // ID of the user
-}
-
-// MarkAsReadResponse contains the result of a notification read attempt.
-message MarkAsReadResponse {}
-
-// MarkAllAsReadRequest contains the details needed to mark all notifications as read.
-message MarkAllAsReadRequest {
+// MarkNotificationsReadRequest contains the details needed to mark notifications as read.
+message MarkNotificationsReadRequest {
     repeated string ids    = 1; // IDs of the notifications
-    string        user_id  = 2; // ID of the user
+    string user_id         = 2; // ID of the user
 }
 
-// MarkAllAsReadResponse contains the result of a notification read attempt.
-message MarkAllAsReadResponse {}
+// MarkNotificationsReadResponse contains the result of a notification read attempt.
+message MarkNotificationsReadResponse {}
 
 // ListNotificationsRequest contains the details needed to list notifications.
 message ListNotificationsRequest {
@@ -63,11 +54,8 @@ service NotificationsService {
     // This is an internal API and should not be exposed to the public.
     rpc CreateNotification(CreateNotificationRequest) returns (CreateNotificationResponse) {}
 
-    // MarkAsRead marks a notification as read.
-    rpc MarkAsRead(MarkAsReadRequest) returns (MarkAsReadResponse) {}
-
-    // MarkAllAsRead marks all notifications as read.
-    rpc MarkAllAsRead(MarkAllAsReadRequest) returns (MarkAllAsReadResponse) {}
+    // MarkNotificationsRead marks a list of notifications as read.
+    rpc MarkNotificationsRead(MarkNotificationsReadRequest) returns (MarkNotificationsReadResponse) {}
 
     // ListNotifications returns a list of notifications.
     rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse) {}

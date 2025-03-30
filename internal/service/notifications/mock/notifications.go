@@ -71,30 +71,16 @@ func (mr *MockRepositoryMockRecorder) ListNotifications(ctx, userID, kind, curso
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNotifications", reflect.TypeOf((*MockRepository)(nil).ListNotifications), ctx, userID, kind, cursor)
 }
 
-// MarkAllAsRead mocks base method.
-func (m *MockRepository) MarkAllAsRead(ctx context.Context, ids []string, userID string) error {
+// MarkNotificationsRead mocks base method.
+func (m *MockRepository) MarkNotificationsRead(ctx context.Context, notificationIDs []string, userID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkAllAsRead", ctx, ids, userID)
+	ret := m.ctrl.Call(m, "MarkNotificationsRead", ctx, notificationIDs, userID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// MarkAllAsRead indicates an expected call of MarkAllAsRead.
-func (mr *MockRepositoryMockRecorder) MarkAllAsRead(ctx, ids, userID any) *gomock.Call {
+// MarkNotificationsRead indicates an expected call of MarkNotificationsRead.
+func (mr *MockRepositoryMockRecorder) MarkNotificationsRead(ctx, notificationIDs, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkAllAsRead", reflect.TypeOf((*MockRepository)(nil).MarkAllAsRead), ctx, ids, userID)
-}
-
-// MarkAsRead mocks base method.
-func (m *MockRepository) MarkAsRead(ctx context.Context, notificationID, userID string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkAsRead", ctx, notificationID, userID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// MarkAsRead indicates an expected call of MarkAsRead.
-func (mr *MockRepositoryMockRecorder) MarkAsRead(ctx, notificationID, userID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkAsRead", reflect.TypeOf((*MockRepository)(nil).MarkAsRead), ctx, notificationID, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkNotificationsRead", reflect.TypeOf((*MockRepository)(nil).MarkNotificationsRead), ctx, notificationIDs, userID)
 }

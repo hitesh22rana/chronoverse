@@ -48,7 +48,6 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	//nolint:errcheck // The error is always nil
@@ -102,9 +101,7 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleGetWorkflow handles the get workflow by ID and user ID request.
@@ -139,7 +136,6 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
@@ -178,7 +174,6 @@ func (s *Server) handleTerminateWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Write the response
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -210,7 +205,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil

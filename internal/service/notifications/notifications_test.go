@@ -142,7 +142,7 @@ func TestService_CreateNotification(t *testing.T) {
 	}
 }
 
-func TestService_MarkAsRead(t *testing.T) {
+func TestService_MarkNotificationsRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	// Create a mock repository
@@ -158,123 +158,19 @@ func TestService_MarkAsRead(t *testing.T) {
 	// Test cases
 	tests := []struct {
 		name  string
-		req   *notificationspb.MarkAsReadRequest
-		mock  func(req *notificationspb.MarkAsReadRequest)
+		req   *notificationspb.MarkNotificationsReadRequest
+		mock  func(req *notificationspb.MarkNotificationsReadRequest)
 		want  want
 		isErr bool
 	}{
 		{
 			name: "success",
-			req: &notificationspb.MarkAsReadRequest{
-				Id:     "notification_id",
-				UserId: "user1",
-			},
-			mock: func(req *notificationspb.MarkAsReadRequest) {
-				repo.EXPECT().MarkAsRead(
-					gomock.Any(),
-					req.GetId(),
-					req.GetUserId(),
-				).Return(nil)
-			},
-			want: want{
-				err: nil,
-			},
-			isErr: false,
-		},
-		{
-			name: "error: missing required fields in request",
-			req: &notificationspb.MarkAsReadRequest{
-				Id:     "",
-				UserId: "",
-			},
-			mock:  func(_ *notificationspb.MarkAsReadRequest) {},
-			want:  want{},
-			isErr: true,
-		},
-		{
-			name: "error: notification not found",
-			req: &notificationspb.MarkAsReadRequest{
-				Id:     "invalid_notification_id",
-				UserId: "user1",
-			},
-			mock: func(req *notificationspb.MarkAsReadRequest) {
-				repo.EXPECT().MarkAsRead(
-					gomock.Any(),
-					req.GetId(),
-					req.GetUserId(),
-				).Return(status.Error(codes.NotFound, "notification not found"))
-			},
-			want:  want{},
-			isErr: true,
-		},
-		{
-			name: "error: internal server error",
-			req: &notificationspb.MarkAsReadRequest{
-				Id:     "notification_id",
-				UserId: "user1",
-			},
-			mock: func(req *notificationspb.MarkAsReadRequest) {
-				repo.EXPECT().MarkAsRead(
-					gomock.Any(),
-					req.GetId(),
-					req.GetUserId(),
-				).Return(status.Error(codes.Internal, "internal server error"))
-			},
-			want:  want{},
-			isErr: true,
-		},
-	}
-
-	defer ctrl.Finish()
-
-	for _, tt := range tests {
-		tt.mock(tt.req)
-		t.Run(tt.name, func(t *testing.T) {
-			err := s.MarkAsRead(t.Context(), tt.req)
-			if tt.isErr {
-				if err == nil {
-					t.Errorf("expected error, got nil")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-		})
-	}
-}
-
-func TestService_MarkAllAsRead(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	// Create a mock repository
-	repo := notificationsmock.NewMockRepository(ctrl)
-
-	// Create a new service
-	s := notifications.New(validator.New(), repo)
-
-	type want struct {
-		err error
-	}
-
-	// Test cases
-	tests := []struct {
-		name  string
-		req   *notificationspb.MarkAllAsReadRequest
-		mock  func(req *notificationspb.MarkAllAsReadRequest)
-		want  want
-		isErr bool
-	}{
-		{
-			name: "success",
-			req: &notificationspb.MarkAllAsReadRequest{
+			req: &notificationspb.MarkNotificationsReadRequest{
 				UserId: "user1",
 				Ids:    []string{"notification_id_1", "notification_id_2"},
 			},
-			mock: func(req *notificationspb.MarkAllAsReadRequest) {
-				repo.EXPECT().MarkAllAsRead(
+			mock: func(req *notificationspb.MarkNotificationsReadRequest) {
+				repo.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					req.GetIds(),
 					req.GetUserId(),
@@ -287,22 +183,22 @@ func TestService_MarkAllAsRead(t *testing.T) {
 		},
 		{
 			name: "error: missing required fields in request",
-			req: &notificationspb.MarkAllAsReadRequest{
+			req: &notificationspb.MarkNotificationsReadRequest{
 				UserId: "",
 				Ids:    nil,
 			},
-			mock:  func(_ *notificationspb.MarkAllAsReadRequest) {},
+			mock:  func(_ *notificationspb.MarkNotificationsReadRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
 			name: "error: some/all notifications not found",
-			req: &notificationspb.MarkAllAsReadRequest{
+			req: &notificationspb.MarkNotificationsReadRequest{
 				UserId: "user1",
 				Ids:    []string{"invalid_notification_id"},
 			},
-			mock: func(req *notificationspb.MarkAllAsReadRequest) {
-				repo.EXPECT().MarkAllAsRead(
+			mock: func(req *notificationspb.MarkNotificationsReadRequest) {
+				repo.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					req.GetIds(),
 					req.GetUserId(),
@@ -313,12 +209,12 @@ func TestService_MarkAllAsRead(t *testing.T) {
 		},
 		{
 			name: "error: internal server error",
-			req: &notificationspb.MarkAllAsReadRequest{
+			req: &notificationspb.MarkNotificationsReadRequest{
 				UserId: "user1",
 				Ids:    []string{"notification_id_1", "notification_id_2"},
 			},
-			mock: func(req *notificationspb.MarkAllAsReadRequest) {
-				repo.EXPECT().MarkAllAsRead(
+			mock: func(req *notificationspb.MarkNotificationsReadRequest) {
+				repo.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					req.GetIds(),
 					req.GetUserId(),
@@ -334,7 +230,7 @@ func TestService_MarkAllAsRead(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			err := s.MarkAllAsRead(t.Context(), tt.req)
+			err := s.MarkNotificationsRead(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")

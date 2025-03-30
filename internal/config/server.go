@@ -15,6 +15,7 @@ type ServerConfig struct {
 	UsersService
 	WorkflowsService
 	JobsService
+	NotificationsService
 	Server
 }
 

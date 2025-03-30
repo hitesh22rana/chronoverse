@@ -21,8 +21,7 @@ import (
 // Repository provides notification related operations.
 type Repository interface {
 	CreateNotification(ctx context.Context, userID, kind, payload string) (string, error)
-	MarkAsRead(ctx context.Context, notificationID, userID string) error
-	MarkAllAsRead(ctx context.Context, ids []string, userID string) error
+	MarkNotificationsRead(ctx context.Context, notificationIDs []string, userID string) error
 	ListNotifications(ctx context.Context, userID, kind, cursor string) (*notificationsmodel.ListNotificationsResponse, error)
 }
 
@@ -92,47 +91,15 @@ func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.C
 	return notificationID, nil
 }
 
-// MarkAsReadRequest holds the request parameters for marking a notification as read.
-type MarkAsReadRequest struct {
-	ID     string `validate:"required"`
-	UserID string `validate:"required"`
-}
-
-// MarkAsRead marks a notification as read.
-func (s *Service) MarkAsRead(ctx context.Context, req *notificationspb.MarkAsReadRequest) (err error) {
-	ctx, span := s.tp.Start(ctx, "Service.MarkAsRead")
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
-	// Validate the request
-	err = s.validator.Struct(&MarkAsReadRequest{
-		ID:     req.GetId(),
-		UserID: req.GetUserId(),
-	})
-	if err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-		return err
-	}
-
-	// Mark the notification as read
-	err = s.repo.MarkAsRead(ctx, req.GetId(), req.GetUserId())
-	return err
-}
-
-// MarkAllAsReadRequest holds the request parameters for marking all notifications as read.
-type MarkAllAsReadRequest struct {
+// MarkNotificationsRead holds the request parameters for marking all notifications as read.
+type MarkNotificationsRead struct {
 	IDs    []string `validate:"required,min=1"`
 	UserID string   `validate:"required"`
 }
 
-// MarkAllAsRead marks all notifications as read.
-func (s *Service) MarkAllAsRead(ctx context.Context, req *notificationspb.MarkAllAsReadRequest) (err error) {
-	ctx, span := s.tp.Start(ctx, "Service.MarkAllAsRead")
+// MarkNotificationsRead marks all notifications as read.
+func (s *Service) MarkNotificationsRead(ctx context.Context, req *notificationspb.MarkNotificationsReadRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.MarkNotificationsRead")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -142,7 +109,7 @@ func (s *Service) MarkAllAsRead(ctx context.Context, req *notificationspb.MarkAl
 	}()
 
 	// Validate the request
-	err = s.validator.Struct(&MarkAllAsReadRequest{
+	err = s.validator.Struct(&MarkNotificationsRead{
 		IDs:    req.GetIds(),
 		UserID: req.GetUserId(),
 	})
@@ -152,7 +119,7 @@ func (s *Service) MarkAllAsRead(ctx context.Context, req *notificationspb.MarkAl
 	}
 
 	// Mark all notifications as read
-	err = s.repo.MarkAllAsRead(ctx, req.GetIds(), req.GetUserId())
+	err = s.repo.MarkNotificationsRead(ctx, req.GetIds(), req.GetUserId())
 	return err
 }
 

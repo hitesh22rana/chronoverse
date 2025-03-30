@@ -62,7 +62,6 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 	setCookie(w, csrfCookieName, csrfToken, s.validationCfg.CSRFExpiry)
 	setCookie(w, sessionCookieName, session, s.validationCfg.SessionExpiry)
 
-	// Return only user ID in response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 }

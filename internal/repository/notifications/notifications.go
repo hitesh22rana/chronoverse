@@ -71,9 +71,9 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 	return notificationID, nil
 }
 
-// MarkAsRead marks a notification as read.
-func (r *Repository) MarkAsRead(ctx context.Context, notificationID, userID string) (err error) {
-	ctx, span := r.tp.Start(ctx, "Repository.MarkAsRead")
+// MarkNotificationsRead marks all notifications as read.
+func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, userID string) (err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.MarkNotificationsRead")
 	defer func() {
 		if err != nil {
 			span.SetStatus(otelcodes.Error, err.Error())
@@ -84,44 +84,8 @@ func (r *Repository) MarkAsRead(ctx context.Context, notificationID, userID stri
 
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET read_at = NOW()
-		WHERE id = $1 AND user_id = $2 AND read_at IS NULL
-	`, notificationsTable)
-
-	ct, err := r.pg.Exec(ctx, query, notificationID, userID)
-	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid notification ID: %v", err)
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to mark notification as read: %v", err)
-		return err
-	}
-
-	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "notification not found")
-		return err
-	}
-
-	return nil
-}
-
-// MarkAllAsRead marks all notifications as read.
-func (r *Repository) MarkAllAsRead(ctx context.Context, ids []string, userID string) (err error) {
-	ctx, span := r.tp.Start(ctx, "Repository.MarkAllAsRead")
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
-	query := fmt.Sprintf(`
-		UPDATE %s
-		SET read_at = NOW()
-		WHERE id = ANY($1) AND user_id = $2 AND read_at IS NULL
+		SET read_at = COALESCE(read_at, NOW())
+		WHERE id = ANY($1) AND user_id = $2
 	`, notificationsTable)
 
 	ct, err := r.pg.Exec(ctx, query, ids, userID)
@@ -136,7 +100,7 @@ func (r *Repository) MarkAllAsRead(ctx context.Context, ids []string, userID str
 	}
 
 	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "some/all notifications not found")
+		err = status.Errorf(codes.NotFound, "notifications not found")
 		return err
 	}
 
@@ -195,15 +159,6 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor
 		}
 
 		err = status.Errorf(codes.Internal, "failed to list all notifications: %v", err)
-		return nil, err
-	}
-
-	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
-			return nil, err
-		}
-		err = status.Errorf(codes.Internal, "failed to list notifications: %v", err)
 		return nil, err
 	}
 

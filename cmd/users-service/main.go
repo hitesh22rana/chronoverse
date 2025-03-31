@@ -149,7 +149,8 @@ func run() int {
 
 	// Initialize the users application
 	app := users.New(ctx, &users.Config{
-		Deadline: cfg.Grpc.RequestTimeout,
+		Deadline:    cfg.Grpc.RequestTimeout,
+		Environment: cfg.Environment.Env,
 	}, svc)
 
 	// Create a TCP listener

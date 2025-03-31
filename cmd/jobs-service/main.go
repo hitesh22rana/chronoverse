@@ -171,7 +171,8 @@ func run() int {
 
 	// Initialize the jobs application
 	app := jobs.New(ctx, &jobs.Config{
-		Deadline: cfg.Grpc.RequestTimeout,
+		Deadline:    cfg.Grpc.RequestTimeout,
+		Environment: cfg.Environment.Env,
 	}, auth, svc)
 
 	// Create a TCP listener

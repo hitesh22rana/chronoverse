@@ -31,7 +31,8 @@ type Service interface {
 
 // Config represents the users-service configuration.
 type Config struct {
-	Deadline time.Duration
+	Deadline    time.Duration
+	Environment string
 }
 
 // Users represents the users-service.
@@ -103,6 +104,11 @@ func isAuthRequired(method string) bool {
 	return true
 }
 
+// isProduction checks if the environment is production.
+func isProduction(environment string) bool {
+	return strings.EqualFold(environment, "production")
+}
+
 // New creates a new users-service.
 func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 	server := grpc.NewServer(
@@ -120,7 +126,10 @@ func New(ctx context.Context, cfg *Config, svc Service) *grpc.Server {
 		svc:    svc,
 	})
 
-	reflection.Register(server)
+	// Only register reflection for non-production environments.
+	if !isProduction(cfg.Environment) {
+		reflection.Register(server)
+	}
 	return server
 }
 

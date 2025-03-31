@@ -46,7 +46,7 @@ build/notifications-service: dependencies
 
 .PHONY: build/scheduling-worker
 build/scheduling-worker: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=scheduling-worker'" -o ./.bin/scheduling-worker ./cmd/scheduling-worker
+	@CGO_ENABLED=0 go build -ldflags "-X 'main.version=v0.0.1' -X 'main.name=workflow-worker' -X 'main.authPrivateKeyPath=certs/auth.ed' -X 'main.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/scheduling-worker ./cmd/scheduling-worker
 
 .PHONY: build/workflow-worker
 build/workflow-worker: dependencies

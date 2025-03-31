@@ -8,36 +8,41 @@ Chronoverse is a distributed, job scheduling and orchestration system designed f
 
 ## Features
 
-- **Workflow Management**: Create, update, and manage scheduled tasks
-- **Flexible Scheduling**: Schedule jobs with cron expressions and precise intervals
+- **Workflow Management**:  Create, update, and monitor scheduled task workflows
+- **Flexible Scheduling**: Configure jobs with precise time intervals in minutes
 - **Multiple Workflow Types Support**: 
-    - `HEARTBEAT`: Simple health check jobs
-    - `CONTAINER`: Execute commands in Docker containers
-- **Distributed Architecture**: Microservices-based design for scalability
-- **High Availability**: Fault-tolerant operation with no single point of failure
-- **Notification System**: Real-time alerts and status updates
-- **Observability**: Built-in OpenTelemetry integration for tracing and metrics
+    - `HEARTBEAT`: Simple health check job
+    - `CONTAINER`: Execute commands in Docker containers with configurable images and parameters
+- **Job Logs**: Comprehensive execution history with logs stored in ClickHouse for efficient storage and retrieval
+- **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes
+- **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs
 - **Security**: JWT-based authentication and authorization
 
 ## Architecture
 
-Chronoverse follows a microservices architecture with the following components:
+Chronoverse implements a message-driven microservices architecture where components communicate through two primary channels:
+
+1. **Kafka**: For reliable, asynchronous processing and event-driven workflows
+2. **gRPC**: For efficient, low-latency synchronous service-to-service communication
+
+This dual communication approach ensures both reliability for critical background processes and responsiveness for user-facing operations. Data persistence is handled by PostgreSQL for transactional data and ClickHouse for analytics and high-volume job logs.
 
 ### Core Services
 
-- **Server**: API gateway that handles client interactions and routes requests to appropriate services
-- **Users Service**: Manages user authentication, authorization, and user profile data
-- **Workflows Service**: Enables creation, configuration, and management of workflow definitions
-- **Jobs Service**: Handles scheduled job instances and their lifecycle management
-- **Notifications Service**: Delivers real-time alerts and status updates
+- **Server**: HTTP API gateway exposing RESTful endpoints with middleware for authentication and authorization
+- **Users Service**: Manages user accounts, authentication tokens, and notification preferences
+- **Workflows Service**: Handles workflow definitions, configuration storage, and build status management
+- **Jobs Service**: Manages job lifecycle from scheduling through execution and completion
+- **Notifications Service**: Provides real-time alerts and status updates
 
 ### Worker Components
 
-- **Scheduling Worker**: Identifies jobs due for execution based on their schedules and initiates the execution process
-- **Workflow Worker**: Prepares jobs for execution, handling any build steps required before execution
-- **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management
+- **Scheduling Worker**: Identifies jobs due for execution based on their schedules and processes them through Kafka
+- **Workflow Worker**: Builds Docker image configurations from workflow definitions and prepares execution templates
+- **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management, manages execution lifecycle and captures outputs/logs
+- **JobLogs Processor**: Performs efficient batch insertion of execution logs from Kafka to ClickHouse for persistent storage and optimized querying
 
-Each component communicates through message queuing to ensure reliability and scalability in distributed environments.
+All workers communicate through Kafka topics, enabling horizontal scaling and fault tolerance. This message-driven architecture ensures that job processing can continue even if individual components experience temporary outages.
 
 ## Getting Started
 
@@ -55,10 +60,33 @@ No other dependencies are required as all services run in containers with automa
    cd chronoverse
    ```
 
-2. Run the entire stack with Docker Compose:
+2. Choose the appropriate deployment environment:
+   **For Development:**
    ```
-   docker-compose up -d
+   docker compose -f compose.dev.yaml up -d
    ```
+
+   **For Production:**
+   ```
+   docker compose -f compose.prod.yaml up -d
+   ```
+
+### Deployment Environments
+
+#### 1. Development Environment (compose.dev.yaml)
+- All service ports are exposed for easy debugging and direct access
+- Database ports (5432, 9000, 6379) accessible from the host
+- gRPC service ports (50051-50054) available for direct testing
+- Monitoring ports fully exposed
+- Suitable for local development and testing
+
+#### 2. Production Environment (compose.prod.yaml)
+- Enhanced security with minimal port exposure
+- Only the main application server (port 8080) is exposed externally
+- Monitoring UI (port 3000) is restricted to localhost access
+- All internal services communicate via Docker's internal network
+- No direct external access to databases or internal microservices
+- gRPC reflection disabled for additional security
 
 ### Configuration
 

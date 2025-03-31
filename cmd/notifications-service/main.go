@@ -151,7 +151,8 @@ func run() int {
 
 	// Initialize the notifications application
 	app := notifications.New(ctx, &notifications.Config{
-		Deadline: cfg.Grpc.RequestTimeout,
+		Deadline:    cfg.Grpc.RequestTimeout,
+		Environment: cfg.Environment.Env,
 	}, auth, svc)
 
 	// Create a TCP listener

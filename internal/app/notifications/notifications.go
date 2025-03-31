@@ -41,7 +41,8 @@ type Service interface {
 
 // Config represents the notifications service configuration.
 type Config struct {
-	Deadline time.Duration
+	Deadline    time.Duration
+	Environment string
 }
 
 // Notifications represents the notifications service.
@@ -113,6 +114,11 @@ func isInternalAPI(fullMethod string) bool {
 	return internalAPIs[parts[2]]
 }
 
+// isProduction checks if the environment is production.
+func isProduction(environment string) bool {
+	return strings.EqualFold(environment, "production")
+}
+
 // New creates a new notifications server.
 func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
 	notifications := &Notifications{
@@ -133,7 +139,10 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 	)
 	notificationspb.RegisterNotificationsServiceServer(server, notifications)
 
-	reflection.Register(server)
+	// Only register reflection for non-production environments.
+	if !isProduction(cfg.Environment) {
+		reflection.Register(server)
+	}
 	return server
 }
 

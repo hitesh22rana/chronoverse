@@ -201,7 +201,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -250,7 +250,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -300,7 +300,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -353,7 +353,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -399,7 +399,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -451,7 +451,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
     build:
       context: .
@@ -507,7 +507,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
     build:
       context: .
@@ -560,7 +560,7 @@ services:
       OTEL_LOGS_EXPORTER: otlp
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -606,7 +606,7 @@ services:
       NOTIFICATIONS_SERVICE_HOST: notifications-service
       NOTIFICATIONS_SERVICE_PORT: 50054
       REDIS_HOST: redis
-      ENV: production
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile

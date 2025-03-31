@@ -46,7 +46,8 @@ type Service interface {
 
 // Config represents the jobs-service configuration.
 type Config struct {
-	Deadline time.Duration
+	Deadline    time.Duration
+	Environment string
 }
 
 // Jobs represents the jobs-service.
@@ -118,6 +119,11 @@ func isInternalAPI(fullMethod string) bool {
 	return internalAPIs[parts[2]]
 }
 
+// isProduction checks if the environment is production.
+func isProduction(environment string) bool {
+	return strings.EqualFold(environment, "production")
+}
+
 // New creates a new jobs server.
 func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
 	jobs := &Jobs{
@@ -138,7 +144,10 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 	)
 	jobspb.RegisterJobsServiceServer(server, jobs)
 
-	reflection.Register(server)
+	// Only register reflection for non-production environments.
+	if !isProduction(cfg.Environment) {
+		reflection.Register(server)
+	}
 	return server
 }
 

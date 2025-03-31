@@ -7,6 +7,11 @@ try {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+	output: 'export',
+	basePath: '/chronoverse',
+	images: {
+		unoptimized: true,
+	},
 	eslint: {
 		ignoreDuringBuilds: true,
 	},

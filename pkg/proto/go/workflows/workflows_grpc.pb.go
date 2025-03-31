@@ -19,13 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WorkflowsService_CreateWorkflow_FullMethodName            = "/workflows.WorkflowsService/CreateWorkflow"
-	WorkflowsService_UpdateWorkflow_FullMethodName            = "/workflows.WorkflowsService/UpdateWorkflow"
-	WorkflowsService_UpdateWorkflowBuildStatus_FullMethodName = "/workflows.WorkflowsService/UpdateWorkflowBuildStatus"
-	WorkflowsService_GetWorkflow_FullMethodName               = "/workflows.WorkflowsService/GetWorkflow"
-	WorkflowsService_GetWorkflowByID_FullMethodName           = "/workflows.WorkflowsService/GetWorkflowByID"
-	WorkflowsService_TerminateWorkflow_FullMethodName         = "/workflows.WorkflowsService/TerminateWorkflow"
-	WorkflowsService_ListWorkflows_FullMethodName             = "/workflows.WorkflowsService/ListWorkflows"
+	WorkflowsService_CreateWorkflow_FullMethodName                               = "/workflows.WorkflowsService/CreateWorkflow"
+	WorkflowsService_UpdateWorkflow_FullMethodName                               = "/workflows.WorkflowsService/UpdateWorkflow"
+	WorkflowsService_UpdateWorkflowBuildStatus_FullMethodName                    = "/workflows.WorkflowsService/UpdateWorkflowBuildStatus"
+	WorkflowsService_GetWorkflow_FullMethodName                                  = "/workflows.WorkflowsService/GetWorkflow"
+	WorkflowsService_GetWorkflowByID_FullMethodName                              = "/workflows.WorkflowsService/GetWorkflowByID"
+	WorkflowsService_IncrementWorkflowConsecutiveJobFailuresCount_FullMethodName = "/workflows.WorkflowsService/IncrementWorkflowConsecutiveJobFailuresCount"
+	WorkflowsService_ResetWorkflowConsecutiveJobFailuresCount_FullMethodName     = "/workflows.WorkflowsService/ResetWorkflowConsecutiveJobFailuresCount"
+	WorkflowsService_TerminateWorkflow_FullMethodName                            = "/workflows.WorkflowsService/TerminateWorkflow"
+	WorkflowsService_ListWorkflows_FullMethodName                                = "/workflows.WorkflowsService/ListWorkflows"
 )
 
 // WorkflowsServiceClient is the client API for WorkflowsService service.
@@ -46,6 +48,12 @@ type WorkflowsServiceClient interface {
 	// GetWorkflowByID a workflow by ID.
 	// This is an internal API and should not be exposed to the public.
 	GetWorkflowByID(ctx context.Context, in *GetWorkflowByIDRequest, opts ...grpc.CallOption) (*GetWorkflowByIDResponse, error)
+	// IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count of a workflow.
+	// This is an internal API and should not be exposed to the public.
+	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, in *IncrementWorkflowConsecutiveJobFailuresCountRequest, opts ...grpc.CallOption) (*IncrementWorkflowConsecutiveJobFailuresCountResponse, error)
+	// ResetWorkflowConsecutiveJobFailuresCount resets the consecutive job failures count of a workflow.
+	// This is an internal API and should not be exposed to the public.
+	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, in *ResetWorkflowConsecutiveJobFailuresCountRequest, opts ...grpc.CallOption) (*ResetWorkflowConsecutiveJobFailuresCountResponse, error)
 	// TerminateWorkflow terminates a workflow.
 	TerminateWorkflow(ctx context.Context, in *TerminateWorkflowRequest, opts ...grpc.CallOption) (*TerminateWorkflowResponse, error)
 	// ListWorkflows returns a list of all workflows owned by a user.
@@ -110,6 +118,26 @@ func (c *workflowsServiceClient) GetWorkflowByID(ctx context.Context, in *GetWor
 	return out, nil
 }
 
+func (c *workflowsServiceClient) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, in *IncrementWorkflowConsecutiveJobFailuresCountRequest, opts ...grpc.CallOption) (*IncrementWorkflowConsecutiveJobFailuresCountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IncrementWorkflowConsecutiveJobFailuresCountResponse)
+	err := c.cc.Invoke(ctx, WorkflowsService_IncrementWorkflowConsecutiveJobFailuresCount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowsServiceClient) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, in *ResetWorkflowConsecutiveJobFailuresCountRequest, opts ...grpc.CallOption) (*ResetWorkflowConsecutiveJobFailuresCountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResetWorkflowConsecutiveJobFailuresCountResponse)
+	err := c.cc.Invoke(ctx, WorkflowsService_ResetWorkflowConsecutiveJobFailuresCount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *workflowsServiceClient) TerminateWorkflow(ctx context.Context, in *TerminateWorkflowRequest, opts ...grpc.CallOption) (*TerminateWorkflowResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TerminateWorkflowResponse)
@@ -148,6 +176,12 @@ type WorkflowsServiceServer interface {
 	// GetWorkflowByID a workflow by ID.
 	// This is an internal API and should not be exposed to the public.
 	GetWorkflowByID(context.Context, *GetWorkflowByIDRequest) (*GetWorkflowByIDResponse, error)
+	// IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count of a workflow.
+	// This is an internal API and should not be exposed to the public.
+	IncrementWorkflowConsecutiveJobFailuresCount(context.Context, *IncrementWorkflowConsecutiveJobFailuresCountRequest) (*IncrementWorkflowConsecutiveJobFailuresCountResponse, error)
+	// ResetWorkflowConsecutiveJobFailuresCount resets the consecutive job failures count of a workflow.
+	// This is an internal API and should not be exposed to the public.
+	ResetWorkflowConsecutiveJobFailuresCount(context.Context, *ResetWorkflowConsecutiveJobFailuresCountRequest) (*ResetWorkflowConsecutiveJobFailuresCountResponse, error)
 	// TerminateWorkflow terminates a workflow.
 	TerminateWorkflow(context.Context, *TerminateWorkflowRequest) (*TerminateWorkflowResponse, error)
 	// ListWorkflows returns a list of all workflows owned by a user.
@@ -175,6 +209,12 @@ func (UnimplementedWorkflowsServiceServer) GetWorkflow(context.Context, *GetWork
 }
 func (UnimplementedWorkflowsServiceServer) GetWorkflowByID(context.Context, *GetWorkflowByIDRequest) (*GetWorkflowByIDResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWorkflowByID not implemented")
+}
+func (UnimplementedWorkflowsServiceServer) IncrementWorkflowConsecutiveJobFailuresCount(context.Context, *IncrementWorkflowConsecutiveJobFailuresCountRequest) (*IncrementWorkflowConsecutiveJobFailuresCountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IncrementWorkflowConsecutiveJobFailuresCount not implemented")
+}
+func (UnimplementedWorkflowsServiceServer) ResetWorkflowConsecutiveJobFailuresCount(context.Context, *ResetWorkflowConsecutiveJobFailuresCountRequest) (*ResetWorkflowConsecutiveJobFailuresCountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetWorkflowConsecutiveJobFailuresCount not implemented")
 }
 func (UnimplementedWorkflowsServiceServer) TerminateWorkflow(context.Context, *TerminateWorkflowRequest) (*TerminateWorkflowResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TerminateWorkflow not implemented")
@@ -292,6 +332,42 @@ func _WorkflowsService_GetWorkflowByID_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowsService_IncrementWorkflowConsecutiveJobFailuresCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IncrementWorkflowConsecutiveJobFailuresCountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowsServiceServer).IncrementWorkflowConsecutiveJobFailuresCount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowsService_IncrementWorkflowConsecutiveJobFailuresCount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowsServiceServer).IncrementWorkflowConsecutiveJobFailuresCount(ctx, req.(*IncrementWorkflowConsecutiveJobFailuresCountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowsService_ResetWorkflowConsecutiveJobFailuresCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetWorkflowConsecutiveJobFailuresCountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowsServiceServer).ResetWorkflowConsecutiveJobFailuresCount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowsService_ResetWorkflowConsecutiveJobFailuresCount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowsServiceServer).ResetWorkflowConsecutiveJobFailuresCount(ctx, req.(*ResetWorkflowConsecutiveJobFailuresCountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WorkflowsService_TerminateWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TerminateWorkflowRequest)
 	if err := dec(in); err != nil {
@@ -354,6 +430,14 @@ var WorkflowsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetWorkflowByID",
 			Handler:    _WorkflowsService_GetWorkflowByID_Handler,
+		},
+		{
+			MethodName: "IncrementWorkflowConsecutiveJobFailuresCount",
+			Handler:    _WorkflowsService_IncrementWorkflowConsecutiveJobFailuresCount_Handler,
+		},
+		{
+			MethodName: "ResetWorkflowConsecutiveJobFailuresCount",
+			Handler:    _WorkflowsService_ResetWorkflowConsecutiveJobFailuresCount_Handler,
 		},
 		{
 			MethodName: "TerminateWorkflow",

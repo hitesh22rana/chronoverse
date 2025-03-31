@@ -7,6 +7,23 @@ import (
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
 
+// Kind represents the kind of the notification.
+type Kind string
+
+// Kinds for the notification.
+const (
+	KindWebAlert   Kind = "WEB_ALERT"
+	KindWebError   Kind = "WEB_ERROR"
+	KindWebWarn    Kind = "WEB_WARN"
+	KindWebSuccess Kind = "WEB_SUCCESS"
+	KindWebInfo    Kind = "WEB_INFO"
+)
+
+// ToString converts the Kind to its string representation.
+func (k Kind) ToString() string {
+	return string(k)
+}
+
 // NotificationResponse represents a notification entity.
 type NotificationResponse struct {
 	ID        string       `db:"id"`

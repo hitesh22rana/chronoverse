@@ -29,8 +29,10 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
-	"UpdateWorkflowBuildStatus": true,
-	"GetWorkflowByID":           true,
+	"UpdateWorkflowBuildStatus":                    true,
+	"GetWorkflowByID":                              true,
+	"IncrementWorkflowConsecutiveJobFailuresCount": true,
+	"ResetWorkflowConsecutiveJobFailuresCount":     true,
 }
 
 // Service provides workflow related operations.
@@ -40,6 +42,8 @@ type Service interface {
 	UpdateWorkflowBuildStatus(ctx context.Context, req *workflowspb.UpdateWorkflowBuildStatusRequest) error
 	GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (*workflowsmodel.GetWorkflowResponse, error)
 	GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (*workflowsmodel.GetWorkflowByIDResponse, error)
+	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) (bool, error)
+	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) error
 	TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) error
 	ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (*workflowsmodel.ListWorkflowsResponse, error)
 }
@@ -162,6 +166,7 @@ func (j *Jobs) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkfl
 			attribute.String("payload", req.GetPayload()),
 			attribute.String("kind", req.GetKind()),
 			attribute.Int("interval", int(req.GetInterval())),
+			attribute.Int("max_consecutive_job_failures_allowed", int(req.GetMaxConsecutiveJobFailuresAllowed())),
 		),
 	)
 	defer func() {
@@ -204,6 +209,7 @@ func (j *Jobs) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkfl
 			attribute.String("name", req.GetName()),
 			attribute.String("payload", req.GetPayload()),
 			attribute.Int("interval", int(req.GetInterval())),
+			attribute.Int("max_consecutive_job_failures_allowed", int(req.GetMaxConsecutiveJobFailuresAllowed())),
 		),
 	)
 	defer func() {
@@ -354,6 +360,89 @@ func (j *Jobs) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflow
 		zap.Any("job", job),
 	)
 	return job.ToProto(), nil
+}
+
+// IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count.
+// This is an internal method used by internal services, and it should not be exposed to the public.
+func (j *Jobs) IncrementWorkflowConsecutiveJobFailuresCount(
+	ctx context.Context,
+	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
+) (res *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.IncrementWorkflowConsecutiveJobFailuresCount",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	thresholdReached, err := j.svc.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to increment job consecutive failures count",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	j.logger.Info(
+		"job consecutive failures count incremented successfully",
+		zap.Any("ctx", ctx),
+		zap.Bool("threshold_reached", thresholdReached),
+	)
+	return &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{
+		ThresholdReached: thresholdReached,
+	}, nil
+}
+
+// ResetWorkflowConsecutiveJobFailuresCount resets the consecutive job failures count.
+// This is an internal method used by internal services, and it should not be exposed to the public.
+func (j *Jobs) ResetWorkflowConsecutiveJobFailuresCount(
+	ctx context.Context,
+	req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest,
+) (res *workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.ResetWorkflowConsecutiveJobFailuresCount",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	err = j.svc.ResetWorkflowConsecutiveJobFailuresCount(ctx, req)
+	if err != nil {
+		j.logger.Error(
+			"failed to reset job consecutive failures count",
+			zap.Any("ctx", ctx),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	j.logger.Info(
+		"job consecutive failures count reset successfully",
+		zap.Any("ctx", ctx),
+	)
+	return &workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse{}, nil
 }
 
 // TerminateWorkflow terminates a job.

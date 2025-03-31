@@ -8,10 +8,11 @@ import (
 )
 
 type createWorkflowRequest struct {
-	Name     string `json:"name"`
-	Payload  string `json:"payload"`
-	Kind     string `json:"kind"`
-	Interval int32  `json:"interval"`
+	Name                             string `json:"name"`
+	Payload                          string `json:"payload"`
+	Kind                             string `json:"kind"`
+	Interval                         int32  `json:"interval"`
+	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed,omitempty"`
 }
 
 // handleCreateWorkflow handles the create workflow request.
@@ -37,11 +38,12 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	// CreateWorkflow creates a new workflow.
 	res, err := s.workflowsClient.CreateWorkflow(r.Context(), &workflowspb.CreateWorkflowRequest{
-		UserId:   userID,
-		Name:     req.Name,
-		Payload:  req.Payload,
-		Kind:     req.Kind,
-		Interval: req.Interval,
+		UserId:                           userID,
+		Name:                             req.Name,
+		Payload:                          req.Payload,
+		Kind:                             req.Kind,
+		Interval:                         req.Interval,
+		MaxConsecutiveJobFailuresAllowed: req.MaxConsecutiveJobFailuresAllowed,
 	})
 	if err != nil {
 		handleError(w, err, "failed to create workflow")
@@ -55,9 +57,10 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateWorkflowRequest struct {
-	Name     string `json:"name"`
-	Payload  string `json:"payload"`
-	Interval int32  `json:"interval"`
+	Name                             string `json:"name"`
+	Payload                          string `json:"payload"`
+	Interval                         int32  `json:"interval"`
+	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed,omitempty"`
 }
 
 // handleUpdateWorkflow handles the update workflow request.
@@ -90,11 +93,12 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	// UpdateWorkflow updates the workflow details.
 	_, err := s.workflowsClient.UpdateWorkflow(r.Context(), &workflowspb.UpdateWorkflowRequest{
-		Id:       workflowID,
-		UserId:   userID,
-		Name:     req.Name,
-		Payload:  req.Payload,
-		Interval: req.Interval,
+		Id:                               workflowID,
+		UserId:                           userID,
+		Name:                             req.Name,
+		Payload:                          req.Payload,
+		Interval:                         req.Interval,
+		MaxConsecutiveJobFailuresAllowed: req.MaxConsecutiveJobFailuresAllowed,
 	})
 	if err != nil {
 		handleError(w, err, "failed to update workflow")

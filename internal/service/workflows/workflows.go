@@ -22,11 +22,13 @@ import (
 
 // Repository provides job related operations.
 type Repository interface {
-	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval int32) (string, error)
-	UpdateWorkflow(ctx context.Context, jobID, userID, name, payload string, interval int32) error
+	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32) (string, error)
+	UpdateWorkflow(ctx context.Context, jobID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error
 	UpdateWorkflowBuildStatus(ctx context.Context, jobID, buildStatus string) error
 	GetWorkflow(ctx context.Context, jobID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
 	GetWorkflowByID(ctx context.Context, jobID string) (*workflowsmodel.GetWorkflowByIDResponse, error)
+	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) (bool, error)
+	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) error
 	TerminateWorkflow(ctx context.Context, jobID, userID string) error
 	ListWorkflows(ctx context.Context, userID, cursor string) (*workflowsmodel.ListWorkflowsResponse, error)
 }
@@ -49,11 +51,12 @@ func New(validator *validator.Validate, repo Repository) *Service {
 
 // CreateWorkflowRequest holds the request parameters for creating a new job.
 type CreateWorkflowRequest struct {
-	UserID   string `validate:"required"`
-	Name     string `validate:"required"`
-	Payload  string `validate:"required"`
-	Kind     string `validate:"required"`
-	Interval int32  `validate:"required"`
+	UserID                           string `validate:"required"`
+	Name                             string `validate:"required"`
+	Payload                          string `validate:"required"`
+	Kind                             string `validate:"required"`
+	Interval                         int32  `validate:"required"`
+	MaxConsecutiveJobFailuresAllowed int32  `validate:"omitempty"`
 }
 
 // CreateWorkflow a new job.
@@ -69,11 +72,12 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 
 	// Validate the request
 	err = s.validator.Struct(&CreateWorkflowRequest{
-		UserID:   req.GetUserId(),
-		Name:     req.GetName(),
-		Payload:  req.GetPayload(),
-		Kind:     req.GetKind(),
-		Interval: req.GetInterval(),
+		UserID:                           req.GetUserId(),
+		Name:                             req.GetName(),
+		Payload:                          req.GetPayload(),
+		Kind:                             req.GetKind(),
+		Interval:                         req.GetInterval(),
+		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -101,6 +105,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		req.GetPayload(),
 		req.GetKind(),
 		req.GetInterval(),
+		req.GetMaxConsecutiveJobFailuresAllowed(),
 	)
 	if err != nil {
 		return "", err
@@ -111,11 +116,12 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 
 // UpdateWorkflowRequest holds the request parameters for updating a job.
 type UpdateWorkflowRequest struct {
-	ID       string `validate:"required"`
-	UserID   string `validate:"required"`
-	Name     string `validate:"required"`
-	Payload  string `validate:"required"`
-	Interval int32  `validate:"required"`
+	ID                               string `validate:"required"`
+	UserID                           string `validate:"required"`
+	Name                             string `validate:"required"`
+	Payload                          string `validate:"required"`
+	Interval                         int32  `validate:"required"`
+	MaxConsecutiveJobFailuresAllowed int32  `validate:"omitempty"`
 }
 
 // UpdateWorkflow updates the job details.
@@ -131,11 +137,12 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 
 	// Validate the request
 	if err = s.validator.Struct(&UpdateWorkflowRequest{
-		ID:       req.GetId(),
-		UserID:   req.GetUserId(),
-		Name:     req.GetName(),
-		Payload:  req.GetPayload(),
-		Interval: req.GetInterval(),
+		ID:                               req.GetId(),
+		UserID:                           req.GetUserId(),
+		Name:                             req.GetName(),
+		Payload:                          req.GetPayload(),
+		Interval:                         req.GetInterval(),
+		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
 	}); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		return err
@@ -156,6 +163,7 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		req.GetName(),
 		req.GetPayload(),
 		req.GetInterval(),
+		req.GetMaxConsecutiveJobFailuresAllowed(),
 	)
 
 	return err
@@ -274,11 +282,71 @@ func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkf
 	return res, nil
 }
 
-// ScheduleWorkflowRequest holds the request parameters for scheduling a job.
-type ScheduleWorkflowRequest struct {
-	WorkflowID  string `validate:"required"`
-	UserID      string `validate:"required"`
-	ScheduledAt string `validate:"required"`
+// IncrementWorkflowConsecutiveJobFailuresCountRequest holds the request parameters for incrementing the job consecutive failures count.
+type IncrementWorkflowConsecutiveJobFailuresCountRequest struct {
+	ID string `validate:"required"`
+}
+
+// IncrementWorkflowConsecutiveJobFailuresCount increments the job consecutive failures count.
+func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
+	ctx context.Context,
+	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
+) (thresholdReached bool, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.IncrementWorkflowConsecutiveJobFailuresCount")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&IncrementWorkflowConsecutiveJobFailuresCountRequest{
+		ID: req.GetId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return false, err
+	}
+
+	// Increment the job consecutive failures count
+	thresholdReached, err = s.repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req.GetId())
+	if err != nil {
+		return false, err
+	}
+
+	return thresholdReached, nil
+}
+
+// ResetWorkflowConsecutiveJobFailuresCountRequest holds the request parameters for resetting the job consecutive failures count.
+type ResetWorkflowConsecutiveJobFailuresCountRequest struct {
+	ID string `validate:"required"`
+}
+
+// ResetWorkflowConsecutiveJobFailuresCount resets the job consecutive failures count.
+func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.ResetWorkflowConsecutiveJobFailuresCount")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&ResetWorkflowConsecutiveJobFailuresCountRequest{
+		ID: req.GetId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return err
+	}
+
+	// Reset the job consecutive failures count
+	err = s.repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, req.GetId())
+	return err
 }
 
 // TerminateWorkflowRequest holds the request parameters for terminating a job.

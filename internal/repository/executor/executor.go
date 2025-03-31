@@ -175,6 +175,8 @@ func (r *Repository) Run(ctx context.Context) error {
 }
 
 // runWorkflow runs the executor workflow.
+//
+//nolint:gocyclo // This function is complex and has multiple responsibilities.
 func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error {
 	// Extract the data from the record value
 	jobID, workflowID, lastScheduledAt, err := extractDataFromRecordValue(recordValue)
@@ -205,10 +207,10 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 	// Ensure the workflow is not already terminated
 	terminatedAt := workflow.GetTerminatedAt()
 	if terminatedAt != "" {
-		// If the workflow is already terminated, do not execute the workflow and update the workflow status from QUEUED to CANCELED
-		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-			Id:          jobID,
-			BuildStatus: statusCanceled,
+		// If the workflow is already terminated, do not execute the workflow and update the job status to CANCELED
+		if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+			Id:     jobID,
+			Status: statusCanceled,
 		}); _err != nil {
 			return _err
 		}
@@ -233,6 +235,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return _err
 	}
 
+	//nolint:nestif // This nested if statement is necessary for the workflow execution
 	if err := r.executeWorkflow(ctx, jobID, workflow); err != nil {
 		// Update the job status from RUNNING to FAILED
 		if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
@@ -242,6 +245,24 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 			return _err
 		}
 
+		// Increment the workflow failure count and check if the threshold is reached
+		res, _err := r.svc.Workflows.IncrementWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+			Id: workflowID,
+		})
+		if _err != nil {
+			return _err
+		}
+
+		// If the threshold has been reached, terminate the workflow
+		if res.GetThresholdReached() {
+			if _, _err := r.svc.Workflows.TerminateWorkflow(ctx, &workflowspb.TerminateWorkflowRequest{
+				Id:     workflowID,
+				UserId: workflow.GetUserId(),
+			}); _err != nil {
+				return _err
+			}
+		}
+
 		return err
 	}
 
@@ -249,6 +270,13 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 	if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 		Id:     jobID,
 		Status: statusCompleted,
+	}); _err != nil {
+		return _err
+	}
+
+	// Reset the workflow consecutive job failures count
+	if _, _err := r.svc.Workflows.ResetWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+		Id: workflowID,
 	}); _err != nil {
 		return _err
 	}

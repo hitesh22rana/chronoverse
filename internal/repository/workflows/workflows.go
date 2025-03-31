@@ -50,7 +50,15 @@ func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
 }
 
 // CreateWorkflow creates a new workflow.
-func (r *Repository) CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval int32) (workflowID string, err error) {
+func (r *Repository) CreateWorkflow(
+	ctx context.Context,
+	userID,
+	name,
+	payload,
+	kind string,
+	interval,
+	maxConsecutiveJobFailuresAllowed int32,
+) (workflowID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CreateWorkflow")
 	defer func() {
 		if err != nil {
@@ -69,13 +77,26 @@ func (r *Repository) CreateWorkflow(ctx context.Context, userID, name, payload, 
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, payload, kind, interval)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id;
-		`, workflowsTable)
+	var query string
+	var args []any
 
-	row := tx.QueryRow(ctx, query, userID, name, payload, kind, interval)
+	if maxConsecutiveJobFailuresAllowed == 0 {
+		query = fmt.Sprintf(`
+			INSERT INTO %s (user_id, name, payload, kind, interval)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING id;
+			`, workflowsTable)
+		args = []any{userID, name, payload, kind, interval}
+	} else {
+		query = fmt.Sprintf(`
+			INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			RETURNING id;
+			`, workflowsTable)
+		args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed}
+	}
+
+	row := tx.QueryRow(ctx, query, args...)
 	if err = row.Scan(&workflowID); err != nil {
 		err = status.Errorf(codes.Internal, "failed to insert workflow: %v", err)
 		return "", err
@@ -89,7 +110,10 @@ func (r *Repository) CreateWorkflow(ctx context.Context, userID, name, payload, 
 
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
-		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
+		err = status.Errorf(
+			codes.Internal,
+			"failed to commit transaction: %v", err,
+		)
 		return "", err
 	}
 
@@ -97,7 +121,15 @@ func (r *Repository) CreateWorkflow(ctx context.Context, userID, name, payload, 
 }
 
 // UpdateWorkflow updates the workflow details.
-func (r *Repository) UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval int32) (err error) {
+func (r *Repository) UpdateWorkflow(
+	ctx context.Context,
+	workflowID,
+	userID,
+	name,
+	payload string,
+	interval,
+	maxConsecutiveJobFailuresAllowed int32,
+) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateWorkflow")
 	defer func() {
 		if err != nil {
@@ -116,15 +148,32 @@ func (r *Repository) UpdateWorkflow(ctx context.Context, workflowID, userID, nam
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
+	// During update, we set the consecutive_job_failures_count to 0 and terminated_at to NULL
+	// This is done to ensure that the workflow can be retried from the beginning.
+
 	// Set all workflows to QUEUED so the worker can determine what to do
-	query := fmt.Sprintf(`
-        UPDATE %s
-        SET name = $1, payload = $2, interval = $3, build_status = $4
-        WHERE id = $5 AND user_id = $6;
-    `, workflowsTable)
+	var query string
+	var args []any
+
+	if maxConsecutiveJobFailuresAllowed == 0 {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET name = $1, payload = $2, interval = $3, build_status = $4, consecutive_job_failures_count = 0, terminated_at = NULL
+			WHERE id = $5 AND user_id = $6;
+		`, workflowsTable)
+		args = []any{name, payload, interval, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID}
+	} else {
+		//nolint:lll // It's fine to have long queries
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET name = $1, payload = $2, interval = $3, max_consecutive_job_failures_allowed = $4, build_status = $5, consecutive_job_failures_count = 0, terminated_at = NULL
+			WHERE id = $6 AND user_id = $7;
+		`, workflowsTable)
+		args = []any{name, payload, interval, maxConsecutiveJobFailuresAllowed, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID}
+	}
 
 	// Execute the query
-	ct, err := tx.Exec(ctx, query, name, payload, interval, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID)
+	ct, err := tx.Exec(ctx, query, args...)
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
@@ -205,8 +254,9 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 		span.End()
 	}()
 
+	//nolint:lll // It's fine to have long queries
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
+		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
 		FROM %s
 		WHERE id = $1 AND user_id = $2
 		LIMIT 1;
@@ -242,8 +292,9 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 		span.End()
 	}()
 
+	//nolint:lll // It's fine to have long queries
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
+		SELECT id, user_id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
 		FROM %s
 		WHERE id = $1
 		LIMIT 1;
@@ -266,6 +317,82 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 	}
 
 	return res, nil
+}
+
+// IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive failures counter.
+// Returns whether threshold was reached or not.
+func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) (thresholdReached bool, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.IncrementWorkflowConsecutiveJobFailuresCount")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET consecutive_job_failures_count = consecutive_job_failures_count + 1
+		WHERE id = $1 AND terminated_at IS NULL
+		RETURNING consecutive_job_failures_count, max_consecutive_job_failures_allowed;
+	`, workflowsTable)
+
+	var consecutiveJobFailuresCount, maxConsecutiveJobFailuresAllowed int32
+	err = r.pg.QueryRow(ctx, query, workflowID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
+	if err != nil {
+		if r.pg.IsNoRows(err) {
+			err = status.Errorf(codes.NotFound, "workflow not found: %v", err)
+			return false, err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return false, err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to increment consecutive job failures count: %v", err)
+		return false, err
+	}
+
+	// Check if the threshold was reached
+	thresholdReached = consecutiveJobFailuresCount >= maxConsecutiveJobFailuresAllowed
+	return thresholdReached, nil
+}
+
+// ResetWorkflowConsecutiveJobFailuresCount resets the consecutive failures counter.
+func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) (err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.ResetWorkflowConsecutiveJobFailuresCount")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET consecutive_job_failures_count = 0
+		WHERE id = $1 AND terminated_at IS NULL;
+	`, workflowsTable)
+
+	// Execute the query
+	ct, err := r.pg.Exec(ctx, query, workflowID)
+	if err != nil {
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to reset consecutive job failures count: %v", err)
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		err = status.Errorf(codes.NotFound, "workflow not found or already terminated")
+		return err
+	}
+
+	return nil
 }
 
 // TerminateWorkflow terminates a workflow.
@@ -318,8 +445,9 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string) (
 		span.End()
 	}()
 
+	//nolint:lll // It's fine to have long queries
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, build_status, interval, created_at, updated_at, terminated_at
+		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
 		FROM %s
 		WHERE user_id = $1
 	`, workflowsTable)

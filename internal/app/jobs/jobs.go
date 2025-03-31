@@ -186,7 +186,7 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 	}
 
 	j.logger.Info(
-		"job successfully",
+		"job scheduled successfully",
 		zap.Any("ctx", ctx),
 		zap.String("job_id", jobID),
 	)

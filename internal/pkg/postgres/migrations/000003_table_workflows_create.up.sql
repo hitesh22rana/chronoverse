@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS workflows (
     kind TEXT NOT NULL,
     build_status WORKFLOW_BUILD_STATUS DEFAULT 'QUEUED' NOT NULL,
     interval INTEGER NOT NULL CHECK (interval >= 1), -- (in minutes)
+    consecutive_job_failures_count INTEGER DEFAULT 0 NOT NULL CHECK (consecutive_job_failures_count >= 0),
+    max_consecutive_job_failures_allowed INTEGER DEFAULT 3 NOT NULL CHECK (max_consecutive_job_failures_allowed > 0),
     created_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     updated_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     terminated_at timestamp WITHOUT TIME ZONE DEFAULT NULL

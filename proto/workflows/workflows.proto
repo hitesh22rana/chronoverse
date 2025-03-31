@@ -6,11 +6,12 @@ option go_package = "github.com/hitesh22rana/chronoverse/proto/go/workflows;work
 
 // CreateWorkflowRequest contains the details needed to create a new workflow.
 message CreateWorkflowRequest {
-    string user_id  = 1; // ID of the user
-    string name     = 2; // Name of the workflow
-    string payload  = 3; // JSON string for payload
-    string kind     = 4; // Kind of workflow
-    int32 interval  = 5; // Interval measured in minutes
+    string user_id                             = 1; // ID of the user
+    string name                                = 2; // Name of the workflow
+    string payload                             = 3; // JSON string for payload
+    string kind                                = 4; // Kind of workflow
+    int32 interval                             = 5; // Interval measured in minutes
+    int32 max_consecutive_job_failures_allowed = 6; // Maximum number of consecutive job failures allowed
 }
 
 // CreateWorkflowResponse contains the result of a workflow creation attempt.
@@ -20,11 +21,12 @@ message CreateWorkflowResponse {
 
 // UpdateWorkflowRequest contains the details needed to update a workflow.
 message UpdateWorkflowRequest {
-    string id        = 1; // ID of the workflow
-    string user_id   = 2; // ID of the user
-    string name      = 3; // Name of the workflow
-    string payload   = 4; // JSON string for payload
-    int32 interval   = 5; // Interval measured in minutes
+    string id                                  = 1; // ID of the workflow
+    string user_id                             = 2; // ID of the user
+    string name                                = 3; // Name of the workflow
+    string payload                             = 4; // JSON string for payload
+    int32 interval                             = 5; // Interval measured in minutes
+    int32 max_consecutive_job_failures_allowed = 6; // Maximum number of consecutive job failures allowed
 }
 
 // UpdateWorkflowResponse contains the result of a workflow update attempt.
@@ -47,15 +49,17 @@ message GetWorkflowRequest {
 
 // GetWorkflowResponse contains the result of a workflow retrieval attempt.
 message GetWorkflowResponse {
-    string id            = 1; // ID of the workflow
-    string name          = 2; // Name of the workflow
-    string payload       = 3; // JSON string for payload
-    string kind          = 4; // Kind of workflow
-    string build_status  = 5; // Status of the workflow
-    int32 interval       = 6; // Interval measured in minutes
-    string created_at    = 7; // Time the workflow was created
-    string updated_at    = 8; // Time the workflow was last updated
-    string terminated_at = 9; // Time the workflow was terminated
+    string id                                  = 1; // ID of the workflow
+    string name                                = 2; // Name of the workflow
+    string payload                             = 3; // JSON string for payload
+    string kind                                = 4; // Kind of workflow
+    string build_status                        = 5; // Status of the workflow
+    int32 interval                             = 6; // Interval measured in minutes
+    int32 consecutive_job_failures_count       = 7; // Number of consecutive job failures
+    int32 max_consecutive_job_failures_allowed = 8; // Maximum number of consecutive job failures allowed
+    string created_at                          = 9; // Time the workflow was created
+    string updated_at                          = 10; // Time the workflow was last updated
+    string terminated_at                       = 11; // Time the workflow was terminated
 }
 
 // GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
@@ -65,23 +69,46 @@ message GetWorkflowByIDRequest {
 
 // GetWorkflowByIDResponse contains the result of a workflow retrieval attempt.
 message GetWorkflowByIDResponse {
-    string id            = 1; // ID of the workflow
-    string user_id       = 2; // ID of the user
-    string name          = 3; // Name of the workflow
-    string payload       = 4; // JSON string for payload
-    string kind          = 5; // Kind of workflow
-    string build_status  = 6; // Status of the workflow
-    int32 interval       = 7; // Interval measured in minutes
-    string created_at    = 8; // Time the workflow was created
-    string updated_at    = 9; // Time the workflow was last updated
-    string terminated_at = 10; // Time the workflow was terminated
+    string id                                  = 1; // ID of the workflow
+    string user_id                             = 2; // ID of the user
+    string name                                = 3; // Name of the workflow
+    string payload                             = 4; // JSON string for payload
+    string kind                                = 5; // Kind of workflow
+    string build_status                        = 6; // Status of the workflow
+    int32 interval                             = 7; // Interval measured in minutes
+    int32 consecutive_job_failures_count       = 8; // Number of consecutive job failures
+    int32 max_consecutive_job_failures_allowed = 9; // Maximum number of consecutive job failures allowed
+    string created_at                          = 10; // Time the workflow was created
+    string updated_at                          = 11; // Time the workflow was last updated
+    string terminated_at                       = 12; // Time the workflow was terminated
 }
+
+// IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
+message IncrementWorkflowConsecutiveJobFailuresCountRequest {
+    string id = 1; // ID of the workflow
+}
+
+// IncrementWorkflowConsecutiveJobFailuresCountResponse contains the result of a workflow consecutive job failures count increment attempt.
+message IncrementWorkflowConsecutiveJobFailuresCountResponse {
+    bool threshold_reached = 1; // Indicates if the threshold was reached
+}
+
+// ResetWorkflowConsecutiveJobFailuresCountRequest contains the details needed to reset the consecutive job failures count of a workflow.
+message ResetWorkflowConsecutiveJobFailuresCountRequest {
+    string id = 1; // ID of the workflow
+}
+
+// ResetWorkflowConsecutiveJobFailuresCountResponse contains the result of a workflow consecutive job failures count reset attempt.
+message ResetWorkflowConsecutiveJobFailuresCountResponse {}
 
 // TerminateWorkflowRequest contains the details needed to terminate a workflow.
 message TerminateWorkflowRequest {
     string id      = 1; // ID of the workflow
     string user_id = 2; // ID of the user
 }
+
+// TerminateWorkflowResponse contains the result of a workflow termination attempt.
+message TerminateWorkflowResponse {}
 
 // ListWorkflowsRequest contains the details needed to list all workflows.
 message ListWorkflowsRequest {
@@ -91,15 +118,17 @@ message ListWorkflowsRequest {
 
 // WorkflowsByUserIDResponse contains the result of a workflow listing attempt.
 message WorkflowsByUserIDResponse {
-    string id            = 1; // ID of the workflow
-    string name          = 2; // Name of the workflow
-    string payload       = 3; // JSON string for payload
-    string kind          = 4; // Kind of workflow
-    string build_status  = 5; // Status of the workflow
-    int32 interval       = 6; // Interval measured in minutes
-    string created_at    = 7; // Time the workflow was created
-    string updated_at    = 8; // Time the workflow was last updated
-    string terminated_at = 9; // Time the workflow was terminated
+    string id                                  = 1; // ID of the workflow
+    string name                                = 2; // Name of the workflow
+    string payload                             = 3; // JSON string for payload
+    string kind                                = 4; // Kind of workflow
+    string build_status                        = 5; // Status of the workflow
+    int32 interval                             = 6; // Interval measured in minutes
+    int32 consecutive_job_failures_count       = 7; // Number of consecutive job failures
+    int32 max_consecutive_job_failures_allowed = 8; // Maximum number of consecutive job failures allowed
+    string created_at                          = 9; // Time the workflow was created
+    string updated_at                          = 10; // Time the workflow was last updated
+    string terminated_at                       = 12; // Time the workflow was terminated
 }
 
 // ListWorkflowsResponse contains the result of a workflow listing attempt.
@@ -107,9 +136,6 @@ message ListWorkflowsResponse {
     repeated WorkflowsByUserIDResponse workflows = 1; // List of workflows
     string cursor                                = 2; // Cursor for pagination
 }
-
-// TerminateWorkflowResponse contains the result of a workflow termination attempt.
-message TerminateWorkflowResponse {}
 
 // WorkflowsService contains the service definition for the Workflow service.
 service WorkflowsService {
@@ -129,6 +155,14 @@ service WorkflowsService {
     // GetWorkflowByID a workflow by ID.
     // This is an internal API and should not be exposed to the public.
     rpc GetWorkflowByID(GetWorkflowByIDRequest) returns (GetWorkflowByIDResponse){}
+
+    // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count of a workflow.
+    // This is an internal API and should not be exposed to the public.
+    rpc IncrementWorkflowConsecutiveJobFailuresCount(IncrementWorkflowConsecutiveJobFailuresCountRequest) returns (IncrementWorkflowConsecutiveJobFailuresCountResponse) {}
+
+    // ResetWorkflowConsecutiveJobFailuresCount resets the consecutive job failures count of a workflow.
+    // This is an internal API and should not be exposed to the public.
+    rpc ResetWorkflowConsecutiveJobFailuresCount(ResetWorkflowConsecutiveJobFailuresCountRequest) returns (ResetWorkflowConsecutiveJobFailuresCountResponse) {}
 
     // TerminateWorkflow terminates a workflow.
     rpc TerminateWorkflow(TerminateWorkflowRequest) returns(TerminateWorkflowResponse) {}

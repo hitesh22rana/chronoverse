@@ -87,6 +87,21 @@ func (mr *MockServiceMockRecorder) GetWorkflowByID(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkflowByID", reflect.TypeOf((*MockService)(nil).GetWorkflowByID), ctx, req)
 }
 
+// IncrementWorkflowConsecutiveJobFailuresCount mocks base method.
+func (m *MockService) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflows0.IncrementWorkflowConsecutiveJobFailuresCountRequest) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementWorkflowConsecutiveJobFailuresCount", ctx, req)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementWorkflowConsecutiveJobFailuresCount indicates an expected call of IncrementWorkflowConsecutiveJobFailuresCount.
+func (mr *MockServiceMockRecorder) IncrementWorkflowConsecutiveJobFailuresCount(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockService)(nil).IncrementWorkflowConsecutiveJobFailuresCount), ctx, req)
+}
+
 // ListWorkflows mocks base method.
 func (m *MockService) ListWorkflows(ctx context.Context, req *workflows0.ListWorkflowsRequest) (*workflows.ListWorkflowsResponse, error) {
 	m.ctrl.T.Helper()
@@ -100,6 +115,20 @@ func (m *MockService) ListWorkflows(ctx context.Context, req *workflows0.ListWor
 func (mr *MockServiceMockRecorder) ListWorkflows(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListWorkflows", reflect.TypeOf((*MockService)(nil).ListWorkflows), ctx, req)
+}
+
+// ResetWorkflowConsecutiveJobFailuresCount mocks base method.
+func (m *MockService) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflows0.ResetWorkflowConsecutiveJobFailuresCountRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetWorkflowConsecutiveJobFailuresCount", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetWorkflowConsecutiveJobFailuresCount indicates an expected call of ResetWorkflowConsecutiveJobFailuresCount.
+func (mr *MockServiceMockRecorder) ResetWorkflowConsecutiveJobFailuresCount(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockService)(nil).ResetWorkflowConsecutiveJobFailuresCount), ctx, req)
 }
 
 // TerminateWorkflow mocks base method.

@@ -41,11 +41,12 @@ func TestCreateWorkflow(t *testing.T) {
 		{
 			name: "success",
 			req: &workflowspb.CreateWorkflowRequest{
-				UserId:   "user1",
-				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-				Kind:     "HEARTBEAT",
-				Interval: 1,
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:                             "HEARTBEAT",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -55,6 +56,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetPayload(),
 					req.GetKind(),
 					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
 				).Return("workflow_id", nil)
 			},
 			want: want{
@@ -78,11 +80,12 @@ func TestCreateWorkflow(t *testing.T) {
 		{
 			name: "error: invalid payload",
 			req: &workflowspb.CreateWorkflowRequest{
-				UserId:   "user1",
-				Name:     "workflow1",
-				Payload:  `invalid json`,
-				Kind:     "HEARTBEAT",
-				Interval: 1,
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `invalid json`,
+				Kind:                             "HEARTBEAT",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 0,
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -91,11 +94,12 @@ func TestCreateWorkflow(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &workflowspb.CreateWorkflowRequest{
-				UserId:   "user1",
-				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-				Kind:     "HEARTBEAT",
-				Interval: 1,
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:                             "HEARTBEAT",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -105,6 +109,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetPayload(),
 					req.GetKind(),
 					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
 				).Return("", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -154,11 +159,12 @@ func TestUpdateWorkflow(t *testing.T) {
 		{
 			name: "success",
 			req: &workflowspb.UpdateWorkflowRequest{
-				Id:       "workflow_id",
-				UserId:   "user1",
-				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-				Interval: 1,
+				Id:                               "workflow_id",
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
 			},
 			mock: func(req *workflowspb.UpdateWorkflowRequest) {
 				repo.EXPECT().UpdateWorkflow(
@@ -168,6 +174,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetName(),
 					req.GetPayload(),
 					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
 				).Return(nil)
 			},
 			isErr: false,
@@ -187,11 +194,12 @@ func TestUpdateWorkflow(t *testing.T) {
 		{
 			name: "error: invalid payload",
 			req: &workflowspb.UpdateWorkflowRequest{
-				Id:       "workflow_id",
-				UserId:   "user1",
-				Name:     "workflow1",
-				Payload:  `invalid json`,
-				Interval: 1,
+				Id:                               "workflow_id",
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `invalid json`,
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 0,
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowRequest) {},
 			isErr: true,
@@ -199,11 +207,12 @@ func TestUpdateWorkflow(t *testing.T) {
 		{
 			name: "error: workflow not found",
 			req: &workflowspb.UpdateWorkflowRequest{
-				Id:       "invalid_workflow_id",
-				UserId:   "user1",
-				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-				Interval: 1,
+				Id:                               "invalid_workflow_id",
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
 			},
 			mock: func(req *workflowspb.UpdateWorkflowRequest) {
 				repo.EXPECT().UpdateWorkflow(
@@ -213,6 +222,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetName(),
 					req.GetPayload(),
 					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
 			isErr: true,
@@ -220,11 +230,12 @@ func TestUpdateWorkflow(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &workflowspb.UpdateWorkflowRequest{
-				Id:       "workflow_id",
-				UserId:   "user1",
-				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-				Interval: 1,
+				Id:                               "workflow_id",
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
 			},
 			mock: func(req *workflowspb.UpdateWorkflowRequest) {
 				repo.EXPECT().UpdateWorkflow(
@@ -234,6 +245,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetName(),
 					req.GetPayload(),
 					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,
@@ -647,6 +659,211 @@ func TestGetWorkflowByID(t *testing.T) {
 			}
 
 			assert.Equal(t, tt.want.GetWorkflowByIDResponse, workflow)
+		})
+	}
+}
+
+func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := workflowsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := workflows.New(validator.New(), repo)
+
+	type want struct {
+		thresholdReached bool
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest
+		mock  func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success: threshold not reached",
+			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "workflow_id",
+			},
+			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					req.GetId(),
+				).Return(false, nil)
+			},
+			want: want{
+				thresholdReached: false,
+			},
+			isErr: false,
+		},
+		{
+			name: "success: threshold reached",
+			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "workflow_id",
+			},
+			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					req.GetId(),
+				).Return(true, nil)
+			},
+			want: want{
+				thresholdReached: true,
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing workflow ID",
+			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "",
+			},
+			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: workflow not found",
+			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "invalid_workflow_id",
+			},
+			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					req.GetId(),
+				).Return(false, status.Error(codes.NotFound, "workflow not found"))
+			},
+			want: want{
+				thresholdReached: false,
+			},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "workflow_id",
+			},
+			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					req.GetId(),
+				).Return(false, status.Error(codes.Internal, "internal server error"))
+			},
+			want: want{
+				thresholdReached: false,
+			},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			thresholdReached, err := s.IncrementWorkflowConsecutiveJobFailuresCount(t.Context(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			assert.Equal(t, thresholdReached, tt.want.thresholdReached)
+		})
+	}
+}
+
+func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := workflowsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := workflows.New(validator.New(), repo)
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest
+		mock  func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest)
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "workflow_id",
+			},
+			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					req.GetId(),
+				).Return(nil)
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing workflow ID",
+			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "",
+			},
+			mock:  func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {},
+			isErr: true,
+		},
+		{
+			name: "error: workflow not found",
+			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "invalid_workflow_id",
+			},
+			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					req.GetId(),
+				).Return(status.Error(codes.NotFound, "workflow not found"))
+			},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+				Id: "workflow_id",
+			},
+			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					req.GetId(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.ResetWorkflowConsecutiveJobFailuresCount(t.Context(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
 		})
 	}
 }

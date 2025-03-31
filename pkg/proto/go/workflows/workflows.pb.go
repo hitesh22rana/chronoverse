@@ -23,14 +23,15 @@ const (
 
 // CreateWorkflowRequest contains the details needed to create a new workflow.
 type CreateWorkflowRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                   // Name of the workflow
-	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`             // JSON string for payload
-	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                   // Kind of workflow
-	Interval      int32                  `protobuf:"varint,5,opt,name=interval,proto3" json:"interval,omitempty"`          // Interval measured in minutes
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                            protoimpl.MessageState `protogen:"open.v1"`
+	UserId                           string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                                                                      // ID of the user
+	Name                             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                                                                                        // Name of the workflow
+	Payload                          string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                                                                                                  // JSON string for payload
+	Kind                             string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                                        // Kind of workflow
+	Interval                         int32                  `protobuf:"varint,5,opt,name=interval,proto3" json:"interval,omitempty"`                                                                                               // Interval measured in minutes
+	MaxConsecutiveJobFailuresAllowed int32                  `protobuf:"varint,6,opt,name=max_consecutive_job_failures_allowed,json=maxConsecutiveJobFailuresAllowed,proto3" json:"max_consecutive_job_failures_allowed,omitempty"` // Maximum number of consecutive job failures allowed
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
 }
 
 func (x *CreateWorkflowRequest) Reset() {
@@ -98,6 +99,13 @@ func (x *CreateWorkflowRequest) GetInterval() int32 {
 	return 0
 }
 
+func (x *CreateWorkflowRequest) GetMaxConsecutiveJobFailuresAllowed() int32 {
+	if x != nil {
+		return x.MaxConsecutiveJobFailuresAllowed
+	}
+	return 0
+}
+
 // CreateWorkflowResponse contains the result of a workflow creation attempt.
 type CreateWorkflowResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -145,14 +153,15 @@ func (x *CreateWorkflowResponse) GetId() string {
 
 // UpdateWorkflowRequest contains the details needed to update a workflow.
 type UpdateWorkflowRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                       // ID of the workflow
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`                   // Name of the workflow
-	Payload       string                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`             // JSON string for payload
-	Interval      int32                  `protobuf:"varint,5,opt,name=interval,proto3" json:"interval,omitempty"`          // Interval measured in minutes
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                            protoimpl.MessageState `protogen:"open.v1"`
+	Id                               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                                                            // ID of the workflow
+	UserId                           string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                                                                      // ID of the user
+	Name                             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`                                                                                                        // Name of the workflow
+	Payload                          string                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`                                                                                                  // JSON string for payload
+	Interval                         int32                  `protobuf:"varint,5,opt,name=interval,proto3" json:"interval,omitempty"`                                                                                               // Interval measured in minutes
+	MaxConsecutiveJobFailuresAllowed int32                  `protobuf:"varint,6,opt,name=max_consecutive_job_failures_allowed,json=maxConsecutiveJobFailuresAllowed,proto3" json:"max_consecutive_job_failures_allowed,omitempty"` // Maximum number of consecutive job failures allowed
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
 }
 
 func (x *UpdateWorkflowRequest) Reset() {
@@ -216,6 +225,13 @@ func (x *UpdateWorkflowRequest) GetPayload() string {
 func (x *UpdateWorkflowRequest) GetInterval() int32 {
 	if x != nil {
 		return x.Interval
+	}
+	return 0
+}
+
+func (x *UpdateWorkflowRequest) GetMaxConsecutiveJobFailuresAllowed() int32 {
+	if x != nil {
+		return x.MaxConsecutiveJobFailuresAllowed
 	}
 	return 0
 }
@@ -402,18 +418,20 @@ func (x *GetWorkflowRequest) GetUserId() string {
 
 // GetWorkflowResponse contains the result of a workflow retrieval attempt.
 type GetWorkflowResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                         // ID of the workflow
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                     // Name of the workflow
-	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                               // JSON string for payload
-	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                                     // Kind of workflow
-	BuildStatus   string                 `protobuf:"bytes,5,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"`    // Status of the workflow
-	Interval      int32                  `protobuf:"varint,6,opt,name=interval,proto3" json:"interval,omitempty"`                            // Interval measured in minutes
-	CreatedAt     string                 `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`          // Time the workflow was created
-	UpdatedAt     string                 `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`          // Time the workflow was last updated
-	TerminatedAt  string                 `protobuf:"bytes,9,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"` // Time the workflow was terminated
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                            protoimpl.MessageState `protogen:"open.v1"`
+	Id                               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                                                            // ID of the workflow
+	Name                             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                                                                                        // Name of the workflow
+	Payload                          string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                                                                                                  // JSON string for payload
+	Kind                             string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                                        // Kind of workflow
+	BuildStatus                      string                 `protobuf:"bytes,5,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"`                                                                       // Status of the workflow
+	Interval                         int32                  `protobuf:"varint,6,opt,name=interval,proto3" json:"interval,omitempty"`                                                                                               // Interval measured in minutes
+	ConsecutiveJobFailuresCount      int32                  `protobuf:"varint,7,opt,name=consecutive_job_failures_count,json=consecutiveJobFailuresCount,proto3" json:"consecutive_job_failures_count,omitempty"`                  // Number of consecutive job failures
+	MaxConsecutiveJobFailuresAllowed int32                  `protobuf:"varint,8,opt,name=max_consecutive_job_failures_allowed,json=maxConsecutiveJobFailuresAllowed,proto3" json:"max_consecutive_job_failures_allowed,omitempty"` // Maximum number of consecutive job failures allowed
+	CreatedAt                        string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                                                             // Time the workflow was created
+	UpdatedAt                        string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
+	TerminatedAt                     string                 `protobuf:"bytes,11,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
 }
 
 func (x *GetWorkflowResponse) Reset() {
@@ -488,6 +506,20 @@ func (x *GetWorkflowResponse) GetInterval() int32 {
 	return 0
 }
 
+func (x *GetWorkflowResponse) GetConsecutiveJobFailuresCount() int32 {
+	if x != nil {
+		return x.ConsecutiveJobFailuresCount
+	}
+	return 0
+}
+
+func (x *GetWorkflowResponse) GetMaxConsecutiveJobFailuresAllowed() int32 {
+	if x != nil {
+		return x.MaxConsecutiveJobFailuresAllowed
+	}
+	return 0
+}
+
 func (x *GetWorkflowResponse) GetCreatedAt() string {
 	if x != nil {
 		return x.CreatedAt
@@ -556,19 +588,21 @@ func (x *GetWorkflowByIDRequest) GetId() string {
 
 // GetWorkflowByIDResponse contains the result of a workflow retrieval attempt.
 type GetWorkflowByIDResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                          // ID of the workflow
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                    // ID of the user
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`                                      // Name of the workflow
-	Payload       string                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`                                // JSON string for payload
-	Kind          string                 `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`                                      // Kind of workflow
-	BuildStatus   string                 `protobuf:"bytes,6,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"`     // Status of the workflow
-	Interval      int32                  `protobuf:"varint,7,opt,name=interval,proto3" json:"interval,omitempty"`                             // Interval measured in minutes
-	CreatedAt     string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`           // Time the workflow was created
-	UpdatedAt     string                 `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`           // Time the workflow was last updated
-	TerminatedAt  string                 `protobuf:"bytes,10,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"` // Time the workflow was terminated
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                            protoimpl.MessageState `protogen:"open.v1"`
+	Id                               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                                                            // ID of the workflow
+	UserId                           string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                                                                      // ID of the user
+	Name                             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`                                                                                                        // Name of the workflow
+	Payload                          string                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`                                                                                                  // JSON string for payload
+	Kind                             string                 `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                                        // Kind of workflow
+	BuildStatus                      string                 `protobuf:"bytes,6,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"`                                                                       // Status of the workflow
+	Interval                         int32                  `protobuf:"varint,7,opt,name=interval,proto3" json:"interval,omitempty"`                                                                                               // Interval measured in minutes
+	ConsecutiveJobFailuresCount      int32                  `protobuf:"varint,8,opt,name=consecutive_job_failures_count,json=consecutiveJobFailuresCount,proto3" json:"consecutive_job_failures_count,omitempty"`                  // Number of consecutive job failures
+	MaxConsecutiveJobFailuresAllowed int32                  `protobuf:"varint,9,opt,name=max_consecutive_job_failures_allowed,json=maxConsecutiveJobFailuresAllowed,proto3" json:"max_consecutive_job_failures_allowed,omitempty"` // Maximum number of consecutive job failures allowed
+	CreatedAt                        string                 `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                                                            // Time the workflow was created
+	UpdatedAt                        string                 `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
+	TerminatedAt                     string                 `protobuf:"bytes,12,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
 }
 
 func (x *GetWorkflowByIDResponse) Reset() {
@@ -650,6 +684,20 @@ func (x *GetWorkflowByIDResponse) GetInterval() int32 {
 	return 0
 }
 
+func (x *GetWorkflowByIDResponse) GetConsecutiveJobFailuresCount() int32 {
+	if x != nil {
+		return x.ConsecutiveJobFailuresCount
+	}
+	return 0
+}
+
+func (x *GetWorkflowByIDResponse) GetMaxConsecutiveJobFailuresAllowed() int32 {
+	if x != nil {
+		return x.MaxConsecutiveJobFailuresAllowed
+	}
+	return 0
+}
+
 func (x *GetWorkflowByIDResponse) GetCreatedAt() string {
 	if x != nil {
 		return x.CreatedAt
@@ -671,6 +719,178 @@ func (x *GetWorkflowByIDResponse) GetTerminatedAt() string {
 	return ""
 }
 
+// IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
+type IncrementWorkflowConsecutiveJobFailuresCountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // ID of the workflow
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountRequest) Reset() {
+	*x = IncrementWorkflowConsecutiveJobFailuresCountRequest{}
+	mi := &file_workflows_workflows_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IncrementWorkflowConsecutiveJobFailuresCountRequest) ProtoMessage() {}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflows_workflows_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IncrementWorkflowConsecutiveJobFailuresCountRequest.ProtoReflect.Descriptor instead.
+func (*IncrementWorkflowConsecutiveJobFailuresCountRequest) Descriptor() ([]byte, []int) {
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+// IncrementWorkflowConsecutiveJobFailuresCountResponse contains the result of a workflow consecutive job failures count increment attempt.
+type IncrementWorkflowConsecutiveJobFailuresCountResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ThresholdReached bool                   `protobuf:"varint,1,opt,name=threshold_reached,json=thresholdReached,proto3" json:"threshold_reached,omitempty"` // Indicates if the threshold was reached
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountResponse) Reset() {
+	*x = IncrementWorkflowConsecutiveJobFailuresCountResponse{}
+	mi := &file_workflows_workflows_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IncrementWorkflowConsecutiveJobFailuresCountResponse) ProtoMessage() {}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflows_workflows_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IncrementWorkflowConsecutiveJobFailuresCountResponse.ProtoReflect.Descriptor instead.
+func (*IncrementWorkflowConsecutiveJobFailuresCountResponse) Descriptor() ([]byte, []int) {
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountResponse) GetThresholdReached() bool {
+	if x != nil {
+		return x.ThresholdReached
+	}
+	return false
+}
+
+// ResetWorkflowConsecutiveJobFailuresCountRequest contains the details needed to reset the consecutive job failures count of a workflow.
+type ResetWorkflowConsecutiveJobFailuresCountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // ID of the workflow
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountRequest) Reset() {
+	*x = ResetWorkflowConsecutiveJobFailuresCountRequest{}
+	mi := &file_workflows_workflows_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetWorkflowConsecutiveJobFailuresCountRequest) ProtoMessage() {}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflows_workflows_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetWorkflowConsecutiveJobFailuresCountRequest.ProtoReflect.Descriptor instead.
+func (*ResetWorkflowConsecutiveJobFailuresCountRequest) Descriptor() ([]byte, []int) {
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+// ResetWorkflowConsecutiveJobFailuresCountResponse contains the result of a workflow consecutive job failures count reset attempt.
+type ResetWorkflowConsecutiveJobFailuresCountResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountResponse) Reset() {
+	*x = ResetWorkflowConsecutiveJobFailuresCountResponse{}
+	mi := &file_workflows_workflows_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetWorkflowConsecutiveJobFailuresCountResponse) ProtoMessage() {}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflows_workflows_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetWorkflowConsecutiveJobFailuresCountResponse.ProtoReflect.Descriptor instead.
+func (*ResetWorkflowConsecutiveJobFailuresCountResponse) Descriptor() ([]byte, []int) {
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{13}
+}
+
 // TerminateWorkflowRequest contains the details needed to terminate a workflow.
 type TerminateWorkflowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -682,7 +902,7 @@ type TerminateWorkflowRequest struct {
 
 func (x *TerminateWorkflowRequest) Reset() {
 	*x = TerminateWorkflowRequest{}
-	mi := &file_workflows_workflows_proto_msgTypes[10]
+	mi := &file_workflows_workflows_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -694,7 +914,7 @@ func (x *TerminateWorkflowRequest) String() string {
 func (*TerminateWorkflowRequest) ProtoMessage() {}
 
 func (x *TerminateWorkflowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[10]
+	mi := &file_workflows_workflows_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,7 +927,7 @@ func (x *TerminateWorkflowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminateWorkflowRequest.ProtoReflect.Descriptor instead.
 func (*TerminateWorkflowRequest) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{10}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TerminateWorkflowRequest) GetId() string {
@@ -724,6 +944,43 @@ func (x *TerminateWorkflowRequest) GetUserId() string {
 	return ""
 }
 
+// TerminateWorkflowResponse contains the result of a workflow termination attempt.
+type TerminateWorkflowResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminateWorkflowResponse) Reset() {
+	*x = TerminateWorkflowResponse{}
+	mi := &file_workflows_workflows_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminateWorkflowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminateWorkflowResponse) ProtoMessage() {}
+
+func (x *TerminateWorkflowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflows_workflows_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminateWorkflowResponse.ProtoReflect.Descriptor instead.
+func (*TerminateWorkflowResponse) Descriptor() ([]byte, []int) {
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{15}
+}
+
 // ListWorkflowsRequest contains the details needed to list all workflows.
 type ListWorkflowsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -735,7 +992,7 @@ type ListWorkflowsRequest struct {
 
 func (x *ListWorkflowsRequest) Reset() {
 	*x = ListWorkflowsRequest{}
-	mi := &file_workflows_workflows_proto_msgTypes[11]
+	mi := &file_workflows_workflows_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -747,7 +1004,7 @@ func (x *ListWorkflowsRequest) String() string {
 func (*ListWorkflowsRequest) ProtoMessage() {}
 
 func (x *ListWorkflowsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[11]
+	mi := &file_workflows_workflows_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -760,7 +1017,7 @@ func (x *ListWorkflowsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkflowsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkflowsRequest) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{11}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListWorkflowsRequest) GetUserId() string {
@@ -779,23 +1036,25 @@ func (x *ListWorkflowsRequest) GetCursor() string {
 
 // WorkflowsByUserIDResponse contains the result of a workflow listing attempt.
 type WorkflowsByUserIDResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                         // ID of the workflow
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                     // Name of the workflow
-	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                               // JSON string for payload
-	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                                     // Kind of workflow
-	BuildStatus   string                 `protobuf:"bytes,5,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"`    // Status of the workflow
-	Interval      int32                  `protobuf:"varint,6,opt,name=interval,proto3" json:"interval,omitempty"`                            // Interval measured in minutes
-	CreatedAt     string                 `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`          // Time the workflow was created
-	UpdatedAt     string                 `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`          // Time the workflow was last updated
-	TerminatedAt  string                 `protobuf:"bytes,9,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"` // Time the workflow was terminated
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                            protoimpl.MessageState `protogen:"open.v1"`
+	Id                               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                                                            // ID of the workflow
+	Name                             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                                                                                        // Name of the workflow
+	Payload                          string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                                                                                                  // JSON string for payload
+	Kind                             string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                                        // Kind of workflow
+	BuildStatus                      string                 `protobuf:"bytes,5,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"`                                                                       // Status of the workflow
+	Interval                         int32                  `protobuf:"varint,6,opt,name=interval,proto3" json:"interval,omitempty"`                                                                                               // Interval measured in minutes
+	ConsecutiveJobFailuresCount      int32                  `protobuf:"varint,7,opt,name=consecutive_job_failures_count,json=consecutiveJobFailuresCount,proto3" json:"consecutive_job_failures_count,omitempty"`                  // Number of consecutive job failures
+	MaxConsecutiveJobFailuresAllowed int32                  `protobuf:"varint,8,opt,name=max_consecutive_job_failures_allowed,json=maxConsecutiveJobFailuresAllowed,proto3" json:"max_consecutive_job_failures_allowed,omitempty"` // Maximum number of consecutive job failures allowed
+	CreatedAt                        string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                                                             // Time the workflow was created
+	UpdatedAt                        string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
+	TerminatedAt                     string                 `protobuf:"bytes,12,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
 }
 
 func (x *WorkflowsByUserIDResponse) Reset() {
 	*x = WorkflowsByUserIDResponse{}
-	mi := &file_workflows_workflows_proto_msgTypes[12]
+	mi := &file_workflows_workflows_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -807,7 +1066,7 @@ func (x *WorkflowsByUserIDResponse) String() string {
 func (*WorkflowsByUserIDResponse) ProtoMessage() {}
 
 func (x *WorkflowsByUserIDResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[12]
+	mi := &file_workflows_workflows_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -820,7 +1079,7 @@ func (x *WorkflowsByUserIDResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkflowsByUserIDResponse.ProtoReflect.Descriptor instead.
 func (*WorkflowsByUserIDResponse) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{12}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *WorkflowsByUserIDResponse) GetId() string {
@@ -865,6 +1124,20 @@ func (x *WorkflowsByUserIDResponse) GetInterval() int32 {
 	return 0
 }
 
+func (x *WorkflowsByUserIDResponse) GetConsecutiveJobFailuresCount() int32 {
+	if x != nil {
+		return x.ConsecutiveJobFailuresCount
+	}
+	return 0
+}
+
+func (x *WorkflowsByUserIDResponse) GetMaxConsecutiveJobFailuresAllowed() int32 {
+	if x != nil {
+		return x.MaxConsecutiveJobFailuresAllowed
+	}
+	return 0
+}
+
 func (x *WorkflowsByUserIDResponse) GetCreatedAt() string {
 	if x != nil {
 		return x.CreatedAt
@@ -897,7 +1170,7 @@ type ListWorkflowsResponse struct {
 
 func (x *ListWorkflowsResponse) Reset() {
 	*x = ListWorkflowsResponse{}
-	mi := &file_workflows_workflows_proto_msgTypes[13]
+	mi := &file_workflows_workflows_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -909,7 +1182,7 @@ func (x *ListWorkflowsResponse) String() string {
 func (*ListWorkflowsResponse) ProtoMessage() {}
 
 func (x *ListWorkflowsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[13]
+	mi := &file_workflows_workflows_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -922,7 +1195,7 @@ func (x *ListWorkflowsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkflowsResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkflowsResponse) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{13}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListWorkflowsResponse) GetWorkflows() []*WorkflowsByUserIDResponse {
@@ -939,62 +1212,27 @@ func (x *ListWorkflowsResponse) GetCursor() string {
 	return ""
 }
 
-// TerminateWorkflowResponse contains the result of a workflow termination attempt.
-type TerminateWorkflowResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TerminateWorkflowResponse) Reset() {
-	*x = TerminateWorkflowResponse{}
-	mi := &file_workflows_workflows_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TerminateWorkflowResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TerminateWorkflowResponse) ProtoMessage() {}
-
-func (x *TerminateWorkflowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TerminateWorkflowResponse.ProtoReflect.Descriptor instead.
-func (*TerminateWorkflowResponse) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{14}
-}
-
 var File_workflows_workflows_proto protoreflect.FileDescriptor
 
 const file_workflows_workflows_proto_rawDesc = "" +
 	"\n" +
-	"\x19workflows/workflows.proto\x12\tworkflows\"\x8e\x01\n" +
+	"\x19workflows/workflows.proto\x12\tworkflows\"\xde\x01\n" +
 	"\x15CreateWorkflowRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x1a\n" +
-	"\binterval\x18\x05 \x01(\x05R\binterval\"(\n" +
+	"\binterval\x18\x05 \x01(\x05R\binterval\x12N\n" +
+	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\"(\n" +
 	"\x16CreateWorkflowResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x8a\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xda\x01\n" +
 	"\x15UpdateWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x18\n" +
 	"\apayload\x18\x04 \x01(\tR\apayload\x12\x1a\n" +
-	"\binterval\x18\x05 \x01(\x05R\binterval\"\x18\n" +
+	"\binterval\x18\x05 \x01(\x05R\binterval\x12N\n" +
+	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\"\x18\n" +
 	"\x16UpdateWorkflowResponse\"U\n" +
 	" UpdateWorkflowBuildStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
@@ -1002,21 +1240,24 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"!UpdateWorkflowBuildStatusResponse\"=\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x89\x02\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x9e\x03\n" +
 	"\x13GetWorkflowResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12!\n" +
 	"\fbuild_status\x18\x05 \x01(\tR\vbuildStatus\x12\x1a\n" +
-	"\binterval\x18\x06 \x01(\x05R\binterval\x12\x1d\n" +
+	"\binterval\x18\x06 \x01(\x05R\binterval\x12C\n" +
+	"\x1econsecutive_job_failures_count\x18\a \x01(\x05R\x1bconsecutiveJobFailuresCount\x12N\n" +
+	"$max_consecutive_job_failures_allowed\x18\b \x01(\x05R maxConsecutiveJobFailuresAllowed\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\t \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\tR\tupdatedAt\x12#\n" +
-	"\rterminated_at\x18\t \x01(\tR\fterminatedAt\"(\n" +
+	"updated_at\x18\n" +
+	" \x01(\tR\tupdatedAt\x12#\n" +
+	"\rterminated_at\x18\v \x01(\tR\fterminatedAt\"(\n" +
 	"\x16GetWorkflowByIDRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xa6\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xbb\x03\n" +
 	"\x17GetWorkflowByIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
@@ -1024,41 +1265,55 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\apayload\x18\x04 \x01(\tR\apayload\x12\x12\n" +
 	"\x04kind\x18\x05 \x01(\tR\x04kind\x12!\n" +
 	"\fbuild_status\x18\x06 \x01(\tR\vbuildStatus\x12\x1a\n" +
-	"\binterval\x18\a \x01(\x05R\binterval\x12\x1d\n" +
+	"\binterval\x18\a \x01(\x05R\binterval\x12C\n" +
+	"\x1econsecutive_job_failures_count\x18\b \x01(\x05R\x1bconsecutiveJobFailuresCount\x12N\n" +
+	"$max_consecutive_job_failures_allowed\x18\t \x01(\x05R maxConsecutiveJobFailuresAllowed\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\b \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\n" +
+	" \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\tR\tupdatedAt\x12#\n" +
-	"\rterminated_at\x18\n" +
-	" \x01(\tR\fterminatedAt\"C\n" +
+	"updated_at\x18\v \x01(\tR\tupdatedAt\x12#\n" +
+	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\"E\n" +
+	"3IncrementWorkflowConsecutiveJobFailuresCountRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
+	"4IncrementWorkflowConsecutiveJobFailuresCountResponse\x12+\n" +
+	"\x11threshold_reached\x18\x01 \x01(\bR\x10thresholdReached\"A\n" +
+	"/ResetWorkflowConsecutiveJobFailuresCountRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"2\n" +
+	"0ResetWorkflowConsecutiveJobFailuresCountResponse\"C\n" +
 	"\x18TerminateWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\"G\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x1b\n" +
+	"\x19TerminateWorkflowResponse\"G\n" +
 	"\x14ListWorkflowsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x16\n" +
-	"\x06cursor\x18\x02 \x01(\tR\x06cursor\"\x8f\x02\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\"\xa4\x03\n" +
 	"\x19WorkflowsByUserIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12!\n" +
 	"\fbuild_status\x18\x05 \x01(\tR\vbuildStatus\x12\x1a\n" +
-	"\binterval\x18\x06 \x01(\x05R\binterval\x12\x1d\n" +
+	"\binterval\x18\x06 \x01(\x05R\binterval\x12C\n" +
+	"\x1econsecutive_job_failures_count\x18\a \x01(\x05R\x1bconsecutiveJobFailuresCount\x12N\n" +
+	"$max_consecutive_job_failures_allowed\x18\b \x01(\x05R maxConsecutiveJobFailuresAllowed\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\t \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\tR\tupdatedAt\x12#\n" +
-	"\rterminated_at\x18\t \x01(\tR\fterminatedAt\"s\n" +
+	"updated_at\x18\n" +
+	" \x01(\tR\tupdatedAt\x12#\n" +
+	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\"s\n" +
 	"\x15ListWorkflowsResponse\x12B\n" +
 	"\tworkflows\x18\x01 \x03(\v2$.workflows.WorkflowsByUserIDResponseR\tworkflows\x12\x16\n" +
-	"\x06cursor\x18\x02 \x01(\tR\x06cursor\"\x1b\n" +
-	"\x19TerminateWorkflowResponse2\xa2\x05\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor2\xfe\a\n" +
 	"\x10WorkflowsService\x12W\n" +
 	"\x0eCreateWorkflow\x12 .workflows.CreateWorkflowRequest\x1a!.workflows.CreateWorkflowResponse\"\x00\x12W\n" +
 	"\x0eUpdateWorkflow\x12 .workflows.UpdateWorkflowRequest\x1a!.workflows.UpdateWorkflowResponse\"\x00\x12x\n" +
 	"\x19UpdateWorkflowBuildStatus\x12+.workflows.UpdateWorkflowBuildStatusRequest\x1a,.workflows.UpdateWorkflowBuildStatusResponse\"\x00\x12N\n" +
 	"\vGetWorkflow\x12\x1d.workflows.GetWorkflowRequest\x1a\x1e.workflows.GetWorkflowResponse\"\x00\x12Z\n" +
-	"\x0fGetWorkflowByID\x12!.workflows.GetWorkflowByIDRequest\x1a\".workflows.GetWorkflowByIDResponse\"\x00\x12`\n" +
+	"\x0fGetWorkflowByID\x12!.workflows.GetWorkflowByIDRequest\x1a\".workflows.GetWorkflowByIDResponse\"\x00\x12\xb1\x01\n" +
+	",IncrementWorkflowConsecutiveJobFailuresCount\x12>.workflows.IncrementWorkflowConsecutiveJobFailuresCountRequest\x1a?.workflows.IncrementWorkflowConsecutiveJobFailuresCountResponse\"\x00\x12\xa5\x01\n" +
+	"(ResetWorkflowConsecutiveJobFailuresCount\x12:.workflows.ResetWorkflowConsecutiveJobFailuresCountRequest\x1a;.workflows.ResetWorkflowConsecutiveJobFailuresCountResponse\"\x00\x12`\n" +
 	"\x11TerminateWorkflow\x12#.workflows.TerminateWorkflowRequest\x1a$.workflows.TerminateWorkflowResponse\"\x00\x12T\n" +
 	"\rListWorkflows\x12\x1f.workflows.ListWorkflowsRequest\x1a .workflows.ListWorkflowsResponse\"\x00BBZ@github.com/hitesh22rana/chronoverse/proto/go/workflows;workflowsb\x06proto3"
 
@@ -1074,42 +1329,50 @@ func file_workflows_workflows_proto_rawDescGZIP() []byte {
 	return file_workflows_workflows_proto_rawDescData
 }
 
-var file_workflows_workflows_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_workflows_workflows_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_workflows_workflows_proto_goTypes = []any{
-	(*CreateWorkflowRequest)(nil),             // 0: workflows.CreateWorkflowRequest
-	(*CreateWorkflowResponse)(nil),            // 1: workflows.CreateWorkflowResponse
-	(*UpdateWorkflowRequest)(nil),             // 2: workflows.UpdateWorkflowRequest
-	(*UpdateWorkflowResponse)(nil),            // 3: workflows.UpdateWorkflowResponse
-	(*UpdateWorkflowBuildStatusRequest)(nil),  // 4: workflows.UpdateWorkflowBuildStatusRequest
-	(*UpdateWorkflowBuildStatusResponse)(nil), // 5: workflows.UpdateWorkflowBuildStatusResponse
-	(*GetWorkflowRequest)(nil),                // 6: workflows.GetWorkflowRequest
-	(*GetWorkflowResponse)(nil),               // 7: workflows.GetWorkflowResponse
-	(*GetWorkflowByIDRequest)(nil),            // 8: workflows.GetWorkflowByIDRequest
-	(*GetWorkflowByIDResponse)(nil),           // 9: workflows.GetWorkflowByIDResponse
-	(*TerminateWorkflowRequest)(nil),          // 10: workflows.TerminateWorkflowRequest
-	(*ListWorkflowsRequest)(nil),              // 11: workflows.ListWorkflowsRequest
-	(*WorkflowsByUserIDResponse)(nil),         // 12: workflows.WorkflowsByUserIDResponse
-	(*ListWorkflowsResponse)(nil),             // 13: workflows.ListWorkflowsResponse
-	(*TerminateWorkflowResponse)(nil),         // 14: workflows.TerminateWorkflowResponse
+	(*CreateWorkflowRequest)(nil),                                // 0: workflows.CreateWorkflowRequest
+	(*CreateWorkflowResponse)(nil),                               // 1: workflows.CreateWorkflowResponse
+	(*UpdateWorkflowRequest)(nil),                                // 2: workflows.UpdateWorkflowRequest
+	(*UpdateWorkflowResponse)(nil),                               // 3: workflows.UpdateWorkflowResponse
+	(*UpdateWorkflowBuildStatusRequest)(nil),                     // 4: workflows.UpdateWorkflowBuildStatusRequest
+	(*UpdateWorkflowBuildStatusResponse)(nil),                    // 5: workflows.UpdateWorkflowBuildStatusResponse
+	(*GetWorkflowRequest)(nil),                                   // 6: workflows.GetWorkflowRequest
+	(*GetWorkflowResponse)(nil),                                  // 7: workflows.GetWorkflowResponse
+	(*GetWorkflowByIDRequest)(nil),                               // 8: workflows.GetWorkflowByIDRequest
+	(*GetWorkflowByIDResponse)(nil),                              // 9: workflows.GetWorkflowByIDResponse
+	(*IncrementWorkflowConsecutiveJobFailuresCountRequest)(nil),  // 10: workflows.IncrementWorkflowConsecutiveJobFailuresCountRequest
+	(*IncrementWorkflowConsecutiveJobFailuresCountResponse)(nil), // 11: workflows.IncrementWorkflowConsecutiveJobFailuresCountResponse
+	(*ResetWorkflowConsecutiveJobFailuresCountRequest)(nil),      // 12: workflows.ResetWorkflowConsecutiveJobFailuresCountRequest
+	(*ResetWorkflowConsecutiveJobFailuresCountResponse)(nil),     // 13: workflows.ResetWorkflowConsecutiveJobFailuresCountResponse
+	(*TerminateWorkflowRequest)(nil),                             // 14: workflows.TerminateWorkflowRequest
+	(*TerminateWorkflowResponse)(nil),                            // 15: workflows.TerminateWorkflowResponse
+	(*ListWorkflowsRequest)(nil),                                 // 16: workflows.ListWorkflowsRequest
+	(*WorkflowsByUserIDResponse)(nil),                            // 17: workflows.WorkflowsByUserIDResponse
+	(*ListWorkflowsResponse)(nil),                                // 18: workflows.ListWorkflowsResponse
 }
 var file_workflows_workflows_proto_depIdxs = []int32{
-	12, // 0: workflows.ListWorkflowsResponse.workflows:type_name -> workflows.WorkflowsByUserIDResponse
+	17, // 0: workflows.ListWorkflowsResponse.workflows:type_name -> workflows.WorkflowsByUserIDResponse
 	0,  // 1: workflows.WorkflowsService.CreateWorkflow:input_type -> workflows.CreateWorkflowRequest
 	2,  // 2: workflows.WorkflowsService.UpdateWorkflow:input_type -> workflows.UpdateWorkflowRequest
 	4,  // 3: workflows.WorkflowsService.UpdateWorkflowBuildStatus:input_type -> workflows.UpdateWorkflowBuildStatusRequest
 	6,  // 4: workflows.WorkflowsService.GetWorkflow:input_type -> workflows.GetWorkflowRequest
 	8,  // 5: workflows.WorkflowsService.GetWorkflowByID:input_type -> workflows.GetWorkflowByIDRequest
-	10, // 6: workflows.WorkflowsService.TerminateWorkflow:input_type -> workflows.TerminateWorkflowRequest
-	11, // 7: workflows.WorkflowsService.ListWorkflows:input_type -> workflows.ListWorkflowsRequest
-	1,  // 8: workflows.WorkflowsService.CreateWorkflow:output_type -> workflows.CreateWorkflowResponse
-	3,  // 9: workflows.WorkflowsService.UpdateWorkflow:output_type -> workflows.UpdateWorkflowResponse
-	5,  // 10: workflows.WorkflowsService.UpdateWorkflowBuildStatus:output_type -> workflows.UpdateWorkflowBuildStatusResponse
-	7,  // 11: workflows.WorkflowsService.GetWorkflow:output_type -> workflows.GetWorkflowResponse
-	9,  // 12: workflows.WorkflowsService.GetWorkflowByID:output_type -> workflows.GetWorkflowByIDResponse
-	14, // 13: workflows.WorkflowsService.TerminateWorkflow:output_type -> workflows.TerminateWorkflowResponse
-	13, // 14: workflows.WorkflowsService.ListWorkflows:output_type -> workflows.ListWorkflowsResponse
-	8,  // [8:15] is the sub-list for method output_type
-	1,  // [1:8] is the sub-list for method input_type
+	10, // 6: workflows.WorkflowsService.IncrementWorkflowConsecutiveJobFailuresCount:input_type -> workflows.IncrementWorkflowConsecutiveJobFailuresCountRequest
+	12, // 7: workflows.WorkflowsService.ResetWorkflowConsecutiveJobFailuresCount:input_type -> workflows.ResetWorkflowConsecutiveJobFailuresCountRequest
+	14, // 8: workflows.WorkflowsService.TerminateWorkflow:input_type -> workflows.TerminateWorkflowRequest
+	16, // 9: workflows.WorkflowsService.ListWorkflows:input_type -> workflows.ListWorkflowsRequest
+	1,  // 10: workflows.WorkflowsService.CreateWorkflow:output_type -> workflows.CreateWorkflowResponse
+	3,  // 11: workflows.WorkflowsService.UpdateWorkflow:output_type -> workflows.UpdateWorkflowResponse
+	5,  // 12: workflows.WorkflowsService.UpdateWorkflowBuildStatus:output_type -> workflows.UpdateWorkflowBuildStatusResponse
+	7,  // 13: workflows.WorkflowsService.GetWorkflow:output_type -> workflows.GetWorkflowResponse
+	9,  // 14: workflows.WorkflowsService.GetWorkflowByID:output_type -> workflows.GetWorkflowByIDResponse
+	11, // 15: workflows.WorkflowsService.IncrementWorkflowConsecutiveJobFailuresCount:output_type -> workflows.IncrementWorkflowConsecutiveJobFailuresCountResponse
+	13, // 16: workflows.WorkflowsService.ResetWorkflowConsecutiveJobFailuresCount:output_type -> workflows.ResetWorkflowConsecutiveJobFailuresCountResponse
+	15, // 17: workflows.WorkflowsService.TerminateWorkflow:output_type -> workflows.TerminateWorkflowResponse
+	18, // 18: workflows.WorkflowsService.ListWorkflows:output_type -> workflows.ListWorkflowsResponse
+	10, // [10:19] is the sub-list for method output_type
+	1,  // [1:10] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -1126,7 +1389,7 @@ func file_workflows_workflows_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workflows_workflows_proto_rawDesc), len(file_workflows_workflows_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

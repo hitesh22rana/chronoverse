@@ -118,11 +118,12 @@ func TestCreateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.CreateWorkflowRequest{
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:     "HEARTBEAT",
-					Interval: 1,
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
@@ -152,11 +153,12 @@ func TestCreateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.CreateWorkflowRequest{
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:     "HEARTBEAT",
-					Interval: 1,
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
@@ -192,7 +194,7 @@ func TestCreateWorkflow(t *testing.T) {
 				svc.EXPECT().CreateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
-				).Return("", status.Error(codes.InvalidArgument, "user_id, name, payload, kind, interval, and max_retry are required"))
+				).Return("", status.Error(codes.InvalidArgument, "user_id, name, payload, kind, interval are required"))
 			},
 			res:   nil,
 			isErr: true,
@@ -206,11 +208,12 @@ func TestCreateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.CreateWorkflowRequest{
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:     "HEARTBEAT",
-					Interval: 1,
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
@@ -232,11 +235,12 @@ func TestCreateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.CreateWorkflowRequest{
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:     "HEARTBEAT",
-					Interval: 1,
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
@@ -310,11 +314,12 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:       "job_id",
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Interval: 1,
+					Id:                               "job_id",
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowRequest) {
@@ -342,11 +347,12 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:       "job_id",
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Interval: 1,
+					Id:                               "job_id",
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowRequest) {
@@ -396,11 +402,12 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:       "job_id",
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Interval: 1,
+					Id:                               "job_id",
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowRequest) {},
@@ -422,11 +429,12 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:       "job_id",
-					UserId:   "user1",
-					Name:     "job1",
-					Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
-					Interval: 1,
+					Id:                               "job_id",
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowRequest) {
@@ -708,14 +716,16 @@ func TestGetWorkflow(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
-					ID:                  "job_id",
-					Name:                "job1",
-					Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:                "HEARTBEAT",
-					WorkflowBuildStatus: "COMPLETED",
-					Interval:            1,
-					CreatedAt:           time.Now(),
-					UpdatedAt:           time.Now(),
+					ID:                               "job_id",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        time.Now(),
+					UpdatedAt:                        time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -723,15 +733,17 @@ func TestGetWorkflow(t *testing.T) {
 				}, nil)
 			},
 			res: &workflowspb.GetWorkflowResponse{
-				Id:           "job_id",
-				Name:         "job1",
-				Payload:      `{"action": "run", "params": {"foo": "bar"}}`,
-				Kind:         "HEARTBEAT",
-				BuildStatus:  "COMPLETED",
-				Interval:     1,
-				CreatedAt:    time.Now().Format(time.RFC3339Nano),
-				UpdatedAt:    time.Now().Format(time.RFC3339Nano),
-				TerminatedAt: time.Now().Format(time.RFC3339Nano),
+				Id:                               "job_id",
+				Name:                             "job1",
+				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:                             "HEARTBEAT",
+				BuildStatus:                      "COMPLETED",
+				Interval:                         1,
+				ConsecutiveJobFailuresCount:      0,
+				MaxConsecutiveJobFailuresAllowed: 5,
+				CreatedAt:                        time.Now().Format(time.RFC3339Nano),
+				UpdatedAt:                        time.Now().Format(time.RFC3339Nano),
+				TerminatedAt:                     time.Now().Format(time.RFC3339Nano),
 			},
 			isErr: false,
 		},
@@ -905,14 +917,16 @@ func TestGetWorkflowByID(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&workflowsmodel.GetWorkflowByIDResponse{
-					UserID:              "user1",
-					Name:                "job1",
-					Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:                "HEARTBEAT",
-					WorkflowBuildStatus: "COMPLETED",
-					Interval:            1,
-					CreatedAt:           time.Now(),
-					UpdatedAt:           time.Now(),
+					UserID:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        time.Now(),
+					UpdatedAt:                        time.Now(),
 					TerminatedAt: sql.NullTime{
 						Time:  time.Now(),
 						Valid: true,
@@ -920,15 +934,17 @@ func TestGetWorkflowByID(t *testing.T) {
 				}, nil)
 			},
 			res: &workflowspb.GetWorkflowByIDResponse{
-				UserId:       "user1",
-				Name:         "job1",
-				Payload:      `{"action": "run", "params": {"foo": "bar"}}`,
-				Kind:         "HEARTBEAT",
-				BuildStatus:  "COMPLETED",
-				Interval:     1,
-				CreatedAt:    time.Now().Format(time.RFC3339Nano),
-				UpdatedAt:    time.Now().Format(time.RFC3339Nano),
-				TerminatedAt: time.Now().Format(time.RFC3339Nano),
+				UserId:                           "user1",
+				Name:                             "job1",
+				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Kind:                             "HEARTBEAT",
+				BuildStatus:                      "COMPLETED",
+				Interval:                         1,
+				ConsecutiveJobFailuresCount:      0,
+				MaxConsecutiveJobFailuresAllowed: 5,
+				CreatedAt:                        time.Now().Format(time.RFC3339Nano),
+				UpdatedAt:                        time.Now().Format(time.RFC3339Nano),
+				TerminatedAt:                     time.Now().Format(time.RFC3339Nano),
 			},
 			isErr: false,
 		},
@@ -1066,6 +1082,422 @@ func TestGetWorkflowByID(t *testing.T) {
 			if tt.isErr {
 				if err == nil {
 					t.Error("GetWorkflowByID() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := workflowsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(workflows.New(t.Context(), &workflows.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest)
+		res   *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse
+		isErr bool
+	}{
+		{
+			name: "success: threshold not reached",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "job_id",
+				},
+			},
+			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(false, nil)
+			},
+			res: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{
+				ThresholdReached: false,
+			},
+			isErr: false,
+		},
+		{
+			name: "success: threshold reached",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(true, nil)
+			},
+			res: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{
+				ThresholdReached: true,
+			},
+			isErr: false,
+		},
+		{
+			name: "error: unauthorized access (invalid role)",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"invalid-token",
+					)
+				},
+				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "",
+				},
+			},
+			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(false, status.Error(codes.InvalidArgument, "id is required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(false, status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.IncrementWorkflowConsecutiveJobFailuresCount(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("IncrementWorkflowConsecutiveJobFailuresCount() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("IncrementWorkflowConsecutiveJobFailuresCount() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := workflowsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(workflows.New(t.Context(), &workflows.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest)
+		res   *workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "job_id",
+				},
+			},
+			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil)
+			},
+			res:   &workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse{},
+			isErr: false,
+		},
+		{
+			name: "error: unauthorized access (invalid role)",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "job_id",
+				},
+			},
+			mock:  func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"invalid-token",
+					)
+				},
+				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "",
+				},
+			},
+			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.InvalidArgument, "id is required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock:  func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
+					Id: "workflow_id",
+				},
+			},
+			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.ResetWorkflowConsecutiveJobFailuresCount(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("ResetWorkflowConsecutiveJobFailuresCount() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("ResetWorkflowConsecutiveJobFailuresCount() error = nil, want error")
 				}
 				return
 			}
@@ -1298,14 +1730,16 @@ func TestListWorkflows(t *testing.T) {
 				).Return(&workflowsmodel.ListWorkflowsResponse{
 					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
 						{
-							ID:                  "job_id",
-							Name:                "job1",
-							Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-							Kind:                "HEARTBEAT",
-							WorkflowBuildStatus: "COMPLETED",
-							Interval:            1,
-							CreatedAt:           time.Now(),
-							UpdatedAt:           time.Now(),
+							ID:                               "job_id",
+							Name:                             "job1",
+							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:                             "HEARTBEAT",
+							WorkflowBuildStatus:              "COMPLETED",
+							Interval:                         1,
+							ConsecutiveJobFailuresCount:      0,
+							MaxConsecutiveJobFailuresAllowed: 5,
+							CreatedAt:                        time.Now(),
+							UpdatedAt:                        time.Now(),
 							TerminatedAt: sql.NullTime{
 								Time:  time.Now(),
 								Valid: true,
@@ -1318,15 +1752,17 @@ func TestListWorkflows(t *testing.T) {
 			res: &workflowspb.ListWorkflowsResponse{
 				Workflows: []*workflowspb.WorkflowsByUserIDResponse{
 					{
-						Id:           "job_id",
-						Name:         "job1",
-						Payload:      `{"action": "run", "params": {"foo": "bar"}}`,
-						Kind:         "HEARTBEAT",
-						BuildStatus:  "COMPLETED",
-						Interval:     1,
-						CreatedAt:    time.Now().Format(time.RFC3339Nano),
-						UpdatedAt:    time.Now().Format(time.RFC3339Nano),
-						TerminatedAt: time.Now().Format(time.RFC3339Nano),
+						Id:                               "job_id",
+						Name:                             "job1",
+						Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+						Kind:                             "HEARTBEAT",
+						BuildStatus:                      "COMPLETED",
+						Interval:                         1,
+						ConsecutiveJobFailuresCount:      0,
+						MaxConsecutiveJobFailuresAllowed: 5,
+						CreatedAt:                        time.Now().Format(time.RFC3339Nano),
+						UpdatedAt:                        time.Now().Format(time.RFC3339Nano),
+						TerminatedAt:                     time.Now().Format(time.RFC3339Nano),
 					},
 				},
 				Cursor: "",

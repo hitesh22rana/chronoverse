@@ -9,6 +9,7 @@ type WorkflowWorker struct {
 	Kafka
 	WorkflowsService
 	JobsService
+	NotificationsService
 	WorkflowWorkerConfig
 }
 

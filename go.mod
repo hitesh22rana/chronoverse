@@ -3,7 +3,7 @@ module github.com/hitesh22rana/chronoverse
 go 1.24.0
 
 require (
-	github.com/ClickHouse/clickhouse-go/v2 v2.33.1
+	github.com/ClickHouse/clickhouse-go/v2 v2.34.0
 	github.com/docker/docker v28.0.4+incompatible
 	github.com/exaring/otelpgx v0.9.0
 	github.com/go-playground/validator/v10 v10.26.0
@@ -28,7 +28,7 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.36.0
 	golang.org/x/sync v0.12.0
-	google.golang.org/grpc v1.71.0
+	google.golang.org/grpc v1.71.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1
 	google.golang.org/protobuf v1.36.6
 )

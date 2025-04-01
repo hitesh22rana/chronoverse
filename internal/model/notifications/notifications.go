@@ -2,7 +2,12 @@ package notifications
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
@@ -22,6 +27,36 @@ const (
 // ToString converts the Kind to its string representation.
 func (k Kind) ToString() string {
 	return string(k)
+}
+
+// Entity represents the entity of the notification.
+type Entity string
+
+// Entities for the notification.
+const (
+	EntityWorkflow Entity = "WORKFLOW"
+	EntityJob      Entity = "JOB"
+)
+
+// ToString converts the Entity to its string representation.
+func (e Entity) ToString() string {
+	return string(e)
+}
+
+// CreateWorkflowsNotificationPayload creates a notification payload for workflows.
+func CreateWorkflowsNotificationPayload(title, message, workflowID string) (string, error) {
+	payload, err := json.Marshal(map[string]any{
+		"title":       title,
+		"message":     message,
+		"entity_id":   workflowID,
+		"entity_type": EntityWorkflow.ToString(),
+		"action_url":  fmt.Sprintf("/workflows/%s", workflowID),
+	})
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "failed to marshal payload: %v", err)
+	}
+
+	return string(payload), nil
 }
 
 // NotificationResponse represents a notification entity.

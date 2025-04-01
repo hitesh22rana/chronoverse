@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -14,8 +15,10 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
@@ -40,9 +43,10 @@ type ContainerSvc interface {
 
 // Services represents the services used by the workflow.
 type Services struct {
-	Workflows workflowspb.WorkflowsServiceClient
-	Jobs      jobspb.JobsServiceClient
-	Csvc      ContainerSvc
+	Workflows     workflowspb.WorkflowsServiceClient
+	Jobs          jobspb.JobsServiceClient
+	Notifications notificationspb.NotificationsServiceClient
+	Csvc          ContainerSvc
 }
 
 // Config represents the repository constants configuration.
@@ -207,6 +211,18 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 			return _err
 		}
 
+		// Send notification for the workflow build skipped event
+		// This is a fire-and-forget operation, so we don't need to wait for it to complete
+		//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+		go r.sendNotification(
+			ctx,
+			workflow.GetUserId(),
+			workflowID,
+			"Workflow Build Skipped",
+			fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", workflow.GetName()),
+			notificationsmodel.KindWebInfo.ToString(),
+		)
+
 		return nil
 	}
 
@@ -218,14 +234,26 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		return _err
 	}
 
-	// Extract the image from the workflow
-	imageName, err := extractImageName(workflow.GetPayload())
-	if err != nil {
-		return err
-	}
+	// Send notification for the workflow build start event
+	// This is a fire-and-forget operation, so we don't need to wait for it to complete
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+	go r.sendNotification(
+		ctx,
+		workflow.GetUserId(),
+		workflowID,
+		"Workflow Build Started",
+		fmt.Sprintf("Build process for workflow '%s' has started.", workflow.GetName()),
+		notificationsmodel.KindWebInfo.ToString(),
+	)
 
 	// Execute the build process with retry enabled
 	if workflowErr := withRetry(func() error {
+		// Extract the image from the workflow
+		imageName, err := extractImageName(workflow.GetPayload())
+		if err != nil {
+			return err
+		}
+
 		return r.svc.Csvc.Build(ctx, imageName)
 	}); workflowErr != nil {
 		// Update the workflow status from QUEUED to FAILED
@@ -235,6 +263,18 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		}); _err != nil {
 			return _err
 		}
+
+		// Send notification for the workflow build failed event
+		// This is a fire-and-forget operation, so we don't need to wait for it to complete
+		//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+		go r.sendNotification(
+			ctx,
+			workflow.GetUserId(),
+			workflowID,
+			"Workflow Build Failed",
+			fmt.Sprintf("Build process for workflow '%s' has failed.", workflow.GetName()),
+			notificationsmodel.KindWebError.ToString(),
+		)
 
 		return workflowErr
 	}
@@ -254,6 +294,38 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
 	}); _err != nil {
 		return _err
+	}
+
+	// Send notification for the workflow build completed event
+	// This is a fire-and-forget operation, so we don't need to wait for it to complete
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+	go r.sendNotification(
+		ctx,
+		workflow.GetUserId(),
+		workflowID,
+		"Workflow Build Completed",
+		fmt.Sprintf("Build process for workflow '%s' has completed and is scheduled to run.", workflow.GetName()),
+		notificationsmodel.KindWebSuccess.ToString(),
+	)
+
+	return nil
+}
+
+// sendNotification sends a notification for the workflow related events.
+func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, title, message, kind string) error {
+	notification, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
+	if err != nil {
+		return err
+	}
+
+	// Create the notification
+	_, err = r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
+		UserId:  userID,
+		Kind:    kind,
+		Payload: notification,
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil

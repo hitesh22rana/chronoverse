@@ -11,6 +11,7 @@ type ExecutionWorker struct {
 	Kafka
 	WorkflowsService
 	JobsService
+	NotificationsService
 	ExecutionWorkerConfig
 }
 

@@ -59,6 +59,22 @@ func CreateWorkflowsNotificationPayload(title, message, workflowID string) (stri
 	return string(payload), nil
 }
 
+// CreateJobsNotificationPayload creates a notification payload for jobs.
+func CreateJobsNotificationPayload(title, message, jobID string) (string, error) {
+	payload, err := json.Marshal(map[string]any{
+		"title":       title,
+		"message":     message,
+		"entity_id":   jobID,
+		"entity_type": EntityJob.ToString(),
+		"action_url":  fmt.Sprintf("/jobs/%s", jobID),
+	})
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "failed to marshal payload: %v", err)
+	}
+
+	return string(payload), nil
+}
+
 // NotificationResponse represents a notification entity.
 type NotificationResponse struct {
 	ID        string       `db:"id"`

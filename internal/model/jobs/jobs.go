@@ -95,6 +95,13 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	}
 }
 
+// ScheduledJobEntry represents the scheduled job entry.
+type ScheduledJobEntry struct {
+	JobID       string
+	WorkflowID  string
+	ScheduledAt string
+}
+
 // JobLogEntry represents the log entry of the job.
 type JobLogEntry struct {
 	JobID       string

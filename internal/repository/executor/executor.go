@@ -3,7 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
-	"strings"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -16,16 +16,17 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	delimiter   = '$'
 	authSubject = "internal/executor"
 
 	// Statuses for the jobs.
@@ -58,10 +59,11 @@ type HeartBeatSvc interface {
 
 // Services represents the services used by the executor.
 type Services struct {
-	Workflows workflowspb.WorkflowsServiceClient
-	Jobs      jobspb.JobsServiceClient
-	Csvc      ContainerSvc
-	Hsvc      HeartBeatSvc
+	Workflows     workflowspb.WorkflowsServiceClient
+	Jobs          jobspb.JobsServiceClient
+	Notifications notificationspb.NotificationsServiceClient
+	Csvc          ContainerSvc
+	Hsvc          HeartBeatSvc
 }
 
 // Config represents the repository constants configuration.
@@ -133,7 +135,7 @@ func (r *Repository) Run(ctx context.Context) error {
 					defer span.End()
 
 					// Execute the run workflow
-					if err := r.runWorkflow(ctxWithTrace, string(record.Value)); err != nil {
+					if err := r.runWorkflow(ctxWithTrace, record.Value); err != nil {
 						logger.Error(
 							"run workflow execution failed",
 							zap.Any("ctx", ctxWithTrace),
@@ -177,9 +179,9 @@ func (r *Repository) Run(ctx context.Context) error {
 // runWorkflow runs the executor workflow.
 //
 //nolint:gocyclo // This function is complex and has multiple responsibilities.
-func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error {
-	// Extract the data from the record value
-	jobID, workflowID, lastScheduledAt, err := extractDataFromRecordValue(recordValue)
+func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error {
+	// Extract the fields from the record value
+	jobID, workflowID, lastScheduledAt, err := extractFieldFromRecordValue(recordValue)
 	if err != nil {
 		return err
 	}
@@ -227,7 +229,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return _err
 	}
 
-	// Update the jov status from QUEUED to RUNNING
+	// Update the job status from QUEUED to RUNNING
 	if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 		Id:     jobID,
 		Status: statusRunning,
@@ -253,6 +255,19 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 			return _err
 		}
 
+		// Send an error notification for the job execution failure
+		// This is a fire-and-forget operation, so we don't need to wait for it to complete
+		//nolint:errcheck // Ignore the error as we don't want to block the job execution
+		go r.sendNotification(
+			ctx,
+			workflow.GetUserId(),
+			jobID,
+			"Job Execution Failed",
+			fmt.Sprintf("Job execution failed for workflow '%s'. Please check the logs for more details.", workflow.GetName()),
+			notificationsmodel.KindWebError.ToString(),
+			notificationsmodel.EntityJob.ToString(),
+		)
+
 		// If the threshold has been reached, terminate the workflow
 		if res.GetThresholdReached() {
 			if _, _err := r.svc.Workflows.TerminateWorkflow(ctx, &workflowspb.TerminateWorkflowRequest{
@@ -261,6 +276,19 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 			}); _err != nil {
 				return _err
 			}
+
+			// The threshold has been reached, send an alert notification for the workflow termination
+			// This is a fire-and-forget operation, so we don't need to wait for it to complete
+			//nolint:errcheck,lll // Ignore the error as we don't want to block the job execution
+			go r.sendNotification(
+				ctx,
+				workflow.GetUserId(),
+				workflowID,
+				"Workflow Terminated",
+				fmt.Sprintf("Workflow '%s' has been terminated after reaching %d consecutive job failures...", workflow.GetName(), workflow.GetMaxConsecutiveJobFailuresAllowed()),
+				notificationsmodel.KindWebAlert.ToString(),
+				notificationsmodel.EntityWorkflow.ToString(),
+			)
 		}
 
 		return err
@@ -274,6 +302,19 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 		return _err
 	}
 
+	// Send a success notification for the job execution
+	// This is a fire-and-forget operation, so we don't need to wait for it to complete
+	//nolint:errcheck // Ignore the error as we don't want to block the job execution
+	go r.sendNotification(
+		ctx,
+		workflow.GetUserId(),
+		jobID,
+		"Job Execution Completed",
+		fmt.Sprintf("Job execution completed successfully for workflow '%s'.", workflow.GetName()),
+		notificationsmodel.KindWebSuccess.ToString(),
+		notificationsmodel.EntityJob.ToString(),
+	)
+
 	// Reset the workflow consecutive job failures count
 	if _, _err := r.svc.Workflows.ResetWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
 		Id: workflowID,
@@ -284,19 +325,59 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue string) error 
 	return nil
 }
 
-// extractDataFromRecordValue extracts the data from the record value.
-func extractDataFromRecordValue(recordValue string) (jobID, workflowID string, lastScheduledAt time.Time, err error) {
-	parts := strings.Split(recordValue, string(delimiter))
-	if len(parts) != 3 {
-		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid data format")
+// sendNotification sends a notification for the job execution related events.
+func (r *Repository) sendNotification(ctx context.Context, userID, entityID, title, message, kind, notificationType string) error {
+	switch notificationType {
+	case notificationsmodel.EntityJob.ToString():
+		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, entityID)
+		if err != nil {
+			return err
+		}
+
+		// Create a new notification
+		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
+			UserId:  userID,
+			Kind:    kind,
+			Payload: payload,
+		}); err != nil {
+			return err
+		}
+	case notificationsmodel.EntityWorkflow.ToString():
+		payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, entityID)
+		if err != nil {
+			return err
+		}
+
+		// Create a new notification
+		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
+			UserId:  userID,
+			Kind:    kind,
+			Payload: payload,
+		}); err != nil {
+			return err
+		}
+	default:
+		return status.Error(codes.InvalidArgument, "invalid notification kind")
 	}
 
-	lastScheduledAt, err = time.Parse(time.RFC3339Nano, parts[2])
+	return nil
+}
+
+// extractFieldFromRecordValue extracts the data from the record value.
+func extractFieldFromRecordValue(recordValue []byte) (jobID, workflowID string, lastScheduledAt time.Time, err error) {
+	var scheduledJobEntry jobsmodel.ScheduledJobEntry
+	if err = json.Unmarshal(recordValue, &scheduledJobEntry); err != nil {
+		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid record value format")
+	}
+
+	jobID = scheduledJobEntry.JobID
+	workflowID = scheduledJobEntry.WorkflowID
+	lastScheduledAt, err = time.Parse(time.RFC3339Nano, scheduledJobEntry.ScheduledAt)
 	if err != nil {
-		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid scheduled at time")
+		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid scheduledAt format")
 	}
 
-	return parts[0], parts[1], lastScheduledAt, nil
+	return jobID, workflowID, lastScheduledAt, nil
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
@@ -352,7 +433,7 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 			currentSeq := atomic.AddUint32(&sequenceNum, 1)
 
 			// Serialize the log entry
-			logEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
+			jobEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
 				JobID:       jobID,
 				WorkflowID:  workflowID,
 				UserID:      userID,
@@ -364,7 +445,7 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 				continue
 			}
 
-			if err := r.kfk.ProduceSync(ctx, kgo.SliceRecord(logEntryBytes)).FirstErr(); err != nil {
+			if err := r.kfk.ProduceSync(ctx, kgo.SliceRecord(jobEntryBytes)).FirstErr(); err != nil {
 				continue
 			}
 		}

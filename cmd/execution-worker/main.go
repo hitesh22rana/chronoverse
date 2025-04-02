@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/executor"
@@ -201,14 +202,37 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
+	// Load the notifications service credentials
+	if cfg.NotificationsService.Secure {
+		creds, err = loadTLSCredentials(cfg.NotificationsService.CertFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
+			return ExitError
+		}
+	} else {
+		creds = insecure.NewCredentials()
+	}
+
+	// Connect to the notifications service
+	notificationsConn, err := grpc.NewClient(
+		fmt.Sprintf("%s:%d", cfg.NotificationsService.Host, cfg.NotificationsService.Port),
+		grpc.WithTransportCredentials(creds),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to notifications gRPC server: %v\n", err)
+		return ExitError
+	}
+	defer notificationsConn.Close()
+
 	// Initialize the execution job components
 	repo := executorrepo.New(&executorrepo.Config{
 		ParallelismLimit: cfg.ExecutionWorkerConfig.ParallelismLimit,
 	}, auth, &executorrepo.Services{
-		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
-		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
-		Csvc:      csvc,
-		Hsvc:      heartbeat.New(),
+		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:          jobspb.NewJobsServiceClient(jobsConn),
+		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
+		Csvc:          csvc,
+		Hsvc:          heartbeat.New(),
 	}, kfk)
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)

@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -13,12 +14,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	delimiter = '$'
 	jobsTable = "jobs"
 )
 
@@ -99,15 +100,17 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			err = status.Errorf(codes.Internal, "failed to scan job: %v", err)
 			return 0, err
 		}
-		record := fmt.Sprintf(
-			"%s%c%s%c%s",
-			id,
-			delimiter,
-			workflowID,
-			delimiter,
-			scheduledAt.Format(time.RFC3339Nano),
-		)
-		records = append(records, kgo.StringRecord(record))
+
+		scheduledJobEntryBytes, _err := json.Marshal(&jobsmodel.ScheduledJobEntry{
+			JobID:       id,
+			WorkflowID:  workflowID,
+			ScheduledAt: scheduledAt.Format(time.RFC3339Nano),
+		})
+		if _err != nil {
+			continue
+		}
+
+		records = append(records, kgo.SliceRecord(scheduledJobEntryBytes))
 	}
 
 	// Handle any errors that may have occurred during iteration

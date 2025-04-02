@@ -487,6 +487,8 @@ services:
         condition: service_started
       jobs-service:
         condition: service_started
+      notifications-service:
+        condition: service_started
     networks:
       - chronoverse
 
@@ -502,6 +504,8 @@ services:
       WORKFLOWS_SERVICE_PORT: 50052
       JOBS_SERVICE_HOST: jobs-service
       JOBS_SERVICE_PORT: 50053
+      NOTIFICATIONS_SERVICE_HOST: notifications-service
+      NOTIFICATIONS_SERVICE_PORT: 50054
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
@@ -543,6 +547,8 @@ services:
       workflows-service:
         condition: service_started
       jobs-service:
+        condition: service_started
+      notifications-service:
         condition: service_started
     networks:
       - chronoverse

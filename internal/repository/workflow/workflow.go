@@ -313,16 +313,16 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 
 // sendNotification sends a notification for the workflow related events.
 func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, title, message, kind string) error {
-	notification, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
+	payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
 	if err != nil {
 		return err
 	}
 
-	// Create the notification
+	// Create a new notification
 	_, err = r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
 		UserId:  userID,
 		Kind:    kind,
-		Payload: notification,
+		Payload: payload,
 	})
 	if err != nil {
 		return err

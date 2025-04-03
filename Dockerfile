@@ -6,6 +6,7 @@ ARG VERSION
 ARG NAME
 ARG PRIVATE_KEY_PATH
 ARG PUBLIC_KEY_PATH
+ARG PKG_PATH="github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 
 # Set working directory
 WORKDIR /app
@@ -45,7 +46,13 @@ COPY . .
 RUN rm -rf pkg/proto && buf dep update && buf generate
 
 # Build the service with ldflags
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -trimpath -ldflags "-s -w -X 'main.version=${VERSION}' -X 'main.name=${NAME}' -X 'main.authPrivateKeyPath=${PRIVATE_KEY_PATH}' -X 'main.authPublicKeyPath=${PUBLIC_KEY_PATH}'" -o /go/bin/service cmd/${NAME}/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -trimpath \
+    -ldflags "-s -w \
+    -X '${PKG_PATH}.version=${VERSION}' \
+    -X '${PKG_PATH}.name=${NAME}' \
+    -X '${PKG_PATH}.authPrivateKeyPath=${PRIVATE_KEY_PATH}' \
+    -X '${PKG_PATH}.authPublicKeyPath=${PUBLIC_KEY_PATH}'" \
+    -o /go/bin/service cmd/${NAME}/main.go
 
 # Final minimal stage
 FROM alpine:latest

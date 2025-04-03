@@ -91,3 +91,15 @@ func handleError(w http.ResponseWriter, err error, message ...string) {
 		http.Error(w, msg, http.StatusInternalServerError)
 	}
 }
+
+// statusResponseWriter is a wrapper around http.ResponseWriter that captures the status code.
+type statusResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader captures the status code before calling the underlying WriteHeader.
+func (w *statusResponseWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}

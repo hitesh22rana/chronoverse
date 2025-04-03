@@ -1,10 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -17,6 +17,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	"github.com/hitesh22rana/chronoverse/internal/server"
@@ -29,32 +30,15 @@ const (
 	ExitError
 )
 
-var (
-	// version is the service version.
-	version string
-
-	// name is the name of the service.
-	name string
-
-	// authPrivateKeyPath is the path to the private key.
-	authPrivateKeyPath string
-
-	// authPublicKeyPath is the path to the public key.
-	authPublicKeyPath string
-)
-
 func main() {
 	os.Exit(run())
 }
 
 //nolint:gocyclo // This function is necessary to run the service.
 func run() int {
-	// Global context to cancel the execution
-	ctx, cancel := context.WithCancel(context.Background())
+	// Initialize the service with, all necessary components
+	ctx, cancel := svcpkg.Init()
 	defer cancel()
-
-	// Initialize the service information
-	initSvcInfo()
 
 	// Load the server configuration
 	cfg, err := config.InitServerConfig()
@@ -190,7 +174,7 @@ func run() int {
 	workflowsServiceClient := workflowspb.NewWorkflowsServiceClient(workflowsConn)
 	jobsServiceClient := jobspb.NewJobsServiceClient(jobsConn)
 	notificationsServiceClient := notificationspb.NewNotificationsServiceClient(notificationsConn)
-	srv := server.New(&server.Config{
+	srv := server.New(ctx, &server.Config{
 		Host:              cfg.Server.Host,
 		Port:              cfg.Server.Port,
 		RequestTimeout:    cfg.Server.RequestTimeout,
@@ -206,27 +190,24 @@ func run() int {
 		},
 	}, auth, crypto, rdb, usersServiceClient, workflowsServiceClient, jobsServiceClient, notificationsServiceClient)
 
-	fmt.Fprintln(os.Stdout, "Starting HTTP server on port 8080",
-		fmt.Sprintf("name: %s, version: %s",
-			svcpkg.Info().GetName(),
-			svcpkg.Info().GetVersion(),
-		),
+	// Log the server information
+	loggerpkg.FromContext(ctx).Info(
+		"starting server",
+		zap.Any("ctx", ctx),
+		zap.String("name", svcpkg.Info().GetName()),
+		zap.String("version", svcpkg.Info().GetVersion()),
+		zap.Int("port", cfg.Server.Port),
+		zap.String("host", cfg.Server.Host),
+		zap.String("env", cfg.Environment.Env),
 	)
 
+	// Start the http server
 	if err := srv.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
 	return ExitOk
-}
-
-// initSvcInfo initializes the service information.
-func initSvcInfo() {
-	svcpkg.SetVersion(version)
-	svcpkg.SetName(name)
-	svcpkg.SetAuthPrivateKeyPath(authPrivateKeyPath)
-	svcpkg.SetAuthPublicKeyPath(authPublicKeyPath)
 }
 
 // loadTLSCredentials loads the TLS credentials from the certificate file.

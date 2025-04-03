@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -28,30 +27,14 @@ const (
 	ExitError
 )
 
-var (
-	// version is the service version.
-	version string
-
-	// name is the name of the service.
-	name string
-
-	// authPrivateKeyPath is the path to the private key.
-	authPrivateKeyPath string
-
-	// authPublicKeyPath is the path to the public key.
-	authPublicKeyPath string
-)
-
 func main() {
 	os.Exit(run())
 }
 
 func run() int {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Initialize the service with, all necessary components
+	ctx, cancel := svcpkg.Init()
 	defer cancel()
-
-	// Initialize the service information
-	initSvcInfo()
 
 	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -166,8 +149,8 @@ func run() int {
 	logger.Info(
 		"starting job",
 		zap.Any("ctx", ctx),
-		zap.String("name", svcpkg.Info().Name),
-		zap.String("version", svcpkg.Info().Version),
+		zap.String("name", svcpkg.Info().GetName()),
+		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("environment", cfg.Environment.Env),
 	)
 
@@ -178,12 +161,4 @@ func run() int {
 	}
 
 	return ExitOk
-}
-
-// initSvcInfo initializes the service information.
-func initSvcInfo() {
-	svcpkg.SetVersion(version)
-	svcpkg.SetName(name)
-	svcpkg.SetAuthPrivateKeyPath(authPrivateKeyPath)
-	svcpkg.SetAuthPublicKeyPath(authPublicKeyPath)
 }

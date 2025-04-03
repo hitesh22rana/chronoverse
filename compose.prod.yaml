@@ -588,6 +588,7 @@ services:
     container_name: server
     environment:
       SERVER_HOST: 0.0.0.0
+      REDIS_HOST: redis
       USERS_SERVICE_HOST: users-service
       USERS_SERVICE_PORT: 50051
       WORKFLOWS_SERVICE_HOST: workflows-service
@@ -596,7 +597,13 @@ services:
       JOBS_SERVICE_PORT: 50053
       NOTIFICATIONS_SERVICE_HOST: notifications-service
       NOTIFICATIONS_SERVICE_PORT: 50054
-      REDIS_HOST: redis
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     build:
       context: .

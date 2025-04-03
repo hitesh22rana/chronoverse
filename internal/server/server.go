@@ -9,6 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
+
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
@@ -16,11 +20,15 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
+	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Server implements the HTTP server.
 type Server struct {
+	tp                  trace.Tracer
+	logger              *zap.Logger
 	auth                auth.IAuth
 	crypto              *crypto.Crypto
 	rdb                 *redis.Store
@@ -54,6 +62,7 @@ type Config struct {
 
 // New creates a new HTTP server.
 func New(
+	ctx context.Context,
 	cfg *Config,
 	auth auth.IAuth,
 	crypto *crypto.Crypto,
@@ -64,6 +73,8 @@ func New(
 	notificationsClient notificationspb.NotificationsServiceClient,
 ) *Server {
 	srv := &Server{
+		tp:                  otel.Tracer(svcpkg.Info().GetName()),
+		logger:              loggerpkg.FromContext(ctx),
 		auth:                auth,
 		crypto:              crypto,
 		rdb:                 rdb,
@@ -83,7 +94,9 @@ func New(
 
 	router := http.NewServeMux()
 	srv.registerRoutes(router)
-	srv.httpServer.Handler = router
+
+	// Common middlewares
+	srv.httpServer.Handler = srv.withOtelMiddleware(router)
 	return srv
 }
 

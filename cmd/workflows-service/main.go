@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"os"
@@ -14,7 +13,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	workflowsrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflows"
@@ -28,32 +26,14 @@ const (
 	ExitError
 )
 
-var (
-	// version is the service version.
-	version string
-
-	// name is the name of the service.
-	name string
-
-	// authPrivateKeyPath is the path to the private key.
-	authPrivateKeyPath string
-
-	// authPublicKeyPath is the path to the public key.
-	authPublicKeyPath string
-)
-
 func main() {
 	os.Exit(run())
 }
 
-//nolint:gocyclo // This function is necessary to run the service.
 func run() int {
-	// Global context to cancel the execution
-	ctx, cancel := context.WithCancel(context.Background())
+	// Initialize the service with, all necessary components
+	ctx, cancel := svcpkg.Init()
 	defer cancel()
-
-	// Initialize the service information
-	initSvcInfo()
 
 	// Load the workflows service configuration
 	cfg, err := config.InitWorkflowsServiceConfig()
@@ -61,57 +41,6 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-
-	// Initialize the OpenTelemetry Resource
-	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	// Initialize the OpenTelemetry TracerProvider
-	tp, err := otelpkg.InitTracerProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = tp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown tracer provider: %v\n", err)
-		}
-	}()
-
-	// Initialize the OpenTelemetry MeterProvider
-	mp, err := otelpkg.InitMeterProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = mp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown meter provider: %v\n", err)
-		}
-	}()
-
-	// Initialize the OpenTelemetry LoggerProvider
-	lp, err := otelpkg.InitLogProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = lp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown logger provider: %v\n", err)
-		}
-	}()
-
-	// Initialize and set the logger in the context
-	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetName(), lp)
-	defer func() {
-		if err = logger.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
-		}
-	}()
 
 	// Initialize the auth issuer
 	auth, err := auth.New()
@@ -184,11 +113,11 @@ func run() int {
 	}()
 
 	// Log the service information
-	logger.Info(
+	loggerpkg.FromContext(ctx).Info(
 		"starting service",
 		zap.Any("ctx", ctx),
-		zap.String("name", svcpkg.Info().Name),
-		zap.String("version", svcpkg.Info().Version),
+		zap.String("name", svcpkg.Info().GetName()),
+		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("address", listener.Addr().String()),
 		zap.String("environment", cfg.Environment.Env),
 	)
@@ -200,12 +129,4 @@ func run() int {
 	}
 
 	return ExitOk
-}
-
-// initSvcInfo initializes the service information.
-func initSvcInfo() {
-	svcpkg.SetVersion(version)
-	svcpkg.SetName(name)
-	svcpkg.SetAuthPrivateKeyPath(authPrivateKeyPath)
-	svcpkg.SetAuthPublicKeyPath(authPublicKeyPath)
 }

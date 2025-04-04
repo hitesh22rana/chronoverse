@@ -81,7 +81,7 @@ func run() int {
 	app := users.New(ctx, &users.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
 		Environment: cfg.Environment.Env,
-	}, svc)
+	}, auth, svc)
 
 	// Create a TCP listener
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Grpc.Port))

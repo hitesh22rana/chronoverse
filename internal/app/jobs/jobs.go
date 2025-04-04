@@ -12,16 +12,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -53,54 +51,22 @@ type Config struct {
 // Jobs represents the jobs-service.
 type Jobs struct {
 	jobspb.UnimplementedJobsServiceServer
-	logger *zap.Logger
-	tp     trace.Tracer
-	auth   auth.IAuth
-	cfg    *Config
-	svc    Service
+	tp   trace.Tracer
+	auth authpkg.IAuth
+	cfg  *Config
+	svc  Service
 }
 
-// audienceInterceptor sets the audience from the metadata and adds it to the context.
-func audienceInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the audience from metadata.
-		audience, err := auth.ExtractAudienceFromMetadata(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		return handler(auth.WithAudience(ctx, audience), req)
-	}
-}
-
-// roleInterceptor extracts the role from the metadata and adds it to the context.
-func roleInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the role from metadata.
-		role, err := auth.ExtractRoleFromMetadata(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		// Validate the role for internal APIs.
-		if isInternalAPI(info.FullMethod) && role != auth.RoleAdmin.String() {
-			return "", status.Error(codes.PermissionDenied, "unauthorized access")
-		}
-
-		return handler(auth.WithRole(ctx, role), req)
-	}
-}
-
-// authTokenInterceptor extracts the authToken from metadata and adds it to the context.
+// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
 func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the authToken from metadata.
-		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
+		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
 
-		ctx = auth.WithAuthorizationToken(ctx, authToken)
+		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
 		if _, err := j.auth.ValidateToken(ctx); err != nil {
 			return "", err
 		}
@@ -125,20 +91,22 @@ func isProduction(environment string) bool {
 }
 
 // New creates a new jobs server.
-func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
+func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grpc.Server {
 	jobs := &Jobs{
-		logger: loggerpkg.FromContext(ctx),
-		tp:     otel.Tracer(svcpkg.Info().GetName()),
-		auth:   auth,
-		cfg:    cfg,
-		svc:    svc,
+		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		auth: auth,
+		cfg:  cfg,
+		svc:  svc,
 	}
 
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			audienceInterceptor(),
-			roleInterceptor(),
+			grpcmiddlewares.LoggingInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.AudienceInterceptor(),
+			grpcmiddlewares.RoleInterceptor(func(method, role string) bool {
+				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
+			}),
 			jobs.authTokenInterceptor(),
 		),
 	)
@@ -177,19 +145,9 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 
 	jobID, err := j.svc.ScheduleJob(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to schedule job",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job scheduled successfully",
-		zap.Any("ctx", ctx),
-		zap.String("job_id", jobID),
-	)
 	return &jobspb.ScheduleJobResponse{Id: jobID}, nil
 }
 
@@ -221,24 +179,13 @@ func (j *Jobs) UpdateJobStatus(
 
 	err = j.svc.UpdateJobStatus(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to update job status",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job status updated successfully",
-		zap.Any("ctx", ctx),
-	)
 	return &jobspb.UpdateJobStatusResponse{}, nil
 }
 
 // GetJob returns the job details by ID, job ID, and user ID.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobspb.GetJobResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
@@ -262,19 +209,8 @@ func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobs
 
 	job, err := j.svc.GetJob(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to fetch job details",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
-
-	j.logger.Info(
-		"job details fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("job", job),
-	)
 
 	return job.ToProto(), nil
 }
@@ -302,19 +238,9 @@ func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (r
 
 	job, err := j.svc.GetJobByID(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to fetch job details",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job details fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("job", job),
-	)
 	return job.ToProto(), nil
 }
 
@@ -343,25 +269,13 @@ func (j *Jobs) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (r
 
 	logs, err := j.svc.GetJobLogs(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to fetch job logs",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job logs fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("logs", logs),
-	)
 	return logs.ToProto(), nil
 }
 
 // ListJobs returns the jobs by job ID.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
 func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *jobspb.ListJobsResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
@@ -385,18 +299,8 @@ func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *
 
 	jobs, err := j.svc.ListJobs(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to fetch jobs",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"jobs fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("jobs", jobs),
-	)
 	return jobs.ToProto(), nil
 }

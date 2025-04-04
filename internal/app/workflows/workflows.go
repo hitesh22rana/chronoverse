@@ -12,16 +12,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -54,58 +52,26 @@ type Config struct {
 	Environment string
 }
 
-// Jobs represents the workflows-service.
-type Jobs struct {
+// Workflows represents the workflows-service.
+type Workflows struct {
 	workflowspb.UnimplementedWorkflowsServiceServer
-	logger *zap.Logger
-	tp     trace.Tracer
-	auth   auth.IAuth
-	cfg    *Config
-	svc    Service
+	tp   trace.Tracer
+	auth authpkg.IAuth
+	cfg  *Config
+	svc  Service
 }
 
-// audienceInterceptor sets the audience from the metadata and adds it to the context.
-func audienceInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the audience from metadata.
-		audience, err := auth.ExtractAudienceFromMetadata(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		return handler(auth.WithAudience(ctx, audience), req)
-	}
-}
-
-// roleInterceptor extracts the role from the metadata and adds it to the context.
-func roleInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the role from metadata.
-		role, err := auth.ExtractRoleFromMetadata(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		// Validate the role for internal APIs.
-		if isInternalAPI(info.FullMethod) && role != auth.RoleAdmin.String() {
-			return "", status.Error(codes.PermissionDenied, "unauthorized access")
-		}
-
-		return handler(auth.WithRole(ctx, role), req)
-	}
-}
-
-// authTokenInterceptor extracts the authToken from metadata and adds it to the context.
-func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
+// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
+func (w *Workflows) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the authToken from metadata.
-		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
+		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
 
-		ctx = auth.WithAuthorizationToken(ctx, authToken)
-		if _, err := j.auth.ValidateToken(ctx); err != nil {
+		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
+		if _, err := w.auth.ValidateToken(ctx); err != nil {
 			return "", err
 		}
 
@@ -129,20 +95,22 @@ func isProduction(environment string) bool {
 }
 
 // New creates a new workflows server.
-func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
-	workflows := &Jobs{
-		logger: loggerpkg.FromContext(ctx),
-		tp:     otel.Tracer(svcpkg.Info().GetName()),
-		auth:   auth,
-		cfg:    cfg,
-		svc:    svc,
+func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grpc.Server {
+	workflows := &Workflows{
+		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		auth: auth,
+		cfg:  cfg,
+		svc:  svc,
 	}
 
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			audienceInterceptor(),
-			roleInterceptor(),
+			grpcmiddlewares.LoggingInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.AudienceInterceptor(),
+			grpcmiddlewares.RoleInterceptor(func(method, role string) bool {
+				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
+			}),
 			workflows.authTokenInterceptor(),
 		),
 	)
@@ -156,8 +124,8 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 }
 
 // CreateWorkflow creates a new job.
-func (j *Jobs) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (res *workflowspb.CreateWorkflowResponse, err error) {
-	ctx, span := j.tp.Start(
+func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (res *workflowspb.CreateWorkflowResponse, err error) {
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.CreateWorkflow",
 		trace.WithAttributes(
@@ -177,30 +145,20 @@ func (j *Jobs) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkfl
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	jobID, err := j.svc.CreateWorkflow(ctx, req)
+	jobID, err := w.svc.CreateWorkflow(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to create job",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job created successfully",
-		zap.Any("ctx", ctx),
-		zap.String("job_id", jobID),
-	)
 	return &workflowspb.CreateWorkflowResponse{Id: jobID}, nil
 }
 
 // UpdateWorkflow updates the job details.
-func (j *Jobs) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (res *workflowspb.UpdateWorkflowResponse, err error) {
-	ctx, span := j.tp.Start(
+func (w *Workflows) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (res *workflowspb.UpdateWorkflowResponse, err error) {
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.UpdateWorkflow",
 		trace.WithAttributes(
@@ -220,35 +178,24 @@ func (j *Jobs) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkfl
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	err = j.svc.UpdateWorkflow(ctx, req)
+	err = w.svc.UpdateWorkflow(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to update job",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job updated successfully",
-		zap.Any("ctx", ctx),
-	)
 	return &workflowspb.UpdateWorkflowResponse{}, nil
 }
 
 // UpdateWorkflowBuildStatus updates the job build status.
 // This is an internal method used by internal services, and it should not be exposed to the public.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
-func (j *Jobs) UpdateWorkflowBuildStatus(
+func (w *Workflows) UpdateWorkflowBuildStatus(
 	ctx context.Context,
 	req *workflowspb.UpdateWorkflowBuildStatusRequest,
 ) (res *workflowspb.UpdateWorkflowBuildStatusResponse, err error) {
-	ctx, span := j.tp.Start(
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.UpdateWorkflowBuildStatus",
 		trace.WithAttributes(
@@ -264,29 +211,20 @@ func (j *Jobs) UpdateWorkflowBuildStatus(
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	err = j.svc.UpdateWorkflowBuildStatus(ctx, req)
+	err = w.svc.UpdateWorkflowBuildStatus(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to update job build status",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job build status updated successfully",
-		zap.Any("ctx", ctx),
-	)
 	return &workflowspb.UpdateWorkflowBuildStatusResponse{}, nil
 }
 
 // GetWorkflow returns the job details by ID and user ID.
-func (j *Jobs) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowspb.GetWorkflowResponse, err error) {
-	ctx, span := j.tp.Start(
+func (w *Workflows) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowspb.GetWorkflowResponse, err error) {
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.GetWorkflow",
 		trace.WithAttributes(
@@ -302,31 +240,21 @@ func (j *Jobs) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequ
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	job, err := j.svc.GetWorkflow(ctx, req)
+	job, err := w.svc.GetWorkflow(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to fetch job details",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job details fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("job", job),
-	)
 	return job.ToProto(), nil
 }
 
 // GetWorkflowByID returns the job details by ID.
 // This is an internal method used by internal services, and it should not be exposed to the public.
-func (j *Jobs) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowspb.GetWorkflowByIDResponse, err error) {
-	ctx, span := j.tp.Start(
+func (w *Workflows) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowspb.GetWorkflowByIDResponse, err error) {
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.GetWorkflowByID",
 		trace.WithAttributes(
@@ -341,34 +269,24 @@ func (j *Jobs) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflow
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	job, err := j.svc.GetWorkflowByID(ctx, req)
+	job, err := w.svc.GetWorkflowByID(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to fetch job details",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job details fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("job", job),
-	)
 	return job.ToProto(), nil
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count.
 // This is an internal method used by internal services, and it should not be exposed to the public.
-func (j *Jobs) IncrementWorkflowConsecutiveJobFailuresCount(
+func (w *Workflows) IncrementWorkflowConsecutiveJobFailuresCount(
 	ctx context.Context,
 	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
 ) (res *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, err error) {
-	ctx, span := j.tp.Start(
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.IncrementWorkflowConsecutiveJobFailuresCount",
 		trace.WithAttributes(
@@ -383,23 +301,14 @@ func (j *Jobs) IncrementWorkflowConsecutiveJobFailuresCount(
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	thresholdReached, err := j.svc.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req)
+	thresholdReached, err := w.svc.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to increment job consecutive failures count",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
-	j.logger.Info(
-		"job consecutive failures count incremented successfully",
-		zap.Any("ctx", ctx),
-		zap.Bool("threshold_reached", thresholdReached),
-	)
+
 	return &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{
 		ThresholdReached: thresholdReached,
 	}, nil
@@ -407,11 +316,11 @@ func (j *Jobs) IncrementWorkflowConsecutiveJobFailuresCount(
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the consecutive job failures count.
 // This is an internal method used by internal services, and it should not be exposed to the public.
-func (j *Jobs) ResetWorkflowConsecutiveJobFailuresCount(
+func (w *Workflows) ResetWorkflowConsecutiveJobFailuresCount(
 	ctx context.Context,
 	req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest,
 ) (res *workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse, err error) {
-	ctx, span := j.tp.Start(
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.ResetWorkflowConsecutiveJobFailuresCount",
 		trace.WithAttributes(
@@ -426,30 +335,20 @@ func (j *Jobs) ResetWorkflowConsecutiveJobFailuresCount(
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	err = j.svc.ResetWorkflowConsecutiveJobFailuresCount(ctx, req)
+	err = w.svc.ResetWorkflowConsecutiveJobFailuresCount(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to reset job consecutive failures count",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
-	j.logger.Info(
-		"job consecutive failures count reset successfully",
-		zap.Any("ctx", ctx),
-	)
+
 	return &workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse{}, nil
 }
 
 // TerminateWorkflow terminates a job.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
-func (j *Jobs) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (res *workflowspb.TerminateWorkflowResponse, err error) {
-	ctx, span := j.tp.Start(
+func (w *Workflows) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (res *workflowspb.TerminateWorkflowResponse, err error) {
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.TerminateWorkflow",
 		trace.WithAttributes(
@@ -466,29 +365,20 @@ func (j *Jobs) TerminateWorkflow(ctx context.Context, req *workflowspb.Terminate
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	err = j.svc.TerminateWorkflow(ctx, req)
+	err = w.svc.TerminateWorkflow(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to terminate job",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"job terminated successfully",
-		zap.Any("ctx", ctx),
-	)
 	return &workflowspb.TerminateWorkflowResponse{}, nil
 }
 
 // ListWorkflows returns the workflows by user ID.
-func (j *Jobs) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (res *workflowspb.ListWorkflowsResponse, err error) {
-	ctx, span := j.tp.Start(
+func (w *Workflows) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (res *workflowspb.ListWorkflowsResponse, err error) {
+	ctx, span := w.tp.Start(
 		ctx,
 		"App.ListWorkflows",
 		trace.WithAttributes(
@@ -504,23 +394,13 @@ func (j *Jobs) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflows
 		span.End()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	workflows, err := j.svc.ListWorkflows(ctx, req)
+	workflows, err := w.svc.ListWorkflows(ctx, req)
 	if err != nil {
-		j.logger.Error(
-			"failed to fetch all workflows by user ID",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	j.logger.Info(
-		"workflows details fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("workflows", workflows),
-	)
 	return workflows.ToProto(), nil
 }

@@ -21,16 +21,18 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/users"
 	usersmock "github.com/hitesh22rana/chronoverse/internal/app/users/mock"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 )
 
 func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := usersmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	server := users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc)
+	}, _auth, svc)
 
 	_ = server
 }
@@ -78,10 +80,11 @@ func TestRegisterUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := usersmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {
@@ -238,10 +241,11 @@ func TestLoginUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := usersmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
 
 	client, _close := initClient(users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
-	}, svc))
+	}, _auth, svc))
 	defer _close()
 
 	type args struct {

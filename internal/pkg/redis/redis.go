@@ -90,12 +90,12 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 
 	// Enable tracing instrumentation for Redis
 	if err := redisotel.InstrumentTracing(client); err != nil {
-		panic(err)
+		return nil, status.Errorf(codes.Internal, "failed to instrument tracing: %v", err)
 	}
 
 	// Enable metrics instrumentation for Redis
 	if err := redisotel.InstrumentMetrics(client); err != nil {
-		panic(err)
+		return nil, status.Errorf(codes.Internal, "failed to instrument metrics: %v", err)
 	}
 
 	return &Store{client: client}, nil

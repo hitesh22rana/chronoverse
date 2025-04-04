@@ -12,16 +12,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -48,54 +46,22 @@ type Config struct {
 // Notifications represents the notifications service.
 type Notifications struct {
 	notificationspb.UnimplementedNotificationsServiceServer
-	logger *zap.Logger
-	tp     trace.Tracer
-	auth   auth.IAuth
-	cfg    *Config
-	svc    Service
+	tp   trace.Tracer
+	auth authpkg.IAuth
+	cfg  *Config
+	svc  Service
 }
 
-// audienceInterceptor sets the audience from the metadata and adds it to the context.
-func audienceInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the audience from metadata.
-		audience, err := auth.ExtractAudienceFromMetadata(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		return handler(auth.WithAudience(ctx, audience), req)
-	}
-}
-
-// roleInterceptor extracts the role from the metadata and adds it to the context.
-func roleInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the role from metadata.
-		role, err := auth.ExtractRoleFromMetadata(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		// Validate the role for internal APIs.
-		if isInternalAPI(info.FullMethod) && role != auth.RoleAdmin.String() {
-			return "", status.Error(codes.PermissionDenied, "unauthorized access")
-		}
-
-		return handler(auth.WithRole(ctx, role), req)
-	}
-}
-
-// authTokenInterceptor extracts the authToken from metadata and adds it to the context.
+// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
 func (n *Notifications) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Extract the authToken from metadata.
-		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
+		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
 
-		ctx = auth.WithAuthorizationToken(ctx, authToken)
+		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
 		if _, err := n.auth.ValidateToken(ctx); err != nil {
 			return "", err
 		}
@@ -120,20 +86,22 @@ func isProduction(environment string) bool {
 }
 
 // New creates a new notifications server.
-func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
+func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grpc.Server {
 	notifications := &Notifications{
-		logger: loggerpkg.FromContext(ctx),
-		tp:     otel.Tracer(svcpkg.Info().GetName()),
-		auth:   auth,
-		cfg:    cfg,
-		svc:    svc,
+		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		auth: auth,
+		cfg:  cfg,
+		svc:  svc,
 	}
 
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			audienceInterceptor(),
-			roleInterceptor(),
+			grpcmiddlewares.LoggingInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.AudienceInterceptor(),
+			grpcmiddlewares.RoleInterceptor(func(method, role string) bool {
+				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
+			}),
 			notifications.authTokenInterceptor(),
 		),
 	)
@@ -174,19 +142,9 @@ func (n *Notifications) CreateNotification(
 
 	notificationID, err := n.svc.CreateNotification(ctx, req)
 	if err != nil {
-		n.logger.Error(
-			"failed to create notification",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	n.logger.Info(
-		"notification created successfully",
-		zap.Any("ctx", ctx),
-		zap.String("notification_id", notificationID),
-	)
 	return &notificationspb.CreateNotificationResponse{Id: notificationID}, nil
 }
 
@@ -216,11 +174,6 @@ func (n *Notifications) MarkNotificationsRead(
 
 	err = n.svc.MarkNotificationsRead(ctx, req)
 	if err != nil {
-		n.logger.Error(
-			"failed to mark all notifications as read",
-			zap.Any("ctx", ctx),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
@@ -259,10 +212,5 @@ func (n *Notifications) ListNotifications(
 		return nil, err
 	}
 
-	n.logger.Info(
-		"all notifications fetched successfully",
-		zap.Any("ctx", ctx),
-		zap.Any("notifications", notifications),
-	)
 	return notifications.ToProto(), nil
 }

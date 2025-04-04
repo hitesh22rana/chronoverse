@@ -5,9 +5,6 @@ import (
 	"os"
 
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
@@ -15,8 +12,9 @@ import (
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/config"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
+	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -34,7 +32,6 @@ func main() {
 	os.Exit(run())
 }
 
-//nolint:gocyclo // This function is necessary to run the service.
 func run() int {
 	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
@@ -48,7 +45,7 @@ func run() int {
 	}
 
 	// Initialize the auth issuer
-	auth, err := auth.New()
+	auth, err := authpkg.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -61,91 +58,58 @@ func run() int {
 		return ExitError
 	}
 
-	// Load the users service credentials
-	var creds credentials.TransportCredentials
-	if cfg.UsersService.Secure {
-		creds, err = loadTLSCredentials(cfg.UsersService.CertFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
-			return ExitError
-		}
-	} else {
-		creds = insecure.NewCredentials()
-	}
-
 	// Connect to the users service
-	usersConn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", cfg.UsersService.Host, cfg.UsersService.Port),
-		grpc.WithTransportCredentials(creds),
-	)
+	usersConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.UsersService.Host,
+			Port:     cfg.UsersService.Port,
+			Secure:   cfg.UsersService.Secure,
+			CertFile: cfg.UsersService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to auth gRPC server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer usersConn.Close()
 
-	// Load the workflows service credentials
-	if cfg.WorkflowsService.Secure {
-		creds, err = loadTLSCredentials(cfg.WorkflowsService.CertFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
-			return ExitError
-		}
-	} else {
-		creds = insecure.NewCredentials()
-	}
-
 	// Connect to the workflows service
-	workflowsConn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", cfg.WorkflowsService.Host, cfg.WorkflowsService.Port),
-		grpc.WithTransportCredentials(creds),
-	)
+	workflowsConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.WorkflowsService.Host,
+			Port:     cfg.WorkflowsService.Port,
+			Secure:   cfg.WorkflowsService.Secure,
+			CertFile: cfg.WorkflowsService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to workflows gRPC server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer workflowsConn.Close()
 
-	// Load the jobs service credentials
-	if cfg.JobsService.Secure {
-		creds, err = loadTLSCredentials(cfg.JobsService.CertFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
-			return ExitError
-		}
-	} else {
-		creds = insecure.NewCredentials()
-	}
-
 	// Connect to the jobs service
-	jobsConn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", cfg.JobsService.Host, cfg.JobsService.Port),
-		grpc.WithTransportCredentials(creds),
-	)
+	jobsConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.JobsService.Host,
+			Port:     cfg.JobsService.Port,
+			Secure:   cfg.JobsService.Secure,
+			CertFile: cfg.JobsService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to jobs gRPC server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer jobsConn.Close()
 
-	// Load the notifications service credentials
-	if cfg.NotificationsService.Secure {
-		creds, err = loadTLSCredentials(cfg.NotificationsService.CertFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
-			return ExitError
-		}
-	} else {
-		creds = insecure.NewCredentials()
-	}
-
 	// Connect to the notifications service
-	notificationsConn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", cfg.NotificationsService.Host, cfg.NotificationsService.Port),
-		grpc.WithTransportCredentials(creds),
-	)
+	notificationsConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.NotificationsService.Host,
+			Port:     cfg.NotificationsService.Port,
+			Secure:   cfg.NotificationsService.Secure,
+			CertFile: cfg.NotificationsService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to notifications gRPC server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer notificationsConn.Close()
@@ -208,14 +172,4 @@ func run() int {
 	}
 
 	return ExitOk
-}
-
-// loadTLSCredentials loads the TLS credentials from the certificate file.
-func loadTLSCredentials(certFile string) (credentials.TransportCredentials, error) {
-	creds, err := credentials.NewClientTLSFromFile(certFile, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
-	}
-
-	return creds, nil
 }

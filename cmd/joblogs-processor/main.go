@@ -13,7 +13,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	joblogsrepo "github.com/hitesh22rana/chronoverse/internal/repository/joblogs"
 	joblogssvc "github.com/hitesh22rana/chronoverse/internal/service/joblogs"
@@ -49,57 +48,6 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-
-	// Initialize the OpenTelemetry Resource
-	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	// Initialize the OpenTelemetry TracerProvider
-	tp, err := otelpkg.InitTracerProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = tp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown tracer provider: %v\n", err)
-		}
-	}()
-
-	// Initialize the OpenTelemetry MeterProvider
-	mp, err := otelpkg.InitMeterProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = mp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown meter provider: %v\n", err)
-		}
-	}()
-
-	// Initialize the OpenTelemetry LoggerProvider
-	lp, err := otelpkg.InitLogProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = lp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown logger provider: %v\n", err)
-		}
-	}()
-
-	// Initialize and set the logger in the context
-	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetName(), lp)
-	defer func() {
-		if err = logger.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
-		}
-	}()
 
 	// Initialize the ClickHouse database
 	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
@@ -140,7 +88,7 @@ func run() int {
 	app := joblogs.New(ctx, svc)
 
 	// Log the job information
-	logger.Info(
+	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
 		zap.String("name", svcpkg.Info().GetName()),

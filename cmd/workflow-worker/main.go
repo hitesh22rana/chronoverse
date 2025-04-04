@@ -7,9 +7,6 @@ import (
 	"syscall"
 
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 
 	jobpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
@@ -18,10 +15,10 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/workflow"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	workflowrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflow"
 	workflowsvc "github.com/hitesh22rana/chronoverse/internal/service/workflow"
@@ -38,7 +35,6 @@ func main() {
 	os.Exit(run())
 }
 
-//nolint:gocyclo // This function is necessary to run the service.
 func run() int {
 	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
@@ -58,57 +54,6 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-
-	// Initialize the OpenTelemetry Resource
-	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	// Initialize the OpenTelemetry TracerProvider
-	tp, err := otelpkg.InitTracerProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = tp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown tracer provider: %v\n", err)
-		}
-	}()
-
-	// Initialize the OpenTelemetry MeterProvider
-	mp, err := otelpkg.InitMeterProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = mp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown meter provider: %v\n", err)
-		}
-	}()
-
-	// Initialize the OpenTelemetry LoggerProvider
-	lp, err := otelpkg.InitLogProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer func() {
-		if err = lp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to shutdown logger provider: %v\n", err)
-		}
-	}()
-
-	// Initialize and set the logger in the context
-	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetName(), lp)
-	defer func() {
-		if err = logger.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
-		}
-	}()
 
 	// Initialize the auth issuer
 	auth, err := auth.New()
@@ -137,69 +82,44 @@ func run() int {
 		return ExitError
 	}
 
-	// Load the workflows service credentials
-	var creds credentials.TransportCredentials
-	if cfg.WorkflowsService.Secure {
-		creds, err = loadTLSCredentials(cfg.WorkflowsService.CertFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
-			return ExitError
-		}
-	} else {
-		creds = insecure.NewCredentials()
-	}
-
 	// Connect to the workflows service
-	workflowsConn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", cfg.WorkflowsService.Host, cfg.WorkflowsService.Port),
-		grpc.WithTransportCredentials(creds),
-	)
+	workflowsConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.WorkflowsService.Host,
+			Port:     cfg.WorkflowsService.Port,
+			Secure:   cfg.WorkflowsService.Secure,
+			CertFile: cfg.WorkflowsService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to workflows gRPC server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer workflowsConn.Close()
 
-	// Load the jobs service credentials
-	if cfg.JobsService.Secure {
-		creds, err = loadTLSCredentials(cfg.JobsService.CertFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
-			return ExitError
-		}
-	} else {
-		creds = insecure.NewCredentials()
-	}
-
 	// Connect to the jobs service
-	jobsConn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", cfg.JobsService.Host, cfg.JobsService.Port),
-		grpc.WithTransportCredentials(creds),
-	)
+	jobsConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.JobsService.Host,
+			Port:     cfg.JobsService.Port,
+			Secure:   cfg.JobsService.Secure,
+			CertFile: cfg.JobsService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to jobs gRPC server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer jobsConn.Close()
 
-	// Load the notifications service credentials
-	if cfg.NotificationsService.Secure {
-		creds, err = loadTLSCredentials(cfg.NotificationsService.CertFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load TLS credentials: %v\n", err)
-			return ExitError
-		}
-	} else {
-		creds = insecure.NewCredentials()
-	}
-
 	// Connect to the notifications service
-	notificationsConn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", cfg.NotificationsService.Host, cfg.NotificationsService.Port),
-		grpc.WithTransportCredentials(creds),
-	)
+	notificationsConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.NotificationsService.Host,
+			Port:     cfg.NotificationsService.Port,
+			Secure:   cfg.NotificationsService.Secure,
+			CertFile: cfg.NotificationsService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to notifications gRPC server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer notificationsConn.Close()
@@ -217,7 +137,7 @@ func run() int {
 	app := workflow.New(ctx, svc)
 
 	// Log the job information
-	logger.Info(
+	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
 		zap.String("name", svcpkg.Info().GetName()),
@@ -232,14 +152,4 @@ func run() int {
 	}
 
 	return ExitOk
-}
-
-// loadTLSCredentials loads the TLS credentials from the certificate file.
-func loadTLSCredentials(certFile string) (credentials.TransportCredentials, error) {
-	creds, err := credentials.NewClientTLSFromFile(certFile, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
-	}
-
-	return creds, nil
 }

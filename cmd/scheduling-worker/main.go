@@ -13,7 +13,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	schedulerrepo "github.com/hitesh22rana/chronoverse/internal/repository/scheduler"
@@ -50,57 +49,6 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-
-	// Initialize OTel Resource
-	res, err := otelpkg.InitResource(ctx, svcpkg.Info().GetName(), svcpkg.Info().GetVersion())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init OTel resource: %v\n", err)
-		return ExitError
-	}
-
-	// Initialize TracerProvider
-	tp, err := otelpkg.InitTracerProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init tracer provider: %v\n", err)
-		return ExitError
-	}
-	defer func() {
-		if err = tp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to shutdown tracer provider: %v\n", err)
-		}
-	}()
-
-	// Initialize MeterProvider (optional for metrics)
-	mp, err := otelpkg.InitMeterProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init meter provider: %v\n", err)
-		return ExitError
-	}
-	defer func() {
-		if err = mp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to shutdown meter provider: %v\n", err)
-		}
-	}()
-
-	// Initialize LoggerProvider
-	lp, err := otelpkg.InitLogProvider(ctx, res)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init log provider: %v\n", err)
-		return ExitError
-	}
-	defer func() {
-		if err = lp.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to shutdown log provider: %v\n", err)
-		}
-	}()
-
-	// Set up logger
-	ctx, logger := loggerpkg.Init(ctx, svcpkg.Info().GetName(), lp)
-	defer func() {
-		if err = logger.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
-		}
-	}()
 
 	// Initialize the PostgreSQL database
 	pdb, err := postgres.New(ctx, &postgres.Config{
@@ -146,7 +94,7 @@ func run() int {
 	}, svc)
 
 	// Log the job information
-	logger.Info(
+	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
 		zap.String("name", svcpkg.Info().GetName()),

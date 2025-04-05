@@ -6,8 +6,8 @@ import "github.com/kelseyhightower/envconfig"
 type NotificationsConfig struct {
 	Environment
 
-	Postgres
 	Grpc
+	Postgres
 	NotificationsServiceConfig
 }
 

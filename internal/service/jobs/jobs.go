@@ -250,12 +250,12 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the next page token
+	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
 		cursor, err = decodeCursor(req.GetCursor())
 		if err != nil {
-			err = status.Errorf(codes.InvalidArgument, "invalid next page token: %v", err)
+			err = status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
 			return nil, err
 		}
 	}
@@ -298,12 +298,12 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the next page token
+	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
 		cursor, err = decodeCursor(req.GetCursor())
 		if err != nil {
-			err = status.Errorf(codes.InvalidArgument, "invalid next page token: %v", err)
+			err = status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
 			return nil, err
 		}
 	}

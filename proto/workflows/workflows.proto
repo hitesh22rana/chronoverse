@@ -34,8 +34,9 @@ message UpdateWorkflowResponse {}
 
 // UpdateWorkflowBuildStatusRequest contains the details needed to update the build status of a workflow.
 message UpdateWorkflowBuildStatusRequest {
-    string id          = 1; // ID of the workflow
-    string build_status = 2; // Status of the workflow
+    string id           = 1; // ID of the workflow
+    string user_id      = 2; // ID of the user
+    string build_status = 3; // Status of the workflow
 }
 
 // UpdateWorkflowBuildStatusResponse contains the result of a workflow build status update attempt.
@@ -85,7 +86,8 @@ message GetWorkflowByIDResponse {
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
 message IncrementWorkflowConsecutiveJobFailuresCountRequest {
-    string id = 1; // ID of the workflow
+    string id      = 1; // ID of the workflow
+    string user_id = 2; // ID of the user
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountResponse contains the result of a workflow consecutive job failures count increment attempt.
@@ -95,7 +97,8 @@ message IncrementWorkflowConsecutiveJobFailuresCountResponse {
 
 // ResetWorkflowConsecutiveJobFailuresCountRequest contains the details needed to reset the consecutive job failures count of a workflow.
 message ResetWorkflowConsecutiveJobFailuresCountRequest {
-    string id = 1; // ID of the workflow
+    string id      = 1; // ID of the workflow
+    string user_id = 2; // ID of the user
 }
 
 // ResetWorkflowConsecutiveJobFailuresCountResponse contains the result of a workflow consecutive job failures count reset attempt.

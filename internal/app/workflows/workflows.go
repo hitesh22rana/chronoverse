@@ -200,6 +200,7 @@ func (w *Workflows) UpdateWorkflowBuildStatus(
 		"App.UpdateWorkflowBuildStatus",
 		trace.WithAttributes(
 			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
 			attribute.String("build_status", req.GetBuildStatus()),
 		),
 	)
@@ -291,6 +292,7 @@ func (w *Workflows) IncrementWorkflowConsecutiveJobFailuresCount(
 		"App.IncrementWorkflowConsecutiveJobFailuresCount",
 		trace.WithAttributes(
 			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
 		),
 	)
 	defer func() {
@@ -325,6 +327,7 @@ func (w *Workflows) ResetWorkflowConsecutiveJobFailuresCount(
 		"App.ResetWorkflowConsecutiveJobFailuresCount",
 		trace.WithAttributes(
 			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
 		),
 	)
 	defer func() {

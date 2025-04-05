@@ -8,8 +8,8 @@ import (
 type UsersConfig struct {
 	Environment
 
-	Postgres
 	Grpc
+	Postgres
 }
 
 // InitUsersServiceConfig initializes the users service configuration.

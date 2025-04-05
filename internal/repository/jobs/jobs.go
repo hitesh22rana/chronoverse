@@ -286,7 +286,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		span.End()
 	}()
 
-	// Add the next page token to the query
+	// Add the cursor to the query
 	query := fmt.Sprintf(`
 		SELECT id, workflow_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
 		FROM %s

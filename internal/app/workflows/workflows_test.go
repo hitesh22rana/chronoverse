@@ -131,10 +131,10 @@ func TestCreateWorkflow(t *testing.T) {
 				svc.EXPECT().CreateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
-				).Return("job_id", nil)
+				).Return("workflow_id", nil)
 			},
 			res: &workflowspb.CreateWorkflowResponse{
-				Id: "job_id",
+				Id: "workflow_id",
 			},
 			isErr: false,
 		},
@@ -314,7 +314,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:                               "job_id",
+					Id:                               "workflow_id",
 					UserId:                           "user1",
 					Name:                             "job1",
 					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
@@ -347,7 +347,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:                               "job_id",
+					Id:                               "workflow_id",
 					UserId:                           "user1",
 					Name:                             "job1",
 					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
@@ -402,7 +402,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:                               "job_id",
+					Id:                               "workflow_id",
 					UserId:                           "user1",
 					Name:                             "job1",
 					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
@@ -429,7 +429,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowRequest{
-					Id:                               "job_id",
+					Id:                               "workflow_id",
 					UserId:                           "user1",
 					Name:                             "job1",
 					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
@@ -508,7 +508,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-					Id:          "job_id",
+					Id:          "workflow_id",
+					UserId:      "user1",
 					BuildStatus: "COMPLETED",
 				},
 			},
@@ -537,7 +538,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-					Id:          "job_id",
+					Id:          "workflow_id",
+					UserId:      "user1",
 					BuildStatus: "COMPLETED",
 				},
 			},
@@ -560,7 +562,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-					Id:          "job_id",
+					Id:          "workflow_id",
+					UserId:      "user1",
 					BuildStatus: "COMPLETED",
 				},
 			},
@@ -586,6 +589,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 				},
 				req: &workflowspb.UpdateWorkflowBuildStatusRequest{
 					Id:          "",
+					UserId:      "",
 					BuildStatus: "",
 				},
 			},
@@ -608,7 +612,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-					Id:          "job_id",
+					Id:          "workflow_id",
+					UserId:      "user1",
 					BuildStatus: "COMPLETED",
 				},
 			},
@@ -631,7 +636,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					)
 				},
 				req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-					Id:          "job_id",
+					Id:          "workflow_id",
+					UserId:      "user1",
 					BuildStatus: "COMPLETED",
 				},
 			},
@@ -706,7 +712,7 @@ func TestGetWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -716,7 +722,7 @@ func TestGetWorkflow(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
-					ID:                               "job_id",
+					ID:                               "workflow_id",
 					Name:                             "job1",
 					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
 					Kind:                             "HEARTBEAT",
@@ -733,7 +739,7 @@ func TestGetWorkflow(t *testing.T) {
 				}, nil)
 			},
 			res: &workflowspb.GetWorkflowResponse{
-				Id:                               "job_id",
+				Id:                               "workflow_id",
 				Name:                             "job1",
 				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
 				Kind:                             "HEARTBEAT",
@@ -762,7 +768,7 @@ func TestGetWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -810,7 +816,7 @@ func TestGetWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -833,7 +839,7 @@ func TestGetWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -908,7 +914,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowByIDRequest{
-					Id: "job_id",
+					Id: "workflow_id",
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
@@ -917,6 +923,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&workflowsmodel.GetWorkflowByIDResponse{
+					ID:                               "workflow_id",
 					UserID:                           "user1",
 					Name:                             "job1",
 					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
@@ -934,6 +941,7 @@ func TestGetWorkflowByID(t *testing.T) {
 				}, nil)
 			},
 			res: &workflowspb.GetWorkflowByIDResponse{
+				Id:                               "workflow_id",
 				UserId:                           "user1",
 				Name:                             "job1",
 				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
@@ -963,7 +971,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowByIDRequest{
-					Id: "job_id",
+					Id: "workflow_id",
 				},
 			},
 			mock:  func(_ *workflowspb.GetWorkflowByIDRequest) {},
@@ -985,7 +993,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowByIDRequest{
-					Id: "job_id",
+					Id: "workflow_id",
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
@@ -1031,7 +1039,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowByIDRequest{
-					Id: "job_id",
+					Id: "workflow_id",
 				},
 			},
 			mock:  func(_ *workflowspb.GetWorkflowByIDRequest) {},
@@ -1053,7 +1061,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					)
 				},
 				req: &workflowspb.GetWorkflowByIDRequest{
-					Id: "job_id",
+					Id: "workflow_id",
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
@@ -1127,7 +1135,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "job_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1157,7 +1166,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "workflow_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1187,7 +1197,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "workflow_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
@@ -1209,7 +1220,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "workflow_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1233,7 +1245,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "",
+					Id:     "",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1255,7 +1268,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "workflow_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
@@ -1277,7 +1291,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "workflow_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1351,7 +1366,8 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "job_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1379,7 +1395,8 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "job_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock:  func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {},
@@ -1401,7 +1418,8 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "workflow_id",
+					Id:     "workflow_id",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1425,7 +1443,8 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-					Id: "",
+					Id:     "",
+					UserId: "user1",
 				},
 			},
 			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
@@ -1543,7 +1562,7 @@ func TestTerminateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.TerminateWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -1572,7 +1591,7 @@ func TestTerminateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.TerminateWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -1620,7 +1639,7 @@ func TestTerminateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.TerminateWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -1643,7 +1662,7 @@ func TestTerminateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.TerminateWorkflowRequest{
-					Id:     "job_id",
+					Id:     "workflow_id",
 					UserId: "user1",
 				},
 			},
@@ -1730,7 +1749,7 @@ func TestListWorkflows(t *testing.T) {
 				).Return(&workflowsmodel.ListWorkflowsResponse{
 					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
 						{
-							ID:                               "job_id",
+							ID:                               "workflow_id",
 							Name:                             "job1",
 							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
 							Kind:                             "HEARTBEAT",
@@ -1752,7 +1771,7 @@ func TestListWorkflows(t *testing.T) {
 			res: &workflowspb.ListWorkflowsResponse{
 				Workflows: []*workflowspb.WorkflowsByUserIDResponse{
 					{
-						Id:                               "job_id",
+						Id:                               "workflow_id",
 						Name:                             "job1",
 						Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
 						Kind:                             "HEARTBEAT",

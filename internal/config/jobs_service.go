@@ -6,9 +6,9 @@ import "github.com/kelseyhightower/envconfig"
 type JobsConfig struct {
 	Environment
 
+	Grpc
 	Postgres
 	ClickHouse
-	Grpc
 	JobsServiceConfig
 }
 

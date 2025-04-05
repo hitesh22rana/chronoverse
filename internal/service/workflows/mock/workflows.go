@@ -12,6 +12,7 @@ package workflows
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	workflows "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	gomock "go.uber.org/mock/gomock"
@@ -57,48 +58,48 @@ func (mr *MockRepositoryMockRecorder) CreateWorkflow(ctx, userID, name, payload,
 }
 
 // GetWorkflow mocks base method.
-func (m *MockRepository) GetWorkflow(ctx context.Context, jobID, userID string) (*workflows.GetWorkflowResponse, error) {
+func (m *MockRepository) GetWorkflow(ctx context.Context, workflowID, userID string) (*workflows.GetWorkflowResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkflow", ctx, jobID, userID)
+	ret := m.ctrl.Call(m, "GetWorkflow", ctx, workflowID, userID)
 	ret0, _ := ret[0].(*workflows.GetWorkflowResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetWorkflow indicates an expected call of GetWorkflow.
-func (mr *MockRepositoryMockRecorder) GetWorkflow(ctx, jobID, userID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) GetWorkflow(ctx, workflowID, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkflow", reflect.TypeOf((*MockRepository)(nil).GetWorkflow), ctx, jobID, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkflow", reflect.TypeOf((*MockRepository)(nil).GetWorkflow), ctx, workflowID, userID)
 }
 
 // GetWorkflowByID mocks base method.
-func (m *MockRepository) GetWorkflowByID(ctx context.Context, jobID string) (*workflows.GetWorkflowByIDResponse, error) {
+func (m *MockRepository) GetWorkflowByID(ctx context.Context, workflowID string) (*workflows.GetWorkflowByIDResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkflowByID", ctx, jobID)
+	ret := m.ctrl.Call(m, "GetWorkflowByID", ctx, workflowID)
 	ret0, _ := ret[0].(*workflows.GetWorkflowByIDResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetWorkflowByID indicates an expected call of GetWorkflowByID.
-func (mr *MockRepositoryMockRecorder) GetWorkflowByID(ctx, jobID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) GetWorkflowByID(ctx, workflowID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkflowByID", reflect.TypeOf((*MockRepository)(nil).GetWorkflowByID), ctx, jobID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkflowByID", reflect.TypeOf((*MockRepository)(nil).GetWorkflowByID), ctx, workflowID)
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCount mocks base method.
-func (m *MockRepository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) (bool, error) {
+func (m *MockRepository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IncrementWorkflowConsecutiveJobFailuresCount", ctx, workflowID)
+	ret := m.ctrl.Call(m, "IncrementWorkflowConsecutiveJobFailuresCount", ctx, workflowID, userID)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCount indicates an expected call of IncrementWorkflowConsecutiveJobFailuresCount.
-func (mr *MockRepositoryMockRecorder) IncrementWorkflowConsecutiveJobFailuresCount(ctx, workflowID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) IncrementWorkflowConsecutiveJobFailuresCount(ctx, workflowID, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockRepository)(nil).IncrementWorkflowConsecutiveJobFailuresCount), ctx, workflowID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockRepository)(nil).IncrementWorkflowConsecutiveJobFailuresCount), ctx, workflowID, userID)
 }
 
 // ListWorkflows mocks base method.
@@ -117,57 +118,139 @@ func (mr *MockRepositoryMockRecorder) ListWorkflows(ctx, userID, cursor any) *go
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount mocks base method.
-func (m *MockRepository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) error {
+func (m *MockRepository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ResetWorkflowConsecutiveJobFailuresCount", ctx, workflowID)
+	ret := m.ctrl.Call(m, "ResetWorkflowConsecutiveJobFailuresCount", ctx, workflowID, userID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount indicates an expected call of ResetWorkflowConsecutiveJobFailuresCount.
-func (mr *MockRepositoryMockRecorder) ResetWorkflowConsecutiveJobFailuresCount(ctx, workflowID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) ResetWorkflowConsecutiveJobFailuresCount(ctx, workflowID, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockRepository)(nil).ResetWorkflowConsecutiveJobFailuresCount), ctx, workflowID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockRepository)(nil).ResetWorkflowConsecutiveJobFailuresCount), ctx, workflowID, userID)
 }
 
 // TerminateWorkflow mocks base method.
-func (m *MockRepository) TerminateWorkflow(ctx context.Context, jobID, userID string) error {
+func (m *MockRepository) TerminateWorkflow(ctx context.Context, workflowID, userID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TerminateWorkflow", ctx, jobID, userID)
+	ret := m.ctrl.Call(m, "TerminateWorkflow", ctx, workflowID, userID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // TerminateWorkflow indicates an expected call of TerminateWorkflow.
-func (mr *MockRepositoryMockRecorder) TerminateWorkflow(ctx, jobID, userID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) TerminateWorkflow(ctx, workflowID, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TerminateWorkflow", reflect.TypeOf((*MockRepository)(nil).TerminateWorkflow), ctx, jobID, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TerminateWorkflow", reflect.TypeOf((*MockRepository)(nil).TerminateWorkflow), ctx, workflowID, userID)
 }
 
 // UpdateWorkflow mocks base method.
-func (m *MockRepository) UpdateWorkflow(ctx context.Context, jobID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error {
+func (m *MockRepository) UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateWorkflow", ctx, jobID, userID, name, payload, interval, maxConsecutiveJobFailuresAllowed)
+	ret := m.ctrl.Call(m, "UpdateWorkflow", ctx, workflowID, userID, name, payload, interval, maxConsecutiveJobFailuresAllowed)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateWorkflow indicates an expected call of UpdateWorkflow.
-func (mr *MockRepositoryMockRecorder) UpdateWorkflow(ctx, jobID, userID, name, payload, interval, maxConsecutiveJobFailuresAllowed any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateWorkflow(ctx, workflowID, userID, name, payload, interval, maxConsecutiveJobFailuresAllowed any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkflow", reflect.TypeOf((*MockRepository)(nil).UpdateWorkflow), ctx, jobID, userID, name, payload, interval, maxConsecutiveJobFailuresAllowed)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkflow", reflect.TypeOf((*MockRepository)(nil).UpdateWorkflow), ctx, workflowID, userID, name, payload, interval, maxConsecutiveJobFailuresAllowed)
 }
 
 // UpdateWorkflowBuildStatus mocks base method.
-func (m *MockRepository) UpdateWorkflowBuildStatus(ctx context.Context, jobID, buildStatus string) error {
+func (m *MockRepository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateWorkflowBuildStatus", ctx, jobID, buildStatus)
+	ret := m.ctrl.Call(m, "UpdateWorkflowBuildStatus", ctx, workflowID, userID, buildStatus)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateWorkflowBuildStatus indicates an expected call of UpdateWorkflowBuildStatus.
-func (mr *MockRepositoryMockRecorder) UpdateWorkflowBuildStatus(ctx, jobID, buildStatus any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateWorkflowBuildStatus(ctx, workflowID, userID, buildStatus any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkflowBuildStatus", reflect.TypeOf((*MockRepository)(nil).UpdateWorkflowBuildStatus), ctx, jobID, buildStatus)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkflowBuildStatus", reflect.TypeOf((*MockRepository)(nil).UpdateWorkflowBuildStatus), ctx, workflowID, userID, buildStatus)
+}
+
+// MockCache is a mock of Cache interface.
+type MockCache struct {
+	ctrl     *gomock.Controller
+	recorder *MockCacheMockRecorder
+	isgomock struct{}
+}
+
+// MockCacheMockRecorder is the mock recorder for MockCache.
+type MockCacheMockRecorder struct {
+	mock *MockCache
+}
+
+// NewMockCache creates a new mock instance.
+func NewMockCache(ctrl *gomock.Controller) *MockCache {
+	mock := &MockCache{ctrl: ctrl}
+	mock.recorder = &MockCacheMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockCache) EXPECT() *MockCacheMockRecorder {
+	return m.recorder
+}
+
+// Delete mocks base method.
+func (m *MockCache) Delete(ctx context.Context, key string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Delete", ctx, key)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Delete indicates an expected call of Delete.
+func (mr *MockCacheMockRecorder) Delete(ctx, key any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockCache)(nil).Delete), ctx, key)
+}
+
+// DeleteByPattern mocks base method.
+func (m *MockCache) DeleteByPattern(ctx context.Context, pattern string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteByPattern", ctx, pattern)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteByPattern indicates an expected call of DeleteByPattern.
+func (mr *MockCacheMockRecorder) DeleteByPattern(ctx, pattern any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteByPattern", reflect.TypeOf((*MockCache)(nil).DeleteByPattern), ctx, pattern)
+}
+
+// Get mocks base method.
+func (m *MockCache) Get(ctx context.Context, key string, dest any) (any, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", ctx, key, dest)
+	ret0, _ := ret[0].(any)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockCacheMockRecorder) Get(ctx, key, dest any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCache)(nil).Get), ctx, key, dest)
+}
+
+// Set mocks base method.
+func (m *MockCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Set", ctx, key, value, expiration)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Set indicates an expected call of Set.
+func (mr *MockCacheMockRecorder) Set(ctx, key, value, expiration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockCache)(nil).Set), ctx, key, value, expiration)
 }

@@ -197,6 +197,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		// Update the workflow status from QUEUED to COMPLETED
 		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 			Id:          workflowID,
+			UserId:      workflow.GetUserId(),
 			BuildStatus: statusCompleted,
 		}); _err != nil {
 			return _err
@@ -229,6 +230,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 	// Update the workflow status from QUEUED to STARTED
 	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 		Id:          workflowID,
+		UserId:      workflow.GetUserId(),
 		BuildStatus: statusStarted,
 	}); _err != nil {
 		return _err
@@ -259,6 +261,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		// Update the workflow status from QUEUED to FAILED
 		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 			Id:          workflowID,
+			UserId:      workflow.GetUserId(),
 			BuildStatus: statusFailed,
 		}); _err != nil {
 			return _err
@@ -282,6 +285,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 	// Update the workflow status from QUEUED to COMPLETED
 	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 		Id:          workflowID,
+		UserId:      workflow.GetUserId(),
 		BuildStatus: statusCompleted,
 	}); _err != nil {
 		return _err

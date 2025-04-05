@@ -153,7 +153,7 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 
 		// Get the corresponding user ID from the session
 		var userID string
-		if err = s.rdb.Get(r.Context(), session, &userID); err != nil {
+		if _, err = s.rdb.Get(r.Context(), session, &userID); err != nil {
 			http.Error(w, "invalid auth token", http.StatusUnauthorized)
 			return
 		}

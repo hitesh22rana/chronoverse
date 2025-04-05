@@ -249,7 +249,8 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 
 		// Increment the workflow failure count and check if the threshold is reached
 		res, _err := r.svc.Workflows.IncrementWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-			Id: workflowID,
+			Id:     workflowID,
+			UserId: workflow.GetUserId(),
 		})
 		if _err != nil {
 			return _err
@@ -317,7 +318,8 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 
 	// Reset the workflow consecutive job failures count
 	if _, _err := r.svc.Workflows.ResetWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-		Id: workflowID,
+		Id:     workflowID,
+		UserId: workflow.GetUserId(),
 	}); _err != nil {
 		return _err
 	}

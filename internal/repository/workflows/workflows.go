@@ -205,9 +205,7 @@ func (r *Repository) UpdateWorkflow(
 }
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
-//
-//nolint:dupl // It's okay to have similar code for different methods.
-func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, buildStatus string) (err error) {
+func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateWorkflowBuildStatus")
 	defer func() {
 		if err != nil {
@@ -220,11 +218,11 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET build_status = $1
-		WHERE id = $2
+		WHERE id = $2 AND user_id = $3
 	`, workflowsTable)
 
 	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID)
+	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID)
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
@@ -321,7 +319,7 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive failures counter.
 // Returns whether threshold was reached or not.
-func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) (thresholdReached bool, err error) {
+func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (thresholdReached bool, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.IncrementWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -334,12 +332,12 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET consecutive_job_failures_count = consecutive_job_failures_count + 1
-		WHERE id = $1 AND terminated_at IS NULL
+		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL
 		RETURNING consecutive_job_failures_count, max_consecutive_job_failures_allowed;
 	`, workflowsTable)
 
 	var consecutiveJobFailuresCount, maxConsecutiveJobFailuresAllowed int32
-	err = r.pg.QueryRow(ctx, query, workflowID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
+	err = r.pg.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "workflow not found: %v", err)
@@ -359,7 +357,9 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the consecutive failures counter.
-func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) (err error) {
+//
+//nolint:dupl // It's okay to have similar code for different methods.
+func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ResetWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -372,11 +372,11 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET consecutive_job_failures_count = 0
-		WHERE id = $1 AND terminated_at IS NULL;
+		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
 	`, workflowsTable)
 
 	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, workflowID)
+	ct, err := r.pg.Exec(ctx, query, workflowID, userID)
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)

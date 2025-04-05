@@ -6,31 +6,50 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+)
+
+const (
+	defaultExpiration        = time.Hour
+	cacheInvalidationTimeout = time.Second * 5
+
+	noCursor = "no_cursor"
 )
 
 // Repository provides job related operations.
 type Repository interface {
 	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32) (string, error)
-	UpdateWorkflow(ctx context.Context, jobID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error
-	UpdateWorkflowBuildStatus(ctx context.Context, jobID, buildStatus string) error
-	GetWorkflow(ctx context.Context, jobID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
-	GetWorkflowByID(ctx context.Context, jobID string) (*workflowsmodel.GetWorkflowByIDResponse, error)
-	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) (bool, error)
-	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID string) error
-	TerminateWorkflow(ctx context.Context, jobID, userID string) error
+	UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error
+	UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) error
+	GetWorkflow(ctx context.Context, workflowID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
+	GetWorkflowByID(ctx context.Context, workflowID string) (*workflowsmodel.GetWorkflowByIDResponse, error)
+	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (bool, error)
+	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) error
+	TerminateWorkflow(ctx context.Context, workflowID, userID string) error
 	ListWorkflows(ctx context.Context, userID, cursor string) (*workflowsmodel.ListWorkflowsResponse, error)
+}
+
+// Cache provides cache related operations.
+type Cache interface {
+	Set(ctx context.Context, key string, value any, expiration time.Duration) error
+	Get(ctx context.Context, key string, dest any) (any, error)
+	Delete(ctx context.Context, key string) error
+	DeleteByPattern(ctx context.Context, pattern string) (int64, error)
 }
 
 // Service provides job related operations.
@@ -38,14 +57,16 @@ type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
+	cache     Cache
 }
 
 // New creates a new workflows-service.
-func New(validator *validator.Validate, repo Repository) *Service {
+func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 	return &Service{
 		validator: validator,
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		repo:      repo,
+		cache:     cache,
 	}
 }
 
@@ -61,6 +82,9 @@ type CreateWorkflowRequest struct {
 
 // CreateWorkflow a new job.
 func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (jobID string, err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.CreateWorkflow")
 	defer func() {
 		if err != nil {
@@ -111,6 +135,31 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", err
 	}
 
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
+
+		// Cache the workflow details
+		// We use the combination of user ID and job ID as the key to uniquely identify the workflow.
+		// The key is in the format "workflow:{user_id}:{job_id}".
+		cacheKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), jobID)
+		if setErr := s.cache.Set(bgCtx, cacheKey, jobID, defaultExpiration); setErr != nil {
+			logger.Warn("failed to cache workflow",
+				zap.String("cache_key", cacheKey),
+				zap.Error(setErr),
+			)
+		} else if logger.Core().Enabled(zap.DebugLevel) {
+			logger.Debug("cached workflow",
+				zap.String("cache_key", cacheKey),
+			)
+		}
+
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
+
 	return jobID, nil
 }
 
@@ -126,6 +175,10 @@ type UpdateWorkflowRequest struct {
 
 // UpdateWorkflow updates the job details.
 func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+		zap.String("workflow_id", req.GetId()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.UpdateWorkflow")
 	defer func() {
 		if err != nil {
@@ -165,18 +218,40 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		req.GetInterval(),
 		req.GetMaxConsecutiveJobFailuresAllowed(),
 	)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		// Cache invalidation for the following:
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
+
+		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
+
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
+
+	return nil
 }
 
 // UpdateWorkflowBuildStatusRequest holds the request parameters for updating a job build status.
 type UpdateWorkflowBuildStatusRequest struct {
 	ID          string `validate:"required"`
+	UserID      string `validate:"required"`
 	BuildStatus string `validate:"required"`
 }
 
 // UpdateWorkflowBuildStatus updates the job build status.
 func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowspb.UpdateWorkflowBuildStatusRequest) (err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+		zap.String("workflow_id", req.GetId()),
+		zap.String("build_status", req.GetBuildStatus()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.UpdateWorkflowBuildStatus")
 	defer func() {
 		if err != nil {
@@ -189,6 +264,7 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 	// Validate the request
 	err = s.validator.Struct(&UpdateWorkflowBuildStatusRequest{
 		ID:          req.GetId(),
+		UserID:      req.GetUserId(),
 		BuildStatus: req.GetBuildStatus(),
 	})
 	if err != nil {
@@ -206,8 +282,25 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 	err = s.repo.UpdateWorkflowBuildStatus(
 		ctx,
 		req.GetId(),
+		req.GetUserId(),
 		req.GetBuildStatus(),
 	)
+	if err != nil {
+		return err
+	}
+
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		// Cache invalidation for the following:
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
+
+		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
+
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
 
 	return err
 }
@@ -220,6 +313,10 @@ type GetWorkflowRequest struct {
 
 // GetWorkflow returns the job details by ID and user ID.
 func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowsmodel.GetWorkflowResponse, err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+		zap.String("workflow_id", req.GetId()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.GetWorkflow")
 	defer func() {
 		if err != nil {
@@ -239,11 +336,40 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	// Check if the workflow is cached
+	cachedKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), req.GetId())
+	if cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{}); cacheErr == nil {
+		// Cache hit, return cached response
+		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
+		return cacheRes.(*workflowsmodel.GetWorkflowResponse), nil
+	}
+
 	// Get the job details
 	res, err = s.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
 	if err != nil {
 		return nil, err
 	}
+
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
+
+		if setErr := s.cache.Set(bgCtx, cachedKey, res, defaultExpiration); setErr != nil {
+			logger.Warn("failed to cache workflow",
+				zap.String("cache_key", cachedKey),
+				zap.Error(setErr),
+			)
+		} else if logger.Core().Enabled(zap.DebugLevel) {
+			logger.Debug("cached workflow",
+				zap.String("cache_key", cachedKey),
+			)
+		}
+
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
 
 	return res, nil
 }
@@ -284,7 +410,8 @@ func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkf
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest holds the request parameters for incrementing the job consecutive failures count.
 type IncrementWorkflowConsecutiveJobFailuresCountRequest struct {
-	ID string `validate:"required"`
+	ID     string `validate:"required"`
+	UserID string `validate:"required"`
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the job consecutive failures count.
@@ -292,6 +419,10 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 	ctx context.Context,
 	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
 ) (thresholdReached bool, err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+		zap.String("workflow_id", req.GetId()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.IncrementWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -303,7 +434,8 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 
 	// Validate the request
 	err = s.validator.Struct(&IncrementWorkflowConsecutiveJobFailuresCountRequest{
-		ID: req.GetId(),
+		ID:     req.GetId(),
+		UserID: req.GetUserId(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -311,21 +443,41 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 	}
 
 	// Increment the job consecutive failures count
-	thresholdReached, err = s.repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req.GetId())
+	thresholdReached, err = s.repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId())
 	if err != nil {
 		return false, err
 	}
+
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		// Cache invalidation for the following:
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
+
+		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
+
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
 
 	return thresholdReached, nil
 }
 
 // ResetWorkflowConsecutiveJobFailuresCountRequest holds the request parameters for resetting the job consecutive failures count.
 type ResetWorkflowConsecutiveJobFailuresCountRequest struct {
-	ID string `validate:"required"`
+	ID     string `validate:"required"`
+	UserID string `validate:"required"`
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the job consecutive failures count.
+//
+//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) (err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+		zap.String("workflow_id", req.GetId()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.ResetWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -337,7 +489,8 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 
 	// Validate the request
 	err = s.validator.Struct(&ResetWorkflowConsecutiveJobFailuresCountRequest{
-		ID: req.GetId(),
+		ID:     req.GetId(),
+		UserID: req.GetUserId(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -345,8 +498,25 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 	}
 
 	// Reset the job consecutive failures count
-	err = s.repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, req.GetId())
-	return err
+	err = s.repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId())
+	if err != nil {
+		return err
+	}
+
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		// Cache invalidation for the following:
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
+
+		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
+
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
+
+	return nil
 }
 
 // TerminateWorkflowRequest holds the request parameters for terminating a job.
@@ -356,7 +526,13 @@ type TerminateWorkflowRequest struct {
 }
 
 // TerminateWorkflow terminates a job.
+//
+//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+		zap.String("workflow_id", req.GetId()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.TerminateWorkflow")
 	defer func() {
 		if err != nil {
@@ -378,8 +554,24 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 
 	// Terminate the job
 	err = s.repo.TerminateWorkflow(ctx, req.GetId(), req.GetUserId())
+	if err != nil {
+		return err
+	}
 
-	return err
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		// Cache invalidation for the following:
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
+
+		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
+
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
+
+	return nil
 }
 
 // ListWorkflowsRequest holds the request parameters for listing workflows by user ID.
@@ -390,6 +582,10 @@ type ListWorkflowsRequest struct {
 
 // ListWorkflows returns workflows by user ID.
 func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (res *workflowsmodel.ListWorkflowsResponse, err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("user_id", req.GetUserId()),
+		zap.String("cursor", req.GetCursor()),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.ListWorkflows")
 	defer func() {
 		if err != nil {
@@ -408,14 +604,28 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the next page token
+	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
 		cursor, err = decodeCursor(req.GetCursor())
 		if err != nil {
-			err = status.Errorf(codes.InvalidArgument, "invalid next page token: %v", err)
+			err = status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
 			return nil, err
 		}
+	}
+
+	cachedCursorKey := req.GetCursor()
+	if cachedCursorKey == "" {
+		cachedCursorKey = noCursor
+	}
+
+	cacheKey := fmt.Sprintf("workflows:%s:%s", req.GetUserId(), cachedCursorKey)
+
+	// Check for cached response
+	if cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{}); cacheErr == nil {
+		// Cache hit, return cached response
+		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
+		return cacheRes.(*workflowsmodel.ListWorkflowsResponse), nil
 	}
 
 	// List all workflows by user ID
@@ -424,14 +634,25 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		return nil, err
 	}
 
-	return res, nil
-}
+	// Cache the response in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheInvalidationTimeout)
+		defer cancel()
 
-// ListScheduledWorkflowsRequest holds the request parameters for listing scheduled workflows.
-type ListScheduledWorkflowsRequest struct {
-	WorkflowID string `validate:"required"`
-	UserID     string `validate:"required"`
-	Cursor     string `validate:"omitempty"`
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpiration); setErr != nil {
+			logger.Warn("failed to cache workflows list",
+				zap.Error(setErr),
+			)
+		} else if logger.Core().Enabled(zap.DebugLevel) {
+			logger.Debug("cached workflows list",
+				zap.String("cache_key", cacheKey),
+			)
+		}
+	}()
+
+	return res, nil
 }
 
 func validateWorkflowBuildStatus(s string) error {
@@ -464,4 +685,36 @@ func decodeCursor(token string) (string, error) {
 	}
 
 	return string(decoded), nil
+}
+
+// invalidateWorkflowCache handles cache invalidation for a specific workflow for a user.
+func (s *Service) invalidateWorkflowCache(ctx context.Context, workflowID, userID string, logger *zap.Logger) {
+	// Invalidate specific workflow cache
+	// The key is in the format "workflow:{user_id}:{job_id}".
+	cacheKey := fmt.Sprintf("workflow:%s:%s", userID, workflowID)
+	if err := s.cache.Delete(ctx, cacheKey); err != nil &&
+		status.Code(err) != codes.NotFound {
+		logger.Warn("failed to invalidate workflow cache",
+			zap.String("key", cacheKey),
+			zap.Error(err))
+	} else if logger.Core().Enabled(zap.DebugLevel) {
+		logger.Debug("invalidated workflow cache",
+			zap.String("key", cacheKey))
+	}
+}
+
+// invalidateWorkflowsCache handles cache invalidation for all workflows for a user.
+func (s *Service) invalidateWorkflowsCache(ctx context.Context, userID string, logger *zap.Logger) {
+	// Invalidate all list entries for the user
+	// We use the user ID as the key, and '*' as the pattern.
+	patternKey := fmt.Sprintf("workflows:%s:*", userID)
+	count, err := s.cache.DeleteByPattern(ctx, patternKey)
+	if err != nil {
+		logger.Warn("failed to invalidate list caches",
+			zap.String("pattern", patternKey),
+			zap.Error(err))
+	} else if logger.Core().Enabled(zap.DebugLevel) {
+		logger.Debug("invalidated workflow list caches",
+			zap.Int64("count", count))
+	}
 }

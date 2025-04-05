@@ -6,8 +6,9 @@ import "github.com/kelseyhightower/envconfig"
 type WorkflowsConfig struct {
 	Environment
 
-	Postgres
 	Grpc
+	Postgres
+	Redis
 	Kafka
 	WorkflowsServiceConfig
 }

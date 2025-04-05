@@ -22,9 +22,10 @@ func TestCreateWorkflow(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
 		workflowID string
@@ -58,6 +59,20 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 				).Return("workflow_id", nil)
+
+				// Simulate a cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
 			},
 			want: want{
 				workflowID: "workflow_id",
@@ -145,9 +160,10 @@ func TestUpdateWorkflow(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	// Test cases
 	tests := []struct {
@@ -176,6 +192,18 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 				).Return(nil)
+
+				// Simulate a cache delete
+				cache.EXPECT().Delete(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -278,9 +306,10 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	// Test cases
 	tests := []struct {
@@ -293,14 +322,28 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			name: "success",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
 				Id:          "workflow_id",
+				UserId:      "user_id",
 				BuildStatus: "COMPLETED",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 					req.GetBuildStatus(),
 				).Return(nil)
+
+				// Simulate a cache delete
+				cache.EXPECT().Delete(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -308,6 +351,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			name: "error: missing workflow ID",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
 				Id:          "",
+				UserId:      "user_id",
 				BuildStatus: "COMPLETED",
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {},
@@ -317,6 +361,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			name: "error: missing build status",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
 				Id:          "workflow_id",
+				UserId:      "user_id",
 				BuildStatus: "",
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {},
@@ -326,6 +371,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			name: "error: invalid build status",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
 				Id:          "workflow_id",
+				UserId:      "user_id",
 				BuildStatus: "INVALID",
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {},
@@ -335,12 +381,14 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			name: "error: workflow not found",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
 				Id:          "invalid_workflow_id",
+				UserId:      "user_id",
 				BuildStatus: "COMPLETED",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 					req.GetBuildStatus(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
@@ -350,12 +398,14 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			name: "error: internal server error",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
 				Id:          "workflow_id",
+				UserId:      "user_id",
 				BuildStatus: "COMPLETED",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 					req.GetBuildStatus(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
@@ -389,9 +439,10 @@ func TestGetWorkflow(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
 		*workflowsmodel.GetWorkflowResponse
@@ -415,39 +466,107 @@ func TestGetWorkflow(t *testing.T) {
 		isErr bool
 	}{
 		{
-			name: "success",
+			name: "success: no cache hit",
 			req: &workflowspb.GetWorkflowRequest{
 				Id:     "workflow_id",
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
+				// Simulate a cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
-					ID:                  "workflow_id",
-					Name:                "workflow1",
-					Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:                "HEARTBEAT",
-					WorkflowBuildStatus: "COMPLETED",
-					Interval:            1,
-					CreatedAt:           createdAt,
-					UpdatedAt:           updatedAt,
-					TerminatedAt:        terminatedAt,
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        createdAt,
+					UpdatedAt:                        updatedAt,
+					TerminatedAt:                     terminatedAt,
+				}, nil)
+
+				// Simulate a cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+			},
+			want: want{
+				&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        createdAt,
+					UpdatedAt:                        updatedAt,
+					TerminatedAt:                     terminatedAt,
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "success: cache hit",
+			req: &workflowspb.GetWorkflowRequest{
+				Id:     "workflow_id",
+				UserId: "user_id",
+			},
+			mock: func(_ *workflowspb.GetWorkflowRequest) {
+				// Simulate a cache hit
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        createdAt,
+					UpdatedAt:                        updatedAt,
+					TerminatedAt:                     terminatedAt,
 				}, nil)
 			},
 			want: want{
 				&workflowsmodel.GetWorkflowResponse{
-					ID:                  "workflow_id",
-					Name:                "workflow1",
-					Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:                "HEARTBEAT",
-					WorkflowBuildStatus: "COMPLETED",
-					Interval:            1,
-					CreatedAt:           createdAt,
-					UpdatedAt:           updatedAt,
-					TerminatedAt:        terminatedAt,
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        createdAt,
+					UpdatedAt:                        updatedAt,
+					TerminatedAt:                     terminatedAt,
 				},
 			},
 			isErr: false,
@@ -469,6 +588,13 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "invalid_user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
+				// Simulate a cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
@@ -485,6 +611,13 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
+				// Simulate a cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
@@ -501,6 +634,13 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
+				// Simulate a cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
@@ -540,9 +680,10 @@ func TestGetWorkflowByID(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
 		*workflowsmodel.GetWorkflowByIDResponse
@@ -575,28 +716,34 @@ func TestGetWorkflowByID(t *testing.T) {
 					gomock.Any(),
 					req.GetId(),
 				).Return(&workflowsmodel.GetWorkflowByIDResponse{
-					UserID:              "user1",
-					Name:                "workflow1",
-					Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:                "HEARTBEAT",
-					WorkflowBuildStatus: "COMPLETED",
-					Interval:            1,
-					CreatedAt:           createdAt,
-					UpdatedAt:           updatedAt,
-					TerminatedAt:        terminatedAt,
+					ID:                               "workflow_id",
+					UserID:                           "user1",
+					Name:                             "workflow1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        createdAt,
+					UpdatedAt:                        updatedAt,
+					TerminatedAt:                     terminatedAt,
 				}, nil)
 			},
 			want: want{
 				&workflowsmodel.GetWorkflowByIDResponse{
-					UserID:              "user1",
-					Name:                "workflow1",
-					Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-					Kind:                "HEARTBEAT",
-					WorkflowBuildStatus: "COMPLETED",
-					Interval:            1,
-					CreatedAt:           createdAt,
-					UpdatedAt:           updatedAt,
-					TerminatedAt:        terminatedAt,
+					ID:                               "workflow_id",
+					UserID:                           "user1",
+					Name:                             "workflow1",
+					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        createdAt,
+					UpdatedAt:                        updatedAt,
+					TerminatedAt:                     terminatedAt,
 				},
 			},
 			isErr: false,
@@ -668,9 +815,10 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
 		thresholdReached bool
@@ -687,13 +835,27 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "success: threshold not reached",
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "workflow_id",
+				Id:     "workflow_id",
+				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 				).Return(false, nil)
+
+				// Simulate a cache delete
+				cache.EXPECT().Delete(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
 			},
 			want: want{
 				thresholdReached: false,
@@ -703,12 +865,14 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "success: threshold reached",
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "workflow_id",
+				Id:     "workflow_id",
+				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 				).Return(true, nil)
 			},
 			want: want{
@@ -719,7 +883,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "error: missing workflow ID",
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "",
+				Id:     "",
+				UserId: "user_id",
 			},
 			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
 			want:  want{},
@@ -728,12 +893,14 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "error: workflow not found",
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "invalid_workflow_id",
+				Id:     "invalid_workflow_id",
+				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 				).Return(false, status.Error(codes.NotFound, "workflow not found"))
 			},
 			want: want{
@@ -744,12 +911,14 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "workflow_id",
+				Id:     "workflow_id",
+				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 				).Return(false, status.Error(codes.Internal, "internal server error"))
 			},
 			want: want{
@@ -787,9 +956,10 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	// Test cases
 	tests := []struct {
@@ -801,20 +971,35 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "success",
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "workflow_id",
+				Id:     "workflow_id",
+				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 				).Return(nil)
+
+				// Simulate a cache delete
+				cache.EXPECT().Delete(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
 		{
 			name: "error: missing workflow ID",
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "",
+				Id:     "",
+				UserId: "user_id",
 			},
 			mock:  func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {},
 			isErr: true,
@@ -822,12 +1007,14 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "error: workflow not found",
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "invalid_workflow_id",
+				Id:     "invalid_workflow_id",
+				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
 			isErr: true,
@@ -835,12 +1022,14 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-				Id: "workflow_id",
+				Id:     "workflow_id",
+				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
+					req.GetUserId(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,
@@ -873,9 +1062,10 @@ func TestTerminateWorkflow(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	// Test cases
 	tests := []struct {
@@ -896,6 +1086,18 @@ func TestTerminateWorkflow(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 				).Return(nil)
+
+				// Simulate a cache delete
+				cache.EXPECT().Delete(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -975,9 +1177,10 @@ func TestListWorkflows(t *testing.T) {
 
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo)
+	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
 		*workflowsmodel.ListWorkflowsResponse
@@ -990,6 +1193,7 @@ func TestListWorkflows(t *testing.T) {
 			Time:  time.Now(),
 			Valid: true,
 		}
+		expirationTime = time.Hour // 1 hour
 	)
 
 	// Test cases
@@ -1001,12 +1205,20 @@ func TestListWorkflows(t *testing.T) {
 		isErr bool
 	}{
 		{
-			name: "success",
+			name: "success: no cache hit",
 			req: &workflowspb.ListWorkflowsRequest{
 				UserId: "user1",
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
+				// Simulate a cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
+				// Simulate a repository call
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),
@@ -1014,15 +1226,78 @@ func TestListWorkflows(t *testing.T) {
 				).Return(&workflowsmodel.ListWorkflowsResponse{
 					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
 						{
-							ID:                  "workflow_id",
-							Name:                "workflow1",
-							Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-							Kind:                "HEARTBEAT",
-							WorkflowBuildStatus: "COMPLETED",
-							Interval:            1,
-							CreatedAt:           createdAt,
-							UpdatedAt:           updatedAt,
-							TerminatedAt:        terminatedAt,
+							ID:                               "workflow_id",
+							Name:                             "workflow1",
+							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:                             "HEARTBEAT",
+							WorkflowBuildStatus:              "COMPLETED",
+							Interval:                         1,
+							ConsecutiveJobFailuresCount:      0,
+							MaxConsecutiveJobFailuresAllowed: 5,
+							CreatedAt:                        createdAt,
+							UpdatedAt:                        updatedAt,
+							TerminatedAt:                     terminatedAt,
+						},
+					},
+					Cursor: "",
+				}, nil)
+
+				// Simulate a cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					expirationTime,
+				).Return(nil).AnyTimes()
+			},
+			want: want{
+				&workflowsmodel.ListWorkflowsResponse{
+					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
+						{
+							ID:                               "workflow_id",
+							Name:                             "workflow1",
+							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:                             "HEARTBEAT",
+							WorkflowBuildStatus:              "COMPLETED",
+							Interval:                         1,
+							ConsecutiveJobFailuresCount:      0,
+							MaxConsecutiveJobFailuresAllowed: 5,
+							CreatedAt:                        createdAt,
+							UpdatedAt:                        updatedAt,
+							TerminatedAt:                     terminatedAt,
+						},
+					},
+					Cursor: "",
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "success: cache hit",
+			req: &workflowspb.ListWorkflowsRequest{
+				UserId: "user1",
+				Cursor: "",
+			},
+			mock: func(_ *workflowspb.ListWorkflowsRequest) {
+				// Simulate a cache hit using a pre-defined response
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(&workflowsmodel.ListWorkflowsResponse{
+					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
+						{
+							ID:                               "workflow_id",
+							Name:                             "workflow1",
+							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:                             "HEARTBEAT",
+							WorkflowBuildStatus:              "COMPLETED",
+							Interval:                         1,
+							ConsecutiveJobFailuresCount:      0,
+							MaxConsecutiveJobFailuresAllowed: 5,
+							CreatedAt:                        createdAt,
+							UpdatedAt:                        updatedAt,
+							TerminatedAt:                     terminatedAt,
 						},
 					},
 					Cursor: "",
@@ -1032,15 +1307,17 @@ func TestListWorkflows(t *testing.T) {
 				&workflowsmodel.ListWorkflowsResponse{
 					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
 						{
-							ID:                  "workflow_id",
-							Name:                "workflow1",
-							Payload:             `{"action": "run", "params": {"foo": "bar"}}`,
-							Kind:                "HEARTBEAT",
-							WorkflowBuildStatus: "COMPLETED",
-							Interval:            1,
-							CreatedAt:           createdAt,
-							UpdatedAt:           updatedAt,
-							TerminatedAt:        terminatedAt,
+							ID:                               "workflow_id",
+							Name:                             "workflow1",
+							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Kind:                             "HEARTBEAT",
+							WorkflowBuildStatus:              "COMPLETED",
+							Interval:                         1,
+							ConsecutiveJobFailuresCount:      0,
+							MaxConsecutiveJobFailuresAllowed: 5,
+							CreatedAt:                        createdAt,
+							UpdatedAt:                        updatedAt,
+							TerminatedAt:                     terminatedAt,
 						},
 					},
 					Cursor: "",
@@ -1065,6 +1342,15 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
+				// Simulate a cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
+				// Simulate a repository call
+				// This should return an error
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),
@@ -1081,6 +1367,15 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
+				// Simulate a cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
+				// Simulate a repository call
+				// This should return an error
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),

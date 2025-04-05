@@ -240,6 +240,7 @@ services:
     container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
+      REDIS_HOST: redis
       KAFKA_BROKERS: kafka:9092
       KAFKA_PRODUCER_TOPIC: workflows
       GRPC_PORT: 50052

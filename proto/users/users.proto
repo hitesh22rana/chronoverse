@@ -6,25 +6,49 @@ option go_package = "github.com/hitesh22rana/chronoverse/proto/go/users;users";
 
 // RegisterUserRequest contains the details needed to register a new user.
 message RegisterUserRequest {
-    string email    = 1;    // User's email address
-    string password = 2;    // User's password
+    string email    = 1; // User's email address
+    string password = 2; // User's password
 }
 
 // RegisterUserResponse contains the result of a registration attempt.
 message RegisterUserResponse {
-    string user_id = 1;    // ID of the newly registered user
+    string user_id = 1; // ID of the newly registered user
 }
 
 // LoginUserRequest contains the credentials for logging in.
 message LoginUserRequest {
-    string email    = 1;    // User's email address
-    string password = 2;    // User's password
+    string email    = 1; // User's email address
+    string password = 2; // User's password
 }
 
 // LoginUserResponse contains the result of a login attempt.
 message LoginUserResponse {
-    string user_id = 1;    // ID of the logged in user
+    string user_id = 1; // ID of the logged in user
 }
+
+// GetUserRequest contains the ID of the user to retrieve.
+message GetUserRequest {
+    string id = 1; // ID of the user to retrieve
+}
+
+// GetUserResponse contains the details of the retrieved user.
+message GetUserResponse {
+    string id                      = 1; // ID of the retrieved user
+    string email                   = 2; // User's email address
+    string notification_preference = 3; // User's notification preference
+    string created_at              = 4; // Timestamp of when the user was created
+    string updated_at              = 5; // Timestamp of when the user was last updated
+}
+
+// UpdateUserRequest contains the details needed to update a user's information.
+message UpdateUserRequest {
+    string id                      = 1; // ID of the user to update
+    string password                = 2; // User's new password
+    string notification_preference = 3; // User's new notification preference
+}
+
+// UpdateUserResponse contains the result of a user update attempt.
+message UpdateUserResponse {}
 
 // UsersService handles user related operations.
 service UsersService {
@@ -33,4 +57,10 @@ service UsersService {
 
     // LoginUser with email and password.
     rpc LoginUser(LoginUserRequest) returns (LoginUserResponse) {}
+
+    // GetUser retrieves user details by user ID.
+    rpc GetUser(GetUserRequest) returns (GetUserResponse) {}
+
+    // UpdateUser updates user details.
+    rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse) {}
 }

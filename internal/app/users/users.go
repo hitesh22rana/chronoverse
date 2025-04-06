@@ -17,6 +17,7 @@ import (
 
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 
+	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
@@ -27,6 +28,8 @@ import (
 type Service interface {
 	RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (string, string, error)
 	LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (string, string, error)
+	GetUser(ctx context.Context, req *userpb.GetUserRequest) (*usersmodel.GetUserResponse, error)
+	UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest) error
 }
 
 // Config represents the users-service configuration.
@@ -181,4 +184,56 @@ func (u *Users) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (re
 	}
 
 	return &userpb.LoginUserResponse{UserId: userID}, nil
+}
+
+// GetUser gets the user.
+func (u *Users) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res *userpb.GetUserResponse, err error) {
+	ctx, span := u.tp.Start(
+		ctx,
+		"App.GetUser",
+		trace.WithAttributes(attribute.String("user_id", req.GetId())),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, u.cfg.Deadline)
+	defer cancel()
+
+	user, err := u.svc.GetUser(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return user.ToProto(), nil
+}
+
+// UpdateUser updates the user.
+func (u *Users) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest) (res *userpb.UpdateUserResponse, err error) {
+	ctx, span := u.tp.Start(
+		ctx,
+		"App.UpdateUser",
+		trace.WithAttributes(attribute.String("user_id", req.GetId())),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, u.cfg.Deadline)
+	defer cancel()
+
+	err = u.svc.UpdateUser(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &userpb.UpdateUserResponse{}, nil
 }

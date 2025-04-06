@@ -217,6 +217,226 @@ func (x *LoginUserResponse) GetUserId() string {
 	return ""
 }
 
+// GetUserRequest contains the ID of the user to retrieve.
+type GetUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // ID of the user to retrieve
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserRequest) Reset() {
+	*x = GetUserRequest{}
+	mi := &file_users_users_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserRequest) ProtoMessage() {}
+
+func (x *GetUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_users_users_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserRequest.ProtoReflect.Descriptor instead.
+func (*GetUserRequest) Descriptor() ([]byte, []int) {
+	return file_users_users_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetUserRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+// GetUserResponse contains the details of the retrieved user.
+type GetUserResponse struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Id                     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                       // ID of the retrieved user
+	Email                  string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`                                                                 // User's email address
+	NotificationPreference string                 `protobuf:"bytes,3,opt,name=notification_preference,json=notificationPreference,proto3" json:"notification_preference,omitempty"` // User's notification preference
+	CreatedAt              string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                        // Timestamp of when the user was created
+	UpdatedAt              string                 `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                        // Timestamp of when the user was last updated
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *GetUserResponse) Reset() {
+	*x = GetUserResponse{}
+	mi := &file_users_users_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserResponse) ProtoMessage() {}
+
+func (x *GetUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_users_users_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserResponse.ProtoReflect.Descriptor instead.
+func (*GetUserResponse) Descriptor() ([]byte, []int) {
+	return file_users_users_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetUserResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *GetUserResponse) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *GetUserResponse) GetNotificationPreference() string {
+	if x != nil {
+		return x.NotificationPreference
+	}
+	return ""
+}
+
+func (x *GetUserResponse) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *GetUserResponse) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+// UpdateUserRequest contains the details needed to update a user's information.
+type UpdateUserRequest struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Id                     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                       // ID of the user to update
+	Password               string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`                                                           // User's new password
+	NotificationPreference string                 `protobuf:"bytes,3,opt,name=notification_preference,json=notificationPreference,proto3" json:"notification_preference,omitempty"` // User's new notification preference
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *UpdateUserRequest) Reset() {
+	*x = UpdateUserRequest{}
+	mi := &file_users_users_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateUserRequest) ProtoMessage() {}
+
+func (x *UpdateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_users_users_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateUserRequest.ProtoReflect.Descriptor instead.
+func (*UpdateUserRequest) Descriptor() ([]byte, []int) {
+	return file_users_users_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UpdateUserRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateUserRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *UpdateUserRequest) GetNotificationPreference() string {
+	if x != nil {
+		return x.NotificationPreference
+	}
+	return ""
+}
+
+// UpdateUserResponse contains the result of a user update attempt.
+type UpdateUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateUserResponse) Reset() {
+	*x = UpdateUserResponse{}
+	mi := &file_users_users_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateUserResponse) ProtoMessage() {}
+
+func (x *UpdateUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_users_users_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateUserResponse.ProtoReflect.Descriptor instead.
+func (*UpdateUserResponse) Descriptor() ([]byte, []int) {
+	return file_users_users_proto_rawDescGZIP(), []int{7}
+}
+
 var File_users_users_proto protoreflect.FileDescriptor
 
 const file_users_users_proto_rawDesc = "" +
@@ -231,10 +451,28 @@ const file_users_users_proto_rawDesc = "" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\",\n" +
 	"\x11LoginUserResponse\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId2\x9b\x01\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\" \n" +
+	"\x0eGetUserRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xae\x01\n" +
+	"\x0fGetUserResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\x127\n" +
+	"\x17notification_preference\x18\x03 \x01(\tR\x16notificationPreference\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"x\n" +
+	"\x11UpdateUserRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\x127\n" +
+	"\x17notification_preference\x18\x03 \x01(\tR\x16notificationPreference\"\x14\n" +
+	"\x12UpdateUserResponse2\x9c\x02\n" +
 	"\fUsersService\x12I\n" +
 	"\fRegisterUser\x12\x1a.users.RegisterUserRequest\x1a\x1b.users.RegisterUserResponse\"\x00\x12@\n" +
-	"\tLoginUser\x12\x17.users.LoginUserRequest\x1a\x18.users.LoginUserResponse\"\x00B:Z8github.com/hitesh22rana/chronoverse/proto/go/users;usersb\x06proto3"
+	"\tLoginUser\x12\x17.users.LoginUserRequest\x1a\x18.users.LoginUserResponse\"\x00\x12:\n" +
+	"\aGetUser\x12\x15.users.GetUserRequest\x1a\x16.users.GetUserResponse\"\x00\x12C\n" +
+	"\n" +
+	"UpdateUser\x12\x18.users.UpdateUserRequest\x1a\x19.users.UpdateUserResponse\"\x00B:Z8github.com/hitesh22rana/chronoverse/proto/go/users;usersb\x06proto3"
 
 var (
 	file_users_users_proto_rawDescOnce sync.Once
@@ -248,20 +486,28 @@ func file_users_users_proto_rawDescGZIP() []byte {
 	return file_users_users_proto_rawDescData
 }
 
-var file_users_users_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_users_users_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_users_users_proto_goTypes = []any{
 	(*RegisterUserRequest)(nil),  // 0: users.RegisterUserRequest
 	(*RegisterUserResponse)(nil), // 1: users.RegisterUserResponse
 	(*LoginUserRequest)(nil),     // 2: users.LoginUserRequest
 	(*LoginUserResponse)(nil),    // 3: users.LoginUserResponse
+	(*GetUserRequest)(nil),       // 4: users.GetUserRequest
+	(*GetUserResponse)(nil),      // 5: users.GetUserResponse
+	(*UpdateUserRequest)(nil),    // 6: users.UpdateUserRequest
+	(*UpdateUserResponse)(nil),   // 7: users.UpdateUserResponse
 }
 var file_users_users_proto_depIdxs = []int32{
 	0, // 0: users.UsersService.RegisterUser:input_type -> users.RegisterUserRequest
 	2, // 1: users.UsersService.LoginUser:input_type -> users.LoginUserRequest
-	1, // 2: users.UsersService.RegisterUser:output_type -> users.RegisterUserResponse
-	3, // 3: users.UsersService.LoginUser:output_type -> users.LoginUserResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	4, // 2: users.UsersService.GetUser:input_type -> users.GetUserRequest
+	6, // 3: users.UsersService.UpdateUser:input_type -> users.UpdateUserRequest
+	1, // 4: users.UsersService.RegisterUser:output_type -> users.RegisterUserResponse
+	3, // 5: users.UsersService.LoginUser:output_type -> users.LoginUserResponse
+	5, // 6: users.UsersService.GetUser:output_type -> users.GetUserResponse
+	7, // 7: users.UsersService.UpdateUser:output_type -> users.UpdateUserResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -278,7 +524,7 @@ func file_users_users_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_users_users_proto_rawDesc), len(file_users_users_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

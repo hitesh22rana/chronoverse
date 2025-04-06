@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
-	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
 type registerRequest struct {
@@ -27,7 +27,7 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var header metadata.MD
-	res, err := s.usersClient.RegisterUser(r.Context(), &userpb.RegisterUserRequest{
+	res, err := s.usersClient.RegisterUser(r.Context(), &userspb.RegisterUserRequest{
 		Email:    req.Email,
 		Password: req.Password,
 	}, grpc.Header(&header))
@@ -82,7 +82,7 @@ func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var header metadata.MD
-	res, err := s.usersClient.LoginUser(r.Context(), &userpb.LoginUserRequest{
+	res, err := s.usersClient.LoginUser(r.Context(), &userspb.LoginUserRequest{
 		Email:    req.Email,
 		Password: req.Password,
 	}, grpc.Header(&header))
@@ -146,4 +146,71 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // handleValidate handles the validate request.
 func (s *Server) handleValidate(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleGetUser handles the get user request.
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	res, err := s.usersClient.GetUser(r.Context(), &userspb.GetUserRequest{
+		Id: userID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to get user")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(res)
+}
+
+type updateUserRequest struct {
+	Password               string `json:"password"`
+	NotificationPreference string `json:"notification_preference"`
+}
+
+// handleUpdateUser handles the update user request.
+func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
+	var req updateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := s.usersClient.UpdateUser(r.Context(), &userspb.UpdateUserRequest{
+		Id:                     userID,
+		Password:               req.Password,
+		NotificationPreference: req.NotificationPreference,
+	}); err != nil {
+		handleError(w, err, "failed to update user")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

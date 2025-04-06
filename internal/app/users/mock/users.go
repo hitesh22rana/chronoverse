@@ -13,7 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	users "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+	users "github.com/hitesh22rana/chronoverse/internal/model/users"
+	users0 "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,8 +42,23 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 	return m.recorder
 }
 
+// GetUser mocks base method.
+func (m *MockService) GetUser(ctx context.Context, req *users0.GetUserRequest) (*users.GetUserResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUser", ctx, req)
+	ret0, _ := ret[0].(*users.GetUserResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUser indicates an expected call of GetUser.
+func (mr *MockServiceMockRecorder) GetUser(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUser", reflect.TypeOf((*MockService)(nil).GetUser), ctx, req)
+}
+
 // LoginUser mocks base method.
-func (m *MockService) LoginUser(ctx context.Context, req *users.LoginUserRequest) (string, string, error) {
+func (m *MockService) LoginUser(ctx context.Context, req *users0.LoginUserRequest) (string, string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LoginUser", ctx, req)
 	ret0, _ := ret[0].(string)
@@ -58,7 +74,7 @@ func (mr *MockServiceMockRecorder) LoginUser(ctx, req any) *gomock.Call {
 }
 
 // RegisterUser mocks base method.
-func (m *MockService) RegisterUser(ctx context.Context, req *users.RegisterUserRequest) (string, string, error) {
+func (m *MockService) RegisterUser(ctx context.Context, req *users0.RegisterUserRequest) (string, string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RegisterUser", ctx, req)
 	ret0, _ := ret[0].(string)
@@ -71,4 +87,18 @@ func (m *MockService) RegisterUser(ctx context.Context, req *users.RegisterUserR
 func (mr *MockServiceMockRecorder) RegisterUser(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterUser", reflect.TypeOf((*MockService)(nil).RegisterUser), ctx, req)
+}
+
+// UpdateUser mocks base method.
+func (m *MockService) UpdateUser(ctx context.Context, req *users0.UpdateUserRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateUser", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateUser indicates an expected call of UpdateUser.
+func (mr *MockServiceMockRecorder) UpdateUser(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUser", reflect.TypeOf((*MockService)(nil).UpdateUser), ctx, req)
 }

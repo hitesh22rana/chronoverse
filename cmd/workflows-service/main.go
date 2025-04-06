@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 
 	"github.com/go-playground/validator/v10"
+	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/workflows"
@@ -120,6 +122,7 @@ func run() int {
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("address", listener.Addr().String()),
 		zap.String("environment", cfg.Environment.Env),
+		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
 	)
 
 	// Serve the gRPC service

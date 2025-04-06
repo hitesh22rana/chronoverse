@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
+	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -163,6 +165,7 @@ func run() int {
 		zap.Int("port", cfg.Server.Port),
 		zap.String("host", cfg.Server.Host),
 		zap.String("env", cfg.Environment.Env),
+		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
 	)
 
 	// Start the http server

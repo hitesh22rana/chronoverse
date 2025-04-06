@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
+	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/joblogs"
@@ -94,6 +96,7 @@ func run() int {
 		zap.String("name", svcpkg.Info().GetName()),
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("environment", cfg.Environment.Env),
+		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
 	)
 
 	// Run the joblogs job

@@ -12,6 +12,7 @@ package users
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	users "github.com/hitesh22rana/chronoverse/internal/model/users"
 	gomock "go.uber.org/mock/gomock"
@@ -57,10 +58,10 @@ func (mr *MockRepositoryMockRecorder) GetUser(ctx, id any) *gomock.Call {
 }
 
 // LoginUser mocks base method.
-func (m *MockRepository) LoginUser(ctx context.Context, email, password string) (string, string, error) {
+func (m *MockRepository) LoginUser(ctx context.Context, email, password string) (*users.GetUserResponse, string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LoginUser", ctx, email, password)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(*users.GetUserResponse)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
@@ -73,10 +74,10 @@ func (mr *MockRepositoryMockRecorder) LoginUser(ctx, email, password any) *gomoc
 }
 
 // RegisterUser mocks base method.
-func (m *MockRepository) RegisterUser(ctx context.Context, email, password string) (string, string, error) {
+func (m *MockRepository) RegisterUser(ctx context.Context, email, password string) (*users.GetUserResponse, string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RegisterUser", ctx, email, password)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(*users.GetUserResponse)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
@@ -100,4 +101,71 @@ func (m *MockRepository) UpdateUser(ctx context.Context, id, password, notificat
 func (mr *MockRepositoryMockRecorder) UpdateUser(ctx, id, password, notificationPreference any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUser", reflect.TypeOf((*MockRepository)(nil).UpdateUser), ctx, id, password, notificationPreference)
+}
+
+// MockCache is a mock of Cache interface.
+type MockCache struct {
+	ctrl     *gomock.Controller
+	recorder *MockCacheMockRecorder
+	isgomock struct{}
+}
+
+// MockCacheMockRecorder is the mock recorder for MockCache.
+type MockCacheMockRecorder struct {
+	mock *MockCache
+}
+
+// NewMockCache creates a new mock instance.
+func NewMockCache(ctrl *gomock.Controller) *MockCache {
+	mock := &MockCache{ctrl: ctrl}
+	mock.recorder = &MockCacheMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockCache) EXPECT() *MockCacheMockRecorder {
+	return m.recorder
+}
+
+// Delete mocks base method.
+func (m *MockCache) Delete(ctx context.Context, key string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Delete", ctx, key)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Delete indicates an expected call of Delete.
+func (mr *MockCacheMockRecorder) Delete(ctx, key any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockCache)(nil).Delete), ctx, key)
+}
+
+// Get mocks base method.
+func (m *MockCache) Get(ctx context.Context, key string, dest any) (any, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", ctx, key, dest)
+	ret0, _ := ret[0].(any)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockCacheMockRecorder) Get(ctx, key, dest any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCache)(nil).Get), ctx, key, dest)
+}
+
+// Set mocks base method.
+func (m *MockCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Set", ctx, key, value, expiration)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Set indicates an expected call of Set.
+func (mr *MockCacheMockRecorder) Set(ctx, key, value, expiration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockCache)(nil).Set), ctx, key, value, expiration)
 }

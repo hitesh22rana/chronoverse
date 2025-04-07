@@ -265,11 +265,10 @@ func (x *GetUserRequest) GetId() string {
 // GetUserResponse contains the details of the retrieved user.
 type GetUserResponse struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
-	Id                     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                       // ID of the retrieved user
-	Email                  string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`                                                                 // User's email address
-	NotificationPreference string                 `protobuf:"bytes,3,opt,name=notification_preference,json=notificationPreference,proto3" json:"notification_preference,omitempty"` // User's notification preference
-	CreatedAt              string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                        // Timestamp of when the user was created
-	UpdatedAt              string                 `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                        // Timestamp of when the user was last updated
+	Email                  string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`                                                                 // User's email address
+	NotificationPreference string                 `protobuf:"bytes,2,opt,name=notification_preference,json=notificationPreference,proto3" json:"notification_preference,omitempty"` // User's notification preference
+	CreatedAt              string                 `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                        // Timestamp of when the user was created
+	UpdatedAt              string                 `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                        // Timestamp of when the user was last updated
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -302,13 +301,6 @@ func (x *GetUserResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetUserResponse.ProtoReflect.Descriptor instead.
 func (*GetUserResponse) Descriptor() ([]byte, []int) {
 	return file_users_users_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *GetUserResponse) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
 }
 
 func (x *GetUserResponse) GetEmail() string {
@@ -453,15 +445,14 @@ const file_users_users_proto_rawDesc = "" +
 	"\x11LoginUserResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\" \n" +
 	"\x0eGetUserRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xae\x01\n" +
-	"\x0fGetUserResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
-	"\x05email\x18\x02 \x01(\tR\x05email\x127\n" +
-	"\x17notification_preference\x18\x03 \x01(\tR\x16notificationPreference\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x9e\x01\n" +
+	"\x0fGetUserResponse\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x127\n" +
+	"\x17notification_preference\x18\x02 \x01(\tR\x16notificationPreference\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"x\n" +
+	"updated_at\x18\x04 \x01(\tR\tupdatedAt\"x\n" +
 	"\x11UpdateUserRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x127\n" +

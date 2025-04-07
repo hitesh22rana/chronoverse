@@ -15,6 +15,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	usersrepo "github.com/hitesh22rana/chronoverse/internal/repository/users"
 	userssvc "github.com/hitesh22rana/chronoverse/internal/service/users"
@@ -70,6 +71,26 @@ func run() int {
 	}
 	defer pdb.Close()
 
+	// Initialize the redis store
+	rdb, err := redis.New(ctx, &redis.Config{
+		Host:                     cfg.Redis.Host,
+		Port:                     cfg.Redis.Port,
+		Password:                 cfg.Redis.Password,
+		DB:                       cfg.Redis.DB,
+		PoolSize:                 cfg.Redis.PoolSize,
+		MinIdleConns:             cfg.Redis.MinIdleConns,
+		ReadTimeout:              cfg.Redis.ReadTimeout,
+		WriteTimeout:             cfg.Redis.WriteTimeout,
+		MaxMemory:                cfg.Redis.MaxMemory,
+		EvictionPolicy:           cfg.Redis.EvictionPolicy,
+		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer rdb.Close()
+
 	// Initialize the users repository
 	repo := usersrepo.New(auth, pdb)
 
@@ -77,7 +98,7 @@ func run() int {
 	validator := validator.New()
 
 	// Initialize the users service
-	svc := userssvc.New(validator, repo)
+	svc := userssvc.New(validator, repo, rdb)
 
 	// Initialize the users application
 	app := users.New(ctx, &users.Config{

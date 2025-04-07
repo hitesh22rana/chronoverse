@@ -450,7 +450,6 @@ func TestGetUser(t *testing.T) {
 				}, nil)
 			},
 			res: &userpb.GetUserResponse{
-				Id:                     "user1",
 				Email:                  "user1@example.com",
 				NotificationPreference: "ALERTS",
 				CreatedAt:              time.Now().Format(time.RFC3339Nano),

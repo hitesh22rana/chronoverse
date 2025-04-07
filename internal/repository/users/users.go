@@ -42,7 +42,7 @@ func New(auth auth.IAuth, pg *postgres.Postgres) *Repository {
 // RegisterUser a new user.
 //
 //nolint:gocritic // ID and authToken are returned.
-func (r *Repository) RegisterUser(ctx context.Context, email, password string) (ID, authToken string, err error) {
+func (r *Repository) RegisterUser(ctx context.Context, email, password string) (res *usersmodel.GetUserResponse, authToken string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.RegisterUser")
 	defer func() {
 		if err != nil {
@@ -56,41 +56,48 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to hash password: %v", err)
-		return "", "", err
+		return nil, "", err
 	}
 
 	// Insert user into database
 	query := fmt.Sprintf(`
 		INSERT INTO %s (email, password) 
 		VALUES ($1, $2)
-		RETURNING id;
+		RETURNING id, email, notification_preference, created_at, updated_at;
 	`, userTable)
+	args := []any{email, string(hashedPassword)}
 
-	err = r.pg.QueryRow(ctx, query, email, string(hashedPassword)).Scan(&ID)
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, args...)
+	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
 		// Check if the user already exists
 		if r.pg.IsUniqueViolation(err) {
 			err = status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
-			return "", "", err
+			return nil, "", err
+		} else if r.pg.IsNoRows(err) {
+			err = status.Errorf(codes.NotFound, "user not found: %v", err)
+			return nil, "", err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+			return nil, "", err
 		}
 
-		err = status.Errorf(codes.Internal, "failed to insert user: %v", err)
-		return "", "", err
+		err = status.Errorf(codes.Internal, "failed to fetch user: %v", err)
+		return nil, "", err
 	}
 
 	// Issue authToken
-	authToken, err = r.auth.IssueToken(ctx, ID)
+	authToken, err = r.auth.IssueToken(ctx, res.ID)
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 
-	return ID, authToken, nil
+	return res, authToken, nil
 }
 
 // LoginUser user.
-//
-//nolint:gocritic // ID and authToken are returned.
-func (r *Repository) LoginUser(ctx context.Context, email, pass string) (ID, authToken string, err error) {
+func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *usersmodel.GetUserResponse, authToken string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.LoginUser")
 	defer func() {
 		if err != nil {
@@ -101,40 +108,50 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (ID, aut
 	}()
 
 	// Fetch user from database
-	var password string
 	query := fmt.Sprintf(`
-		SELECT id, password
+		SELECT id, email, password, notification_preference, created_at, updated_at
 		FROM %s WHERE email = $1
 		LIMIT 1;
 	`, userTable)
+	args := []any{email}
 
-	err = r.pg.QueryRow(ctx, query, email).Scan(&ID, &password)
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, args...)
+	loginUserResponse, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "user not found: %v", err)
-			return "", "", err
+			return nil, "", err
 		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid email: %v", err)
-			return "", "", err
+			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+			return nil, "", err
 		}
 
 		err = status.Errorf(codes.Internal, "failed to fetch user: %v", err)
-		return "", "", err
+		return nil, "", err
 	}
 
 	// Validate password
-	if err = bcrypt.CompareHashAndPassword([]byte(password), []byte(pass)); err != nil {
+	if err = bcrypt.CompareHashAndPassword([]byte(loginUserResponse.Password), []byte(pass)); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid password: %v", err)
-		return "", "", err
+		return nil, "", err
 	}
 
 	// Issue authToken
-	authToken, err = r.auth.IssueToken(ctx, ID)
+	authToken, err = r.auth.IssueToken(ctx, loginUserResponse.ID)
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 
-	return ID, authToken, nil
+	res = &usersmodel.GetUserResponse{
+		ID:                     loginUserResponse.ID,
+		Email:                  loginUserResponse.Email,
+		NotificationPreference: loginUserResponse.NotificationPreference,
+		CreatedAt:              loginUserResponse.CreatedAt,
+		UpdatedAt:              loginUserResponse.UpdatedAt,
+	}
+
+	return res, authToken, nil
 }
 
 // GetUser fetches user by ID.
@@ -153,9 +170,10 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 		FROM %s WHERE id = $1
 		LIMIT 1;
 	`, userTable)
+	args := []any{id}
 
 	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, id)
+	rows, _ := r.pg.Query(ctx, query, args...)
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {

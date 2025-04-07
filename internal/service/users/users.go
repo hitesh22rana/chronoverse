@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	defaultExpiration = time.Hour
-	cacheTimeout      = time.Second * 5
+	defaultExpirationTTL = time.Minute * 30
+	cacheTimeout         = time.Second * 2
 )
 
 // Repository provides user related operations.
@@ -107,7 +107,7 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpiration); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
 			logger.Warn("failed to cache user",
 				zap.String("user_id", res.ID),
 				zap.String("cache_key", cacheKey),
@@ -171,7 +171,7 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpiration); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
 			logger.Warn("failed to cache user",
 				zap.String("user_id", res.ID),
 				zap.String("cache_key", cacheKey),
@@ -238,7 +238,7 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 
 		// Cache the GetUser response
 		// The key is in the format "user:{user_id}"
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpiration); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
 			logger.Warn("failed to cache user",
 				zap.String("user_id", res.ID),
 				zap.String("cache_key", cacheKey),
@@ -291,6 +291,9 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 		req.GetPassword(),
 		req.GetNotificationPreference(),
 	)
+	if err != nil {
+		return err
+	}
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
@@ -302,7 +305,7 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 		// Invalidate the user cache
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", req.GetId())
-		if delErr := s.cache.Delete(bgCtx, cacheKey); delErr != nil {
+		if delErr := s.cache.Delete(bgCtx, cacheKey); delErr != nil && status.Code(delErr) != codes.NotFound {
 			logger.Warn("failed to delete user cache",
 				zap.String("user_id", req.GetId()),
 				zap.String("cache_key", cacheKey),

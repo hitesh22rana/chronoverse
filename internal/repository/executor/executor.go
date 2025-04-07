@@ -280,7 +280,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 
 			// The threshold has been reached, send an alert notification for the workflow termination
 			// This is a fire-and-forget operation, so we don't need to wait for it to complete
-			//nolint:errcheck,lll // Ignore the error as we don't want to block the job execution
+			//nolint:errcheck // Ignore the error as we don't want to block the job execution
 			go r.sendNotification(
 				ctx,
 				workflow.GetUserId(),

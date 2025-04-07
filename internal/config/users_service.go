@@ -10,6 +10,7 @@ type UsersConfig struct {
 
 	Grpc
 	Postgres
+	Redis
 }
 
 // InitUsersServiceConfig initializes the users service configuration.

@@ -260,7 +260,6 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 		// This is a fire-and-forget operation, so we don't need to wait for it to complete
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution
 		go r.sendNotification(
-			ctx,
 			workflow.GetUserId(),
 			jobID,
 			"Job Execution Failed",
@@ -280,9 +279,8 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 
 			// The threshold has been reached, send an alert notification for the workflow termination
 			// This is a fire-and-forget operation, so we don't need to wait for it to complete
-			//nolint:errcheck,lll // Ignore the error as we don't want to block the job execution
+			//nolint:errcheck // Ignore the error as we don't want to block the job execution
 			go r.sendNotification(
-				ctx,
 				workflow.GetUserId(),
 				workflowID,
 				"Workflow Terminated",
@@ -307,7 +305,6 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	// This is a fire-and-forget operation, so we don't need to wait for it to complete
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution
 	go r.sendNotification(
-		ctx,
 		workflow.GetUserId(),
 		jobID,
 		"Job Execution Completed",
@@ -328,7 +325,12 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 }
 
 // sendNotification sends a notification for the job execution related events.
-func (r *Repository) sendNotification(ctx context.Context, userID, entityID, title, message, kind, notificationType string) error {
+func (r *Repository) sendNotification(userID, entityID, title, message, kind, notificationType string) error {
+	ctx, err := r.withAuthorization(context.Background())
+	if err != nil {
+		return err
+	}
+
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
 		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, entityID)

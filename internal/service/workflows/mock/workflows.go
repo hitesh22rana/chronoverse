@@ -43,10 +43,10 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 }
 
 // CreateWorkflow mocks base method.
-func (m *MockRepository) CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32) (string, error) {
+func (m *MockRepository) CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32) (*workflows.GetWorkflowResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateWorkflow", ctx, userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(*workflows.GetWorkflowResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

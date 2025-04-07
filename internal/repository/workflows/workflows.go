@@ -58,7 +58,7 @@ func (r *Repository) CreateWorkflow(
 	kind string,
 	interval,
 	maxConsecutiveJobFailuresAllowed int32,
-) (workflowID string, err error) {
+) (res *workflowsmodel.GetWorkflowResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CreateWorkflow")
 	defer func() {
 		if err != nil {
@@ -72,7 +72,7 @@ func (r *Repository) CreateWorkflow(
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
-		return "", err
+		return nil, err
 	}
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
@@ -84,28 +84,30 @@ func (r *Repository) CreateWorkflow(
 		query = fmt.Sprintf(`
 			INSERT INTO %s (user_id, name, payload, kind, interval)
 			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id;
+			RETURNING id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at;
 			`, workflowsTable)
 		args = []any{userID, name, payload, kind, interval}
 	} else {
 		query = fmt.Sprintf(`
 			INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed)
 			VALUES ($1, $2, $3, $4, $5, $6)
-			RETURNING id;
+			RETURNING id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at;
 			`, workflowsTable)
 		args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed}
 	}
 
-	row := tx.QueryRow(ctx, query, args...)
-	if err = row.Scan(&workflowID); err != nil {
+	//nolint:errcheck // The error is handled in the next line
+	rows, _ := r.pg.Query(ctx, query, args...)
+	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
+	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to insert workflow: %v", err)
-		return "", err
+		return nil, err
 	}
 
 	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, kgo.StringRecord(workflowID)).FirstErr(); err != nil {
+	if err = r.kfk.ProduceSync(ctx, kgo.StringRecord(res.ID)).FirstErr(); err != nil {
 		err = status.Errorf(codes.Internal, "failed to publish workflow ID to Kafka: %v", err)
-		return "", err
+		return nil, err
 	}
 
 	// Commit transaction
@@ -114,10 +116,10 @@ func (r *Repository) CreateWorkflow(
 			codes.Internal,
 			"failed to commit transaction: %v", err,
 		)
-		return "", err
+		return nil, err
 	}
 
-	return workflowID, nil
+	return res, nil
 }
 
 // UpdateWorkflow updates the workflow details.
@@ -163,7 +165,6 @@ func (r *Repository) UpdateWorkflow(
 		`, workflowsTable)
 		args = []any{name, payload, interval, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID}
 	} else {
-		//nolint:lll // It's fine to have long queries
 		query = fmt.Sprintf(`
 			UPDATE %s
 			SET name = $1, payload = $2, interval = $3, max_consecutive_job_failures_allowed = $4, build_status = $5, consecutive_job_failures_count = 0, terminated_at = NULL
@@ -252,7 +253,6 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 		span.End()
 	}()
 
-	//nolint:lll // It's fine to have long queries
 	query := fmt.Sprintf(`
 		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
 		FROM %s
@@ -290,7 +290,6 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 		span.End()
 	}()
 
-	//nolint:lll // It's fine to have long queries
 	query := fmt.Sprintf(`
 		SELECT id, user_id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
 		FROM %s
@@ -445,7 +444,6 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string) (
 		span.End()
 	}()
 
-	//nolint:lll // It's fine to have long queries
 	query := fmt.Sprintf(`
 		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
 		FROM %s

@@ -44,7 +44,7 @@ func TestCreateWorkflow(t *testing.T) {
 			req: &workflowspb.CreateWorkflowRequest{
 				UserId:                           "user1",
 				Name:                             "workflow1",
-				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
@@ -58,7 +58,28 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetKind(),
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
-				).Return("workflow_id", nil)
+				).Return(&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        time.Now(),
+					UpdatedAt:                        time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+				}, nil)
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
 
 				// Simulate a cache set
 				cache.EXPECT().Set(
@@ -67,12 +88,6 @@ func TestCreateWorkflow(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
-
-				// Simulate a cache delete by pattern
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			want: want{
 				workflowID: "workflow_id",
@@ -84,7 +99,7 @@ func TestCreateWorkflow(t *testing.T) {
 			req: &workflowspb.CreateWorkflowRequest{
 				UserId:   "",
 				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+				Payload:  `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Kind:     "",
 				Interval: 1,
 			},
@@ -111,7 +126,7 @@ func TestCreateWorkflow(t *testing.T) {
 			req: &workflowspb.CreateWorkflowRequest{
 				UserId:                           "user1",
 				Name:                             "workflow1",
-				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
@@ -125,7 +140,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetKind(),
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
-				).Return("", status.Error(codes.Internal, "internal server error"))
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
 			isErr: true,
@@ -178,7 +193,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				Id:                               "workflow_id",
 				UserId:                           "user1",
 				Name:                             "workflow1",
-				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 			},
@@ -213,7 +228,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				Id:       "",
 				UserId:   "user1",
 				Name:     "workflow1",
-				Payload:  `{"action": "run", "params": {"foo": "bar"}}`,
+				Payload:  `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Interval: 1,
 			},
 			mock:  func(_ *workflowspb.UpdateWorkflowRequest) {},
@@ -238,7 +253,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				Id:                               "invalid_workflow_id",
 				UserId:                           "user1",
 				Name:                             "workflow1",
-				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 			},
@@ -261,7 +276,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				Id:                               "workflow_id",
 				UserId:                           "user1",
 				Name:                             "workflow1",
-				Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 			},
@@ -486,7 +501,7 @@ func TestGetWorkflow(t *testing.T) {
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
-					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 					Kind:                             "HEARTBEAT",
 					WorkflowBuildStatus:              "COMPLETED",
 					Interval:                         1,
@@ -497,6 +512,12 @@ func TestGetWorkflow(t *testing.T) {
 					TerminatedAt:                     terminatedAt,
 				}, nil)
 
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+
 				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
@@ -504,18 +525,12 @@ func TestGetWorkflow(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
-
-				// Simulate a cache delete by pattern
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			want: want{
 				&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
-					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 					Kind:                             "HEARTBEAT",
 					WorkflowBuildStatus:              "COMPLETED",
 					Interval:                         1,
@@ -543,7 +558,7 @@ func TestGetWorkflow(t *testing.T) {
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
-					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 					Kind:                             "HEARTBEAT",
 					WorkflowBuildStatus:              "COMPLETED",
 					Interval:                         1,
@@ -558,7 +573,7 @@ func TestGetWorkflow(t *testing.T) {
 				&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
-					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 					Kind:                             "HEARTBEAT",
 					WorkflowBuildStatus:              "COMPLETED",
 					Interval:                         1,
@@ -719,7 +734,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					ID:                               "workflow_id",
 					UserID:                           "user1",
 					Name:                             "workflow1",
-					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 					Kind:                             "HEARTBEAT",
 					WorkflowBuildStatus:              "COMPLETED",
 					Interval:                         1,
@@ -735,7 +750,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					ID:                               "workflow_id",
 					UserID:                           "user1",
 					Name:                             "workflow1",
-					Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 					Kind:                             "HEARTBEAT",
 					WorkflowBuildStatus:              "COMPLETED",
 					Interval:                         1,
@@ -1193,7 +1208,6 @@ func TestListWorkflows(t *testing.T) {
 			Time:  time.Now(),
 			Valid: true,
 		}
-		expirationTime = time.Hour // 1 hour
 	)
 
 	// Test cases
@@ -1218,7 +1232,6 @@ func TestListWorkflows(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.NotFound, "cache miss"))
 
-				// Simulate a repository call
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),
@@ -1228,7 +1241,7 @@ func TestListWorkflows(t *testing.T) {
 						{
 							ID:                               "workflow_id",
 							Name:                             "workflow1",
-							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 							Kind:                             "HEARTBEAT",
 							WorkflowBuildStatus:              "COMPLETED",
 							Interval:                         1,
@@ -1247,7 +1260,7 @@ func TestListWorkflows(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 					gomock.Any(),
-					expirationTime,
+					gomock.Any(),
 				).Return(nil).AnyTimes()
 			},
 			want: want{
@@ -1256,7 +1269,7 @@ func TestListWorkflows(t *testing.T) {
 						{
 							ID:                               "workflow_id",
 							Name:                             "workflow1",
-							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 							Kind:                             "HEARTBEAT",
 							WorkflowBuildStatus:              "COMPLETED",
 							Interval:                         1,
@@ -1289,7 +1302,7 @@ func TestListWorkflows(t *testing.T) {
 						{
 							ID:                               "workflow_id",
 							Name:                             "workflow1",
-							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 							Kind:                             "HEARTBEAT",
 							WorkflowBuildStatus:              "COMPLETED",
 							Interval:                         1,
@@ -1309,7 +1322,7 @@ func TestListWorkflows(t *testing.T) {
 						{
 							ID:                               "workflow_id",
 							Name:                             "workflow1",
-							Payload:                          `{"action": "run", "params": {"foo": "bar"}}`,
+							Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 							Kind:                             "HEARTBEAT",
 							WorkflowBuildStatus:              "COMPLETED",
 							Interval:                         1,
@@ -1374,8 +1387,6 @@ func TestListWorkflows(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.NotFound, "cache miss"))
 
-				// Simulate a repository call
-				// This should return an error
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),
@@ -1406,7 +1417,6 @@ func TestListWorkflows(t *testing.T) {
 			}
 
 			assert.Equal(t, len(workflows.Workflows), len(tt.want.ListWorkflowsResponse.Workflows))
-
 			assert.Equal(t, workflows.Workflows, tt.want.ListWorkflowsResponse.Workflows)
 			assert.Equal(t, workflows.Cursor, tt.want.ListWorkflowsResponse.Cursor)
 		})

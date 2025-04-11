@@ -277,7 +277,8 @@ func (*UpdateWorkflowResponse) Descriptor() ([]byte, []int) {
 type UpdateWorkflowBuildStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                      // ID of the workflow
-	BuildStatus   string                 `protobuf:"bytes,2,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"` // Status of the workflow
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                // ID of the user
+	BuildStatus   string                 `protobuf:"bytes,3,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"` // Status of the workflow
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -315,6 +316,13 @@ func (*UpdateWorkflowBuildStatusRequest) Descriptor() ([]byte, []int) {
 func (x *UpdateWorkflowBuildStatusRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateWorkflowBuildStatusRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -722,7 +730,8 @@ func (x *GetWorkflowByIDResponse) GetTerminatedAt() string {
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
 type IncrementWorkflowConsecutiveJobFailuresCountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // ID of the workflow
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                       // ID of the workflow
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -760,6 +769,13 @@ func (*IncrementWorkflowConsecutiveJobFailuresCountRequest) Descriptor() ([]byte
 func (x *IncrementWorkflowConsecutiveJobFailuresCountRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *IncrementWorkflowConsecutiveJobFailuresCountRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -812,7 +828,8 @@ func (x *IncrementWorkflowConsecutiveJobFailuresCountResponse) GetThresholdReach
 // ResetWorkflowConsecutiveJobFailuresCountRequest contains the details needed to reset the consecutive job failures count of a workflow.
 type ResetWorkflowConsecutiveJobFailuresCountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // ID of the workflow
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                       // ID of the workflow
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -850,6 +867,13 @@ func (*ResetWorkflowConsecutiveJobFailuresCountRequest) Descriptor() ([]byte, []
 func (x *ResetWorkflowConsecutiveJobFailuresCountRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *ResetWorkflowConsecutiveJobFailuresCountRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -1233,10 +1257,11 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\apayload\x18\x04 \x01(\tR\apayload\x12\x1a\n" +
 	"\binterval\x18\x05 \x01(\x05R\binterval\x12N\n" +
 	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\"\x18\n" +
-	"\x16UpdateWorkflowResponse\"U\n" +
+	"\x16UpdateWorkflowResponse\"n\n" +
 	" UpdateWorkflowBuildStatusRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
-	"\fbuild_status\x18\x02 \x01(\tR\vbuildStatus\"#\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12!\n" +
+	"\fbuild_status\x18\x03 \x01(\tR\vbuildStatus\"#\n" +
 	"!UpdateWorkflowBuildStatusResponse\"=\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
@@ -1273,13 +1298,15 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	" \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"updated_at\x18\v \x01(\tR\tupdatedAt\x12#\n" +
-	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\"E\n" +
+	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\"^\n" +
 	"3IncrementWorkflowConsecutiveJobFailuresCountRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"c\n" +
 	"4IncrementWorkflowConsecutiveJobFailuresCountResponse\x12+\n" +
-	"\x11threshold_reached\x18\x01 \x01(\bR\x10thresholdReached\"A\n" +
+	"\x11threshold_reached\x18\x01 \x01(\bR\x10thresholdReached\"Z\n" +
 	"/ResetWorkflowConsecutiveJobFailuresCountRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"2\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"2\n" +
 	"0ResetWorkflowConsecutiveJobFailuresCountResponse\"C\n" +
 	"\x18TerminateWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +

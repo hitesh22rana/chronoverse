@@ -193,6 +193,7 @@ services:
     container_name: users-service
     environment:
       POSTGRES_HOST: postgres
+      REDIS_HOST: redis
       GRPC_PORT: 50051
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
@@ -226,6 +227,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       lgtm:
         condition: service_started
       init-migrate-postgres:
@@ -240,6 +243,7 @@ services:
     container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
+      REDIS_HOST: redis
       KAFKA_BROKERS: kafka:9092
       KAFKA_PRODUCER_TOPIC: workflows
       GRPC_PORT: 50052
@@ -274,6 +278,8 @@ services:
       '
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       kafka:
         condition: service_started

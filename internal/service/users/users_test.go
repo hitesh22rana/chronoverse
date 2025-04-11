@@ -21,9 +21,10 @@ func TestRegisterUser(t *testing.T) {
 
 	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
+	cache := usersmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := users.New(validator.New(), repo)
+	s := users.New(validator.New(), repo, cache)
 
 	type want struct {
 		userID string
@@ -49,10 +50,24 @@ func TestRegisterUser(t *testing.T) {
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
-				).Return("1", "token", nil)
+				).Return(&usersmodel.GetUserResponse{
+					ID:                     "userID",
+					Email:                  "user@example.com",
+					NotificationPreference: "ALERTS",
+					CreatedAt:              time.Now(),
+					UpdatedAt:              time.Now(),
+				}, "token", nil)
+
+				// Simulate cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
 			},
 			want: want{
-				userID: "1",
+				userID: "userID",
 				pat:    "token",
 			},
 			isErr: false,
@@ -88,7 +103,7 @@ func TestRegisterUser(t *testing.T) {
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
-				).Return("", "", status.Errorf(codes.AlreadyExists, "user already exists"))
+				).Return(nil, "", status.Errorf(codes.AlreadyExists, "user already exists"))
 			},
 			want:  want{},
 			isErr: true,
@@ -122,9 +137,10 @@ func TestLoginUser(t *testing.T) {
 
 	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
+	cache := usersmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := users.New(validator.New(), repo)
+	s := users.New(validator.New(), repo, cache)
 
 	type want struct {
 		userID string
@@ -150,10 +166,24 @@ func TestLoginUser(t *testing.T) {
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
-				).Return("1", "token", nil)
+				).Return(&usersmodel.GetUserResponse{
+					ID:                     "userID",
+					Email:                  "user@example.com",
+					NotificationPreference: "ALERTS",
+					CreatedAt:              time.Now(),
+					UpdatedAt:              time.Now(),
+				}, "token", nil)
+
+				// Simulate cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
 			},
 			want: want{
-				userID: "1",
+				userID: "userID",
 				pat:    "token",
 			},
 			isErr: false,
@@ -189,7 +219,7 @@ func TestLoginUser(t *testing.T) {
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
-				).Return("", "", status.Errorf(codes.NotFound, "user not found"))
+				).Return(nil, "", status.Errorf(codes.NotFound, "user not found"))
 			},
 			want:  want{},
 			isErr: true,
@@ -223,9 +253,10 @@ func TestGetUser(t *testing.T) {
 
 	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
+	cache := usersmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := users.New(validator.New(), repo)
+	s := users.New(validator.New(), repo, cache)
 
 	type want struct {
 		*usersmodel.GetUserResponse
@@ -245,14 +276,59 @@ func TestGetUser(t *testing.T) {
 		isErr bool
 	}{
 		{
-			name: "success",
+			name: "success: no cache hit",
 			req: &userspb.GetUserRequest{
-				Id: "1",
+				Id: "userID",
 			},
 			mock: func(req *userspb.GetUserRequest) {
+				// Simulate cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
+				).Return(&usersmodel.GetUserResponse{
+					ID:                     "userID",
+					Email:                  "user@example.com",
+					NotificationPreference: "ALERTS",
+					CreatedAt:              createdAt,
+					UpdatedAt:              updatedAt,
+				}, nil)
+
+				// Simulate cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+			},
+			want: want{
+				GetUserResponse: &usersmodel.GetUserResponse{
+					ID:                     "userID",
+					Email:                  "user@example.com",
+					NotificationPreference: "ALERTS",
+					CreatedAt:              createdAt,
+					UpdatedAt:              updatedAt,
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "success: cache hit",
+			req: &userspb.GetUserRequest{
+				Id: "userID",
+			},
+			mock: func(_ *userspb.GetUserRequest) {
+				// Simulate cache hit
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
 				).Return(&usersmodel.GetUserResponse{
 					ID:                     "userID",
 					Email:                  "user@example.com",
@@ -287,6 +363,13 @@ func TestGetUser(t *testing.T) {
 				Id: "invalid_user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
+				// Simulate cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
@@ -301,6 +384,13 @@ func TestGetUser(t *testing.T) {
 				Id: "invalid_user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
+				// Simulate cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
@@ -315,6 +405,13 @@ func TestGetUser(t *testing.T) {
 				Id: "user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
+				// Simulate cache miss
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
@@ -353,9 +450,10 @@ func TestUpdateUser(t *testing.T) {
 
 	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
+	cache := usersmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := users.New(validator.New(), repo)
+	s := users.New(validator.New(), repo, cache)
 
 	tests := []struct {
 		name  string
@@ -366,7 +464,7 @@ func TestUpdateUser(t *testing.T) {
 		{
 			name: "success",
 			req: &userspb.UpdateUserRequest{
-				Id:                     "1",
+				Id:                     "userID",
 				Password:               "newpassword",
 				NotificationPreference: "ALERTS",
 			},
@@ -377,6 +475,12 @@ func TestUpdateUser(t *testing.T) {
 					req.GetPassword(),
 					req.GetNotificationPreference(),
 				).Return(nil)
+
+				// Simulate cache invalidation
+				cache.EXPECT().Delete(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
 			},
 			isErr: false,
 		},

@@ -40,7 +40,7 @@ linters-settings:
     disable:
       - fieldalignment
   lll:
-    line-length: 160
+    line-length: 200
   misspell:
     locale: US
   nolintlint:

@@ -121,20 +121,20 @@ func (s *Store) Set(ctx context.Context, key string, value any, expiration time.
 }
 
 // Get retrieves a value by key.
-func (s *Store) Get(ctx context.Context, key string, dest any) error {
+func (s *Store) Get(ctx context.Context, key string, dest any) (any, error) {
 	data, err := s.client.Get(ctx, key).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return status.Errorf(codes.NotFound, "key not found: %s", key)
+			return nil, status.Errorf(codes.NotFound, "key not found: %s", key)
 		}
-		return status.Errorf(codes.Internal, "failed to get value from redis: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", err)
 	}
 
 	if err := json.Unmarshal(data, dest); err != nil {
-		return status.Errorf(codes.Internal, "failed to unmarshal value: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to unmarshal value: %v", err)
 	}
 
-	return nil
+	return dest, nil
 }
 
 // Delete removes a key.
@@ -149,6 +149,50 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	}
 
 	return nil
+}
+
+// DeleteByPattern deletes all keys that match the given pattern.
+func (s *Store) DeleteByPattern(ctx context.Context, pattern string) (int64, error) {
+	var cursor uint64
+	var totalDeleted int64
+
+	for {
+		var keys []string
+		var err error
+
+		// Scan for keys matching pattern (safer than KEYS command)
+		keys, cursor, err = s.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return 0, status.Errorf(codes.Internal, "failed to scan keys: %v", err)
+		}
+
+		// If keys found, delete them in a pipeline for efficiency
+		if len(keys) > 0 {
+			pipe := s.client.Pipeline()
+			for _, key := range keys {
+				pipe.Del(ctx, key)
+			}
+
+			cmds, err := pipe.Exec(ctx)
+			if err != nil {
+				return 0, status.Errorf(codes.Internal, "failed to delete keys: %v", err)
+			}
+
+			// Count deleted keys
+			for _, cmd := range cmds {
+				if delCmd, ok := cmd.(*redis.IntCmd); ok {
+					totalDeleted += delCmd.Val()
+				}
+			}
+		}
+
+		// Stop if cursor is 0 (no more keys to scan)
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return totalDeleted, nil
 }
 
 // Exists checks if a key exists.

@@ -33,11 +33,10 @@ message GetUserRequest {
 
 // GetUserResponse contains the details of the retrieved user.
 message GetUserResponse {
-    string id                      = 1; // ID of the retrieved user
-    string email                   = 2; // User's email address
-    string notification_preference = 3; // User's notification preference
-    string created_at              = 4; // Timestamp of when the user was created
-    string updated_at              = 5; // Timestamp of when the user was last updated
+    string email                   = 1; // User's email address
+    string notification_preference = 2; // User's notification preference
+    string created_at              = 3; // Timestamp of when the user was created
+    string updated_at              = 4; // Timestamp of when the user was last updated
 }
 
 // UpdateUserRequest contains the details needed to update a user's information.

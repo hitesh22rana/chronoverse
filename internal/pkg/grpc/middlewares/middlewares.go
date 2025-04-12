@@ -128,7 +128,12 @@ func loggingInterceptor(l *zap.Logger) logging.Logger {
 
 		msg := ""
 		if method, ok := grpc.Method(ctx); ok {
-			msg = strings.Split(method, "/")[1]
+			splits := strings.Split(method, "/")
+			if len(splits) != 3 {
+				msg = "unknown method"
+			} else {
+				msg = splits[2]
+			}
 		}
 		switch lvl {
 		case logging.LevelDebug:

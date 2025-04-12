@@ -61,17 +61,18 @@ func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 			zap.String("duration", duration.String()),
 		}
 
+		msg := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 		//nolint:gocritic // This if-else chain is better than a switch statement
 		if wrw.status >= 500 {
-			log.Error("request completed with server error", logFields...)
+			log.Error(msg, logFields...)
 			span.SetAttributes(attribute.String("http.error", http.StatusText(wrw.status)))
 			span.RecordError(fmt.Errorf("server error: %s", http.StatusText(wrw.status)))
 		} else if wrw.status >= 400 {
-			log.Warn("request completed with client error", logFields...)
+			log.Warn(msg, logFields...)
 			span.SetAttributes(attribute.String("http.error", http.StatusText(wrw.status)))
 			span.RecordError(fmt.Errorf("client error: %s", http.StatusText(wrw.status)))
 		} else {
-			log.Info("request completed successfully", logFields...)
+			log.Info(msg, logFields...)
 			span.SetAttributes(attribute.String("http.success", http.StatusText(wrw.status)))
 		}
 	})

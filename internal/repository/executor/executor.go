@@ -39,7 +39,7 @@ const (
 	workflowHeartBeat = "HEARTBEAT"
 	workflowContainer = "CONTAINER"
 
-	containerWorkflowExecutionTimeout = 10 * time.Second
+	containerWorkflowDefaultExecutionTimeout = 10 * time.Second
 )
 
 // Workflow represents a workflow that can be executed.
@@ -434,15 +434,15 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 		return r.svc.Hsvc.Execute(ctx, payload)
 	// Execute the CONTAINER workflow
 	case workflowContainer:
-		imageName, cmd, err := extractContainerDetails(payload)
+		timeout, image, cmd, err := extractContainerDetails(payload)
 		if err != nil {
 			return err
 		}
 
 		logs, _, workflowErr := r.svc.Csvc.Execute(
 			ctx,
-			containerWorkflowExecutionTimeout,
-			imageName,
+			timeout,
+			image,
 			cmd,
 		)
 
@@ -477,30 +477,46 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 }
 
 // extractContainerDetails extracts the container details from the workflow payload.
-func extractContainerDetails(payload string) (imageName string, cmdStr []string, err error) {
+func extractContainerDetails(payload string) (timeout time.Duration, image string, cmdStr []string, err error) {
 	var data map[string]any
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		return "", nil, status.Error(codes.InvalidArgument, "invalid payload format")
+		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "invalid payload format")
 	}
 
-	imageName, ok := data["image"].(string)
+	image, ok := data["image"].(string)
 	if !ok {
-		return "", nil, status.Error(codes.InvalidArgument, "image is missing or invalid")
+		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "image is missing or invalid")
 	}
 
 	cmd, ok := data["cmd"].([]any)
 	if !ok {
-		return "", nil, status.Error(codes.InvalidArgument, "cmd is missing or invalid")
+		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "cmd is missing or invalid")
 	}
 
 	for _, c := range cmd {
 		c, err := c.(string)
 		if !err {
-			return "", nil, status.Error(codes.InvalidArgument, "cmd is invalid")
+			return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "cmd is invalid")
 		}
 
 		cmdStr = append(cmdStr, c)
 	}
 
-	return imageName, cmdStr, nil
+	timeoutStr, ok := data["timeout"].(string)
+
+	// If the timeout is not present, set it to the default value
+	if !ok {
+		return containerWorkflowDefaultExecutionTimeout, image, cmdStr, nil
+	}
+
+	timeout, err = time.ParseDuration(timeoutStr)
+	if err != nil {
+		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "timeout is invalid")
+	}
+
+	if timeout <= 0 {
+		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "timeout is invalid")
+	}
+
+	return timeout, image, cmdStr, nil
 }

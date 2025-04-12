@@ -210,41 +210,59 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	terminatedAt := workflow.GetTerminatedAt()
 	if terminatedAt != "" {
 		// If the workflow is already terminated, do not execute the workflow and update the job status to CANCELED
-		if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+		if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 			Id:     jobID,
 			Status: statusCanceled,
-		}); _err != nil {
-			return _err
+		}); err != nil {
+			return err
 		}
 
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
 
 	// Schedule a new job based on the last scheduledAt time and interval accordingly
-	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+	if _, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
 		WorkflowId:  workflowID,
 		UserId:      workflow.GetUserId(),
 		ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-	}); _err != nil {
-		return _err
+	}); err != nil {
+		return err
 	}
 
 	// Update the job status from QUEUED to RUNNING
-	if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 		Id:     jobID,
 		Status: statusRunning,
-	}); _err != nil {
-		return _err
+	}); err != nil {
+		return err
 	}
 
-	//nolint:nestif // This nested if statement is necessary for the workflow execution
-	if err := r.executeWorkflow(ctx, jobID, workflow); err != nil {
+	executeErr := r.executeWorkflow(ctx, jobID, workflow)
+
+	// Since, the workflow execution can take time to execute and can led to authorization issues
+	// So, we need to re-issue the authorization token
+	// This context is used for all the gRPC calls
+	// This context uses the parent context
+	ctx, err = r.withAuthorization(ctx)
+	if err != nil {
+		return err
+	}
+
+	// This context is used for sending notifications, as we don't want to propagate the cancellation
+	// This context does not use the parent context
+	notificationCtx, err := r.withAuthorization(context.Background())
+	if err != nil {
+		return err
+	}
+
+	//nolint:nestif // This is a nested if statement, but it's necessary to handle the error cases
+	if executeErr != nil {
 		// Update the job status from RUNNING to FAILED
-		if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+		if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 			Id:     jobID,
 			Status: statusFailed,
-		}); _err != nil {
-			return _err
+		}); err != nil {
+			return err
 		}
 
 		// Increment the workflow failure count and check if the threshold is reached
@@ -258,8 +276,9 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 
 		// Send an error notification for the job execution failure
 		// This is a fire-and-forget operation, so we don't need to wait for it to complete
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution
+		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the job execution
 		go r.sendNotification(
+			notificationCtx,
 			workflow.GetUserId(),
 			jobID,
 			"Job Execution Failed",
@@ -270,17 +289,18 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 
 		// If the threshold has been reached, terminate the workflow
 		if res.GetThresholdReached() {
-			if _, _err := r.svc.Workflows.TerminateWorkflow(ctx, &workflowspb.TerminateWorkflowRequest{
+			if _, err = r.svc.Workflows.TerminateWorkflow(ctx, &workflowspb.TerminateWorkflowRequest{
 				Id:     workflowID,
 				UserId: workflow.GetUserId(),
-			}); _err != nil {
-				return _err
+			}); err != nil {
+				return err
 			}
 
 			// The threshold has been reached, send an alert notification for the workflow termination
 			// This is a fire-and-forget operation, so we don't need to wait for it to complete
-			//nolint:errcheck // Ignore the error as we don't want to block the job execution
+			//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the job execution
 			go r.sendNotification(
+				notificationCtx,
 				workflow.GetUserId(),
 				workflowID,
 				"Workflow Terminated",
@@ -294,17 +314,18 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	}
 
 	// Update the job status from RUNNING to COMPLETED
-	if _, _err := r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 		Id:     jobID,
 		Status: statusCompleted,
-	}); _err != nil {
-		return _err
+	}); err != nil {
+		return err
 	}
 
 	// Send a success notification for the job execution
 	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	//nolint:errcheck // Ignore the error as we don't want to block the job execution
+	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the job execution
 	go r.sendNotification(
+		notificationCtx,
 		workflow.GetUserId(),
 		jobID,
 		"Job Execution Completed",
@@ -325,12 +346,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 }
 
 // sendNotification sends a notification for the job execution related events.
-func (r *Repository) sendNotification(userID, entityID, title, message, kind, notificationType string) error {
-	ctx, err := r.withAuthorization(context.Background())
-	if err != nil {
-		return err
-	}
-
+func (r *Repository) sendNotification(ctx context.Context, userID, entityID, title, message, kind, notificationType string) error {
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
 		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, entityID)

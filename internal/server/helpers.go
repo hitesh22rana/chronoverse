@@ -14,8 +14,6 @@ const (
 	serverShutdownTimeout = 10 * time.Second
 	csrfCookieName        = "csrf"
 	sessionCookieName     = "session"
-	csrfHeaderKey         = "X-CSRF-Token"
-	sessionHeaderKey      = "X-Session-Token"
 )
 
 // sessionKey is the key used to store the session in the context.
@@ -35,16 +33,24 @@ func sessionFromContext(ctx context.Context) (string, error) {
 }
 
 // setCookie sets a cookie in the response.
-func setCookie(w http.ResponseWriter, name, value string, expires time.Duration) {
-	http.SetCookie(w, &http.Cookie{
+func setCookie(w http.ResponseWriter, name, value, host string, secure bool, expires time.Duration) {
+	cookie := &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   secure,
 		Expires:  time.Now().Add(expires),
-		SameSite: http.SameSiteLaxMode,
-	})
+		SameSite: http.SameSiteStrictMode,
+	}
+
+	// Set domain only for non-localhost
+	if host != "localhost" {
+		cookie.Domain = host
+	}
+
+	// Set the cookie in the response
+	http.SetCookie(w, cookie)
 }
 
 //nolint:gocyclo // handleErrors is a helper function to handle gRPC errors.

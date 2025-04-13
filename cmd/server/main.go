@@ -154,6 +154,7 @@ func run() int {
 			RequestBodyLimit: cfg.Server.RequestBodyLimit,
 			CSRFHMACSecret:   cfg.Server.CSRFHMACSecret,
 		},
+		FrontendURL: cfg.Server.FrontendURL,
 	}, auth, crypto, rdb, usersServiceClient, workflowsServiceClient, jobsServiceClient, notificationsServiceClient)
 
 	// Log the server information

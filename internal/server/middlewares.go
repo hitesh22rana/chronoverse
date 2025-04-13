@@ -16,6 +16,25 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+// withCORSMiddleware adds CORS headers to all responses.
+func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", s.frontendConfig.URL)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Credentials", "true") // Critical for cookies
+		w.Header().Set("Access-Control-Max-Age", "86400")          // 24 hours
+
+		// Handle preflight requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // withOtelMiddleware adds OpenTelemetry tracing to the HTTP handler.
 func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,19 +120,21 @@ func (s *Server) withAllowedMethodMiddleware(allowedMethod string, next http.Han
 // withVerifyCSRFMiddleware is a middleware that checks the CSRF token.
 func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get the CSRF token from the header
-		csrfToken := r.Header.Get(csrfHeaderKey)
-		if csrfToken == "" {
+		// Get the CSRF token from cookie
+		csrfCookie, err := r.Cookie(csrfCookieName)
+		if err != nil {
 			http.Error(w, "csrf token not found", http.StatusBadRequest)
 			return
 		}
+		csrfToken := csrfCookie.Value
 
-		// Get the session from the header
-		sessionToken := r.Header.Get(sessionHeaderKey)
-		if sessionToken == "" {
+		// Get the session from cookie
+		sessionCookie, err := r.Cookie(sessionCookieName)
+		if err != nil {
 			http.Error(w, "session token not found", http.StatusBadRequest)
 			return
 		}
+		sessionToken := sessionCookie.Value
 
 		// Verify the CSRF token
 		if err := verifyCSRFToken(csrfToken, sessionToken, s.validationCfg.CSRFHMACSecret, s.validationCfg.CSRFExpiry); err != nil {
@@ -128,12 +149,13 @@ func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFun
 // withVerifySessionMiddleware is a middleware that verifies the attached token.
 func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get the session from the header
-		session := r.Header.Get(sessionHeaderKey)
-		if session == "" {
-			http.Error(w, "session token not found", http.StatusBadRequest)
+		// Get the session from cookie instead of header
+		cookie, err := r.Cookie(sessionCookieName)
+		if err != nil {
+			http.Error(w, "session not found", http.StatusUnauthorized)
 			return
 		}
+		session := cookie.Value
 
 		// Decrypt and verify the session
 		authToken, err := s.crypto.Decrypt(session)

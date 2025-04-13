@@ -32,6 +32,7 @@ type Server struct {
 	SessionExpiry     time.Duration `envconfig:"SERVER_SESSION_EXPIRY" default:"2h"`
 	CSRFExpiry        time.Duration `envconfig:"SERVER_CSRF_EXPIRY" default:"2h"`
 	CSRFHMACSecret    string        `envconfig:"SERVER_CSRF_HMAC_SECRET" default:"a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?"`
+	FrontendURL       string        `envconfig:"SERVER_FRONTEND_URL" default:"http://localhost:3001"`
 }
 
 // InitServerConfig initializes the server configuration.

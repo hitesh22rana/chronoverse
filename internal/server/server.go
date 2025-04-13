@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -38,6 +39,7 @@ type Server struct {
 	notificationsClient notificationspb.NotificationsServiceClient
 	httpServer          *http.Server
 	validationCfg       *ValidationConfig
+	frontendConfig      *FrontendConfig
 }
 
 // ValidationConfig represents the configuration of the validation.
@@ -46,6 +48,13 @@ type ValidationConfig struct {
 	CSRFExpiry       time.Duration
 	RequestBodyLimit int64
 	CSRFHMACSecret   string
+}
+
+// FrontendConfig represents the configuration of the frontend.
+type FrontendConfig struct {
+	URL    string
+	Host   string
+	Secure bool
 }
 
 // Config represents the configuration of the HTTP server.
@@ -58,6 +67,7 @@ type Config struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	ValidationConfig  *ValidationConfig
+	FrontendURL       string
 }
 
 // New creates a new HTTP server.
@@ -72,9 +82,15 @@ func New(
 	jobsClient jobspb.JobsServiceClient,
 	notificationsClient notificationspb.NotificationsServiceClient,
 ) *Server {
+	logger := loggerpkg.FromContext(ctx)
+	frontend, err := url.Parse(cfg.FrontendURL)
+	if err != nil {
+		logger.Fatal("failed to parse frontend URL", zap.Error(err))
+	}
+
 	srv := &Server{
 		tp:                  otel.Tracer(svcpkg.Info().GetName()),
-		logger:              loggerpkg.FromContext(ctx),
+		logger:              logger,
 		auth:                auth,
 		crypto:              crypto,
 		rdb:                 rdb,
@@ -90,13 +106,20 @@ func New(
 			IdleTimeout:       cfg.IdleTimeout,
 		},
 		validationCfg: cfg.ValidationConfig,
+		frontendConfig: &FrontendConfig{
+			URL:    cfg.FrontendURL,
+			Host:   frontend.Hostname(),
+			Secure: frontend.Scheme == "https",
+		},
 	}
 
 	router := http.NewServeMux()
 	srv.registerRoutes(router)
 
 	// Common middlewares
-	srv.httpServer.Handler = srv.withOtelMiddleware(router)
+	srv.httpServer.Handler = srv.withOtelMiddleware(
+		srv.withCORSMiddleware(router),
+	)
 	return srv
 }
 

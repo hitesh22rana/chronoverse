@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Poppins as FontPoppins } from 'next/font/google'
+import { Toaster } from "sonner";
 
-import { ThemeProvider } from "@/components/theme-provider"
+import { Providers } from "@/app/providers";
+import { ThemeProvider } from "@/components/theme-provider";
 
 import { cn } from "@/lib/utils";
 
@@ -20,18 +22,9 @@ const fontHeading = FontPoppins({
 })
 
 export const metadata: Metadata = {
-  title: 'Chronoverse - Distributed Task Scheduler & Orchestrator',
-  description:
-    'Chronoverse is a distributed, job scheduling and orchestration system designed for reliability and scalability.',
-  keywords: [
-    'chronoverse',
-    'task scheduler',
-    'job orchestrator',
-    'distributed system',
-    'microservices',
-    'golang',
-  ],
-}
+  title: "Chronoverse - Distributed Task Scheduler & Orchestrator",
+  description: "Dashboard for Chronoverse, a distributed task scheduler and orchestrator."
+};
 
 export default function RootLayout({
   children,
@@ -58,7 +51,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <Providers>
+            {children}
+            <Toaster position="top-right" />
+          </Providers>
         </ThemeProvider>
       </body>
     </html>

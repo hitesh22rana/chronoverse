@@ -42,8 +42,18 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(res)
 }
 
+type markNotificationsReadRequest struct {
+	IDs []string `json:"ids"`
+}
+
 // handleMarkNotificationsRead handles the mark notifications read request.
 func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
+	var req markNotificationsReadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
 	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
@@ -57,17 +67,11 @@ func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Get the notification IDs from the request body
-	var req notificationspb.MarkNotificationsReadRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "failed to decode request body", http.StatusBadRequest)
-		return
-	}
-
-	req.UserId = userID
-
 	// MarkNotificationsRead marks the notifications as read.
-	_, err := s.notificationsClient.MarkNotificationsRead(r.Context(), &req)
+	_, err := s.notificationsClient.MarkNotificationsRead(r.Context(), &notificationspb.MarkNotificationsReadRequest{
+		UserId: userID,
+		Ids:    req.IDs,
+	})
 	if err != nil {
 		handleError(w, err, "failed to mark notifications as read")
 		return

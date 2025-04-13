@@ -59,10 +59,9 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCookie(w, csrfCookieName, csrfToken, s.validationCfg.CSRFExpiry)
-	setCookie(w, sessionCookieName, session, s.validationCfg.SessionExpiry)
+	setCookie(w, csrfCookieName, csrfToken, s.frontendConfig.Host, s.frontendConfig.Secure, s.validationCfg.CSRFExpiry)
+	setCookie(w, sessionCookieName, session, s.frontendConfig.Host, s.frontendConfig.Secure, s.validationCfg.SessionExpiry)
 
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -114,18 +113,17 @@ func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCookie(w, csrfCookieName, csrfToken, s.validationCfg.CSRFExpiry)
-	setCookie(w, sessionCookieName, session, s.validationCfg.SessionExpiry)
+	setCookie(w, csrfCookieName, csrfToken, s.frontendConfig.Host, s.frontendConfig.Secure, s.validationCfg.CSRFExpiry)
+	setCookie(w, sessionCookieName, session, s.frontendConfig.Host, s.frontendConfig.Secure, s.validationCfg.SessionExpiry)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusCreated)
 }
 
 // handleLogout handles the logout request.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Delete the csrf and session cookies
-	setCookie(w, csrfCookieName, "", -1)
-	setCookie(w, sessionCookieName, "", -1)
+	setCookie(w, csrfCookieName, "", s.frontendConfig.Host, s.frontendConfig.Secure, -1)
+	setCookie(w, sessionCookieName, "", s.frontendConfig.Host, s.frontendConfig.Secure, -1)
 
 	// Get the session from the context
 	session, err := sessionFromContext(r.Context())

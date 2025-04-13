@@ -479,7 +479,7 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 // extractContainerDetails extracts the container details from the workflow payload.
 func extractContainerDetails(payload string) (timeout time.Duration, image string, cmdStr []string, err error) {
 	var data map[string]any
-	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+	if err = json.Unmarshal([]byte(payload), &data); err != nil {
 		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "invalid payload format")
 	}
 

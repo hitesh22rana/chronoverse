@@ -12,7 +12,7 @@ const WORKFLOWS_ENDPOINT = `${API_URL}/workflows`
 
 export type WorkflowsResponse = {
     workflows: Workflow[]
-    cursor: string | null
+    cursor?: string
 }
 
 export type Workflow = {
@@ -20,13 +20,13 @@ export type Workflow = {
     name: string
     kind: string
     payload: string
-    workflowBuildStatus: string
+    build_status: string
     interval: number
-    consecutiveJobFailuresCount: number
-    maxConsecutiveJobFailuresAllowed: number
-    createdAt: string
-    updatedAt: string
-    terminatedAt: string | null
+    consecutive_job_failures_count?: number
+    max_consecutive_job_failures_allowed: number
+    created_at: string
+    updated_at: string
+    terminated_at?: string
 }
 
 export function useWorkflows() {
@@ -138,6 +138,7 @@ export function useWorkflows() {
         terminateWorkflow: terminateWorkflowMutation.mutate,
         isTerminating: terminateWorkflowMutation.isPending,
         refetch: query.refetch,
+        refetchLoading: query.isRefetching,
         pagination: {
             nextCursor: query.data?.cursor,
             hasNextPage: !!query.data?.cursor,

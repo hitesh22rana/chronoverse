@@ -38,7 +38,7 @@ export function useAuth() {
             })
 
             if (!response.ok) {
-                throw new Error("Login failed")
+                throw new Error("failed to login")
             }
         },
         onSuccess: () => {
@@ -62,7 +62,7 @@ export function useAuth() {
             })
 
             if (!response.ok) {
-                throw new Error("Signup failed")
+                throw new Error("failed to signup")
             }
         },
         onSuccess: () => {
@@ -81,7 +81,7 @@ export function useAuth() {
             })
 
             if (!response.ok) {
-                throw new Error("Logout failed")
+                throw new Error("failed to logout")
             }
         },
         onSuccess: () => {

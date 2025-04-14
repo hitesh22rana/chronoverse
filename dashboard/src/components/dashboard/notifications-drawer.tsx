@@ -70,10 +70,10 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         }
     }, [cursor, isLoading, isFetchingNextPage, fetchNextPage])
 
-    const unreadCount = notifications?.filter(n => !n.readAt).length
+    const unreadCount = notifications?.filter(n => !n.read_at).length
 
     const notificationsList = activeTab === "unread"
-        ? notifications.filter(n => !n.readAt)
+        ? notifications.filter(n => !n.read_at)
         : notifications
 
     const getIcon = (kind: string, entityType: string) => {
@@ -122,7 +122,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
     const handleMarkAllAsRead = () => {
         notifications.forEach(notification => {
-            if (!notification.readAt) {
+            if (!notification.read_at) {
                 markAsRead?.(notification.id)
             }
         })
@@ -198,7 +198,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                                                         key={notification.id}
                                                         className={cn(
                                                             "px-6 py-4 transition-colors relative",
-                                                            notification.readAt ? "bg-background" : getKindClass(notification.kind)
+                                                            notification.read_at ? "bg-background" : getKindClass(notification.kind)
                                                         )}
                                                     >
                                                         <div className="flex items-start gap-3">
@@ -209,12 +209,12 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                                                                 <div className="flex items-start justify-between">
                                                                     <h4 className="font-medium text-sm">{notification.payload.title}</h4>
                                                                     <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                                                                        {formatDistanceToNow(new Date(notification?.createdAt), { addSuffix: true })}
+                                                                        {formatDistanceToNow(new Date(notification?.created_at), { addSuffix: true })}
                                                                     </span>
                                                                 </div>
                                                                 <p className="text-sm text-muted-foreground leading-relaxed">{notification.payload.message}</p>
                                                                 <div className="flex items-center justify-between mt-1">
-                                                                    {!notification.readAt && (
+                                                                    {!notification.read_at && (
                                                                         <Button
                                                                             variant="ghost"
                                                                             size="sm"
@@ -308,7 +308,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                                                                 <div className="flex items-start justify-between">
                                                                     <h4 className="font-medium text-sm">{notification.payload.title}</h4>
                                                                     <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                                                                        {formatDistanceToNow(new Date(notification?.createdAt), { addSuffix: true })}
+                                                                        {formatDistanceToNow(new Date(notification?.created_at), { addSuffix: true })}
                                                                     </span>
                                                                 </div>
                                                                 <p className="text-sm text-muted-foreground leading-relaxed">{notification.payload.message}</p>

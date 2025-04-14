@@ -13,13 +13,11 @@ export default function DashboardLayout({
   const [notificationsOpen, setNotificationsOpen] = useState(false)
 
   return (
-    <div className="flex h-screen">
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <Header onNotificationsClick={() => setNotificationsOpen(true)} />
-        <main className="flex-1 overflow-auto p-6 bg-background/95">
-          {children}
-        </main>
-      </div>
+    <div className="flex flex-col h-svh w-full overflow-hidden">
+      <Header onNotificationsClick={() => setNotificationsOpen(true)} />
+      <main className="flex-1 flex flex-col overflow-hidden bg-background/95 md:p-6 p-4">
+        {children}
+      </main>
       <NotificationsDrawer
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}

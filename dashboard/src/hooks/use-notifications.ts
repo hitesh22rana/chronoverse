@@ -9,7 +9,7 @@ const NOTIFICATIONS_ENDPOINT = `${API_URL}/notifications`
 
 export type Notifications = {
     notifications: Notification[]
-    cursor: string | null
+    cursor?: string
 }
 
 export type Notification = {
@@ -22,9 +22,9 @@ export type Notification = {
         entity_type: string
         action_url: string
     }
-    readAt: string | null
-    createdAt: string
-    updatedAt: string
+    read_at?: string
+    created_at: string
+    updated_at: string
 }
 
 export function useNotifications() {
@@ -117,7 +117,7 @@ export function useNotifications() {
         cursor,
         isLoading: query.isLoading,
         error: query.error,
-        unreadCount: notifications?.filter(n => n && !n?.readAt)?.length,
+        unreadCount: notifications?.filter(n => n && !n?.read_at)?.length,
         markAsRead: markAsReadMutation.mutate,
         refetch: query.refetch,
         fetchNextPage: query.fetchNextPage,

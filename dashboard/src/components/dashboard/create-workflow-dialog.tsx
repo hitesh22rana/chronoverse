@@ -64,6 +64,7 @@ const containerPayloadSchema = z.object({
             try {
                 const parsed = parseDuration(val as unknown as Duration, 's')
                 return parsed > 0 && parsed <= 3600
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
             } catch (e) {
                 return false
             }
@@ -223,7 +224,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
             if (isCreating && !newOpen) return; // Prevent closing during submission
             onOpenChange(newOpen)
         }}>
-            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Create New Workflow</DialogTitle>
                     <DialogDescription>
@@ -234,9 +235,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 <Form {...form}>
                     <form onSubmit={(e) => {
                         e.preventDefault();
-                        console.log("Form submitted, validating...");
                         form.handleSubmit((data) => {
-                            console.log("Validation passed, data:", data);
                             handleSubmit(data);
                         })(e);
                     }} className="space-y-6 pt-2">

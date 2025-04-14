@@ -11,11 +11,11 @@ export default function DashboardPage() {
     const [showCreateDialog, setShowCreateDialog] = useState(false)
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col h-full">
             <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0">
                 <div>
                     <h2 className="text-xl font-bold tracking-tight">Dashboard</h2>
-                    <p className="text-muted-foreground">
+                    <p className="md:text-base text-sm text-muted-foreground">
                         Monitor and manage your automated workflows
                     </p>
                 </div>

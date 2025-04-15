@@ -4,6 +4,7 @@ package notifications
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 
 	"github.com/go-playground/validator/v10"
@@ -155,11 +156,30 @@ func (s *Service) ListNotifications(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	// Validate the cursor
+	var cursor string
+	if req.GetCursor() != "" {
+		cursor, err = decodeCursor(req.GetCursor())
+		if err != nil {
+			err = status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
+			return nil, err
+		}
+	}
+
 	// List the notifications
-	res, err = s.repo.ListNotifications(ctx, req.GetUserId(), req.GetKind(), req.GetCursor())
+	res, err = s.repo.ListNotifications(ctx, req.GetUserId(), req.GetKind(), cursor)
 	if err != nil {
 		return nil, err
 	}
 
 	return res, nil
+}
+
+func decodeCursor(token string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return "", err
+	}
+
+	return string(decoded), nil
 }

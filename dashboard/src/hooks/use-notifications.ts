@@ -89,11 +89,12 @@ export function useNotifications() {
                     // Update notifications in all pages
                     const updatedPages = oldData.pages.map((page: Notifications) => ({
                         ...page,
-                        notifications: page.notifications.map((notification) =>
+                        notifications: page?.notifications?.map((notification) =>
                             notification.id === id
-                                ? { ...notification, readAt: new Date().toISOString() }
+                                ? { ...notification, read_at: new Date().toISOString() }
                                 : notification
                         )
+
                     }))
 
                     return {
@@ -104,11 +105,7 @@ export function useNotifications() {
             )
         },
         onError: (error) => {
-            if (error instanceof Error) {
-                toast.error(error.message)
-            } else {
-                toast.error("An error occurred while marking notification as read")
-            }
+            toast.error(error.message)
         }
     })
 
@@ -122,6 +119,6 @@ export function useNotifications() {
         refetch: query.refetch,
         fetchNextPage: query.fetchNextPage,
         isFetchingNextPage: query.isFetchingNextPage,
-        hasNextPage: !!cursor
+        hasNextPage: query.hasNextPage
     }
 }

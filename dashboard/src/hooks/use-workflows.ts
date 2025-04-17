@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -35,6 +35,8 @@ export function useWorkflows() {
     const queryClient = useQueryClient()
 
     const currentCursor = searchParams.get("cursor")
+    const searchQuery = searchParams.get("search") || ""
+    const statusFilter = searchParams.get("status") || "ALL"
 
     const query = useQuery({
         queryKey: ["workflows", currentCursor],
@@ -74,6 +76,24 @@ export function useWorkflows() {
         params.delete("cursor")
         router.push(`?${params.toString()}`)
     }, [router, searchParams])
+
+    // Apply filters inside the hook
+    const filteredWorkflows = useMemo(() => {
+        return query.data?.workflows.filter(workflow => {
+            // Search filter
+            const matchesSearch = !searchQuery ||
+                workflow.name.toLowerCase().includes(searchQuery.toLowerCase())
+
+            // Status filter
+            const normalizedStatusFilter = statusFilter === "ALL" ? null : statusFilter
+            const matchesStatus = !normalizedStatusFilter ||
+                (normalizedStatusFilter === "TERMINATED"
+                    ? !!workflow.terminated_at
+                    : workflow.build_status === normalizedStatusFilter)
+
+            return matchesSearch && matchesStatus
+        })
+    }, [query.data?.workflows, searchQuery, statusFilter])
 
     if (query.error instanceof Error) {
         toast.error(query.error.message)
@@ -115,7 +135,7 @@ export function useWorkflows() {
             })
 
             if (!response.ok) {
-                throw new Error("Failed to terminate workflow")
+                throw new Error("failed to terminate workflow")
             }
 
             return id
@@ -130,7 +150,7 @@ export function useWorkflows() {
     })
 
     return {
-        workflows: query.data?.workflows || [],
+        workflows: filteredWorkflows || [],
         isLoading: query.isLoading,
         error: query.error,
         createWorkflow: createWorkflowMutation.mutate,

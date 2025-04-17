@@ -27,7 +27,7 @@ export function EmptyState({
                 "flex flex-col items-center justify-center flex-1 h-full w-full",
                 "rounded-lg border border-dashed",
                 "bg-gradient-to-b from-muted/10 to-muted/20",
-                className
+                className,
             )}
         >
             {mounted ? (

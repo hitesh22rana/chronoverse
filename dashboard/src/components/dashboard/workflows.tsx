@@ -23,7 +23,6 @@ export function Workflows() {
     const router = useRouter()
     const searchParams = useSearchParams()
 
-    // Get search and filter values from URL
     const urlSearchQuery = searchParams.get("search") || ""
     const urlStatusFilter = searchParams.get("status") || "ALL"
 
@@ -37,9 +36,6 @@ export function Workflows() {
         refetch,
         refetchLoading
     } = useWorkflows()
-
-    // Sync URL status filter with local state
-    const statusFilter = urlStatusFilter === "ALL" ? null : urlStatusFilter
 
     // Update URL with filters
     useEffect(() => {
@@ -82,21 +78,10 @@ export function Workflows() {
         refetch()
     }
 
-    // Filter workflows based on search and status
-    const filteredWorkflows = workflows.filter(workflow => {
-        const matchesSearch = !searchQuery ||
-            workflow.name.toLowerCase().includes(searchQuery.toLowerCase())
-
-        const matchesStatus = !statusFilter ||
-            (statusFilter === "TERMINATED" ? !!workflow.terminated_at : workflow.build_status === statusFilter)
-
-        return matchesSearch && matchesStatus
-    })
-
     return (
         <div className="flex flex-col h-full mt-8">
             {/* Improved control bar layout */}
-            <div className="flex md:flex-row flex-col items-center justify-between gap-5 mb-8">
+            <div className="flex md:flex-row flex-col items-center justify-between gap-5 mb-4">
                 {/* Search box */}
                 <div className="relative flex-1 w-full">
                     <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
@@ -182,17 +167,16 @@ export function Workflows() {
                             />
                         ))}
                     </div>
-                ) : filteredWorkflows.length === 0 ? (
+                ) : workflows.length === 0 ? (
                     <EmptyState
                         title="No workflows found"
-                        description={searchQuery || statusFilter
+                        description={searchQuery || urlStatusFilter !== "ALL"
                             ? 'Try adjusting your search or filters'
                             : 'Create your first workflow to get started'}
-                        className="flex-1"
                     />
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredWorkflows.map((workflow) => (
+                        {workflows.map((workflow) => (
                             <WorkflowCard
                                 key={workflow.id}
                                 workflow={workflow}

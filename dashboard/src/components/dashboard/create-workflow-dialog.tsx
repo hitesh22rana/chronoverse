@@ -39,7 +39,16 @@ import { useWorkflows } from "@/hooks/use-workflows"
 // Base schema for common fields
 const baseWorkflowSchema = z.object({
     name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters"),
-    interval: z.coerce.number().int().min(1, "Must be at least 1 minute").max(10080, "Must be at most 10080 minutes (1 week)"),
+    interval: z.union([
+        z.string().trim().refine(val => val === "" || /^\d+$/.test(val), {
+            message: "Please enter a valid number"
+        }),
+        z.number()
+    ])
+        .transform(val => val === "" ? undefined : Number(val))
+        .refine(val => val === undefined || (val >= 1 && val <= 10080), {
+            message: "Must be between 1 and 10080 minutes (1 week)"
+        }),
     maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(0).max(100)
 })
 
@@ -502,51 +511,55 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                             </CardContent>
                         </Card>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <FormField
-                                control={form.control}
-                                name="interval"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Interval (minutes)</FormLabel>
-                                        <FormControl>
-                                            <Input
-                                                type="number"
-                                                min={1}
-                                                {...field}
-                                                value={field.value || 5}
-                                            />
-                                        </FormControl>
-                                        <FormDescription>
-                                            How often to run this workflow.
-                                        </FormDescription>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+                        <FormField
+                            control={form.control}
+                            name="interval"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Interval (minutes)</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            {...field}
+                                            value={field.value === undefined ? "" : field.value}
+                                            onChange={(e) => {
+                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
+                                            }}
+                                        />
+                                    </FormControl>
+                                    <FormDescription>
+                                        How often to run this workflow.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
 
-                            <FormField
-                                control={form.control}
-                                name="maxConsecutiveJobFailuresAllowed"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Max Consecutive Failures</FormLabel>
-                                        <FormControl>
-                                            <Input
-                                                type="number"
-                                                min={0}
-                                                {...field}
-                                                value={field.value || 3}
-                                            />
-                                        </FormControl>
-                                        <FormDescription>
-                                            Number of failures before disabling.
-                                        </FormDescription>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                        </div>
+                        <FormField
+                            control={form.control}
+                            name="maxConsecutiveJobFailuresAllowed"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Max Consecutive Failures</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            type="number"
+                                            min={0}
+                                            {...field}
+                                            value={field.value === undefined ? "" : field.value}
+                                            onChange={(e) => {
+                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
+                                            }}
+                                        />
+                                    </FormControl>
+                                    <FormDescription>
+                                        Number of failures before disabling.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
 
                         <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <Button

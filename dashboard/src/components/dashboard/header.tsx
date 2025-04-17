@@ -23,16 +23,24 @@ export function Header({ onNotificationsClick }: HeaderProps) {
                 <Button
                     variant="ghost"
                     size="icon"
-                    className="relative"
+                    className="relative rounded-full"
                     onClick={onNotificationsClick}
                 >
                     <Bell className="h-5 w-5" />
                     {unreadCount > 0 && (
                         <Badge
                             variant="destructive"
-                            className="absolute right-0 top-0 size-4 rounded-full p-0 flex items-center justify-center text-xs"
+                            className="absolute right-0 top-0 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
                         >
-                            {unreadCount > 9 ? '9+' : unreadCount}
+                            {unreadCount > 9 ?
+                                <span className="absolute -top-0 -right-0.5">
+                                    9+
+                                </span>
+                                : (
+                                    <span>
+                                        {unreadCount}
+                                    </span>
+                                )}
                         </Badge>
                     )}
                     <span className="sr-only">Notifications</span>

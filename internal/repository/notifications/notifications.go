@@ -108,6 +108,7 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 }
 
 // ListNotifications returns notifications by user ID.
+// By default, it only returns the unread notifications.
 func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor string) (res *notificationsmodel.ListNotificationsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListNotifications")
 	defer func() {
@@ -121,7 +122,7 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor
 	query := fmt.Sprintf(`
 		SELECT id, kind, payload, read_at, created_at, updated_at
 		FROM %s
-		WHERE user_id = $1
+		WHERE user_id = $1 AND read_at IS NULL
 	`, notificationsTable)
 	args := []any{userID}
 

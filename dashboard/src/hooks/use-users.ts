@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 import { fetchWithAuth } from "@/utils/api-client"
 
@@ -15,7 +16,7 @@ type User = {
 }
 
 export function useUsers() {
-    const mutation = useQuery({
+    const query = useQuery({
         queryKey: ["user"],
         queryFn: async () => {
             const response = await fetchWithAuth(USER_ENDPOINT, {
@@ -23,8 +24,7 @@ export function useUsers() {
             })
 
             if (!response.ok) {
-                const errorData = await response.json()
-                throw new Error(errorData.message || errorData.error || "Failed to fetch user")
+                throw new Error("failed to fetch user")
             }
 
             const data = await response.json() as User
@@ -32,9 +32,13 @@ export function useUsers() {
         }
     })
 
+    if (query.error instanceof Error) {
+        toast.error(query.error.message)
+    }
+
     return {
-        user: mutation.data as User,
-        isLoading: mutation.isLoading,
-        error: mutation.error,
+        user: query.data as User,
+        isLoading: query.isLoading,
+        error: query.error,
     }
 }

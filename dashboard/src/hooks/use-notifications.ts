@@ -1,6 +1,6 @@
 "use client"
 
-import { useInfiniteQuery, useMutation, useQueryClient, InfiniteData } from "@tanstack/react-query"
+import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { fetchWithAuth } from "@/utils/api-client"
 
@@ -33,24 +33,18 @@ export function useNotifications() {
     const query = useInfiniteQuery<Notifications, Error>({
         queryKey: ["notifications"],
         queryFn: async ({ pageParam }) => {
-            const url = pageParam
-                ? `${NOTIFICATIONS_ENDPOINT}?cursor=${pageParam}`
-                : `${NOTIFICATIONS_ENDPOINT}`
-
+            const url = pageParam ? `${NOTIFICATIONS_ENDPOINT}?cursor=${pageParam}` : `${NOTIFICATIONS_ENDPOINT}`
             const response = await fetchWithAuth(url)
 
             if (!response.ok) {
                 throw new Error("failed to fetch notifications")
             }
 
-            // Parse JSON response
-            const data = await response.json()
-            return data as Notifications
+            return (await response.json()) as Notifications
         },
         initialPageParam: null,
-        getNextPageParam: (lastPage: Notifications) => lastPage?.cursor || null,
-        getPreviousPageParam: (firstPage: Notifications) => firstPage?.cursor || null,
-        refetchInterval: 10000, // Refetch every 10 seconds
+        getNextPageParam: (lastPage) => lastPage?.cursor || undefined,
+        refetchInterval: 10000, // 10 seconds
     })
 
     if (query.error instanceof Error) {
@@ -58,67 +52,65 @@ export function useNotifications() {
     }
 
     const allPages = query.data?.pages || []
-
-    const notifications = allPages.length > 0
-        ? allPages.flatMap((page) => page?.notifications || [])
-        : []
-
-    // Get cursor from last page with null fallback
-    const cursor = allPages.length > 0
-        ? (allPages[allPages.length - 1]?.cursor || null)
-        : null
+    const notifications = allPages.length > 0 ? allPages.flatMap((page) => page?.notifications || []) : []
 
     const markAsReadMutation = useMutation({
-        mutationFn: async (id: string) => {
-            const response = await fetchWithAuth(`${NOTIFICATIONS_ENDPOINT}/${id}/read`, {
-                method: "POST"
-            })
-
-            if (!response.ok) {
-                throw new Error("failed to mark notification as read")
+        mutationFn: async (ids: string[]) => {
+            // To make sure we don't send too many ids in one request, we batch the ids into smaller arrays
+            // This is a simple batching function that splits the array into small batches
+            const batchSize = 100
+            const batchs: string[][] = []
+            for (let i = 0; i < ids.length; i += batchSize) {
+                batchs.push(ids.slice(i, i + batchSize))
             }
 
-            return id
-        },
-        onSuccess: (id) => {
-            queryClient.setQueryData(
-                ["notifications"],
-                (oldData: InfiniteData<Notifications> | undefined) => {
-                    if (!oldData) return oldData
+            // Send a request for each batch
+            for (const batch of batchs) {
+                const _ids = batch
+                const response = await fetchWithAuth(`${NOTIFICATIONS_ENDPOINT}/read`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ ids: _ids }),
+                })
 
-                    // Update notifications in all pages
-                    const updatedPages = oldData.pages.map((page: Notifications) => ({
-                        ...page,
-                        notifications: page?.notifications?.map((notification) =>
-                            notification.id === id
-                                ? { ...notification, read_at: new Date().toISOString() }
-                                : notification
-                        )
-
-                    }))
-
-                    return {
-                        ...oldData,
-                        pages: updatedPages
-                    }
+                if (!response.ok) {
+                    throw new Error("failed to mark notifications as read")
                 }
-            )
+            }
+
+            return ids
+        },
+        onSuccess: (ids) => {
+            queryClient.setQueryData(["notifications"], (oldData: InfiniteData<Notifications> | undefined) => {
+                if (!oldData) return oldData
+
+                // Remove the notifications from the old data
+                const updatedPages = oldData.pages.map((page) => {
+                    const updatedNotifications = page.notifications.filter((notification) => !ids.includes(notification.id))
+                    return { ...page, notifications: updatedNotifications }
+                })
+
+                return {
+                    ...oldData,
+                    pages: updatedPages,
+                }
+            })
         },
         onError: (error) => {
             toast.error(error.message)
-        }
+        },
     })
 
     return {
         notifications,
-        cursor,
         isLoading: query.isLoading,
         error: query.error,
-        unreadCount: notifications?.filter(n => n && !n?.read_at)?.length,
         markAsRead: markAsReadMutation.mutate,
         refetch: query.refetch,
         fetchNextPage: query.fetchNextPage,
         isFetchingNextPage: query.isFetchingNextPage,
-        hasNextPage: query.hasNextPage
+        hasNextPage: query.hasNextPage,
     }
 }

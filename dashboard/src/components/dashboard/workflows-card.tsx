@@ -180,7 +180,23 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                                 <div className="bg-emerald-500 h-1 rounded-full w-full" />
                             </div>
                         </div>
-                    ) : null}
+                    ) : (
+                        <div className="mt-3">
+                            <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center text-gray-500 dark:text-gray-400">
+                                    <Shield className="h-3 w-3 mr-1" />
+                                    <span className="text-xs font-medium">No runs yet</span>
+                                </div>
+                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                    No failures
+                                </span>
+                            </div>
+
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                                <div className="bg-gray-500 h-1 rounded-full w-full" />
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
 
                 {workflow.updated_at && (

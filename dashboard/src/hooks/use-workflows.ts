@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useMemo } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -31,12 +31,25 @@ export type Workflow = {
 
 export function useWorkflows() {
     const router = useRouter()
+    const path = usePathname()
     const searchParams = useSearchParams()
     const queryClient = useQueryClient()
 
-    const currentCursor = searchParams.get("cursor")
-    const searchQuery = searchParams.get("search") || ""
-    const statusFilter = searchParams.get("status") || "ALL"
+    const isNotRootPath = path !== "/"
+
+    let currentCursor = ""
+    let searchQuery = ""
+    let statusFilter = "ALL"
+
+    if (isNotRootPath) {
+        currentCursor = ""
+        searchQuery = ""
+        statusFilter = "ALL"
+    } else {
+        currentCursor = searchParams.get("cursor") || ""
+        searchQuery = searchParams.get("search") || ""
+        statusFilter = searchParams.get("status") || "ALL"
+    }
 
     const query = useQuery({
         queryKey: ["workflows", currentCursor],

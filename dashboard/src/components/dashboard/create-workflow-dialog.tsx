@@ -1,11 +1,15 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { Duration, parseDuration } from '@alwatr/parse-duration'
-import { Loader2, Plus, Trash2 } from "lucide-react"
+import {
+    Loader2,
+    Plus,
+    Trash2
+} from "lucide-react"
 
 import {
     Dialog,
@@ -33,11 +37,18 @@ import {
     SelectTrigger,
     SelectValue
 } from "@/components/ui/select"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle
+} from "@/components/ui/card"
+
 import { useWorkflows } from "@/hooks/use-workflows"
 
 // Base schema for common fields
-const baseWorkflowSchema = z.object({
+const baseCreateWorkflowSchema = z.object({
     name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters"),
     interval: z.union([
         z.string().trim().refine(val => val === "" || /^\d+$/.test(val), {
@@ -81,12 +92,12 @@ const containerPayloadSchema = z.object({
 })
 
 // Complete workflow schemas with discriminated union
-const heartbeatWorkflowSchema = baseWorkflowSchema.extend({
+const heartbeatWorkflowSchema = baseCreateWorkflowSchema.extend({
     kind: z.literal("HEARTBEAT"),
     heartbeatPayload: heartbeatPayloadSchema,
 })
 
-const containerWorkflowSchema = baseWorkflowSchema.extend({
+const containerWorkflowSchema = baseCreateWorkflowSchema.extend({
     kind: z.literal("CONTAINER"),
     containerPayload: containerPayloadSchema,
 })
@@ -119,7 +130,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     const { createWorkflow, isCreating } = useWorkflows()
     const [selectedKind, setSelectedKind] = useState<"HEARTBEAT" | "CONTAINER">("HEARTBEAT")
 
-    const form = useForm<WorkflowFormValues>({
+    const form = useForm({
         resolver: zodResolver(workflowSchema),
         defaultValues: {
             name: "",
@@ -131,7 +142,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 headers: []
             }
         },
-        mode: "onChange"
+        mode: "onBlur",
     })
 
     // Watch kind changes and update form structure
@@ -179,7 +190,6 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     }, [open, form])
 
     const handleSubmit = (data: WorkflowFormValues) => {
-        // Transform the structured form data into the API payload format
         let payload: string
 
         if (data.kind === "HEARTBEAT") {
@@ -208,8 +218,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         createWorkflow({
             name: data.name,
             kind: data.kind,
-            payload,
-            interval: data.interval,
+            payload: payload,
+            interval: data.interval as number,
             maxConsecutiveJobFailuresAllowed: data.maxConsecutiveJobFailuresAllowed
         }, {
             onSuccess: () => {
@@ -229,10 +239,14 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         : []
 
     return (
-        <Dialog open={open} onOpenChange={(newOpen) => {
-            if (isCreating && !newOpen) return; // Prevent closing during submission
-            onOpenChange(newOpen)
-        }}>
+        <Dialog
+            open={open}
+            onOpenChange={(newOpen) => {
+                // Prevent closing if creating
+                if (isCreating && !newOpen) return;
+                onOpenChange(newOpen)
+            }}
+        >
             <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Create New Workflow</DialogTitle>
@@ -308,7 +322,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 {selectedKind === "HEARTBEAT" && (
-                                    <>
+                                    <Fragment>
                                         <FormField
                                             control={form.control}
                                             name="heartbeatPayload.endpoint"
@@ -401,11 +415,11 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 </div>
                                             ))}
                                         </div>
-                                    </>
+                                    </Fragment>
                                 )}
 
                                 {selectedKind === "CONTAINER" && (
-                                    <>
+                                    <Fragment>
                                         <FormField
                                             control={form.control}
                                             name="containerPayload.image"
@@ -500,13 +514,13 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         />
                                                     </FormControl>
                                                     <FormDescription>
-                                                        Maximum execution time (e.g., "30s", "5m"), up to 1 hour
+                                                        Maximum execution time (e.g., &quot;30s&quot;, &quot;5m&quot;), up to 1 hour
                                                     </FormDescription>
                                                     <FormMessage />
                                                 </FormItem>
                                             )}
                                         />
-                                    </>
+                                    </Fragment>
                                 )}
                             </CardContent>
                         </Card>

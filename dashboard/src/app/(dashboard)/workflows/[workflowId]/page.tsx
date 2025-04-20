@@ -20,7 +20,8 @@ import {
     ChevronRight,
     ScrollText,
     Workflow,
-    Edit
+    Edit,
+    Trash2
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -48,14 +49,16 @@ import {
     SelectValue
 } from "@/components/ui/select"
 import { EmptyState } from "@/components/dashboard/empty-state"
+import { UpdateWorkflowDialog } from "@/components/dashboard/update-workflow-dialog"
+import { TerminateWorkflowDialog } from "@/components/dashboard/terminate-workflow-dialog"
 
-import { cn } from "@/lib/utils"
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { useWorkflowJobs, Job } from "@/hooks/use-workflow-jobs"
-import { UpdateWorkflowDialog } from "@/components/dashboard/update-workflow-dialog"
+
+import { cn } from "@/lib/utils"
 
 export default function WorkflowDetailsPage() {
-    const { workflowId } = useParams()
+    const { workflowId } = useParams() as { workflowId: string }
 
     const router = useRouter()
     const searchParams = useSearchParams()
@@ -78,11 +81,11 @@ export default function WorkflowDetailsPage() {
         pagination
     } = useWorkflowJobs(workflowId as string)
 
-    const [showUpdateDialog, setShowUpdateDialog] = useState(false)
+    const [showUpdateWorkflowDialog, setShowUpdateWorkflowDialog] = useState(false)
+    const [showTerminateWorkflowDialog, setShowTerminateWorkflowDialog] = useState(false)
 
     // Determine status
-    const isTerminated = workflow?.terminated_at ? true : false
-    const status = isTerminated ? "TERMINATED" : workflow?.build_status
+    const status = workflow?.terminated_at ? "TERMINATED" : workflow?.build_status
 
     // Get status configuration
     const statusConfig = getStatusConfig(status)
@@ -211,19 +214,37 @@ export default function WorkflowDetailsPage() {
                             {/* UpdateWorkflow Dialog */}
                             <UpdateWorkflowDialog
                                 workflowId={workflow.id}
-                                open={showUpdateDialog}
-                                onOpenChange={setShowUpdateDialog}
+                                open={showUpdateWorkflowDialog}
+                                onOpenChange={setShowUpdateWorkflowDialog}
                             />
 
-                            <div className="flex items-center justify-end mb-4 h-9">
+                            {/* TerminateWorkflow Dialog */}
+                            <TerminateWorkflowDialog
+                                workflow={workflow}
+                                open={showTerminateWorkflowDialog}
+                                onOpenChange={setShowTerminateWorkflowDialog}
+                            />
+
+                            <div className="flex items-center justify-end mb-4 h-9 gap-5">
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     className="cursor-pointer shrink-0 max-w-[140px] w-full"
-                                    onClick={() => setShowUpdateDialog(true)}
+                                    onClick={() => setShowUpdateWorkflowDialog(true)}
                                 >
                                     <Edit className="h-4 w-4" />
                                     Edit Workflow
+                                </Button>
+
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="cursor-pointer shrink-0 max-w-[180px] w-full"
+                                    onClick={() => setShowTerminateWorkflowDialog(true)}
+                                    disabled={!!workflow?.terminated_at}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Terminate Workflow
                                 </Button>
                             </div>
                             <Card>
@@ -418,8 +439,9 @@ export default function WorkflowDetailsPage() {
 function WorkflowDetailsSkeleton() {
     return (
         <Fragment>
-            <div className="flex items-center justify-end mb-4 h-9">
+            <div className="flex items-center justify-end mb-4 h-9 gap-5">
                 <Skeleton className="h-9 max-w-[140px] w-full" />
+                <Skeleton className="h-9 max-w-[180px] w-full" />
             </div>
             <Card className="overflow-hidden space-y-4">
                 <CardHeader>
@@ -456,43 +478,44 @@ function WorkflowDetailsSkeleton() {
     )
 }
 
-// Job Card Component remains unchanged
-function JobCard({ job }: { job: Job }) {
-    const getJobStatusInfo = (status: string) => {
-        return {
-            PENDING: {
-                icon: CircleDashed,
-                colorClass: "text-gray-600 bg-gray-50 dark:bg-gray-950/30",
-                label: "Pending"
-            },
-            QUEUED: {
-                icon: Clock,
-                colorClass: "text-amber-600 bg-amber-50 dark:bg-amber-950/30",
-                label: "Queued"
-            },
-            RUNNING: {
-                icon: RefreshCw,
-                colorClass: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
-                iconClass: "animate-spin",
-                label: "Running"
-            },
-            COMPLETED: {
-                icon: CheckCircle,
-                colorClass: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30",
-                label: "Completed"
-            },
-            FAILED: {
-                icon: AlertTriangle,
-                colorClass: "text-red-600 bg-red-50 dark:bg-red-950/30",
-                label: "Failed"
-            },
-        }[status] || {
+// Function to get job status information
+const getJobStatusInfo = (status: string) => {
+    return {
+        PENDING: {
             icon: CircleDashed,
             colorClass: "text-gray-600 bg-gray-50 dark:bg-gray-950/30",
-            label: status
-        }
+            label: "Pending"
+        },
+        QUEUED: {
+            icon: Clock,
+            colorClass: "text-amber-600 bg-amber-50 dark:bg-amber-950/30",
+            label: "Queued"
+        },
+        RUNNING: {
+            icon: RefreshCw,
+            colorClass: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
+            iconClass: "animate-spin",
+            label: "Running"
+        },
+        COMPLETED: {
+            icon: CheckCircle,
+            colorClass: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30",
+            label: "Completed"
+        },
+        FAILED: {
+            icon: AlertTriangle,
+            colorClass: "text-red-600 bg-red-50 dark:bg-red-950/30",
+            label: "Failed"
+        },
+    }[status] || {
+        icon: CircleDashed,
+        colorClass: "text-gray-600 bg-gray-50 dark:bg-gray-950/30",
+        label: status
     }
+}
 
+// Job Card Component remains unchanged
+function JobCard({ job }: { job: Job }) {
     const statusInfo = getJobStatusInfo(job.status)
     const StatusIcon = statusInfo.icon
 
@@ -512,7 +535,7 @@ function JobCard({ job }: { job: Job }) {
                                 <StatusIcon className={cn("h-3 w-3", statusInfo.iconClass)} />
                                 <span className="text-xs">{statusInfo.label}</span>
                             </Badge>
-                            <span className="text-sm font-medium">Job {job.id.split('-')[0]}</span>
+                            <span className="text-sm font-medium">Job: {job.id.split('-')[0]}</span>
                         </div>
                         <span className="text-xs text-muted-foreground">
                             {job.created_at && formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
@@ -598,20 +621,6 @@ function JobCardSkeleton() {
 // Status configuration function remains unchanged
 function getStatusConfig(status: string) {
     return {
-        COMPLETED: {
-            label: "Active",
-            icon: CheckCircle,
-            colorClass: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-200/50 dark:border-emerald-800/30",
-            dotColor: "#10b981"
-        },
-        PENDING: {
-            label: "Pending",
-            icon: CircleDashed,
-            colorClass: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
-            glowClass: "shadow-none",
-            dotColor: "#6b7280"
-        },
         QUEUED: {
             label: "Scheduled",
             icon: Clock,
@@ -626,6 +635,13 @@ function getStatusConfig(status: string) {
             glowClass: "shadow-[0_0_15px_rgba(245,158,11,0.15)] dark:shadow-[0_0_20px_rgba(245,158,11,0.25)] border-amber-200/50 dark:border-amber-800/30",
             iconClass: "animate-spin",
             dotColor: "#f59e0b"
+        },
+        COMPLETED: {
+            label: "Active",
+            icon: CheckCircle,
+            colorClass: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
+            glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-200/50 dark:border-emerald-800/30",
+            dotColor: "#10b981"
         },
         FAILED: {
             label: "Failed",
@@ -644,9 +660,9 @@ function getStatusConfig(status: string) {
         TERMINATED: {
             label: "Terminated",
             icon: XCircle,
-            colorClass: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(107,114,128,0.1)] dark:shadow-[0_0_15px_rgba(107,114,128,0.15)] border-gray-200/50 dark:border-gray-700/30",
-            dotColor: "#6b7280"
+            colorClass: "text-red-500 bg-red-50 dark:bg-red-950/30",
+            glowClass: "shadow-[0_0_15px_rgba(239,68,68,0.15)] dark:shadow-[0_0_20px_rgba(239,68,68,0.25)] border-red-200/50 dark:border-red-800/30",
+            dotColor: "#ef4444"
         }
     }[status] || {
         label: status || "Unknown",

@@ -20,16 +20,9 @@ interface WorkflowCardProps {
     workflow: Workflow
 }
 
-export function WorkflowCard({ workflow }: WorkflowCardProps) {
-    // Determine status
-    const isTerminated = !!workflow.terminated_at
-    const status = isTerminated ? "TERMINATED" : workflow.build_status
-
-    // Format dates
-    const updatedAt = formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })
-
-    // Status configuration with enhanced glow effects
-    const statusConfig = {
+// Status configuration with enhanced glow effects
+const getStatusConfig = (status: string) => {
+    return {
         COMPLETED: {
             label: "Active",
             icon: CheckCircle,
@@ -69,9 +62,9 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
         TERMINATED: {
             label: "Terminated",
             icon: XCircle,
-            colorClass: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(107,114,128,0.1)] dark:shadow-[0_0_15px_rgba(107,114,128,0.15)] border-gray-200/50 dark:border-gray-700/30",
-            dotColor: "#6b7280"
+            colorClass: "text-red-500 bg-red-50 dark:bg-red-950/30",
+            glowClass: "shadow-[0_0_15px_rgba(239,68,68,0.15)] dark:shadow-[0_0_20px_rgba(239,68,68,0.25)] border-red-200/50 dark:border-red-800/30",
+            dotColor: "#ef4444"
         }
     }[status] || {
         label: status,
@@ -80,6 +73,15 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
         glowClass: "shadow-[0_0_15px_rgba(107,114,128,0.1)] dark:shadow-[0_0_15px_rgba(107,114,128,0.15)] border-gray-200/50 dark:border-gray-700/30",
         dotColor: "#6b7280"
     }
+}
+
+export function WorkflowCard({ workflow }: WorkflowCardProps) {
+    // Determine status
+    const status = workflow?.terminated_at ? "TERMINATED" : workflow.build_status
+
+    // Format dates
+    const updatedAt = formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })
+    const statusConfig = getStatusConfig(status)
 
     const StatusIcon = statusConfig.icon
 

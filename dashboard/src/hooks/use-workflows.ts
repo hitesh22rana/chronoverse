@@ -64,8 +64,7 @@ export function useWorkflows() {
                 throw new Error("failed to fetch workflows")
             }
 
-            const data = await response.json()
-            return data as WorkflowsResponse
+            return response.json() as Promise<WorkflowsResponse>
         }
     })
 
@@ -99,6 +98,11 @@ export function useWorkflows() {
 
             // Status filter
             const normalizedStatusFilter = statusFilter === "ALL" ? null : statusFilter
+
+            if (!!workflow?.terminated_at) {
+                return matchesSearch && (normalizedStatusFilter === "TERMINATED" || !normalizedStatusFilter)
+            }
+
             const matchesStatus = !normalizedStatusFilter ||
                 (normalizedStatusFilter === "TERMINATED"
                     ? !!workflow.terminated_at
@@ -128,8 +132,6 @@ export function useWorkflows() {
             if (!response.ok) {
                 throw new Error("failed to create workflow")
             }
-
-            return response.json()
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["workflows"] })
@@ -143,8 +145,8 @@ export function useWorkflows() {
 
     const terminateWorkflowMutation = useMutation({
         mutationFn: async (id: string) => {
-            const response = await fetchWithAuth(`${WORKFLOWS_ENDPOINT}/${id}/terminate`, {
-                method: "POST"
+            const response = await fetchWithAuth(`${WORKFLOWS_ENDPOINT}/${id}`, {
+                method: "DELETE"
             })
 
             if (!response.ok) {
@@ -155,7 +157,9 @@ export function useWorkflows() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["workflows"] })
+            resetPagination()
             toast.success("workflow terminated successfully")
+            router.push("/")
         },
         onError: (error) => {
             toast.error(error.message)

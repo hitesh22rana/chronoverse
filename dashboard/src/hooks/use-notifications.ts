@@ -33,17 +33,19 @@ export function useNotifications() {
     const query = useInfiniteQuery<Notifications, Error>({
         queryKey: ["notifications"],
         queryFn: async ({ pageParam }) => {
-            const url = pageParam ? `${NOTIFICATIONS_ENDPOINT}?cursor=${pageParam}` : `${NOTIFICATIONS_ENDPOINT}`
+            const url = pageParam
+                ? `${NOTIFICATIONS_ENDPOINT}?cursor=${pageParam}`
+                : `${NOTIFICATIONS_ENDPOINT}`
             const response = await fetchWithAuth(url)
 
             if (!response.ok) {
                 throw new Error("failed to fetch notifications")
             }
 
-            return (await response.json()) as Notifications
+            return response.json() as Promise<Notifications>
         },
         initialPageParam: null,
-        getNextPageParam: (lastPage) => lastPage?.cursor || undefined,
+        getNextPageParam: (lastPage) => lastPage?.cursor || null,
         refetchInterval: 10000, // 10 seconds
     })
 

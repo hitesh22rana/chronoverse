@@ -58,8 +58,7 @@ export function useWorkflowJobs(workflowId: string) {
                 throw new Error("Failed to fetch workflow jobs")
             }
 
-            const data = await response.json()
-            return data as JobsResponse
+            return response.json() as Promise<JobsResponse>
         },
     })
 

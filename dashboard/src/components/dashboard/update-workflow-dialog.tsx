@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useMemo } from "react"
+import { toast } from "sonner"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -179,7 +180,7 @@ export function UpdateWorkflowDialog({
                 } : {})
             });
         } catch (e) {
-            console.error("Error parsing workflow payload:", e);
+            toast.error("failed to parse workflow payload");
         }
     }, [workflow, form]);
 
@@ -219,12 +220,9 @@ export function UpdateWorkflowDialog({
             payload: payload,
             interval: data.interval,
             max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed
-        }, {
-            onSuccess: () => {
-                form.reset();
-                onOpenChange(false);
-            },
-        });
+        })
+        form.reset();
+        onOpenChange(false);
     };
 
     // Get current field values based on kind
@@ -240,7 +238,7 @@ export function UpdateWorkflowDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>Update Workflow</DialogTitle>
+                    <DialogTitle>Update workflow</DialogTitle>
                     <DialogDescription>
                         Modify your workflow configuration.
                     </DialogDescription>

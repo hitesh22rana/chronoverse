@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { fetchWithAuth } from "@/utils/api-client"
 import { Workflow } from "@/hooks/use-workflows"
+import { useState } from "react"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 const WORKFLOW_DETAILS_ENDPOINT = `${API_URL}/workflows`
@@ -17,6 +18,8 @@ export type UpdateWorkflowDetails = {
 }
 
 export function useWorkflowDetails(workflowId: string) {
+    const [workflowNotActive, setWorkflowNotActive] = useState(false)
+
     const query = useQuery({
         queryKey: ["workflow", workflowId],
         queryFn: async () => {
@@ -26,9 +29,14 @@ export function useWorkflowDetails(workflowId: string) {
                 throw new Error("failed to fetch workflow details")
             }
 
-            const data = await response.json()
-            return data as Workflow
+            const data = await response.json() as Workflow
+            if (data.build_status === "QUEUED" || data.build_status === "STARTED") {
+                setWorkflowNotActive(true)
+            }
+
+            return data
         },
+        refetchInterval: workflowNotActive ? 5000 : false, // Refetch every 5 seconds if workflow is not active
     })
 
     if (query.error instanceof Error) {

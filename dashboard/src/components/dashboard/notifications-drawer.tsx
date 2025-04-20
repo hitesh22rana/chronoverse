@@ -132,39 +132,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         }
     }, [open, hasNextPage, isFetchingNextPage, fetchNextPage])
 
-    const getIcon = (kind: string, entityType: string) => {
-        if (entityType === "WORKFLOW") return <Settings className="h-4 w-4 text-purple-500" />
-        if (entityType === "JOB") return <Clock className="h-4 w-4 text-blue-500" />
-
-        switch (kind) {
-            case "WEB_INFO":
-                return <Info className="h-4 w-4 text-blue-500" />
-            case "WEB_SUCCESS":
-                return <Check className="h-4 w-4 text-green-500" />
-            case "WEB_ERROR":
-                return <XCircle className="h-4 w-4 text-red-500" />
-            case "WEB_ALERT":
-                return <AlertCircle className="h-4 w-4 text-yellow-500" />
-            default:
-                return <Info className="h-4 w-4 text-muted-foreground" />
-        }
-    }
-
-    const getKindClass = (kind: string) => {
-        switch (kind) {
-            case "WEB_INFO":
-                return "border-l-4 border-l-blue-500 bg-blue-500/5"
-            case "WEB_SUCCESS":
-                return "border-l-4 border-l-green-500 bg-green-500/5"
-            case "WEB_ERROR":
-                return "border-l-4 border-l-red-500 bg-red-500/5"
-            case "WEB_ALERT":
-                return "border-l-4 border-l-yellow-500 bg-yellow-500/5"
-            default:
-                return "border-l-4 border-l-muted"
-        }
-    }
-
     // Event delegation handler for notification actions
     const handleNotificationAction = (e: React.MouseEvent) => {
         // Find the closest button with data-action attribute
@@ -232,8 +199,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                                     <NotificationItem
                                         key={notification.id}
                                         notification={notification}
-                                        getIcon={getIcon}
-                                        getKindClass={getKindClass}
                                         className={index & 1 ? "bg-background/50" : ""}
                                         ref={index === notifications.length - 1 ? lastItemRef : undefined}
                                     />
@@ -263,24 +228,53 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     )
 }
 
+const getIcon = (kind: string, entityType: string) => {
+    if (entityType === "WORKFLOW") return <Settings className="h-4 w-4 text-purple-500" />
+    if (entityType === "JOB") return <Clock className="h-4 w-4 text-blue-500" />
+
+    switch (kind) {
+        case "WEB_INFO":
+            return <Info className="h-4 w-4 text-blue-500" />
+        case "WEB_SUCCESS":
+            return <Check className="h-4 w-4 text-green-500" />
+        case "WEB_ERROR":
+            return <XCircle className="h-4 w-4 text-red-500" />
+        case "WEB_ALERT":
+            return <AlertCircle className="h-4 w-4 text-yellow-500" />
+        default:
+            return <Info className="h-4 w-4 text-muted-foreground" />
+    }
+}
+
+const getKindClass = (kind: string) => {
+    switch (kind) {
+        case "WEB_INFO":
+            return "border-l-4 border-l-blue-500 bg-blue-500/5"
+        case "WEB_SUCCESS":
+            return "border-l-4 border-l-green-500 bg-green-500/5"
+        case "WEB_ERROR":
+            return "border-l-4 border-l-red-500 bg-red-500/5"
+        case "WEB_ALERT":
+            return "border-l-4 border-l-yellow-500 bg-yellow-500/5"
+        default:
+            return "border-l-4 border-l-muted"
+    }
+}
+
 // Modified to remove the onMarkRead prop and use data attributes instead
 const NotificationItem = forwardRef<
     HTMLDivElement,
     {
         notification: Notification
-        getIcon: (kind: string, entityType: string) => React.ReactNode
-        getKindClass: (kind: string) => string
         className?: string
     }
->(({ notification, getIcon, getKindClass, className }, ref) => {
+>(({ notification, className }, ref) => {
     return (
         <div
             ref={ref}
             className={cn(
                 "px-6 py-4 transition-colors group",
-                notification.read_at
-                    ? "bg-background hover:bg-muted/50"
-                    : cn(getKindClass(notification.kind), "hover:bg-muted/30"),
+                cn(getKindClass(notification.kind), "hover:bg-muted/30"),
                 className
             )}
         >

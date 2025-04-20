@@ -142,7 +142,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 headers: []
             }
         },
-        mode: "onBlur",
+        mode: "onChange",
     })
 
     // Watch kind changes and update form structure
@@ -221,12 +221,9 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
             payload: payload,
             interval: data.interval as number,
             maxConsecutiveJobFailuresAllowed: data.maxConsecutiveJobFailuresAllowed
-        }, {
-            onSuccess: () => {
-                form.reset()
-                onOpenChange(false)
-            }
         })
+        form.reset()
+        onOpenChange(false)
     }
 
     // Get current field values based on selected kind
@@ -249,7 +246,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         >
             <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>Create New Workflow</DialogTitle>
+                    <DialogTitle>Create new workflow</DialogTitle>
                     <DialogDescription>
                         Define a new workflow to be executed on a schedule.
                     </DialogDescription>

@@ -27,8 +27,7 @@ export function useUsers() {
                 throw new Error("failed to fetch user")
             }
 
-            const data = await response.json() as User
-            return data
+            return response.json() as Promise<User>
         }
     })
 

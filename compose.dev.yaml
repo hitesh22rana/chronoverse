@@ -86,6 +86,7 @@ services:
       CLUSTER_ID: chronoverse
     volumes:
       - kafka:/var/lib/kafka/data
+      - kafka-secrets:/etc/kafka/secrets
     networks:
       - chronoverse
 
@@ -670,6 +671,7 @@ volumes:
   clickhouse:
   redis:
   kafka:
+  kafka-secrets:
   lgtm:
   otel-lgtm:
 

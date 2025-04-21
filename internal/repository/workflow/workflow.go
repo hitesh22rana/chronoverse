@@ -119,11 +119,28 @@ func (r *Repository) Run(ctx context.Context) error {
 
 					// Execute the build workflow
 					if err := r.buildWorkflow(ctxWithTrace, string(record.Value)); err != nil {
-						logger.Error(
-							"build workflow execution failed",
-							zap.Any("ctx", ctxWithTrace),
-							zap.Error(err),
-						)
+						// If the build workflow is failed due to internal issues, log the error, else log warning
+						if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+							logger.Error(
+								"internal error while executing build workflow",
+								zap.Any("ctx", ctxWithTrace),
+								zap.String("topic", record.Topic),
+								zap.Int64("offset", record.Offset),
+								zap.Int32("partition", record.Partition),
+								zap.String("message", string(record.Value)),
+								zap.Error(err),
+							)
+						} else {
+							logger.Warn(
+								"build workflow execution failed",
+								zap.Any("ctx", ctxWithTrace),
+								zap.String("topic", record.Topic),
+								zap.Int64("offset", record.Offset),
+								zap.Int32("partition", record.Partition),
+								zap.String("message", string(record.Value)),
+								zap.Error(err),
+							)
+						}
 					}
 
 					// Commit the record even if the workflow workflow fails to avoid reprocessing
@@ -172,6 +189,11 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		return err
 	}
 
+	// This context is used for sending notifications, as we don't want to propagate the cancellation
+	// This context does not use the parent context
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
+	notificationCtx, _ := r.withAuthorization(context.Background())
+
 	// Get the workflow details
 	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
 		Id: workflowID,
@@ -187,8 +209,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 	}
 
 	// Ensure the workflow is not already terminated
-	terminatedAt := workflow.GetTerminatedAt()
-	if terminatedAt != "" {
+	if workflow.GetTerminatedAt() != "" {
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
 
@@ -214,9 +235,9 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 
 		// Send notification for the workflow build skipped event
 		// This is a fire-and-forget operation, so we don't need to wait for it to complete
-		//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
-			ctx,
+			notificationCtx,
 			workflow.GetUserId(),
 			workflowID,
 			"Workflow Build Skipped",
@@ -238,9 +259,9 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 
 	// Send notification for the workflow build start event
 	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 	go r.sendNotification(
-		ctx,
+		notificationCtx,
 		workflow.GetUserId(),
 		workflowID,
 		"Workflow Build Started",
@@ -249,7 +270,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 	)
 
 	// Execute the build process with retry enabled
-	if workflowErr := withRetry(func() error {
+	workflowErr := withRetry(func() error {
 		// Extract the image from the workflow
 		imageName, err := extractImageName(workflow.GetPayload())
 		if err != nil {
@@ -257,7 +278,21 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 		}
 
 		return r.svc.Csvc.Build(ctx, imageName)
-	}); workflowErr != nil {
+	})
+
+	// Since, build process can take time to execute and can led to authorization issues
+	// So, we need to re-issue the authorization token
+	// This context is used for all the gRPC calls
+	// This context uses the parent context
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
+	ctx, _ = r.withAuthorization(ctx)
+
+	// This context is used for sending notifications, as we don't want to propagate the cancellation
+	// This context does not use the parent context
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
+	notificationCtx, _ = r.withAuthorization(context.Background())
+
+	if workflowErr != nil {
 		// Update the workflow status from QUEUED to FAILED
 		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 			Id:          workflowID,
@@ -269,9 +304,9 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 
 		// Send notification for the workflow build failed event
 		// This is a fire-and-forget operation, so we don't need to wait for it to complete
-		//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
-			ctx,
+			notificationCtx,
 			workflow.GetUserId(),
 			workflowID,
 			"Workflow Build Failed",
@@ -302,9 +337,9 @@ func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) erro
 
 	// Send notification for the workflow build completed event
 	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
 	go r.sendNotification(
-		ctx,
+		notificationCtx,
 		workflow.GetUserId(),
 		workflowID,
 		"Workflow Build Completed",

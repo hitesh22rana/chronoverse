@@ -23,8 +23,9 @@ x-limits:
           cpus: '0.1'    # 100 m CPU
           memory: 128M   # 128 MB
 
-  # Workers require more memory
-  workers-limit: &workers-limit
+  # Low resources workers require a bit more cpu and memory
+  # but still less than the database
+  low-resources-workers-limit: &low-resources-workers-limit
     deploy:
       resources:
         limits:
@@ -33,6 +34,17 @@ x-limits:
         reservations:
           cpus: '0.25'   # 250 m CPU
           memory: '1G'  # 1 GB
+
+  # High resources workers require a bit more cpu and memory
+  high-resources-workers-limit: &high-resources-workers-limit
+    deploy:
+      resources:
+        limits:
+          cpus: '2'     # 2 CPU
+          memory: '4G'  # 4 GB
+        reservations:
+          cpus: '1'     # 1 CPU
+          memory: '2G'  # 2 GB
 
 services:
   postgres:
@@ -420,7 +432,7 @@ services:
       - chronoverse
 
   scheduling-worker:
-    <<: *workers-limit
+    <<: *low-resources-workers-limit
     image: scheduling-worker
     container_name: scheduling-worker
     environment:
@@ -469,7 +481,7 @@ services:
       - chronoverse
 
   workflow-worker:
-    <<: *workers-limit
+    <<: *low-resources-workers-limit
     image: workflow-worker
     container_name: workflow-worker
     environment:
@@ -529,7 +541,7 @@ services:
       - chronoverse
 
   execution-worker:
-    <<: *workers-limit
+    <<: *high-resources-workers-limit
     image: execution-worker
     container_name: execution-worker
     environment:

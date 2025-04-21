@@ -332,7 +332,8 @@ func validateJobStatus(s string) error {
 		jobsmodel.JobStatusQueued.ToString(),
 		jobsmodel.JobStatusRunning.ToString(),
 		jobsmodel.JobStatusCompleted.ToString(),
-		jobsmodel.JobStatusFailed.ToString():
+		jobsmodel.JobStatusFailed.ToString(),
+		jobsmodel.JobStatusCanceled.ToString():
 		return nil
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid status: %s", s)

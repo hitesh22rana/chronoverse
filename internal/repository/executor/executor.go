@@ -136,11 +136,28 @@ func (r *Repository) Run(ctx context.Context) error {
 
 					// Execute the run workflow
 					if err := r.runWorkflow(ctxWithTrace, record.Value); err != nil {
-						logger.Error(
-							"run workflow execution failed",
-							zap.Any("ctx", ctxWithTrace),
-							zap.Error(err),
-						)
+						// If the workflow is failed due to internal issues, log the error, else log warning
+						if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+							logger.Error(
+								"internal error while executing workflow",
+								zap.Any("ctx", ctxWithTrace),
+								zap.String("topic", record.Topic),
+								zap.Int64("offset", record.Offset),
+								zap.Int32("partition", record.Partition),
+								zap.String("message", string(record.Value)),
+								zap.Error(err),
+							)
+						} else {
+							logger.Warn(
+								"error while executing workflow",
+								zap.Any("ctx", ctxWithTrace),
+								zap.String("topic", record.Topic),
+								zap.Int64("offset", record.Offset),
+								zap.Int32("partition", record.Partition),
+								zap.String("message", string(record.Value)),
+								zap.Error(err),
+							)
+						}
 					}
 
 					// Commit the record even if the workflow workflow fails to avoid reprocessing
@@ -201,14 +218,8 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	}
 
 	// Early return idempotency checks
-	// Ensure the workflow build status is COMPLETED
-	if workflow.GetBuildStatus() != statusCompleted {
-		return status.Error(codes.FailedPrecondition, "workflow build status is not COMPLETED")
-	}
-
 	// Ensure the workflow is not already terminated
-	terminatedAt := workflow.GetTerminatedAt()
-	if terminatedAt != "" {
+	if workflow.GetTerminatedAt() != "" {
 		// If the workflow is already terminated, do not execute the workflow and update the job status to CANCELED
 		if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 			Id:     jobID,
@@ -218,6 +229,11 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 		}
 
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
+	}
+
+	// Ensure the workflow build status is COMPLETED
+	if workflow.GetBuildStatus() != statusCompleted {
+		return status.Error(codes.FailedPrecondition, "workflow build status is not COMPLETED")
 	}
 
 	// Schedule a new job based on the last scheduledAt time and interval accordingly
@@ -243,17 +259,13 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	// So, we need to re-issue the authorization token
 	// This context is used for all the gRPC calls
 	// This context uses the parent context
-	ctx, err = r.withAuthorization(ctx)
-	if err != nil {
-		return err
-	}
+	//nolint:errcheck // Ignore the error as we don't want to block the job execution
+	ctx, _ = r.withAuthorization(ctx)
 
 	// This context is used for sending notifications, as we don't want to propagate the cancellation
 	// This context does not use the parent context
-	notificationCtx, err := r.withAuthorization(context.Background())
-	if err != nil {
-		return err
-	}
+	//nolint:errcheck // Ignore the error as we don't want to block the job execution
+	notificationCtx, _ := r.withAuthorization(context.Background())
 
 	//nolint:nestif // This is a nested if statement, but it's necessary to handle the error cases
 	if executeErr != nil {
@@ -439,38 +451,70 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 			return err
 		}
 
-		logs, _, workflowErr := r.svc.Csvc.Execute(
+		logs, errs, workflowErr := r.svc.Csvc.Execute(
 			ctx,
 			timeout,
 			image,
 			cmd,
 		)
 
-		var sequenceNum uint32
-
-		// Publish the logs to the Kafka topic
-		for log := range logs {
-			currentSeq := atomic.AddUint32(&sequenceNum, 1)
-
-			// Serialize the log entry
-			jobEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
-				JobID:       jobID,
-				WorkflowID:  workflowID,
-				UserID:      userID,
-				Message:     log,
-				TimeStamp:   time.Now(),
-				SequenceNum: currentSeq,
-			})
-			if err != nil {
-				continue
-			}
-
-			if err := r.kfk.ProduceSync(ctx, kgo.SliceRecord(jobEntryBytes)).FirstErr(); err != nil {
-				continue
-			}
+		// If there was an error starting the container, return immediately
+		if workflowErr != nil {
+			return workflowErr
 		}
 
-		return workflowErr
+		var sequenceNum uint32
+
+		// Create a done channel to signal when to stop processing
+		done := make(chan struct{})
+		defer close(done)
+
+		// Process logs
+		logsProcessing := make(chan struct{})
+		go func() {
+			defer close(logsProcessing)
+
+			for {
+				select {
+				case log, ok := <-logs:
+					if !ok {
+						// Logs channel closed, we're done
+						return
+					}
+
+					currentSeq := atomic.AddUint32(&sequenceNum, 1)
+
+					// Serialize the log entry
+					jobEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
+						JobID:       jobID,
+						WorkflowID:  workflowID,
+						UserID:      userID,
+						Message:     log,
+						TimeStamp:   time.Now(),
+						SequenceNum: currentSeq,
+					})
+					if err != nil {
+						continue
+					}
+
+					// Asynchronously produce the log entry to the Kafka topic
+					r.kfk.Produce(ctx, kgo.SliceRecord(jobEntryBytes), func(_ *kgo.Record, _ error) {})
+
+				case <-done:
+					// We were signaled to stop processing logs
+					return
+				}
+			}
+		}()
+
+		// Handle errors from the logs channel
+		// This way we can immediately return when an error occurs
+		for err := range errs {
+			return err
+		}
+
+		<-logsProcessing
+		return nil
 	default:
 		return status.Error(codes.InvalidArgument, "invalid workflow kind")
 	}
@@ -488,34 +532,36 @@ func extractContainerDetails(payload string) (timeout time.Duration, image strin
 		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "image is missing or invalid")
 	}
 
-	cmd, ok := data["cmd"].([]any)
-	if !ok {
-		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "cmd is missing or invalid")
-	}
-
-	for _, c := range cmd {
-		c, err := c.(string)
-		if !err {
-			return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "cmd is invalid")
-		}
-
-		cmdStr = append(cmdStr, c)
-	}
-
 	timeoutStr, ok := data["timeout"].(string)
 
 	// If the timeout is not present, set it to the default value
-	if !ok {
-		return containerWorkflowDefaultExecutionTimeout, image, cmdStr, nil
-	}
-
-	timeout, err = time.ParseDuration(timeoutStr)
-	if err != nil {
-		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "timeout is invalid")
+	if !ok || timeoutStr == "" {
+		timeout = containerWorkflowDefaultExecutionTimeout
+	} else {
+		timeout, err = time.ParseDuration(timeoutStr)
+		if err != nil {
+			return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "timeout is invalid")
+		}
 	}
 
 	if timeout <= 0 {
 		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "timeout is invalid")
+	}
+
+	// Command is an optional field
+	cmd, ok := data["cmd"].([]any)
+	if !ok {
+		// If cmd is not provided, return an empty slice
+		return timeout, image, cmdStr, nil
+	}
+
+	// If cmd is provided, convert all elements to strings
+	for _, c := range cmd {
+		cStr, ok := c.(string)
+		if !ok {
+			return timeout, "", nil, status.Error(codes.InvalidArgument, "cmd contains non-string elements")
+		}
+		cmdStr = append(cmdStr, cStr)
 	}
 
 	return timeout, image, cmdStr, nil

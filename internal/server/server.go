@@ -267,9 +267,9 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						),
 					),
 				).ServeHTTP(w, r)
-			case http.MethodDelete:
+			case http.MethodPatch:
 				s.withAllowedMethodMiddleware(
-					http.MethodDelete,
+					http.MethodPatch,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
 							withAttachBasicMetadataHeaderMiddleware(

@@ -148,7 +148,7 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                     {hasFailures ? (
                         <div className="mt-3">
                             <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center text-amber-600 dark:text-amber-400">
+                                <div className="flex items-center text-red-600 dark:text-red-400">
                                     <AlertTriangle className="h-3 w-3 mr-1" />
                                     <span className="text-xs font-medium">Failures</span>
                                 </div>
@@ -159,7 +159,7 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
 
                             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
                                 <div
-                                    className="bg-amber-500 h-1 rounded-full"
+                                    className="bg-red-500 h-1 rounded-full"
                                     style={{
                                         width: `${((workflow.consecutive_job_failures_count || 0) / workflow.max_consecutive_job_failures_allowed) * 100}%`
                                     }}

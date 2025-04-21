@@ -88,9 +88,9 @@ export default function JobDetailsPage() {
                         <ArrowLeft className="h-4 w-4" />
                     </Link>
                     <div>
-                        <h2 className="text-xl font-bold tracking-tight">Job: {jobId.split('-')[0]}</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Job: {jobId}</h2>
                         <p className="text-sm text-muted-foreground">
-                            Workflow: {workflowId.split('-')[0]}
+                            Workflow: {workflowId}
                         </p>
                     </div>
                 </div>

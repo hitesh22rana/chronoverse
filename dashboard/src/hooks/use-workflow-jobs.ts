@@ -60,6 +60,7 @@ export function useWorkflowJobs(workflowId: string) {
 
             return response.json() as Promise<JobsResponse>
         },
+        refetchInterval: 10000, // Refetch every 10 seconds
     })
 
     // Pagination functions

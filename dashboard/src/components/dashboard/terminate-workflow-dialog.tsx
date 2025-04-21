@@ -27,7 +27,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
-import { useWorkflows, Workflow } from "@/hooks/use-workflows"
+import { useWorkflowDetails } from "@/hooks/use-workflow-details"
+import { Workflow } from "@/hooks/use-workflows"
 
 interface TerminateWorkflowDialogProps {
     workflow: Workflow
@@ -40,7 +41,7 @@ export function TerminateWorkflowDialog({
     open,
     onOpenChange
 }: TerminateWorkflowDialogProps) {
-    const { terminateWorkflow, isTerminating } = useWorkflows()
+    const { terminateWorkflow, isTerminating } = useWorkflowDetails(workflow.id)
 
     const FormSchema = z.object({
         confirmName: z.string().refine(value => value === workflow.name, {
@@ -52,11 +53,12 @@ export function TerminateWorkflowDialog({
         resolver: zodResolver(FormSchema),
         defaultValues: {
             confirmName: ""
-        }
+        },
+        mode: "onSubmit",
     })
 
     const handleTerminate = () => {
-        terminateWorkflow(workflow.id)
+        terminateWorkflow()
         onOpenChange(false)
     }
 

@@ -77,7 +77,10 @@ const heartbeatPayloadSchema = z.object({
 // Container payload schema
 const containerPayloadSchema = z.object({
     image: z.string().min(1, "Container image is required"),
-    cmd: z.array(z.string().min(1, "Command cannot be empty")).default([""]),
+    cmd: z.array(z.string())
+        .optional()
+        .default([])
+        .transform(val => val?.filter(item => item !== "") || []),
     timeout: z.string().default("")
         .refine(val => {
             if (!val) return true
@@ -205,11 +208,11 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 endpoint,
                 headers: headersObject
             })
-        } else {
+        } else if (data.kind === "CONTAINER") {
             const { image, cmd, timeout } = (data as z.infer<typeof containerWorkflowSchema>).containerPayload
             payload = JSON.stringify({
                 image,
-                cmd,
+                ...(cmd && cmd.length > 0 ? { cmd } : {}),
                 ...timeout ? { timeout } : {}
             })
         }
@@ -440,15 +443,16 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
 
                                         <div className="space-y-2">
                                             <FormLabel>
-                                                Command
+                                                Command (Optional)
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
                                                     className="ml-2"
                                                     onClick={() => {
+                                                        const currentCmds = form.watch("containerPayload.cmd") || []
                                                         form.setValue("containerPayload.cmd", [
-                                                            ...cmdFields,
+                                                            ...currentCmds,
                                                             ""
                                                         ])
                                                     }}
@@ -457,10 +461,10 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 </Button>
                                             </FormLabel>
                                             <FormDescription>
-                                                Command and arguments to run in the container
+                                                Optional command and arguments to run in the container
                                             </FormDescription>
 
-                                            {cmdFields.map((_, index) => (
+                                            {cmdFields?.map((_, index) => (
                                                 <div key={index} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
@@ -469,7 +473,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                             <FormItem className="flex-1">
                                                                 <FormControl>
                                                                     <Input
-                                                                        placeholder={index === 0 ? "sh" : "-c"}
+                                                                        placeholder={""}
                                                                         {...field}
                                                                         value={field.value || ""}
                                                                     />
@@ -483,13 +487,10 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
-                                                            // Don't remove the last item
-                                                            if (cmdFields.length <= 1) return
-                                                            const updatedCmds = [...cmdFields]
+                                                            const updatedCmds = [...(form.watch("containerPayload.cmd") || [])]
                                                             updatedCmds.splice(index, 1)
                                                             form.setValue("containerPayload.cmd", updatedCmds)
                                                         }}
-                                                        disabled={cmdFields.length <= 1}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>

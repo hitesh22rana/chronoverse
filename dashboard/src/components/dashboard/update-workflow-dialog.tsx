@@ -71,7 +71,10 @@ const heartbeatPayloadSchema = z.object({
 // Container payload schema
 const containerPayloadSchema = z.object({
     image: z.string().min(1, "Container image is required"),
-    cmd: z.array(z.string().min(1, "Command cannot be empty")).default([""]),
+    cmd: z.array(z.string())
+        .optional()
+        .default([])
+        .transform(val => val?.filter(item => item !== "") || []),
     timeout: z.string().default("")
         .refine(val => {
             if (!val) return true
@@ -179,6 +182,7 @@ export function UpdateWorkflowDialog({
                     containerPayload: form.getValues("containerPayload")
                 } : {})
             });
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (e) {
             toast.error("failed to parse workflow payload");
         }
@@ -204,12 +208,11 @@ export function UpdateWorkflowDialog({
                 endpoint,
                 headers: headersObject
             });
-        }
-        else if (workflow.kind === "CONTAINER") {
+        } else if (workflow.kind === "CONTAINER") {
             const { image, cmd, timeout } = data.containerPayload;
             payload = JSON.stringify({
                 image,
-                cmd,
+                ...(cmd && cmd.length > 0 ? { cmd } : {}),
                 ...(timeout ? { timeout } : {})
             });
         }
@@ -391,7 +394,7 @@ export function UpdateWorkflowDialog({
 
                                             <div className="space-y-2">
                                                 <FormLabel>
-                                                    Command
+                                                    Command (Optional)
                                                     <Button
                                                         type="button"
                                                         variant="outline"
@@ -408,7 +411,7 @@ export function UpdateWorkflowDialog({
                                                     </Button>
                                                 </FormLabel>
                                                 <FormDescription>
-                                                    Command and arguments to run in the container
+                                                    Optional command and arguments to run in the container
                                                 </FormDescription>
 
                                                 {cmdFields.map((_, index) => (
@@ -420,8 +423,9 @@ export function UpdateWorkflowDialog({
                                                                 <FormItem className="flex-1">
                                                                     <FormControl>
                                                                         <Input
-                                                                            placeholder={index === 0 ? "sh" : "-c"}
+                                                                            placeholder={""}
                                                                             {...field}
+                                                                            value={field.value || ""}
                                                                         />
                                                                     </FormControl>
                                                                     <FormMessage />
@@ -433,13 +437,10 @@ export function UpdateWorkflowDialog({
                                                             variant="ghost"
                                                             size="sm"
                                                             onClick={() => {
-                                                                // Don't remove the last item
-                                                                if (cmdFields.length <= 1) return
                                                                 const updatedCmds = [...cmdFields]
                                                                 updatedCmds.splice(index, 1)
                                                                 form.setValue("containerPayload.cmd", updatedCmds)
                                                             }}
-                                                            disabled={cmdFields.length <= 1}
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>

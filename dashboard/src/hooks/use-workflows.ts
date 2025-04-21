@@ -65,18 +65,19 @@ export function useWorkflows() {
             }
 
             return response.json() as Promise<WorkflowsResponse>
-        }
+        },
+        refetchInterval: 10000, // Refetch every 10 seconds
     })
 
     const goToNextPage = useCallback(() => {
-        const nextCursor = query.data?.cursor
+        const nextCursor = query?.data?.cursor
         if (!nextCursor) return false
 
         const params = new URLSearchParams(searchParams.toString())
         params.set("cursor", nextCursor)
         router.push(`?${params.toString()}`)
         return true
-    }, [query.data?.cursor, router, searchParams])
+    }, [query?.data?.cursor, router, searchParams])
 
     const goToPreviousPage = useCallback(() => {
         router.back()
@@ -91,7 +92,7 @@ export function useWorkflows() {
 
     // Apply filters inside the hook
     const filteredWorkflows = useMemo(() => {
-        return query.data?.workflows.filter(workflow => {
+        return query?.data?.workflows.filter(workflow => {
             // Search filter
             const matchesSearch = !searchQuery ||
                 workflow.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -110,7 +111,7 @@ export function useWorkflows() {
 
             return matchesSearch && matchesStatus
         })
-    }, [query.data?.workflows, searchQuery, statusFilter])
+    }, [query?.data?.workflows, searchQuery, statusFilter])
 
     if (query.error instanceof Error) {
         toast.error(query.error.message)
@@ -143,42 +144,17 @@ export function useWorkflows() {
         }
     })
 
-    const terminateWorkflowMutation = useMutation({
-        mutationFn: async (id: string) => {
-            const response = await fetchWithAuth(`${WORKFLOWS_ENDPOINT}/${id}`, {
-                method: "DELETE"
-            })
-
-            if (!response.ok) {
-                throw new Error("failed to terminate workflow")
-            }
-
-            return id
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["workflows"] })
-            resetPagination()
-            toast.success("workflow terminated successfully")
-            router.push("/")
-        },
-        onError: (error) => {
-            toast.error(error.message)
-        }
-    })
-
     return {
         workflows: filteredWorkflows || [],
         isLoading: query.isLoading,
         error: query.error,
         createWorkflow: createWorkflowMutation.mutate,
         isCreating: createWorkflowMutation.isPending,
-        terminateWorkflow: terminateWorkflowMutation.mutate,
-        isTerminating: terminateWorkflowMutation.isPending,
         refetch: query.refetch,
         refetchLoading: query.isRefetching,
         pagination: {
-            nextCursor: query.data?.cursor,
-            hasNextPage: !!query.data?.cursor,
+            nextCursor: query?.data?.cursor,
+            hasNextPage: !!query?.data?.cursor,
             hasPreviousPage: !!currentCursor,
             goToNextPage,
             goToPreviousPage,

@@ -11,7 +11,6 @@ export async function middleware(request: NextRequest) {
 
     const validUser = request.cookies.has("session") && request.cookies.has("csrf")
 
-
     // If user is not authenticated and trying to access a protected route
     // Redirect unauthenticated users to login
     if (!validUser && !isPublicRoute) {

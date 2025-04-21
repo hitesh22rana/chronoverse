@@ -141,7 +141,7 @@ export default function WorkflowDetailsPage() {
                             <ArrowLeft className="h-4 w-4" />
                         </Link>
                         {workflow?.name ? (
-                            <h1 className="text-2xl font-bold tracking-tight">{workflow?.name}</h1>
+                            <h1 className="text-2xl font-bold tracking-tight md:max-w-full max-w-60 w-full truncate">{workflow?.name}</h1>
                         ) : (
                             <Skeleton className="h-8 w-48" />
                         )}
@@ -165,7 +165,7 @@ export default function WorkflowDetailsPage() {
                             <Skeleton className="h-5 w-20" />
                         )}
                         {workflow?.created_at ? (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-muted-foreground max-w-40 w-full truncate">
                                 Created {formatDistanceToNow(new Date(workflow.created_at), { addSuffix: true })}
                             </span>
                         ) : (
@@ -255,7 +255,7 @@ export default function WorkflowDetailsPage() {
                                     {/* Basic Info */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Type</div>
+                                            <div className="text-sm font-medium">Workflow Type</div>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                 <Settings className="h-4 w-4" />
                                                 {workflow?.kind}
@@ -269,7 +269,7 @@ export default function WorkflowDetailsPage() {
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Build Status</div>
+                                            <div className="text-sm font-medium">Status</div>
                                             <div className="text-sm flex items-center gap-2">
                                                 <span className={cn("flex items-center gap-1", statusConfig.colorClass)}>
                                                     <statusConfig.icon className={cn("h-4 w-4", statusConfig.iconClass)} />
@@ -304,7 +304,7 @@ export default function WorkflowDetailsPage() {
                                             <Separator />
                                             <div className="space-y-2">
                                                 <div className="flex items-center justify-between mb-1">
-                                                    <div className="flex items-center text-amber-600 dark:text-amber-400">
+                                                    <div className="flex items-center text-red-600 dark:text-red-400">
                                                         <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
                                                         <span className="text-sm font-medium">Failure Tracking</span>
                                                     </div>
@@ -314,7 +314,7 @@ export default function WorkflowDetailsPage() {
                                                 </div>
                                                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                                                     <div
-                                                        className="bg-amber-500 h-1.5 rounded-full"
+                                                        className="bg-red-500 h-1.5 rounded-full"
                                                         style={{
                                                             width: `${(workflow.consecutive_job_failures_count / workflow.max_consecutive_job_failures_allowed) * 100}%`
                                                         }}
@@ -535,7 +535,7 @@ function JobCard({ job }: { job: Job }) {
                                 <StatusIcon className={cn("h-3 w-3", statusInfo.iconClass)} />
                                 <span className="text-xs">{statusInfo.label}</span>
                             </Badge>
-                            <span className="text-sm font-medium">Job: {job.id.split('-')[0]}</span>
+                            <span className="text-sm font-medium max-w-[100px] w-full truncate">Job: {job.id}</span>
                         </div>
                         <span className="text-xs text-muted-foreground">
                             {job.created_at && formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}

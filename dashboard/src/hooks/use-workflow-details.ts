@@ -43,7 +43,7 @@ export function useWorkflowDetails(workflowId: string) {
         toast.error(query.error.message)
     }
 
-    const updateWorkflow = useMutation({
+    const updateWorkflowMutation = useMutation({
         mutationFn: async (updatedWorkflowDetails: UpdateWorkflowDetails) => {
             const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`, {
                 method: "PUT",
@@ -63,13 +63,37 @@ export function useWorkflowDetails(workflowId: string) {
         }
     })
 
+    const terminateWorkflowMutation = useMutation({
+        mutationFn: async () => {
+            const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`, {
+                method: "PATCH",
+            })
+
+            if (!response.ok) {
+                throw new Error("failed to terminate workflow")
+            }
+
+            return workflowId
+        },
+        onSuccess: () => {
+            toast.success("workflow terminated successfully")
+            query.refetch()
+            setWorkflowNotActive(false)
+        },
+        onError: (error) => {
+            toast.error(error.message)
+        }
+    })
+
     return {
         workflow: query.data as Workflow,
         isLoading: query.isLoading,
         error: query.error,
-        updateWorkflow: updateWorkflow.mutate,
-        isUpdating: updateWorkflow.isPending,
-        updateError: updateWorkflow.error,
+        updateWorkflow: updateWorkflowMutation.mutate,
+        isUpdating: updateWorkflowMutation.isPending,
+        updateError: updateWorkflowMutation.error,
+        terminateWorkflow: terminateWorkflowMutation.mutate,
+        isTerminating: terminateWorkflowMutation.isPending,
         refetch: query.refetch,
     }
 }

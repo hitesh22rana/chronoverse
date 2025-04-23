@@ -118,7 +118,6 @@ export default function WorkflowDetailsPage() {
     // Handle status filter change
     const handleStatusFilter = (value: string) => {
         const params = new URLSearchParams(searchParams.toString())
-
         if (value === "ALL") {
             params.delete("status")
         } else {
@@ -136,12 +135,12 @@ export default function WorkflowDetailsPage() {
                     <div className="flex items-center gap-2">
                         <Link
                             href="/"
-                            className="h-8 w-8 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
+                            className="h-8 w-8 px-2 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
                         >
                             <ArrowLeft className="h-4 w-4" />
                         </Link>
                         {workflow?.name ? (
-                            <h1 className="text-2xl font-bold tracking-tight md:max-w-full max-w-60 w-full truncate">{workflow?.name}</h1>
+                            <h1 className="text-2xl font-bold tracking-tight md:max-w-full max-w-68 w-full truncate">{workflow?.name}</h1>
                         ) : (
                             <Skeleton className="h-8 w-48" />
                         )}
@@ -365,6 +364,7 @@ export default function WorkflowDetailsPage() {
                                 <SelectItem value="RUNNING">Running</SelectItem>
                                 <SelectItem value="COMPLETED">Completed</SelectItem>
                                 <SelectItem value="FAILED">Failed</SelectItem>
+                                <SelectItem value="CANCELED">Canceled</SelectItem>
                             </SelectContent>
                         </Select>
 
@@ -522,9 +522,9 @@ function JobCard({ job }: { job: Job }) {
     return (
         <Link href={`/workflows/${job.workflow_id}/jobs/${job.id}`} className="block h-full">
             <Card className="overflow-hidden">
-                <CardHeader className="pb-3">
+                <CardHeader>
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        <div className="flex md:flex-row flex-col justify-start items-start gap-2">
                             <Badge
                                 variant="outline"
                                 className={cn(
@@ -535,7 +535,7 @@ function JobCard({ job }: { job: Job }) {
                                 <StatusIcon className={cn("h-3 w-3", statusInfo.iconClass)} />
                                 <span className="text-xs">{statusInfo.label}</span>
                             </Badge>
-                            <span className="text-sm font-medium max-w-[100px] w-full truncate">Job: {job.id}</span>
+                            <span className="text-sm font-medium xl:max-w-full md:max-w-[200px] max-w-[140px] w-full truncate">Job: {job.id}</span>
                         </div>
                         <span className="text-xs text-muted-foreground">
                             {job.created_at && formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}

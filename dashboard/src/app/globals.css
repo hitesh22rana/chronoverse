@@ -112,9 +112,14 @@
 
 @layer base {
   * {
+    @apply scroll-smooth;
     @apply border-border outline-ring/50;
   }
   body {
+    @apply min-h-screen;
+    @apply min-w-screen;
     @apply bg-background text-foreground;
+    @apply antialiased;
+    @apply h-full;
   }
 }

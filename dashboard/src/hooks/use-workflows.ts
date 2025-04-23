@@ -30,10 +30,10 @@ export type Workflow = {
 }
 
 export function useWorkflows() {
+    const queryClient = useQueryClient()
     const router = useRouter()
     const path = usePathname()
     const searchParams = useSearchParams()
-    const queryClient = useQueryClient()
 
     const isNotRootPath = path !== "/"
 

@@ -107,9 +107,11 @@ export function Workflows() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="ALL">All statuses</SelectItem>
+                            <SelectItem value="QUEUED">Queued</SelectItem>
+                            <SelectItem value="STARTED">Building</SelectItem>
                             <SelectItem value="COMPLETED">Active</SelectItem>
-                            <SelectItem value="QUEUED">Building</SelectItem>
                             <SelectItem value="FAILED">Failed</SelectItem>
+                            <SelectItem value="CANCELED">Canceled</SelectItem>
                             <SelectItem value="TERMINATED">Terminated</SelectItem>
                         </SelectContent>
                     </Select>
@@ -119,15 +121,15 @@ export function Workflows() {
                         variant="outline"
                         size="icon"
                         onClick={handleRefresh}
-                        disabled={refetchLoading}
+                        disabled={(isLoading || refetchLoading)}
                         className={cn(
                             "h-9 w-9",
-                            refetchLoading && "cursor-not-allowed"
+                            (isLoading || refetchLoading) && "cursor-not-allowed"
                         )}
                     >
                         <RefreshCw className={cn(
                             "size-4",
-                            refetchLoading && "animate-spin"
+                            (isLoading || refetchLoading) && "animate-spin"
                         )} />
                         <span className="sr-only">Refresh</span>
                     </Button>
@@ -159,7 +161,7 @@ export function Workflows() {
             </div>
 
             <div className="flex-1 flex flex-col">
-                {(isLoading || refetchLoading) && workflows.length === 0 ? (
+                {(isLoading) && workflows.length === 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {[...Array(6)].map((_, i) => (
                             <WorkflowCardSkeleton

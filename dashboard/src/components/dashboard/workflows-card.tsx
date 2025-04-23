@@ -23,15 +23,8 @@ interface WorkflowCardProps {
 // Status configuration with enhanced glow effects
 const getStatusConfig = (status: string) => {
     return {
-        COMPLETED: {
-            label: "Active",
-            icon: CheckCircle,
-            colorClass: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-200/50 dark:border-emerald-800/30",
-            dotColor: "#10b981"
-        },
         QUEUED: {
-            label: "Scheduled",
+            label: "Queued",
             icon: Clock,
             colorClass: "text-blue-500 bg-blue-50 dark:bg-blue-950/30",
             glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)] dark:shadow-[0_0_20px_rgba(59,130,246,0.25)] border-blue-200/50 dark:border-blue-800/30",
@@ -44,6 +37,13 @@ const getStatusConfig = (status: string) => {
             glowClass: "shadow-[0_0_15px_rgba(245,158,11,0.15)] dark:shadow-[0_0_20px_rgba(245,158,11,0.25)] border-amber-200/50 dark:border-amber-800/30",
             iconClass: "animate-spin",
             dotColor: "#f59e0b"
+        },
+        COMPLETED: {
+            label: "Active",
+            icon: CheckCircle,
+            colorClass: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
+            glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-200/50 dark:border-emerald-800/30",
+            dotColor: "#10b981"
         },
         FAILED: {
             label: "Failed",
@@ -93,6 +93,10 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
 
     // Only show success badge if the workflow has run at least once and has no failures
     const showSuccessBadge = hasRun && !hasFailures && status === "COMPLETED"
+
+    // If the workflow is terminated, show the terminated status
+    const isTerminated = !!workflow.terminated_at
+    const formatedStatus = workflow.build_status.charAt(0).toUpperCase() + workflow.build_status.slice(1).toLowerCase()
 
     // Format interval for display
     const interval = workflow.interval === 1440
@@ -185,17 +189,30 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                     ) : (
                         <div className="mt-3">
                             <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center text-gray-500 dark:text-gray-400">
-                                    <Shield className="h-3 w-3 mr-1" />
-                                    <span className="text-xs font-medium">No runs yet</span>
+                                <div className={cn(
+                                    "flex items-center text-gray-500 dark:text-gray-400",
+                                    isTerminated && "text-red-500 dark:text-red-400"
+                                )}>
+                                    {isTerminated ? (
+                                        <XCircle className="h-3 w-3 mr-1" />
+                                    ) : (
+                                        <Shield className="h-3 w-3 mr-1" />
+                                    )}
+                                    <span className="text-xs font-medium">{isTerminated ? "Terminated" : formatedStatus}</span>
                                 </div>
-                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                                    No failures
+                                <span className={cn(
+                                    "text-xs font-medium text-gray-500 dark:text-gray-400",
+                                    isTerminated && "text-red-500 dark:text-red-400"
+                                )}>
+                                    {isTerminated ? "N/A" : "No failures"}
                                 </span>
                             </div>
 
                             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
-                                <div className="bg-gray-500 h-1 rounded-full w-full" />
+                                <div className={cn(
+                                    "h-1 rounded-full w-full",
+                                    isTerminated ? "bg-red-500" : "bg-gray-500"
+                                )} />
                             </div>
                         </div>
                     )}

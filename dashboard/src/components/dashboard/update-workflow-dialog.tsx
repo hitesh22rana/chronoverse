@@ -1,7 +1,6 @@
 "use client"
 
 import { Fragment, useEffect, useMemo } from "react"
-import { toast } from "sonner"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -149,43 +148,38 @@ export function UpdateWorkflowDialog({
     useEffect(() => {
         if (!workflow) return;
 
-        try {
-            const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) : {};
+        const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) : {};
 
-            if (workflow.kind === "HEARTBEAT") {
-                // Prepare headers array from object
-                const headers = parsedPayload.headers ?
-                    Object.entries(parsedPayload.headers).map(([key, value]) => ({ key, value })) :
-                    [];
+        if (workflow.kind === "HEARTBEAT") {
+            // Prepare headers array from object
+            const headers = parsedPayload.headers ?
+                Object.entries(parsedPayload.headers).map(([key, value]) => ({ key, value })) :
+                [];
 
-                form.setValue("heartbeatPayload", {
-                    endpoint: parsedPayload.endpoint || "",
-                    headers
-                });
-            }
-            else if (workflow.kind === "CONTAINER") {
-                form.setValue("containerPayload", {
-                    image: parsedPayload.image || "",
-                    cmd: parsedPayload.cmd || [""],
-                    timeout: parsedPayload.timeout || ""
-                });
-            }
-
-            form.reset({
-                name: workflow.name,
-                interval: workflow.interval,
-                maxConsecutiveJobFailuresAllowed: workflow.max_consecutive_job_failures_allowed,
-                ...(workflow.kind === "HEARTBEAT" ? {
-                    heartbeatPayload: form.getValues("heartbeatPayload")
-                } : {}),
-                ...(workflow.kind === "CONTAINER" ? {
-                    containerPayload: form.getValues("containerPayload")
-                } : {})
+            form.setValue("heartbeatPayload", {
+                endpoint: parsedPayload.endpoint || "",
+                headers
             });
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        } catch (e) {
-            toast.error("failed to parse workflow payload");
         }
+        else if (workflow.kind === "CONTAINER") {
+            form.setValue("containerPayload", {
+                image: parsedPayload.image || "",
+                cmd: parsedPayload.cmd || [""],
+                timeout: parsedPayload.timeout || ""
+            });
+        }
+
+        form.reset({
+            name: workflow.name,
+            interval: workflow.interval,
+            maxConsecutiveJobFailuresAllowed: workflow.max_consecutive_job_failures_allowed,
+            ...(workflow.kind === "HEARTBEAT" ? {
+                heartbeatPayload: form.getValues("heartbeatPayload")
+            } : {}),
+            ...(workflow.kind === "CONTAINER" ? {
+                containerPayload: form.getValues("containerPayload")
+            } : {})
+        });
     }, [workflow, form]);
 
     const handleSubmit = (data) => {

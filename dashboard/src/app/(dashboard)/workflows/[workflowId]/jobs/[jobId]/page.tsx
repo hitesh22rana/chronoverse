@@ -88,8 +88,8 @@ export default function JobDetailsPage() {
                         <ArrowLeft className="h-4 w-4" />
                     </Link>
                     <div>
-                        <h2 className="text-xl font-bold tracking-tight">Job: {jobId}</h2>
-                        <p className="text-sm text-muted-foreground">
+                        <h2 className="text-xl font-bold tracking-tight md:max-w-full max-w-60 w-full truncate">Job: {jobId}</h2>
+                        <p className="text-sm text-muted-foreground md:max-w-full max-w-60 w-full truncate">
                             Workflow: {workflowId}
                         </p>
                     </div>

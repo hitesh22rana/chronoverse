@@ -193,7 +193,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     }, [open, form])
 
     const handleSubmit = (data: WorkflowFormValues) => {
-        let payload: string
+        let payload: string = "{}"
 
         if (data.kind === "HEARTBEAT") {
             const { endpoint, headers = [] } = (data as z.infer<typeof heartbeatWorkflowSchema>).heartbeatPayload

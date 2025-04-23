@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 
 import { Header } from "@/components/dashboard/header"
 import { NotificationsDrawer } from "@/components/dashboard/notifications-drawer"
@@ -8,8 +8,28 @@ import { NotificationsDrawer } from "@/components/dashboard/notifications-drawer
 import { useWorkflows } from "@/hooks/use-workflows"
 
 import { cn } from "@/lib/utils"
+import { Loader } from "lucide-react"
 
 export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center w-full h-full">
+        <Loader className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    }>
+      <Layout>
+        {children}
+      </Layout>
+    </Suspense>
+  )
+}
+
+function Layout({
   children,
 }: {
   children: React.ReactNode;

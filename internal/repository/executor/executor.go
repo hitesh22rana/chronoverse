@@ -30,6 +30,7 @@ const (
 	authSubject = "internal/executor"
 
 	// Statuses for the jobs.
+	statusQueued    = "QUEUED"
 	statusRunning   = "RUNNING"
 	statusCompleted = "COMPLETED"
 	statusFailed    = "FAILED"
@@ -234,6 +235,18 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	// Ensure the workflow build status is COMPLETED
 	if workflow.GetBuildStatus() != statusCompleted {
 		return status.Error(codes.FailedPrecondition, "workflow build status is not COMPLETED")
+	}
+
+	// Ensure the job status is QUEUED, if not return early since the job might be already in progress
+	job, err := r.svc.Jobs.GetJobByID(ctx, &jobspb.GetJobByIDRequest{
+		Id: jobID,
+	})
+	if err != nil {
+		return err
+	}
+
+	if job.GetStatus() != statusQueued {
+		return status.Error(codes.FailedPrecondition, "job is not in RUNNING state")
 	}
 
 	// Schedule a new job based on the last scheduledAt time and interval accordingly

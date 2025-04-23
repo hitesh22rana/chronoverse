@@ -1,5 +1,7 @@
 # Chronoverse ⏳🌌
 
+![chronoverse](./.github/assets/chronoverse.png)
+
 **Distributed Task Scheduler & Orchestrator**
 
 Chronoverse is a distributed, job scheduling and orchestration system designed for reliability and scalability. It allows you to define, schedule, and execute various types of jobs across your infrastructure with powerful monitoring and management capabilities.

@@ -65,10 +65,10 @@ export default function JobDetailsPage() {
                             "Failed to load job data"}
                 </p>
                 <div className="flex gap-4">
-                    <Button onClick={() => router.back()}>
+                    <Button className="cursor-pointer" onClick={() => router.back()}>
                         Go Back
                     </Button>
-                    <Button variant="outline" onClick={handleRefresh}>
+                    <Button variant="outline" className="cursor-pointer" onClick={handleRefresh}>
                         Try Again
                     </Button>
                 </div>

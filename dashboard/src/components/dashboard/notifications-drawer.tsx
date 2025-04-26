@@ -1,44 +1,90 @@
 "use client"
 
 import {
-    forwardRef,
-    Fragment,
     useEffect,
+    useMemo,
     useRef,
     useState,
-    useCallback
-} from "react"
-import Link from "next/link"
-import { formatDistanceToNow } from "date-fns"
+} from "react";
+import Link from "next/link";
 import {
-    AlertCircle,
+    formatDistanceToNow,
+    isToday,
+    isYesterday,
+    format,
+} from "date-fns";
+import {
     Bell,
     Check,
-    CheckCheck,
-    Info,
     XCircle,
-    Clock,
-    Settings,
-    Loader2
-} from "lucide-react"
+    AlertTriangle,
+    LayoutList,
+    SquareArrowOutUpRight,
+} from "lucide-react";
+import {
+    VariableSizeList as List,
+    ListChildComponentProps,
+} from "react-window";
+import AutoSizer from "react-virtualized-auto-sizer";
 
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
     Sheet,
     SheetContent,
     SheetHeader,
-    SheetTitle
-} from "@/components/ui/sheet"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+    SheetTitle,
+} from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 
-import { useNotifications, type Notification } from "@/hooks/use-notifications"
+import {
+    useNotifications,
+    type Notification,
+    type NotificationPayload,
+} from "@/hooks/use-notifications";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
+
+type Severity = "ERROR" | "ALERT" | "INFO" | "SUCCESS";
+
+const KIND_TO_SEVERITY: Record<string, Severity> = {
+    WEB_ERROR: "ERROR",
+    WEB_ALERT: "ALERT",
+    WEB_WARN: "ALERT",
+    WEB_INFO: "INFO",
+    WEB_SUCCESS: "SUCCESS",
+};
+
+const SEVERITY_META: Record<Severity, { color: string }> = {
+    ERROR: {
+        color:
+            "border-l-4 border-red-500 bg-red-500/5 dark:bg-red-900/20 text-red-100",
+    },
+    ALERT: {
+        color:
+            "border-l-4 border-orange-500 bg-orange-500/5 dark:bg-orange-900/20 text-orange-100",
+    },
+    INFO: {
+        color:
+            "border-l-4 border-blue-500 bg-blue-500/5 dark:bg-blue-900/20 text-blue-100",
+    },
+    SUCCESS: {
+        color:
+            "border-l-4 border-green-500 bg-green-500/5 dark:bg-green-900/20 text-green-100",
+    },
+};
+
+function dateHeading(iso: string) {
+    const d = new Date(iso);
+    if (isToday(d)) return "Today";
+    if (isYesterday(d)) return "Yesterday";
+    return format(d, "MMM d, yyyy");
+}
 
 interface NotificationsDrawerProps {
-    open: boolean
-    onClose: () => void
+    open: boolean;
+    onClose: () => void;
 }
 
 export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps) {
@@ -48,290 +94,198 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         markAsRead,
         fetchNextPage,
         isFetchingNextPage,
-        hasNextPage
-    } = useNotifications()
+        hasNextPage,
+    } = useNotifications();
 
-    const [observerInitialized, setObserverInitialized] = useState(false)
-    const lastItemRef = useRef<HTMLDivElement>(null)
-    const scrollContainerRef = useRef<HTMLDivElement>(null)
+    const listRef = useRef<List>(null);
+    const [tab, setTab] = useState<"all" | "alerts" | "errors">("all");
+    const filtered = useMemo(() => {
+        if (tab === "all") return notifications;
+        if (tab === "alerts")
+            return notifications.filter((n) => {
+                const sev = KIND_TO_SEVERITY[n.kind];
+                return sev === "ALERT";
+            });
+        return notifications.filter((n) => KIND_TO_SEVERITY[n.kind] === "ERROR");
+    }, [notifications, tab]);
 
-    // Setup intersection observer with a delay to ensure DOM is ready
-    const setupObserver = useCallback(() => {
-        if (!open || !scrollContainerRef.current || !lastItemRef.current) return
+    const flat = useMemo(() => {
+        const result: { type: "heading" | "item"; heading?: string; n?: Notification }[] = [];
+        const groups = new Map<string, Notification[]>();
+        filtered.forEach((n) => {
+            const key = dateHeading(n.created_at);
+            const arr = groups.get(key) ?? [];
+            arr.push(n);
+            groups.set(key, arr);
+        });
+        groups.forEach((arr, heading) => {
+            result.push({ type: "heading", heading });
+            arr.forEach((n) => result.push({ type: "item", n }));
+        });
+        return result;
+    }, [filtered]);
 
-        const options = {
-            root: scrollContainerRef.current,
-            rootMargin: "200px",
-            threshold: 0.1,
-        }
-
-        const observer = new IntersectionObserver((entries) => {
-            const [entry] = entries
-            if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
-                fetchNextPage()
-            }
-        }, options)
-
-        const currentRef = lastItemRef.current
-        if (currentRef) {
-            observer.observe(currentRef)
-            setObserverInitialized(true)
-        }
-
-        return () => {
-            if (currentRef) {
-                observer.unobserve(currentRef)
-            }
-        }
-    }, [open, fetchNextPage, hasNextPage, isFetchingNextPage])
-
-    // Initial setup with delay
     useEffect(() => {
-        if (!open) return
+        // reset from index 0 so every row is re-measured
+        listRef.current?.resetAfterIndex(0, true);
+    }, [flat]);
 
-        setObserverInitialized(false)
+    const itemKey = (index: number) =>
+        flat[index].type === "heading"
+            ? `heading-${flat[index].heading}`
+            : (flat[index].n as Notification).id;
 
-        const timeoutId = setTimeout(() => {
-            setupObserver()
-        }, 500)
+    // bulk selection
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const toggleSelect = (id: string) => {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+    const clearSel = () => setSelected(new Set());
+    const bulkRead = () => {
+        if (selected.size === 0) return;
+        markAsRead(Array.from(selected));
+        clearSel();
+    };
 
-        return () => {
-            clearTimeout(timeoutId)
+    const Row = ({ index, style }: ListChildComponentProps) => {
+        const d = flat[index];
+
+        if (index === flat.length - 1 && hasNextPage && !isFetchingNextPage) fetchNextPage();
+
+        if (d.type === "heading") {
+            return (
+                <div
+                    style={style}
+                    key={index}
+                    className="bg-background/90 text-sm backdrop-blur font-semibold border-b px-4 py-2"
+                >
+                    {d.heading}
+                </div>
+            )
         }
-    }, [open, setupObserver])
 
-    // Re-initialize observer when notifications change
-    useEffect(() => {
-        if (open && notifications.length > 0 && !observerInitialized) {
-            setupObserver()
-        }
-    }, [open, notifications.length, observerInitialized, setupObserver])
+        const n = d.n!;
+        const payload: NotificationPayload = JSON.parse(n.payload);
+        const sev = KIND_TO_SEVERITY[n.kind] ?? "INFO";
+        const meta = SEVERITY_META[sev];
 
-    // Force check intersection on scroll
-    useEffect(() => {
-        if (!open || !scrollContainerRef.current) return
+        return (
+            <div
+                style={style}
+                className={cn(
+                    "relative px-2 py-4 flex gap-3 group hover:bg-muted/30 transition-colors",
+                    meta.color,
+                    !n.read_at && "ring-1 ring-white/5"
+                )}
+                onClick={() => {
+                    window.open(payload.action_url, "_blank");
+                    if (!n.read_at) markAsRead([n.id]);
+                }}
+                key={index}
+            >
+                <div
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(n.id);
+                    }}
+                >
+                    <Checkbox checked={selected.has(n.id)} />
+                </div>
+                <div className="flex-1 min-w-0 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-sm truncate">{payload.title}</p>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                            {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                        </span>
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground line-clamp-2">
+                        {payload.message}
+                    </p>
 
-        const handleScroll = () => {
-            if (lastItemRef.current && hasNextPage && !isFetchingNextPage) {
-                const rect = lastItemRef.current.getBoundingClientRect()
-                const containerRect = scrollContainerRef.current!.getBoundingClientRect()
-
-                const isVisible = rect.top >= containerRect.top - 200 && rect.bottom <= containerRect.bottom + 200
-
-                if (isVisible) {
-                    fetchNextPage()
-                }
-            }
-        }
-
-        const scrollContainer = scrollContainerRef.current
-        scrollContainer.addEventListener("scroll", handleScroll)
-
-        return () => {
-            scrollContainer.removeEventListener("scroll", handleScroll)
-        }
-    }, [open, hasNextPage, isFetchingNextPage, fetchNextPage])
-
-    // Event delegation handler for notification actions
-    const handleNotificationAction = (e: React.MouseEvent) => {
-        // Find the closest button with data-action attribute
-        const button = (e.target as HTMLElement).closest('button[data-action]');
-
-        if (!button) return;
-
-        const action = button.getAttribute('data-action');
-        const notificationId = button.getAttribute('data-notification-id');
-
-        if (action === 'mark-read' && notificationId) {
-            e.preventDefault();
-            markAsRead?.([notificationId]);
-        }
-    }
+                    <Link href={payload.action_url} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <SquareArrowOutUpRight className="h-4 w-4" />
+                    </Link>
+                </div>
+            </div>
+        );
+    };
 
     return (
         <Sheet open={open} onOpenChange={onClose}>
-            <SheetContent className="w-full sm:max-w-md p-0 h-full">
-                <div className="flex flex-col h-full">
-                    <SheetHeader className="px-6 py-4 border-b flex-shrink-0">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <Bell className="h-5 w-5 text-primary" />
-                                <SheetTitle>Notifications</SheetTitle>
+            <SheetContent className="w-full sm:max-w-md p-0 gap-0 h-full flex flex-col">
+                {/* header */}
+                <SheetHeader className="px-6 py-4 border-b flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                        <Bell className="h-5 w-5" />
+                        <SheetTitle>Notifications</SheetTitle>
+                    </div>
+                </SheetHeader>
+
+                {/* tabs */}
+                <Tabs value={tab} onValueChange={(v) => setTab(v as never)} className="p-4 w-full">
+                    <TabsList className="flex flex-row w-full">
+                        <TabsTrigger value="all" className="gap-1 cursor-pointer">
+                            <LayoutList className="h-4 w-4" /> All
+                        </TabsTrigger>
+                        <TabsTrigger value="alerts" className="gap-1 cursor-pointer">
+                            <AlertTriangle className="h-4 w-4" /> Alerts
+                        </TabsTrigger>
+                        <TabsTrigger value="errors" className="gap-1 cursor-pointer">
+                            <XCircle className="h-4 w-4" /> Errors
+                        </TabsTrigger>
+                    </TabsList>
+                </Tabs>
+
+                {/* bulk bar */}
+                <div className="px-4 py-2 border-b flex items-center justify-between gap-3 bg-background/95">
+                    <p className="text-sm font-medium">{selected.size || 0} selected</p>
+                    <Button size="sm" variant="ghost" className="gap-1 cursor-pointer" onClick={bulkRead} disabled={!selected.size}>
+                        <Check className="h-4 w-4" /> Mark read
+                    </Button>
+                </div>
+
+                {/* list / loading / empty */}
+                <div className="flex-1">
+                    {isLoading && filtered.length === 0 ? (
+                        [...Array(10)].map((_, i) => (
+                            <div key={i} className="px-6 py-4 space-y-3">
+                                <Skeleton className="h-4 w-3/4" />
+                                <Skeleton className="h-3 w-full" />
+                                <Skeleton className="h-3 w-1/2" />
                             </div>
-                            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
-                                <span className="sr-only">Close</span>
-                            </Button>
+                        ))
+                    ) : filtered.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center p-8 text-center gap-2 text-muted-foreground">
+                            <Bell className="h-8 w-8" />
+                            <p className="font-medium">You&apos;re all caught up!</p>
+                            <p className="text-sm">We&apos;ll notify you when there&apos;s new activity.</p>
                         </div>
-                    </SheetHeader>
-
-                    {notifications.length > 0 && (
-                        <div className="px-6 py-3 border-b">
-                            <Button variant="outline" size="sm" className="w-full text-xs h-8" onClick={() => markAsRead?.(notifications.map(n => n.id))}>
-                                <CheckCheck className="h-3.5 w-3.5 mr-2" />
-                                Mark all as read
-                            </Button>
-                        </div>
+                    ) : (
+                        <AutoSizer disableWidth>
+                            {({ height }) => (
+                                <List
+                                    ref={listRef}
+                                    height={height}
+                                    width="100%"
+                                    itemCount={flat.length}
+                                    itemKey={itemKey}
+                                    itemSize={(idx) =>
+                                        flat[idx].type === "heading" ? 36 : 90
+                                    }
+                                    overscanCount={5}
+                                >
+                                    {Row}
+                                </List>
+                            )}
+                        </AutoSizer>
                     )}
-
-                    {/* Add the click handler to the container for event delegation */}
-                    <ScrollArea
-                        ref={scrollContainerRef}
-                        className="flex-1 h-full overflow-auto"
-                        onClick={handleNotificationAction}
-                    >
-                        {isLoading && notifications.length === 0 ? (
-                            Array.from({ length: 5 }).map((_, i) => (
-                                <div key={i} className="px-6 py-4 space-y-3">
-                                    <Skeleton className="h-4 w-3/4" />
-                                    <Skeleton className="h-3 w-full" />
-                                    <Skeleton className="h-3 w-1/2" />
-                                </div>
-                            ))
-                        ) : notifications.length === 0 ? (
-                            <EmptyState
-                                icon={<Bell />}
-                                title="No notifications yet"
-                                message="You're all caught up! We'll notify you when there's new activity."
-                            />
-                        ) : (
-                            <Fragment>
-                                {notifications.map((notification, index) => (
-                                    <NotificationItem
-                                        key={notification.id}
-                                        notification={notification}
-                                        className={index & 1 ? "bg-background/50" : ""}
-                                        ref={index === notifications.length - 1 ? lastItemRef : undefined}
-                                    />
-                                ))}
-
-                                {/* Loading indicator */}
-                                {isFetchingNextPage && (
-                                    <div className="p-4 flex justify-center">
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    </div>
-                                )}
-
-                                {/* Empty state when no more notifications */}
-                                {!hasNextPage && (
-                                    <EmptyState
-                                        icon={<Check />}
-                                        title="No more notifications"
-                                        message="You've reached the end of your notifications."
-                                    />
-                                )}
-                            </Fragment>
-                        )}
-                    </ScrollArea>
                 </div>
             </SheetContent>
         </Sheet>
-    )
-}
-
-const getIcon = (kind: string, entityType: string) => {
-    if (entityType === "WORKFLOW") return <Settings className="h-4 w-4 text-purple-500" />
-    if (entityType === "JOB") return <Clock className="h-4 w-4 text-blue-500" />
-
-    switch (kind) {
-        case "WEB_INFO":
-            return <Info className="h-4 w-4 text-blue-500" />
-        case "WEB_SUCCESS":
-            return <Check className="h-4 w-4 text-green-500" />
-        case "WEB_ERROR":
-            return <XCircle className="h-4 w-4 text-red-500" />
-        case "WEB_ALERT":
-            return <AlertCircle className="h-4 w-4 text-yellow-500" />
-        default:
-            return <Info className="h-4 w-4 text-muted-foreground" />
-    }
-}
-
-const getKindClass = (kind: string) => {
-    switch (kind) {
-        case "WEB_INFO":
-            return "border-l-4 border-l-blue-500 bg-blue-500/5"
-        case "WEB_SUCCESS":
-            return "border-l-4 border-l-green-500 bg-green-500/5"
-        case "WEB_ERROR":
-            return "border-l-4 border-l-red-500 bg-red-500/5"
-        case "WEB_ALERT":
-            return "border-l-4 border-l-yellow-500 bg-yellow-500/5"
-        default:
-            return "border-l-4 border-l-muted"
-    }
-}
-
-// Modified to remove the onMarkRead prop and use data attributes instead
-const NotificationItem = forwardRef<
-    HTMLDivElement,
-    {
-        notification: Notification
-        className?: string
-    }
->(({ notification, className }, ref) => {
-    return (
-        <div
-            ref={ref}
-            className={cn(
-                "px-6 py-4 transition-colors group",
-                cn(getKindClass(notification.kind), "hover:bg-muted/30"),
-                className
-            )}
-        >
-            <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-0.5">{getIcon(notification.kind, notification.payload.entity_type)}</div>
-                <div className="flex-1 space-y-1.5">
-                    <div className="flex items-start justify-between">
-                        <h4 className="font-medium text-sm">{notification.payload.title}</h4>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {formatDistanceToNow(new Date(notification.created_at), {
-                                addSuffix: true,
-                            })}
-                        </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{notification.payload.message}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                        {!notification.read_at && (
-                            <Button
-                                variant="ghost"
-                                className="h-6 px-2 text-xs"
-                                data-action="mark-read"
-                                data-notification-id={notification.id}
-                            >
-                                <Check className="h-3.5 w-3.5 mr-1.5" />
-                                Mark as read
-                            </Button>
-                        )}
-                        {notification.payload.action_url && (
-                            <Button variant="outline" className="h-6 px-2 text-xs" asChild>
-                                <Link href={notification.payload.action_url}>
-                                    View {notification.payload.entity_type.toLowerCase()}
-                                </Link>
-                            </Button>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    )
-})
-
-NotificationItem.displayName = "NotificationItem"
-
-function EmptyState({
-    icon,
-    title,
-    message,
-}: {
-    icon: React.ReactNode
-    title: string
-    message: string
-}) {
-    return (
-        <div className="flex flex-col items-center justify-center p-6 text-center">
-            <div className="mb-3 text-muted-foreground/50">{icon}</div>
-            <h3 className="font-medium text-muted-foreground">{title}</h3>
-            <p className="text-sm text-muted-foreground/70 mt-1.5">{message}</p>
-        </div>
-    )
+    );
 }

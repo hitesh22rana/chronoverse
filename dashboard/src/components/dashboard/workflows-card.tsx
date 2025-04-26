@@ -204,7 +204,7 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                                     "text-xs font-medium text-gray-500 dark:text-gray-400",
                                     isTerminated && "text-red-500 dark:text-red-400"
                                 )}>
-                                    {isTerminated ? "N/A" : "No failures"}
+                                    {isTerminated ? "" : "No failures"}
                                 </span>
                             </div>
 

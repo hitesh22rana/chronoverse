@@ -95,11 +95,11 @@ interface UpdateWorkflowDialogProps {
 
 const kindType = {
     'HEARTBEAT': {
-        title: "Heartbeat Workflow",
+        title: "Heartbeat workflow",
         description: "HEARTBEAT workflows are used to monitor the availability of external services.",
     },
     'CONTAINER': {
-        title: "Container Workflow",
+        title: "Container workflow",
         description: "Container workflows are used to run custom code in a containerized environment.",
     }
 }
@@ -294,7 +294,7 @@ export function UpdateWorkflowDialog({
 
                                             <div className="space-y-2">
                                                 <FormLabel>
-                                                    Headers
+                                                    Headers (optional)
                                                     <Button
                                                         type="button"
                                                         variant="outline"
@@ -307,7 +307,7 @@ export function UpdateWorkflowDialog({
                                                             ])
                                                         }}
                                                     >
-                                                        <Plus className="mr-1 h-3 w-3" /> Add Header
+                                                        <Plus className="mr-1 h-3 w-3" /> Add header
                                                     </Button>
                                                 </FormLabel>
                                                 <FormDescription>
@@ -371,7 +371,7 @@ export function UpdateWorkflowDialog({
                                                 name="containerPayload.image"
                                                 render={({ field }) => (
                                                     <FormItem>
-                                                        <FormLabel>Container Image</FormLabel>
+                                                        <FormLabel>Image</FormLabel>
                                                         <FormControl>
                                                             <Input
                                                                 placeholder="alpine:latest"
@@ -388,7 +388,7 @@ export function UpdateWorkflowDialog({
 
                                             <div className="space-y-2">
                                                 <FormLabel>
-                                                    Command (Optional)
+                                                    Command (optional)
                                                     <Button
                                                         type="button"
                                                         variant="outline"
@@ -401,7 +401,7 @@ export function UpdateWorkflowDialog({
                                                             ])
                                                         }}
                                                     >
-                                                        <Plus className="mr-1 h-3 w-3" /> Add Argument
+                                                        <Plus className="mr-1 h-3 w-3" /> Add argument
                                                     </Button>
                                                 </FormLabel>
                                                 <FormDescription>
@@ -447,7 +447,7 @@ export function UpdateWorkflowDialog({
                                                 name="containerPayload.timeout"
                                                 render={({ field }) => (
                                                     <FormItem>
-                                                        <FormLabel>Timeout (Optional)</FormLabel>
+                                                        <FormLabel>Timeout (optional)</FormLabel>
                                                         <FormControl>
                                                             <Input
                                                                 placeholder="30s"
@@ -496,7 +496,7 @@ export function UpdateWorkflowDialog({
                                 name="maxConsecutiveJobFailuresAllowed"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Max Consecutive Failures</FormLabel>
+                                        <FormLabel>Max consecutive failures allowed</FormLabel>
                                         <FormControl>
                                             <Input
                                                 type="number"
@@ -532,7 +532,7 @@ export function UpdateWorkflowDialog({
                                     className="cursor-pointer w-full"
                                 >
                                     {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Update Workflow
+                                    Update workflow
                                 </Button>
                             </DialogFooter>
                         </form>

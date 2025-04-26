@@ -12,16 +12,18 @@ export type Notifications = {
     cursor?: string
 }
 
+export type NotificationPayload = {
+    title: string
+    message: string
+    entity_id: string
+    entity_type: string
+    action_url: string
+}
+
 export type Notification = {
     id: string
     kind: string
-    payload: {
-        title: string
-        message: string
-        entity_id: string
-        entity_type: string
-        action_url: string
-    }
+    payload: string
     read_at?: string
     created_at: string
     updated_at: string

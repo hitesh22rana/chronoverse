@@ -68,10 +68,11 @@ export function TerminateWorkflowDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <AlertTriangle className="h-5 w-5 text-destructive" />
-                        Terminate Workflow
+                        Terminate workflow
                     </DialogTitle>
                     <DialogDescription>
-                        This action cannot be undone. The workflow will be permanently terminated.
+                        This action cannot be undone, and will cancel all remaining
+                        jobs and scheduled executions for this workflow.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -130,7 +131,7 @@ export function TerminateWorkflowDialog({
                                             Deleting...
                                         </Fragment>
                                     ) : (
-                                        "Terminate Workflow"
+                                        "Terminate workflow"
                                     )}
                                 </Button>
                             </DialogFooter>

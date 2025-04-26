@@ -14,14 +14,14 @@ import {
     XCircle,
     CircleDashed,
     Shield,
-    Settings,
     Filter,
     ChevronLeft,
     ChevronRight,
     ScrollText,
     Workflow,
     Edit,
-    Trash2
+    Trash2,
+    HeartPulse
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -181,7 +181,7 @@ export default function WorkflowDetailsPage() {
                 onValueChange={handleTabsChange}
             >
                 <TabsList
-                    className="grid h-max lg:max-w-xs w-full grid-cols-2 rounded-xl bg-muted/80 backdrop-blur-sm border-dashed border-muted/50"
+                    className="grid h-max lg:max-w-xs w-full grid-cols-2 rounded-xl bg-muted/80 backdrop-blur-sm border-dashed border-muted/50 p-1"
                 >
                     <TabsTrigger
                         value="details"
@@ -232,7 +232,7 @@ export default function WorkflowDetailsPage() {
                                     onClick={() => setShowUpdateWorkflowDialog(true)}
                                 >
                                     <Edit className="h-4 w-4" />
-                                    Edit Workflow
+                                    Edit workflow
                                 </Button>
 
                                 <Button
@@ -243,7 +243,7 @@ export default function WorkflowDetailsPage() {
                                     disabled={!!workflow?.terminated_at}
                                 >
                                     <Trash2 className="h-4 w-4" />
-                                    Terminate Workflow
+                                    Terminate workflow
                                 </Button>
                             </div>
                             <Card>
@@ -252,16 +252,21 @@ export default function WorkflowDetailsPage() {
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     {/* Basic Info */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Workflow Type</div>
+                                            <div className="text-sm font-medium">Workflow type</div>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                                <Settings className="h-4 w-4" />
+                                                {
+                                                    workflow?.kind === "HEARTBEAT" ?
+                                                        <HeartPulse className="h-4 w-4" />
+                                                        :
+                                                        <Workflow className="h-4 w-4" />
+                                                }
                                                 {workflow?.kind}
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Execution Schedule</div>
+                                            <div className="text-sm font-medium">Execution schedule</div>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                 <Clock className="h-4 w-4" />
                                                 {interval}
@@ -277,7 +282,7 @@ export default function WorkflowDetailsPage() {
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Max Consecutive Failures</div>
+                                            <span className="text-sm font-medium">Max consecutive failures allowed</span>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                 <Shield className="h-4 w-4" />
                                                 {workflow?.max_consecutive_job_failures_allowed}
@@ -305,7 +310,7 @@ export default function WorkflowDetailsPage() {
                                                 <div className="flex items-center justify-between mb-1">
                                                     <div className="flex items-center text-red-600 dark:text-red-400">
                                                         <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
-                                                        <span className="text-sm font-medium">Failure Tracking</span>
+                                                        <span className="text-sm font-medium">Failure tracking</span>
                                                     </div>
                                                     <span className="text-sm font-medium">
                                                         {workflow.consecutive_job_failures_count} / {workflow.max_consecutive_job_failures_allowed}
@@ -406,7 +411,7 @@ export default function WorkflowDetailsPage() {
 
                     {isJobsLoading ? (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {Array(6).fill(0).map((_, i) => (
+                            {Array(10).fill(0).map((_, i) => (
                                 <JobCardSkeleton key={i} />
                             ))}
                         </div>
@@ -447,16 +452,35 @@ function WorkflowDetailsSkeleton() {
                 <CardHeader>
                     <Skeleton className="h-6 w-40" />
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6 -mt-2">
-                    {[...Array(4)].map((_, i) => (
-                        <div key={i} className="space-y-2">
-                            <Skeleton className="h-4 w-16" />
-                            <div className="flex flex-row items-center gap-4">
-                                <Skeleton className="h-4 w-4 rounded-full" />
-                                <Skeleton className="h-4 w-28" />
-                            </div>
+                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-5 md:-mt-2 -mt-3">
+                    <div className="md:space-y-2 space-y-3">
+                        <Skeleton className="h-4 w-24" />
+                        <div className="flex flex-row items-center gap-2">
+                            <Skeleton className="h-4 w-4 rounded-full" />
+                            <Skeleton className="h-4 w-20" />
                         </div>
-                    ))}
+                    </div>
+                    <div className="md:space-y-2 space-y-3">
+                        <Skeleton className="h-4 w-28" />
+                        <div className="flex flex-row items-center gap-2">
+                            <Skeleton className="h-4 w-4 rounded-full" />
+                            <Skeleton className="h-4 w-24" />
+                        </div>
+                    </div>
+                    <div className="md:space-y-2 space-y-3">
+                        <Skeleton className="h-4 w-14" />
+                        <div className="flex flex-row items-center gap-2">
+                            <Skeleton className="h-4 w-4 rounded-full" />
+                            <Skeleton className="h-4 w-12" />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Skeleton className="h-4 w-40" />
+                        <div className="flex flex-row items-center gap-2">
+                            <Skeleton className="h-4 w-4 rounded-full" />
+                            <Skeleton className="h-4 w-8" />
+                        </div>
+                    </div>
                 </CardContent>
                 <Separator className="mx-6 -mt-6 mb-0" />
                 <div className="flex flex-col gap-2 px-6 -mt-1">
@@ -506,6 +530,11 @@ const getJobStatusInfo = (status: string) => {
             icon: AlertTriangle,
             colorClass: "text-red-600 bg-red-50 dark:bg-red-950/30",
             label: "Failed"
+        },
+        CANCELED: {
+            icon: XCircle,
+            colorClass: "text-orange-600 bg-orange-50 dark:bg-orange-950/30",
+            label: "Canceled"
         },
     }[status] || {
         icon: CircleDashed,
@@ -595,13 +624,13 @@ function JobCardSkeleton() {
             <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Skeleton className="h-5 w-24" />
-                        <Skeleton className="h-5 w-24" />
+                        <Skeleton className="h-5 w-20" />
+                        <Skeleton className="h-5 w-80" />
                     </div>
                     <Skeleton className="h-4 w-16" />
                 </div>
             </CardHeader>
-            <CardContent className="pt-4 space-y-3">
+            <CardContent className="md:pt-1 pt-8 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {[...Array(3)].map((_, i) => (
                         <Fragment key={i}>

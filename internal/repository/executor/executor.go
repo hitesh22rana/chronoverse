@@ -31,6 +31,7 @@ const (
 
 	// Statuses for the jobs.
 	statusQueued    = "QUEUED"
+	statusPending   = "PENDING"
 	statusRunning   = "RUNNING"
 	statusCompleted = "COMPLETED"
 	statusFailed    = "FAILED"
@@ -245,8 +246,12 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 		return err
 	}
 
-	if job.GetStatus() != statusQueued {
-		return status.Error(codes.FailedPrecondition, "job is not in RUNNING state")
+	// We check if the job status is QUEUED or PENDING
+	// If the job status is not QUEUED or PENDING, we don't want to execute the workflow
+	// This is to avoid executing the workflow multiple times
+	// NOTE: We are checking for the PENDING status because the job status might not be updated yet but have received from kafka via the scheduler
+	if job.GetStatus() != statusQueued && job.GetStatus() != statusPending {
+		return status.Error(codes.FailedPrecondition, "job is not in QUEUED or PENDING state")
 	}
 
 	// Schedule a new job based on the last scheduledAt time and interval accordingly
@@ -258,7 +263,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 		return err
 	}
 
-	// Update the job status from QUEUED to RUNNING
+	// Update the job status from PENDING/QUEUED to RUNNING
 	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 		Id:     jobID,
 		Status: statusRunning,
@@ -305,6 +310,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 		go r.sendNotification(
 			notificationCtx,
 			workflow.GetUserId(),
+			workflowID,
 			jobID,
 			"Job Execution Failed",
 			fmt.Sprintf("Job execution failed for workflow '%s'. Please check the logs for more details.", workflow.GetName()),
@@ -328,6 +334,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 				notificationCtx,
 				workflow.GetUserId(),
 				workflowID,
+				jobID,
 				"Workflow Terminated",
 				fmt.Sprintf("Workflow '%s' has been terminated after reaching %d consecutive job failures...", workflow.GetName(), workflow.GetMaxConsecutiveJobFailuresAllowed()),
 				notificationsmodel.KindWebAlert.ToString(),
@@ -352,6 +359,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	go r.sendNotification(
 		notificationCtx,
 		workflow.GetUserId(),
+		workflowID,
 		jobID,
 		"Job Execution Completed",
 		fmt.Sprintf("Job execution completed successfully for workflow '%s'.", workflow.GetName()),
@@ -371,10 +379,10 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 }
 
 // sendNotification sends a notification for the job execution related events.
-func (r *Repository) sendNotification(ctx context.Context, userID, entityID, title, message, kind, notificationType string) error {
+func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType string) error {
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
-		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, entityID)
+		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
 		if err != nil {
 			return err
 		}
@@ -388,7 +396,7 @@ func (r *Repository) sendNotification(ctx context.Context, userID, entityID, tit
 			return err
 		}
 	case notificationsmodel.EntityWorkflow.ToString():
-		payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, entityID)
+		payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
 		if err != nil {
 			return err
 		}

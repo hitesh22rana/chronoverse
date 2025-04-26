@@ -88,9 +88,10 @@ message GetJobLogsResponse {
 
 // ListJobsRequest contains the details needed to list all jobs for a workflow_id.
 message ListJobsRequest {
-    string workflow_id  = 1; // ID of the workflow
-    string user_id      = 2; // ID of the user
-    string cursor       = 3; // Cursor for pagination
+    string workflow_id     = 1; // ID of the workflow
+    string user_id         = 2; // ID of the user
+    string cursor          = 3; // Cursor for pagination
+    optional string status = 4; // Status of the job (optional)
 }
 
 // JobsResponse contains the result of a job listing attempt.

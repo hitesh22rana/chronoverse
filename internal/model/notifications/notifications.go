@@ -60,13 +60,13 @@ func CreateWorkflowsNotificationPayload(title, message, workflowID string) (stri
 }
 
 // CreateJobsNotificationPayload creates a notification payload for jobs.
-func CreateJobsNotificationPayload(title, message, jobID string) (string, error) {
+func CreateJobsNotificationPayload(title, message, workflowID, jobID string) (string, error) {
 	payload, err := json.Marshal(map[string]any{
 		"title":       title,
 		"message":     message,
 		"entity_id":   jobID,
 		"entity_type": EntityJob.ToString(),
-		"action_url":  fmt.Sprintf("/jobs/%s", jobID),
+		"action_url":  fmt.Sprintf("/workflows/%s/jobs/%s", workflowID, jobID),
 	})
 	if err != nil {
 		return "", status.Errorf(codes.InvalidArgument, "failed to marshal payload: %v", err)

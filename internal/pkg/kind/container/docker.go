@@ -13,6 +13,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	// containerStopTimeout is the default timeout for stopping a container.
+	containerStopTimeout = 2 * time.Second
+)
+
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
@@ -81,7 +86,6 @@ func (w *DockerWorkflow) Execute(
 	}
 
 	containerID := resp.ID
-	startTime := time.Now()
 
 	// Start the container
 	if err := w.Client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
@@ -92,10 +96,14 @@ func (w *DockerWorkflow) Execute(
 	logs := make(chan string)
 	errs := make(chan error)
 
+	// Create a context with timeout for this container
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+
 	// Stream logs and handle container completion
 	go func() {
 		defer close(logs)
 		defer close(errs)
+		defer cancel() // Ensure context is canceled when we're done
 
 		// Stream logs
 		streamedLogs, err := w.Client.ContainerLogs(ctx, containerID, container.LogsOptions{
@@ -114,29 +122,78 @@ func (w *DockerWorkflow) Execute(
 		}
 		defer streamedLogs.Close()
 
+		// Set up container wait early to detect completion
+		statusCh, waitErrCh := w.Client.ContainerWait(timeoutCtx, containerID, container.WaitConditionRemoved)
+
 		// Read logs in a separate goroutine
 		logsDone := make(chan struct{})
 		go func() {
 			defer close(logsDone)
 			buf := make([]byte, 4096)
 			for {
-				n, err := streamedLogs.Read(buf)
-				if n > 0 {
-					logs <- string(buf[:n])
+				// Use a read with timeout to avoid blocking forever
+				readCtx, readCancel := context.WithTimeout(ctx, 100*time.Millisecond)
+
+				if deadline, ok := readCtx.Deadline(); ok {
+					if deadliner, ok := streamedLogs.(interface{ SetReadDeadline(time.Time) error }); ok {
+						//nolint:errcheck // Ignore error, as this is a best-effort operation
+						_ = deadliner.SetReadDeadline(deadline)
+					}
 				}
+
+				n, err := streamedLogs.Read(buf)
+				readCancel()
+
+				if n > 0 {
+					select {
+					case logs <- string(buf[:n]):
+						// Log sent successfully
+					case <-timeoutCtx.Done():
+						// Container timed out, stop sending logs
+						return
+					}
+				}
+
 				if err != nil {
 					return
+				}
+
+				// Check timeouts between reads
+				select {
+				case <-timeoutCtx.Done():
+					return
+				default:
+					// Continue reading
 				}
 			}
 		}()
 
-		// Wait for container completion to get exit code
-		statusCh, waitErrCh := w.Client.ContainerWait(ctx, containerID, container.WaitConditionRemoved)
+		// Monitor for timeouts, container completion, and log streaming concurrently
 		select {
+		case <-timeoutCtx.Done():
+			// Container execution timed out
+			errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", timeoutCtx.Err())
+
+			// Try to stop the container
+			stopTimeout := int(containerStopTimeout.Seconds())
+			//nolint:errcheck,contextcheck // Ignore error, as this is a best-effort operation
+			_ = w.Client.ContainerStop(context.Background(), containerID, container.StopOptions{
+				Timeout: &stopTimeout,
+			})
+
+			// Wait a moment for logs to catch up
+			time.Sleep(100 * time.Millisecond)
+			return
+
 		case err := <-waitErrCh:
 			if err != nil {
 				// Return early if the container was already removed
 				if strings.Contains(err.Error(), "No such container") {
+					// Wait for any remaining logs
+					select {
+					case <-logsDone:
+					case <-time.After(100 * time.Millisecond):
+					}
 					return
 				}
 
@@ -147,24 +204,15 @@ func (w *DockerWorkflow) Execute(
 					errs <- status.Errorf(codes.Aborted, "container execution error: %v", err)
 				}
 			}
+
 		case containerStatus := <-statusCh:
+			// Check exit code after logs finish
+			//nolint:gosimple // Ignore error, as this is a best-effort operation
+			_ = <-logsDone
+
 			if containerStatus.StatusCode != 0 {
 				errs <- status.Errorf(codes.Aborted, "container exited with non-zero code: %d", containerStatus.StatusCode)
 			}
-			executionTime := time.Since(startTime)
-			if executionTime > timeout {
-				errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", executionTime)
-			}
-		case <-ctx.Done():
-			errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", ctx.Err())
-		}
-
-		// Wait for logs to finish streaming or timeout
-		select {
-		case <-logsDone:
-			// All logs have been read
-		case <-time.After(time.Second):
-			// If logs are taking too long, continue anyway
 		}
 	}()
 

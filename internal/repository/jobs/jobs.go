@@ -276,7 +276,7 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 }
 
 // ListJobs returns jobs.
-func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor string) (res *jobsmodel.ListJobsResponse, err error) {
+func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor, jobStatus string) (res *jobsmodel.ListJobsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobs")
 	defer func() {
 		if err != nil {
@@ -293,6 +293,11 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		WHERE workflow_id = $1 AND user_id = $2
 	`, jobsTable)
 	args := []any{workflowID, userID}
+
+	if jobStatus != "" {
+		query += ` AND status = $3`
+		args = append(args, jobStatus)
+	}
 
 	if cursor != "" {
 		id, createdAt, _err := extractDataFromListJobsCursor(cursor)

@@ -21,7 +21,7 @@ lint-fix: dependencies
 
 PHONY: test
 test: dependencies
-	@go test -v ./...
+	@go test -race -v ./...
 
 .PHONY: tools
 tools:

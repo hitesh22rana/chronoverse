@@ -3,7 +3,6 @@ package workflow
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -28,12 +27,6 @@ import (
 const (
 	authSubject  = "internal/workflow"
 	retryBackoff = time.Second
-
-	// Statuses for the workflow build status.
-	statusQueued    = "QUEUED"
-	statusStarted   = "STARTED"
-	statusCompleted = "COMPLETED"
-	statusFailed    = "FAILED"
 )
 
 // ContainerSvc represents the container service.
@@ -75,6 +68,8 @@ func New(cfg *Config, auth auth.IAuth, svc *Services, kfk *kgo.Client) *Reposito
 }
 
 // Run start the workflow execution.
+//
+//nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
 
@@ -117,12 +112,22 @@ func (r *Repository) Run(ctx context.Context) error {
 					ctxWithTrace, span := r.tp.Start(groupCtx, "workflow.Run")
 					defer span.End()
 
-					// Execute the build workflow
-					if err := r.buildWorkflow(ctxWithTrace, string(record.Value)); err != nil {
-						// If the build workflow is failed due to internal issues, log the error, else log warning
-						if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+					var workflowEntry workflowsmodel.WorkflowEntry
+					if err := json.Unmarshal(record.Value, &workflowEntry); err != nil {
+						logger.Error(
+							"failed to unmarshal record",
+							zap.Any("ctx", ctxWithTrace),
+							zap.String("topic", record.Topic),
+							zap.Int64("offset", record.Offset),
+							zap.Int32("partition", record.Partition),
+							zap.String("message", string(record.Value)),
+							zap.Error(err),
+						)
+
+						// Skip the record and commit it to avoid reprocessing
+						if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
 							logger.Error(
-								"internal error while executing build workflow",
+								"failed to commit record",
 								zap.Any("ctx", ctxWithTrace),
 								zap.String("topic", record.Topic),
 								zap.Int64("offset", record.Offset),
@@ -130,16 +135,64 @@ func (r *Repository) Run(ctx context.Context) error {
 								zap.String("message", string(record.Value)),
 								zap.Error(err),
 							)
-						} else {
-							logger.Warn(
-								"build workflow execution failed",
-								zap.Any("ctx", ctxWithTrace),
-								zap.String("topic", record.Topic),
-								zap.Int64("offset", record.Offset),
-								zap.Int32("partition", record.Partition),
-								zap.String("message", string(record.Value)),
-								zap.Error(err),
-							)
+						}
+
+						// Skip processing this record
+						return nil
+					}
+
+					switch workflowEntry.Action {
+					case workflowsmodel.ActionBuild:
+						// Execute the build workflow
+						if err := r.buildWorkflow(ctxWithTrace, workflowEntry.ID); err != nil {
+							// If the build workflow is failed due to internal issues, log the error, else log warning
+							if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+								logger.Error(
+									"internal error while executing build workflow",
+									zap.Any("ctx", ctxWithTrace),
+									zap.String("topic", record.Topic),
+									zap.Int64("offset", record.Offset),
+									zap.Int32("partition", record.Partition),
+									zap.String("message", string(record.Value)),
+									zap.Error(err),
+								)
+							} else {
+								logger.Warn(
+									"build workflow execution failed",
+									zap.Any("ctx", ctxWithTrace),
+									zap.String("topic", record.Topic),
+									zap.Int64("offset", record.Offset),
+									zap.Int32("partition", record.Partition),
+									zap.String("message", string(record.Value)),
+									zap.Error(err),
+								)
+							}
+						}
+					case workflowsmodel.ActionTerminate:
+						// Execute the terminate workflow
+						if err := r.terminateWorkflow(ctxWithTrace, workflowEntry.ID, workflowEntry.UserID); err != nil {
+							// If the terminate workflow is failed due to internal issues, log the error, else log warning
+							if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+								logger.Error(
+									"internal error while executing terminate workflow",
+									zap.Any("ctx", ctxWithTrace),
+									zap.String("topic", record.Topic),
+									zap.Int64("offset", record.Offset),
+									zap.Int32("partition", record.Partition),
+									zap.String("message", string(record.Value)),
+									zap.Error(err),
+								)
+							} else {
+								logger.Warn(
+									"terminate workflow execution failed",
+									zap.Any("ctx", ctxWithTrace),
+									zap.String("topic", record.Topic),
+									zap.Int64("offset", record.Offset),
+									zap.Int32("partition", record.Partition),
+									zap.String("message", string(record.Value)),
+									zap.Error(err),
+								)
+							}
 						}
 					}
 
@@ -176,207 +229,42 @@ func (r *Repository) Run(ctx context.Context) error {
 	}
 }
 
-// buildWorkflow executes the build workflow.
-func (r *Repository) buildWorkflow(ctx context.Context, recordValue string) error {
-	workflowID, err := extractDataFromRecordValue(recordValue)
-	if err != nil {
-		return err
-	}
-
-	// Issue necessary headers and tokens for authorization
-	ctx, err = r.withAuthorization(ctx)
-	if err != nil {
-		return err
-	}
-
-	// This context is used for sending notifications, as we don't want to propagate the cancellation
-	// This context does not use the parent context
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	notificationCtx, _ := r.withAuthorization(context.Background())
-
-	// Get the workflow details
-	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
-		Id: workflowID,
-	})
-	if err != nil {
-		return err
-	}
-
-	// Early return idempotency checks
-	// Ensure the build process is not already started
-	if workflow.GetBuildStatus() != statusQueued {
-		return nil
-	}
-
-	// Ensure the workflow is not already terminated
-	if workflow.GetTerminatedAt() != "" {
-		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
-	}
-
-	// If the build step is not required, skip the build process
-	if !isBuildStepRequired(workflow.GetKind()) {
-		// Update the workflow status from QUEUED to COMPLETED
-		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-			Id:          workflowID,
-			UserId:      workflow.GetUserId(),
-			BuildStatus: statusCompleted,
-		}); _err != nil {
-			return _err
-		}
-
-		// Schedule the workflow for the run
-		if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-			WorkflowId:  workflowID,
-			UserId:      workflow.GetUserId(),
-			ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-		}); _err != nil {
-			return _err
-		}
-
-		// Send notification for the workflow build skipped event
-		// This is a fire-and-forget operation, so we don't need to wait for it to complete
-		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
-		go r.sendNotification(
-			notificationCtx,
-			workflow.GetUserId(),
-			workflowID,
-			"Workflow Build Skipped",
-			fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", workflow.GetName()),
-			notificationsmodel.KindWebInfo.ToString(),
-		)
-
-		return nil
-	}
-
-	// Update the workflow status from QUEUED to STARTED
-	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-		Id:          workflowID,
-		UserId:      workflow.GetUserId(),
-		BuildStatus: statusStarted,
-	}); _err != nil {
-		return _err
-	}
-
-	// Send notification for the workflow build start event
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
-	go r.sendNotification(
-		notificationCtx,
-		workflow.GetUserId(),
-		workflowID,
-		"Workflow Build Started",
-		fmt.Sprintf("Build process for workflow '%s' has started.", workflow.GetName()),
-		notificationsmodel.KindWebInfo.ToString(),
-	)
-
-	// Execute the build process with retry enabled
-	workflowErr := withRetry(func() error {
-		// Extract the image from the workflow
-		imageName, err := extractImageName(workflow.GetPayload())
+// sendNotification sends a notification for the job execution related events.
+func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType string) error {
+	switch notificationType {
+	case notificationsmodel.EntityJob.ToString():
+		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
 		if err != nil {
 			return err
 		}
 
-		return r.svc.Csvc.Build(ctx, imageName)
-	})
-
-	// Since, build process can take time to execute and can led to authorization issues
-	// So, we need to re-issue the authorization token
-	// This context is used for all the gRPC calls
-	// This context uses the parent context
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	ctx, _ = r.withAuthorization(ctx)
-
-	// This context is used for sending notifications, as we don't want to propagate the cancellation
-	// This context does not use the parent context
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	notificationCtx, _ = r.withAuthorization(context.Background())
-
-	if workflowErr != nil {
-		// Update the workflow status from QUEUED to FAILED
-		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-			Id:          workflowID,
-			UserId:      workflow.GetUserId(),
-			BuildStatus: statusFailed,
-		}); _err != nil {
-			return _err
+		// Create a new notification
+		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
+			UserId:  userID,
+			Kind:    kind,
+			Payload: payload,
+		}); err != nil {
+			return err
+		}
+	case notificationsmodel.EntityWorkflow.ToString():
+		payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
+		if err != nil {
+			return err
 		}
 
-		// Send notification for the workflow build failed event
-		// This is a fire-and-forget operation, so we don't need to wait for it to complete
-		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
-		go r.sendNotification(
-			notificationCtx,
-			workflow.GetUserId(),
-			workflowID,
-			"Workflow Build Failed",
-			fmt.Sprintf("Build process for workflow '%s' has failed.", workflow.GetName()),
-			notificationsmodel.KindWebError.ToString(),
-		)
-
-		return workflowErr
-	}
-
-	// Update the workflow status from QUEUED to COMPLETED
-	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-		Id:          workflowID,
-		UserId:      workflow.GetUserId(),
-		BuildStatus: statusCompleted,
-	}); _err != nil {
-		return _err
-	}
-
-	// Schedule the workflow for the run
-	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		WorkflowId:  workflowID,
-		UserId:      workflow.GetUserId(),
-		ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-	}); _err != nil {
-		return _err
-	}
-
-	// Send notification for the workflow build completed event
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
-	go r.sendNotification(
-		notificationCtx,
-		workflow.GetUserId(),
-		workflowID,
-		"Workflow Build Completed",
-		fmt.Sprintf("Build process for workflow '%s' has completed and is scheduled to run.", workflow.GetName()),
-		notificationsmodel.KindWebSuccess.ToString(),
-	)
-
-	return nil
-}
-
-// sendNotification sends a notification for the workflow related events.
-func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, title, message, kind string) error {
-	payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
-	if err != nil {
-		return err
-	}
-
-	// Create a new notification
-	_, err = r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-		UserId:  userID,
-		Kind:    kind,
-		Payload: payload,
-	})
-	if err != nil {
-		return err
+		// Create a new notification
+		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
+			UserId:  userID,
+			Kind:    kind,
+			Payload: payload,
+		}); err != nil {
+			return err
+		}
+	default:
+		return status.Error(codes.InvalidArgument, "invalid notification kind")
 	}
 
 	return nil
-}
-
-// extractDataFromRecordValue extracts the data from the record value.
-func extractDataFromRecordValue(recordValue string) (string, error) {
-	if recordValue == "" {
-		return "", status.Error(codes.InvalidArgument, "record value is empty")
-	}
-
-	return recordValue, nil
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
@@ -417,29 +305,4 @@ func withRetry(fn func() error) error {
 
 	// Execute the function again
 	return fn()
-}
-
-// extractImageName extracts the image name from the workflow payload.
-func extractImageName(payload string) (string, error) {
-	var data map[string]any
-	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		return "", status.Error(codes.InvalidArgument, "invalid payload format")
-	}
-
-	imageName, ok := data["image"].(string)
-	if !ok || imageName == "" {
-		return "", status.Error(codes.InvalidArgument, "invalid image name")
-	}
-
-	return imageName, nil
-}
-
-// isBuildStepRequired checks if the build step is required for the given kind.
-func isBuildStepRequired(kind string) bool {
-	switch kind {
-	case workflowsmodel.KindHeartbeat.ToString():
-		return false
-	default:
-		return true
-	}
 }

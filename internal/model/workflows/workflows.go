@@ -38,6 +38,27 @@ func (j WorkflowBuildStatus) ToString() string {
 	return string(j)
 }
 
+// Action represents the action of the workflow.
+type Action string
+
+// Actions for the workflow.
+const (
+	ActionBuild     Action = "BUILD"
+	ActionTerminate Action = "TERMINATE"
+)
+
+// ToString converts the Action to its string representation.
+func (a Action) ToString() string {
+	return string(a)
+}
+
+// WorkflowEntry represents the entry of the workflow.
+type WorkflowEntry struct {
+	ID     string
+	UserID string
+	Action Action
+}
+
 // GetWorkflowResponse represents the response of GetWorkflow.
 type GetWorkflowResponse struct {
 	ID                               string       `db:"id"`

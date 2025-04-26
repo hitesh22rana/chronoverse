@@ -27,7 +27,7 @@ type Repository interface {
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, error)
-	ListJobs(ctx context.Context, workflowID, userID, cursor string) (*jobsmodel.ListJobsResponse, error)
+	ListJobs(ctx context.Context, workflowID, userID, cursor, status string) (*jobsmodel.ListJobsResponse, error)
 }
 
 // Service provides job related operations.
@@ -274,6 +274,7 @@ type ListJobsRequest struct {
 	WorkflowID string `validate:"required"`
 	UserID     string `validate:"required"`
 	Cursor     string `validate:"omitempty"`
+	Status     string `validate:"omitempty"`
 }
 
 // ListJobs returns scheduled jobs.
@@ -292,6 +293,7 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		WorkflowID: req.GetWorkflowId(),
 		UserID:     req.GetUserId(),
 		Cursor:     req.GetCursor(),
+		Status:     req.GetStatus(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -308,8 +310,16 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		}
 	}
 
+	// Validate the status
+	if req.GetStatus() != "" {
+		err = validateJobStatus(req.GetStatus())
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// List all scheduled jobs by job ID
-	res, err = s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor)
+	res, err = s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, req.GetStatus())
 	if err != nil {
 		return nil, err
 	}

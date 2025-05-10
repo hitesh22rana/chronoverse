@@ -74,6 +74,10 @@ const containerPayloadSchema = z.object({
         .optional()
         .default([])
         .transform(val => val?.filter(item => item !== "") || []),
+    env: z.array(z.string())
+        .optional()
+        .default([])
+        .transform(val => val?.filter(item => item !== "") || []),
     timeout: z.string().default("")
         .refine(val => {
             if (!val) return true
@@ -162,9 +166,17 @@ export function UpdateWorkflowDialog({
             });
         }
         else if (workflow.kind === "CONTAINER") {
+            let envArray: string[] = [];
+            if (parsedPayload.env && typeof parsedPayload.env === 'object') {
+                envArray = Object.entries(parsedPayload.env).map(
+                    ([key, value]) => `${key}=${value}`
+                );
+            }
+
             form.setValue("containerPayload", {
                 image: parsedPayload.image || "",
                 cmd: parsedPayload.cmd || [""],
+                env: envArray.length > 0 ? envArray : [""],
                 timeout: parsedPayload.timeout || ""
             });
         }
@@ -203,10 +215,20 @@ export function UpdateWorkflowDialog({
                 headers: headersObject
             });
         } else if (workflow.kind === "CONTAINER") {
-            const { image, cmd, timeout } = data.containerPayload;
+            const { image, cmd, env, timeout } = data.containerPayload;
+            // parse env in key=value format and map to object
+            const envObject = env.reduce((acc, item) => {
+                const [key, value] = item.split("=")
+                if (key) {
+                    acc[key] = value || ""
+                }
+                return acc
+            }, {} as Record<string, string>)
+
             payload = JSON.stringify({
                 image,
                 ...(cmd && cmd.length > 0 ? { cmd } : {}),
+                ...(env && env.length > 0 ? { env: envObject } : {}),
                 ...(timeout ? { timeout } : {})
             });
         }
@@ -229,6 +251,10 @@ export function UpdateWorkflowDialog({
 
     const cmdFields = workflow?.kind === "CONTAINER"
         ? form.watch("containerPayload.cmd") || []
+        : [];
+
+    const envFields = workflow?.kind === "CONTAINER"
+        ? form.watch("containerPayload.env") || []
         : [];
 
     return (
@@ -417,7 +443,7 @@ export function UpdateWorkflowDialog({
                                                                 <FormItem className="flex-1">
                                                                     <FormControl>
                                                                         <Input
-                                                                            placeholder={""}
+                                                                            placeholder={"sh -c 'echo hello'"}
                                                                             {...field}
                                                                             value={field.value || ""}
                                                                         />
@@ -434,6 +460,62 @@ export function UpdateWorkflowDialog({
                                                                 const updatedCmds = [...cmdFields]
                                                                 updatedCmds.splice(index, 1)
                                                                 form.setValue("containerPayload.cmd", updatedCmds)
+                                                            }}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <FormLabel>
+                                                    Environment Variables (optional)
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="ml-2"
+                                                        onClick={() => {
+                                                            form.setValue("containerPayload.env", [
+                                                                ...envFields,
+                                                                ""
+                                                            ])
+                                                        }}
+                                                    >
+                                                        <Plus className="mr-1 h-3 w-3" /> Add variable
+                                                    </Button>
+                                                </FormLabel>
+                                                <FormDescription>
+                                                    Optional environment variables to set in the container
+                                                </FormDescription>
+
+                                                {envFields.map((_, index) => (
+                                                    <div key={index} className="flex items-center gap-2 mt-2">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`containerPayload.env.${index}`}
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex-1">
+                                                                    <FormControl>
+                                                                        <Input
+                                                                            placeholder={"MY_ENV=VALUE"}
+                                                                            {...field}
+                                                                            value={field.value || ""}
+                                                                        />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                const updatedEnvs = [...envFields]
+                                                                updatedEnvs.splice(index, 1)
+                                                                form.setValue("containerPayload.env", updatedEnvs)
                                                             }}
                                                         >
                                                             <Trash2 className="h-4 w-4" />

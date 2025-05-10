@@ -489,7 +489,7 @@ function WorkflowDetailsSkeleton() {
                 </div>
                 <Separator className="mx-6 -mt-6 mb-0" />
                 <div className="flex flex-row items-center justify-between w-full px-6">
-                    <div className="flex flex-row items-center gap-4">
+                    <div className="flex flex-row items-center gap-2">
                         <Skeleton className="h-4 w-4 rounded-full" />
                         <Skeleton className="h-4 w-24" />
                     </div>

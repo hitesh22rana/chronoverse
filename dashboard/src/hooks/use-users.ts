@@ -1,6 +1,6 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { fetchWithAuth } from "@/utils/api-client"
@@ -13,6 +13,11 @@ type User = {
     notification_preference: string
     created_at: string
     updated_at: string
+}
+
+export type UpdateUserDetails = {
+    password: string
+    notification_preference: string
 }
 
 export function useUsers() {
@@ -31,6 +36,26 @@ export function useUsers() {
         }
     })
 
+    const updateUser = useMutation({
+        mutationFn: async (updatedUser: UpdateUserDetails) => {
+            const response = await fetchWithAuth(USER_ENDPOINT, {
+                method: "PUT",
+                body: JSON.stringify(updatedUser),
+            })
+
+            if (!response.ok) {
+                throw new Error("failed to update user")
+            }
+        },
+        onSuccess: () => {
+            toast.success("user updated successfully")
+            query.refetch()
+        },
+        onError: (error) => {
+            toast.error(error.message)
+        }
+    })
+
     if (query.error instanceof Error) {
         toast.error(query.error.message)
     }
@@ -39,5 +64,9 @@ export function useUsers() {
         user: query.data as User,
         isLoading: query.isLoading,
         error: query.error,
+        refetch: query.refetch,
+        updateUser: updateUser.mutate,
+        isUpdating: updateUser.isPending,
+        updateError: updateUser.error,
     }
 }

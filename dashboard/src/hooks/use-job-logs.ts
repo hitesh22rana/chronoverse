@@ -54,9 +54,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         logs,
         isLoading: query.isLoading,
         error: query.error,
-        refetch: query.refetch,
         fetchNextPage: query.fetchNextPage,
         isFetchingNextPage: query.isFetchingNextPage,
         hasNextPage: query.hasNextPage,
+        refetch: query.refetch,
     }
 }

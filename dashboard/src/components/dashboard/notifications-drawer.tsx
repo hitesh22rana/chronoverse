@@ -162,11 +162,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 <div
                     style={style}
                     key={index}
-                    className="bg-background/90 text-sm backdrop-blur font-semibold border-b px-4 py-2"
+                    className="sticky bg-background text-sm font-semibold border-b px-4 py-2"
                 >
                     {d.heading}
                 </div>
-            )
+            );
         }
 
         const n = d.n!;
@@ -250,7 +250,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 </div>
 
                 {/* list / loading / empty */}
-                <div className="flex-1">
+                <div className="flex-1 relative">
                     {isLoading && filtered.length === 0 ? (
                         [...Array(10)].map((_, i) => (
                             <div key={i} className="px-6 py-4 space-y-3">

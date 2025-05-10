@@ -1,19 +1,19 @@
 "use client"
 
 import Link from "next/link"
-import { Bell } from "lucide-react"
+import { Bell, User } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { UserNav } from "@/components/dashboard/user-nav"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 import { useNotifications } from "@/hooks/use-notifications"
 interface HeaderProps {
     onNotificationsClick: () => void
+    onProfileClick: () => void
 }
 
-export function Header({ onNotificationsClick }: HeaderProps) {
+export function Header({ onNotificationsClick, onProfileClick }: HeaderProps) {
     const { notifications } = useNotifications()
     const count = notifications.length || 0
 
@@ -47,7 +47,15 @@ export function Header({ onNotificationsClick }: HeaderProps) {
                     )}
                     <span className="sr-only">Notifications</span>
                 </Button>
-                <UserNav />
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    onClick={onProfileClick}
+                >
+                    <User className="h-5 w-5" />
+                    <span className="sr-only">Profile</span>
+                </Button>
             </div>
         </header>
     )

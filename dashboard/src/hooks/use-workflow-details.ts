@@ -89,11 +89,11 @@ export function useWorkflowDetails(workflowId: string) {
         workflow: query.data as Workflow,
         isLoading: query.isLoading,
         error: query.error,
+        refetch: query.refetch,
         updateWorkflow: updateWorkflowMutation.mutate,
         isUpdating: updateWorkflowMutation.isPending,
         updateError: updateWorkflowMutation.error,
         terminateWorkflow: terminateWorkflowMutation.mutate,
         isTerminating: terminateWorkflowMutation.isPending,
-        refetch: query.refetch,
     }
 }

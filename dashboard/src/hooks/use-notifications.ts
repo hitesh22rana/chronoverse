@@ -111,10 +111,10 @@ export function useNotifications() {
         notifications,
         isLoading: query.isLoading,
         error: query.error,
-        markAsRead: markAsReadMutation.mutate,
         refetch: query.refetch,
         fetchNextPage: query.fetchNextPage,
         isFetchingNextPage: query.isFetchingNextPage,
         hasNextPage: query.hasNextPage,
+        markAsRead: markAsReadMutation.mutate,
     }
 }

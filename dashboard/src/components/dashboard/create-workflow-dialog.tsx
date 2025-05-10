@@ -81,6 +81,10 @@ const containerPayloadSchema = z.object({
         .optional()
         .default([])
         .transform(val => val?.filter(item => item !== "") || []),
+    env: z.array(z.string())
+        .optional()
+        .default([])
+        .transform(val => val?.filter(item => item !== "") || []),
     timeout: z.string().default("")
         .refine(val => {
             if (!val) return true
@@ -129,9 +133,11 @@ const kindType = {
     }
 }
 
+type KindType = keyof typeof kindType
+
 export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const { createWorkflow, isCreating } = useWorkflows()
-    const [selectedKind, setSelectedKind] = useState<"HEARTBEAT" | "CONTAINER">("HEARTBEAT")
+    const [selectedKind, setSelectedKind] = useState<KindType>("HEARTBEAT")
 
     const form = useForm({
         resolver: zodResolver(workflowSchema),
@@ -153,7 +159,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
 
     useEffect(() => {
         if (watchedKind !== selectedKind) {
-            setSelectedKind(watchedKind as "HEARTBEAT" | "CONTAINER")
+            setSelectedKind(watchedKind)
 
             // Reset the form with the appropriate structure
             if (watchedKind === "HEARTBEAT") {
@@ -168,6 +174,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 form.setValue("containerPayload", {
                     image: "",
                     cmd: [""],
+                    env: [""],
                     timeout: ""
                 })
                 form.unregister("heartbeatPayload")
@@ -209,10 +216,20 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 headers: headersObject
             })
         } else if (data.kind === "CONTAINER") {
-            const { image, cmd, timeout } = (data as z.infer<typeof containerWorkflowSchema>).containerPayload
+            const { image, cmd, env, timeout } = (data as z.infer<typeof containerWorkflowSchema>).containerPayload
+            // parse env in key=value format and map to object
+            const envObject = env.reduce((acc, item) => {
+                const [key, value] = item.split("=")
+                if (key) {
+                    acc[key] = value || ""
+                }
+                return acc
+            }, {} as Record<string, string>)
+
             payload = JSON.stringify({
                 image,
                 ...(cmd && cmd.length > 0 ? { cmd } : {}),
+                ...(env && env.length > 0 ? { env: envObject } : {}),
                 ...timeout ? { timeout } : {}
             })
         }
@@ -473,7 +490,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                             <FormItem className="flex-1">
                                                                 <FormControl>
                                                                     <Input
-                                                                        placeholder={""}
+                                                                        placeholder={"sh -c 'echo hello'"}
                                                                         {...field}
                                                                         value={field.value || ""}
                                                                     />
@@ -490,6 +507,63 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                             const updatedCmds = [...(form.watch("containerPayload.cmd") || [])]
                                                             updatedCmds.splice(index, 1)
                                                             form.setValue("containerPayload.cmd", updatedCmds)
+                                                        }}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <FormLabel>
+                                                Environment variables (optional)
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="ml-2"
+                                                    onClick={() => {
+                                                        const currentEnvs = form.watch("containerPayload.env") || []
+                                                        form.setValue("containerPayload.env", [
+                                                            ...currentEnvs,
+                                                            ""
+                                                        ])
+                                                    }}
+                                                >
+                                                    <Plus className="mr-1 h-3 w-3" /> Add variable
+                                                </Button>
+                                            </FormLabel>
+                                            <FormDescription>
+                                                Optional environment variables to set in the container
+                                            </FormDescription>
+
+                                            {form.watch("containerPayload.env")?.map((_, index) => (
+                                                <div key={index} className="flex items-center gap-2 mt-2">
+                                                    <FormField
+                                                        control={form.control}
+                                                        name={`containerPayload.env.${index}`}
+                                                        render={({ field }) => (
+                                                            <FormItem className="flex-1">
+                                                                <FormControl>
+                                                                    <Input
+                                                                        placeholder={"MY_ENV=VALUE"}
+                                                                        {...field}
+                                                                        value={field.value || ""}
+                                                                    />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            const updatedEnvs = [...(form.watch("containerPayload.env") || [])]
+                                                            updatedEnvs.splice(index, 1)
+                                                            form.setValue("containerPayload.env", updatedEnvs)
                                                         }}
                                                     >
                                                         <Trash2 className="h-4 w-4" />

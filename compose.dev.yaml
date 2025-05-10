@@ -666,6 +666,31 @@ services:
     networks:
       - chronoverse
 
+  dashboard:
+    image: dashboard
+    container_name: dashboard
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    build:
+      context: ./
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - '3001:3000'
+    restart: on-failure
+    depends_on:
+      server:
+        condition: service_started
+      scheduling-worker:
+        condition: service_started
+      workflow-worker:
+        condition: service_started
+      execution-worker:
+        condition: service_started
+      joblogs-processor:
+        condition: service_started
+    networks:
+      - chronoverse
+
 volumes:
   postgres:
   clickhouse:

@@ -12,19 +12,16 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
 
-const (
-	// workflowBuild statuses.
-	workflowBuildQueued    = "QUEUED"
-	workflowBuildStarted   = "STARTED"
-	workflowBuildCompleted = "COMPLETED"
-	workflowBuildFailed    = "FAILED"
-)
+var pendingJobStatus = jobsmodel.JobStatusPending.ToString()
 
 // buildWorkflow executes the build workflow.
+//
+//nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
 func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error {
 	// Issue necessary headers and tokens for authorization
 	ctx, err := r.withAuthorization(ctx)
@@ -47,7 +44,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 
 	// Early return idempotency checks
 	// Ensure the build process is not already started
-	if workflow.GetBuildStatus() != workflowBuildQueued {
+	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusQueued.ToString() {
 		return nil
 	}
 
@@ -56,13 +53,23 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
 
+	// Cancel all the jobs which are in the QUEUED or PENDING state
+	// This handles the condition where the worklow is updated, since the interval might be changed
+	if err := r.cancelJobsWithStatus(ctx, workflowID, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
+		return err
+	}
+	if err := r.cancelJobsWithStatus(ctx, workflowID, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
+		return err
+	}
+
 	// If the build step is not required, skip the build process
+	//nolint:nestif // Ignore the nested if statement as it is required for the workflow execution
 	if !isBuildStepRequired(workflow.GetKind()) {
 		// Update the workflow status from QUEUED to COMPLETED
 		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 			Id:          workflowID,
 			UserId:      workflow.GetUserId(),
-			BuildStatus: workflowBuildCompleted,
+			BuildStatus: workflowsmodel.WorkflowBuildStatusCompleted.ToString(),
 		}); _err != nil {
 			return _err
 		}
@@ -97,7 +104,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 		Id:          workflowID,
 		UserId:      workflow.GetUserId(),
-		BuildStatus: workflowBuildStarted,
+		BuildStatus: workflowsmodel.WorkflowBuildStatusStarted.ToString(),
 	}); _err != nil {
 		return _err
 	}
@@ -119,7 +126,8 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 	// Execute the build process with retry enabled
 	workflowErr := withRetry(func() error {
 		// Extract the image from the workflow
-		imageName, err := extractImageName(workflow.GetPayload())
+		var imageName string
+		imageName, err = extractImageName(workflow.GetPayload())
 		if err != nil {
 			return err
 		}
@@ -144,7 +152,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 			Id:          workflowID,
 			UserId:      workflow.GetUserId(),
-			BuildStatus: workflowBuildFailed,
+			BuildStatus: workflowsmodel.WorkflowBuildStatusFailed.ToString(),
 		}); _err != nil {
 			return _err
 		}
@@ -170,7 +178,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
 		Id:          workflowID,
 		UserId:      workflow.GetUserId(),
-		BuildStatus: workflowBuildCompleted,
+		BuildStatus: workflowsmodel.WorkflowBuildStatusCompleted.ToString(),
 	}); _err != nil {
 		return _err
 	}

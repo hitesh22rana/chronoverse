@@ -39,6 +39,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		name           string
 		image          string
 		cmd            []string
+		env            []string
 		timeout        time.Duration
 		executionError error
 		timeoutError   error
@@ -46,18 +47,20 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		logs           bool
 	}{
 		{
-			name:           "successful execution short-lived command",
+			name:           "successful execution",
 			image:          "alpine:latest",
-			cmd:            []string{"/bin/sh", "-c", "echo 'Hello from Docker!'"},
+			cmd:            []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
+			env:            nil,
 			timeout:        10 * time.Second,
 			executionError: nil,
 			errs:           nil,
 			logs:           true,
 		},
 		{
-			name:           "successful execution long-lived command",
+			name:           "successful execution with environment variables",
 			image:          "alpine:latest",
-			cmd:            []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
+			cmd:            []string{"/bin/sh", "-c", "echo $MY_ENV_VAR1 && echo $MY_ENV_VAR2"},
+			env:            []string{"MY_ENV_VAR1=Hello from Docker!", "MY_ENV_VAR2=Goodbye from Docker!"},
 			timeout:        10 * time.Second,
 			executionError: nil,
 			errs:           nil,
@@ -67,6 +70,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			name:           "error during execution (nonexistent image)",
 			image:          "nonexistent:latest",
 			cmd:            []string{"/bin/sh", "-c", "echo 'Hello from Docker!'"},
+			env:            nil,
 			timeout:        5 * time.Second,
 			executionError: status.Error(codes.FailedPrecondition, "failed to create container: "),
 			errs:           nil,
@@ -76,6 +80,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			name:           "error during execution (nonexistent command)",
 			image:          "alpine:latest",
 			cmd:            []string{"/bin/nonexistent"},
+			env:            nil,
 			timeout:        5 * time.Second,
 			executionError: status.Error(codes.FailedPrecondition, "failed to start container: "),
 			errs:           nil,
@@ -85,6 +90,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			name:           "error workflow failure during runtime",
 			image:          "alpine:latest",
 			cmd:            []string{"/bin/sh", "-c", "echo 'About to fail...' && sleep 2 && exit 1"},
+			env:            nil,
 			timeout:        5 * time.Second,
 			executionError: nil,
 			errs:           []error{status.Error(codes.Aborted, "container exited with non-zero code: ")},
@@ -94,6 +100,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			name:           "error workflow timeout",
 			image:          "alpine:latest",
 			cmd:            []string{"/bin/sh", "-c", "sleep 5"},
+			env:            nil,
 			timeout:        2 * time.Second,
 			executionError: nil,
 			timeoutError:   nil,
@@ -107,7 +114,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			t.Parallel()
 
 			// In the test body
-			logs, errs, err := workflow.Execute(t.Context(), tt.timeout, tt.image, tt.cmd)
+			logs, errs, err := workflow.Execute(t.Context(), tt.timeout, tt.image, tt.cmd, tt.env)
 			if tt.executionError != nil {
 				require.Error(t, err)
 				assert.Equal(t, status.Code(tt.executionError), status.Code(err))

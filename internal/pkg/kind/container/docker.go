@@ -61,6 +61,7 @@ func (w *DockerWorkflow) Execute(
 	timeout time.Duration,
 	image string,
 	cmd []string,
+	env []string,
 ) (<-chan string, <-chan error, error) {
 	if err := w.healthCheck(ctx); err != nil {
 		return nil, nil, err
@@ -75,6 +76,7 @@ func (w *DockerWorkflow) Execute(
 			Image:       image,
 			Cmd:         cmd,
 			StopTimeout: &containerTimeout,
+			Env:         env,
 		},
 		&container.HostConfig{
 			AutoRemove: true,

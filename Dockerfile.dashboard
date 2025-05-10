@@ -1,0 +1,54 @@
+# Stage 1: Dependencies
+FROM node:23-alpine3.20 AS deps
+WORKDIR /app
+
+# Install dependencies based on the preferred package manager
+COPY dashboard/package.json dashboard/package-lock.json* ./
+RUN npm ci
+
+# Stage 2: Builder
+FROM node:23-alpine3.20 AS builder
+WORKDIR /app
+
+# Copy dependencies
+COPY --from=deps /app/node_modules ./node_modules
+COPY dashboard .
+
+# Set build-time environment variables
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+# Build the application
+RUN npm run build
+
+# Stage 3: Runner
+FROM node:23-alpine3.20 AS runner
+WORKDIR /app
+
+# Set runtime environment variables
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+
+# Create a non-root user to run the app and own app files
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Copy only necessary files from the builder stage
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Set the correct permission for prerender cache
+RUN mkdir -p .next/cache && \
+    chown -R nextjs:nodejs .next && \
+    chmod -R 755 .next/cache
+
+# Switch to non-root user
+USER nextjs
+
+# Expose the port the app will run on
+EXPOSE 3000
+
+# Start the application
+CMD ["node", "server.js"]

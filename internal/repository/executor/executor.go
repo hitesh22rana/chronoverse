@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -21,6 +20,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -28,20 +28,6 @@ import (
 
 const (
 	authSubject = "internal/executor"
-
-	// Statuses for the jobs.
-	statusQueued    = "QUEUED"
-	statusPending   = "PENDING"
-	statusRunning   = "RUNNING"
-	statusCompleted = "COMPLETED"
-	statusFailed    = "FAILED"
-	statusCanceled  = "CANCELED"
-
-	// Workflow names.
-	workflowHeartBeat = "HEARTBEAT"
-	workflowContainer = "CONTAINER"
-
-	containerWorkflowDefaultExecutionTimeout = 10 * time.Second
 )
 
 // Workflow represents a workflow that can be executed.
@@ -51,7 +37,7 @@ type Workflow interface {
 
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
-	Execute(ctx context.Context, timeout time.Duration, image string, cmd []string) (<-chan string, <-chan error, error)
+	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (<-chan string, <-chan error, error)
 }
 
 // HeartBeatSvc represents the heartbeat service.
@@ -225,7 +211,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 		// If the workflow is already terminated, do not execute the workflow and update the job status to CANCELED
 		if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 			Id:     jobID,
-			Status: statusCanceled,
+			Status: jobsmodel.JobStatusCanceled.ToString(),
 		}); err != nil {
 			return err
 		}
@@ -234,7 +220,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	}
 
 	// Ensure the workflow build status is COMPLETED
-	if workflow.GetBuildStatus() != statusCompleted {
+	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
 		return status.Error(codes.FailedPrecondition, "workflow build status is not COMPLETED")
 	}
 
@@ -250,7 +236,8 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	// If the job status is not QUEUED or PENDING, we don't want to execute the workflow
 	// This is to avoid executing the workflow multiple times
 	// NOTE: We are checking for the PENDING status because the job status might not be updated yet but have received from kafka via the scheduler
-	if job.GetStatus() != statusQueued && job.GetStatus() != statusPending {
+	if job.GetStatus() != jobsmodel.JobStatusQueued.ToString() &&
+		job.GetStatus() != jobsmodel.JobStatusPending.ToString() {
 		return status.Error(codes.FailedPrecondition, "job is not in QUEUED or PENDING state")
 	}
 
@@ -266,7 +253,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	// Update the job status from PENDING/QUEUED to RUNNING
 	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 		Id:     jobID,
-		Status: statusRunning,
+		Status: jobsmodel.JobStatusRunning.ToString(),
 	}); err != nil {
 		return err
 	}
@@ -290,7 +277,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 		// Update the job status from RUNNING to FAILED
 		if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 			Id:     jobID,
-			Status: statusFailed,
+			Status: jobsmodel.JobStatusFailed.ToString(),
 		}); err != nil {
 			return err
 		}
@@ -348,7 +335,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	// Update the job status from RUNNING to COMPLETED
 	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 		Id:     jobID,
-		Status: statusCompleted,
+		Status: jobsmodel.JobStatusCompleted.ToString(),
 	}); err != nil {
 		return err
 	}
@@ -455,135 +442,14 @@ func (r *Repository) withAuthorization(ctx context.Context) (context.Context, er
 
 // executeWorkflow executes the workflow.
 func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
-	workflowID := workflow.GetId()
-	userID := workflow.GetUserId()
-
-	kind := workflow.GetKind()
-	payload := workflow.GetPayload()
-
-	switch kind {
+	switch workflow.GetKind() {
 	// Execute the HEARTBEAT workflow
-	case workflowHeartBeat:
-		return r.svc.Hsvc.Execute(ctx, payload)
+	case workflowsmodel.KindHeartbeat.ToString():
+		return r.svc.Hsvc.Execute(ctx, workflow.GetPayload())
 	// Execute the CONTAINER workflow
-	case workflowContainer:
-		timeout, image, cmd, err := extractContainerDetails(payload)
-		if err != nil {
-			return err
-		}
-
-		logs, errs, workflowErr := r.svc.Csvc.Execute(
-			ctx,
-			timeout,
-			image,
-			cmd,
-		)
-
-		// If there was an error starting the container, return immediately
-		if workflowErr != nil {
-			return workflowErr
-		}
-
-		var sequenceNum uint32
-
-		// Create a done channel to signal when to stop processing
-		done := make(chan struct{})
-		defer close(done)
-
-		// Process logs
-		logsProcessing := make(chan struct{})
-		go func() {
-			defer close(logsProcessing)
-
-			for {
-				select {
-				case log, ok := <-logs:
-					if !ok {
-						// Logs channel closed, we're done
-						return
-					}
-
-					currentSeq := atomic.AddUint32(&sequenceNum, 1)
-
-					// Serialize the log entry
-					jobEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
-						JobID:       jobID,
-						WorkflowID:  workflowID,
-						UserID:      userID,
-						Message:     log,
-						TimeStamp:   time.Now(),
-						SequenceNum: currentSeq,
-					})
-					if err != nil {
-						continue
-					}
-
-					// Asynchronously produce the log entry to the Kafka topic
-					r.kfk.Produce(ctx, kgo.SliceRecord(jobEntryBytes), func(_ *kgo.Record, _ error) {})
-
-				case <-done:
-					// We were signaled to stop processing logs
-					return
-				}
-			}
-		}()
-
-		// Handle errors from the logs channel
-		// This way we can immediately return when an error occurs
-		for err := range errs {
-			return err
-		}
-
-		<-logsProcessing
-		return nil
+	case workflowsmodel.KindContainer.ToString():
+		return r.executeContainerWorkflow(ctx, jobID, workflow)
 	default:
 		return status.Error(codes.InvalidArgument, "invalid workflow kind")
 	}
-}
-
-// extractContainerDetails extracts the container details from the workflow payload.
-func extractContainerDetails(payload string) (timeout time.Duration, image string, cmdStr []string, err error) {
-	var data map[string]any
-	if err = json.Unmarshal([]byte(payload), &data); err != nil {
-		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "invalid payload format")
-	}
-
-	image, ok := data["image"].(string)
-	if !ok {
-		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "image is missing or invalid")
-	}
-
-	timeoutStr, ok := data["timeout"].(string)
-
-	// If the timeout is not present, set it to the default value
-	if !ok || timeoutStr == "" {
-		timeout = containerWorkflowDefaultExecutionTimeout
-	} else {
-		timeout, err = time.ParseDuration(timeoutStr)
-		if err != nil {
-			return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "timeout is invalid")
-		}
-	}
-
-	if timeout <= 0 {
-		return containerWorkflowDefaultExecutionTimeout, "", nil, status.Error(codes.InvalidArgument, "timeout is invalid")
-	}
-
-	// Command is an optional field
-	cmd, ok := data["cmd"].([]any)
-	if !ok {
-		// If cmd is not provided, return an empty slice
-		return timeout, image, cmdStr, nil
-	}
-
-	// If cmd is provided, convert all elements to strings
-	for _, c := range cmd {
-		cStr, ok := c.(string)
-		if !ok {
-			return timeout, "", nil, status.Error(codes.InvalidArgument, "cmd contains non-string elements")
-		}
-		cmdStr = append(cmdStr, cStr)
-	}
-
-	return timeout, image, cmdStr, nil
 }

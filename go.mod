@@ -1,11 +1,11 @@
 module github.com/hitesh22rana/chronoverse
 
-go 1.24.2
+go 1.24.3
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.34.0
 	github.com/docker/docker v28.1.1+incompatible
-	github.com/exaring/otelpgx v0.9.2
+	github.com/exaring/otelpgx v0.9.3
 	github.com/go-playground/validator/v10 v10.26.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2

@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Run linters
+        run: make lint
+
+  build:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Build code
+        run: make build/all
+
+  test:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+      
+      - name: Pull alpine image for tests
+        run: docker pull alpine:latest
+
+      - name: Run tests
+        run: make test
+
+      - name: Check if PR can be merged
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ $? -ne 0 ]; then
+            echo "Tests failed, PR cannot be merged!"
+            exit 1
+          fi
+
+  release:
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker images
+        run: |
+          SERVICES="users-service workflows-service jobs-service notifications-service scheduling-worker workflow-worker execution-worker joblogs-processor server"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+
+          for SERVICE_NAME in $SERVICES; do
+            IMAGE_BASENAME="chronoverse-${SERVICE_NAME}"
+            echo "Building and pushing ${IMAGE_BASENAME} version ${VERSION_TAG}"
+
+            docker buildx build \
+              --platform linux/amd64,linux/arm64,linux/arm/v7 \
+              --build-arg NAME=${SERVICE_NAME} \
+              --build-arg VERSION=${VERSION_TAG} \
+              -t "ghcr.io/${{ github.repository_owner }}/${IMAGE_BASENAME}:${VERSION_TAG}" \
+              -t "ghcr.io/${{ github.repository_owner }}/${IMAGE_BASENAME}:latest" \
+              --push \
+              .
+          done

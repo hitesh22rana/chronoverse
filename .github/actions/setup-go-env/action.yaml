@@ -1,0 +1,55 @@
+name: 'Setup Go Environment'
+description: 'Sets up Go, caches modules and tools, and installs dependencies'
+inputs:
+  go-version:
+    description: 'Go version to use'
+    required: false
+    default: '1.24'
+  buf-version:
+    description: 'Buf version to install'
+    required: false
+    default: 'v1.50.0'
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Cache tools directory
+      uses: actions/cache@v4
+      with:
+        path: ./.bin
+        key: ${{ runner.os }}-bindir-${{ hashFiles('Makefile', 'tools.go') }}-buf-${{ inputs.buf-version }}
+        restore-keys: |
+          ${{ runner.os }}-bindir-
+
+    - name: Install tools and buf
+      shell: bash
+      run: |
+        mkdir -p ./.bin
+        echo "Installing tools (make tools)..."
+        make tools
+        echo "Tools installed."
+
+        echo "Installing buf to ./.bin..."
+        GOBIN=$(pwd)/.bin go install github.com/bufbuild/buf/cmd/buf@${{ inputs.buf-version }}
+        echo "Buf installed to ./.bin."
+
+        echo "$(pwd)/.bin" >> $GITHUB_PATH
+        echo "buf version: $(buf --version)"
+
+    - name: Install project dependencies
+      shell: bash
+      run: make dependencies

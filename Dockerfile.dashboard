@@ -10,6 +10,9 @@ RUN npm ci
 FROM node:23-alpine3.20 AS builder
 WORKDIR /app
 
+# Build arguments
+ARG NEXT_PUBLIC_API_URL
+
 # Copy dependencies
 COPY --from=deps /app/node_modules ./node_modules
 COPY dashboard .
@@ -17,6 +20,7 @@ COPY dashboard .
 # Set build-time environment variables
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Build the application
 RUN npm run build

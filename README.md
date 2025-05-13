@@ -76,19 +76,20 @@ No other dependencies are required as all services run in containers with automa
 ### Deployment Environments
 
 #### 1. Development Environment (compose.dev.yaml)
-- All service ports are exposed for easy debugging and direct access
-- Database ports (5432, 9000, 6379) accessible from the host
-- gRPC service ports (50051-50054) available for direct testing
-- Monitoring ports fully exposed
-- Suitable for local development and testing
+- All service ports are exposed for easy debugging and direct access.
+- Database ports (5432, 9000, 6379) accessible from the host.
+- gRPC service ports (50051-50054) available for direct testing.
+- Monitoring ports fully exposed.
+- Dashboard is accessible via port 3001.
+- Suitable for local development and testing.
 
 #### 2. Production Environment (compose.prod.yaml)
-- Enhanced security with minimal port exposure
-- Only the main application server (port 8080) is exposed externally
-- Monitoring UI (port 3000) is restricted to localhost access
-- All internal services communicate via Docker's internal network
-- No direct external access to databases or internal microservices
-- gRPC reflection disabled for additional security
+- Enhanced security with minimal port exposure.
+- Dashboard is accessible via port 80/443 through Nginx/reverse proxy.
+- Monitoring dashboard can be accessed via port 3000.
+- All internal services communicate via Docker's internal network.
+- No direct external access to databases or internal microservices.
+- gRPC reflection disabled for additional security.
 
 ### Configuration
 

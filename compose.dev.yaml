@@ -669,11 +669,11 @@ services:
   dashboard:
     image: dashboard
     container_name: dashboard
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
     build:
       context: ./
       dockerfile: Dockerfile.dashboard
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080
     ports:
       - '3001:3000'
     restart: on-failure

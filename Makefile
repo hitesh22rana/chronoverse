@@ -65,6 +65,10 @@ build/joblogs-processor: dependencies
 build/server: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=v0.0.1' -X '${PKG_PATH}.name=server' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/server ./cmd/server
 
+.PHONY: build/all
+build/all: build/users-service build/workflows-service build/jobs-service build/notifications-service build/scheduling-worker build/workflow-worker build/execution-worker build/joblogs-processor build/server
+	@echo "All services and workers built successfully."
+
 .PHONY: run/users-service
 run/users-service: build/users-service
 	@./.bin/users-service

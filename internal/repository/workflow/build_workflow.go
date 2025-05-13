@@ -17,8 +17,6 @@ import (
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
 
-var pendingJobStatus = jobsmodel.JobStatusPending.ToString()
-
 // buildWorkflow executes the build workflow.
 //
 //nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
@@ -55,15 +53,17 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 
 	// Cancel all the jobs which are in the QUEUED or PENDING state
 	// This handles the condition where the worklow is updated, since the interval might be changed
+	//nolint:govet // Ignore shadow of error variable
 	if err := r.cancelJobsWithStatus(ctx, workflowID, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
 		return err
 	}
+
+	//nolint:govet // Ignore shadow of error variable
 	if err := r.cancelJobsWithStatus(ctx, workflowID, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
 		return err
 	}
 
 	// If the build step is not required, skip the build process
-	//nolint:nestif // Ignore the nested if statement as it is required for the workflow execution
 	if !isBuildStepRequired(workflow.GetKind()) {
 		// Update the workflow status from QUEUED to COMPLETED
 		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{

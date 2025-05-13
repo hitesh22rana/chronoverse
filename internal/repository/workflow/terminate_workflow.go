@@ -12,7 +12,7 @@ import (
 )
 
 // cancelJobs cancels the jobs of the workflow.
-// This function is invoked via the cancelJobsWithStatus function
+// This function is invoked via the cancelJobsWithStatus function.
 func (r *Repository) cancelJobs(ctx, notificationCtx context.Context, workflowID, userID string, jobs *jobspb.ListJobsResponse) error {
 	// Iterate over the jobs and cancel them
 	for _, job := range jobs.GetJobs() {

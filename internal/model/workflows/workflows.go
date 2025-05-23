@@ -187,3 +187,13 @@ func (r *ListWorkflowsResponse) ToProto() *workflowspb.ListWorkflowsResponse {
 		Cursor:    r.Cursor,
 	}
 }
+
+// ListWorkflowsFilters represents the filters for listing workflows.
+type ListWorkflowsFilters struct {
+	Query        string `validate:"omitempty"`
+	Kind         string `validate:"omitempty"`
+	BuildStatus  string `validate:"omitempty"`
+	IsTerminated bool   `validate:"omitempty"`
+	IntervalMin  int32  `validate:"omitempty"`
+	IntervalMax  int32  `validate:"omitempty"`
+}

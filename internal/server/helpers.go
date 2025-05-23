@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,20 @@ const (
 	serverShutdownTimeout = 10 * time.Second
 	csrfCookieName        = "csrf"
 	sessionCookieName     = "session"
+)
+
+var (
+	validKinds = []string{
+		"HEARTBEAT",
+		"CONTAINER",
+	}
+	validBuildStatuses = []string{
+		"QUEUED",
+		"STARTED",
+		"COMPLETED",
+		"FAILED",
+		"CANCELED",
+	}
 )
 
 // sessionKey is the key used to store the session in the context.
@@ -108,4 +123,14 @@ type statusResponseWriter struct {
 func (w *statusResponseWriter) WriteHeader(code int) {
 	w.status = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// isValidKind checks if the given kind is valid.
+func isValidKind(kind string) bool {
+	return slices.Contains(validKinds, kind)
+}
+
+// isValidBuildStatus checks if the given build status is valid.
+func isValidBuildStatus(buildStatus string) bool {
+	return slices.Contains(validBuildStatuses, buildStatus)
 }

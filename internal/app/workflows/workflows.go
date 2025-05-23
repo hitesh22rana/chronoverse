@@ -387,6 +387,7 @@ func (w *Workflows) ListWorkflows(ctx context.Context, req *workflowspb.ListWork
 		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("cursor", req.GetCursor()),
+			attribute.String("filters", req.GetFilters().String()),
 		),
 	)
 	defer func() {

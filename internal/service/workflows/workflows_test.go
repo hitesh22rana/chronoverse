@@ -1236,6 +1236,7 @@ func TestListWorkflows(t *testing.T) {
 					gomock.Any(),
 					req.GetUserId(),
 					req.GetCursor(),
+					gomock.Any(),
 				).Return(&workflowsmodel.ListWorkflowsResponse{
 					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
 						{
@@ -1368,6 +1369,7 @@ func TestListWorkflows(t *testing.T) {
 					gomock.Any(),
 					req.GetUserId(),
 					req.GetCursor(),
+					gomock.Any(),
 				).Return(nil, status.Error(codes.NotFound, "user not found"))
 			},
 			want:  want{},
@@ -1391,6 +1393,7 @@ func TestListWorkflows(t *testing.T) {
 					gomock.Any(),
 					req.GetUserId(),
 					req.GetCursor(),
+					gomock.Any(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},

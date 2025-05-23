@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -27,8 +28,6 @@ import (
 const (
 	defaultExpirationTTL = time.Minute * 30
 	cacheTimeout         = time.Second * 2
-
-	noCursor = "no_cursor"
 )
 
 // Repository provides job related operations.
@@ -41,7 +40,7 @@ type Repository interface {
 	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (bool, error)
 	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) error
 	TerminateWorkflow(ctx context.Context, workflowID, userID string) error
-	ListWorkflows(ctx context.Context, userID, cursor string) (*workflowsmodel.ListWorkflowsResponse, error)
+	ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (*workflowsmodel.ListWorkflowsResponse, error)
 }
 
 // Cache provides cache related operations.
@@ -589,8 +588,9 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 
 // ListWorkflowsRequest holds the request parameters for listing workflows by user ID.
 type ListWorkflowsRequest struct {
-	UserID string `validate:"required"`
-	Cursor string `validate:"omitempty"`
+	UserID  string                               `validate:"required"`
+	Cursor  string                               `validate:"omitempty"`
+	Filters *workflowsmodel.ListWorkflowsFilters `validate:"omitempty"`
 }
 
 // ListWorkflows returns workflows by user ID.
@@ -607,10 +607,20 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		span.End()
 	}()
 
+	filters := &workflowsmodel.ListWorkflowsFilters{
+		Query:        req.GetFilters().GetQuery(),
+		Kind:         req.GetFilters().GetKind(),
+		BuildStatus:  req.GetFilters().GetBuildStatus(),
+		IsTerminated: req.GetFilters().GetIsTerminated(),
+		IntervalMin:  req.GetFilters().GetIntervalMin(),
+		IntervalMax:  req.GetFilters().GetIntervalMax(),
+	}
+
 	// Validate the request
 	err = s.validator.Struct(&ListWorkflowsRequest{
-		UserID: req.GetUserId(),
-		Cursor: req.GetCursor(),
+		UserID:  req.GetUserId(),
+		Cursor:  req.GetCursor(),
+		Filters: filters,
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -627,12 +637,13 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		}
 	}
 
-	cachedCursorKey := req.GetCursor()
-	if cachedCursorKey == "" {
-		cachedCursorKey = noCursor
+	// Validate the filters
+	if err = validateFilters(filters); err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid filters: %v", err)
+		return nil, err
 	}
 
-	cacheKey := fmt.Sprintf("workflows:%s:%s", req.GetUserId(), cachedCursorKey)
+	cacheKey := generateListWorkflowsCacheKey(req.GetUserId(), req.GetCursor(), filters)
 
 	// Check for cached response
 	if cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{}); cacheErr == nil {
@@ -642,7 +653,7 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 	}
 
 	// List all workflows by user ID
-	res, err = s.repo.ListWorkflows(ctx, req.GetUserId(), cursor)
+	res, err = s.repo.ListWorkflows(ctx, req.GetUserId(), cursor, filters)
 	if err != nil {
 		return nil, err
 	}
@@ -694,6 +705,38 @@ func validateKind(k string) error {
 	}
 }
 
+func validateFilters(filters *workflowsmodel.ListWorkflowsFilters) error {
+	if filters == nil {
+		return nil
+	}
+
+	if filters.Kind != "" {
+		if err := validateKind(filters.Kind); err != nil {
+			return err
+		}
+	}
+
+	if filters.BuildStatus != "" {
+		if err := validateWorkflowBuildStatus(filters.BuildStatus); err != nil {
+			return err
+		}
+	}
+
+	if filters.IntervalMin < 0 {
+		return status.Errorf(codes.InvalidArgument, "invalid interval_min: %d", filters.IntervalMin)
+	}
+
+	if filters.IntervalMax < 0 {
+		return status.Errorf(codes.InvalidArgument, "invalid interval_max: %d", filters.IntervalMax)
+	}
+
+	if filters.IntervalMin > filters.IntervalMax {
+		return status.Errorf(codes.InvalidArgument, "invalid interval_min and interval_max: %d > %d", filters.IntervalMin, filters.IntervalMax)
+	}
+
+	return nil
+}
+
 func decodeCursor(token string) (string, error) {
 	decoded, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
@@ -701,6 +744,19 @@ func decodeCursor(token string) (string, error) {
 	}
 
 	return string(decoded), nil
+}
+
+func generateListWorkflowsCacheKey(userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) string {
+	allFilters := []string{
+		fmt.Sprintf("query=%s", filters.Query),
+		fmt.Sprintf("kind=%s", filters.Kind),
+		fmt.Sprintf("build_status=%s", filters.BuildStatus),
+		fmt.Sprintf("is_terminated=%v", filters.IsTerminated),
+		fmt.Sprintf("interval_min=%d", filters.IntervalMin),
+		fmt.Sprintf("interval_max=%d", filters.IntervalMax),
+	}
+
+	return fmt.Sprintf("workflows:%s:cursor=%s&%s", userID, cursor, strings.Join(allFilters, "&"))
 }
 
 // invalidateWorkflowCache handles cache invalidation for a specific workflow for a user.

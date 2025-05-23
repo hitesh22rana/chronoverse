@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
+	"strconv"
 
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -182,6 +184,8 @@ func (s *Server) handleTerminateWorkflow(w http.ResponseWriter, r *http.Request)
 }
 
 // handleListWorkflows handles the list workflows by user ID request.
+//
+//nolint:gocyclo // This function is complex and can be simplified further.
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
@@ -199,10 +203,74 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	// Get cursor from the query parameters
 	cursor := r.URL.Query().Get("cursor")
 
+	// 1. query
+	query := r.URL.Query().Get("query")
+
+	// 2. kind
+	kind := r.URL.Query().Get("kind")
+	if kind != "" {
+		// Validate kind
+		if !isValidKind(kind) {
+			http.Error(w, "invalid kind", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// 3. build_status
+	buildStatus := r.URL.Query().Get("build_status")
+	if buildStatus != "" {
+		// Validate build status
+		if !isValidBuildStatus(buildStatus) {
+			http.Error(w, "invalid build status", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// 4. terminated
+	terminatedStr := r.URL.Query().Get("terminated")
+	if terminatedStr == "" {
+		terminatedStr = "false"
+	}
+	terminated, err := strconv.ParseBool(terminatedStr)
+	if err != nil {
+		http.Error(w, "invalid terminated", http.StatusBadRequest)
+		return
+	}
+
+	// If build status is provided, terminated must be false
+	if buildStatus != "" && terminated {
+		http.Error(w, "terminated cannot be true when build status is provided", http.StatusBadRequest)
+		return
+	}
+
+	// 5. interval_min
+	intervalMin, _ := strconv.Atoi(r.URL.Query().Get("interval_min"))
+	if intervalMin < 0 || intervalMin > math.MaxInt32 {
+		http.Error(w, "invalid interval_min", http.StatusBadRequest)
+		return
+	}
+
+	// 6. interval_max
+	intervalMax, _ := strconv.Atoi(r.URL.Query().Get("interval_max"))
+	if intervalMax < 0 || intervalMax > math.MaxInt32 || (intervalMax != 0 && intervalMax < intervalMin) {
+		http.Error(w, "invalid interval_max", http.StatusBadRequest)
+		return
+	}
+
 	// ListWorkflows lists the workflows by user ID.
 	res, err := s.workflowsClient.ListWorkflows(r.Context(), &workflowspb.ListWorkflowsRequest{
 		UserId: userID,
 		Cursor: cursor,
+		Filters: &workflowspb.ListWorkflowsFilters{
+			Query:        query,
+			Kind:         kind,
+			BuildStatus:  buildStatus,
+			IsTerminated: terminated,
+			//nolint:gosec // G109 // We are not using the value of the variable
+			IntervalMin: int32(intervalMin),
+			//nolint:gosec // G109 // We are not using the value of the variable
+			IntervalMax: int32(intervalMax),
+		},
 	})
 	if err != nil {
 		handleError(w, err, "failed to list workflows")

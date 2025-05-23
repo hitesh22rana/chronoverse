@@ -301,7 +301,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                             name="kind"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>Workflow type</FormLabel>
+                                    <FormLabel>Workflow kind</FormLabel>
                                     <Select
                                         onValueChange={(value) => {
                                             field.onChange(value);
@@ -310,7 +310,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                     >
                                         <FormControl>
                                             <SelectTrigger>
-                                                <SelectValue placeholder="Select a workflow type" />
+                                                <SelectValue placeholder="Select a workflow kind" />
                                             </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>

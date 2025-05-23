@@ -254,7 +254,7 @@ export default function WorkflowDetailsPage() {
                                     {/* Basic Info */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Workflow type</div>
+                                            <div className="text-sm font-medium">Workflow kind</div>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                 {
                                                     workflow?.kind === "HEARTBEAT" ?

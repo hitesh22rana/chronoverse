@@ -103,18 +103,18 @@ func (mr *MockRepositoryMockRecorder) IncrementWorkflowConsecutiveJobFailuresCou
 }
 
 // ListWorkflows mocks base method.
-func (m *MockRepository) ListWorkflows(ctx context.Context, userID, cursor string) (*workflows.ListWorkflowsResponse, error) {
+func (m *MockRepository) ListWorkflows(ctx context.Context, userID, cursor string, filters *workflows.ListWorkflowsFilters) (*workflows.ListWorkflowsResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListWorkflows", ctx, userID, cursor)
+	ret := m.ctrl.Call(m, "ListWorkflows", ctx, userID, cursor, filters)
 	ret0, _ := ret[0].(*workflows.ListWorkflowsResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListWorkflows indicates an expected call of ListWorkflows.
-func (mr *MockRepositoryMockRecorder) ListWorkflows(ctx, userID, cursor any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) ListWorkflows(ctx, userID, cursor, filters any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListWorkflows", reflect.TypeOf((*MockRepository)(nil).ListWorkflows), ctx, userID, cursor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListWorkflows", reflect.TypeOf((*MockRepository)(nil).ListWorkflows), ctx, userID, cursor, filters)
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount mocks base method.

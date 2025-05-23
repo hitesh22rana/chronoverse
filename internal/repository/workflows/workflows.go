@@ -470,7 +470,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 }
 
 // ListWorkflows returns workflows by user ID.
-func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string) (res *workflowsmodel.ListWorkflowsResponse, err error) {
+func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (res *workflowsmodel.ListWorkflowsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListWorkflows")
 	defer func() {
 		if err != nil {
@@ -480,12 +480,58 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string) (
 		span.End()
 	}()
 
+	// Base query for user's workflows
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
-		FROM %s
-		WHERE user_id = $1
-	`, workflowsTable)
+        SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
+        FROM %s
+        WHERE user_id = $1
+    `, workflowsTable)
 	args := []any{userID}
+	paramIndex := 2 // Start from $2 since $1 is already used for userID
+
+	// Apply filters if provided
+	//nolint:nestif // The filters are applied in the next lines
+	if filters != nil {
+		// Text search on workflow name
+		if filters.Query != "" {
+			query += fmt.Sprintf(` AND name ILIKE $%d`, paramIndex)
+			args = append(args, "%"+filters.Query+"%")
+			paramIndex++
+		}
+
+		// Filter by workflow kind
+		if filters.Kind != "" {
+			query += fmt.Sprintf(` AND kind = $%d`, paramIndex)
+			args = append(args, filters.Kind)
+			paramIndex++
+		}
+
+		// If build status is provided, filter by it
+		// Otherwise, filter by termination status
+
+		// Filter by build status
+		if filters.BuildStatus != "" {
+			query += fmt.Sprintf(` AND build_status = $%d`, paramIndex)
+			args = append(args, filters.BuildStatus)
+			paramIndex++
+			query += ` AND terminated_at IS NULL`
+		} else if filters.IsTerminated {
+			query += ` AND terminated_at IS NOT NULL`
+		}
+
+		// Filter by interval range
+		if filters.IntervalMin > 0 {
+			query += fmt.Sprintf(` AND interval >= $%d`, paramIndex)
+			args = append(args, filters.IntervalMin)
+			paramIndex++
+		}
+
+		if filters.IntervalMax > 0 {
+			query += fmt.Sprintf(` AND interval <= $%d`, paramIndex)
+			args = append(args, filters.IntervalMax)
+			paramIndex++
+		}
+	}
 
 	if cursor != "" {
 		id, createdAt, _err := extractDataFromCursor(cursor)
@@ -494,10 +540,11 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string) (
 			return nil, err
 		}
 
-		query += ` AND (created_at, id) <= ($2, $3)`
+		query += fmt.Sprintf(` AND (created_at, id) <= ($%d, $%d)`, paramIndex, paramIndex+1)
 		args = append(args, createdAt, id)
 	}
 
+	// Always sort by created_at DESC, id DESC for consistency
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	//nolint:errcheck // The error is handled in the next line

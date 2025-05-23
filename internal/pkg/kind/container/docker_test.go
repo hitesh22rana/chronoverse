@@ -22,9 +22,9 @@ const (
 func TestDockerWorkflow_Execute(t *testing.T) {
 	t.Parallel()
 
-	// Skip if running in CI environment
+	// Skip if not running in CI environment
 	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+		t.Skip("Skipping long-running tests in short mode")
 	}
 
 	workflow, err := container.NewDockerWorkflow()
@@ -187,9 +187,9 @@ func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
 func TestDockerWorkflow_Build(t *testing.T) {
 	t.Parallel()
 
-	// Skip if running in CI environment
+	// Skip if not running in CI environment
 	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+		t.Skip("Skipping long-running tests in short mode")
 	}
 
 	workflow, err := container.NewDockerWorkflow()

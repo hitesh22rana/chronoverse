@@ -16,11 +16,15 @@ dependencies: generate
 lint: dependencies
 	@golangci-lint run
 
-.PHONY: lint-fix
-lint-fix: dependencies
+.PHONY: lint/fix
+lint/fix: dependencies
 	@golangci-lint run --fix
 
-PHONY: test
+.PHONY: test/short
+test/short: dependencies
+	@go test -v -short ./...
+
+.PHONY: test
 test: dependencies
 	@go test -race -v ./...
 

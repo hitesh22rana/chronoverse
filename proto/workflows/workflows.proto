@@ -36,7 +36,7 @@ message UpdateWorkflowResponse {}
 message UpdateWorkflowBuildStatusRequest {
     string id           = 1; // ID of the workflow
     string user_id      = 2; // ID of the user
-    string build_status = 3; // Status of the workflow
+    string build_status = 3; // Build Status of the workflow
 }
 
 // UpdateWorkflowBuildStatusResponse contains the result of a workflow build status update attempt.
@@ -54,7 +54,7 @@ message GetWorkflowResponse {
     string name                                = 2; // Name of the workflow
     string payload                             = 3; // JSON string for payload
     string kind                                = 4; // Kind of workflow
-    string build_status                        = 5; // Status of the workflow
+    string build_status                        = 5; // Build Status of the workflow
     int32 interval                             = 6; // Interval measured in minutes
     int32 consecutive_job_failures_count       = 7; // Number of consecutive job failures
     int32 max_consecutive_job_failures_allowed = 8; // Maximum number of consecutive job failures allowed
@@ -75,7 +75,7 @@ message GetWorkflowByIDResponse {
     string name                                = 3; // Name of the workflow
     string payload                             = 4; // JSON string for payload
     string kind                                = 5; // Kind of workflow
-    string build_status                        = 6; // Status of the workflow
+    string build_status                        = 6; // Build Status of the workflow
     int32 interval                             = 7; // Interval measured in minutes
     int32 consecutive_job_failures_count       = 8; // Number of consecutive job failures
     int32 max_consecutive_job_failures_allowed = 9; // Maximum number of consecutive job failures allowed
@@ -113,10 +113,20 @@ message TerminateWorkflowRequest {
 // TerminateWorkflowResponse contains the result of a workflow termination attempt.
 message TerminateWorkflowResponse {}
 
+message ListWorkflowsFilters {
+    string query          = 1; // Query string for filtering
+    string kind           = 2; // Kind of workflow
+    string build_status   = 3; // Build Status of the workflow
+    bool is_terminated    = 4; // Filter for terminated workflows
+    int32 interval_min    = 5; // Filter for workflows with a specific interval
+    int32 interval_max    = 6; // Filter for workflows with a specific interval
+}
+
 // ListWorkflowsRequest contains the details needed to list all workflows.
 message ListWorkflowsRequest {
-    string user_id = 1; // ID of the user
-    string cursor  = 2; // Cursor for pagination
+    string user_id                        = 1; // ID of the user
+    string cursor                         = 2; // Cursor for pagination
+    optional ListWorkflowsFilters filters = 3; // Filters applied to the list
 }
 
 // WorkflowsByUserIDResponse contains the result of a workflow listing attempt.
@@ -125,7 +135,7 @@ message WorkflowsByUserIDResponse {
     string name                                = 2; // Name of the workflow
     string payload                             = 3; // JSON string for payload
     string kind                                = 4; // Kind of workflow
-    string build_status                        = 5; // Status of the workflow
+    string build_status                        = 5; // Build Status of the workflow
     int32 interval                             = 6; // Interval measured in minutes
     int32 consecutive_job_failures_count       = 7; // Number of consecutive job failures
     int32 max_consecutive_job_failures_allowed = 8; // Maximum number of consecutive job failures allowed

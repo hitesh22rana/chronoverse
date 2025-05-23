@@ -20,6 +20,10 @@ lint: dependencies
 lint-fix: dependencies
 	@golangci-lint run --fix
 
+.PHONY: test/short
+test/short: dependencies
+	@go test -v -short ./...
+
 PHONY: test
 test: dependencies
 	@go test -race -v ./...

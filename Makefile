@@ -16,8 +16,8 @@ dependencies: generate
 lint: dependencies
 	@golangci-lint run
 
-.PHONY: lint-fix
-lint-fix: dependencies
+.PHONY: lint/fix
+lint/fix: dependencies
 	@golangci-lint run --fix
 
 .PHONY: test/short

@@ -244,6 +244,7 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. interval_min
+	//nolint:errcheck // As we are using the default value of interval_min, we can ignore the error
 	intervalMin, _ := strconv.Atoi(r.URL.Query().Get("interval_min"))
 	if intervalMin < 0 || intervalMin > math.MaxInt32 {
 		http.Error(w, "invalid interval_min", http.StatusBadRequest)
@@ -251,6 +252,7 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. interval_max
+	//nolint:errcheck // As we are using the default value of interval_max, we can ignore the error
 	intervalMax, _ := strconv.Atoi(r.URL.Query().Get("interval_max"))
 	if intervalMax < 0 || intervalMax > math.MaxInt32 || (intervalMax != 0 && intervalMax < intervalMin) {
 		http.Error(w, "invalid interval_max", http.StatusBadRequest)

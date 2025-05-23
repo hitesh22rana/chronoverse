@@ -515,11 +515,8 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 			args = append(args, filters.BuildStatus)
 			paramIndex++
 			query += ` AND terminated_at IS NULL`
-		} else {
-			// Filter by termination status
-			if filters.IsTerminated {
-				query += ` AND terminated_at IS NOT NULL`
-			}
+		} else if filters.IsTerminated {
+			query += ` AND terminated_at IS NOT NULL`
 		}
 
 		// Filter by interval range

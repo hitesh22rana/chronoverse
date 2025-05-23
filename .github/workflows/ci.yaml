@@ -2,11 +2,13 @@ name: CI
 
 on:
   pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
     tags:
-      - 'v*' 
+      - 'v*'
 
 jobs:
   lint:

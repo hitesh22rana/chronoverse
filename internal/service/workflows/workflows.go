@@ -607,13 +607,18 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		span.End()
 	}()
 
-	filters := &workflowsmodel.ListWorkflowsFilters{
-		Query:        req.GetFilters().GetQuery(),
-		Kind:         req.GetFilters().GetKind(),
-		BuildStatus:  req.GetFilters().GetBuildStatus(),
-		IsTerminated: req.GetFilters().GetIsTerminated(),
-		IntervalMin:  req.GetFilters().GetIntervalMin(),
-		IntervalMax:  req.GetFilters().GetIntervalMax(),
+	var filters *workflowsmodel.ListWorkflowsFilters
+	if req.GetFilters() != nil {
+		filters = &workflowsmodel.ListWorkflowsFilters{
+			Query:        req.GetFilters().GetQuery(),
+			Kind:         req.GetFilters().GetKind(),
+			BuildStatus:  req.GetFilters().GetBuildStatus(),
+			IsTerminated: req.GetFilters().GetIsTerminated(),
+			IntervalMin:  req.GetFilters().GetIntervalMin(),
+			IntervalMax:  req.GetFilters().GetIntervalMax(),
+		}
+	} else {
+		filters = &workflowsmodel.ListWorkflowsFilters{}
 	}
 
 	// Validate the request

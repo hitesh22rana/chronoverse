@@ -24,7 +24,7 @@ lint-fix: dependencies
 test/short: dependencies
 	@go test -v -short ./...
 
-PHONY: test
+.PHONY: test
 test: dependencies
 	@go test -race -v ./...
 

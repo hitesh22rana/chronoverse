@@ -155,14 +155,18 @@ func (r *Repository) cancelRunningJobs(ctx context.Context, workflowID, userID, 
 		jobsToCancel := make([]*jobspb.JobsResponse, 0, len(jobs.GetJobs()))
 
 		// Iterate over the jobs and filter the ones to cancel
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution
 		for _, job := range jobs.GetJobs() {
 			if job.GetStartedAt() == "" {
 				jobsToCancel = append(jobsToCancel, job)
 				continue
 			}
 
-			startTime, _ := time.Parse(time.RFC3339Nano, job.GetStartedAt())
+			startTime, err := time.Parse(time.RFC3339Nano, job.GetStartedAt())
+			// Skip the job if the started time is not valid
+			if err != nil {
+				continue
+			}
+
 			if time.Since(startTime) > workflowTimeOut {
 				jobsToCancel = append(jobsToCancel, job)
 			}

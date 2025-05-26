@@ -288,15 +288,18 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor, j
 
 	// Add the cursor to the query
 	query := fmt.Sprintf(`
-		SELECT id, workflow_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
-		FROM %s
-		WHERE workflow_id = $1 AND user_id = $2
-	`, jobsTable)
+        SELECT id, workflow_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+        FROM %s
+        WHERE workflow_id = $1 AND user_id = $2
+    `, jobsTable)
 	args := []any{workflowID, userID}
+	// This is used to track the parameter index for the query dynamically
+	paramIndex := 3
 
 	if jobStatus != "" {
-		query += ` AND status = $3`
+		query += fmt.Sprintf(` AND status = $%d`, paramIndex)
 		args = append(args, jobStatus)
+		paramIndex++
 	}
 
 	if cursor != "" {
@@ -306,7 +309,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor, j
 			return nil, err
 		}
 
-		query += ` AND (created_at, id) <= ($3, $4)`
+		query += fmt.Sprintf(` AND (created_at, id) <= ($%d, $%d)`, paramIndex, paramIndex+1)
 		args = append(args, createdAt, id)
 	}
 

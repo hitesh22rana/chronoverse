@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { fetchWithAuth } from "@/utils/api-client"
+import { fetchWithAuth } from "@/lib/api-client"
 import { Workflow } from "@/hooks/use-workflows"
 import { useState } from "react"
 

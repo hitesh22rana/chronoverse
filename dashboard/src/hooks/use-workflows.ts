@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { fetchWithAuth } from "@/utils/api-client"
+import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 const WORKFLOWS_ENDPOINT = `${API_URL}/workflows`

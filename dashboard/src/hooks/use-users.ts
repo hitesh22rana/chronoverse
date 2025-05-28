@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { fetchWithAuth } from "@/utils/api-client"
+import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 const USER_ENDPOINT = `${API_URL}/users`

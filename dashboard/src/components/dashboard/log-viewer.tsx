@@ -270,19 +270,19 @@ export function LogViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                         </div>
                     ) : logs.length > 0 ? (
                         <div ref={logContainerRef} className="h-full overflow-auto p-4 space-y-1">
-                            {logs.map((log) => {
+                            {logs.map((log, index) => {
                                 const logText = log.message
 
                                 return (
                                     <div
-                                        key={`${log.timestamp}-${log.sequence_num}`}
+                                        key={`${log.timestamp}-${index}`}
                                         className="flex hover:bg-muted/50 px-2 py-1 rounded group"
                                     >
                                         <span className="text-muted-foreground mr-4 select-none min-w-[3ch] text-right">
-                                            {log.sequence_num}
+                                            {index + 1}
                                         </span>
                                         <span className="flex-1 whitespace-pre-wrap break-all">
-                                            {highlightText(logText, log.sequence_num - 1)}
+                                            {highlightText(logText, index)}
                                         </span>
                                     </div>
                                 )

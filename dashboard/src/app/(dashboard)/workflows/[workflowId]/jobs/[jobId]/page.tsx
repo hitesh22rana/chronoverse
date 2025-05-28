@@ -25,9 +25,9 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 
 import { useJobDetails } from "@/hooks/use-job-details"
-import { useJobLogs } from "@/hooks/use-job-logs"
 
 import { cn } from "@/lib/utils"
+import { LogViewer } from "@/components/dashboard/log-viewer"
 
 export default function JobDetailsPage() {
     const { workflowId, jobId } = useParams() as { workflowId: string, jobId: string }
@@ -41,28 +41,19 @@ export default function JobDetailsPage() {
         refetch: refetchJob
     } = useJobDetails(workflowId, jobId)
 
-    const {
-        logs,
-        isLoading: isLogsLoading,
-        error: logsError,
-        refetch: refetchLogs,
-    } = useJobLogs(workflowId, jobId, job?.status || "PENDING")
-
     // Handle manual refresh
     const handleRefresh = () => {
         refetchJob()
-        refetchLogs()
     }
 
-    if (jobError || logsError) {
+    if (jobError) {
         return (
             <div className="flex flex-col items-center justify-center h-full p-8">
                 <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
                 <h2 className="text-xl font-bold mb-2">Error Loading Job</h2>
                 <p className="text-muted-foreground mb-6">
                     {jobError instanceof Error ? jobError.message :
-                        logsError instanceof Error ? logsError.message :
-                            "Failed to load job data"}
+                        "Failed to load job data"}
                 </p>
                 <div className="flex gap-4">
                     <Button className="cursor-pointer" onClick={() => router.back()}>
@@ -204,33 +195,7 @@ export default function JobDetailsPage() {
                     </CardContent>
                 </Card>
 
-                {/* Logs Panel */}
-                <Card className="flex flex-col flex-1 h-full">
-                    <CardHeader className="flex-shrink-0">
-                        <CardTitle>Logs</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex-1 p-0 overflow-hidden -mt-5">
-                        <div className="h-full w-full rounded-md font-mono text-sm p-4 overflow-hidden">
-                            {isLogsLoading ? (
-                                <div className="flex items-center justify-center h-full">
-                                    <Loader2 className="h-6 w-6 animate-spin" />
-                                </div>
-                            ) : logs.length > 0 ? (
-                                <pre className="flex flex-col gap-2 bg-background p-2 rounded h-full text-wrap">
-                                    {logs?.map((log, index) => (
-                                        <span key={`${log.timestamp}-${index}`} className="block text-sm">
-                                            {`[${log.sequence_num}]: ${log.message}`}
-                                        </span>
-                                    ))}
-                                </pre>
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-gray-400">
-                                    No logs available
-                                </div>
-                            )}
-                        </div>
-                    </CardContent>
-                </Card>
+                <LogViewer workflowId={workflowId} jobId={jobId} jobStatus={job?.status || "PENDING"} />
             </div>
         </div>
     )

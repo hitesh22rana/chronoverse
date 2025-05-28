@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { logout } from "@/actions"
 
-import { fetchWithAuth } from "@/utils/api-client"
+import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 const LOGIN_ENDPOINT = `${API_URL}/auth/login`

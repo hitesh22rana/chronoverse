@@ -1,8 +1,9 @@
 "use client"
 
 import { useInfiniteQuery } from "@tanstack/react-query"
-import { fetchWithAuth } from "@/utils/api-client"
+import { fetchWithAuth } from "@/lib/api-client"
 import { toast } from "sonner"
+import { removeBinaryGarbage } from "@/lib/utils"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
@@ -35,7 +36,17 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                 throw new Error("failed to fetch job logs")
             }
 
-            return response.json() as Promise<JobLogsResponse>
+            const data = await response.json() as JobLogsResponse
+
+            // Clean binary garbage from all log messages
+            if (data.logs) {
+                data.logs = data.logs.map(log => ({
+                    ...log,
+                    message: removeBinaryGarbage(log.message)
+                }))
+            }
+
+            return data
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,

@@ -145,11 +145,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             return next;
         });
     };
-    const clearSel = () => setSelected(new Set());
+    const clearSelection = () => setSelected(new Set());
     const bulkRead = () => {
         if (selected.size === 0) return;
         markAsRead(Array.from(selected));
-        clearSel();
+        clearSelection();
     };
 
     const Row = ({ index, style }: ListChildComponentProps) => {
@@ -207,7 +207,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                         {payload.message}
                     </p>
 
-                    <Link href={payload.action_url} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <Link href={payload.action_url} prefetch={false} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         <SquareArrowOutUpRight className="h-4 w-4" />
                     </Link>
                 </div>

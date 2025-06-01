@@ -38,5 +38,5 @@ func (dm *DataMigration) Run(ctx context.Context) error {
 		dm.logger.Info("successfully exited the data migration job")
 	}
 
-	return nil
+	return err
 }

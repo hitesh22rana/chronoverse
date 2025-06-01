@@ -59,6 +59,11 @@ func run() int {
 		cfg.Postgres.Database,
 		cfg.Postgres.SSLMode,
 	)
+
+	if len(cfg.ClickHouse.Hosts) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: ClickHouse hosts configuration is empty")
+		return ExitError
+	}
 	chDSN := fmt.Sprintf(
 		"clickhouse://%s?username=%s&password=%s&database=%s&x-multi-statement=true",
 		cfg.ClickHouse.Hosts[0],

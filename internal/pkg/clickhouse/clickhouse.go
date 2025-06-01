@@ -18,7 +18,7 @@ const (
 	MaxHealthCheckRetries = 3
 )
 
-// MigrationsFS holds the embedded postgres migration files.
+// MigrationsFS holds the embedded clickhouse migration files.
 //
 //go:embed migrations/*.sql
 var MigrationsFS embed.FS

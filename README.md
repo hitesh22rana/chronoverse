@@ -10,39 +10,40 @@ Chronoverse is a distributed job scheduling and orchestration system designed fo
 
 ## Features
 
-- **Workflow Management**:  Create, update, and monitor scheduled workflows
-- **Flexible Scheduling**: Configure workflows with precise time intervals in minutes
+- **Workflow Management**:  Create, update, and monitor scheduled workflows.
+- **Flexible Scheduling**: Configure workflows with precise time intervals in minutes.
 - **Multiple Workflow Types Support**:
    - `HEARTBEAT`: Simple health check job.
    - `CONTAINER`: Execute custom containerized applications and scripts.
-- **Job Logs**: Comprehensive execution history with logs stored in ClickHouse for efficient storage and retrieval
-- **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes
-- **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs
-- **Security**: JWT-based authentication and authorization
+- **Job Logs**: Comprehensive execution history with logs stored in ClickHouse for efficient storage and retrieval.
+- **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes.
+- **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs.
+- **Security**: JWT-based authentication and authorization.
 
 ## Architecture
 
 Chronoverse implements a message-driven microservices architecture where components communicate through two primary channels:
 
-1. **Kafka**: For reliable, asynchronous processing and event-driven workflows
-2. **gRPC**: For efficient, low-latency synchronous service-to-service communication
+1. **Kafka**: For reliable, asynchronous processing and event-driven workflows.
+2. **gRPC**: For efficient, low-latency synchronous service-to-service communication.
 
 This dual communication approach ensures both reliability for critical background processes and responsiveness for user-facing operations. Data persistence is handled by PostgreSQL for transactional data and ClickHouse for analytics and high-volume job logs.
 
 ### Core Services
 
-- **Server**: HTTP API gateway exposing RESTful endpoints with middleware for authentication and authorization
-- **Users Service**: Manages user accounts, authentication tokens, and notification preferences
-- **Workflows Service**: Handles workflow definitions, configuration storage, and build status management
-- **Jobs Service**: Manages job lifecycle from scheduling through execution and completion
-- **Notifications Service**: Provides real-time alerts and status updates
+- **Server**: HTTP API gateway exposing RESTful endpoints with middleware for authentication and authorization.
+- **Users Service**: Manages user accounts, authentication tokens, and notification preferences.
+- **Workflows Service**: Handles workflow definitions, configuration storage, and build status management.
+- **Jobs Service**: Manages job lifecycle from scheduling through execution and completion.
+- **Notifications Service**: Provides real-time alerts and status updates.
 
 ### Worker Components
 
-- **Scheduling Worker**: Identifies jobs due for execution based on their schedules and processes them through Kafka
-- **Workflow Worker**: Builds Docker image configurations from workflow definitions and prepares execution templates
-- **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management, manages execution lifecycle and captures outputs/logs
-- **JobLogs Processor**: Performs efficient batch insertion of execution logs from Kafka to ClickHouse for persistent storage and optimized querying
+- **Scheduling Worker**: Identifies jobs due for execution based on their schedules and processes them through Kafka.
+- **Workflow Worker**: Builds Docker image configurations from workflow definitions and prepares execution templates.
+- **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management, manages execution lifecycle and captures outputs/logs.
+- **JobLogs Processor**: Performs efficient batch insertion of execution logs from Kafka to ClickHouse for persistent storage and optimized querying.
+- **Database Migration**: Manages database schema evolution and applies necessary migrations for PostgreSQL and ClickHouse during deployments or updates.
 
 All workers communicate through Kafka topics, enabling horizontal scaling and fault tolerance. This message-driven architecture ensures that job processing can continue even if individual components experience temporary outages.
 
@@ -103,11 +104,11 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork the repository.
+2. Create your feature branch (`git checkout -b feature/amazing-feature`).
+3. Commit your changes (`git commit -m 'Add some amazing feature'`).
+4. Push to the branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
 
 ## Acknowledgments
 

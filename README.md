@@ -2,19 +2,19 @@
 
 ![chronoverse](./.github/assets/chronoverse.png)
 
-**Distributed Task Scheduler & Orchestrator**
+**Distributed job scheduler & Orchestrator on your infrastructure**
 
-Chronoverse is a distributed, job scheduling and orchestration system designed for reliability and scalability. It allows you to define, schedule, and execute various types of jobs across your infrastructure with powerful monitoring and management capabilities.
+Chronoverse is a distributed job scheduling and orchestration system designed for reliability and scalability. It allows you to define, schedule, and execute various types of jobs across your infrastructure with powerful monitoring and management capabilities.
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/hitesh22rana/chronoverse)](https://goreportcard.com/report/github.com/hitesh22rana/chronoverse) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Features
 
-- **Workflow Management**:  Create, update, and monitor scheduled task workflows
-- **Flexible Scheduling**: Configure jobs with precise time intervals in minutes
-- **Multiple Workflow Types Support**: 
-    - `HEARTBEAT`: Simple health check job
-    - `CONTAINER`: Execute commands in Docker containers with configurable images and parameters
+- **Workflow Management**:  Create, update, and monitor scheduled workflows
+- **Flexible Scheduling**: Configure workflows with precise time intervals in minutes
+- **Multiple Workflow Types Support**:
+   - `HEARTBEAT`: Simple health check job.
+   - `CONTAINER`: Execute custom containerized applications and scripts.
 - **Job Logs**: Comprehensive execution history with logs stored in ClickHouse for efficient storage and retrieval
 - **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes
 - **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs

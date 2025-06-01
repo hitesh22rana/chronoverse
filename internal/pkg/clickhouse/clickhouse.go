@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"embed"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -16,6 +17,11 @@ const (
 	// MaxHealthCheckRetries is the maximum number of retries for the health check.
 	MaxHealthCheckRetries = 3
 )
+
+// MigrationsFS holds the embedded clickhouse migration files.
+//
+//go:embed migrations/*.sql
+var MigrationsFS embed.FS
 
 // Config represents the configuration for the ClickHouse client.
 type Config struct {

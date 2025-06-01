@@ -197,8 +197,8 @@ jobs:
           done
           echo "--- Finished Workers ---"
 
-  release-processor-and-server:
-    name: Release Processor and Server
+  release-jobs-and-server:
+    name: Release Jobs and Server
     needs: [lint, build, test]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
@@ -229,13 +229,13 @@ jobs:
       - name: Build Go binaries with release version
         run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
-      - name: Build and push Processor and Server Docker images
+      - name: Build and push database migration and job logs processor and server Docker images
         run: |
-          IMAGES="joblogs-processor server"
+          IMAGES="database-migration joblogs-processor server"
           VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          echo "--- Building Processor and Server ---"
+          echo "--- Building Jobs and Server ---"
           for IMAGE_NAME in $IMAGES; do
             IMAGE_NAME_SUFFIX="chronoverse/${IMAGE_NAME}"
             IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
@@ -260,7 +260,7 @@ jobs:
                 .
             fi
           done
-          echo "--- Finished Processor and Server ---"
+          echo "--- Finished Jobs and Server ---"
 
   release-dashboard:
     name: Release Dashboard

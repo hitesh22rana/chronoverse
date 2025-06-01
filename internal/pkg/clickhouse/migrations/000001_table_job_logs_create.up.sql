@@ -15,8 +15,8 @@ ORDER BY (job_id, timestamp, sequence_num)
 SETTINGS index_granularity = 8192;
 
 -- Indexes
-CREATE INDEX idx_job_logs_user ON job_logs (user_id) TYPE minmax;
-CREATE INDEX idx_job_logs_workflow ON job_logs (workflow_id) TYPE minmax;
+CREATE INDEX IF NOT EXISTS idx_job_logs_user ON job_logs (user_id) TYPE minmax;
+CREATE INDEX IF NOT EXISTS idx_job_logs_workflow ON job_logs (workflow_id) TYPE minmax;
 
 -- This will delete logs older than 7 days
 ALTER TABLE job_logs MODIFY TTL date + INTERVAL 7 DAY DELETE;

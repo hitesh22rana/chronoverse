@@ -13,7 +13,7 @@ func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := workflowmock.NewMockService(ctrl)
-	server := workflow.New(t.Context(), svc)
+	app := workflow.New(t.Context(), svc)
 
-	_ = server
+	_ = app
 }

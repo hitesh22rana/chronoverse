@@ -14,10 +14,10 @@ func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := schedulermock.NewMockService(ctrl)
-	server := scheduler.New(t.Context(), &scheduler.Config{
+	app := scheduler.New(t.Context(), &scheduler.Config{
 		PollInterval:   time.Second * 10,
 		ContextTimeout: time.Second * 5,
 	}, svc)
 
-	_ = server
+	_ = app
 }

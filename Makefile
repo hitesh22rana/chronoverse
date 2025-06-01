@@ -66,12 +66,16 @@ build/execution-worker: dependencies
 build/joblogs-processor: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=joblogs-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/joblogs-processor ./cmd/joblogs-processor
 
+.PHONY: build/database-migration
+build/database-migration: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=database-migration' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/database-migration ./cmd/database-migration
+
 .PHONY: build/server
 build/server: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=server' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/server ./cmd/server
 
 .PHONY: build/all
-build/all: build/users-service build/workflows-service build/jobs-service build/notifications-service build/scheduling-worker build/workflow-worker build/execution-worker build/joblogs-processor build/server
+build/all: build/users-service build/workflows-service build/jobs-service build/notifications-service build/scheduling-worker build/workflow-worker build/execution-worker build/joblogs-processor build/database-migration build/server
 	@echo "All services and workers built successfully."
 
 .PHONY: run/users-service
@@ -105,6 +109,10 @@ run/execution-worker: build/execution-worker
 .PHONY: run/joblogs-processor
 run/joblogs-processor: build/joblogs-processor
 	@./.bin/joblogs-processor
+
+.PHONY: run/database-migration
+run/database-migration: build/database-migration
+	@./.bin/database-migration
 
 .PHONY: run/server
 run/server: build/server

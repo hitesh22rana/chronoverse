@@ -46,15 +46,6 @@ func New(validator *validator.Validate, repo Repository) *Service {
 	}
 }
 
-// CreateJobRequest holds the request parameters for creating a new job.
-type CreateJobRequest struct {
-	UserID   string `validate:"required"`
-	Name     string `validate:"required"`
-	Payload  string `validate:"required"`
-	Kind     string `validate:"required"`
-	Interval int32  `validate:"required"`
-}
-
 // ScheduleJobRequest holds the request parameters for scheduling a job.
 type ScheduleJobRequest struct {
 	WorkflowID  string `validate:"required"`

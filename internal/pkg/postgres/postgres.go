@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"time"
 
@@ -17,6 +18,11 @@ const (
 	// MaxHealthCheckRetries is the maximum number of retries for the health check.
 	MaxHealthCheckRetries = 3
 )
+
+// MigrationsFS holds the embedded postgres migration files.
+//
+//go:embed migrations/*.sql
+var MigrationsFS embed.FS
 
 // Config holds PostgreSQL connection configuration.
 type Config struct {

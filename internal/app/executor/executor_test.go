@@ -13,7 +13,7 @@ func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := executormock.NewMockService(ctrl)
-	server := executor.New(t.Context(), svc)
+	app := executor.New(t.Context(), svc)
 
-	_ = server
+	_ = app
 }

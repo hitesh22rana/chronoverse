@@ -64,6 +64,7 @@ No other dependencies are required as all services run in containers with automa
    ```
 
 2. Choose the appropriate deployment environment:
+
    **For Development:**
    ```
    docker compose -f compose.dev.yaml up -d

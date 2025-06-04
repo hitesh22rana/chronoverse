@@ -154,6 +154,11 @@ services:
         openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
         echo "Certificates generated successfully"
       fi
+
+      echo "Setting certificate permissions..."
+      chmod 444 /certs/auth.ed.pub
+      chmod 444 /certs/auth.ed
+      echo "Certificate permissions set successfully"
       '
     restart: "no"
     networks:

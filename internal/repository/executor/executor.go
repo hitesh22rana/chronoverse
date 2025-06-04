@@ -113,7 +113,7 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 			}
 
 			ctxWithTrace, span := r.tp.Start(
-				ctx, // Use the context passed to worker
+				ctx,
 				"executor.worker.processRecord",
 				trace.WithAttributes(
 					attribute.String("worker_id", workerID),
@@ -129,13 +129,13 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 
 			// Execute the run workflow
 			if err := r.runWorkflow(ctxWithTrace, job.record.Value); err != nil {
-				// Logging (similar to existing error logging for runWorkflow)
 				if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
 					logger.Error(
 						"internal error while executing workflow",
 						zap.String("topic", job.record.Topic),
 						zap.Int64("offset", job.record.Offset),
 						zap.Int32("partition", job.record.Partition),
+						zap.String("message", string(job.record.Value)),
 						zap.Error(err),
 					)
 				} else {
@@ -144,6 +144,7 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 						zap.String("topic", job.record.Topic),
 						zap.Int64("offset", job.record.Offset),
 						zap.Int32("partition", job.record.Partition),
+						zap.String("message", string(job.record.Value)),
 						zap.Error(err),
 					)
 				}
@@ -156,6 +157,7 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 					zap.String("topic", job.record.Topic),
 					zap.Int64("offset", job.record.Offset),
 					zap.Int32("partition", job.record.Partition),
+					zap.String("message", string(job.record.Value)),
 					zap.Error(err),
 				)
 			} else {
@@ -163,6 +165,7 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 					zap.String("topic", job.record.Topic),
 					zap.Int64("offset", job.record.Offset),
 					zap.Int32("partition", job.record.Partition),
+					zap.String("message", string(job.record.Value)),
 				)
 			}
 			span.End()

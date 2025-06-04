@@ -8,9 +8,10 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
+	"sync"
+
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -59,23 +60,92 @@ type Config struct {
 	ParallelismLimit int
 }
 
+// kafkaJob defines a job for the worker pool.
+type kafkaJob struct {
+	record *kgo.Record
+	ctx    context.Context // Context for this specific job
+}
+
 // Repository provides executor repository.
 type Repository struct {
-	tp   trace.Tracer
-	cfg  *Config
-	kfk  *kgo.Client
-	auth auth.IAuth
-	svc  *Services
+	tp      trace.Tracer
+	cfg     *Config
+	kfk     *kgo.Client
+	auth    auth.IAuth
+	svc     *Services
+	jobChan chan kafkaJob // Buffered channel for jobs
+	wg      sync.WaitGroup
 }
 
 // New creates a new executor repository.
 func New(cfg *Config, auth auth.IAuth, svc *Services, kfk *kgo.Client) *Repository {
-	return &Repository{
-		tp:   otel.Tracer(svcpkg.Info().GetName()),
-		cfg:  cfg,
-		auth: auth,
-		svc:  svc,
-		kfk:  kfk,
+	r := &Repository{
+		tp:      otel.Tracer(svcpkg.Info().GetName()),
+		cfg:     cfg,
+		auth:    auth,
+		svc:     svc,
+		kfk:     kfk,
+		jobChan: make(chan kafkaJob, cfg.ParallelismLimit),
+	}
+
+	// Start worker goroutines
+	for i := 0; i < cfg.ParallelismLimit; i++ {
+		r.wg.Add(1)
+		go r.worker(context.Background(), fmt.Sprintf("worker-%d", i)) // Pass an initial context
+	}
+
+	return r
+}
+
+// worker processes Kafka messages from the job channel.
+func (r *Repository) worker(initCtx context.Context, workerID string) {
+	defer r.wg.Done()
+	logger := loggerpkg.FromContext(initCtx).With(zap.String("worker_id", workerID)) // Add worker identifier
+	for job := range r.jobChan {
+		// Use job.ctx for this specific job's execution and tracing
+		ctxWithTrace, span := r.tp.Start(job.ctx, "executor.worker.processRecord")
+
+		logger := loggerpkg.FromContext(ctxWithTrace) // Get logger with trace info
+
+		// Execute the run workflow
+		if err := r.runWorkflow(ctxWithTrace, job.record.Value); err != nil {
+			// Logging (similar to existing error logging for runWorkflow)
+			if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+				logger.Error(
+					"internal error while executing workflow",
+					zap.String("topic", job.record.Topic),
+					zap.Int64("offset", job.record.Offset),
+					zap.Int32("partition", job.record.Partition),
+					zap.Error(err),
+				)
+			} else {
+				logger.Warn(
+					"error while executing workflow",
+					zap.String("topic", job.record.Topic),
+					zap.Int64("offset", job.record.Offset),
+					zap.Int32("partition", job.record.Partition),
+					zap.Error(err),
+				)
+			}
+		}
+
+		// Commit the record
+		if err := r.kfk.CommitRecords(ctxWithTrace, job.record); err != nil {
+			logger.Error(
+				"failed to commit record",
+				zap.String("topic", job.record.Topic),
+				zap.Int64("offset", job.record.Offset),
+				zap.Int32("partition", job.record.Partition),
+				zap.Error(err),
+			)
+		} else {
+			logger.Info("record processed and committed successfully",
+				zap.String("topic", job.record.Topic),
+				zap.Int64("offset", job.record.Offset),
+				zap.Int32("partition", job.record.Partition),
+			)
+		}
+		span.End()
 	}
 }
 
@@ -83,10 +153,17 @@ func New(cfg *Config, auth auth.IAuth, svc *Services, kfk *kgo.Client) *Reposito
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
 
+	// Ensure all workers are done before Run exits
+	defer func() {
+		close(r.jobChan) // Close jobChan to signal workers to stop
+		r.wg.Wait()      // Wait for all workers to finish
+	}()
+
 	for {
 		// Check context cancellation before processing
 		select {
 		case <-ctx.Done():
+			logger.Warn("shutting down executor, context cancelled", zap.Error(ctx.Err()))
 			return ctx.Err()
 		default:
 			// Continue processing
@@ -94,7 +171,8 @@ func (r *Repository) Run(ctx context.Context) error {
 
 		fetches := r.kfk.PollFetches(ctx)
 		if fetches.IsClientClosed() {
-			return status.Error(codes.Canceled, "client closed")
+			logger.Info("kafka client closed, shutting down executor")
+			return nil // Return nil as this is an expected shutdown path
 		}
 
 		if fetches.Empty() {
@@ -108,75 +186,23 @@ func (r *Repository) Run(ctx context.Context) error {
 				zap.Int32("partition", fetchErr.Partition),
 				zap.Error(fetchErr.Err),
 			)
-			continue
+			// TODO: Decide if we should continue or return an error here.
+			// For now, continuing to allow processing of other records.
 		}
-
-		// Error group for running multiple goroutines
-		eg, groupCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(r.cfg.ParallelismLimit)
 
 		for !iter.Done() {
-			// Process the record in a separate goroutine
-			eg.Go(func(record *kgo.Record) func() error {
-				return func() error {
-					ctxWithTrace, span := r.tp.Start(groupCtx, "executor.Run")
-					defer span.End()
+			record := iter.Next()
+			jobCtx, jobSpan := r.tp.Start(ctx, "executor.Run.dispatchToWorker")
 
-					// Execute the run workflow
-					if err := r.runWorkflow(ctxWithTrace, record.Value); err != nil {
-						// If the workflow is failed due to internal issues, log the error, else log warning
-						if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
-							logger.Error(
-								"internal error while executing workflow",
-								zap.Any("ctx", ctxWithTrace),
-								zap.String("topic", record.Topic),
-								zap.Int64("offset", record.Offset),
-								zap.Int32("partition", record.Partition),
-								zap.String("message", string(record.Value)),
-								zap.Error(err),
-							)
-						} else {
-							logger.Warn(
-								"error while executing workflow",
-								zap.Any("ctx", ctxWithTrace),
-								zap.String("topic", record.Topic),
-								zap.Int64("offset", record.Offset),
-								zap.Int32("partition", record.Partition),
-								zap.String("message", string(record.Value)),
-								zap.Error(err),
-							)
-						}
-					}
-
-					// Commit the record even if the workflow workflow fails to avoid reprocessing
-					if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
-						logger.Error(
-							"failed to commit record",
-							zap.Any("ctx", ctxWithTrace),
-							zap.String("topic", record.Topic),
-							zap.Int64("offset", record.Offset),
-							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
-							zap.Error(err),
-						)
-					} else {
-						logger.Info("record processed and committed successfully",
-							zap.Any("ctx", ctxWithTrace),
-							zap.String("topic", record.Topic),
-							zap.Int64("offset", record.Offset),
-							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
-						)
-					}
-
-					return nil
-				}
-			}(iter.Next()))
-		}
-
-		// Wait for all the goroutines to finish
-		if err := eg.Wait(); err != nil {
-			logger.Error("error while running goroutines", zap.Error(err))
+			select {
+			case r.jobChan <- kafkaJob{record: record, ctx: jobCtx}:
+				// Job dispatched
+			case <-ctx.Done(): // Check for cancellation of the main Run context
+				logger.Warn("shutting down dispatcher, context cancelled", zap.Error(ctx.Err()))
+				jobSpan.End()
+				return ctx.Err() // Exit if main context is cancelled
+			}
+			jobSpan.End()
 		}
 	}
 }

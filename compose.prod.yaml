@@ -195,6 +195,11 @@ services:
         openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
         echo "Certificates generated successfully"
       fi
+
+      echo "Setting certificate permissions..."
+      chmod 444 /certs/auth.ed.pub
+      chmod 444 /certs/auth.ed
+      echo "Certificate permissions set successfully"
       '
     restart: "no"
     networks:
@@ -501,7 +506,7 @@ services:
       - chronoverse
 
   execution-worker:
-    <<: *high-resources-workers-limit
+    <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     container_name: execution-worker
     environment:

@@ -506,7 +506,7 @@ services:
       - chronoverse
 
   execution-worker:
-    <<: *low-resources-workers-limit
+    <<: *high-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     container_name: execution-worker
     environment:

@@ -25,8 +25,9 @@ const (
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit int
-	BatchSize  int
+	FetchLimit    int
+	BatchSize     int
+	ProducerTopic string
 }
 
 // Repository provides scheduler repository.
@@ -110,7 +111,12 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			continue
 		}
 
-		records = append(records, kgo.SliceRecord(scheduledJobEntryBytes))
+		record := &kgo.Record{
+			Topic: r.cfg.ProducerTopic,
+			Key:   []byte(id),
+			Value: scheduledJobEntryBytes,
+		}
+		records = append(records, record)
 	}
 
 	// Handle any errors that may have occurred during iteration

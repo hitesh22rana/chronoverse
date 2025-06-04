@@ -27,6 +27,7 @@ x-limits:
   # but still less than the database
   low-resources-workers-limit: &low-resources-workers-limit
     deploy:
+      replicas: 2
       resources:
         limits:
           cpus: '0.5'    # 500 m CPU
@@ -38,6 +39,7 @@ x-limits:
   # High resources workers require a bit more cpu and memory
   high-resources-workers-limit: &high-resources-workers-limit
     deploy:
+      replicas: 2
       resources:
         limits:
           cpus: '2'     # 2 CPU
@@ -125,6 +127,7 @@ services:
       KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 2
       CLUSTER_ID: chronoverse
     volumes:
       - kafka:/var/lib/kafka/data
@@ -413,7 +416,6 @@ services:
   scheduling-worker:
     <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/scheduling-worker:latest
-    container_name: scheduling-worker
     environment:
       POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
@@ -454,7 +456,6 @@ services:
   workflow-worker:
     <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
-    container_name: workflow-worker
     environment:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: workflows
@@ -508,7 +509,6 @@ services:
   execution-worker:
     <<: *high-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
-    container_name: execution-worker
     environment:
       KAFKA_BROKERS: kafka:9092
       KAFKA_PRODUCER_TOPIC: job_logs
@@ -562,9 +562,8 @@ services:
       - chronoverse
 
   joblogs-processor:
-    <<: *services-limit
+    <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
-    container_name: joblogs-processor
     environment:
       CLICKHOUSE_HOSTS: clickhouse:9000
       KAFKA_BROKERS: kafka:9092

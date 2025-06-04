@@ -29,7 +29,8 @@ const (
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit int
+	FetchLimit    int
+	ProducerTopic string
 }
 
 // Repository provides workflows repository.
@@ -111,8 +112,13 @@ func (r *Repository) CreateWorkflow(
 		Action: workflowsmodel.ActionBuild,
 	})
 
+	record := &kgo.Record{
+		Topic: r.cfg.ProducerTopic,
+		Key:   []byte(res.ID),
+		Value: workflowEntryBytes,
+	}
 	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, kgo.SliceRecord(workflowEntryBytes)).FirstErr(); err != nil {
+	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
 		return nil, err
 	}
@@ -203,8 +209,13 @@ func (r *Repository) UpdateWorkflow(
 		Action: workflowsmodel.ActionBuild,
 	})
 
+	record := &kgo.Record{
+		Topic: r.cfg.ProducerTopic,
+		Key:   []byte(workflowID),
+		Value: workflowEntryBytes,
+	}
 	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, kgo.SliceRecord(workflowEntryBytes)).FirstErr(); err != nil {
+	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
 		return err
 	}
@@ -454,8 +465,13 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 		Action: workflowsmodel.ActionTerminate,
 	})
 
+	record := &kgo.Record{
+		Topic: r.cfg.ProducerTopic,
+		Key:   []byte(workflowID),
+		Value: workflowEntryBytes,
+	}
 	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, kgo.SliceRecord(workflowEntryBytes)).FirstErr(); err != nil {
+	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
 		return err
 	}

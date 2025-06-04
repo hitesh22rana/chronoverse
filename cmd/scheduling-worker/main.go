@@ -86,8 +86,9 @@ func run() int {
 
 	// Initialize the scheduling job components
 	repo := schedulerrepo.New(&schedulerrepo.Config{
-		FetchLimit: cfg.SchedulingWorkerConfig.FetchLimit,
-		BatchSize:  cfg.SchedulingWorkerConfig.BatchSize,
+		FetchLimit:    cfg.SchedulingWorkerConfig.FetchLimit,
+		BatchSize:     cfg.SchedulingWorkerConfig.BatchSize,
+		ProducerTopic: cfg.Kafka.ProducerTopic,
 	}, pdb, kfk)
 	svc := schedulersvc.New(repo)
 	app := scheduler.New(ctx, &scheduler.Config{

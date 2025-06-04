@@ -105,7 +105,8 @@ func run() int {
 
 	// Initialize the workflows repository
 	repo := workflowsrepo.New(&workflowsrepo.Config{
-		FetchLimit: cfg.WorkflowsServiceConfig.FetchLimit,
+		FetchLimit:    cfg.WorkflowsServiceConfig.FetchLimit,
+		ProducerTopic: cfg.Kafka.ProducerTopic,
 	}, pdb, kfk)
 
 	// Initialize the validator utility

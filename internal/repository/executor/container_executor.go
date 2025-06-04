@@ -83,8 +83,13 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 					continue
 				}
 
+				record := &kgo.Record{
+					Topic: r.cfg.ProducerTopic,
+					Key:   []byte(jobID),
+					Value: jobEntryBytes,
+				}
 				// Asynchronously produce the log entry to the Kafka topic
-				r.kfk.Produce(ctx, kgo.SliceRecord(jobEntryBytes), func(_ *kgo.Record, _ error) {})
+				r.kfk.Produce(ctx, record, func(_ *kgo.Record, _ error) {})
 
 			case <-done:
 				// We were signaled to stop processing logs

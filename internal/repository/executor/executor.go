@@ -59,6 +59,7 @@ type Services struct {
 // Config represents the repository constants configuration.
 type Config struct {
 	ParallelismLimit int
+	ProducerTopic    string
 }
 
 // kafkaJob defines a job for the worker pool.

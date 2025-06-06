@@ -475,6 +475,8 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 }
 
 // TerminateWorkflow terminates a workflow.
+//
+//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.TerminateWorkflow")
 	defer func() {

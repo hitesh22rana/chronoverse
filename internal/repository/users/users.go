@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.opentelemetry.io/otel"
@@ -67,8 +68,12 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 	`, userTable)
 	args := []any{email, string(hashedPassword)}
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, args...)
+	rows, err := r.pg.Query(ctx, query, args...)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, "", err
+	}
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
 		// Check if the user already exists
@@ -115,8 +120,12 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	`, userTable)
 	args := []any{email}
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, args...)
+	rows, err := r.pg.Query(ctx, query, args...)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, "", err
+	}
+
 	loginUserResponse, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -172,8 +181,12 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 	`, userTable)
 	args := []any{id}
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, args...)
+	rows, err := r.pg.Query(ctx, query, args...)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -219,6 +232,11 @@ func (r *Repository) UpdateUser(ctx context.Context, id, password, notificationP
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, args...)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "user not found: %v", err)
 			return err

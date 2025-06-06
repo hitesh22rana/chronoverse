@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -73,6 +74,11 @@ func (r *Repository) CreateWorkflow(
 	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
 		return nil, err
 	}
@@ -98,15 +104,20 @@ func (r *Repository) CreateWorkflow(
 		args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed}
 	}
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, args...)
+	rows, err := tx.Query(ctx, query, args...)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to insert workflow: %v", err)
 		return nil, err
 	}
 
-	workflowEntryBytes, err := json.Marshal(&workflowsmodel.WorkflowEntry{
+	//nolint:errcheck // We don't expect an error here
+	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
 		ID:     res.ID,
 		UserID: userID,
 		Action: workflowsmodel.ActionBuild,
@@ -119,16 +130,23 @@ func (r *Repository) CreateWorkflow(
 	}
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
 		return nil, err
 	}
 
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
-		err = status.Errorf(
-			codes.Internal,
-			"failed to commit transaction: %v", err,
-		)
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
 		return nil, err
 	}
 
@@ -136,6 +154,8 @@ func (r *Repository) CreateWorkflow(
 }
 
 // UpdateWorkflow updates the workflow details.
+//
+//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) UpdateWorkflow(
 	ctx context.Context,
 	workflowID,
@@ -157,6 +177,11 @@ func (r *Repository) UpdateWorkflow(
 	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
 		return err
 	}
@@ -189,7 +214,10 @@ func (r *Repository) UpdateWorkflow(
 	// Execute the query
 	ct, err := tx.Exec(ctx, query, args...)
 	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
 			return err
 		}
@@ -203,7 +231,8 @@ func (r *Repository) UpdateWorkflow(
 		return err
 	}
 
-	workflowEntryBytes, err := json.Marshal(&workflowsmodel.WorkflowEntry{
+	//nolint:errcheck // We don't expect an error here
+	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
 		ID:     workflowID,
 		UserID: userID,
 		Action: workflowsmodel.ActionBuild,
@@ -216,12 +245,22 @@ func (r *Repository) UpdateWorkflow(
 	}
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
 		return err
 	}
 
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
 		return err
 	}
@@ -249,7 +288,10 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID)
 	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
 			return err
 		}
@@ -284,8 +326,12 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 		LIMIT 1;
 	`, workflowsTable)
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, workflowID, userID)
+	rows, err := r.pg.Query(ctx, query, workflowID, userID)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -321,8 +367,12 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 		LIMIT 1;
 	`, workflowsTable)
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, workflowID)
+	rows, err := r.pg.Query(ctx, query, workflowID)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowByIDResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -362,6 +412,11 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	var consecutiveJobFailuresCount, maxConsecutiveJobFailuresAllowed int32
 	err = r.pg.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return false, err
+		}
+
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "workflow not found: %v", err)
 			return false, err
@@ -399,7 +454,10 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, workflowID, userID)
 	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
 			return err
 		}
@@ -417,6 +475,8 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 }
 
 // TerminateWorkflow terminates a workflow.
+//
+//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.TerminateWorkflow")
 	defer func() {
@@ -430,6 +490,11 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
 		return err
 	}
@@ -445,6 +510,11 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	// Execute the query
 	ct, err := tx.Exec(ctx, query, workflowID, userID)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
 			return err
@@ -459,7 +529,8 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 		return err
 	}
 
-	workflowEntryBytes, err := json.Marshal(&workflowsmodel.WorkflowEntry{
+	//nolint:errcheck // We don't expect an error here
+	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
 		ID:     workflowID,
 		UserID: userID,
 		Action: workflowsmodel.ActionTerminate,
@@ -472,12 +543,22 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	}
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
 		return err
 	}
 
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
 		return err
 	}
@@ -486,6 +567,8 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 }
 
 // ListWorkflows returns workflows by user ID.
+//
+//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (res *workflowsmodel.ListWorkflowsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListWorkflows")
 	defer func() {
@@ -563,8 +646,12 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 	// Always sort by created_at DESC, id DESC for consistency
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, args...)
+	rows, err := r.pg.Query(ctx, query, args...)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[workflowsmodel.WorkflowByUserIDResponse])
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {

@@ -60,7 +60,7 @@ type ClickHouse struct {
 type Grpc struct {
 	Host           string        `envconfig:"GRPC_HOST" default:"localhost"`
 	Port           int           `envconfig:"GRPC_PORT" required:"true"`
-	RequestTimeout time.Duration `envconfig:"GRPC_REQUEST_TIMEOUT" default:"500ms"`
+	RequestTimeout time.Duration `envconfig:"GRPC_REQUEST_TIMEOUT" default:"200ms"`
 	Secure         bool          `envconfig:"GRPC_SECURE" default:"false"`
 	CertFile       string        `envconfig:"GRPC_CERT_FILE" default:""`
 }

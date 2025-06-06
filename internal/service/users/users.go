@@ -4,6 +4,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -218,7 +219,13 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 
 	// Check if the user is already cached
 	cacheKey := fmt.Sprintf("user:%s", req.GetId())
-	if cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &usersmodel.GetUserResponse{}); cacheErr == nil {
+	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &usersmodel.GetUserResponse{})
+	if cacheErr != nil {
+		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			return nil, err
+		}
+	} else {
 		// Cache hit, return cached response
 		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 		return cacheRes.(*usersmodel.GetUserResponse), nil

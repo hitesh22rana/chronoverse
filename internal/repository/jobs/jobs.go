@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
@@ -64,6 +65,10 @@ func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedul
 	}()
 
 	scheduledAtTime, err := parseTime(scheduledAt)
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid scheduled_at time format: %v", err)
+		return "", err
+	}
 
 	// Insert job into database
 	query := fmt.Sprintf(`
@@ -74,6 +79,11 @@ func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedul
 
 	row := r.pg.QueryRow(ctx, query, workflowID, userID, scheduledAtTime)
 	if err = row.Scan(&jobID); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return "", err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to insert job: %v", err)
 		return "", err
 	}
@@ -114,9 +124,11 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, jobStatus strin
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, args...)
 	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
-
 			return err
 		}
 
@@ -150,8 +162,12 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 		LIMIT 1;
 	`, jobsTable)
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, jobID, workflowID, userID)
+	rows, err := r.pg.Query(ctx, query, jobID, workflowID, userID)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -187,8 +203,12 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 		LIMIT 1;
 	`, jobsTable)
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, jobID)
+	rows, err := r.pg.Query(ctx, query, jobID)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobByIDResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -239,6 +259,11 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 
 	rows, err := r.ch.Query(ctx, query, args...)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		}
+
 		err = status.Errorf(codes.NotFound, "no logs found for job: %v", err)
 		return nil, err
 	}
@@ -315,8 +340,12 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor, j
 
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, args...)
+	rows, err := r.pg.Query(ctx, query, args...)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.JobByWorkflowIDResponse])
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {

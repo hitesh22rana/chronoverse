@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -342,7 +343,13 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 
 	// Check if the workflow is cached
 	cachedKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), req.GetId())
-	if cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{}); cacheErr == nil {
+	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{})
+	if cacheErr != nil {
+		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			return nil, err
+		}
+	} else {
 		// Cache hit, return cached response
 		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 		return cacheRes.(*workflowsmodel.GetWorkflowResponse), nil
@@ -388,7 +395,7 @@ type GetWorkflowByIDRequest struct {
 }
 
 // GetWorkflowByID returns the job details by ID.
-// Don't cache since, this is a internal API and we don't want to cache the workflow details.
+// This is a internal API and we don't want the cached workflow details, so we don't use the cache here.
 func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowsmodel.GetWorkflowByIDResponse, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.GetWorkflowByID")
 	defer func() {
@@ -651,7 +658,13 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 	cacheKey := generateListWorkflowsCacheKey(req.GetUserId(), req.GetCursor(), filters)
 
 	// Check for cached response
-	if cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{}); cacheErr == nil {
+	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{})
+	if cacheErr != nil {
+		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			return nil, err
+		}
+	} else {
 		// Cache hit, return cached response
 		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 		return cacheRes.(*workflowsmodel.ListWorkflowsResponse), nil

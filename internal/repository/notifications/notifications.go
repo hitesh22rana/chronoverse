@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 
@@ -64,6 +65,11 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 
 	err = r.pg.QueryRow(ctx, query, userID, kind, payload).Scan(&notificationID)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return "", err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to create notification: %v", err)
 		return "", err
 	}
@@ -90,6 +96,11 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 
 	ct, err := r.pg.Exec(ctx, query, ids, userID)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid notification ID's: %v", err)
 			return err
@@ -150,8 +161,12 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor
 
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
-	//nolint:errcheck // The error is handled in the next line
-	rows, _ := r.pg.Query(ctx, query, args...)
+	rows, err := r.pg.Query(ctx, query, args...)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	}
+
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[notificationsmodel.NotificationResponse])
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {

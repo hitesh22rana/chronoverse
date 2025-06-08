@@ -382,6 +382,8 @@ services:
     environment:
       POSTGRES_HOST: postgres
       GRPC_PORT: 50054
+      USERS_SERVICE_HOST: users-service
+      USERS_SERVICE_PORT: 50051
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true

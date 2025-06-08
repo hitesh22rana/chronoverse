@@ -16,10 +16,6 @@ import {
 import {
     Bell,
     Check,
-    XCircle,
-    AlertTriangle,
-    LayoutList,
-    SquareArrowOutUpRight,
 } from "lucide-react";
 import {
     VariableSizeList as List,
@@ -33,7 +29,6 @@ import {
     SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,21 +52,21 @@ const KIND_TO_SEVERITY: Record<string, Severity> = {
 };
 
 const SEVERITY_META: Record<Severity, { color: string }> = {
-    ERROR: {
-        color:
-            "border-l-4 border-red-500 bg-red-500/5 dark:bg-red-900/20 text-red-100",
-    },
     ALERT: {
         color:
-            "border-l-4 border-orange-500 bg-orange-500/5 dark:bg-orange-900/20 text-orange-100",
+            "border-l-4 border-red-500 bg-red-500/5 dark:bg-red-900/20 dark:text-red-100 text-red-900",
+    },
+    ERROR: {
+        color:
+            "border-l-4 border-orange-500 bg-orange-500/5 dark:bg-orange-900/20 dark:text-orange-100 text-orange-900",
     },
     INFO: {
         color:
-            "border-l-4 border-blue-500 bg-blue-500/5 dark:bg-blue-900/20 text-blue-100",
+            "border-l-4 border-blue-500 bg-blue-500/5 dark:bg-blue-900/20 dark:text-blue-100 text-blue-900",
     },
     SUCCESS: {
         color:
-            "border-l-4 border-green-500 bg-green-500/5 dark:bg-green-900/20 text-green-100",
+            "border-l-4 border-green-500 bg-green-500/5 dark:bg-green-900/20 dark:text-green-100 text-green-900",
     },
 };
 
@@ -80,6 +75,13 @@ function dateHeading(iso: string) {
     if (isToday(d)) return "Today";
     if (isYesterday(d)) return "Yesterday";
     return format(d, "MMM d, yyyy");
+}
+
+function highlightNotification(message: string): string {
+    return message.replace(
+        /'([^']+)'/g,
+        (_, p1) => `<span class="font-semibold">${p1}</span>`
+    );
 }
 
 interface NotificationsDrawerProps {
@@ -98,21 +100,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     } = useNotifications();
 
     const listRef = useRef<List>(null);
-    const [tab, setTab] = useState<"all" | "alerts" | "errors">("all");
-    const filtered = useMemo(() => {
-        if (tab === "all") return notifications;
-        if (tab === "alerts")
-            return notifications.filter((n) => {
-                const sev = KIND_TO_SEVERITY[n.kind];
-                return sev === "ALERT";
-            });
-        return notifications.filter((n) => KIND_TO_SEVERITY[n.kind] === "ERROR");
-    }, [notifications, tab]);
 
     const flat = useMemo(() => {
         const result: { type: "heading" | "item"; heading?: string; n?: Notification }[] = [];
         const groups = new Map<string, Notification[]>();
-        filtered.forEach((n) => {
+        notifications.forEach((n) => {
             const key = dateHeading(n.created_at);
             const arr = groups.get(key) ?? [];
             arr.push(n);
@@ -123,7 +115,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             arr.forEach((n) => result.push({ type: "item", n }));
         });
         return result;
-    }, [filtered]);
+    }, [notifications]);
 
     useEffect(() => {
         // reset from index 0 so every row is re-measured
@@ -178,12 +170,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             <div
                 style={style}
                 className={cn(
-                    "relative px-2 py-4 flex gap-3 group hover:bg-muted/30 transition-colors",
+                    "relative px-2 py-4 flex gap-3 group hover:bg-muted/30 transition-colors cursor-pointer",
                     meta.color,
                     !n.read_at && "ring-1 ring-white/5"
                 )}
                 onClick={() => {
-                    window.open(payload.action_url, "_blank");
                     if (!n.read_at) markAsRead([n.id]);
                 }}
                 key={index}
@@ -196,21 +187,22 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 >
                     <Checkbox checked={selected.has(n.id)} />
                 </div>
-                <div className="flex-1 min-w-0 flex flex-col gap-2">
+                <Link
+                    href={payload.action_url}
+                    prefetch={false}
+                    className="flex-1 min-w-0 flex flex-col gap-2">
                     <div className="flex items-center justify-between gap-2">
                         <p className="font-medium text-sm truncate">{payload.title}</p>
                         <span className="text-xs text-muted-foreground shrink-0">
                             {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
                         </span>
                     </div>
-                    <p className="text-xs font-medium text-muted-foreground line-clamp-2">
-                        {payload.message}
-                    </p>
-
-                    <Link href={payload.action_url} prefetch={false} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <SquareArrowOutUpRight className="h-4 w-4" />
-                    </Link>
-                </div>
+                    <p className="text-xs font-medium text-muted-foreground line-clamp-2"
+                        dangerouslySetInnerHTML={{
+                            __html: highlightNotification(payload.message),
+                        }}
+                    />
+                </Link>
             </div>
         );
     };
@@ -226,21 +218,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                     </div>
                 </SheetHeader>
 
-                {/* tabs */}
-                <Tabs value={tab} onValueChange={(v) => setTab(v as never)} className="p-4 w-full">
-                    <TabsList className="flex flex-row w-full">
-                        <TabsTrigger value="all" className="gap-1 cursor-pointer">
-                            <LayoutList className="h-4 w-4" /> All
-                        </TabsTrigger>
-                        <TabsTrigger value="alerts" className="gap-1 cursor-pointer">
-                            <AlertTriangle className="h-4 w-4" /> Alerts
-                        </TabsTrigger>
-                        <TabsTrigger value="errors" className="gap-1 cursor-pointer">
-                            <XCircle className="h-4 w-4" /> Errors
-                        </TabsTrigger>
-                    </TabsList>
-                </Tabs>
-
                 {/* bulk bar */}
                 <div className="px-4 py-2 border-b flex items-center justify-between gap-3 bg-background/95">
                     <p className="text-sm font-medium">{selected.size || 0} selected</p>
@@ -251,7 +228,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
                 {/* list / loading / empty */}
                 <div className="flex-1 relative">
-                    {isLoading && filtered.length === 0 ? (
+                    {isLoading && notifications.length === 0 ? (
                         [...Array(10)].map((_, i) => (
                             <div key={i} className="px-6 py-4 space-y-3">
                                 <Skeleton className="h-4 w-3/4" />
@@ -259,7 +236,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                                 <Skeleton className="h-3 w-1/2" />
                             </div>
                         ))
-                    ) : filtered.length === 0 ? (
+                    ) : notifications.length === 0 ? (
                         <div className="flex flex-col items-center justify-center p-8 text-center gap-2 text-muted-foreground">
                             <Bell className="h-8 w-8" />
                             <p className="font-medium">You&apos;re all caught up!</p>

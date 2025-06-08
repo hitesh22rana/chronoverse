@@ -277,14 +277,12 @@ func TestService_ListNotifications(t *testing.T) {
 			name: "success",
 			req: &notificationspb.ListNotificationsRequest{
 				UserId: "user1",
-				Kind:   "",
 				Cursor: "",
 			},
 			mock: func(req *notificationspb.ListNotificationsRequest) {
 				repo.EXPECT().ListNotifications(
 					gomock.Any(),
 					req.GetUserId(),
-					req.GetKind(),
 					req.GetCursor(),
 				).Return(&notificationsmodel.ListNotificationsResponse{
 					Notifications: []*notificationsmodel.NotificationResponse{
@@ -337,7 +335,6 @@ func TestService_ListNotifications(t *testing.T) {
 			name: "error: missing user ID",
 			req: &notificationspb.ListNotificationsRequest{
 				UserId: "",
-				Kind:   "",
 				Cursor: "",
 			},
 			mock:  func(_ *notificationspb.ListNotificationsRequest) {},
@@ -348,14 +345,12 @@ func TestService_ListNotifications(t *testing.T) {
 			name: "error: user not found",
 			req: &notificationspb.ListNotificationsRequest{
 				UserId: "invalid_user_id",
-				Kind:   "",
 				Cursor: "",
 			},
 			mock: func(req *notificationspb.ListNotificationsRequest) {
 				repo.EXPECT().ListNotifications(
 					gomock.Any(),
 					req.GetUserId(),
-					req.GetKind(),
 					req.GetCursor(),
 				).Return(nil, status.Error(codes.NotFound, "user not found"))
 			},
@@ -366,14 +361,12 @@ func TestService_ListNotifications(t *testing.T) {
 			name: "error: internal server error",
 			req: &notificationspb.ListNotificationsRequest{
 				UserId: "user1",
-				Kind:   "",
 				Cursor: "",
 			},
 			mock: func(req *notificationspb.ListNotificationsRequest) {
 				repo.EXPECT().ListNotifications(
 					gomock.Any(),
 					req.GetUserId(),
-					req.GetKind(),
 					req.GetCursor(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},

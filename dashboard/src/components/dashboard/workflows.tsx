@@ -50,8 +50,6 @@ export function Workflows() {
         kind: "",
         intervalMin: "",
         intervalMax: "",
-        createdAfter: "",
-        createdBefore: ""
     })
 
     const {
@@ -62,13 +60,8 @@ export function Workflows() {
         kindFilter,
         intervalMin,
         intervalMax,
-        createdAfter,
-        createdBefore,
         updateSearchQuery,
-        updateStatusFilter,
-        updateKindFilter,
-        updateIntervalFilter,
-        updateDateFilter,
+        applyAllFilters,
         clearAllFilters,
         pagination,
         refetch,
@@ -87,10 +80,8 @@ export function Workflows() {
             kind: kindFilter || "",
             intervalMin: intervalMin || "",
             intervalMax: intervalMax || "",
-            createdAfter: createdAfter || "",
-            createdBefore: createdBefore || ""
         })
-    }, [statusFilter, kindFilter, intervalMin, intervalMax, createdAfter, createdBefore])
+    }, [statusFilter, kindFilter, intervalMin, intervalMax])
 
     // Debounced search update
     useEffect(() => {
@@ -98,34 +89,13 @@ export function Workflows() {
             if (searchInput !== searchQuery) {
                 updateSearchQuery(searchInput)
             }
-        }, 300)
+        }, 500)
 
         return () => clearTimeout(timer)
     }, [searchInput, searchQuery, updateSearchQuery])
 
-    const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSearchInput(e.target.value)
-    }
-
-    const handleRefresh = () => {
-        refetch()
-    }
-
     const handleApplyFilters = () => {
-        // Apply all filters at once
-        if (filterState.status !== statusFilter) {
-            updateStatusFilter(filterState.status || "ALL")
-        }
-        if (filterState.kind !== kindFilter) {
-            updateKindFilter(filterState.kind || "ALL")
-        }
-        if (filterState.intervalMin !== intervalMin || filterState.intervalMax !== intervalMax) {
-            updateIntervalFilter(filterState.intervalMin, filterState.intervalMax)
-        }
-        if (filterState.createdAfter !== createdAfter || filterState.createdBefore !== createdBefore) {
-            updateDateFilter(filterState.createdAfter, filterState.createdBefore)
-        }
-
+        applyAllFilters(filterState)
         setIsFiltersOpen(false)
     }
 
@@ -136,8 +106,6 @@ export function Workflows() {
             kind: "",
             intervalMin: "",
             intervalMax: "",
-            createdAfter: "",
-            createdBefore: ""
         })
         setIsFiltersOpen(false)
     }
@@ -148,8 +116,6 @@ export function Workflows() {
         kindFilter,
         intervalMin,
         intervalMax,
-        createdAfter,
-        createdBefore
     ].filter(Boolean).length
 
     return (
@@ -164,7 +130,7 @@ export function Workflows() {
                         <Input
                             placeholder="Search workflows..."
                             value={searchInput}
-                            onChange={handleSearch}
+                            onChange={e => setSearchInput(e.target.value)}
                             className="w-full pl-9 h-9"
                         />
                     </div>
@@ -173,13 +139,16 @@ export function Workflows() {
                         {/* Filters popover */}
                         <Popover open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
                             <PopoverTrigger asChild>
-                                <Button variant="outline" className="h-9">
+                                <Button variant="outline" className="relative h-9">
                                     <Filter className="size-3" />
                                     <span className="sm:not-sr-only sr-only">
                                         Filters
                                     </span>
                                     {activeFiltersCount > 0 && (
-                                        <Badge variant="secondary" className="ml-2 h-5 min-w-5 text-xs">
+                                        <Badge
+                                            variant="secondary"
+                                            className="absolute -right-1 -top-1.5 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
+                                        >
                                             {activeFiltersCount}
                                         </Badge>
                                     )}
@@ -293,7 +262,7 @@ export function Workflows() {
                         <Button
                             variant="outline"
                             size="icon"
-                            onClick={handleRefresh}
+                            onClick={() => refetch()}
                             disabled={(isLoading || refetchLoading)}
                             className={cn(
                                 "h-9 w-9",
@@ -337,7 +306,7 @@ export function Workflows() {
             <div className="flex-1 flex flex-col">
                 {(isLoading) && workflows.length === 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[...Array(6)].map((_, i) => (
+                        {[...Array(9)].map((_, i) => (
                             <WorkflowCardSkeleton key={i} />
                         ))}
                     </div>

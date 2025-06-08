@@ -15,7 +15,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -23,7 +26,13 @@ import (
 const (
 	notificationsTable = "notifications"
 	delimiter          = '$'
+	authSubject        = "internal/notifications"
 )
+
+// Services represents the services used by the notifications repository.
+type Services struct {
+	UsersService userspb.UsersServiceClient
+}
 
 // Config represents the repository constants configuration.
 type Config struct {
@@ -32,17 +41,21 @@ type Config struct {
 
 // Repository provides notifications repository.
 type Repository struct {
-	tp  trace.Tracer
-	cfg *Config
-	pg  *postgres.Postgres
+	tp   trace.Tracer
+	cfg  *Config
+	auth auth.IAuth
+	pg   *postgres.Postgres
+	svc  *Services
 }
 
 // New creates a new notifications repository.
-func New(cfg *Config, pg *postgres.Postgres) *Repository {
+func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, svc *Services) *Repository {
 	return &Repository{
-		tp:  otel.Tracer(svcpkg.Info().GetName()),
-		cfg: cfg,
-		pg:  pg,
+		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		cfg:  cfg,
+		auth: auth,
+		pg:   pg,
+		svc:  svc,
 	}
 }
 
@@ -120,7 +133,7 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 
 // ListNotifications returns notifications by user ID.
 // By default, it only returns the unread notifications.
-func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor string) (res *notificationsmodel.ListNotificationsResponse, err error) {
+func (r *Repository) ListNotifications(ctx context.Context, userID, cursor string) (res *notificationsmodel.ListNotificationsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListNotifications")
 	defer func() {
 		if err != nil {
@@ -130,18 +143,54 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor
 		span.End()
 	}()
 
+	// Issue necessary headers and tokens for authorization
+	ctx, ctxErr := r.withAuthorization(ctx)
+	if ctxErr != nil {
+		err = ctxErr
+		return nil, err
+	}
+
+	// Fetch user details for user's preferences
+	user, usersErr := r.svc.UsersService.GetUser(ctx, &userspb.GetUserRequest{
+		Id: userID,
+	})
+	if usersErr != nil {
+		err = usersErr
+		return nil, err
+	}
+
+	var notificationsPreferences []string
+	switch user.GetNotificationPreference() {
+	case "ALL":
+		notificationsPreferences = []string{
+			notificationsmodel.KindWebAlert.ToString(),
+			notificationsmodel.KindWebError.ToString(),
+			notificationsmodel.KindWebWarn.ToString(),
+			notificationsmodel.KindWebInfo.ToString(),
+			notificationsmodel.KindWebSuccess.ToString(),
+		}
+	case "ALERTS":
+		notificationsPreferences = []string{
+			notificationsmodel.KindWebAlert.ToString(),
+		}
+	case "NONE":
+		// If the user has opted out of notifications, return an empty response
+		return &notificationsmodel.ListNotificationsResponse{
+			Notifications: nil,
+			Cursor:        "",
+		}, nil
+	default:
+		// If the user has an invalid preference, return error
+		err = status.Errorf(codes.InvalidArgument, "invalid notification preference: %s", user.GetNotificationPreference())
+		return nil, err
+	}
+
 	query := fmt.Sprintf(`
 		SELECT id, kind, payload, read_at, created_at, updated_at
 		FROM %s
-		WHERE user_id = $1 AND read_at IS NULL
+		WHERE user_id = $1 AND read_at IS NULL AND kind = ANY($2)
 	`, notificationsTable)
-	args := []any{userID}
-
-	// Add kind filter if provided
-	if kind != "" {
-		query += ` AND kind = $2`
-		args = append(args, kind)
-	}
+	args := []any{userID, notificationsPreferences}
 
 	// Add cursor pagination
 	if cursor != "" {
@@ -151,11 +200,7 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor
 			return nil, err
 		}
 
-		if kind != "" {
-			query += ` AND (created_at, id) <= ($3, $4)`
-		} else {
-			query += ` AND (created_at, id) <= ($2, $3)`
-		}
+		query += ` AND (created_at, id) <= ($3, $4)`
 		args = append(args, createdAt, id)
 	}
 
@@ -196,10 +241,31 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, kind, cursor
 	}, nil
 }
 
+// withAuthorization issues the necessary headers and tokens for authorization.
+func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
+	// Attach the audience and role to the context
+	ctx = auth.WithAudience(ctx, svcpkg.Info().GetName())
+	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
+
+	// Issue a new token
+	authToken, err := r.auth.IssueToken(ctx, authSubject)
+	if err != nil {
+		return nil, err
+	}
+
+	// Attach all the necessary headers and tokens to the context
+	ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
+	ctx = auth.WithRoleInMetadata(ctx, auth.RoleAdmin)
+	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
+
+	return ctx, nil
+}
+
 func encodeCursor(cursor string) string {
 	if cursor == "" {
 		return ""
 	}
+
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 

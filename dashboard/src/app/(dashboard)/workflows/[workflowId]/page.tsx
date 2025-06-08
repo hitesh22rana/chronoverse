@@ -135,6 +135,7 @@ export default function WorkflowDetailsPage() {
                     <div className="flex items-center gap-2">
                         <Link
                             href="/"
+                            prefetch={false}
                             className="h-8 w-8 px-2 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
                         >
                             <ArrowLeft className="h-4 w-4" />
@@ -302,42 +303,28 @@ export default function WorkflowDetailsPage() {
                                         </div>
                                     </div>
 
+                                    <Separator />
+
                                     {/* Failure tracking */}
-                                    {workflow?.consecutive_job_failures_count ? (
-                                        <Fragment>
-                                            <Separator />
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <div className="flex items-center text-red-600 dark:text-red-400">
-                                                        <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
-                                                        <span className="text-sm font-medium">Failure tracking</span>
-                                                    </div>
-                                                    <span className="text-sm font-medium">
-                                                        {workflow.consecutive_job_failures_count} / {workflow.max_consecutive_job_failures_allowed}
-                                                    </span>
-                                                </div>
-                                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                                                    <div
-                                                        className="bg-red-500 h-1.5 rounded-full"
-                                                        style={{
-                                                            width: `${(workflow.consecutive_job_failures_count / workflow.max_consecutive_job_failures_allowed) * 100}%`
-                                                        }}
-                                                    />
-                                                </div>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <div className="flex items-center text-orange-600 dark:text-orange-400">
+                                                <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
+                                                <span className="text-sm font-medium">Failure tracking</span>
                                             </div>
-                                        </Fragment>
-                                    ) : (
-                                        <Fragment>
-                                            <Separator />
-                                            <div className="flex items-center justify-between mb-1">
-                                                <div className="flex items-center text-gray-500 dark:text-gray-400">
-                                                    <CircleDashed className="h-3.5 w-3.5 mr-1.5" />
-                                                    <span className="text-sm font-medium">Failure Tracking</span>
-                                                </div>
-                                                <span className="text-sm font-medium">No failures yet</span>
-                                            </div>
-                                        </Fragment>
-                                    )}
+                                            <span className="text-sm font-medium">
+                                                {workflow?.consecutive_job_failures_count ?? 0} / {workflow?.max_consecutive_job_failures_allowed ?? 1}
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                            <div
+                                                className="bg-orange-500 h-1.5 rounded-full"
+                                                style={{
+                                                    width: `${(workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1) * 100}%`
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
                                 </CardContent>
                                 <CardFooter className="text-xs text-muted-foreground border-t">
                                     Last updated {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
@@ -488,12 +475,15 @@ function WorkflowDetailsSkeleton() {
                     <Skeleton className="h-36 w-full" />
                 </div>
                 <Separator className="mx-6 -mt-6 mb-0" />
-                <div className="flex flex-row items-center justify-between w-full px-6">
-                    <div className="flex flex-row items-center gap-2">
-                        <Skeleton className="h-4 w-4 rounded-full" />
-                        <Skeleton className="h-4 w-24" />
+                <div className="flex flex-col w-full gap-2">
+                    <div className="flex flex-row items-center justify-between w-full px-6">
+                        <div className="flex flex-row items-center gap-2">
+                            <Skeleton className="h-4 w-4 rounded-full" />
+                            <Skeleton className="h-4 w-24" />
+                        </div>
+                        <Skeleton className="h-4 w-16" />
                     </div>
-                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-1.5 w-full mx-6" />
                 </div>
                 <Separator />
                 <Skeleton className="h-4 w-36 mx-6 -mt-4" />
@@ -549,7 +539,11 @@ function JobCard({ job }: { job: Job }) {
     const StatusIcon = statusInfo.icon
 
     return (
-        <Link href={`/workflows/${job.workflow_id}/jobs/${job.id}`} className="block h-full">
+        <Link
+            href={`/workflows/${job.workflow_id}/jobs/${job.id}`}
+            prefetch={false}
+            className="block h-full"
+        >
             <Card className="overflow-hidden">
                 <CardHeader>
                     <div className="flex items-center justify-between">

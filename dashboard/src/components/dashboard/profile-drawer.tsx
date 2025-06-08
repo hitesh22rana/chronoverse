@@ -53,6 +53,7 @@ import { Input } from "@/components/ui/input"
 
 import { useUsers } from "@/hooks/use-users"
 import { useAuth } from "@/hooks/use-auth"
+import { useNotifications } from "@/hooks/use-notifications"
 
 
 interface ProfileDrawerProps {
@@ -63,6 +64,7 @@ interface ProfileDrawerProps {
 export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
     const { user, updateUser, isUpdating } = useUsers()
     const { logout, isLogoutLoading } = useAuth()
+    const { refetch: refetchNotifications } = useNotifications()
 
     // State for password confirmation dialog
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -102,6 +104,7 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
             onSuccess: () => {
                 setConfirmDialogOpen(false)
                 setPassword("")
+                refetchNotifications()
             }
         })
     }

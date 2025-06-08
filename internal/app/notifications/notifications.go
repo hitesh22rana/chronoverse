@@ -190,7 +190,6 @@ func (n *Notifications) ListNotifications(
 		"App.ListNotifications",
 		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
-			attribute.String("kind", req.GetKind()),
 			attribute.String("cursor", req.GetCursor()),
 		),
 	)

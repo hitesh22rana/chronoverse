@@ -221,8 +221,7 @@ func (*MarkNotificationsReadResponse) Descriptor() ([]byte, []int) {
 type ListNotificationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`                   // Kind of notification (optional)
-	Cursor        string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`               // Cursor for pagination
+	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`               // Cursor for pagination
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -260,13 +259,6 @@ func (*ListNotificationsRequest) Descriptor() ([]byte, []int) {
 func (x *ListNotificationsRequest) GetUserId() string {
 	if x != nil {
 		return x.UserId
-	}
-	return ""
-}
-
-func (x *ListNotificationsRequest) GetKind() string {
-	if x != nil {
-		return x.Kind
 	}
 	return ""
 }
@@ -430,11 +422,10 @@ const file_notifications_notifications_proto_rawDesc = "" +
 	"\x1cMarkNotificationsReadRequest\x12\x10\n" +
 	"\x03ids\x18\x01 \x03(\tR\x03ids\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x1f\n" +
-	"\x1dMarkNotificationsReadResponse\"_\n" +
+	"\x1dMarkNotificationsReadResponse\"K\n" +
 	"\x18ListNotificationsRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
-	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"\xab\x01\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x16\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\"\xab\x01\n" +
 	"\x14NotificationResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +

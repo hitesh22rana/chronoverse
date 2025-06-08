@@ -43,8 +43,6 @@ export function useWorkflows() {
     let kindFilter = ""
     let intervalMin = ""
     let intervalMax = ""
-    let createdAfter = ""
-    let createdBefore = ""
 
     if (isNotRootPath) {
         currentCursor = ""
@@ -53,8 +51,6 @@ export function useWorkflows() {
         kindFilter = ""
         intervalMin = ""
         intervalMax = ""
-        createdAfter = ""
-        createdBefore = ""
     } else {
         currentCursor = searchParams.get("cursor") || ""
         searchQuery = searchParams.get("query") || ""
@@ -62,8 +58,6 @@ export function useWorkflows() {
         kindFilter = searchParams.get("kind") || ""
         intervalMin = searchParams.get("interval_min") || ""
         intervalMax = searchParams.get("interval_max") || ""
-        createdAfter = searchParams.get("created_after") || ""
-        createdBefore = searchParams.get("created_before") || ""
     }
 
     // Build query parameters for the API call
@@ -98,19 +92,11 @@ export function useWorkflows() {
             params.set("interval_max", intervalMax)
         }
 
-        if (createdAfter) {
-            params.set("created_after", createdAfter)
-        }
-
-        if (createdBefore) {
-            params.set("created_before", createdBefore)
-        }
-
         return params.toString()
-    }, [currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax, createdAfter, createdBefore])
+    }, [currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax])
 
     const query = useQuery({
-        queryKey: ["workflows", currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax, createdAfter, createdBefore],
+        queryKey: ["workflows", currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax],
         queryFn: async () => {
             const url = queryParams
                 ? `${WORKFLOWS_ENDPOINT}?${queryParams}`
@@ -162,47 +148,44 @@ export function useWorkflows() {
         router.push(`?${params.toString()}`)
     }, [router, searchParams])
 
-    // Update status filter in URL params
-    const updateStatusFilter = useCallback((newStatus: string) => {
+    // Apply all filters and search query
+    const applyAllFilters = useCallback((filters: unknown) => {
         const params = new URLSearchParams(searchParams.toString())
-        params.delete("cursor") // Reset pagination when filtering
+        params.delete("cursor") // Reset pagination when applying filters
 
-        if (newStatus && newStatus !== "ALL") {
-            params.set("status", newStatus)
+        const
+            {
+                status,
+                kind,
+                intervalMin,
+                intervalMax
+            } = filters as {
+                status?: string,
+                kind?: string,
+                intervalMin?: string,
+                intervalMax?: string,
+            }
+
+        if (status && status !== "ALL") {
+            params.set("status", status)
         } else {
             params.delete("status")
         }
 
-        router.push(`?${params.toString()}`)
-    }, [router, searchParams])
-
-    // Update kind filter in URL params
-    const updateKindFilter = useCallback((newKind: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-        params.delete("cursor")
-
-        if (newKind && newKind !== "ALL") {
-            params.set("kind", newKind)
+        if (kind && kind !== "ALL") {
+            params.set("kind", kind)
         } else {
             params.delete("kind")
         }
 
-        router.push(`?${params.toString()}`)
-    }, [router, searchParams])
-
-    // Update interval range filters
-    const updateIntervalFilter = useCallback((min: string, max: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-        params.delete("cursor")
-
-        if (min) {
-            params.set("interval_min", min)
+        if (intervalMin) {
+            params.set("interval_min", intervalMin)
         } else {
             params.delete("interval_min")
         }
 
-        if (max) {
-            params.set("interval_max", max)
+        if (intervalMax) {
+            params.set("interval_max", intervalMax)
         } else {
             params.delete("interval_max")
         }
@@ -210,31 +193,19 @@ export function useWorkflows() {
         router.push(`?${params.toString()}`)
     }, [router, searchParams])
 
-    // Update date range filters
-    const updateDateFilter = useCallback((after: string, before: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-        params.delete("cursor")
+    // Clear all filters
+    const clearAllFilters = useCallback(() => {
+        // Get the search query if it exists
+        const oldParams = new URLSearchParams(searchParams.toString())
+        const query = oldParams.get("query")
 
-        if (after) {
-            params.set("created_after", after)
-        } else {
-            params.delete("created_after")
-        }
-
-        if (before) {
-            params.set("created_before", before)
-        } else {
-            params.delete("created_before")
+        const params = new URLSearchParams()
+        if (query) {
+            params.set("query", query)
         }
 
         router.push(`?${params.toString()}`)
     }, [router, searchParams])
-
-    // Clear all filters
-    const clearAllFilters = useCallback(() => {
-        const params = new URLSearchParams()
-        router.push(`?${params.toString()}`)
-    }, [router])
 
     if (query.error instanceof Error) {
         toast.error(query.error.message)
@@ -281,13 +252,8 @@ export function useWorkflows() {
         kindFilter,
         intervalMin,
         intervalMax,
-        createdAfter,
-        createdBefore,
         updateSearchQuery,
-        updateStatusFilter,
-        updateKindFilter,
-        updateIntervalFilter,
-        updateDateFilter,
+        applyAllFilters,
         clearAllFilters,
         pagination: {
             nextCursor: query?.data?.cursor,

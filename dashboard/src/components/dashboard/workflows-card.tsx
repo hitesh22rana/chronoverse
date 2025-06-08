@@ -2,7 +2,13 @@
 
 import Link from "next/link"
 import { formatDistanceToNow } from "date-fns"
-import { Clock, CheckCircle, AlertTriangle, Loader2, XCircle, Shield } from "lucide-react"
+import {
+    Clock,
+    CheckCircle,
+    AlertTriangle,
+    Loader2,
+    XCircle
+} from "lucide-react"
 
 import { Workflow } from "@/hooks/use-workflows"
 import { cn } from "@/lib/utils"
@@ -85,19 +91,6 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
 
     const StatusIcon = statusConfig.icon
 
-    // Determine if we should show failures count
-    const hasFailures = workflow.consecutive_job_failures_count && workflow.consecutive_job_failures_count > 0
-
-    // Check if workflow has run at least once (updated_at different from created_at)
-    const hasRun = workflow.updated_at !== workflow.created_at
-
-    // Only show success badge if the workflow has run at least once and has no failures
-    const showSuccessBadge = hasRun && !hasFailures && status === "COMPLETED"
-
-    // If the workflow is terminated, show the terminated status
-    const isTerminated = !!workflow.terminated_at
-    const formatedStatus = workflow.build_status.charAt(0).toUpperCase() + workflow.build_status.slice(1).toLowerCase()
-
     // Format interval for display
     const interval = workflow.interval === 1440
         ? "daily"
@@ -106,7 +99,7 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
             : `every ${workflow.interval} minute${workflow.interval !== 1 ? 's' : ''}`
 
     return (
-        <Link href={`/workflows/${workflow.id}`} className="block h-full">
+        <Link href={`/workflows/${workflow.id}`} prefetch={false} className="block h-full">
             <Card className={cn(
                 "h-full relative overflow-hidden transition-all duration-300 rounded-md",
                 statusConfig.glowClass
@@ -149,73 +142,26 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                         <span>Runs {interval}</span>
                     </div>
 
-                    {hasFailures ? (
-                        <div className="mt-3">
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center text-red-600 dark:text-red-400">
-                                    <AlertTriangle className="h-3 w-3 mr-1" />
-                                    <span className="text-xs font-medium">Failures</span>
-                                </div>
-                                <span className="text-xs font-medium">
-                                    {workflow.consecutive_job_failures_count} / {workflow.max_consecutive_job_failures_allowed || 0}
-                                </span>
+                    <div className="mt-3">
+                        <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center text-orange-600 dark:text-orange-400">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                <span className="text-xs font-medium">Failures</span>
                             </div>
-
-                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
-                                <div
-                                    className="bg-red-500 h-1 rounded-full"
-                                    style={{
-                                        width: `${((workflow.consecutive_job_failures_count || 0) / workflow.max_consecutive_job_failures_allowed) * 100}%`
-                                    }}
-                                />
-                            </div>
+                            <span className="text-xs font-medium">
+                                {workflow?.consecutive_job_failures_count ?? 0} / {workflow?.max_consecutive_job_failures_allowed ?? 1}
+                            </span>
                         </div>
-                    ) : showSuccessBadge ? (
-                        <div className="mt-3">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center text-emerald-600 dark:text-emerald-400">
-                                    <Shield className="h-3 w-3 mr-1" />
-                                    <span className="text-xs font-medium">Healthy</span>
-                                </div>
-                                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                                    0 failures
-                                </span>
-                            </div>
 
-                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1 mt-1">
-                                <div className="bg-emerald-500 h-1 rounded-full w-full" />
-                            </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                            <div
+                                className="bg-orange-500 h-1 rounded-full"
+                                style={{
+                                    width: `${(workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1) * 100}%`
+                                }}
+                            />
                         </div>
-                    ) : (
-                        <div className="mt-3">
-                            <div className="flex items-center justify-between mb-1">
-                                <div className={cn(
-                                    "flex items-center text-gray-500 dark:text-gray-400",
-                                    isTerminated && "text-red-500 dark:text-red-400"
-                                )}>
-                                    {isTerminated ? (
-                                        <XCircle className="h-3 w-3 mr-1" />
-                                    ) : (
-                                        <Shield className="h-3 w-3 mr-1" />
-                                    )}
-                                    <span className="text-xs font-medium">{isTerminated ? "Terminated" : formatedStatus}</span>
-                                </div>
-                                <span className={cn(
-                                    "text-xs font-medium text-gray-500 dark:text-gray-400",
-                                    isTerminated && "text-red-500 dark:text-red-400"
-                                )}>
-                                    {isTerminated ? "" : "No failures"}
-                                </span>
-                            </div>
-
-                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
-                                <div className={cn(
-                                    "h-1 rounded-full w-full",
-                                    isTerminated ? "bg-red-500" : "bg-gray-500"
-                                )} />
-                            </div>
-                        </div>
-                    )}
+                    </div>
                 </CardContent>
 
                 {workflow.updated_at && (

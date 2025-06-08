@@ -74,6 +74,7 @@ export default function JobDetailsPage() {
                 <div className="flex items-center gap-2">
                     <Link
                         href={`/workflows/${workflowId}`}
+                        prefetch={false}
                         className="h-8 w-8 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
                     >
                         <ArrowLeft className="h-4 w-4" />
@@ -94,7 +95,7 @@ export default function JobDetailsPage() {
                     onClick={handleRefresh}
                 >
                     <RefreshCw className="h-4 w-4" />
-                    <span className="sr-only">Refresh</span>
+                    <span className="md:not-sr-only sr-only">Refresh</span>
                 </Button>
             </div>
 

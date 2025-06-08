@@ -396,6 +396,7 @@ func encodeListJobsCursor(cursor string) string {
 	if cursor == "" {
 		return ""
 	}
+
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 

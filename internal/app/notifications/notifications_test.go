@@ -497,7 +497,6 @@ func TestListNotifications(t *testing.T) {
 				},
 				req: &notificationspb.ListNotificationsRequest{
 					UserId: "user-id",
-					Kind:   "",
 					Cursor: "",
 				},
 			},
@@ -566,7 +565,6 @@ func TestListNotifications(t *testing.T) {
 				},
 				req: &notificationspb.ListNotificationsRequest{
 					UserId: "user-id",
-					Kind:   "",
 					Cursor: "",
 				},
 			},
@@ -592,7 +590,6 @@ func TestListNotifications(t *testing.T) {
 				},
 				req: &notificationspb.ListNotificationsRequest{
 					UserId: "",
-					Kind:   "",
 					Cursor: "",
 				},
 			},
@@ -616,7 +613,6 @@ func TestListNotifications(t *testing.T) {
 				},
 				req: &notificationspb.ListNotificationsRequest{
 					UserId: "user-id",
-					Kind:   "",
 					Cursor: "",
 				},
 			},
@@ -640,7 +636,6 @@ func TestListNotifications(t *testing.T) {
 				},
 				req: &notificationspb.ListNotificationsRequest{
 					UserId: "user-id",
-					Kind:   "",
 					Cursor: "",
 				},
 			},

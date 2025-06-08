@@ -10,9 +10,12 @@ import (
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
+	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+
 	"github.com/hitesh22rana/chronoverse/internal/app/notifications"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -50,6 +53,20 @@ func run() int {
 		return ExitError
 	}
 
+	// Connect to the users service
+	usersConn, err := grpcclient.NewClient(
+		grpcclient.ServiceConfig{
+			Host:     cfg.UsersService.Host,
+			Port:     cfg.UsersService.Port,
+			Secure:   cfg.UsersService.Secure,
+			CertFile: cfg.UsersService.CertFile,
+		}, grpcclient.DefaultRetryConfig())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return ExitError
+	}
+	defer usersConn.Close()
+
 	// Initialize the PostgreSQL database
 	pdb, err := postgres.New(ctx, &postgres.Config{
 		Host:        cfg.Postgres.Host,
@@ -73,7 +90,9 @@ func run() int {
 	// Initialize the notifications repository
 	repo := notificationsrepo.New(&notificationsrepo.Config{
 		FetchLimit: cfg.NotificationsServiceConfig.FetchLimit,
-	}, pdb)
+	}, auth, pdb, &notificationsrepo.Services{
+		UsersService: userspb.NewUsersServiceClient(usersConn),
+	})
 
 	// Initialize the validator utility
 	validator := validator.New()

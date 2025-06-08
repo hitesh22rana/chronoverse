@@ -23,7 +23,7 @@ import (
 type Repository interface {
 	CreateNotification(ctx context.Context, userID, kind, payload string) (string, error)
 	MarkNotificationsRead(ctx context.Context, notificationIDs []string, userID string) error
-	ListNotifications(ctx context.Context, userID, kind, cursor string) (*notificationsmodel.ListNotificationsResponse, error)
+	ListNotifications(ctx context.Context, userID, cursor string) (*notificationsmodel.ListNotificationsResponse, error)
 }
 
 // Service provides notification related operations.
@@ -127,7 +127,6 @@ func (s *Service) MarkNotificationsRead(ctx context.Context, req *notificationsp
 // ListNotificationsRequest holds the request parameters for listing notifications.
 type ListNotificationsRequest struct {
 	UserID string `validate:"required"`
-	Kind   string `validate:"omitempty"`
 	Cursor string `validate:"omitempty"`
 }
 
@@ -148,7 +147,6 @@ func (s *Service) ListNotifications(
 	// Validate the request
 	err = s.validator.Struct(&ListNotificationsRequest{
 		UserID: req.GetUserId(),
-		Kind:   req.GetKind(),
 		Cursor: req.GetCursor(),
 	})
 	if err != nil {
@@ -167,7 +165,7 @@ func (s *Service) ListNotifications(
 	}
 
 	// List the notifications
-	res, err = s.repo.ListNotifications(ctx, req.GetUserId(), req.GetKind(), cursor)
+	res, err = s.repo.ListNotifications(ctx, req.GetUserId(), cursor)
 	if err != nil {
 		return nil, err
 	}

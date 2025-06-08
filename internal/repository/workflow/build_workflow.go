@@ -167,7 +167,7 @@ func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error
 			"",
 			"Workflow Build Failed",
 			fmt.Sprintf("Build process for workflow '%s' has failed.", workflow.GetName()),
-			notificationsmodel.KindWebError.ToString(),
+			notificationsmodel.KindWebAlert.ToString(),
 			notificationsmodel.EntityWorkflow.ToString(),
 		)
 

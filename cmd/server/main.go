@@ -136,26 +136,32 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	usersServiceClient := userpb.NewUsersServiceClient(usersConn)
-	workflowsServiceClient := workflowspb.NewWorkflowsServiceClient(workflowsConn)
-	jobsServiceClient := jobspb.NewJobsServiceClient(jobsConn)
-	notificationsServiceClient := notificationspb.NewNotificationsServiceClient(notificationsConn)
-	srv := server.New(ctx, &server.Config{
-		Host:              cfg.Server.Host,
-		Port:              cfg.Server.Port,
-		RequestTimeout:    cfg.Server.RequestTimeout,
-		ReadTimeout:       cfg.Server.ReadTimeout,
-		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
-		WriteTimeout:      cfg.Server.WriteTimeout,
-		IdleTimeout:       cfg.Server.IdleTimeout,
-		ValidationConfig: &server.ValidationConfig{
-			SessionExpiry:    cfg.Server.SessionExpiry,
-			CSRFExpiry:       cfg.Server.CSRFExpiry,
-			RequestBodyLimit: cfg.Server.RequestBodyLimit,
-			CSRFHMACSecret:   cfg.Server.CSRFHMACSecret,
+	srv := server.New(
+		ctx,
+		&server.Config{
+			Host:              cfg.Server.Host,
+			Port:              cfg.Server.Port,
+			RequestTimeout:    cfg.Server.RequestTimeout,
+			ReadTimeout:       cfg.Server.ReadTimeout,
+			ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+			WriteTimeout:      cfg.Server.WriteTimeout,
+			IdleTimeout:       cfg.Server.IdleTimeout,
+			ValidationConfig: &server.ValidationConfig{
+				SessionExpiry:    cfg.Server.SessionExpiry,
+				CSRFExpiry:       cfg.Server.CSRFExpiry,
+				RequestBodyLimit: cfg.Server.RequestBodyLimit,
+				CSRFHMACSecret:   cfg.Server.CSRFHMACSecret,
+			},
+			FrontendURL: cfg.Server.FrontendURL,
 		},
-		FrontendURL: cfg.Server.FrontendURL,
-	}, auth, crypto, rdb, usersServiceClient, workflowsServiceClient, jobsServiceClient, notificationsServiceClient)
+		auth,
+		crypto,
+		rdb,
+		userpb.NewUsersServiceClient(usersConn),
+		workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		jobspb.NewJobsServiceClient(jobsConn),
+		notificationspb.NewNotificationsServiceClient(notificationsConn),
+	)
 
 	// Log the server information
 	loggerpkg.FromContext(ctx).Info(

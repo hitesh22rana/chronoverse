@@ -57,18 +57,18 @@ func (mr *MockRepositoryMockRecorder) CreateNotification(ctx, userID, kind, payl
 }
 
 // ListNotifications mocks base method.
-func (m *MockRepository) ListNotifications(ctx context.Context, userID, kind, cursor string) (*notifications.ListNotificationsResponse, error) {
+func (m *MockRepository) ListNotifications(ctx context.Context, userID, cursor string) (*notifications.ListNotificationsResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListNotifications", ctx, userID, kind, cursor)
+	ret := m.ctrl.Call(m, "ListNotifications", ctx, userID, cursor)
 	ret0, _ := ret[0].(*notifications.ListNotificationsResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListNotifications indicates an expected call of ListNotifications.
-func (mr *MockRepositoryMockRecorder) ListNotifications(ctx, userID, kind, cursor any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) ListNotifications(ctx, userID, cursor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNotifications", reflect.TypeOf((*MockRepository)(nil).ListNotifications), ctx, userID, kind, cursor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNotifications", reflect.TypeOf((*MockRepository)(nil).ListNotifications), ctx, userID, cursor)
 }
 
 // MarkNotificationsRead mocks base method.

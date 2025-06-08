@@ -28,8 +28,7 @@ message MarkNotificationsReadResponse {}
 // ListNotificationsRequest contains the details needed to list notifications.
 message ListNotificationsRequest {
     string user_id = 1; // ID of the user
-    string kind    = 2; // Kind of notification (optional)
-    string cursor  = 3; // Cursor for pagination
+    string cursor  = 2; // Cursor for pagination
 }
 
 // NotificationResponse contains the details of a notification.

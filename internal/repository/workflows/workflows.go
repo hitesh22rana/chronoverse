@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
@@ -53,6 +54,8 @@ func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
 }
 
 // CreateWorkflow creates a new workflow.
+//
+//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) CreateWorkflow(
 	ctx context.Context,
 	userID,
@@ -132,6 +135,11 @@ func (r *Repository) CreateWorkflow(
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		}
+
+		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
+			err = status.Error(codes.Unavailable, err.Error())
 			return nil, err
 		}
 
@@ -247,6 +255,11 @@ func (r *Repository) UpdateWorkflow(
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
+		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
+			err = status.Error(codes.Unavailable, err.Error())
 			return err
 		}
 
@@ -545,6 +558,11 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		}
+
+		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
+			err = status.Error(codes.Unavailable, err.Error())
 			return err
 		}
 

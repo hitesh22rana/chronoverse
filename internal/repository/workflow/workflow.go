@@ -268,9 +268,9 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
-func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
+func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
 	// Attach the audience and role to the context
-	ctx = auth.WithAudience(ctx, svcpkg.Info().GetName())
+	ctx := auth.WithAudience(parentCtx, svcpkg.Info().GetName())
 	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
 
 	// Issue a new token

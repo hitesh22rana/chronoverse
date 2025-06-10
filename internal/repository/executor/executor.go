@@ -237,7 +237,7 @@ func (r *Repository) Run(ctx context.Context) error {
 // runWorkflow runs the executor workflow.
 //
 //nolint:gocyclo // This function is complex and has multiple responsibilities.
-func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error {
+func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) error {
 	// Extract the fields from the record value
 	jobID, workflowID, lastScheduledAt, err := extractFieldFromRecordValue(recordValue)
 	if err != nil {
@@ -245,7 +245,7 @@ func (r *Repository) runWorkflow(ctx context.Context, recordValue []byte) error 
 	}
 
 	// Issue necessary headers and tokens for authorization
-	ctx, err = r.withAuthorization(ctx)
+	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
 		return err
 	}
@@ -474,9 +474,9 @@ func extractFieldFromRecordValue(recordValue []byte) (jobID, workflowID string, 
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
-func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
+func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
 	// Attach the audience and role to the context
-	ctx = auth.WithAudience(ctx, svcpkg.Info().GetName())
+	ctx := auth.WithAudience(parentCtx, svcpkg.Info().GetName())
 	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
 
 	// Issue a new token

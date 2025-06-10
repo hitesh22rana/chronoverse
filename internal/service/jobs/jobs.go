@@ -241,18 +241,8 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the cursor
-	var cursor string
-	if req.GetCursor() != "" {
-		cursor, err = decodeCursor(req.GetCursor())
-		if err != nil {
-			err = status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
-			return nil, err
-		}
-	}
-
 	// Get the scheduled job logs
-	res, err = s.repo.GetJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId(), cursor)
+	res, err = s.repo.GetJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor())
 	if err != nil {
 		return nil, err
 	}

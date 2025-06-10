@@ -122,16 +122,40 @@ func WithAuthorizationToken(ctx context.Context, token string) context.Context {
 
 // WithAudienceInMetadata sets the audience in the metadata for incoming requests.
 func WithAudienceInMetadata(ctx context.Context, audience string) context.Context {
+	// Delete any existing audience metadata to avoid duplicates
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+		md.Delete(audienceMetadataKey)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	// Append the new audience metadata
 	return metadata.AppendToOutgoingContext(ctx, audienceMetadataKey, audience)
 }
 
 // WithRoleInMetadata sets the role in the metadata for incoming requests.
 func WithRoleInMetadata(ctx context.Context, role Role) context.Context {
+	// Delete any existing role metadata to avoid duplicates
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+		md.Delete(roleMetadataKey)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	// Append the new role metadata
 	return metadata.AppendToOutgoingContext(ctx, roleMetadataKey, string(role))
 }
 
 // WithAuthorizationTokenInMetadata sets the authorization token in the metadata for incoming requests.
 func WithAuthorizationTokenInMetadata(ctx context.Context, token string) context.Context {
+	// Delete any existing authorization token metadata to avoid duplicates
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+		md.Delete(authorizationMetadataKey)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	// Append the new authorization token metadata
 	return metadata.AppendToOutgoingContext(ctx, authorizationMetadataKey, "Bearer "+token)
 }
 

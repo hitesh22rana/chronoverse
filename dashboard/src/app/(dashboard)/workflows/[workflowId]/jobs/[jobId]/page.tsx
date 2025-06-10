@@ -23,11 +23,11 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { LogViewer } from "@/components/dashboard/log-viewer"
 
 import { useJobDetails } from "@/hooks/use-job-details"
 
 import { cn } from "@/lib/utils"
-import { LogViewer } from "@/components/dashboard/log-viewer"
 
 export default function JobDetailsPage() {
     const { workflowId, jobId } = useParams() as { workflowId: string, jobId: string }

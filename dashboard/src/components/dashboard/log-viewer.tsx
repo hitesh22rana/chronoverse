@@ -5,6 +5,7 @@ import {
     useEffect,
     useRef,
     useMemo,
+    useCallback,
 } from "react"
 import {
     Loader2,
@@ -50,17 +51,72 @@ export function LogViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
         logs,
         isLoading: isLogsLoading,
         error: logsError,
+        fetchNextPage,
+        isFetchingNextPage,
+        hasNextPage,
     } = useJobLogs(workflowId, jobId, jobStatus)
+
+    // Infinite scroll handler
+    const handleScroll = useCallback(() => {
+        if (!logContainerRef.current || !hasNextPage || isFetchingNextPage) return
+
+        const container = logContainerRef.current
+        const { scrollTop, scrollHeight, clientHeight } = container
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+
+        // Trigger when user is near the bottom (within 200px)
+        if (distanceFromBottom < 200) {
+            fetchNextPage()
+        }
+    }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
+    // Add scroll listener with throttling
+    useEffect(() => {
+        const container = logContainerRef.current
+        if (!container) return
+
+        // Add throttling to prevent too many calls
+        let ticking = false
+        const throttledHandleScroll = () => {
+            if (!ticking) {
+                requestAnimationFrame(() => {
+                    handleScroll()
+                    ticking = false
+                })
+                ticking = true
+            }
+        }
+
+        container.addEventListener('scroll', throttledHandleScroll, { passive: true })
+
+        // Check on mount if container is too small and needs more logs
+        setTimeout(() => {
+            if (container.scrollHeight <= container.clientHeight && hasNextPage && !isFetchingNextPage) {
+                fetchNextPage()
+            }
+        }, 100)
+
+        return () => {
+            container.removeEventListener('scroll', throttledHandleScroll)
+        }
+    }, [handleScroll, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+    // Auto-load more logs when we have few entries
+    useEffect(() => {
+        if (logs && logs.length > 0 && logs.length < 50 && hasNextPage && !isFetchingNextPage && !isLogsLoading) {
+            fetchNextPage()
+        }
+    }, [logs, hasNextPage, isFetchingNextPage, isLogsLoading, fetchNextPage])
 
     // Find all search matches
     const searchMatches = useMemo(() => {
-        if (!searchQuery.trim() || logs.length === 0) return []
+        if (!searchQuery.trim() || !logs || logs.length === 0) return []
 
         const matches: SearchMatch[] = []
         const query = searchQuery.toLowerCase()
 
         logs.forEach((log, lineIndex) => {
-            const logText = log.message.toLowerCase()
+            const logText = log.toLowerCase()
             let startIndex = 0
 
             while (true) {
@@ -189,7 +245,9 @@ export function LogViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
     }
 
     const downloadLogs = () => {
-        const logText = logs.map(log => log.message).join("\n")
+        if (!logs || logs.length === 0) return
+
+        const logText = logs.map(log => log || '').join("\n")
         const blob = new Blob([logText], { type: "text/plain" })
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
@@ -203,8 +261,15 @@ export function LogViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
         <Card className="flex flex-col flex-1 h-full">
             <CardHeader className="flex-shrink-0 space-y-4">
                 <div className="flex items-center justify-between">
-                    <CardTitle>Logs</CardTitle>
-                    <Button variant="outline" size="sm" onClick={downloadLogs} disabled={logs.length === 0}>
+                    <CardTitle>
+                        Logs
+                    </CardTitle>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={downloadLogs}
+                        disabled={logs.length === 0}
+                    >
                         <Download className="h-4 w-4 mr-2" />
                         Download
                     </Button>
@@ -216,7 +281,7 @@ export function LogViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                             ref={searchInputRef}
-                            placeholder="Search logs..."
+                            placeholder="Search logs... (Ctrl+F)"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onFocus={() => setIsSearchFocused(true)}
@@ -262,35 +327,57 @@ export function LogViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                 <div className="h-full w-full font-mono text-sm overflow-hidden">
                     {isLogsLoading ? (
                         <div className="flex items-center justify-center h-full">
-                            <Loader2 className="h-6 w-6 animate-spin" />
+                            <div className="flex items-center gap-2">
+                                <Loader2 className="h-6 w-6 animate-spin" />
+                                <span>Loading logs...</span>
+                            </div>
                         </div>
                     ) : logsError ? (
-                        <div className="flex items-center justify-center h-full text-red-500">
-                            {logsError.message}
+                        <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                                <div className="text-red-500 mb-2">Error loading logs</div>
+                                <div className="text-sm text-muted-foreground">
+                                    {logsError.message}
+                                </div>
+                            </div>
                         </div>
                     ) : logs.length > 0 ? (
-                        <div ref={logContainerRef} className="h-full overflow-auto p-4 space-y-1">
+                        <div ref={logContainerRef} className="h-full overflow-auto p-4 space-y-1 scroll-smooth">
                             {logs.map((log, index) => {
-                                const logText = log.message
-
                                 return (
                                     <div
-                                        key={`${log.timestamp}-${index}`}
+                                        key={index}
                                         className="flex hover:bg-muted/50 px-2 py-1 rounded group"
                                     >
-                                        <span className="text-muted-foreground mr-4 select-none min-w-[3ch] text-right">
+                                        <span className="text-muted-foreground mr-4 select-none min-w-[4ch] text-right">
                                             {index + 1}
                                         </span>
                                         <span className="flex-1 whitespace-pre-wrap break-all">
-                                            {highlightText(logText, index)}
+                                            {highlightText(log, index)}
                                         </span>
                                     </div>
                                 )
                             })}
+
+                            {/* Loading indicator for infinite scroll */}
+                            {isFetchingNextPage && (
+                                <div className="flex items-center justify-center py-4">
+                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    <span className="text-sm text-muted-foreground">Loading more logs...</span>
+                                </div>
+                            )}
                         </div>
                     ) : (
-                        <div className="flex items-center justify-center h-full text-gray-400">
-                            No logs available
+                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                            <div className="text-lg mb-2">No logs available</div>
+                            <div className="text-sm text-center">
+                                {jobStatus === 'RUNNING'
+                                    ? 'Logs will appear here as the job executes'
+                                    : jobStatus === 'PENDING'
+                                        ? 'Job is waiting to start'
+                                        : 'This job did not produce any logs'
+                                }
+                            </div>
                         </div>
                     )}
                 </div>

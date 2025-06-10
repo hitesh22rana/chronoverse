@@ -20,9 +20,9 @@ import (
 // buildWorkflow executes the build workflow.
 //
 //nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
-func (r *Repository) buildWorkflow(ctx context.Context, workflowID string) error {
+func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string) error {
 	// Issue necessary headers and tokens for authorization
-	ctx, err := r.withAuthorization(ctx)
+	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
 		return err
 	}

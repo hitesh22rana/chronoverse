@@ -1,9 +1,11 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -15,25 +17,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
-
-// withCORSMiddleware adds CORS headers to all responses.
-func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", s.frontendConfig.URL)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Credentials", "true") // Critical for cookies
-		w.Header().Set("Access-Control-Max-Age", "86400")          // 24 hours
-
-		// Handle preflight requests
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
 
 // withOtelMiddleware adds OpenTelemetry tracing to the HTTP handler.
 func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
@@ -64,7 +47,10 @@ func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 		defer span.End()
 
 		// Wrapped response writer to capture the status code
-		wrw := &statusResponseWriter{ResponseWriter: w, status: http.StatusOK}
+		wrw := &customResponseWriter{
+			ResponseWriter: w,
+			status:         http.StatusOK,
+		}
 
 		// Continue the request with the new context
 		next.ServeHTTP(wrw, r.WithContext(ctx))
@@ -94,6 +80,58 @@ func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 			log.Info(msg, logFields...)
 			span.SetAttributes(attribute.String("http.success", http.StatusText(wrw.status)))
 		}
+	})
+}
+
+// withCORSMiddleware adds CORS headers to all responses.
+func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", s.frontendConfig.URL)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Credentials", "true") // Critical for cookies
+		w.Header().Set("Access-Control-Max-Age", "86400")          // 24 hours
+
+		// Handle preflight requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// withCompressionMiddleware adds HTTP gzip compression for JSON responses.
+func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if client accepts gzip compression
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Create gzip writer with best speed for better performance
+		gz, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+		if err != nil {
+			s.logger.Error("failed to create gzip writer", zap.Error(err))
+			next.ServeHTTP(w, r)
+			return
+		}
+		defer gz.Close()
+
+		// Set Vary header to indicate response varies based on Accept-Encoding
+		w.Header().Set("Vary", "Accept-Encoding")
+
+		// Create proper gzip response writer
+		gzipWriter := &gzipResponseWriter{
+			ResponseWriter: w,
+			gzipWriter:     gz,
+			status:         http.StatusOK,
+		}
+
+		// Serve the request with compressed response
+		next.ServeHTTP(gzipWriter, r)
 	})
 }
 

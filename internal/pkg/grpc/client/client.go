@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/status"
 )
 
@@ -67,6 +68,7 @@ func NewClient(svcCfg ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, e
 		opts,
 		grpc.WithUnaryInterceptor(retry.UnaryClientInterceptor(retryOpts...)),
 		grpc.WithStreamInterceptor(retry.StreamClientInterceptor(retryOpts...)),
+		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
 	)
 
 	// Load credentials

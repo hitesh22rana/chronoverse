@@ -110,7 +110,7 @@ export function useWorkflows() {
 
             return response.json() as Promise<WorkflowsResponse>
         },
-        refetchInterval: 10000,
+        refetchInterval: 10000, // Refetch every 10 seconds
     })
 
     const goToNextPage = useCallback(() => {

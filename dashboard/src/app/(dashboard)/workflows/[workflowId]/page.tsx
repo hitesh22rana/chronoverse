@@ -78,6 +78,7 @@ export default function WorkflowDetailsPage() {
         isLoading: isJobsLoading,
         refetch: refetchJobs,
         error: jobsError,
+        applyAllFilters,
         pagination
     } = useWorkflowJobs(workflowId as string)
 
@@ -117,14 +118,7 @@ export default function WorkflowDetailsPage() {
 
     // Handle status filter change
     const handleStatusFilter = (value: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-        if (value === "ALL") {
-            params.delete("status")
-        } else {
-            params.set("status", value)
-        }
-
-        router.push(`?${params.toString()}`, { scroll: false })
+        applyAllFilters({ status: value })
     }
 
     return (
@@ -377,7 +371,7 @@ export default function WorkflowDetailsPage() {
                                 variant="outline"
                                 size="icon"
                                 onClick={() => pagination.goToPreviousPage()}
-                                disabled={!pagination.hasPreviousPage || (urlStatusFilter !== "ALL")}
+                                disabled={!pagination.hasPreviousPage}
                                 className="h-9 w-9"
                             >
                                 <ChevronLeft className="size-4" />
@@ -387,7 +381,7 @@ export default function WorkflowDetailsPage() {
                                 variant="outline"
                                 size="icon"
                                 onClick={() => pagination.goToNextPage()}
-                                disabled={!pagination.hasNextPage || (urlStatusFilter !== "ALL")}
+                                disabled={!pagination.hasNextPage}
                                 className="h-9 w-9 ml-2"
                             >
                                 <ChevronRight className="size-4" />

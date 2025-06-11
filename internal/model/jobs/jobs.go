@@ -196,3 +196,8 @@ func (r *ListJobsResponse) ToProto() *jobspb.ListJobsResponse {
 		Cursor: r.Cursor,
 	}
 }
+
+// ListJobsFilters represents the filters for listing jobs.
+type ListJobsFilters struct {
+	Status string `validate:"omitempty"`
+}

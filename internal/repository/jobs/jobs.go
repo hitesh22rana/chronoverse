@@ -301,7 +301,7 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 }
 
 // ListJobs returns jobs.
-func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor, jobStatus string) (res *jobsmodel.ListJobsResponse, err error) {
+func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (res *jobsmodel.ListJobsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobs")
 	defer func() {
 		if err != nil {
@@ -321,10 +321,13 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor, j
 	// This is used to track the parameter index for the query dynamically
 	paramIndex := 3
 
-	if jobStatus != "" {
-		query += fmt.Sprintf(` AND status = $%d`, paramIndex)
-		args = append(args, jobStatus)
-		paramIndex++
+	// Apply filters if provided
+	if filters != nil {
+		if filters.Status != "" {
+			query += fmt.Sprintf(` AND status = $%d`, paramIndex)
+			args = append(args, filters.Status)
+			paramIndex++
+		}
 	}
 
 	if cursor != "" {

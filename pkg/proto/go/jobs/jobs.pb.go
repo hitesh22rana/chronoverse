@@ -732,20 +732,65 @@ func (x *GetJobLogsResponse) GetCursor() string {
 	return ""
 }
 
+// ListJobsFilters contains the filters for listing jobs.
+type ListJobsFilters struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // Status of the job (optional)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListJobsFilters) Reset() {
+	*x = ListJobsFilters{}
+	mi := &file_jobs_jobs_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListJobsFilters) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListJobsFilters) ProtoMessage() {}
+
+func (x *ListJobsFilters) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListJobsFilters.ProtoReflect.Descriptor instead.
+func (*ListJobsFilters) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListJobsFilters) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 // ListJobsRequest contains the details needed to list all jobs for a workflow_id.
 type ListJobsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkflowId    string                 `protobuf:"bytes,1,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"` // ID of the workflow
 	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`             // ID of the user
 	Cursor        string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`                           // Cursor for pagination
-	Status        *string                `protobuf:"bytes,4,opt,name=status,proto3,oneof" json:"status,omitempty"`                     // Status of the job (optional)
+	Filters       *ListJobsFilters       `protobuf:"bytes,4,opt,name=filters,proto3,oneof" json:"filters,omitempty"`                   // Filters applied to the list
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[11]
+	mi := &file_jobs_jobs_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -757,7 +802,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[11]
+	mi := &file_jobs_jobs_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -770,7 +815,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{11}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListJobsRequest) GetWorkflowId() string {
@@ -794,11 +839,11 @@ func (x *ListJobsRequest) GetCursor() string {
 	return ""
 }
 
-func (x *ListJobsRequest) GetStatus() string {
-	if x != nil && x.Status != nil {
-		return *x.Status
+func (x *ListJobsRequest) GetFilters() *ListJobsFilters {
+	if x != nil {
+		return x.Filters
 	}
-	return ""
+	return nil
 }
 
 // JobsResponse contains the result of a job listing attempt.
@@ -818,7 +863,7 @@ type JobsResponse struct {
 
 func (x *JobsResponse) Reset() {
 	*x = JobsResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[12]
+	mi := &file_jobs_jobs_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -830,7 +875,7 @@ func (x *JobsResponse) String() string {
 func (*JobsResponse) ProtoMessage() {}
 
 func (x *JobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[12]
+	mi := &file_jobs_jobs_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -843,7 +888,7 @@ func (x *JobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobsResponse.ProtoReflect.Descriptor instead.
 func (*JobsResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{12}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *JobsResponse) GetId() string {
@@ -912,7 +957,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[13]
+	mi := &file_jobs_jobs_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -924,7 +969,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[13]
+	mi := &file_jobs_jobs_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -937,7 +982,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{13}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListJobsResponse) GetJobs() []*JobsResponse {
@@ -1019,14 +1064,17 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12\x1d\n" +
 	"\x04logs\x18\x03 \x03(\v2\t.jobs.LogR\x04logs\x12\x16\n" +
-	"\x06cursor\x18\x04 \x01(\tR\x06cursor\"\x8b\x01\n" +
+	"\x06cursor\x18\x04 \x01(\tR\x06cursor\")\n" +
+	"\x0fListJobsFilters\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\"\xa5\x01\n" +
 	"\x0fListJobsRequest\x12\x1f\n" +
 	"\vworkflow_id\x18\x01 \x01(\tR\n" +
 	"workflowId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x16\n" +
-	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x12\x1b\n" +
-	"\x06status\x18\x04 \x01(\tH\x00R\x06status\x88\x01\x01B\t\n" +
-	"\a_status\"\xfa\x01\n" +
+	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x124\n" +
+	"\afilters\x18\x04 \x01(\v2\x15.jobs.ListJobsFiltersH\x00R\afilters\x88\x01\x01B\n" +
+	"\n" +
+	"\b_filters\"\xfa\x01\n" +
 	"\fJobsResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -1065,7 +1113,7 @@ func file_jobs_jobs_proto_rawDescGZIP() []byte {
 	return file_jobs_jobs_proto_rawDescData
 }
 
-var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_jobs_jobs_proto_goTypes = []any{
 	(*ScheduleJobRequest)(nil),      // 0: jobs.ScheduleJobRequest
 	(*ScheduleJobResponse)(nil),     // 1: jobs.ScheduleJobResponse
@@ -1078,30 +1126,32 @@ var file_jobs_jobs_proto_goTypes = []any{
 	(*GetJobLogsRequest)(nil),       // 8: jobs.GetJobLogsRequest
 	(*Log)(nil),                     // 9: jobs.Log
 	(*GetJobLogsResponse)(nil),      // 10: jobs.GetJobLogsResponse
-	(*ListJobsRequest)(nil),         // 11: jobs.ListJobsRequest
-	(*JobsResponse)(nil),            // 12: jobs.JobsResponse
-	(*ListJobsResponse)(nil),        // 13: jobs.ListJobsResponse
+	(*ListJobsFilters)(nil),         // 11: jobs.ListJobsFilters
+	(*ListJobsRequest)(nil),         // 12: jobs.ListJobsRequest
+	(*JobsResponse)(nil),            // 13: jobs.JobsResponse
+	(*ListJobsResponse)(nil),        // 14: jobs.ListJobsResponse
 }
 var file_jobs_jobs_proto_depIdxs = []int32{
 	9,  // 0: jobs.GetJobLogsResponse.logs:type_name -> jobs.Log
-	12, // 1: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
-	0,  // 2: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
-	2,  // 3: jobs.JobsService.UpdateJobStatus:input_type -> jobs.UpdateJobStatusRequest
-	4,  // 4: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
-	6,  // 5: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
-	8,  // 6: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
-	11, // 7: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
-	1,  // 8: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
-	3,  // 9: jobs.JobsService.UpdateJobStatus:output_type -> jobs.UpdateJobStatusResponse
-	5,  // 10: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
-	7,  // 11: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
-	10, // 12: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
-	13, // 13: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
-	8,  // [8:14] is the sub-list for method output_type
-	2,  // [2:8] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	11, // 1: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
+	13, // 2: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
+	0,  // 3: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
+	2,  // 4: jobs.JobsService.UpdateJobStatus:input_type -> jobs.UpdateJobStatusRequest
+	4,  // 5: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
+	6,  // 6: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
+	8,  // 7: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
+	12, // 8: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
+	1,  // 9: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
+	3,  // 10: jobs.JobsService.UpdateJobStatus:output_type -> jobs.UpdateJobStatusResponse
+	5,  // 11: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
+	7,  // 12: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
+	10, // 13: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
+	14, // 14: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
+	9,  // [9:15] is the sub-list for method output_type
+	3,  // [3:9] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_jobs_jobs_proto_init() }
@@ -1109,14 +1159,14 @@ func file_jobs_jobs_proto_init() {
 	if File_jobs_jobs_proto != nil {
 		return
 	}
-	file_jobs_jobs_proto_msgTypes[11].OneofWrappers = []any{}
+	file_jobs_jobs_proto_msgTypes[12].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jobs_jobs_proto_rawDesc), len(file_jobs_jobs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

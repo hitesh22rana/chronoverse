@@ -27,7 +27,7 @@ type Repository interface {
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, error)
-	ListJobs(ctx context.Context, workflowID, userID, cursor, status string) (*jobsmodel.ListJobsResponse, error)
+	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
 // Service provides job related operations.
@@ -252,10 +252,10 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 
 // ListJobsRequest holds the request parameters for listing scheduled jobs.
 type ListJobsRequest struct {
-	WorkflowID string `validate:"required"`
-	UserID     string `validate:"required"`
-	Cursor     string `validate:"omitempty"`
-	Status     string `validate:"omitempty"`
+	WorkflowID string                     `validate:"required"`
+	UserID     string                     `validate:"required"`
+	Cursor     string                     `validate:"omitempty"`
+	Filters    *jobsmodel.ListJobsFilters `validate:"omitempty"`
 }
 
 // ListJobs returns scheduled jobs.
@@ -269,12 +269,21 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		span.End()
 	}()
 
+	var filters *jobsmodel.ListJobsFilters
+	if req.GetFilters() != nil {
+		filters = &jobsmodel.ListJobsFilters{
+			Status: req.GetFilters().GetStatus(),
+		}
+	} else {
+		filters = &jobsmodel.ListJobsFilters{}
+	}
+
 	// Validate the request
 	err = s.validator.Struct(&ListJobsRequest{
 		WorkflowID: req.GetWorkflowId(),
 		UserID:     req.GetUserId(),
 		Cursor:     req.GetCursor(),
-		Status:     req.GetStatus(),
+		Filters:    filters,
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -291,16 +300,14 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		}
 	}
 
-	// Validate the status
-	if req.GetStatus() != "" {
-		err = validateJobStatus(req.GetStatus())
-		if err != nil {
-			return nil, err
-		}
+	// Validate the filters
+	if err = validateFilters(filters); err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid filters: %v", err)
+		return nil, err
 	}
 
 	// List all scheduled jobs by job ID
-	res, err = s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, req.GetStatus())
+	res, err = s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, filters)
 	if err != nil {
 		return nil, err
 	}
@@ -329,6 +336,21 @@ func validateJobStatus(s string) error {
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid status: %s", s)
 	}
+}
+
+func validateFilters(filters *jobsmodel.ListJobsFilters) error {
+	if filters == nil {
+		return nil
+	}
+
+	if filters.Status != "" {
+		err := validateJobStatus(filters.Status)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func decodeCursor(token string) (string, error) {

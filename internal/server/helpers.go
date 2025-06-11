@@ -30,6 +30,14 @@ var (
 		"FAILED",
 		"CANCELED",
 	}
+	validJobStatuses = []string{
+		"PENDING",
+		"QUEUED",
+		"RUNNING",
+		"COMPLETED",
+		"FAILED",
+		"CANCELED",
+	}
 )
 
 // sessionKey is the key used to store the session in the context.
@@ -162,4 +170,9 @@ func isValidKind(kind string) bool {
 // isValidBuildStatus checks if the given build status is valid.
 func isValidBuildStatus(buildStatus string) bool {
 	return slices.Contains(validBuildStatuses, buildStatus)
+}
+
+// isValidJobStatus checks if the given job status is valid.
+func isValidJobStatus(status string) bool {
+	return slices.Contains(validJobStatuses, status)
 }

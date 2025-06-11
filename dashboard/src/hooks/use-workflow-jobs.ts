@@ -45,11 +45,26 @@ export function useWorkflowJobs(workflowId: string) {
         statusFilter = searchParams.get("status") || "ALL"
     }
 
+    // Build query parameters for the API call
+    const queryParams = useMemo(() => {
+        const params = new URLSearchParams()
+
+        if (currentCursor) {
+            params.set("cursor", currentCursor)
+        }
+
+        if (statusFilter && statusFilter !== "ALL") {
+            params.set("status", statusFilter)
+        }
+
+        return params.toString()
+    }, [currentCursor, statusFilter])
+
     const query = useQuery({
         queryKey: ["workflow-jobs", workflowId, currentCursor, statusFilter],
         queryFn: async () => {
-            const url = currentCursor ?
-                `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs?cursor=${currentCursor}` :
+            const url = queryParams ?
+                `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs?${queryParams}` :
                 `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs`
 
             const response = await fetchWithAuth(url)
@@ -85,18 +100,21 @@ export function useWorkflowJobs(workflowId: string) {
         router.push(`?${params.toString()}`)
     }, [router, searchParams])
 
-    // Apply status filter client-side (similar to useWorkflows)
-    const filteredJobs = useMemo(() => {
-        if (!query.data?.jobs) return []
+    // Apply all filters to the jobs
+    const applyAllFilters = useCallback((filters: unknown) => {
+        const params = new URLSearchParams(searchParams.toString())
+        params.delete("cursor") // Reset pagination when applying filters
 
-        // If statusFilter is ALL, return all jobs
-        if (statusFilter === "ALL") {
-            return query.data.jobs
+        const { status } = filters as { status?: string }
+
+        if (status && status !== "ALL") {
+            params.set("status", status)
+        } else {
+            params.delete("status")
         }
 
-        // Otherwise filter by status
-        return query.data.jobs.filter(job => job.status === statusFilter)
-    }, [query.data?.jobs, statusFilter])
+        router.push(`?${params.toString()}`)
+    }, [router, searchParams])
 
     // Handle errors
     if (query.error instanceof Error) {
@@ -104,14 +122,15 @@ export function useWorkflowJobs(workflowId: string) {
     }
 
     return {
-        jobs: filteredJobs,
+        jobs: query?.data?.jobs || [],
         isLoading: query.isLoading,
         error: query.error,
         refetch: query.refetch,
         isRefetching: query.isRefetching,
+        applyAllFilters,
         pagination: {
-            nextCursor: query.data?.cursor,
-            hasNextPage: !!query.data?.cursor,
+            nextCursor: query?.data?.cursor,
+            hasNextPage: !!query?.data?.cursor,
             hasPreviousPage: !!currentCursor,
             goToNextPage,
             goToPreviousPage,

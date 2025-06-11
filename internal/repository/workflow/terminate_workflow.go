@@ -21,8 +21,6 @@ const (
 	bufferPercentageTimeout                  = 10
 )
 
-var runningStatus = jobsmodel.JobStatusRunning.ToString()
-
 // cancelJobs cancels the jobs of the workflow.
 // This function is invoked via the cancelJobsWithStatus function.
 func (r *Repository) cancelJobs(parentCtx context.Context, userID, workflowID string, jobs *jobspb.ListJobsResponse) {
@@ -74,7 +72,9 @@ func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflowID,
 			WorkflowId: workflowID,
 			UserId:     userID,
 			Cursor:     cursor,
-			Status:     &status,
+			Filters: &jobspb.ListJobsFilters{
+				Status: status,
+			},
 		})
 		if err != nil {
 			return err
@@ -144,7 +144,9 @@ func (r *Repository) cancelRunningJobs(parentCtx context.Context, workflowID, us
 			WorkflowId: workflowID,
 			UserId:     userID,
 			Cursor:     cursor,
-			Status:     &runningStatus,
+			Filters: &jobspb.ListJobsFilters{
+				Status: jobsmodel.JobStatusRunning.ToString(),
+			},
 		})
 		if err != nil {
 			return err

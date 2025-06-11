@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"net/http"
 	"slices"
@@ -113,16 +114,44 @@ func handleError(w http.ResponseWriter, err error, message ...string) {
 	}
 }
 
-// statusResponseWriter is a wrapper around http.ResponseWriter that captures the status code.
-type statusResponseWriter struct {
+// customResponseWriter wraps http.ResponseWriter to capture status code.
+type customResponseWriter struct {
 	http.ResponseWriter
 	status int
 }
 
-// WriteHeader captures the status code before calling the underlying WriteHeader.
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.status = code
-	w.ResponseWriter.WriteHeader(code)
+func (w *customResponseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *customResponseWriter) Write(b []byte) (int, error) {
+	return w.ResponseWriter.Write(b)
+}
+
+// gzipResponseWriter combines gzip compression with status code capture.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gzipWriter *gzip.Writer
+	status     int
+}
+
+func (w *gzipResponseWriter) Header() http.Header {
+	return w.ResponseWriter.Header()
+}
+
+func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Del("Content-Length") // Will change after compression
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.gzipWriter.Write(b)
 }
 
 // isValidKind checks if the given kind is valid.

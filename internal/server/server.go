@@ -118,7 +118,9 @@ func New(
 
 	// Common middlewares
 	srv.httpServer.Handler = srv.withOtelMiddleware(
-		srv.withCORSMiddleware(router),
+		srv.withCORSMiddleware(
+			srv.withCompressionMiddleware(router),
+		),
 	)
 	return srv
 }
@@ -364,6 +366,11 @@ func (s *Server) Start() error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
+		s.logger.Info("starting HTTP server",
+			zap.String("addr", s.httpServer.Addr),
+			zap.Bool("http_compression_enabled", true),
+		)
+
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "Failed to start server: %v\n", err)
 			os.Exit(1)

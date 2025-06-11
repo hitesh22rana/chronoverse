@@ -13,6 +13,7 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/reflection"
 
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"

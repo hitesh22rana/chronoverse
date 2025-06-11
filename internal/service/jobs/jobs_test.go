@@ -782,7 +782,7 @@ func TestListJobs(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetCursor(),
-					req.GetStatus(),
+					gomock.Any(),
 				).Return(&jobsmodel.ListJobsResponse{
 					Jobs: []*jobsmodel.JobByWorkflowIDResponse{
 						{
@@ -842,7 +842,7 @@ func TestListJobs(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetCursor(),
-					req.GetStatus(),
+					gomock.Any(),
 				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
@@ -861,7 +861,7 @@ func TestListJobs(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetCursor(),
-					req.GetStatus(),
+					gomock.Any(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},

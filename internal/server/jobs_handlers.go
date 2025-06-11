@@ -32,11 +32,24 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	// Get cursor from the query parameters
 	cursor := r.URL.Query().Get("cursor")
 
+	// Get status from the query parameters
+	status := r.URL.Query().Get("status")
+	if status != "" {
+		// Validate the job status
+		if !isValidJobStatus(status) {
+			http.Error(w, "invalid status", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// ListJobs lists the jobs by job ID.
 	res, err := s.jobsClient.ListJobs(r.Context(), &jobspb.ListJobsRequest{
 		WorkflowId: workflowID,
 		UserId:     userID,
 		Cursor:     cursor,
+		Filters: &jobspb.ListJobsFilters{
+			Status: status,
+		},
 	})
 	if err != nil {
 		handleError(w, err, "failed to list jobs")

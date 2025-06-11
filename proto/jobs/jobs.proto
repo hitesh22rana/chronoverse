@@ -86,12 +86,17 @@ message GetJobLogsResponse {
     string cursor      = 4; // Cursor for pagination
 }
 
+// ListJobsFilters contains the filters for listing jobs.
+message ListJobsFilters {
+    string status = 1; // Status of the job (optional)
+}
+
 // ListJobsRequest contains the details needed to list all jobs for a workflow_id.
 message ListJobsRequest {
-    string workflow_id     = 1; // ID of the workflow
-    string user_id         = 2; // ID of the user
-    string cursor          = 3; // Cursor for pagination
-    optional string status = 4; // Status of the job (optional)
+    string workflow_id               = 1; // ID of the workflow
+    string user_id                   = 2; // ID of the user
+    string cursor                    = 3; // Cursor for pagination
+    optional ListJobsFilters filters = 4; // Filters applied to the list
 }
 
 // JobsResponse contains the result of a job listing attempt.

@@ -1,7 +1,10 @@
 package client
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
@@ -13,12 +16,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TLSConfig holds the TLS configuration for gRPC client.
+type TLSConfig struct {
+	Enabled        bool
+	CAFile         string
+	ClientCertFile string
+	ClientKeyFile  string
+}
+
 // ServiceConfig contains the configuration for a gRPC service.
 type ServiceConfig struct {
-	Host     string
-	Port     int
-	Secure   bool
-	CertFile string
+	Host string
+	Port int
+	TLS  *TLSConfig
 }
 
 // RetryConfig contains the configuration for retry behavior.
@@ -48,8 +58,19 @@ func DefaultRetryConfig() *RetryConfig {
 }
 
 // NewClient creates a new gRPC client connection with retry and tracing support.
-func NewClient(svcCfg ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, error) {
+func NewClient(svcCfg *ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, error) {
 	var opts []grpc.DialOption
+
+	// Configure TLS or insecure connection
+	if svcCfg.TLS.Enabled {
+		creds, err := loadTLSCredentials(svcCfg.TLS)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to load TLS credentials: %v", err)
+		}
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
 
 	// Set default retry config if not provided
 	if retryCfg == nil {
@@ -71,17 +92,6 @@ func NewClient(svcCfg ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, e
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
 	)
 
-	// Load credentials
-	if svcCfg.Secure {
-		creds, err := credentials.NewClientTLSFromFile(svcCfg.CertFile, "")
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to load TLS credentials: %v", err)
-		}
-		opts = append(opts, grpc.WithTransportCredentials(creds))
-	} else {
-		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	}
-
 	// Connect to the service
 	conn, err := grpc.NewClient(
 		fmt.Sprintf("%s:%d", svcCfg.Host, svcCfg.Port),
@@ -92,4 +102,32 @@ func NewClient(svcCfg ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, e
 	}
 
 	return conn, nil
+}
+
+// loadTLSCredentials loads TLS credentials for the client.
+func loadTLSCredentials(tlsCfg *TLSConfig) (credentials.TransportCredentials, error) {
+	// Load CA certificate
+	caCert, err := os.ReadFile(tlsCfg.CAFile)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to read CA certificate: %v", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+		return nil, status.Errorf(codes.Internal, "failed to append CA certificate to pool")
+	}
+
+	// Load client certificate and private key
+	clientCert, err := tls.LoadX509KeyPair(tlsCfg.ClientCertFile, tlsCfg.ClientKeyFile)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to load client certificate and key: %v", err)
+	}
+
+	config := &tls.Config{
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      caCertPool,
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	return credentials.NewTLS(config), nil
 }

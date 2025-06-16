@@ -6,6 +6,7 @@ import "github.com/kelseyhightower/envconfig"
 type NotificationsConfig struct {
 	Environment
 
+	ClientTLS
 	UsersService
 	Grpc
 	Postgres

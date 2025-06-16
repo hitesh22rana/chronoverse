@@ -104,6 +104,12 @@ func run() int {
 	app := users.New(ctx, &users.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
 		Environment: cfg.Environment.Env,
+		TLSConfig: &users.TLSConfig{
+			Enabled:  cfg.Grpc.TLS.Enabled,
+			CAFile:   cfg.Grpc.TLS.CAFile,
+			CertFile: cfg.Grpc.TLS.CertFile,
+			KeyFile:  cfg.Grpc.TLS.KeyFile,
+		},
 	}, auth, svc)
 
 	// Create a TCP listener
@@ -129,6 +135,7 @@ func run() int {
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("address", listener.Addr().String()),
 		zap.String("environment", cfg.Environment.Env),
+		zap.Bool("tls_enabled", cfg.Grpc.TLS.Enabled),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
 	)
 

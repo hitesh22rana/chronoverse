@@ -55,11 +55,15 @@ func run() int {
 
 	// Connect to the users service
 	usersConn, err := grpcclient.NewClient(
-		grpcclient.ServiceConfig{
-			Host:     cfg.UsersService.Host,
-			Port:     cfg.UsersService.Port,
-			Secure:   cfg.UsersService.Secure,
-			CertFile: cfg.UsersService.CertFile,
+		&grpcclient.ServiceConfig{
+			Host: cfg.UsersService.Host,
+			Port: cfg.UsersService.Port,
+			TLS: &grpcclient.TLSConfig{
+				Enabled:        cfg.UsersService.TLS.Enabled,
+				CAFile:         cfg.UsersService.TLS.CAFile,
+				ClientCertFile: cfg.ClientTLS.CertFile,
+				ClientKeyFile:  cfg.ClientTLS.KeyFile,
+			},
 		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -104,6 +108,12 @@ func run() int {
 	app := notifications.New(ctx, &notifications.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
 		Environment: cfg.Environment.Env,
+		TLSConfig: &notifications.TLSConfig{
+			Enabled:  cfg.Grpc.TLS.Enabled,
+			CAFile:   cfg.Grpc.TLS.CAFile,
+			CertFile: cfg.Grpc.TLS.CertFile,
+			KeyFile:  cfg.Grpc.TLS.KeyFile,
+		},
 	}, auth, svc)
 
 	// Create a TCP listener
@@ -129,6 +139,7 @@ func run() int {
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("address", listener.Addr().String()),
 		zap.String("environment", cfg.Environment.Env),
+		zap.Bool("tls_enabled", cfg.Grpc.TLS.Enabled),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
 	)
 

@@ -6,6 +6,7 @@ import "github.com/kelseyhightower/envconfig"
 type WorkflowWorker struct {
 	Environment
 
+	ClientTLS
 	Kafka
 	WorkflowsService
 	JobsService

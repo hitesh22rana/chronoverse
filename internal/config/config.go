@@ -14,6 +14,12 @@ type Crypto struct {
 	Secret string `envconfig:"CRYPTO_SECRET" default:"a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?"`
 }
 
+// ClientTLS holds the TLS configuration for the client.
+type ClientTLS struct {
+	CertFile string `envconfig:"CLIENT_TLS_CERT_FILE" default:""`
+	KeyFile  string `envconfig:"CLIENT_TLS_KEY_FILE" default:""`
+}
+
 // Redis holds the Redis configuration.
 type Redis struct {
 	Host                     string        `envconfig:"REDIS_HOST" default:"localhost"`
@@ -61,8 +67,12 @@ type Grpc struct {
 	Host           string        `envconfig:"GRPC_HOST" default:"localhost"`
 	Port           int           `envconfig:"GRPC_PORT" required:"true"`
 	RequestTimeout time.Duration `envconfig:"GRPC_REQUEST_TIMEOUT" default:"200ms"`
-	Secure         bool          `envconfig:"GRPC_SECURE" default:"false"`
-	CertFile       string        `envconfig:"GRPC_CERT_FILE" default:""`
+	TLS            struct {
+		Enabled  bool   `envconfig:"GRPC_TLS_ENABLED" default:"false"`
+		CAFile   string `envconfig:"GRPC_TLS_CA_FILE" default:""`
+		CertFile string `envconfig:"GRPC_TLS_CERT_FILE" default:""`
+		KeyFile  string `envconfig:"GRPC_TLS_KEY_FILE" default:""`
+	}
 }
 
 // Kafka holds the configuration for Kafka.
@@ -75,32 +85,40 @@ type Kafka struct {
 
 // UsersService holds the configuration for the users service.
 type UsersService struct {
-	Host     string `envconfig:"USERS_SERVICE_HOST" required:"true"`
-	Port     int    `envconfig:"USERS_SERVICE_PORT" required:"true"`
-	Secure   bool   `envconfig:"USERS_SERVICE_SECURE" default:"false"`
-	CertFile string `envconfig:"USERS_SERVICE_CERT_FILE" default:""`
+	Host string `envconfig:"USERS_SERVICE_HOST" required:"true"`
+	Port int    `envconfig:"USERS_SERVICE_PORT" required:"true"`
+	TLS  struct {
+		Enabled bool   `envconfig:"USERS_SERVICE_TLS_ENABLED" default:"false"`
+		CAFile  string `envconfig:"USERS_SERVICE_TLS_CA_FILE" default:""`
+	}
 }
 
 // WorkflowsService holds the configuration for the workflows service.
 type WorkflowsService struct {
-	Host     string `envconfig:"WORKFLOWS_SERVICE_HOST" required:"true"`
-	Port     int    `envconfig:"WORKFLOWS_SERVICE_PORT" required:"true"`
-	Secure   bool   `envconfig:"WORKFLOWS_SERVICE_SECURE" default:"false"`
-	CertFile string `envconfig:"WORKFLOWS_SERVICE_CERT_FILE" default:""`
+	Host string `envconfig:"WORKFLOWS_SERVICE_HOST" required:"true"`
+	Port int    `envconfig:"WORKFLOWS_SERVICE_PORT" required:"true"`
+	TLS  struct {
+		Enabled bool   `envconfig:"WORKFLOWS_SERVICE_TLS_ENABLED" default:"false"`
+		CAFile  string `envconfig:"WORKFLOWS_SERVICE_TLS_CA_FILE" default:""`
+	}
 }
 
 // JobsService holds the configuration for the jobs service.
 type JobsService struct {
-	Host     string `envconfig:"JOBS_SERVICE_HOST" required:"true"`
-	Port     int    `envconfig:"JOBS_SERVICE_PORT" required:"true"`
-	Secure   bool   `envconfig:"JOBS_SERVICE_SECURE" default:"false"`
-	CertFile string `envconfig:"JOBS_SERVICE_CERT_FILE" default:""`
+	Host string `envconfig:"JOBS_SERVICE_HOST" required:"true"`
+	Port int    `envconfig:"JOBS_SERVICE_PORT" required:"true"`
+	TLS  struct {
+		Enabled bool   `envconfig:"JOBS_SERVICE_TLS_ENABLED" default:"false"`
+		CAFile  string `envconfig:"JOBS_SERVICE_TLS_CA_FILE" default:""`
+	}
 }
 
 // NotificationsService holds the configuration for the notifications service.
 type NotificationsService struct {
-	Host     string `envconfig:"NOTIFICATIONS_SERVICE_HOST" required:"true"`
-	Port     int    `envconfig:"NOTIFICATIONS_SERVICE_PORT" required:"true"`
-	Secure   bool   `envconfig:"NOTIFICATIONS_SERVICE_SECURE" default:"false"`
-	CertFile string `envconfig:"NOTIFICATIONS_SERVICE_CERT_FILE" default:""`
+	Host string `envconfig:"NOTIFICATIONS_SERVICE_HOST" required:"true"`
+	Port int    `envconfig:"NOTIFICATIONS_SERVICE_PORT" required:"true"`
+	TLS  struct {
+		Enabled bool   `envconfig:"NOTIFICATIONS_SERVICE_TLS_ENABLED" default:"false"`
+		CAFile  string `envconfig:"NOTIFICATIONS_SERVICE_TLS_CA_FILE" default:""`
+	}
 }

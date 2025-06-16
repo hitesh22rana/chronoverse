@@ -33,3 +33,8 @@ bin/
 # keys
 *.ed
 *.pub
+*.pem
+*.srl
+*.crt
+*.key
+*.cnf

@@ -88,11 +88,15 @@ func run() int {
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
-		grpcclient.ServiceConfig{
-			Host:     cfg.WorkflowsService.Host,
-			Port:     cfg.WorkflowsService.Port,
-			Secure:   cfg.WorkflowsService.Secure,
-			CertFile: cfg.WorkflowsService.CertFile,
+		&grpcclient.ServiceConfig{
+			Host: cfg.WorkflowsService.Host,
+			Port: cfg.WorkflowsService.Port,
+			TLS: &grpcclient.TLSConfig{
+				Enabled:        cfg.WorkflowsService.TLS.Enabled,
+				CAFile:         cfg.WorkflowsService.TLS.CAFile,
+				ClientCertFile: cfg.ClientTLS.CertFile,
+				ClientKeyFile:  cfg.ClientTLS.KeyFile,
+			},
 		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -102,11 +106,15 @@ func run() int {
 
 	// Connect to the jobs service
 	jobsConn, err := grpcclient.NewClient(
-		grpcclient.ServiceConfig{
-			Host:     cfg.JobsService.Host,
-			Port:     cfg.JobsService.Port,
-			Secure:   cfg.JobsService.Secure,
-			CertFile: cfg.JobsService.CertFile,
+		&grpcclient.ServiceConfig{
+			Host: cfg.JobsService.Host,
+			Port: cfg.JobsService.Port,
+			TLS: &grpcclient.TLSConfig{
+				Enabled:        cfg.JobsService.TLS.Enabled,
+				CAFile:         cfg.JobsService.TLS.CAFile,
+				ClientCertFile: cfg.ClientTLS.CertFile,
+				ClientKeyFile:  cfg.ClientTLS.KeyFile,
+			},
 		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -116,11 +124,15 @@ func run() int {
 
 	// Connect to the notifications service
 	notificationsConn, err := grpcclient.NewClient(
-		grpcclient.ServiceConfig{
-			Host:     cfg.NotificationsService.Host,
-			Port:     cfg.NotificationsService.Port,
-			Secure:   cfg.NotificationsService.Secure,
-			CertFile: cfg.NotificationsService.CertFile,
+		&grpcclient.ServiceConfig{
+			Host: cfg.NotificationsService.Host,
+			Port: cfg.NotificationsService.Port,
+			TLS: &grpcclient.TLSConfig{
+				Enabled:        cfg.NotificationsService.TLS.Enabled,
+				CAFile:         cfg.NotificationsService.TLS.CAFile,
+				ClientCertFile: cfg.ClientTLS.CertFile,
+				ClientKeyFile:  cfg.ClientTLS.KeyFile,
+			},
 		}, grpcclient.DefaultRetryConfig())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

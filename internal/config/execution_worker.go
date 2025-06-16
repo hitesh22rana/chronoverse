@@ -8,6 +8,7 @@ import (
 type ExecutionWorker struct {
 	Environment
 
+	ClientTLS
 	Kafka
 	WorkflowsService
 	JobsService

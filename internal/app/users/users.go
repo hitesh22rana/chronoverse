@@ -4,6 +4,9 @@ package users
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"os"
 	"strings"
 	"time"
 
@@ -12,7 +15,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/reflection"
 
@@ -33,10 +38,19 @@ type Service interface {
 	UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest) error
 }
 
+// TLSConfig holds the TLS configuration for gRPC server.
+type TLSConfig struct {
+	Enabled  bool
+	CAFile   string
+	CertFile string
+	KeyFile  string
+}
+
 // Config represents the users-service configuration.
 type Config struct {
 	Deadline    time.Duration
 	Environment string
+	TLSConfig   *TLSConfig
 }
 
 // Users represents the users-service.
@@ -101,7 +115,52 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 		svc:  svc,
 	}
 
-	server := grpc.NewServer(
+	var serverOpts []grpc.ServerOption
+	if cfg.TLSConfig != nil && cfg.TLSConfig.Enabled {
+		// Load CA certificate
+		caCert, err := os.ReadFile(cfg.TLSConfig.CAFile)
+		if err != nil {
+			loggerpkg.FromContext(ctx).Fatal(
+				"failed to read CA certificate file",
+				zap.Error(err),
+				zap.String("ca_file", cfg.TLSConfig.CAFile),
+			)
+			return nil
+		}
+
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			loggerpkg.FromContext(ctx).Fatal(
+				"failed to append CA certificate to pool",
+				zap.String("ca_file", cfg.TLSConfig.CAFile),
+				zap.Error(err),
+			)
+			return nil
+		}
+
+		// Server certificate and private key
+		serverCert, err := tls.LoadX509KeyPair(cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile)
+		if err != nil {
+			loggerpkg.FromContext(ctx).Fatal(
+				"failed to load server certificate and key",
+				zap.Error(err),
+				zap.String("cert_file", cfg.TLSConfig.CertFile),
+				zap.String("key_file", cfg.TLSConfig.KeyFile),
+			)
+			return nil
+		}
+
+		config := &tls.Config{
+			Certificates: []tls.Certificate{serverCert},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    caCertPool,
+			MinVersion:   tls.VersionTLS12,
+		}
+
+		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(config)))
+	}
+
+	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			grpcmiddlewares.LoggingInterceptor(loggerpkg.FromContext(ctx)),
@@ -112,6 +171,8 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 			users.authTokenInterceptor(),
 		),
 	)
+
+	server := grpc.NewServer(serverOpts...)
 	userpb.RegisterUsersServiceServer(server, users)
 
 	// Only register reflection for non-production environments.

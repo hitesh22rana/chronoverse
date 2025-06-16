@@ -11,6 +11,7 @@ type ServerConfig struct {
 	Environment
 
 	Crypto
+	ClientTLS
 	Redis
 	UsersService
 	WorkflowsService

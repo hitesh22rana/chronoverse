@@ -49,7 +49,7 @@ import { useWorkflows } from "@/hooks/use-workflows"
 
 // Base schema for common fields
 const baseCreateWorkflowSchema = z.object({
-    name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters"),
+    name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters").trim(),
     interval: z.union([
         z.string().trim().refine(val => val === "" || /^\d+$/.test(val), {
             message: "Please enter a valid number"

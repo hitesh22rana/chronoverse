@@ -42,7 +42,7 @@ import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 
 // Base schema for update workflow
 const baseUpdateWorkflowSchema = z.object({
-    name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters"),
+    name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters").trim(),
     interval: z.union([
         z.string().trim().refine(val => val === "" || /^\d+$/.test(val), {
             message: "Please enter a valid number"

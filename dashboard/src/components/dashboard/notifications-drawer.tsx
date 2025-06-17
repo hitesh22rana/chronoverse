@@ -129,6 +129,8 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
     // bulk selection
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [selectAll, setSelectAll] = useState(false);
+
     const toggleSelect = (id: string) => {
         setSelected((prev) => {
             const next = new Set(prev);
@@ -137,7 +139,33 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             return next;
         });
     };
-    const clearSelection = () => setSelected(new Set());
+
+    const handleSelectAll = () => {
+        if (selectAll) {
+            setSelected(new Set());
+            setSelectAll(false);
+        } else {
+            const allNotificationIds = new Set(notifications.map(n => n.id));
+            setSelected(allNotificationIds);
+            setSelectAll(true);
+        }
+    };
+
+    const clearSelection = () => {
+        setSelected(new Set());
+        setSelectAll(false);
+    };
+
+    useEffect(() => {
+        if (notifications.length === 0) {
+            setSelectAll(false);
+            return;
+        }
+
+        const allSelected = notifications.length > 0 && notifications.every(n => selected.has(n.id));
+        setSelectAll(allSelected);
+    }, [selected, notifications]);
+
     const bulkRead = () => {
         if (selected.size === 0) return;
         markAsRead(Array.from(selected));
@@ -220,7 +248,14 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
                 {/* bulk bar */}
                 <div className="px-4 py-2 border-b flex items-center justify-between gap-3 bg-background/95">
-                    <p className="text-sm font-medium">{selected.size || 0} selected</p>
+                    <div className="flex items-center gap-3">
+                        <Checkbox
+                            checked={selectAll}
+                            onCheckedChange={handleSelectAll}
+                            aria-label="Select all notifications"
+                        />
+                        <p className="text-sm font-medium">{selected.size || 0} selected</p>
+                    </div>
                     <Button size="sm" variant="ghost" className="gap-1 cursor-pointer" onClick={bulkRead} disabled={!selected.size}>
                         <Check className="h-4 w-4" /> Mark read
                     </Button>

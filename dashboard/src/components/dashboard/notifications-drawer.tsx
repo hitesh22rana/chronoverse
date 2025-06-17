@@ -163,13 +163,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         }
 
         const allSelected = notifications.length > 0 && notifications.every(n => selected.has(n.id));
-        const someSelected = notifications.some(n => selected.has(n.id));
-
-        if (allSelected) {
-            setSelectAll(true);
-        } else if (!someSelected) {
-            setSelectAll(false);
-        }
+        setSelectAll(allSelected);
     }, [selected, notifications]);
 
     const bulkRead = () => {

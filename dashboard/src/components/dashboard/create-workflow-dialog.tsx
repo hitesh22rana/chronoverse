@@ -49,7 +49,7 @@ import { useWorkflows } from "@/hooks/use-workflows"
 
 // Base schema for common fields
 const baseCreateWorkflowSchema = z.object({
-    name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters").trim(),
+    name: z.string().trim().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters"),
     interval: z.union([
         z.string().trim().refine(val => val === "" || /^\d+$/.test(val), {
             message: "Please enter a valid number"
@@ -65,23 +65,23 @@ const baseCreateWorkflowSchema = z.object({
 
 // Heartbeat payload schema
 const heartbeatPayloadSchema = z.object({
-    endpoint: z.string().url("Please enter a valid URL"),
+    endpoint: z.string().trim().url("Please enter a valid URL"),
     headers: z.array(
         z.object({
-            key: z.string().min(1, "Header key is required"),
-            value: z.string()
+            key: z.string().trim().min(1, "Header key is required"),
+            value: z.string().trim()
         })
     ).default([])
 })
 
 // Container payload schema
 const containerPayloadSchema = z.object({
-    image: z.string().min(1, "Container image is required"),
-    cmd: z.array(z.string())
+    image: z.string().trim().min(1, "Container image is required"),
+    cmd: z.array(z.string().trim())
         .optional()
         .default([])
         .transform(val => val?.filter(item => item !== "") || []),
-    env: z.array(z.string())
+    env: z.array(z.string().trim())
         .optional()
         .default([])
         .transform(val => val?.filter(item => item !== "") || []),

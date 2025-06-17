@@ -3,7 +3,7 @@ module github.com/hitesh22rana/chronoverse
 go 1.24.3
 
 require (
-	github.com/ClickHouse/clickhouse-go/v2 v2.36.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.37.1
 	github.com/docker/docker v28.2.2+incompatible
 	github.com/exaring/otelpgx v0.9.3
 	github.com/go-playground/validator/v10 v10.26.0

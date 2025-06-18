@@ -31,10 +31,10 @@ x-limits:
       resources:
         limits:
           cpus: '0.5'    # 500 m CPU
-          memory: '2G'  # 2 GB
+          memory: 2G     # 2 GB
         reservations:
           cpus: '0.25'   # 250 m CPU
-          memory: '1G'  # 1 GB
+          memory: 1G     # 1 GB
 
   # High resources workers require a bit more cpu and memory
   high-resources-workers-limit: &high-resources-workers-limit
@@ -43,10 +43,10 @@ x-limits:
       resources:
         limits:
           cpus: '2'     # 2 CPU
-          memory: '4G'  # 4 GB
+          memory: 4G    # 4 GB
         reservations:
           cpus: '1'     # 1 CPU
-          memory: '2G'  # 2 GB
+          memory: 2G    # 2 GB
 
 services:
   postgres:
@@ -749,7 +749,7 @@ services:
     container_name: server
     environment:
       SERVER_HOST: 0.0.0.0
-      SERVER_FRONTEND_URL: http://0.0.0.0:80
+      SERVER_FRONTEND_URL: http://localhost:80
       REDIS_HOST: redis
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key

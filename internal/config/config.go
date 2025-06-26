@@ -66,7 +66,7 @@ type ClickHouse struct {
 type Grpc struct {
 	Host           string        `envconfig:"GRPC_HOST" default:"localhost"`
 	Port           int           `envconfig:"GRPC_PORT" required:"true"`
-	RequestTimeout time.Duration `envconfig:"GRPC_REQUEST_TIMEOUT" default:"200ms"`
+	RequestTimeout time.Duration `envconfig:"GRPC_REQUEST_TIMEOUT" default:"500ms"`
 	TLS            struct {
 		Enabled  bool   `envconfig:"GRPC_TLS_ENABLED" default:"false"`
 		CAFile   string `envconfig:"GRPC_TLS_CA_FILE" default:""`

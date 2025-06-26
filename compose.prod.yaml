@@ -341,6 +341,7 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       GRPC_PORT: 50051
+      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/users-service/users-service.crt
@@ -390,6 +391,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_PRODUCER_TOPIC: workflows
       GRPC_PORT: 50052
+      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/workflows-service/workflows-service.crt
@@ -439,6 +441,7 @@ services:
       POSTGRES_HOST: postgres
       CLICKHOUSE_HOSTS: clickhouse:9000
       GRPC_PORT: 50053
+      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/jobs-service/jobs-service.crt
@@ -487,6 +490,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       GRPC_PORT: 50054
+      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/notifications-service/notifications-service.crt

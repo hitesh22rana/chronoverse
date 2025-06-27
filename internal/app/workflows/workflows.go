@@ -19,6 +19,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -78,7 +80,12 @@ type Workflows struct {
 
 // authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
 func (w *Workflows) authTokenInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		// Skip the interceptor if the method is a health check route.
+		if isHealthCheckRoute(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
 		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
@@ -92,6 +99,11 @@ func (w *Workflows) authTokenInterceptor() grpc.UnaryServerInterceptor {
 
 		return handler(ctx, req)
 	}
+}
+
+// isHealthCheckRoute checks if the method is a health check route.
+func isHealthCheckRoute(method string) bool {
+	return strings.Contains(method, grpc_health_v1.Health_ServiceDesc.ServiceName)
 }
 
 // isInternalAPI checks if the full method is an internal API.
@@ -177,6 +189,16 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 
 	server := grpc.NewServer(serverOpts...)
 	workflowspb.RegisterWorkflowsServiceServer(server, workflows)
+
+	healthServer := health.NewServer()
+
+	healthServer.SetServingStatus(
+		svcpkg.Info().GetName(),
+		grpc_health_v1.HealthCheckResponse_SERVING,
+	)
+
+	// Register the health server.
+	grpc_health_v1.RegisterHealthServer(server, healthServer)
 
 	// Only register reflection for non-production environments.
 	if !isProduction(cfg.Environment) {

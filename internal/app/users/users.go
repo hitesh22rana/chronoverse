@@ -19,6 +19,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
@@ -65,6 +67,11 @@ type Users struct {
 // authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
 func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		// Skip the interceptor if the method is a health check route.
+		if isHealthCheckRoute(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
 		// Skip the interceptor if the method doesn't require authentication.
 		if !isAuthRequired(info.FullMethod) {
 			return handler(ctx, req)
@@ -83,6 +90,11 @@ func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
 
 		return handler(ctx, req)
 	}
+}
+
+// isHealthCheckRoute checks if the method is a health check route.
+func isHealthCheckRoute(method string) bool {
+	return strings.Contains(method, grpc_health_v1.Health_ServiceDesc.ServiceName)
 }
 
 // isAuthRequired checks if the method requires authentication.
@@ -174,6 +186,16 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 
 	server := grpc.NewServer(serverOpts...)
 	userpb.RegisterUsersServiceServer(server, users)
+
+	healthServer := health.NewServer()
+
+	healthServer.SetServingStatus(
+		svcpkg.Info().GetName(),
+		grpc_health_v1.HealthCheckResponse_SERVING,
+	)
+
+	// Register the health server.
+	grpc_health_v1.RegisterHealthServer(server, healthServer)
 
 	// Only register reflection for non-production environments.
 	if !isProduction(cfg.Environment) {

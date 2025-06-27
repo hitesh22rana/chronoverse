@@ -336,6 +336,17 @@ services:
       done
       exec /bin/service
       '
+    healthcheck:
+      test: |
+        if [ "$$GRPC_TLS_ENABLED" = "true" ]; then
+          /bin/grpc-health-probe -addr=localhost:50051 -connect-timeout 250ms -rpc-timeout 250ms -tls -tls-ca-cert certs/ca/ca.crt -tls-client-cert certs/users-service/users-service.crt -tls-client-key certs/users-service/users-service.key -tls-server-name=users-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        else
+          /bin/grpc-health-probe -addr=localhost:50051 -connect-timeout 250ms -rpc-timeout 250ms -service=users-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        fi
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -394,6 +405,17 @@ services:
       done
       exec /bin/service
       '
+    healthcheck:
+      test: |
+        if [ "$$GRPC_TLS_ENABLED" = "true" ]; then
+          /bin/grpc-health-probe -addr=localhost:50052 -connect-timeout 250ms -rpc-timeout 250ms -tls -tls-ca-cert certs/ca/ca.crt -tls-client-cert certs/workflows-service/workflows-service.crt -tls-client-key certs/workflows-service/workflows-service.key -tls-server-name=workflows-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        else
+          /bin/grpc-health-probe -addr=localhost:50052 -connect-timeout 250ms -rpc-timeout 250ms -service=workflows-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        fi
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -452,6 +474,17 @@ services:
       done
       exec /bin/service
       '
+    healthcheck:
+      test: |
+        if [ "$$GRPC_TLS_ENABLED" = "true" ]; then
+          /bin/grpc-health-probe -addr=localhost:50053 -connect-timeout 250ms -rpc-timeout 250ms -tls -tls-ca-cert certs/ca/ca.crt -tls-client-cert certs/jobs-service/jobs-service.crt -tls-client-key certs/jobs-service/jobs-service.key -tls-server-name=jobs-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        else
+          /bin/grpc-health-probe -addr=localhost:50053 -connect-timeout 250ms -rpc-timeout 250ms -service=jobs-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        fi
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -513,6 +546,17 @@ services:
       done
       exec /bin/service
       '
+    healthcheck:
+      test: |
+        if [ "$$GRPC_TLS_ENABLED" = "true" ]; then
+          /bin/grpc-health-probe -addr=localhost:50054 -connect-timeout 250ms -rpc-timeout 250ms -tls -tls-ca-cert certs/ca/ca.crt -tls-client-cert certs/notifications-service/notifications-service.crt -tls-client-key certs/notifications-service/notifications-service.key -tls-server-name=notifications-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        else
+          /bin/grpc-health-probe -addr=localhost:50054 -connect-timeout 250ms -rpc-timeout 250ms -service=notifications-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        fi
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -642,11 +686,11 @@ services:
       init-database-migration:
         condition: service_completed_successfully
       workflows-service:
-        condition: service_started
+        condition: service_healthy
       jobs-service:
-        condition: service_started
+        condition: service_healthy
       notifications-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - chronoverse
 
@@ -715,11 +759,11 @@ services:
       init-database-migration:
         condition: service_completed_successfully
       workflows-service:
-        condition: service_started
+        condition: service_healthy
       jobs-service:
-        condition: service_started
+        condition: service_healthy
       notifications-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - chronoverse
 
@@ -835,13 +879,13 @@ services:
       init-database-migration:
         condition: service_completed_successfully
       users-service:
-        condition: service_started
+        condition: service_healthy
       workflows-service:
-        condition: service_started
+        condition: service_healthy
       jobs-service:
-        condition: service_started
+        condition: service_healthy
       notifications-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - chronoverse
 

@@ -75,8 +75,18 @@ COPY --from=build --chown=app:app /app/certs /certs
 COPY --from=build --chown=app:app /go/bin/service /bin/service
 RUN chmod 500 /bin/service
 
-# Install necessary runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
+# Install necessary runtime dependencies and grpc-health-probe
+RUN apk --no-cache add ca-certificates tzdata wget && \
+    GRPC_HEALTH_PROBE_VERSION=v0.4.39 && \
+    ARCH=$(uname -m) && \
+    case ${ARCH} in \
+    x86_64) ARCH="amd64" ;; \
+    aarch64) ARCH="arm64" ;; \
+    *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac && \
+    wget -qO/bin/grpc-health-probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${ARCH} && \
+    chmod +x /bin/grpc-health-probe && \
+    apk del wget
 
 # Switch to non-root user
 USER app

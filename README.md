@@ -10,11 +10,11 @@ Chronoverse is a distributed job scheduling and orchestration system designed fo
 
 ## Features
 
-- **Workflow Management**:  Create, update, and monitor scheduled workflows.
+- **Workflow Management**: Create, update, and monitor scheduled workflows.
 - **Flexible Scheduling**: Configure workflows with precise time intervals in minutes.
 - **Multiple Workflow Types Support**:
-   - `HEARTBEAT`: Simple health check job.
-   - `CONTAINER`: Execute custom containerized applications and scripts.
+  - `HEARTBEAT`: Simple health check job.
+  - `CONTAINER`: Execute custom containerized applications and scripts.
 - **Job Logs**: Comprehensive execution history with logs stored in ClickHouse for efficient storage and retrieval.
 - **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes.
 - **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs.
@@ -50,6 +50,7 @@ All workers communicate through Kafka topics, enabling horizontal scaling and fa
 ## Getting Started
 
 ### Prerequisites
+
 - **Docker**: [Install Docker](https://docs.docker.com/get-docker/)
 - **Docker Compose**: [Install Docker Compose](https://docs.docker.com/compose/install/)
 
@@ -58,6 +59,7 @@ No other dependencies are required as all services run in containers with automa
 ### Installation
 
 1. Clone the repository:
+
    ```
    git clone https://github.com/hitesh22rana/chronoverse.git
    cd chronoverse
@@ -66,11 +68,13 @@ No other dependencies are required as all services run in containers with automa
 2. Choose the appropriate deployment environment:
 
    **For Development:**
+
    ```
    docker compose -f compose.dev.yaml up -d
    ```
 
    **For Production:**
+
    ```
    docker compose -f compose.prod.yaml up -d
    ```
@@ -78,6 +82,7 @@ No other dependencies are required as all services run in containers with automa
 ### Deployment Environments
 
 #### 1. Development Environment (compose.dev.yaml)
+
 - All service ports are exposed for easy debugging and direct access.
 - Database ports (5432, 9000, 6379) accessible from the host.
 - gRPC service ports (50051-50054) available for direct testing.
@@ -86,6 +91,7 @@ No other dependencies are required as all services run in containers with automa
 - Suitable for local development and testing.
 
 #### 2. Production Environment (compose.prod.yaml)
+
 - Enhanced security with minimal port exposure.
 - Dashboard is accessible via port 80/443 through Nginx/reverse proxy.
 - Monitoring dashboard can be accessed via port 3000.

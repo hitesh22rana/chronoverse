@@ -1698,6 +1698,181 @@ func TestTerminateWorkflow(t *testing.T) {
 	}
 }
 
+func TestDeleteWorkflow(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := workflowsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(workflows.New(t.Context(), &workflows.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *workflowspb.DeleteWorkflowRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*workflowspb.DeleteWorkflowRequest)
+		res   *workflowspb.DeleteWorkflowResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.DeleteWorkflowRequest{
+					Id:     "workflow_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().DeleteWorkflow(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil)
+			},
+			res:   &workflowspb.DeleteWorkflowResponse{},
+			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &workflowspb.DeleteWorkflowRequest{
+					Id:     "workflow_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.DeleteWorkflowRequest{
+					Id:     "",
+					UserId: "",
+				},
+			},
+			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().DeleteWorkflow(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.InvalidArgument, "id and user_id are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &workflowspb.DeleteWorkflowRequest{
+					Id:     "workflow_id",
+					UserId: "user1",
+				},
+			},
+			mock:  func(_ *workflowspb.DeleteWorkflowRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "internal-service",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.DeleteWorkflowRequest{
+					Id:     "workflow_id",
+					UserId: "user1",
+				},
+			},
+			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().DeleteWorkflow(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.DeleteWorkflow(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("DeleteWorkflow() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("DeleteWorkflow() error = nil, want error")
+				}
+				return
+			}
+		})
+	}
+}
+
 func TestListWorkflows(t *testing.T) {
 	ctrl := gomock.NewController(t)
 

@@ -51,6 +51,7 @@ type Service interface {
 	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) (bool, error)
 	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) error
 	TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) error
+	DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWorkflowRequest) error
 	ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (*workflowsmodel.ListWorkflowsResponse, error)
 }
 
@@ -461,6 +462,36 @@ func (w *Workflows) TerminateWorkflow(ctx context.Context, req *workflowspb.Term
 	}
 
 	return &workflowspb.TerminateWorkflowResponse{}, nil
+}
+
+// DeleteWorkflow deletes a workflow.
+func (w *Workflows) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWorkflowRequest) (res *workflowspb.DeleteWorkflowResponse, err error) {
+	ctx, span := w.tp.Start(
+		ctx,
+		"App.DeleteWorkflow",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("user_id", req.GetUserId()),
+		),
+	)
+
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
+	defer cancel()
+
+	err = w.svc.DeleteWorkflow(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &workflowspb.DeleteWorkflowResponse{}, nil
 }
 
 // ListWorkflows returns the workflows by user ID.

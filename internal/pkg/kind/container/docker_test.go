@@ -59,7 +59,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		{
 			name:           "successful execution with environment variables",
 			image:          "alpine:latest",
-			cmd:            []string{"/bin/sh", "-c", "echo $MY_ENV_VAR1 && echo $MY_ENV_VAR2"},
+			cmd:            []string{"/bin/sh", "-c", "echo $MY_ENV_VAR1 && sleep 5 && echo $MY_ENV_VAR2"},
 			env:            []string{"MY_ENV_VAR1=Hello from Docker!", "MY_ENV_VAR2=Goodbye from Docker!"},
 			timeout:        10 * time.Second,
 			executionError: nil,
@@ -127,6 +127,8 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			wg := sync.WaitGroup{}
 			wg.Add(1)
 			go func() {
+				defer wg.Done()
+
 				logsCollected, logsCollectedErr := collect(t, logs)
 				if tt.timeoutError != nil {
 					require.Error(t, logsCollectedErr)
@@ -139,8 +141,6 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 				if tt.logs {
 					assert.NotEmpty(t, logsCollected)
 				}
-
-				wg.Done()
 			}()
 
 			errsCollected, errsCollectedErr := collect(t, errs)

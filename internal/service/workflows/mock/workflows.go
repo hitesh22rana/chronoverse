@@ -57,6 +57,20 @@ func (mr *MockRepositoryMockRecorder) CreateWorkflow(ctx, userID, name, payload,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateWorkflow", reflect.TypeOf((*MockRepository)(nil).CreateWorkflow), ctx, userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed)
 }
 
+// DeleteWorkflow mocks base method.
+func (m *MockRepository) DeleteWorkflow(ctx context.Context, workflowID, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteWorkflow", ctx, workflowID, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteWorkflow indicates an expected call of DeleteWorkflow.
+func (mr *MockRepositoryMockRecorder) DeleteWorkflow(ctx, workflowID, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteWorkflow", reflect.TypeOf((*MockRepository)(nil).DeleteWorkflow), ctx, workflowID, userID)
+}
+
 // GetWorkflow mocks base method.
 func (m *MockRepository) GetWorkflow(ctx context.Context, workflowID, userID string) (*workflows.GetWorkflowResponse, error) {
 	m.ctrl.T.Helper()

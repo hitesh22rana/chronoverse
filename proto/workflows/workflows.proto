@@ -113,6 +113,15 @@ message TerminateWorkflowRequest {
 // TerminateWorkflowResponse contains the result of a workflow termination attempt.
 message TerminateWorkflowResponse {}
 
+// DeleteWorkflowRequest contains the details needed to delete a workflow.
+message DeleteWorkflowRequest {
+    string id      = 1; // ID of the workflow
+    string user_id = 2; // ID of the user
+}
+
+// DeleteWorkflowResponse contains the result of a workflow deletion attempt.
+message DeleteWorkflowResponse {}
+
 message ListWorkflowsFilters {
     string query          = 1; // Query string for filtering
     string kind           = 2; // Kind of workflow
@@ -179,6 +188,9 @@ service WorkflowsService {
 
     // TerminateWorkflow terminates a workflow.
     rpc TerminateWorkflow(TerminateWorkflowRequest) returns(TerminateWorkflowResponse) {}
+
+    // DeleteWorkflow deletes a workflow.
+    rpc DeleteWorkflow(DeleteWorkflowRequest) returns (DeleteWorkflowResponse) {}
 
     // ListWorkflows returns a list of all workflows owned by a user.
     rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse) {}

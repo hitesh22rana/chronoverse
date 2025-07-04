@@ -20,6 +20,7 @@ import (
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -53,16 +54,18 @@ type Repository struct {
 	cfg  *Config
 	auth auth.IAuth
 	svc  *Services
+	ch   *clickhouse.Client
 	kfk  *kgo.Client
 }
 
 // New creates a new workflow repository.
-func New(cfg *Config, auth auth.IAuth, svc *Services, kfk *kgo.Client) *Repository {
+func New(cfg *Config, auth auth.IAuth, svc *Services, ch *clickhouse.Client, kfk *kgo.Client) *Repository {
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
 		auth: auth,
 		svc:  svc,
+		ch:   ch,
 		kfk:  kfk,
 	}
 }
@@ -185,6 +188,32 @@ func (r *Repository) Run(ctx context.Context) error {
 							} else {
 								logger.Warn(
 									"terminate workflow execution failed",
+									zap.Any("ctx", ctxWithTrace),
+									zap.String("topic", record.Topic),
+									zap.Int64("offset", record.Offset),
+									zap.Int32("partition", record.Partition),
+									zap.String("message", string(record.Value)),
+									zap.Error(err),
+								)
+							}
+						}
+					case workflowsmodel.ActionDelete:
+						// Execute the delete workflow
+						if err := r.deleteWorkflow(ctxWithTrace, workflowEntry.ID, workflowEntry.UserID); err != nil {
+							// If the delete workflow is failed due to internal issues, log the error, else log warning
+							if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+								logger.Error(
+									"internal error while executing delete workflow",
+									zap.Any("ctx", ctxWithTrace),
+									zap.String("topic", record.Topic),
+									zap.Int64("offset", record.Offset),
+									zap.Int32("partition", record.Partition),
+									zap.String("message", string(record.Value)),
+									zap.Error(err),
+								)
+							} else {
+								logger.Warn(
+									"delete workflow execution failed",
 									zap.Any("ctx", ctxWithTrace),
 									zap.String("topic", record.Topic),
 									zap.Int64("offset", record.Offset),

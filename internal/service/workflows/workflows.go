@@ -41,6 +41,7 @@ type Repository interface {
 	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (bool, error)
 	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) error
 	TerminateWorkflow(ctx context.Context, workflowID, userID string) error
+	DeleteWorkflow(ctx context.Context, workflowID, userID string) error
 	ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (*workflowsmodel.ListWorkflowsResponse, error)
 }
 
@@ -571,6 +572,62 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 
 	// Terminate the job
 	err = s.repo.TerminateWorkflow(ctx, req.GetId(), req.GetUserId())
+	if err != nil {
+		return err
+	}
+
+	// Invalidate the cache in the background
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	go func() {
+		// Cache invalidation for the following:
+		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		defer cancel()
+
+		// Invalidate specific workflow cache
+		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
+
+		// Invalidate all list entries for the user
+		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+	}()
+
+	return nil
+}
+
+// DeleteWorkflowRequest holds the request parameters for deleting a workflow.
+type DeleteWorkflowRequest struct {
+	ID     string `validate:"required"`
+	UserID string `validate:"required"`
+}
+
+// DeleteWorkflow deletes a workflow.
+//
+//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
+func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWorkflowRequest) (err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("method", "Service.DeleteWorkflow"),
+	)
+	ctx, span := s.tp.Start(ctx, "Service.DeleteWorkflow")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&DeleteWorkflowRequest{
+		ID:     req.GetId(),
+		UserID: req.GetUserId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return err
+	}
+
+	// Delete the workflow
+	err = s.repo.DeleteWorkflow(ctx, req.GetId(), req.GetUserId())
 	if err != nil {
 		return err
 	}

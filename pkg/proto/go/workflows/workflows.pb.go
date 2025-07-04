@@ -1005,6 +1005,96 @@ func (*TerminateWorkflowResponse) Descriptor() ([]byte, []int) {
 	return file_workflows_workflows_proto_rawDescGZIP(), []int{15}
 }
 
+// DeleteWorkflowRequest contains the details needed to delete a workflow.
+type DeleteWorkflowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                       // ID of the workflow
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteWorkflowRequest) Reset() {
+	*x = DeleteWorkflowRequest{}
+	mi := &file_workflows_workflows_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorkflowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorkflowRequest) ProtoMessage() {}
+
+func (x *DeleteWorkflowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflows_workflows_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorkflowRequest.ProtoReflect.Descriptor instead.
+func (*DeleteWorkflowRequest) Descriptor() ([]byte, []int) {
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *DeleteWorkflowRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DeleteWorkflowRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+// DeleteWorkflowResponse contains the result of a workflow deletion attempt.
+type DeleteWorkflowResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteWorkflowResponse) Reset() {
+	*x = DeleteWorkflowResponse{}
+	mi := &file_workflows_workflows_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorkflowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorkflowResponse) ProtoMessage() {}
+
+func (x *DeleteWorkflowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflows_workflows_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorkflowResponse.ProtoReflect.Descriptor instead.
+func (*DeleteWorkflowResponse) Descriptor() ([]byte, []int) {
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{17}
+}
+
 type ListWorkflowsFilters struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`                                    // Query string for filtering
@@ -1019,7 +1109,7 @@ type ListWorkflowsFilters struct {
 
 func (x *ListWorkflowsFilters) Reset() {
 	*x = ListWorkflowsFilters{}
-	mi := &file_workflows_workflows_proto_msgTypes[16]
+	mi := &file_workflows_workflows_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1031,7 +1121,7 @@ func (x *ListWorkflowsFilters) String() string {
 func (*ListWorkflowsFilters) ProtoMessage() {}
 
 func (x *ListWorkflowsFilters) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[16]
+	mi := &file_workflows_workflows_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1044,7 +1134,7 @@ func (x *ListWorkflowsFilters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkflowsFilters.ProtoReflect.Descriptor instead.
 func (*ListWorkflowsFilters) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{16}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListWorkflowsFilters) GetQuery() string {
@@ -1101,7 +1191,7 @@ type ListWorkflowsRequest struct {
 
 func (x *ListWorkflowsRequest) Reset() {
 	*x = ListWorkflowsRequest{}
-	mi := &file_workflows_workflows_proto_msgTypes[17]
+	mi := &file_workflows_workflows_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1113,7 +1203,7 @@ func (x *ListWorkflowsRequest) String() string {
 func (*ListWorkflowsRequest) ProtoMessage() {}
 
 func (x *ListWorkflowsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[17]
+	mi := &file_workflows_workflows_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1126,7 +1216,7 @@ func (x *ListWorkflowsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkflowsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkflowsRequest) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{17}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListWorkflowsRequest) GetUserId() string {
@@ -1170,7 +1260,7 @@ type WorkflowsByUserIDResponse struct {
 
 func (x *WorkflowsByUserIDResponse) Reset() {
 	*x = WorkflowsByUserIDResponse{}
-	mi := &file_workflows_workflows_proto_msgTypes[18]
+	mi := &file_workflows_workflows_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1182,7 +1272,7 @@ func (x *WorkflowsByUserIDResponse) String() string {
 func (*WorkflowsByUserIDResponse) ProtoMessage() {}
 
 func (x *WorkflowsByUserIDResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[18]
+	mi := &file_workflows_workflows_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1195,7 +1285,7 @@ func (x *WorkflowsByUserIDResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkflowsByUserIDResponse.ProtoReflect.Descriptor instead.
 func (*WorkflowsByUserIDResponse) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{18}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *WorkflowsByUserIDResponse) GetId() string {
@@ -1286,7 +1376,7 @@ type ListWorkflowsResponse struct {
 
 func (x *ListWorkflowsResponse) Reset() {
 	*x = ListWorkflowsResponse{}
-	mi := &file_workflows_workflows_proto_msgTypes[19]
+	mi := &file_workflows_workflows_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1298,7 +1388,7 @@ func (x *ListWorkflowsResponse) String() string {
 func (*ListWorkflowsResponse) ProtoMessage() {}
 
 func (x *ListWorkflowsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflows_workflows_proto_msgTypes[19]
+	mi := &file_workflows_workflows_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1311,7 +1401,7 @@ func (x *ListWorkflowsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkflowsResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkflowsResponse) Descriptor() ([]byte, []int) {
-	return file_workflows_workflows_proto_rawDescGZIP(), []int{19}
+	return file_workflows_workflows_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListWorkflowsResponse) GetWorkflows() []*WorkflowsByUserIDResponse {
@@ -1403,7 +1493,11 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\x18TerminateWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x1b\n" +
-	"\x19TerminateWorkflowResponse\"\xce\x01\n" +
+	"\x19TerminateWorkflowResponse\"@\n" +
+	"\x15DeleteWorkflowRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x18\n" +
+	"\x16DeleteWorkflowResponse\"\xce\x01\n" +
 	"\x14ListWorkflowsFilters\x12\x14\n" +
 	"\x05query\x18\x01 \x01(\tR\x05query\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12!\n" +
@@ -1434,7 +1528,7 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\"s\n" +
 	"\x15ListWorkflowsResponse\x12B\n" +
 	"\tworkflows\x18\x01 \x03(\v2$.workflows.WorkflowsByUserIDResponseR\tworkflows\x12\x16\n" +
-	"\x06cursor\x18\x02 \x01(\tR\x06cursor2\xfe\a\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor2\xd7\b\n" +
 	"\x10WorkflowsService\x12W\n" +
 	"\x0eCreateWorkflow\x12 .workflows.CreateWorkflowRequest\x1a!.workflows.CreateWorkflowResponse\"\x00\x12W\n" +
 	"\x0eUpdateWorkflow\x12 .workflows.UpdateWorkflowRequest\x1a!.workflows.UpdateWorkflowResponse\"\x00\x12x\n" +
@@ -1443,7 +1537,8 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\x0fGetWorkflowByID\x12!.workflows.GetWorkflowByIDRequest\x1a\".workflows.GetWorkflowByIDResponse\"\x00\x12\xb1\x01\n" +
 	",IncrementWorkflowConsecutiveJobFailuresCount\x12>.workflows.IncrementWorkflowConsecutiveJobFailuresCountRequest\x1a?.workflows.IncrementWorkflowConsecutiveJobFailuresCountResponse\"\x00\x12\xa5\x01\n" +
 	"(ResetWorkflowConsecutiveJobFailuresCount\x12:.workflows.ResetWorkflowConsecutiveJobFailuresCountRequest\x1a;.workflows.ResetWorkflowConsecutiveJobFailuresCountResponse\"\x00\x12`\n" +
-	"\x11TerminateWorkflow\x12#.workflows.TerminateWorkflowRequest\x1a$.workflows.TerminateWorkflowResponse\"\x00\x12T\n" +
+	"\x11TerminateWorkflow\x12#.workflows.TerminateWorkflowRequest\x1a$.workflows.TerminateWorkflowResponse\"\x00\x12W\n" +
+	"\x0eDeleteWorkflow\x12 .workflows.DeleteWorkflowRequest\x1a!.workflows.DeleteWorkflowResponse\"\x00\x12T\n" +
 	"\rListWorkflows\x12\x1f.workflows.ListWorkflowsRequest\x1a .workflows.ListWorkflowsResponse\"\x00BBZ@github.com/hitesh22rana/chronoverse/proto/go/workflows;workflowsb\x06proto3"
 
 var (
@@ -1458,7 +1553,7 @@ func file_workflows_workflows_proto_rawDescGZIP() []byte {
 	return file_workflows_workflows_proto_rawDescData
 }
 
-var file_workflows_workflows_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_workflows_workflows_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_workflows_workflows_proto_goTypes = []any{
 	(*CreateWorkflowRequest)(nil),                                // 0: workflows.CreateWorkflowRequest
 	(*CreateWorkflowResponse)(nil),                               // 1: workflows.CreateWorkflowResponse
@@ -1476,14 +1571,16 @@ var file_workflows_workflows_proto_goTypes = []any{
 	(*ResetWorkflowConsecutiveJobFailuresCountResponse)(nil),     // 13: workflows.ResetWorkflowConsecutiveJobFailuresCountResponse
 	(*TerminateWorkflowRequest)(nil),                             // 14: workflows.TerminateWorkflowRequest
 	(*TerminateWorkflowResponse)(nil),                            // 15: workflows.TerminateWorkflowResponse
-	(*ListWorkflowsFilters)(nil),                                 // 16: workflows.ListWorkflowsFilters
-	(*ListWorkflowsRequest)(nil),                                 // 17: workflows.ListWorkflowsRequest
-	(*WorkflowsByUserIDResponse)(nil),                            // 18: workflows.WorkflowsByUserIDResponse
-	(*ListWorkflowsResponse)(nil),                                // 19: workflows.ListWorkflowsResponse
+	(*DeleteWorkflowRequest)(nil),                                // 16: workflows.DeleteWorkflowRequest
+	(*DeleteWorkflowResponse)(nil),                               // 17: workflows.DeleteWorkflowResponse
+	(*ListWorkflowsFilters)(nil),                                 // 18: workflows.ListWorkflowsFilters
+	(*ListWorkflowsRequest)(nil),                                 // 19: workflows.ListWorkflowsRequest
+	(*WorkflowsByUserIDResponse)(nil),                            // 20: workflows.WorkflowsByUserIDResponse
+	(*ListWorkflowsResponse)(nil),                                // 21: workflows.ListWorkflowsResponse
 }
 var file_workflows_workflows_proto_depIdxs = []int32{
-	16, // 0: workflows.ListWorkflowsRequest.filters:type_name -> workflows.ListWorkflowsFilters
-	18, // 1: workflows.ListWorkflowsResponse.workflows:type_name -> workflows.WorkflowsByUserIDResponse
+	18, // 0: workflows.ListWorkflowsRequest.filters:type_name -> workflows.ListWorkflowsFilters
+	20, // 1: workflows.ListWorkflowsResponse.workflows:type_name -> workflows.WorkflowsByUserIDResponse
 	0,  // 2: workflows.WorkflowsService.CreateWorkflow:input_type -> workflows.CreateWorkflowRequest
 	2,  // 3: workflows.WorkflowsService.UpdateWorkflow:input_type -> workflows.UpdateWorkflowRequest
 	4,  // 4: workflows.WorkflowsService.UpdateWorkflowBuildStatus:input_type -> workflows.UpdateWorkflowBuildStatusRequest
@@ -1492,18 +1589,20 @@ var file_workflows_workflows_proto_depIdxs = []int32{
 	10, // 7: workflows.WorkflowsService.IncrementWorkflowConsecutiveJobFailuresCount:input_type -> workflows.IncrementWorkflowConsecutiveJobFailuresCountRequest
 	12, // 8: workflows.WorkflowsService.ResetWorkflowConsecutiveJobFailuresCount:input_type -> workflows.ResetWorkflowConsecutiveJobFailuresCountRequest
 	14, // 9: workflows.WorkflowsService.TerminateWorkflow:input_type -> workflows.TerminateWorkflowRequest
-	17, // 10: workflows.WorkflowsService.ListWorkflows:input_type -> workflows.ListWorkflowsRequest
-	1,  // 11: workflows.WorkflowsService.CreateWorkflow:output_type -> workflows.CreateWorkflowResponse
-	3,  // 12: workflows.WorkflowsService.UpdateWorkflow:output_type -> workflows.UpdateWorkflowResponse
-	5,  // 13: workflows.WorkflowsService.UpdateWorkflowBuildStatus:output_type -> workflows.UpdateWorkflowBuildStatusResponse
-	7,  // 14: workflows.WorkflowsService.GetWorkflow:output_type -> workflows.GetWorkflowResponse
-	9,  // 15: workflows.WorkflowsService.GetWorkflowByID:output_type -> workflows.GetWorkflowByIDResponse
-	11, // 16: workflows.WorkflowsService.IncrementWorkflowConsecutiveJobFailuresCount:output_type -> workflows.IncrementWorkflowConsecutiveJobFailuresCountResponse
-	13, // 17: workflows.WorkflowsService.ResetWorkflowConsecutiveJobFailuresCount:output_type -> workflows.ResetWorkflowConsecutiveJobFailuresCountResponse
-	15, // 18: workflows.WorkflowsService.TerminateWorkflow:output_type -> workflows.TerminateWorkflowResponse
-	19, // 19: workflows.WorkflowsService.ListWorkflows:output_type -> workflows.ListWorkflowsResponse
-	11, // [11:20] is the sub-list for method output_type
-	2,  // [2:11] is the sub-list for method input_type
+	16, // 10: workflows.WorkflowsService.DeleteWorkflow:input_type -> workflows.DeleteWorkflowRequest
+	19, // 11: workflows.WorkflowsService.ListWorkflows:input_type -> workflows.ListWorkflowsRequest
+	1,  // 12: workflows.WorkflowsService.CreateWorkflow:output_type -> workflows.CreateWorkflowResponse
+	3,  // 13: workflows.WorkflowsService.UpdateWorkflow:output_type -> workflows.UpdateWorkflowResponse
+	5,  // 14: workflows.WorkflowsService.UpdateWorkflowBuildStatus:output_type -> workflows.UpdateWorkflowBuildStatusResponse
+	7,  // 15: workflows.WorkflowsService.GetWorkflow:output_type -> workflows.GetWorkflowResponse
+	9,  // 16: workflows.WorkflowsService.GetWorkflowByID:output_type -> workflows.GetWorkflowByIDResponse
+	11, // 17: workflows.WorkflowsService.IncrementWorkflowConsecutiveJobFailuresCount:output_type -> workflows.IncrementWorkflowConsecutiveJobFailuresCountResponse
+	13, // 18: workflows.WorkflowsService.ResetWorkflowConsecutiveJobFailuresCount:output_type -> workflows.ResetWorkflowConsecutiveJobFailuresCountResponse
+	15, // 19: workflows.WorkflowsService.TerminateWorkflow:output_type -> workflows.TerminateWorkflowResponse
+	17, // 20: workflows.WorkflowsService.DeleteWorkflow:output_type -> workflows.DeleteWorkflowResponse
+	21, // 21: workflows.WorkflowsService.ListWorkflows:output_type -> workflows.ListWorkflowsResponse
+	12, // [12:22] is the sub-list for method output_type
+	2,  // [2:12] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1514,14 +1613,14 @@ func file_workflows_workflows_proto_init() {
 	if File_workflows_workflows_proto != nil {
 		return
 	}
-	file_workflows_workflows_proto_msgTypes[17].OneofWrappers = []any{}
+	file_workflows_workflows_proto_msgTypes[19].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workflows_workflows_proto_rawDesc), len(file_workflows_workflows_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -34,6 +34,10 @@ tools:
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GO_BIN} v1.64.8
 	@cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % sh -c 'GOBIN=${GO_BIN} go install %@latest'
 
+.PHONY: mockgen
+mockgen: tools
+	@go generate -v ./...
+
 .PHONY: build/users-service
 build/users-service: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=users-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/users-service ./cmd/users-service

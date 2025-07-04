@@ -45,6 +45,7 @@ type Action string
 const (
 	ActionBuild     Action = "BUILD"
 	ActionTerminate Action = "TERMINATE"
+	ActionDelete    Action = "DELETE"
 )
 
 // ToString converts the Action to its string representation.

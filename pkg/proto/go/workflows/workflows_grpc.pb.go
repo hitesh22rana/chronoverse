@@ -27,6 +27,7 @@ const (
 	WorkflowsService_IncrementWorkflowConsecutiveJobFailuresCount_FullMethodName = "/workflows.WorkflowsService/IncrementWorkflowConsecutiveJobFailuresCount"
 	WorkflowsService_ResetWorkflowConsecutiveJobFailuresCount_FullMethodName     = "/workflows.WorkflowsService/ResetWorkflowConsecutiveJobFailuresCount"
 	WorkflowsService_TerminateWorkflow_FullMethodName                            = "/workflows.WorkflowsService/TerminateWorkflow"
+	WorkflowsService_DeleteWorkflow_FullMethodName                               = "/workflows.WorkflowsService/DeleteWorkflow"
 	WorkflowsService_ListWorkflows_FullMethodName                                = "/workflows.WorkflowsService/ListWorkflows"
 )
 
@@ -56,6 +57,8 @@ type WorkflowsServiceClient interface {
 	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, in *ResetWorkflowConsecutiveJobFailuresCountRequest, opts ...grpc.CallOption) (*ResetWorkflowConsecutiveJobFailuresCountResponse, error)
 	// TerminateWorkflow terminates a workflow.
 	TerminateWorkflow(ctx context.Context, in *TerminateWorkflowRequest, opts ...grpc.CallOption) (*TerminateWorkflowResponse, error)
+	// DeleteWorkflow deletes a workflow.
+	DeleteWorkflow(ctx context.Context, in *DeleteWorkflowRequest, opts ...grpc.CallOption) (*DeleteWorkflowResponse, error)
 	// ListWorkflows returns a list of all workflows owned by a user.
 	ListWorkflows(ctx context.Context, in *ListWorkflowsRequest, opts ...grpc.CallOption) (*ListWorkflowsResponse, error)
 }
@@ -148,6 +151,16 @@ func (c *workflowsServiceClient) TerminateWorkflow(ctx context.Context, in *Term
 	return out, nil
 }
 
+func (c *workflowsServiceClient) DeleteWorkflow(ctx context.Context, in *DeleteWorkflowRequest, opts ...grpc.CallOption) (*DeleteWorkflowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteWorkflowResponse)
+	err := c.cc.Invoke(ctx, WorkflowsService_DeleteWorkflow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *workflowsServiceClient) ListWorkflows(ctx context.Context, in *ListWorkflowsRequest, opts ...grpc.CallOption) (*ListWorkflowsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListWorkflowsResponse)
@@ -184,6 +197,8 @@ type WorkflowsServiceServer interface {
 	ResetWorkflowConsecutiveJobFailuresCount(context.Context, *ResetWorkflowConsecutiveJobFailuresCountRequest) (*ResetWorkflowConsecutiveJobFailuresCountResponse, error)
 	// TerminateWorkflow terminates a workflow.
 	TerminateWorkflow(context.Context, *TerminateWorkflowRequest) (*TerminateWorkflowResponse, error)
+	// DeleteWorkflow deletes a workflow.
+	DeleteWorkflow(context.Context, *DeleteWorkflowRequest) (*DeleteWorkflowResponse, error)
 	// ListWorkflows returns a list of all workflows owned by a user.
 	ListWorkflows(context.Context, *ListWorkflowsRequest) (*ListWorkflowsResponse, error)
 }
@@ -218,6 +233,9 @@ func (UnimplementedWorkflowsServiceServer) ResetWorkflowConsecutiveJobFailuresCo
 }
 func (UnimplementedWorkflowsServiceServer) TerminateWorkflow(context.Context, *TerminateWorkflowRequest) (*TerminateWorkflowResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TerminateWorkflow not implemented")
+}
+func (UnimplementedWorkflowsServiceServer) DeleteWorkflow(context.Context, *DeleteWorkflowRequest) (*DeleteWorkflowResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteWorkflow not implemented")
 }
 func (UnimplementedWorkflowsServiceServer) ListWorkflows(context.Context, *ListWorkflowsRequest) (*ListWorkflowsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListWorkflows not implemented")
@@ -386,6 +404,24 @@ func _WorkflowsService_TerminateWorkflow_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowsService_DeleteWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteWorkflowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowsServiceServer).DeleteWorkflow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowsService_DeleteWorkflow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowsServiceServer).DeleteWorkflow(ctx, req.(*DeleteWorkflowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WorkflowsService_ListWorkflows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListWorkflowsRequest)
 	if err := dec(in); err != nil {
@@ -442,6 +478,10 @@ var WorkflowsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TerminateWorkflow",
 			Handler:    _WorkflowsService_TerminateWorkflow_Handler,
+		},
+		{
+			MethodName: "DeleteWorkflow",
+			Handler:    _WorkflowsService_DeleteWorkflow_Handler,
 		},
 		{
 			MethodName: "ListWorkflows",

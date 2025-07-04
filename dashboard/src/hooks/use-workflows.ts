@@ -153,18 +153,17 @@ export function useWorkflows() {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
 
-        const
-            {
-                status,
-                kind,
-                intervalMin,
-                intervalMax
-            } = filters as {
-                status?: string,
-                kind?: string,
-                intervalMin?: string,
-                intervalMax?: string,
-            }
+        const {
+            status,
+            kind,
+            intervalMin,
+            intervalMax
+        } = filters as {
+            status?: string,
+            kind?: string,
+            intervalMin?: string,
+            intervalMax?: string,
+        }
 
         if (status && status !== "ALL") {
             params.set("status", status)

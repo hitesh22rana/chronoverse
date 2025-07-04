@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -18,6 +19,7 @@ export type UpdateWorkflowDetails = {
 }
 
 export function useWorkflowDetails(workflowId: string) {
+    const router = useRouter()
     const [workflowNotActive, setWorkflowNotActive] = useState(false)
 
     const query = useQuery({
@@ -85,6 +87,27 @@ export function useWorkflowDetails(workflowId: string) {
         }
     })
 
+    const deleteWorkflowMutation = useMutation({
+        mutationFn: async () => {
+            const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`, {
+                method: "DELETE",
+            })
+
+            if (!response.ok) {
+                throw new Error("failed to delete workflow")
+            }
+
+            return workflowId
+        },
+        onSuccess: () => {
+            toast.success("workflow deleted successfully")
+            router.push("/") // Redirect to the dashboard after deletion
+        },
+        onError: (error) => {
+            toast.error(error.message)
+        }
+    })
+
     return {
         workflow: query.data as Workflow,
         isLoading: query.isLoading,
@@ -95,5 +118,9 @@ export function useWorkflowDetails(workflowId: string) {
         updateError: updateWorkflowMutation.error,
         terminateWorkflow: terminateWorkflowMutation.mutate,
         isTerminating: terminateWorkflowMutation.isPending,
+        terminateError: terminateWorkflowMutation.error,
+        deleteWorkflow: deleteWorkflowMutation.mutate,
+        isDeleting: deleteWorkflowMutation.isPending,
+        deleteError: deleteWorkflowMutation.error,
     }
 }

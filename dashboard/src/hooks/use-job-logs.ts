@@ -28,7 +28,7 @@ export type JobLogsResponse = {
 }
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
-    const queryKey = ["job-logs", workflowId, jobId]
+    const queryKey = ["job-logs", workflowId, jobId, jobStatus]
 
     const query = useInfiniteQuery<JobLogsResponse, Error>({
         queryKey,

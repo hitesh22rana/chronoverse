@@ -51,6 +51,7 @@ import {
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { UpdateWorkflowDialog } from "@/components/dashboard/update-workflow-dialog"
 import { TerminateWorkflowDialog } from "@/components/dashboard/terminate-workflow-dialog"
+import { DeleteWorkflowDialog } from "@/components/dashboard/delete-workflow-dialog"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { useWorkflowJobs, Job } from "@/hooks/use-workflow-jobs"
@@ -84,6 +85,7 @@ export default function WorkflowDetailsPage() {
 
     const [showUpdateWorkflowDialog, setShowUpdateWorkflowDialog] = useState(false)
     const [showTerminateWorkflowDialog, setShowTerminateWorkflowDialog] = useState(false)
+    const [showDeleteWorkflowDialog, setShowDeleteWorkflowDialog] = useState(false)
 
     // Determine status
     const status = workflow?.terminated_at ? "TERMINATED" : workflow?.build_status
@@ -219,6 +221,13 @@ export default function WorkflowDetailsPage() {
                                 onOpenChange={setShowTerminateWorkflowDialog}
                             />
 
+                            {/* DeleteWorkflow Dialog */}
+                            <DeleteWorkflowDialog
+                                workflow={workflow}
+                                open={showDeleteWorkflowDialog}
+                                onOpenChange={setShowDeleteWorkflowDialog}
+                            />
+
                             <div className="flex items-center justify-end mb-4 h-9 gap-5">
                                 <Button
                                     variant="outline"
@@ -230,16 +239,29 @@ export default function WorkflowDetailsPage() {
                                     Edit workflow
                                 </Button>
 
-                                <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    className="cursor-pointer shrink-0 max-w-[180px] w-full"
-                                    onClick={() => setShowTerminateWorkflowDialog(true)}
-                                    disabled={!!workflow?.terminated_at}
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                    Terminate workflow
-                                </Button>
+                                {
+                                    !!workflow?.terminated_at ? (
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            className="cursor-pointer shrink-0 max-w-[180px] w-full"
+                                            onClick={() => setShowDeleteWorkflowDialog(true)}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                            Delete workflow
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            className="cursor-pointer shrink-0 max-w-[180px] w-full"
+                                            onClick={() => setShowTerminateWorkflowDialog(true)}
+                                        >
+                                            <XCircle className="h-4 w-4" />
+                                            Terminate workflow
+                                        </Button>
+                                    )
+                                }
                             </div>
                             <Card>
                                 <CardHeader>

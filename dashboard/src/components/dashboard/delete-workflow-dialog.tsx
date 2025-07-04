@@ -30,18 +30,18 @@ import { Button } from "@/components/ui/button"
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { Workflow } from "@/hooks/use-workflows"
 
-interface TerminateWorkflowDialogProps {
+interface DeleteWorkflowDialogProps {
     workflow: Workflow
     open: boolean
     onOpenChange: (open: boolean) => void
 }
 
-export function TerminateWorkflowDialog({
+export function DeleteWorkflowDialog({
     workflow,
     open,
     onOpenChange
-}: TerminateWorkflowDialogProps) {
-    const { terminateWorkflow, isTerminating } = useWorkflowDetails(workflow.id)
+}: DeleteWorkflowDialogProps) {
+    const { deleteWorkflow, isDeleting } = useWorkflowDetails(workflow.id)
 
     const FormSchema = z.object({
         confirmName: z.string().refine(value => value === workflow.name, {
@@ -57,8 +57,8 @@ export function TerminateWorkflowDialog({
         mode: "onSubmit",
     })
 
-    const handleTerminate = () => {
-        terminateWorkflow()
+    const handleDelete = () => {
+        deleteWorkflow()
         onOpenChange(false)
     }
 
@@ -68,23 +68,22 @@ export function TerminateWorkflowDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <AlertTriangle className="h-5 w-5 text-destructive" />
-                        Terminate workflow
+                        Delete workflow
                     </DialogTitle>
                     <DialogDescription>
-                        This action will cancel all remaining jobs and scheduled executions for this workflow.
+                        This action cannot be undone, and will delete the workflow
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="py-2">
                     <div className="rounded-md bg-destructive/10 p-4 mb-4">
                         <p className="flex-grow sm:text-sm text-xs text-destructive">
-                            Terminating this workflow will terminate all ongoing jobs
-                            and prevent any future scheduled executions.
+                            Deleting this workflow will remove it permanently from the system, including all its jobs and history. This action cannot be undone.
                         </p>
                     </div>
 
                     <Form {...form}>
-                        <form onSubmit={form.handleSubmit(handleTerminate)} className="space-y-4">
+                        <form onSubmit={form.handleSubmit(handleDelete)} className="space-y-4">
                             <FormField
                                 control={form.control}
                                 name="confirmName"
@@ -99,7 +98,7 @@ export function TerminateWorkflowDialog({
                                                     placeholder="Enter workflow name"
                                                     {...field}
                                                     autoComplete="off"
-                                                    disabled={isTerminating}
+                                                    disabled={isDeleting}
                                                 />
                                             </div>
                                         </FormControl>
@@ -113,7 +112,7 @@ export function TerminateWorkflowDialog({
                                     type="button"
                                     variant="outline"
                                     onClick={() => onOpenChange(false)}
-                                    disabled={isTerminating}
+                                    disabled={isDeleting}
                                     className="cursor-pointer w-full"
                                 >
                                     Cancel
@@ -121,16 +120,16 @@ export function TerminateWorkflowDialog({
                                 <Button
                                     type="submit"
                                     variant="destructive"
-                                    disabled={isTerminating || !form.formState.isValid}
+                                    disabled={isDeleting || !form.formState.isValid}
                                     className="cursor-pointer w-full"
                                 >
-                                    {isTerminating ? (
+                                    {isDeleting ? (
                                         <Fragment>
                                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Terminating...
+                                            Deleting...
                                         </Fragment>
                                     ) : (
-                                        "Terminate workflow"
+                                        "Delete workflow"
                                     )}
                                 </Button>
                             </DialogFooter>

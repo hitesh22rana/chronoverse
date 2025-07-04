@@ -576,7 +576,7 @@ services:
       init-database-migration:
         condition: service_completed_successfully
       users-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - chronoverse
 
@@ -626,6 +626,7 @@ services:
     <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
     environment:
+      CLICKHOUSE_HOSTS: clickhouse:9000
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: workflows
       KAFKA_CONSUMER_GROUP: workflow-worker
@@ -666,6 +667,8 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      clickhouse:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:

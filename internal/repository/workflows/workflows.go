@@ -19,6 +19,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -26,6 +27,7 @@ import (
 
 const (
 	workflowsTable = "workflows"
+	jobsTable      = "jobs"
 	delimiter      = '$'
 )
 
@@ -78,7 +80,7 @@ func (r *Repository) CreateWorkflow(
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return nil, err
 		}
 
@@ -109,7 +111,7 @@ func (r *Repository) CreateWorkflow(
 
 	rows, err := tx.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, err
 	}
 
@@ -134,7 +136,7 @@ func (r *Repository) CreateWorkflow(
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return nil, err
 		}
 
@@ -150,7 +152,7 @@ func (r *Repository) CreateWorkflow(
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return nil, err
 		}
 
@@ -186,7 +188,7 @@ func (r *Repository) UpdateWorkflow(
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -223,7 +225,7 @@ func (r *Repository) UpdateWorkflow(
 	ct, err := tx.Exec(ctx, query, args...)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
@@ -254,7 +256,7 @@ func (r *Repository) UpdateWorkflow(
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -270,7 +272,7 @@ func (r *Repository) UpdateWorkflow(
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -295,14 +297,14 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET build_status = $1
-		WHERE id = $2 AND user_id = $3
+		WHERE id = $2 AND user_id = $3;
 	`, workflowsTable)
 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
@@ -341,7 +343,7 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 
 	rows, err := r.pg.Query(ctx, query, workflowID, userID)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, err
 	}
 
@@ -382,7 +384,7 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 
 	rows, err := r.pg.Query(ctx, query, workflowID)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, err
 	}
 
@@ -426,7 +428,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	err = r.pg.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return false, err
 		}
 
@@ -468,7 +470,7 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 	ct, err := r.pg.Exec(ctx, query, workflowID, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
@@ -504,7 +506,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -524,7 +526,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	ct, err := tx.Exec(ctx, query, workflowID, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -557,7 +559,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -573,7 +575,174 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+// DeleteWorkflow deletes a workflow.
+//
+//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
+func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID string) (err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.DeleteWorkflow")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Start transaction
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(status.Code(err), err.Error())
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
+		return err
+	}
+	//nolint:errcheck // The error is handled in the next line
+	defer tx.Rollback(ctx)
+
+	// Precondition: Only delete workflows that are terminated.
+	// If the workflow is not terminated, we should not allow deletion.
+	activeWorkflowQuery := fmt.Sprintf(`
+		SELECT id, terminated_at
+		FROM %s
+		WHERE id = $1 AND user_id = $2
+		LIMIT 1;
+	`, workflowsTable)
+	var activeWorkflowID string
+	var terminatedAt *time.Time
+	err = tx.QueryRow(ctx, activeWorkflowQuery, workflowID, userID).Scan(&activeWorkflowID, &terminatedAt)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(status.Code(err), err.Error())
+			return err
+		}
+
+		if r.pg.IsNoRows(err) {
+			err = status.Errorf(codes.NotFound, "workflow not found or not owned by user")
+			return err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to check if workflow is active: %v", err)
+		return err
+	}
+
+	if activeWorkflowID != "" && terminatedAt == nil {
+		err = status.Errorf(codes.FailedPrecondition, "workflow is active, cannot delete")
+		return err
+	}
+
+	// Precondition: There should be no active jobs for this workflow.
+	// If there are active/running jobs, we should not allow deletion.
+	// This is to prevent accidental deletion of workflows that are still running.
+	activeJobsQuery := fmt.Sprintf(`
+		SELECT id
+		FROM %s
+		WHERE workflow_id = $1 AND user_id = $2 AND status = $3
+		LIMIT 1;
+	`, jobsTable)
+	var activeJobID string
+	err = tx.QueryRow(ctx, activeJobsQuery, workflowID, userID, jobsmodel.JobStatusRunning.ToString()).Scan(&activeJobID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(status.Code(err), err.Error())
+			return err
+		}
+
+		//nolint:gocritic // Ifelse chain is used to handle specific errors
+		if r.pg.IsNoRows(err) {
+			// No active jobs found, we can proceed with deletion
+			activeJobID = ""
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return err
+		} else {
+			err = status.Errorf(codes.Internal, "failed to check for active jobs: %v", err)
+			return err
+		}
+	}
+
+	if activeJobID != "" {
+		err = status.Errorf(codes.FailedPrecondition, "workflow has active jobs, cannot delete")
+		return err
+	}
+
+	// Only delete workflows that are terminated
+	// This is to prevent accidental deletion of active workflows.
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE id = $1 AND user_id = $2 AND terminated_at IS NOT NULL;
+	`, workflowsTable)
+
+	// Execute the query
+	ct, err := tx.Exec(ctx, query, workflowID, userID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(status.Code(err), err.Error())
+			return err
+		}
+
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to delete workflow: %v", err)
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		err = status.Errorf(codes.NotFound, "workflow not found or not owned by user")
+		return err
+	}
+
+	//nolint:errcheck // We don't expect an error here
+	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
+		ID:     workflowID,
+		UserID: userID,
+		Action: workflowsmodel.ActionDelete,
+	})
+
+	record := &kgo.Record{
+		Topic: r.cfg.ProducerTopic,
+		Key:   []byte(workflowID),
+		Value: workflowEntryBytes,
+	}
+	// Publish the workflowID to the Kafka topic for the build step
+	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(status.Code(err), err.Error())
+			return err
+		}
+
+		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
+			err = status.Error(codes.Unavailable, err.Error())
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
+		return err
+	}
+
+	// Commit transaction
+	if err = tx.Commit(ctx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -666,7 +835,7 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 
 	rows, err := r.pg.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, err
 	}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/workflow"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
@@ -63,6 +64,23 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
+
+	// Initialize the ClickHouse database
+	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
+		Hosts:           cfg.ClickHouse.Hosts,
+		Database:        cfg.ClickHouse.Database,
+		Username:        cfg.ClickHouse.Username,
+		Password:        cfg.ClickHouse.Password,
+		MaxOpenConns:    cfg.ClickHouse.MaxOpenConns,
+		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
+		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
+		DialTimeout:     cfg.ClickHouse.DialTimeout,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer cdb.Close()
 
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
@@ -146,7 +164,7 @@ func run() int {
 		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
 		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
 		Csvc:          csvc,
-	}, kfk)
+	}, cdb, kfk)
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)
 

@@ -6,6 +6,7 @@ import "github.com/kelseyhightower/envconfig"
 type WorkflowWorker struct {
 	Environment
 
+	ClickHouse
 	ClientTLS
 	Kafka
 	WorkflowsService

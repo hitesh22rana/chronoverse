@@ -1187,6 +1187,122 @@ func TestTerminateWorkflow(t *testing.T) {
 	}
 }
 
+func TestDeleteWorkflow(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
+
+	// Create a new service
+	s := workflows.New(validator.New(), repo, cache)
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *workflowspb.DeleteWorkflowRequest
+		mock  func(req *workflowspb.DeleteWorkflowRequest)
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &workflowspb.DeleteWorkflowRequest{
+				Id:     "workflow_id",
+				UserId: "user_id",
+			},
+			mock: func(req *workflowspb.DeleteWorkflowRequest) {
+				repo.EXPECT().DeleteWorkflow(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(nil)
+
+				// Simulate a cache delete
+				cache.EXPECT().Delete(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing workflow ID",
+			req: &workflowspb.DeleteWorkflowRequest{
+				Id:     "",
+				UserId: "user_id",
+			},
+			mock:  func(_ *workflowspb.DeleteWorkflowRequest) {},
+			isErr: true,
+		},
+		{
+			name: "error: workflow not found",
+			req: &workflowspb.DeleteWorkflowRequest{
+				Id:     "invalid_workflow_id",
+				UserId: "user_id",
+			},
+			mock: func(req *workflowspb.DeleteWorkflowRequest) {
+				repo.EXPECT().DeleteWorkflow(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(status.Error(codes.NotFound, "workflow not found"))
+			},
+			isErr: true,
+		},
+		{
+			name: "error: workflow not owned by user",
+			req: &workflowspb.DeleteWorkflowRequest{
+				Id:     "workflow_id",
+				UserId: "invalid_user_id",
+			},
+			mock: func(req *workflowspb.DeleteWorkflowRequest) {
+				repo.EXPECT().DeleteWorkflow(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(status.Error(codes.NotFound, "workflow not found or not owned by user"))
+			},
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			req: &workflowspb.DeleteWorkflowRequest{
+				Id:     "workflow_id",
+				UserId: "user_id",
+			},
+			mock: func(req *workflowspb.DeleteWorkflowRequest) {
+				repo.EXPECT().DeleteWorkflow(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).Return(status.Error(codes.Internal, "internal server error"))
+			},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.DeleteWorkflow(t.Context(), tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+		})
+	}
+}
+
 func TestListWorkflows(t *testing.T) {
 	ctrl := gomock.NewController(t)
 

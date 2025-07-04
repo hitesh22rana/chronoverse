@@ -183,6 +183,41 @@ func (s *Server) handleTerminateWorkflow(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteWorkflow handles the delete workflow by ID and user ID request.
+func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Get the workflow ID from the path parameters
+	workflowID := r.PathValue("workflow_id")
+	if workflowID == "" {
+		http.Error(w, "workflow ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// DeleteWorkflow deletes the workflow by ID.
+	_, err := s.workflowsClient.DeleteWorkflow(r.Context(), &workflowspb.DeleteWorkflowRequest{
+		Id:     workflowID,
+		UserId: userID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to delete workflow")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleListWorkflows handles the list workflows by user ID request.
 //
 //nolint:gocyclo // This function is complex and can be simplified further.

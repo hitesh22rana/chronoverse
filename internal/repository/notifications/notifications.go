@@ -79,7 +79,7 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 	err = r.pg.QueryRow(ctx, query, userID, kind, payload).Scan(&notificationID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return "", err
 		}
 
@@ -110,7 +110,7 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 	ct, err := r.pg.Exec(ctx, query, ids, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 
@@ -208,7 +208,7 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 
 	rows, err := r.pg.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, err
 	}
 

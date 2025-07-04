@@ -57,6 +57,20 @@ func (mr *MockServiceMockRecorder) CreateWorkflow(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateWorkflow", reflect.TypeOf((*MockService)(nil).CreateWorkflow), ctx, req)
 }
 
+// DeleteWorkflow mocks base method.
+func (m *MockService) DeleteWorkflow(ctx context.Context, req *workflows0.DeleteWorkflowRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteWorkflow", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteWorkflow indicates an expected call of DeleteWorkflow.
+func (mr *MockServiceMockRecorder) DeleteWorkflow(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteWorkflow", reflect.TypeOf((*MockService)(nil).DeleteWorkflow), ctx, req)
+}
+
 // GetWorkflow mocks base method.
 func (m *MockService) GetWorkflow(ctx context.Context, req *workflows0.GetWorkflowRequest) (*workflows.GetWorkflowResponse, error) {
 	m.ctrl.T.Helper()

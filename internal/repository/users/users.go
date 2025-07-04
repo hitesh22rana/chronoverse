@@ -70,7 +70,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 
 	rows, err := r.pg.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, "", err
 	}
 
@@ -122,7 +122,7 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 
 	rows, err := r.pg.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, "", err
 	}
 
@@ -183,7 +183,7 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 
 	rows, err := r.pg.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
+		err = status.Error(status.Code(err), err.Error())
 		return nil, err
 	}
 
@@ -233,7 +233,7 @@ func (r *Repository) UpdateUser(ctx context.Context, id, password, notificationP
 	ct, err := r.pg.Exec(ctx, query, args...)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
+			err = status.Error(status.Code(err), err.Error())
 			return err
 		}
 

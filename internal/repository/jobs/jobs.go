@@ -79,8 +79,11 @@ func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedul
 
 	row := r.pg.QueryRow(ctx, query, workflowID, userID, scheduledAtTime)
 	if err = row.Scan(&jobID); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(status.Code(err), err.Error())
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return "", err
+		} else if errors.Is(err, context.Canceled) {
+			err = status.Error(codes.Canceled, err.Error())
 			return "", err
 		}
 
@@ -123,9 +126,13 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, jobStatus strin
 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, args...)
+	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(status.Code(err), err.Error())
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		} else if errors.Is(err, context.Canceled) {
+			err = status.Error(codes.Canceled, err.Error())
 			return err
 		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
@@ -163,8 +170,11 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 	`, jobsTable)
 
 	rows, err := r.pg.Query(ctx, query, jobID, workflowID, userID)
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(status.Code(err), err.Error())
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	} else if errors.Is(err, context.Canceled) {
+		err = status.Error(codes.Canceled, err.Error())
 		return nil, err
 	}
 
@@ -204,8 +214,11 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 	`, jobsTable)
 
 	rows, err := r.pg.Query(ctx, query, jobID)
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(status.Code(err), err.Error())
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	} else if errors.Is(err, context.Canceled) {
+		err = status.Error(codes.Canceled, err.Error())
 		return nil, err
 	}
 
@@ -259,8 +272,11 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 
 	rows, err := r.ch.Query(ctx, query, args...)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			err = status.Error(status.Code(err), err.Error())
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		} else if errors.Is(err, context.Canceled) {
+			err = status.Error(codes.Canceled, err.Error())
 			return nil, err
 		}
 
@@ -344,8 +360,11 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		err = status.Error(status.Code(err), err.Error())
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = status.Error(codes.DeadlineExceeded, err.Error())
+		return nil, err
+	} else if errors.Is(err, context.Canceled) {
+		err = status.Error(codes.Canceled, err.Error())
 		return nil, err
 	}
 

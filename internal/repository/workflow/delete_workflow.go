@@ -34,8 +34,12 @@ func (r *Repository) deleteWorkflowLogs(parentCtx context.Context, workflowID, u
 
 		err := r.ch.Exec(ctx, query, workflowID, userID)
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				return status.Error(status.Code(err), err.Error())
+			if errors.Is(err, context.DeadlineExceeded) {
+				err = status.Error(codes.DeadlineExceeded, err.Error())
+				return err
+			} else if errors.Is(err, context.Canceled) {
+				err = status.Error(codes.Canceled, err.Error())
+				return err
 			}
 
 			return status.Errorf(codes.Internal, "failed to initiate async deletion of logs for workflow %s: %v", workflowID, err)

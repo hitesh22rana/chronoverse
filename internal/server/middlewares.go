@@ -22,7 +22,7 @@ import (
 func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip tracing for SSE endpoints
-		if strings.Contains(r.URL.Path, "/sse/logs") {
+		if strings.Contains(r.URL.Path, "/events") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -112,7 +112,7 @@ func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
 func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip compression for SSE endpoints
-		if strings.Contains(r.URL.Path, "/sse/logs") {
+		if strings.Contains(r.URL.Path, "/events") {
 			next.ServeHTTP(w, r)
 			return
 		}

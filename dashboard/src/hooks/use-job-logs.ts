@@ -46,7 +46,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
     const logsURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs`
-    const sseURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/sse/logs`
+    const sseURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/events`
     const isRunning = jobStatus === "RUNNING"
     const isCompleted = ["COMPLETED", "FAILED", "CANCELED"].includes(jobStatus)
     const shouldFetch = jobStatus !== "PENDING" && jobStatus !== "QUEUED"
@@ -69,7 +69,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     // For completed jobs, use infinite query with pagination
     const infiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
-        queryKey: ["job-logs", workflowId, jobId, jobStatus],
+        queryKey: ["job", workflowId, jobId, jobStatus],
         queryFn: async ({ pageParam }) => {
             const url = pageParam
                 ? `${logsURL}?cursor=${pageParam}`
@@ -107,7 +107,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     })
 
     // For running jobs, use regular query + SSE
-    const sseQueryKey = useMemo(() => [`job-logs/sse`, workflowId, jobId], [workflowId, jobId])
+    const sseQueryKey = useMemo(() => [`job/events`, workflowId, jobId], [workflowId, jobId])
     const sseQuery = useQuery({
         queryKey: sseQueryKey,
         queryFn: async (): Promise<JobLog[]> => {
@@ -160,20 +160,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
         eventSource.onopen = () => {
             setIsConnected(true)
-        }
-
-        eventSource.onmessage = (event) => {
-            try {
-                const logData: JobLog = JSON.parse(event.data)
-
-                // Update cache by merging with existing logs
-                queryClient.setQueryData(sseQueryKey, (oldData: JobLog[] | undefined) => {
-                    const existingLogs = oldData || []
-                    return mergeLogs(existingLogs, [logData])
-                })
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            } catch (_) {
-            }
         }
 
         // Handle specific event types

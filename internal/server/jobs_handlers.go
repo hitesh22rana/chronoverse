@@ -200,7 +200,7 @@ func (s *Server) handleStreamJobLogs(w http.ResponseWriter, r *http.Request) {
 
 	// Disable compression for SSE
 	w.Header().Del("Content-Encoding")
-	w.Header().Set("Transfer-Encoding", "") // Ensure no transfer encoding
+	w.Header().Del("Transfer-Encoding") // Ensure no transfer encoding
 
 	// Create response controller for streaming
 	rc, ok := w.(http.Flusher)
@@ -264,7 +264,7 @@ func (s *Server) handleStreamJobLogs(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Send the log event
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			fmt.Fprintf(w, "event: log\ndata: %s\n\n", data)
 			rc.Flush()
 		}
 	}

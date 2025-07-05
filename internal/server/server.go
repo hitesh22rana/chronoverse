@@ -341,7 +341,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		),
 	)
 	router.HandleFunc(
-		"/workflows/{workflow_id}/jobs/{job_id}/sse/logs",
+		"/workflows/{workflow_id}/jobs/{job_id}/events",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(

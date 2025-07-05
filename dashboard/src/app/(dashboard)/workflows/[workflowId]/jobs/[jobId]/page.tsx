@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { LogViewer } from "@/components/dashboard/log-viewer"
+import { LogsViewer } from "@/components/dashboard/logs-viewer"
 
 import { useJobDetails } from "@/hooks/use-job-details"
 
@@ -196,7 +196,7 @@ export default function JobDetailsPage() {
                     </CardContent>
                 </Card>
 
-                <LogViewer workflowId={workflowId} jobId={jobId} jobStatus={job?.status || "PENDING"} />
+                <LogsViewer workflowId={workflowId} jobId={jobId} jobStatus={job?.status || "PENDING"} />
             </div>
         </div>
     )

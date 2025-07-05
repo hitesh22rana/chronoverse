@@ -119,6 +119,15 @@ type JobLog struct {
 	SequenceNum uint32    `db:"sequence_num"`
 }
 
+// ToProto converts the JobLog to its protobuf representation.
+func (l *JobLog) ToProto() *jobspb.Log {
+	return &jobspb.Log{
+		Timestamp:   l.Timestamp.Format(time.RFC3339Nano),
+		Message:     l.Message,
+		SequenceNum: l.SequenceNum,
+	}
+}
+
 // GetJobLogsResponse represents the response of GetJobLogs.
 type GetJobLogsResponse struct {
 	ID         string
@@ -132,11 +141,7 @@ func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 	jobLogs := make([]*jobspb.Log, len(r.JobLogs))
 	for i := range r.JobLogs {
 		l := r.JobLogs[i]
-		jobLogs[i] = &jobspb.Log{
-			Timestamp:   l.Timestamp.Format(time.RFC3339Nano),
-			Message:     l.Message,
-			SequenceNum: l.SequenceNum,
-		}
+		jobLogs[i] = l.ToProto()
 	}
 
 	return &jobspb.GetJobLogsResponse{

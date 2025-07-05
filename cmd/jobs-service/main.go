@@ -16,6 +16,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	jobsrepo "github.com/hitesh22rana/chronoverse/internal/repository/jobs"
 	jobssvc "github.com/hitesh22rana/chronoverse/internal/service/jobs"
@@ -71,6 +72,26 @@ func run() int {
 	}
 	defer pdb.Close()
 
+	// Initialize the redis store
+	rdb, err := redis.New(ctx, &redis.Config{
+		Host:                     cfg.Redis.Host,
+		Port:                     cfg.Redis.Port,
+		Password:                 cfg.Redis.Password,
+		DB:                       cfg.Redis.DB,
+		PoolSize:                 cfg.Redis.PoolSize,
+		MinIdleConns:             cfg.Redis.MinIdleConns,
+		ReadTimeout:              cfg.Redis.ReadTimeout,
+		WriteTimeout:             cfg.Redis.WriteTimeout,
+		MaxMemory:                cfg.Redis.MaxMemory,
+		EvictionPolicy:           cfg.Redis.EvictionPolicy,
+		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer rdb.Close()
+
 	// Initialize the ClickHouse database
 	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
 		Hosts:           cfg.ClickHouse.Hosts,
@@ -92,7 +113,7 @@ func run() int {
 	repo := jobsrepo.New(&jobsrepo.Config{
 		FetchLimit:     cfg.JobsServiceConfig.FetchLimit,
 		LogsFetchLimit: cfg.JobsServiceConfig.LogsFetchLimit,
-	}, pdb, cdb)
+	}, pdb, rdb, cdb)
 
 	// Initialize the validator utility
 	validator := validator.New()

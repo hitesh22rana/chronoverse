@@ -16,17 +16,20 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/jackc/pgx/v5"
+	goredis "github.com/redis/go-redis/v9"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	jobsTable = "jobs"
-	logsTable = "job_logs"
-	delimiter = '$'
+	jobsTable                  = "jobs"
+	logsTable                  = "job_logs"
+	delimiter                  = '$'
+	jobLogsSubscriptionChannel = "job_logs"
 )
 
 // Config represents the repository constants configuration.
@@ -40,15 +43,17 @@ type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
 	pg  *postgres.Postgres
+	rdb *redis.Store
 	ch  *clickhouse.Client
 }
 
 // New creates a new jobs repository.
-func New(cfg *Config, pg *postgres.Postgres, ch *clickhouse.Client) *Repository {
+func New(cfg *Config, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		pg:  pg,
+		rdb: rdb,
 		ch:  ch,
 	}
 }
@@ -314,6 +319,55 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 		JobLogs:    logs,
 		Cursor:     encodeJobLogsCursor(sequenceNum),
 	}, nil
+}
+
+// StreamJobLogs returns a subscription to stream job logs.
+func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (sub *goredis.PubSub, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.StreamJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate whether the user has access to the job
+	query := fmt.Sprintf(`
+		SELECT id, status
+		FROM %s
+		WHERE id = $1 AND workflow_id = $2 AND user_id = $3
+		LIMIT 1;
+	`, jobsTable)
+	row := r.pg.QueryRow(ctx, query, jobID, workflowID, userID)
+	var id string
+	var jobStatus string
+	//nolint:gocritic // Ifelse is used to handle different error types
+	if err = row.Scan(&id, &jobStatus); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		} else if errors.Is(err, context.Canceled) {
+			err = status.Error(codes.Canceled, err.Error())
+			return nil, err
+		} else if r.pg.IsNoRows(err) {
+			err = status.Errorf(codes.NotFound, "job not found or not owned by user: %v", err)
+			return nil, err
+		} else if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
+			return nil, err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to validate job: %v", err)
+		return nil, err
+	}
+
+	if jobStatus != jobsmodel.JobStatusRunning.ToString() {
+		err = status.Errorf(codes.FailedPrecondition, "job is not running: %s", jobStatus)
+		return nil, err
+	}
+
+	return r.rdb.Subscribe(ctx, jobLogsSubscriptionChannel), nil
 }
 
 // ListJobs returns jobs.

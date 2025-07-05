@@ -24,6 +24,7 @@ const (
 	JobsService_GetJob_FullMethodName          = "/jobs.JobsService/GetJob"
 	JobsService_GetJobByID_FullMethodName      = "/jobs.JobsService/GetJobByID"
 	JobsService_GetJobLogs_FullMethodName      = "/jobs.JobsService/GetJobLogs"
+	JobsService_StreamJobLogs_FullMethodName   = "/jobs.JobsService/StreamJobLogs"
 	JobsService_ListJobs_FullMethodName        = "/jobs.JobsService/ListJobs"
 )
 
@@ -46,6 +47,8 @@ type JobsServiceClient interface {
 	GetJobByID(ctx context.Context, in *GetJobByIDRequest, opts ...grpc.CallOption) (*GetJobByIDResponse, error)
 	// GetJobLogs gets the logs of a job.
 	GetJobLogs(ctx context.Context, in *GetJobLogsRequest, opts ...grpc.CallOption) (*GetJobLogsResponse, error)
+	// StreamJobLogs streams the logs of a job.
+	StreamJobLogs(ctx context.Context, in *StreamJobLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Log], error)
 	// ListJobs returns a list of all jobs for a workflow_id owned by a user.
 	ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error)
 }
@@ -108,6 +111,25 @@ func (c *jobsServiceClient) GetJobLogs(ctx context.Context, in *GetJobLogsReques
 	return out, nil
 }
 
+func (c *jobsServiceClient) StreamJobLogs(ctx context.Context, in *StreamJobLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Log], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &JobsService_ServiceDesc.Streams[0], JobsService_StreamJobLogs_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamJobLogsRequest, Log]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type JobsService_StreamJobLogsClient = grpc.ServerStreamingClient[Log]
+
 func (c *jobsServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListJobsResponse)
@@ -137,6 +159,8 @@ type JobsServiceServer interface {
 	GetJobByID(context.Context, *GetJobByIDRequest) (*GetJobByIDResponse, error)
 	// GetJobLogs gets the logs of a job.
 	GetJobLogs(context.Context, *GetJobLogsRequest) (*GetJobLogsResponse, error)
+	// StreamJobLogs streams the logs of a job.
+	StreamJobLogs(*StreamJobLogsRequest, grpc.ServerStreamingServer[Log]) error
 	// ListJobs returns a list of all jobs for a workflow_id owned by a user.
 	ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error)
 }
@@ -162,6 +186,9 @@ func (UnimplementedJobsServiceServer) GetJobByID(context.Context, *GetJobByIDReq
 }
 func (UnimplementedJobsServiceServer) GetJobLogs(context.Context, *GetJobLogsRequest) (*GetJobLogsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetJobLogs not implemented")
+}
+func (UnimplementedJobsServiceServer) StreamJobLogs(*StreamJobLogsRequest, grpc.ServerStreamingServer[Log]) error {
+	return status.Errorf(codes.Unimplemented, "method StreamJobLogs not implemented")
 }
 func (UnimplementedJobsServiceServer) ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListJobs not implemented")
@@ -276,6 +303,17 @@ func _JobsService_GetJobLogs_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _JobsService_StreamJobLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamJobLogsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(JobsServiceServer).StreamJobLogs(m, &grpc.GenericServerStream[StreamJobLogsRequest, Log]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type JobsService_StreamJobLogsServer = grpc.ServerStreamingServer[Log]
+
 func _JobsService_ListJobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListJobsRequest)
 	if err := dec(in); err != nil {
@@ -326,6 +364,12 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _JobsService_ListJobs_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamJobLogs",
+			Handler:       _JobsService_StreamJobLogs_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "jobs/jobs.proto",
 }

@@ -40,7 +40,7 @@ interface SearchMatch {
     endIndex: number
 }
 
-export function LogViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
+export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
     const [searchQuery, setSearchQuery] = useState("")
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
     const [isSearchFocused, setIsSearchFocused] = useState(false)

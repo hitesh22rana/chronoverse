@@ -17,11 +17,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
@@ -47,6 +49,7 @@ type Service interface {
 	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (*jobsmodel.GetJobLogsResponse, error)
+	StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRequest) (chan *jobsmodel.JobLog, error)
 	ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -74,8 +77,8 @@ type Jobs struct {
 	svc  Service
 }
 
-// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
-func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
+// unaryAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the unary RPC calls.
+func (j *Jobs) unaryAuthTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
@@ -94,6 +97,27 @@ func (j *Jobs) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		}
 
 		return handler(ctx, req)
+	}
+}
+
+// StreamAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the streaming RPC calls.
+func (j *Jobs) StreamAuthTokenInterceptor() grpc.StreamServerInterceptor {
+	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		// Extract the authToken from metadata.
+		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(stream.Context())
+		if err != nil {
+			return err
+		}
+
+		ctx := authpkg.WithAuthorizationToken(stream.Context(), authToken)
+		if _, err := j.auth.ValidateToken(ctx); err != nil {
+			return err
+		}
+
+		return handler(srv, &grpcmiddlewares.WrappedServerStream{
+			ServerStream: stream,
+			Ctx:          ctx,
+		})
 	}
 }
 
@@ -130,12 +154,22 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			grpcmiddlewares.LoggingInterceptor(loggerpkg.FromContext(ctx)),
-			grpcmiddlewares.AudienceInterceptor(),
-			grpcmiddlewares.RoleInterceptor(func(method, role string) bool {
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.UnaryAudienceInterceptor(),
+			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
-			jobs.authTokenInterceptor(),
+			jobs.unaryAuthTokenInterceptor(),
+		),
+		grpc.ChainStreamInterceptor(
+			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.StreamAudienceInterceptor(),
+			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows us to modify the context.
+			grpcmiddlewares.StreamRoleInterceptor(func(_, _ string) bool {
+				return false
+			}),
+			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows us to modify the context.
+			jobs.StreamAuthTokenInterceptor(),
 		),
 	)
 
@@ -357,6 +391,63 @@ func (j *Jobs) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (r
 	}
 
 	return logs.ToProto(), nil
+}
+
+// StreamJobLogs streams the logs for the job.
+func (j *Jobs) StreamJobLogs(req *jobspb.StreamJobLogsRequest, stream jobspb.JobsService_StreamJobLogsServer) (err error) {
+	ctx, span := j.tp.Start(
+		stream.Context(),
+		"App.StreamJobLogs",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("workflow_id", req.GetWorkflowId()),
+			attribute.String("user_id", req.GetUserId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ch, err := j.svc.StreamJobLogs(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected or context canceled
+			switch ctx.Err() {
+			case context.Canceled:
+				// Client disconnected - just return, don't send error
+				return nil
+			case context.DeadlineExceeded:
+				// Context deadline exceeded
+				// This can happen if the client takes too long to read the stream.
+				return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+			default:
+				// Other context errors which can happen if the context is canceled or if there is an error in the context.
+				return status.Error(codes.Unknown, ctx.Err().Error())
+			}
+		case data, ok := <-ch:
+			if !ok {
+				// Channel closed, stream ended
+				return nil
+			}
+
+			if data == nil {
+				continue
+			}
+
+			if err := stream.Send(data.ToProto()); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // ListJobs returns the jobs by job ID.

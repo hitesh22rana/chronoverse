@@ -10,6 +10,7 @@ import (
 type JobLogsProcessor struct {
 	Environment
 
+	Redis
 	ClickHouse
 	Kafka
 	JobLogsProcessorConfig

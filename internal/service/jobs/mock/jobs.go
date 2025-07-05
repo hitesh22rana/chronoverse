@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	jobs "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	redis "github.com/redis/go-redis/v9"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -114,6 +115,21 @@ func (m *MockRepository) ScheduleJob(ctx context.Context, workflowID, userID, sc
 func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, workflowID, userID, scheduledAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockRepository)(nil).ScheduleJob), ctx, workflowID, userID, scheduledAt)
+}
+
+// StreamJobLogs mocks base method.
+func (m *MockRepository) StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*redis.PubSub, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StreamJobLogs", ctx, jobID, workflowID, userID)
+	ret0, _ := ret[0].(*redis.PubSub)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StreamJobLogs indicates an expected call of StreamJobLogs.
+func (mr *MockRepositoryMockRecorder) StreamJobLogs(ctx, jobID, workflowID, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamJobLogs", reflect.TypeOf((*MockRepository)(nil).StreamJobLogs), ctx, jobID, workflowID, userID)
 }
 
 // UpdateJobStatus mocks base method.

@@ -8,6 +8,7 @@ type JobsConfig struct {
 
 	Grpc
 	Postgres
+	Redis
 	ClickHouse
 	JobsServiceConfig
 }

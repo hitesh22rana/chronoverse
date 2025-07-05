@@ -175,9 +175,9 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			grpcmiddlewares.LoggingInterceptor(loggerpkg.FromContext(ctx)),
-			grpcmiddlewares.AudienceInterceptor(),
-			grpcmiddlewares.RoleInterceptor(func(_, _ string) bool {
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.UnaryAudienceInterceptor(),
+			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false
 			}),
 			users.authTokenInterceptor(),

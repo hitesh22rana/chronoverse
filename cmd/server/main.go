@@ -160,7 +160,6 @@ func run() int {
 			RequestTimeout:    cfg.Server.RequestTimeout,
 			ReadTimeout:       cfg.Server.ReadTimeout,
 			ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
-			WriteTimeout:      cfg.Server.WriteTimeout,
 			IdleTimeout:       cfg.Server.IdleTimeout,
 			ValidationConfig: &server.ValidationConfig{
 				SessionExpiry:    cfg.Server.SessionExpiry,

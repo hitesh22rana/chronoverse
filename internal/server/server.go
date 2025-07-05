@@ -102,7 +102,6 @@ func New(
 			Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 			ReadTimeout:       cfg.ReadTimeout,
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
-			WriteTimeout:      cfg.WriteTimeout,
 			IdleTimeout:       cfg.IdleTimeout,
 		},
 		validationCfg: cfg.ValidationConfig,
@@ -336,6 +335,19 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
 						s.handleGetJobLogs,
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
+		"/workflows/{workflow_id}/jobs/{job_id}/sse/logs",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleStreamJobLogs,
 					),
 				),
 			),

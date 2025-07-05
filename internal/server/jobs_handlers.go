@@ -2,6 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -159,4 +162,110 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
+}
+
+// handleStreamJobLogs handles the stream job logs by job ID request.
+func (s *Server) handleStreamJobLogs(w http.ResponseWriter, r *http.Request) {
+	// Get the workflow ID from the path parameters
+	workflowID := r.PathValue("workflow_id")
+	if workflowID == "" {
+		http.Error(w, "workflow ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the job ID from the path parameters
+	jobID := r.PathValue("job_id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Set SSE headers before writing anything
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Disable compression for SSE
+	w.Header().Del("Content-Encoding")
+	w.Header().Set("Transfer-Encoding", "") // Ensure no transfer encoding
+
+	// Create response controller for streaming
+	rc, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a context that can be canceled when the client disconnects
+	ctx := r.Context()
+
+	// Start the gRPC stream
+	stream, err := s.jobsClient.StreamJobLogs(ctx, &jobspb.StreamJobLogsRequest{
+		Id:         jobID,
+		WorkflowId: workflowID,
+		UserId:     userID,
+	})
+	if err != nil {
+		// Send an error event to the client
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+		rc.Flush()
+		return
+	}
+
+	// Send initial connection event
+	fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\"}\n\n")
+	rc.Flush()
+
+	// Stream the logs
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return
+		default:
+			msg, err := stream.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					// Stream ended normally
+					fmt.Fprintf(w, "event: end\ndata: {\"status\":\"stream_ended\"}\n\n")
+					rc.Flush()
+					return
+				}
+
+				// Send error event and close
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+				rc.Flush()
+				return
+			}
+
+			if msg == nil {
+				continue
+			}
+
+			// Marshal the log message
+			data, err := json.Marshal(msg)
+			if err != nil {
+				fmt.Fprintf(w, "event: error\ndata: failed to marshal log message\n\n")
+				rc.Flush()
+				continue
+			}
+
+			// Send the log event
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			rc.Flush()
+		}
+	}
 }

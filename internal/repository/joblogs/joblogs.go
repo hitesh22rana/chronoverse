@@ -17,7 +17,12 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+)
+
+const (
+	jobLogsPublishChannel = "job_logs"
 )
 
 // Config represents the repository constants configuration.
@@ -30,15 +35,17 @@ type Config struct {
 type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
+	rdb *redis.Store
 	ch  *clickhouse.Client
 	kfk *kgo.Client
 }
 
 // New creates a new joblogs repository.
-func New(cfg *Config, ch *clickhouse.Client, kfk *kgo.Client) *Repository {
+func New(cfg *Config, rdb *redis.Store, ch *clickhouse.Client, kfk *kgo.Client) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
+		rdb: rdb,
 		ch:  ch,
 		kfk: kfk,
 	}
@@ -196,6 +203,31 @@ func (r *Repository) processBatch(ctx context.Context, queue *[]queueData, mutex
 		records = append(records, item.record)
 	}
 
+	// Publish logs to Redis Pub/Sub in a separate goroutine
+	// This allows us to continue processing without waiting for Redis, since it's not critical to block the batch processing on Redis publishing.
+	go func() {
+		// Send logs to Redis Pub/Sub
+		for _, log := range logs {
+			// Marshal log entry to JSON
+			data, err := json.Marshal(log)
+			if err != nil {
+				logger.Error("failed to marshal log entry",
+					zap.Any("log", log),
+					zap.Error(err),
+				)
+				continue // Skip this log entry
+			}
+
+			// Publish to Redis Pub/Sub
+			if err := r.rdb.Publish(context.WithoutCancel(ctx), jobLogsPublishChannel, data); err != nil {
+				logger.Error("failed to publish log entry to Redis",
+					zap.Any("log", log),
+					zap.Error(err),
+				)
+			}
+		}
+	}()
+
 	// Insert logs into ClickHouse
 	if err := r.insertLogsBatch(ctx, logs); err != nil {
 		logger.Error("failed to insert logs batch", zap.Error(err))
@@ -208,8 +240,7 @@ func (r *Repository) processBatch(ctx context.Context, queue *[]queueData, mutex
 		return err
 	}
 
-	logger.Info("successfully processed and committed batch",
-		zap.Int("records", len(records)))
+	logger.Info("successfully processed and committed batch", zap.Int("records", len(records)))
 
 	return nil
 }

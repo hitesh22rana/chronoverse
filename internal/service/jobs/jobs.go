@@ -5,6 +5,7 @@ package jobs
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -13,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	goredis "github.com/redis/go-redis/v9"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
@@ -27,6 +30,7 @@ type Repository interface {
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, error)
+	StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*goredis.PubSub, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -248,6 +252,87 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 	}
 
 	return res, nil
+}
+
+// StreamJobLogsRequest holds the request parameters for streaming scheduled job logs.
+type StreamJobLogsRequest struct {
+	ID         string `validate:"required"`
+	WorkflowID string `validate:"required"`
+	UserID     string `validate:"required"`
+}
+
+// StreamJobLogs streams the job logs.
+func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRequest) (ch chan *jobsmodel.JobLog, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.StreamJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&StreamJobLogsRequest{
+		ID:         req.GetId(),
+		WorkflowID: req.GetWorkflowId(),
+		UserID:     req.GetUserId(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Stream the scheduled job logs
+	sub, _err := s.repo.StreamJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId())
+	if _err != nil {
+		err = _err
+		return nil, err
+	}
+
+	subscribedChannel := sub.Channel()
+	ch = make(chan *jobsmodel.JobLog)
+	go func() {
+		defer close(ch)
+		defer sub.Close()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case data, ok := <-subscribedChannel:
+				if !ok {
+					return
+				}
+
+				if data == nil {
+					continue
+				}
+
+				payload := data.Payload
+				var log jobsmodel.JobLogEntry
+				if err := json.Unmarshal([]byte(payload), &log); err != nil {
+					continue
+				}
+
+				if log.JobID != req.GetId() || log.WorkflowID != req.GetWorkflowId() || log.UserID != req.GetUserId() {
+					continue
+				}
+
+				select {
+				case ch <- &jobsmodel.JobLog{
+					Timestamp:   log.TimeStamp,
+					Message:     log.Message,
+					SequenceNum: log.SequenceNum,
+				}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	return ch, nil
 }
 
 // ListJobsRequest holds the request parameters for listing scheduled jobs.

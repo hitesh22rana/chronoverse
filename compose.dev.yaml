@@ -439,6 +439,7 @@ services:
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
+      REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
       GRPC_PORT: 50053
       GRPC_TLS_ENABLED: true
@@ -488,6 +489,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       clickhouse:
         condition: service_healthy
       kafka:
@@ -535,6 +538,8 @@ services:
         - NAME=notifications-service
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    ports:
+      - '50054:50054'
     restart: on-failure
     volumes:
       - ./certs:/certs
@@ -774,6 +779,7 @@ services:
     image: joblogs-processor
     container_name: joblogs-processor
     environment:
+      REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: job_logs
@@ -806,6 +812,10 @@ services:
       exec /bin/service
       '
     depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:

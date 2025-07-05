@@ -86,6 +86,13 @@ message GetJobLogsResponse {
     string cursor      = 4; // Cursor for pagination
 }
 
+// StreamJobLogsRequest contains the details needed to stream the logs of a job.
+message StreamJobLogsRequest {
+    string id          = 1; // ID of the job
+    string workflow_id = 2; // ID of the workflow
+    string user_id     = 3; // ID of the user
+}
+
 // ListJobsFilters contains the filters for listing jobs.
 message ListJobsFilters {
     string status = 1; // Status of the job (optional)
@@ -135,6 +142,9 @@ service JobsService {
 
     // GetJobLogs gets the logs of a job.
     rpc GetJobLogs(GetJobLogsRequest) returns (GetJobLogsResponse) {}
+
+    // StreamJobLogs streams the logs of a job.
+    rpc StreamJobLogs(StreamJobLogsRequest) returns (stream Log) {}
 
     // ListJobs returns a list of all jobs for a workflow_id owned by a user.
     rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {}

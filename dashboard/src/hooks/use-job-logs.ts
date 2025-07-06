@@ -112,22 +112,37 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         queryKey: sseQueryKey,
         queryFn: async (): Promise<JobLog[]> => {
             try {
-                const response = await fetchWithAuth(logsURL)
+                const allLogs: JobLog[] = []
+                let cursor: string | undefined = undefined
 
-                if (!response.ok) {
-                    throw new Error("Failed to fetch job logs")
+                // Fetch all pages of logs
+                while (true) {
+                    const url = cursor
+                        ? `${logsURL}?cursor=${cursor}`
+                        : logsURL
+
+                    const response = await fetchWithAuth(url)
+
+                    if (!response.ok) {
+                        throw new Error("Failed to fetch job logs")
+                    }
+
+                    const res = await response.json() as JobLogsResponseData
+
+                    if (res.logs && res.logs.length > 0) {
+                        allLogs.push(...res.logs)
+                    }
+
+                    // If there's no cursor, we've fetched all pages
+                    if (!res.cursor) {
+                        break
+                    }
+
+                    cursor = res.cursor
                 }
 
-                const res = await response.json() as JobLogsResponseData
-
-                if (!res.logs || res.logs.length === 0) {
-                    return []
-                }
-
-                // Sort logs by sequence_num to ensure proper order
-                const sortedLogs = res.logs.sort((a, b) => a.sequence_num - b.sequence_num)
-
-                return sortedLogs
+                // Sort all logs by sequence_num to ensure proper order
+                return allLogs.sort((a, b) => a.sequence_num - b.sequence_num)
             } catch (error) {
                 throw error
             }

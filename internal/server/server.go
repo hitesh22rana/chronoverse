@@ -347,7 +347,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			s.withVerifySessionMiddleware(
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-						s.handleStreamJobLogs,
+						s.handleJobEvents,
 					),
 				),
 			),

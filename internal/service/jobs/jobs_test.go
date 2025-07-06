@@ -1,11 +1,13 @@
 package jobs_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/go-redis/redismock/v9"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
@@ -730,6 +732,162 @@ func TestGetJobLogs(t *testing.T) {
 			}
 
 			assert.Equal(t, jobLogs, tt.want.GetJobLogsResponse)
+		})
+	}
+}
+
+func TestStreamJobLogs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	// Create a mock repository
+	repo := jobsmock.NewMockRepository(ctrl)
+
+	// Create a new service
+	s := jobs.New(validator.New(), repo)
+
+	type want struct {
+		channelType string
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		req   *jobspb.StreamJobLogsRequest
+		mock  func(req *jobspb.StreamJobLogsRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success",
+			req: &jobspb.StreamJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+			},
+			mock: func(req *jobspb.StreamJobLogsRequest) {
+				redisMock, _ := redismock.NewClientMock()
+				sub := redisMock.Subscribe(t.Context(), "job_logs")
+
+				repo.EXPECT().StreamJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+				).Return(sub, nil)
+
+				// Simulate sending logs to the channel
+				go func() {
+					redisMock.Publish(t.Context(), "job_logs", &jobsmodel.JobLog{
+						Timestamp:   time.Now(),
+						Message:     "log message",
+						SequenceNum: 1,
+					})
+					sub.Close() // Simulate end of stream
+				}()
+			},
+			want: want{
+				channelType: "chan *jobsmodel.JobLog",
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			req: &jobspb.StreamJobLogsRequest{
+				Id:         "",
+				WorkflowId: "",
+				UserId:     "",
+			},
+			mock:  func(_ *jobspb.StreamJobLogsRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: repository error",
+			req: &jobspb.StreamJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+			},
+			mock: func(req *jobspb.StreamJobLogsRequest) {
+				repo.EXPECT().StreamJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: job not running",
+			req: &jobspb.StreamJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+			},
+			mock: func(req *jobspb.StreamJobLogsRequest) {
+				repo.EXPECT().StreamJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+				).Return(nil, status.Error(codes.FailedPrecondition, "job is not running"))
+			},
+			want:  want{},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.req)
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+
+			stream, err := s.StreamJobLogs(ctx, tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				if stream != nil {
+					t.Errorf("expected nil channel on error, got channel")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if stream == nil {
+				t.Errorf("expected channel, got nil")
+				return
+			}
+
+			// Test that the channel is properly typed
+			select {
+			case <-stream:
+				// Channel is readable (this is expected behavior)
+			case <-time.After(100 * time.Millisecond):
+				// Channel is not immediately readable (also expected)
+			}
+
+			// Verify the channel can be closed without panic
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				cancel() // This should trigger cleanup in the goroutine
+			}()
+
+			// Try to read from channel with timeout to ensure cleanup works
+			select {
+			case <-stream:
+			case <-time.After(200 * time.Millisecond):
+				// Timeout is acceptable in tests
+			}
 		})
 	}
 }

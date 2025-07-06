@@ -164,8 +164,8 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleStreamJobLogs handles the stream job logs by job ID request.
-func (s *Server) handleStreamJobLogs(w http.ResponseWriter, r *http.Request) {
+// handleJobEvents handles the job events by job ID request.
+func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	// Get the workflow ID from the path parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {

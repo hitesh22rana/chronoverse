@@ -233,3 +233,18 @@ func (s *Store) Pipeline(ctx context.Context, fn func(redis.Pipeliner) error) er
 
 	return nil
 }
+
+// Publish publishes a message to a channel.
+func (s *Store) Publish(ctx context.Context, channel string, message any) error {
+	if err := s.client.Publish(ctx, channel, message).Err(); err != nil {
+		return status.Errorf(codes.Internal, "failed to publish message to channel %s: %v", channel, err)
+	}
+
+	return nil
+}
+
+// Subscribe subscribes to specified channels and returns a PubSub client.
+// The caller is responsible for closing the PubSub client.
+func (s *Store) Subscribe(ctx context.Context, channels ...string) *redis.PubSub {
+	return s.client.Subscribe(ctx, channels...)
+}

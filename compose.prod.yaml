@@ -461,6 +461,7 @@ services:
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
+      REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
       GRPC_PORT: 50053
       GRPC_REQUEST_TIMEOUT: 500ms
@@ -500,6 +501,8 @@ services:
       start_period: 30s
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
@@ -757,6 +760,7 @@ services:
     <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
     environment:
+      REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUME_TOPICS: job_logs
@@ -781,6 +785,10 @@ services:
       exec /bin/service
       '
     depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:

@@ -125,9 +125,9 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			grpcmiddlewares.LoggingInterceptor(loggerpkg.FromContext(ctx)),
-			grpcmiddlewares.AudienceInterceptor(),
-			grpcmiddlewares.RoleInterceptor(func(method, role string) bool {
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.UnaryAudienceInterceptor(),
+			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
 			notifications.authTokenInterceptor(),

@@ -1120,6 +1120,361 @@ func TestGetJobLogs(t *testing.T) {
 	}
 }
 
+// TestStreamJobLogs tests the StreamJobLogs method of the jobs service.
+//
+//nolint:gocyclo // This function is complex due to the nature of streaming logs and context cancellation.
+func TestStreamJobLogs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	server := jobs.New(t.Context(), &jobs.Config{}, _auth, svc)
+
+	client, _close := initClient(server)
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.StreamJobLogsRequest
+	}
+
+	type want struct {
+		logCount     int
+		expectClosed bool
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.StreamJobLogsRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success: stream logs",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.StreamJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user_id",
+				},
+			},
+			mock: func(_ *jobspb.StreamJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+
+				// Create a channel that will send a few logs then close
+				ch := make(chan *jobsmodel.JobLog, 3)
+				go func() {
+					defer close(ch)
+					ch <- &jobsmodel.JobLog{
+						Timestamp:   time.Now(),
+						Message:     "Log message 1",
+						SequenceNum: 1,
+					}
+					ch <- &jobsmodel.JobLog{
+						Timestamp:   time.Now(),
+						Message:     "Log message 2",
+						SequenceNum: 2,
+					}
+					ch <- &jobsmodel.JobLog{
+						Timestamp:   time.Now(),
+						Message:     "Log message 3",
+						SequenceNum: 3,
+					}
+				}()
+
+				svc.EXPECT().StreamJobLogs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(ch, nil)
+			},
+			want: want{
+				logCount:     3,
+				expectClosed: true,
+			},
+			isErr: false,
+		},
+		{
+			name: "success: context cancellation",
+			args: args{
+				getCtx: func() context.Context {
+					ctx := auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+					ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+					// Cancel after a short delay to test context cancellation
+					go func() {
+						time.Sleep(50 * time.Millisecond)
+						cancel()
+					}()
+					return ctx
+				},
+				req: &jobspb.StreamJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user_id",
+				},
+			},
+			mock: func(_ *jobspb.StreamJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+
+				// Create a channel that sends logs continuously
+				ch := make(chan *jobsmodel.JobLog)
+				go func() {
+					defer close(ch)
+					ticker := time.NewTicker(10 * time.Millisecond)
+					defer ticker.Stop()
+					var i uint32 = 1
+					for {
+						select {
+						case <-ticker.C:
+							ch <- &jobsmodel.JobLog{
+								Timestamp:   time.Now(),
+								Message:     fmt.Sprintf("Log message %d", i),
+								SequenceNum: i,
+							}
+							i++
+						case <-time.After(200 * time.Millisecond):
+							return // Exit after timeout
+						}
+					}
+				}()
+
+				svc.EXPECT().StreamJobLogs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(ch, nil)
+			},
+			want: want{
+				logCount:     0, // We don't expect any specific count due to context cancellation
+				expectClosed: false,
+			},
+			isErr: false, // Context cancellation should not return an error from the gRPC method
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.StreamJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user_id",
+				},
+			},
+			mock: func(_ *jobspb.StreamJobLogsRequest) {},
+			want: want{
+				logCount:     0,
+				expectClosed: false,
+			},
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.StreamJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user_id",
+				},
+			},
+			mock: func(_ *jobspb.StreamJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(nil, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			want: want{
+				logCount:     0,
+				expectClosed: false,
+			},
+			isErr: true,
+		},
+		{
+			name: "error: job not found",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.StreamJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user_id",
+				},
+			},
+			mock: func(_ *jobspb.StreamJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().StreamJobLogs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
+			},
+			want: want{
+				logCount:     0,
+				expectClosed: false,
+			},
+			isErr: true,
+		},
+		{
+			name: "error: job not running",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.StreamJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user_id",
+				},
+			},
+			mock: func(_ *jobspb.StreamJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().StreamJobLogs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.FailedPrecondition, "job is not running"))
+			},
+			want: want{
+				logCount:     0,
+				expectClosed: false,
+			},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.mock(tt.args.req)
+			stream, err := client.StreamJobLogs(tt.args.getCtx(), tt.args.req)
+			if err != nil && tt.isErr {
+				return
+			}
+
+			if tt.isErr {
+				if stream == nil {
+					t.Error("StreamJobLogs() returned nil stream, want error")
+					return
+				}
+
+				_, err = stream.Recv()
+				if err == nil {
+					t.Error("StreamJobLogs() error = nil, want error")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("StreamJobLogs() error = %v, want nil", err)
+				return
+			}
+
+			if stream == nil {
+				t.Errorf("StreamJobLogs() stream = nil, want stream")
+				return
+			}
+
+			// Read logs from the stream
+			var logCount int
+			var streamClosed bool
+
+			// Use a timeout to prevent test from hanging
+			timeout := time.After(300 * time.Millisecond)
+			for {
+				select {
+				case <-timeout:
+					// Test timeout - exit the loop
+					goto done
+				default:
+					log, err := stream.Recv()
+					if err != nil {
+						// Stream ended or error occurred
+						streamClosed = true
+						goto done
+					}
+					if log != nil {
+						logCount++
+						// Verify log structure
+						if log.Message == "" {
+							t.Errorf("received log with empty message")
+						}
+						if log.SequenceNum == 0 {
+							t.Errorf("received log with zero sequence number")
+						}
+						if log.Timestamp == "" {
+							t.Errorf("received log with empty timestamp")
+						}
+					}
+				}
+			}
+
+		done:
+			// Verify expectations based on test case
+			if tt.want.expectClosed && !streamClosed {
+				t.Errorf("expected stream to be closed, but it's still open")
+			}
+
+			if tt.want.logCount > 0 && logCount != tt.want.logCount {
+				t.Errorf("expected %d logs, got %d", tt.want.logCount, logCount)
+			}
+
+			// Ensures stream is properly closed
+			if !streamClosed {
+				if err := stream.CloseSend(); err != nil {
+					t.Errorf("failed to close stream: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestListJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 

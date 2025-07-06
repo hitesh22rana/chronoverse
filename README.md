@@ -16,6 +16,7 @@ Chronoverse is a distributed job scheduling and orchestration system designed fo
   - `HEARTBEAT`: Simple health check job.
   - `CONTAINER`: Execute custom containerized applications and scripts.
 - **Job Logs**: Comprehensive execution history with logs stored in ClickHouse for efficient storage and retrieval.
+- **Live Log Streaming**: Real-time job log streaming using Server-Sent Events (SSE) for running jobs with automatic fallback to static logs for completed jobs.
 - **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes.
 - **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs.
 - **Security**: JWT-based authentication and authorization.

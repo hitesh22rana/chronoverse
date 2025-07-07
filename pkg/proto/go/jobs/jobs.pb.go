@@ -608,6 +608,7 @@ type Log struct {
 	Timestamp     string                 `protobuf:"bytes,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`                         // Time the log was created
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`                             // Log message
 	SequenceNum   uint32                 `protobuf:"varint,3,opt,name=sequence_num,json=sequenceNum,proto3" json:"sequence_num,omitempty"` // Sequence number of the log
+	Stream        string                 `protobuf:"bytes,4,opt,name=stream,proto3" json:"stream,omitempty"`                               // Stream type (stdout or stderr)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -661,6 +662,13 @@ func (x *Log) GetSequenceNum() uint32 {
 		return x.SequenceNum
 	}
 	return 0
+}
+
+func (x *Log) GetStream() string {
+	if x != nil {
+		return x.Stream
+	}
+	return ""
 }
 
 // GetJobLogsResponse contains the result of a job log retrieval attempt.
@@ -1115,11 +1123,12 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12\x17\n" +
 	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x16\n" +
-	"\x06cursor\x18\x04 \x01(\tR\x06cursor\"`\n" +
+	"\x06cursor\x18\x04 \x01(\tR\x06cursor\"x\n" +
 	"\x03Log\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\tR\ttimestamp\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +
-	"\fsequence_num\x18\x03 \x01(\rR\vsequenceNum\"|\n" +
+	"\fsequence_num\x18\x03 \x01(\rR\vsequenceNum\x12\x16\n" +
+	"\x06stream\x18\x04 \x01(\tR\x06stream\"|\n" +
 	"\x12GetJobLogsResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +

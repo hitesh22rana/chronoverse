@@ -76,6 +76,7 @@ message Log {
     string timestamp    = 1; // Time the log was created
     string message      = 2; // Log message
     uint32 sequence_num = 3; // Sequence number of the log
+    string stream       = 4; // Stream type (stdout or stderr)
 }
 
 // GetJobLogsResponse contains the result of a job log retrieval attempt.

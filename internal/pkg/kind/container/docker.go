@@ -1,16 +1,23 @@
 package container
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
 
 const (
@@ -55,14 +62,14 @@ func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
 
 // Execute runs a command in a new container and streams the logs.
 //
-//nolint:gocyclo, gocritic // This function is not complex enough to warrant a refactor
+//nolint:gocyclo,gocritic // This function is not complex enough to warrant a refactor
 func (w *DockerWorkflow) Execute(
 	ctx context.Context,
 	timeout time.Duration,
 	image string,
 	cmd []string,
 	env []string,
-) (<-chan string, <-chan error, error) {
+) (<-chan *jobsmodel.JobLog, <-chan error, error) {
 	if err := w.healthCheck(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -94,8 +101,9 @@ func (w *DockerWorkflow) Execute(
 		return nil, nil, status.Errorf(codes.FailedPrecondition, "failed to start container: %v", err)
 	}
 
-	// Create channels for logs and errors
-	logs := make(chan string)
+	// Channel for logs streaming
+	logs := make(chan *jobsmodel.JobLog)
+	// Channel to capture errors
 	errs := make(chan error)
 
 	// Create a context with timeout for this container
@@ -105,106 +113,54 @@ func (w *DockerWorkflow) Execute(
 	go func() {
 		defer close(logs)
 		defer close(errs)
-		defer cancel() // Ensure context is canceled when we're done
-
-		// Stream logs
-		streamedLogs, err := w.Client.ContainerLogs(ctx, containerID, container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-			Follow:     true,
-		})
-		if err != nil {
-			// To distinguish between Docker daemon unavailability and other errors
-			if client.IsErrConnectionFailed(err) {
-				errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
-			} else {
-				errs <- status.Errorf(codes.FailedPrecondition, "failed to get container logs: %v", err)
-			}
-			return
-		}
-		defer streamedLogs.Close()
+		defer cancel()
 
 		// Set up container wait early to detect completion
 		statusCh, waitErrCh := w.Client.ContainerWait(timeoutCtx, containerID, container.WaitConditionRemoved)
 
-		// Read logs in a separate goroutine
+		// Start log streaming
 		logsDone := make(chan struct{})
 		go func() {
 			defer close(logsDone)
-			buf := make([]byte, 4096)
-			for {
-				// Use a read with timeout to avoid blocking forever
-				readCtx, readCancel := context.WithTimeout(ctx, 100*time.Millisecond)
-
-				if deadline, ok := readCtx.Deadline(); ok {
-					if deadliner, ok := streamedLogs.(interface{ SetReadDeadline(time.Time) error }); ok {
-						//nolint:errcheck // Ignore error, as this is a best-effort operation
-						_ = deadliner.SetReadDeadline(deadline)
-					}
-				}
-
-				n, err := streamedLogs.Read(buf)
-				readCancel()
-
-				if n > 0 {
-					select {
-					case logs <- string(buf[:n]):
-						// Log sent successfully
-					case <-timeoutCtx.Done():
-						// Container timed out, stop sending logs
-						return
-					}
-				}
-
-				if err != nil {
-					return
-				}
-
-				// Check timeouts between reads
-				select {
-				case <-timeoutCtx.Done():
-					return
-				default:
-					// Continue reading
-				}
-			}
+			w.streamContainerLogs(timeoutCtx, containerID, logs, errs)
 		}()
 
-		// Monitor for timeouts, container completion, and log streaming concurrently
+		// Monitor for timeouts and container completion
 		select {
 		case <-timeoutCtx.Done():
 			// Container execution timed out
 			errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", timeoutCtx.Err())
 
-			// Try to stop the container
+			// Container execution timed out - try to stop the container
 			stopTimeout := int(containerStopTimeout.Seconds())
-			//nolint:errcheck,contextcheck // Ignore error, as this is a best-effort operation
+			//nolint:errcheck,contextcheck // Ignore error, as we are trying to stop the container gracefully
 			_ = w.Client.ContainerStop(context.Background(), containerID, container.StopOptions{
 				Timeout: &stopTimeout,
 			})
 
-			// Wait a moment for logs to catch up
-			time.Sleep(100 * time.Millisecond)
+			// Wait for logs to finish
+			select {
+			case <-logsDone:
+			case <-time.After(100 * time.Millisecond):
+			}
 			return
 
 		case err := <-waitErrCh:
-			if err != nil {
-				// Return early if the container was already removed
-				if strings.Contains(err.Error(), "No such container") {
-					// Wait for any remaining logs
-					select {
-					case <-logsDone:
-					case <-time.After(100 * time.Millisecond):
-					}
-					return
+			// Return early if the container was already removed
+			if strings.Contains(err.Error(), "No such container") {
+				// Wait for any remaining logs
+				select {
+				case <-logsDone:
+				case <-time.After(100 * time.Millisecond):
 				}
+				return
+			}
 
-				// Check if this is a context timeout/cancel
-				if ctx.Err() != nil && (ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled) {
-					errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", ctx.Err())
-				} else {
-					errs <- status.Errorf(codes.Aborted, "container execution error: %v", err)
-				}
+			// Check if this is a context timeout/cancel
+			if ctx.Err() != nil && (ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled) {
+				errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", ctx.Err())
+			} else {
+				errs <- status.Errorf(codes.Aborted, "container execution error: %v", err)
 			}
 
 		case containerStatus := <-statusCh:
@@ -219,6 +175,119 @@ func (w *DockerWorkflow) Execute(
 	}()
 
 	return logs, errs, nil
+}
+
+// streamContainerLogs streams container logs and properly demuxes stdout/stderr.
+//
+//nolint:gocyclo // This function is not complex enough to warrant a refactor
+func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID string, logCh chan<- *jobsmodel.JobLog, errs chan<- error) {
+	reader, err := w.Client.ContainerLogs(ctx, containerID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+	})
+	if err != nil {
+		// To distinguish between Docker daemon unavailability and other errors
+		if client.IsErrConnectionFailed(err) {
+			errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
+		} else {
+			errs <- status.Errorf(codes.FailedPrecondition, "failed to get container logs: %v", err)
+		}
+		return
+	}
+	defer reader.Close()
+
+	var sequenceNum uint32
+
+	// Use pipes to receive stdout and stderr separately
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+
+	// Channel to collect log messages from both streams
+	logMessages := make(chan *jobsmodel.JobLog)
+
+	// Start demuxing in a goroutine
+	go func() {
+		defer stdoutWriter.Close()
+		defer stderrWriter.Close()
+		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, reader)
+		if err != nil && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe)) {
+			// Container might have been removed or an error occurred
+			if client.IsErrConnectionFailed(err) {
+				errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
+			}
+		}
+	}()
+
+	// Wait group to track when both readers are done
+	var wg sync.WaitGroup
+
+	// Read from stdout
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer stdoutReader.Close()
+
+		scanner := bufio.NewScanner(stdoutReader)
+		for scanner.Scan() {
+			msg := scanner.Text()
+			if msg != "" {
+				select {
+				case logMessages <- &jobsmodel.JobLog{Timestamp: time.Now(), Message: msg, SequenceNum: atomic.LoadUint32(&sequenceNum), Stream: "stdout"}:
+					// Atomic increment the sequence number for each log entry
+					atomic.AddUint32(&sequenceNum, 1)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	// Read from stderr
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer stderrReader.Close()
+
+		scanner := bufio.NewScanner(stderrReader)
+		for scanner.Scan() {
+			msg := scanner.Text()
+			if msg != "" {
+				select {
+				case logMessages <- &jobsmodel.JobLog{Timestamp: time.Now(), Message: msg, SequenceNum: atomic.LoadUint32(&sequenceNum), Stream: "stderr"}:
+					// Atomic increment the sequence number for each log entry
+					atomic.AddUint32(&sequenceNum, 1)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	// Close logMessages when both readers are done
+	go func() {
+		wg.Wait()
+		close(logMessages)
+	}()
+
+	// Forward log messages to the output channel
+	for {
+		select {
+		case msg, ok := <-logMessages:
+			if !ok {
+				// Channel closed, all logs processed
+				return
+			}
+
+			select {
+			case logCh <- msg:
+			case <-ctx.Done():
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // Build pulls an image from the registry, required for the image to be available locally.

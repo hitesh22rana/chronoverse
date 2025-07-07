@@ -256,7 +256,7 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT timestamp, message, sequence_num
+		SELECT timestamp, message, sequence_num, stream
 		FROM %s
 		WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
 	`, logsTable)
@@ -294,7 +294,8 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 		var timestamp time.Time
 		var message string
 		var sequenceNum uint32
-		if err = rows.Scan(&timestamp, &message, &sequenceNum); err != nil {
+		var stream string
+		if err = rows.Scan(&timestamp, &message, &sequenceNum, &stream); err != nil {
 			err = status.Errorf(codes.Internal, "failed to scan logs: %v", err)
 			return nil, err
 		}
@@ -303,6 +304,7 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 			Timestamp:   timestamp,
 			Message:     message,
 			SequenceNum: sequenceNum,
+			Stream:      stream,
 		})
 	}
 

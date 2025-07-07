@@ -40,6 +40,16 @@ interface SearchMatch {
     endIndex: number
 }
 
+// Determine styling based on log stream
+const getLogStreamStyles = (stream: string) => {
+    switch (stream) {
+        case 'stderr':
+            return 'text-muted-foreground bg-red-50 dark:bg-red-800/20'
+        case 'stdout':
+        default:
+    }
+}
+
 export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
     const [searchQuery, setSearchQuery] = useState("")
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
@@ -116,7 +126,7 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
         const query = searchQuery.toLowerCase()
 
         logs.forEach((log, lineIndex) => {
-            const logText = log.toLowerCase()
+            const logText = log.message.toLowerCase()
             let startIndex = 0
 
             while (true) {
@@ -247,7 +257,7 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
     const downloadLogs = () => {
         if (!logs || logs.length === 0) return
 
-        const logText = logs.map(log => log || '').join("\n")
+        const logText = logs.map(log => log.message || '').join("\n")
         const blob = new Blob([logText], { type: "text/plain" })
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
@@ -342,18 +352,21 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                             </div>
                         </div>
                     ) : logs.length > 0 ? (
-                        <div ref={logContainerRef} className="h-full overflow-auto p-4 space-y-1 scroll-smooth">
+                        <div ref={logContainerRef} className="h-full overflow-auto px-4 pt-4 scroll-smooth">
                             {logs.map((log, index) => {
                                 return (
                                     <div
                                         key={index}
-                                        className="flex hover:bg-muted/50 px-2 py-1 rounded group"
+                                        className={cn(
+                                            "flex hover:bg-muted/50 px-2 py-1 group",
+                                            getLogStreamStyles(log.stream)
+                                        )}
                                     >
-                                        <span className="text-muted-foreground mr-4 select-none min-w-[4ch] text-right">
+                                        <span className="text-muted-foreground mr-4 select-none min-w-[4ch] text-right hover:text-primary">
                                             {index + 1}
                                         </span>
                                         <span className="flex-1 whitespace-pre-wrap break-all">
-                                            {highlightText(log, index)}
+                                            {highlightText(log.message, index)}
                                         </span>
                                     </div>
                                 )
@@ -373,9 +386,13 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                             <div className="text-sm text-center">
                                 {jobStatus === 'RUNNING'
                                     ? 'Logs will appear here as the job executes'
-                                    : jobStatus === 'PENDING'
+                                    : (jobStatus === 'PENDING' || jobStatus === 'QUEUED')
                                         ? 'Job is waiting to start'
-                                        : 'This job did not produce any logs'
+                                        : jobStatus === 'FAILED'
+                                            ? 'Job failed to execute, no logs available'
+                                            : jobStatus === 'COMPLETED'
+                                                ? 'Job completed successfully, but no logs were produced'
+                                                : 'This job did not produce any logs'
                                 }
                             </div>
                         </div>

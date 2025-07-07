@@ -39,7 +39,7 @@ type Workflow interface {
 
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
-	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (<-chan string, <-chan error, error)
+	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (<-chan *jobsmodel.JobLog, <-chan error, error)
 }
 
 // HeartBeatSvc represents the heartbeat service.

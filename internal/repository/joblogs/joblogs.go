@@ -254,8 +254,8 @@ func (r *Repository) insertLogsBatch(ctx context.Context, logs []*jobsmodel.JobL
 	// Prepare batch statement
 	stmt := `
         INSERT INTO job_logs 
-        (job_id, workflow_id, user_id, timestamp, message, sequence_num)
-        VALUES (?, ?, ?, ?, ?, ?);
+        (job_id, workflow_id, user_id, timestamp, message, sequence_num, stream)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
     `
 
 	if err := r.ch.BatchInsert(
@@ -270,6 +270,7 @@ func (r *Repository) insertLogsBatch(ctx context.Context, logs []*jobsmodel.JobL
 					log.TimeStamp,
 					log.Message,
 					log.SequenceNum,
+					log.Stream,
 				)
 				if err != nil {
 					return err

@@ -630,11 +630,13 @@ func TestGetJobLogs(t *testing.T) {
 							Timestamp:   timestamp,
 							Message:     "log 1",
 							SequenceNum: 1,
+							Stream:      "stdout",
 						},
 						{
 							Timestamp:   timestamp,
 							Message:     "log 2",
 							SequenceNum: 2,
+							Stream:      "stdout",
 						},
 					},
 				}, nil)
@@ -648,11 +650,13 @@ func TestGetJobLogs(t *testing.T) {
 							Timestamp:   timestamp,
 							Message:     "log 1",
 							SequenceNum: 1,
+							Stream:      "stdout",
 						},
 						{
 							Timestamp:   timestamp,
 							Message:     "log 2",
 							SequenceNum: 2,
+							Stream:      "stdout",
 						},
 					},
 				},
@@ -781,6 +785,7 @@ func TestStreamJobLogs(t *testing.T) {
 						Timestamp:   time.Now(),
 						Message:     "log message",
 						SequenceNum: 1,
+						Stream:      "stdout",
 					})
 					sub.Close() // Simulate end of stream
 				}()

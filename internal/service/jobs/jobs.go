@@ -324,6 +324,7 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 					Timestamp:   log.TimeStamp,
 					Message:     log.Message,
 					SequenceNum: log.SequenceNum,
+					Stream:      log.Stream,
 				}:
 				case <-ctx.Done():
 					return

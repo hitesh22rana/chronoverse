@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -49,8 +48,6 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 		return workflowErr
 	}
 
-	var sequenceNum uint32
-
 	// Create a done channel to signal when to stop processing
 	done := make(chan struct{})
 	defer close(done)
@@ -68,16 +65,15 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 					return
 				}
 
-				currentSeq := atomic.AddUint32(&sequenceNum, 1)
-
 				// Serialize the log entry
 				jobEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
 					JobID:       jobID,
 					WorkflowID:  workflowID,
 					UserID:      userID,
-					Message:     log,
-					TimeStamp:   time.Now(),
-					SequenceNum: currentSeq,
+					Message:     log.Message,
+					TimeStamp:   log.Timestamp,
+					SequenceNum: log.SequenceNum,
+					Stream:      log.Stream,
 				})
 				if err != nil {
 					continue

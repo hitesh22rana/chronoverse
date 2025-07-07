@@ -87,9 +87,9 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			logs:           false,
 		},
 		{
-			name:           "error workflow failure during runtime",
+			name:           "error failure during runtime",
 			image:          "alpine:latest",
-			cmd:            []string{"/bin/sh", "-c", "echo 'About to fail...' && sleep 2 && exit 1"},
+			cmd:            []string{"/bin/sh", "-c", "echo 'About to fail...' >&2 && sleep 2 && exit 1"},
 			env:            nil,
 			timeout:        5 * time.Second,
 			executionError: nil,

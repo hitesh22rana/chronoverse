@@ -15,7 +15,6 @@ import { EventSourcePolyfill } from "event-source-polyfill"
 import { toast } from "sonner"
 
 import { fetchWithAuth } from "@/lib/api-client"
-import { cleanLog } from "@/lib/utils"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
@@ -23,19 +22,13 @@ type JobLog = {
     timestamp: string
     message: string
     sequence_num: number
+    stream: "stdout" | "stderr"
 }
 
 export type JobLogsResponseData = {
     id: string
     workflow_id: string
     logs: JobLog[]
-    cursor?: string
-}
-
-export type JobLogsResponse = {
-    id: string
-    workflow_id: string
-    logs: string[]
     cursor?: string
 }
 
@@ -68,7 +61,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }
 
     // For completed jobs, use infinite query with pagination
-    const infiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
+    const infiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
         queryKey: ["job", workflowId, jobId, jobStatus],
         queryFn: async ({ pageParam }) => {
             const url = pageParam
@@ -92,10 +85,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                 }
             }
 
-            const data: JobLogsResponse = {
+            const data: JobLogsResponseData = {
                 id: res.id,
                 workflow_id: res.workflow_id,
-                logs: cleanLog(res.logs),
+                logs: res.logs,
                 cursor: res.cursor || undefined,
             }
 
@@ -141,8 +134,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     cursor = res.cursor
                 }
 
-                // Sort all logs by sequence_num to ensure proper order
-                return allLogs.sort((a, b) => a.sequence_num - b.sequence_num)
+                return allLogs
             } catch (error) {
                 throw error
             }
@@ -246,11 +238,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }
 
     if (isRunning) {
-        const rawLogs = sseQuery.data || []
-        const logs = cleanLog(rawLogs)
-
         return {
-            logs,
+            logs: sseQuery.data || [],
             isLoading: sseQuery.isLoading,
             error: sseQuery.error,
             fetchNextPage: () => Promise.resolve(),
@@ -267,11 +256,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     setIsConnected(false)
                     setIsSSEEnabled(false)
                 }
-            },
-            getMaxSequenceNum: () => {
-                const logs = sseQuery.data || []
-                return logs.length > 0 ? Math.max(...logs.map(log => log.sequence_num)) : 0
-            },
+            }
         }
     }
 

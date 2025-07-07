@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS job_logs (
     timestamp DateTime64(3) DEFAULT now64(3) COMMENT 'When the log entry was created',
     message String NOT NULL COMMENT 'The actual log message',
     sequence_num UInt32 NOT NULL COMMENT 'Order of log entries within a job execution',
-    
+    stream String NOT NULL COMMENT 'Stream type (stdout or stderr)',
+
     date Date DEFAULT toDate(timestamp) COMMENT 'Date for partitioning'
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(date)

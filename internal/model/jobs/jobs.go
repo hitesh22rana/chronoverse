@@ -110,6 +110,7 @@ type JobLogEntry struct {
 	Message     string
 	TimeStamp   time.Time
 	SequenceNum uint32
+	Stream      string // "stdout" or "stderr"
 }
 
 // JobLog represents the log of the job.
@@ -117,6 +118,7 @@ type JobLog struct {
 	Timestamp   time.Time `db:"timestamp"`
 	Message     string    `db:"message"`
 	SequenceNum uint32    `db:"sequence_num"`
+	Stream      string    `db:"stream"` // "stdout" or "stderr"
 }
 
 // ToProto converts the JobLog to its protobuf representation.
@@ -125,6 +127,7 @@ func (l *JobLog) ToProto() *jobspb.Log {
 		Timestamp:   l.Timestamp.Format(time.RFC3339Nano),
 		Message:     l.Message,
 		SequenceNum: l.SequenceNum,
+		Stream:      l.Stream,
 	}
 }
 

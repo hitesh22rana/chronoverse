@@ -27,17 +27,12 @@ import {
 import { useJobLogs } from "@/hooks/use-job-logs"
 
 import { cn } from "@/lib/utils"
+import { Trie } from "@/lib/trie"
 
 interface LogViewerProps {
     workflowId: string
     jobId: string
     jobStatus: string
-}
-
-interface SearchMatch {
-    lineIndex: number
-    startIndex: number
-    endIndex: number
 }
 
 // Determine styling based on log stream
@@ -52,10 +47,15 @@ const getLogStreamStyles = (stream: string) => {
 
 export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
     const [searchQuery, setSearchQuery] = useState("")
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
     const logContainerRef = useRef<HTMLDivElement>(null)
     const searchInputRef = useRef<HTMLInputElement>(null)
+
+    const trieRef = useRef<Trie>(new Trie())
+    const processedLogsCountRef = useRef<number>(0)
+    const currentJobRef = useRef<string>(jobId)
 
     const {
         logs,
@@ -65,6 +65,22 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
         isFetchingNextPage,
         hasNextPage,
     } = useJobLogs(workflowId, jobId, jobStatus)
+
+    // Debounce search query to avoid excessive re-renders
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery)
+        }, 150) // 150ms debounce
+
+        return () => clearTimeout(timer)
+    }, [searchQuery])
+
+    // Clear search when input is empty
+    useEffect(() => {
+        if (!searchQuery.trim()) {
+            setDebouncedSearchQuery("")
+        }
+    }, [searchQuery])
 
     // Infinite scroll handler
     const handleScroll = useCallback(() => {
@@ -118,38 +134,58 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
         }
     }, [logs, hasNextPage, isFetchingNextPage, isLogsLoading, fetchNextPage])
 
-    // Find all search matches
+    useEffect(() => {
+        // Reset trie if job changed
+        if (currentJobRef.current !== jobId) {
+            trieRef.current = new Trie()
+            processedLogsCountRef.current = 0
+            currentJobRef.current = jobId
+        }
+
+        if (!logs || logs.length === 0) {
+            // Reset trie and counter when no logs
+            trieRef.current = new Trie()
+            processedLogsCountRef.current = 0
+            return
+        }
+
+        // Only process new logs that haven't been added to the trie yet
+        const newLogsToProcess = logs.slice(processedLogsCountRef.current)
+
+        if (newLogsToProcess.length > 0) {
+            newLogsToProcess.forEach((log, relativeIndex) => {
+                if (log.message) {
+                    const absoluteIndex = processedLogsCountRef.current + relativeIndex
+                    trieRef.current.insert(log.message, absoluteIndex)
+                }
+            })
+
+            // Update the count of processed logs
+            processedLogsCountRef.current = logs.length
+        }
+    }, [logs, jobId])
+
+    // Find all search matches using the Trie
     const searchMatches = useMemo(() => {
-        if (!searchQuery.trim() || !logs || logs.length === 0) return []
+        if (!debouncedSearchQuery.trim()) return []
 
-        const matches: SearchMatch[] = []
-        const query = searchQuery.toLowerCase()
+        // Only search if we have logs
+        if (!logs || logs.length === 0) return []
 
-        logs.forEach((log, lineIndex) => {
-            const logText = log.message.toLowerCase()
-            let startIndex = 0
+        const matches = trieRef.current.search(debouncedSearchQuery)
 
-            while (true) {
-                const foundIndex = logText.indexOf(query, startIndex)
-                if (foundIndex === -1) break
-
-                matches.push({
-                    lineIndex,
-                    startIndex: foundIndex,
-                    endIndex: foundIndex + query.length,
-                })
-
-                startIndex = foundIndex + 1
+        return matches.sort((a: { lineIndex: number; startIndex: number; endIndex: number }, b: { lineIndex: number; startIndex: number; endIndex: number }) => {
+            if (a.lineIndex !== b.lineIndex) {
+                return a.lineIndex - b.lineIndex
             }
+            return a.startIndex - b.startIndex
         })
-
-        return matches
-    }, [logs, searchQuery])
+    }, [debouncedSearchQuery, logs]) // Include logs to invalidate when new logs are added
 
     // Reset current match when search changes
     useEffect(() => {
         setCurrentMatchIndex(0)
-    }, [searchQuery])
+    }, [debouncedSearchQuery])
 
     // Scroll to current match
     useEffect(() => {
@@ -210,15 +246,15 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
     }
 
     const highlightText = (text: string, lineIndex: number) => {
-        if (!searchQuery.trim()) return text
+        if (!debouncedSearchQuery.trim()) return text
 
-        const lineMatches = searchMatches.filter((match) => match.lineIndex === lineIndex)
+        const lineMatches = searchMatches.filter((match: { lineIndex: number; startIndex: number; endIndex: number }) => match.lineIndex === lineIndex)
         if (lineMatches.length === 0) return text
 
         const result = []
         let lastIndex = 0
 
-        lineMatches.forEach((match, matchIndex) => {
+        lineMatches.forEach((match: { lineIndex: number; startIndex: number; endIndex: number }, matchIndex: number) => {
             // Add text before match
             if (match.startIndex > lastIndex) {
                 result.push(text.slice(lastIndex, match.startIndex))
@@ -226,7 +262,7 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
 
             // Add highlighted match
             const isCurrentMatch =
-                searchMatches.findIndex((m) => m.lineIndex === lineIndex && m.startIndex === match.startIndex) ===
+                searchMatches.findIndex((m: { lineIndex: number; startIndex: number; endIndex: number }) => m.lineIndex === lineIndex && m.startIndex === match.startIndex) ===
                 currentMatchIndex
 
             result.push(

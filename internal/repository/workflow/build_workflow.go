@@ -54,12 +54,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 	// Cancel all the jobs which are in the QUEUED or PENDING state
 	// This handles the condition where the worklow is updated, since the interval might be changed
 	//nolint:govet // Ignore shadow of error variable
-	if err := r.cancelJobsWithStatus(ctx, workflowID, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
+	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
 		return err
 	}
 
 	//nolint:govet // Ignore shadow of error variable
-	if err := r.cancelJobsWithStatus(ctx, workflowID, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
+	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
 		return err
 	}
 

@@ -133,15 +133,15 @@ func (mr *MockRepositoryMockRecorder) StreamJobLogs(ctx, jobID, workflowID, user
 }
 
 // UpdateJobStatus mocks base method.
-func (m *MockRepository) UpdateJobStatus(ctx context.Context, jobID, jobStatus string) error {
+func (m *MockRepository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, jobID, jobStatus)
+	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, jobID, containerID, jobStatus)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockRepositoryMockRecorder) UpdateJobStatus(ctx, jobID, jobStatus any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateJobStatus(ctx, jobID, containerID, jobStatus any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockRepository)(nil).UpdateJobStatus), ctx, jobID, jobStatus)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockRepository)(nil).UpdateJobStatus), ctx, jobID, containerID, jobStatus)
 }

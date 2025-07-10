@@ -280,6 +280,7 @@ func (j *Jobs) UpdateJobStatus(
 		"App.UpdateJobStatus",
 		trace.WithAttributes(
 			attribute.String("id", req.GetId()),
+			attribute.String("container_id", req.GetContainerId()),
 			attribute.String("status", req.GetStatus()),
 		),
 	)
@@ -477,5 +478,5 @@ func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *
 		return nil, err
 	}
 
-	return jobs.ToProto(), nil
+	return jobs.ToProto(authpkg.IsInternalService(ctx)), nil
 }

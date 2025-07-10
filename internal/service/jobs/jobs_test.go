@@ -187,6 +187,24 @@ func TestUpdateJobStatus(t *testing.T) {
 				repo.EXPECT().UpdateJobStatus(
 					gomock.Any(),
 					req.GetId(),
+					req.GetContainerId(),
+					req.GetStatus(),
+				).Return(nil)
+			},
+			isErr: false,
+		},
+		{
+			name: "success with container ID",
+			req: &jobspb.UpdateJobStatusRequest{
+				Id:          "job_id",
+				ContainerId: "container_id",
+				Status:      "RUNNING",
+			},
+			mock: func(req *jobspb.UpdateJobStatusRequest) {
+				repo.EXPECT().UpdateJobStatus(
+					gomock.Any(),
+					req.GetId(),
+					req.GetContainerId(),
 					req.GetStatus(),
 				).Return(nil)
 			},
@@ -229,6 +247,7 @@ func TestUpdateJobStatus(t *testing.T) {
 				repo.EXPECT().UpdateJobStatus(
 					gomock.Any(),
 					req.GetId(),
+					req.GetContainerId(),
 					req.GetStatus(),
 				).Return(status.Error(codes.NotFound, "job not found"))
 			},
@@ -244,6 +263,7 @@ func TestUpdateJobStatus(t *testing.T) {
 				repo.EXPECT().UpdateJobStatus(
 					gomock.Any(),
 					req.GetId(),
+					req.GetContainerId(),
 					req.GetStatus(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},

@@ -26,7 +26,7 @@ import (
 // Repository provides job related operations.
 type Repository interface {
 	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt string) (string, error)
-	UpdateJobStatus(ctx context.Context, jobID, jobStatus string) error
+	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, error)
@@ -101,8 +101,9 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 
 // UpdateJobStatusRequest holds the request parameters for updating a scheduled job status.
 type UpdateJobStatusRequest struct {
-	ID     string `validate:"required"`
-	Status string `validate:"required"`
+	ID          string `validate:"required"`
+	ContainerID string `validate:"omitempty"`
+	Status      string `validate:"required"`
 }
 
 // UpdateJobStatus updates the scheduled job status.
@@ -118,8 +119,9 @@ func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStat
 
 	// Validate the request
 	err = s.validator.Struct(&UpdateJobStatusRequest{
-		ID:     req.GetId(),
-		Status: req.GetStatus(),
+		ID:          req.GetId(),
+		ContainerID: req.GetContainerId(),
+		Status:      req.GetStatus(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -136,6 +138,7 @@ func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStat
 	err = s.repo.UpdateJobStatus(
 		ctx,
 		req.GetId(),
+		req.GetContainerId(),
 		req.GetStatus(),
 	)
 
@@ -310,7 +313,7 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 				}
 
 				payload := data.Payload
-				var log jobsmodel.JobLogEntry
+				var log jobsmodel.JobLogEvent
 				if err := json.Unmarshal([]byte(payload), &log); err != nil {
 					continue
 				}

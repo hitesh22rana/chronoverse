@@ -29,7 +29,8 @@ import (
 )
 
 const (
-	authSubject = "internal/executor"
+	authSubject  = "internal/executor"
+	retryBackoff = time.Second
 )
 
 // Workflow represents a workflow that can be executed.
@@ -39,7 +40,7 @@ type Workflow interface {
 
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
-	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (<-chan *jobsmodel.JobLog, <-chan error, error)
+	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (string, <-chan *jobsmodel.JobLog, <-chan error, error)
 }
 
 // HeartBeatSvc represents the heartbeat service.
@@ -303,14 +304,6 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 		return err
 	}
 
-	// Update the job status from PENDING/QUEUED to RUNNING
-	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
-		Id:     jobID,
-		Status: jobsmodel.JobStatusRunning.ToString(),
-	}); err != nil {
-		return err
-	}
-
 	executeErr := r.executeWorkflow(ctx, jobID, workflow)
 
 	// Since, the workflow execution can take time to execute and can led to authorization issues
@@ -493,12 +486,32 @@ func (r *Repository) withAuthorization(parentCtx context.Context) (context.Conte
 	return ctx, nil
 }
 
+// withRetry executes the given function and retries once if it fails with an error
+// other than codes.FailedPrecondition.
+func withRetry(fn func() error) error {
+	err := fn()
+	if err == nil {
+		return nil
+	}
+
+	// If the error is FailedPrecondition or InvalidArgument, do not retry
+	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
+		return err
+	}
+
+	// Wait for the retry backoff duration
+	time.Sleep(retryBackoff)
+
+	// Execute the function again
+	return fn()
+}
+
 // executeWorkflow executes the workflow.
 func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
 	switch workflow.GetKind() {
 	// Execute the HEARTBEAT workflow
 	case workflowsmodel.KindHeartbeat.ToString():
-		return r.svc.Hsvc.Execute(ctx, workflow.GetPayload())
+		return r.executeHeartbeatWorkflow(ctx, jobID, workflow)
 	// Execute the CONTAINER workflow
 	case workflowsmodel.KindContainer.ToString():
 		return r.executeContainerWorkflow(ctx, jobID, workflow)

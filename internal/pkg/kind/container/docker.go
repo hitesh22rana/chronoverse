@@ -69,9 +69,9 @@ func (w *DockerWorkflow) Execute(
 	image string,
 	cmd []string,
 	env []string,
-) (<-chan *jobsmodel.JobLog, <-chan error, error) {
+) (string, <-chan *jobsmodel.JobLog, <-chan error, error) {
 	if err := w.healthCheck(ctx); err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
 	containerTimeout := int(timeout.Seconds())
@@ -91,14 +91,14 @@ func (w *DockerWorkflow) Execute(
 		nil, nil, "",
 	)
 	if err != nil {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "failed to create container: %v", err)
+		return "", nil, nil, status.Errorf(codes.FailedPrecondition, "failed to create container: %v", err)
 	}
 
 	containerID := resp.ID
 
 	// Start the container
 	if err := w.Client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "failed to start container: %v", err)
+		return "", nil, nil, status.Errorf(codes.FailedPrecondition, "failed to start container: %v", err)
 	}
 
 	// Channel for logs streaming
@@ -174,7 +174,7 @@ func (w *DockerWorkflow) Execute(
 		}
 	}()
 
-	return logs, errs, nil
+	return containerID, logs, errs, nil
 }
 
 // streamContainerLogs streams container logs and properly demuxes stdout/stderr.
@@ -306,6 +306,22 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	_, err = io.Copy(io.Discard, out)
 	if err != nil {
 		return status.Errorf(codes.FailedPrecondition, "failed to read image pull output: %v", err)
+	}
+
+	return nil
+}
+
+// Terminate stops a running container by its unique containerID.
+func (w *DockerWorkflow) Terminate(ctx context.Context, containerID string) error {
+	if err := w.healthCheck(ctx); err != nil {
+		return err
+	}
+
+	stopTimeout := int(containerStopTimeout.Seconds())
+	if err := w.Client.ContainerStop(ctx, containerID, container.StopOptions{
+		Timeout: &stopTimeout,
+	}); err != nil {
+		return status.Errorf(codes.Aborted, "failed to stop container %s: %v", containerID, err)
 	}
 
 	return nil

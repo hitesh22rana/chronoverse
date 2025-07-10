@@ -3,8 +3,8 @@ DROP TYPE IF EXISTS WORKFLOW_BUILD_STATUS;
 CREATE TYPE WORKFLOW_BUILD_STATUS AS ENUM ('QUEUED', 'STARTED', 'COMPLETED', 'FAILED', 'CANCELED');
 
 CREATE TABLE IF NOT EXISTS workflows (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
     name VARCHAR(255) NOT NULL,
     payload JSONB,
     kind TEXT NOT NULL,
@@ -12,9 +12,9 @@ CREATE TABLE IF NOT EXISTS workflows (
     interval INTEGER NOT NULL CHECK (interval >= 1), -- (in minutes)
     consecutive_job_failures_count INTEGER DEFAULT 0 NOT NULL CHECK (consecutive_job_failures_count >= 0),
     max_consecutive_job_failures_allowed INTEGER DEFAULT 3 NOT NULL CHECK (max_consecutive_job_failures_allowed > 0),
-    created_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
-    updated_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
-    terminated_at timestamp WITHOUT TIME ZONE DEFAULT NULL
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
+    terminated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflows_user_id ON workflows (user_id);

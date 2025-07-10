@@ -100,7 +100,7 @@ func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedul
 }
 
 // UpdateJobStatus updates the job details.
-func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, jobStatus string) (err error) {
+func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateJobStatus")
 	defer func() {
 		if err != nil {
@@ -117,9 +117,15 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, jobStatus strin
 
 	switch jobStatus {
 	case jobsmodel.JobStatusRunning.ToString():
-		query += `, started_at = $2
-		WHERE id = $3;`
-		args = append(args, time.Now(), jobID)
+		if containerID == "" {
+			query += `, started_at = $2
+			WHERE id = $3;`
+			args = append(args, time.Now(), jobID)
+		} else {
+			query += `, started_at = $2, container_id = $3
+			WHERE id = $4;`
+			args = append(args, time.Now(), containerID, jobID)
+		}
 	case jobsmodel.JobStatusCompleted.ToString(), jobsmodel.JobStatusFailed.ToString():
 		query += `, completed_at = $2
 		WHERE id = $3;`
@@ -212,7 +218,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, workflow_id, user_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+		SELECT id, workflow_id, container_id, user_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
 		FROM %s
 		WHERE id = $1
 		LIMIT 1;
@@ -385,7 +391,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 
 	// Add the cursor to the query
 	query := fmt.Sprintf(`
-        SELECT id, workflow_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+        SELECT id, workflow_id, container_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
         FROM %s
         WHERE workflow_id = $1 AND user_id = $2
     `, jobsTable)

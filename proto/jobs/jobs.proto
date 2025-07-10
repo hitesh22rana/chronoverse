@@ -18,8 +18,9 @@ message ScheduleJobResponse {
 
 // UpdateJobStatusRequest contains the details needed to update the status of a job.
 message UpdateJobStatusRequest {
-    string id     = 1; // ID of the job
-    string status = 2; // Status of the job
+    string id           = 1; // ID of the job
+    string container_id = 2; // ID of the container (if applicable)
+    string status       = 3; // Status of the job
 }
 
 // UpdateJobStatusResponse contains the result of a job status update attempt.
@@ -55,12 +56,13 @@ message GetJobByIDResponse {
     string id           = 1; // ID of the job
     string workflow_id  = 2; // ID of the workflow
     string user_id      = 3; // ID of the user
-    string status       = 4; // Status of the job
-    string scheduled_at = 5; // Time the job is scheduled to run
-    string started_at   = 6; // Time the job was started
-    string completed_at = 7; // Time the job was completed
-    string created_at   = 8; // Time the job was created
-    string updated_at   = 9; // Time the job was last updated
+    string container_id = 4; // ID of the container (if applicable)
+    string status       = 5; // Status of the job
+    string scheduled_at = 6; // Time the job is scheduled to run
+    string started_at   = 7; // Time the job was started
+    string completed_at = 8; // Time the job was completed
+    string created_at   = 9; // Time the job was created
+    string updated_at   = 10; // Time the job was last updated
 }
 
 // GetJobLogsRequest contains the details needed to get the logs of a job.
@@ -111,12 +113,13 @@ message ListJobsRequest {
 message JobsResponse {
     string id           = 1; // ID of the job
     string workflow_id  = 2; // ID of the workflow
-    string status       = 3; // Status of the job
-    string scheduled_at = 4; // Time the job is scheduled to run
-    string started_at   = 5; // Time the job was started
-    string completed_at = 6; // Time the job was completed
-    string created_at   = 7; // Time the job was created
-    string updated_at   = 8; // Time the job was last updated
+    string container_id = 3; // ID of the container (if applicable)
+    string status       = 4; // Status of the job
+    string scheduled_at = 5; // Time the job is scheduled to run
+    string started_at   = 6; // Time the job was started
+    string completed_at = 7; // Time the job was completed
+    string created_at   = 8; // Time the job was created
+    string updated_at   = 9; // Time the job was last updated
 }
 
 message ListJobsResponse {

@@ -3,15 +3,16 @@ DROP TYPE IF EXISTS JOB_STATUS;
 CREATE TYPE JOB_STATUS AS ENUM ('PENDING', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELED');
 
 CREATE TABLE IF NOT EXISTS jobs (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
-    workflow_id uuid NOT NULL REFERENCES workflows(id) ON DELETE CASCADE, -- Foreign key constraint
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
+    workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE, -- Foreign key constraint
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
+    container_id TEXT NULL, -- Unique identifier for the container, if applicable
     status JOB_STATUS DEFAULT 'PENDING' NOT NULL,
-    scheduled_at timestamp WITHOUT TIME ZONE NOT NULL,
-    started_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
-    completed_at timestamp WITHOUT TIME ZONE DEFAULT NULL,
-    created_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
-    updated_at timestamp WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL
+    scheduled_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    started_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
+    completed_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_workflow_id ON jobs (workflow_id);

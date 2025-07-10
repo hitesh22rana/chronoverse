@@ -1499,7 +1499,7 @@ func TestListJobs(t *testing.T) {
 		isErr bool
 	}{
 		{
-			name: "success",
+			name: "success: with no container id",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
@@ -1550,6 +1550,71 @@ func TestListJobs(t *testing.T) {
 						Id:          "job_id",
 						WorkflowId:  "workflow_id",
 						Status:      "PENDING",
+						ScheduledAt: time.Now().Format(time.RFC3339Nano),
+						StartedAt:   time.Now().Format(time.RFC3339Nano),
+						CompletedAt: time.Now().Format(time.RFC3339Nano),
+						CreatedAt:   time.Now().Format(time.RFC3339Nano),
+						UpdatedAt:   time.Now().Format(time.RFC3339Nano),
+					},
+				},
+				Cursor: "",
+			},
+			isErr: false,
+		},
+		{
+			name: "success: with container id",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleAdmin,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.ListJobsRequest{
+					WorkflowId: "workflow_id",
+					UserId:     "user_id",
+					Cursor:     "",
+				},
+			},
+			mock: func(_ *jobspb.ListJobsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().ListJobs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(&jobsmodel.ListJobsResponse{
+					Jobs: []*jobsmodel.JobByWorkflowIDResponse{
+						{
+							ID:          "job_id",
+							WorkflowID:  "workflow_id",
+							JobStatus:   "RUNNING",
+							ContainerID: sql.NullString{String: "container_id", Valid: true},
+							ScheduledAt: time.Now(),
+							StartedAt: sql.NullTime{
+								Time:  time.Now(),
+								Valid: true,
+							},
+							CompletedAt: sql.NullTime{
+								Time:  time.Now(),
+								Valid: true,
+							},
+							CreatedAt: time.Now(),
+							UpdatedAt: time.Now(),
+						},
+					},
+				}, nil)
+			},
+			res: &jobspb.ListJobsResponse{
+				Jobs: []*jobspb.JobsResponse{
+					{
+						Id:          "job_id",
+						WorkflowId:  "workflow_id",
+						Status:      "RUNNING",
+						ContainerId: "container_id",
 						ScheduledAt: time.Now().Format(time.RFC3339Nano),
 						StartedAt:   time.Now().Format(time.RFC3339Nano),
 						CompletedAt: time.Now().Format(time.RFC3339Nano),

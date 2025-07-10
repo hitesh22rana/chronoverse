@@ -67,8 +67,8 @@ jobs:
             exit 1
           fi
 
-  release-services:
-    name: Release Services
+  release-users-service:
+    name: Release Users Service
     needs: [lint, build, test]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
@@ -99,41 +99,36 @@ jobs:
       - name: Build Go binaries with release version
         run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
-      - name: Build and push Service Docker images
+      - name: Build and push users-service Docker image
         run: |
-          IMAGES="users-service workflows-service jobs-service notifications-service"
+          IMAGE="users-service"
           VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE}"
 
-          echo "--- Building Application Services ---"
-          for IMAGE in $IMAGES; do
-            IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
-            IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
-            CACHE_SCOPE="buildx-services-${IMAGE}"
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
 
-            echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
-            if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
-              echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
-            else
-              echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
-              docker buildx build \
-                --platform linux/amd64,linux/arm64 \
-                --build-arg NAME=${IMAGE} \
-                --build-arg VERSION=${VERSION_TAG} \
-                --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-                --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
-                -t "${IMAGE_FULL_NAME_WITH_TAG}" \
-                -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
-                --push \
-                --cache-from "type=gha,scope=${CACHE_SCOPE}" \
-                --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
-                .
-            fi
-          done
-          echo "--- Finished Services ---"
-
-  release-workers:
-    name: Release Workers
+  release-workflows-service:
+    name: Release Workflows Service
     needs: [lint, build, test]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
@@ -164,41 +159,36 @@ jobs:
       - name: Build Go binaries with release version
         run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
-      - name: Build and push Worker Docker images
+      - name: Build and push workflows-service Docker image
         run: |
-          IMAGES="scheduling-worker workflow-worker execution-worker"
+          IMAGE="workflows-service"
           VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE}"
 
-          echo "--- Building Workers ---"
-          for IMAGE in $IMAGES; do
-            IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
-            IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
-            CACHE_SCOPE="buildx-workers-${IMAGE}"
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
 
-            echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
-            if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
-              echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
-            else
-              echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
-              docker buildx build \
-                --platform linux/amd64,linux/arm64 \
-                --build-arg NAME=${IMAGE} \
-                --build-arg VERSION=${VERSION_TAG} \
-                --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-                --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
-                -t "${IMAGE_FULL_NAME_WITH_TAG}" \
-                -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
-                --push \
-                --cache-from "type=gha,scope=${CACHE_SCOPE}" \
-                --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
-                .
-            fi
-          done
-          echo "--- Finished Workers ---"
-
-  release-jobs-and-server:
-    name: Release Jobs and Server
+  release-jobs-service:
+    name: Release Jobs Service
     needs: [lint, build, test]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
@@ -229,38 +219,453 @@ jobs:
       - name: Build Go binaries with release version
         run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
-      - name: Build and push database migration and job logs processor and server Docker images
+      - name: Build and push jobs-service Docker image
         run: |
-          IMAGES="database-migration joblogs-processor server"
+          IMAGE="jobs-service"
           VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE}"
 
-          echo "--- Building Jobs and Server ---"
-          for IMAGE_NAME in $IMAGES; do
-            IMAGE_NAME_SUFFIX="chronoverse/${IMAGE_NAME}"
-            IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
-            CACHE_SCOPE="buildx-processors-${IMAGE_NAME}"
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
 
-            echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
-            if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
-              echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
-            else
-              echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
-              docker buildx build \
-                --platform linux/amd64,linux/arm64 \
-                --build-arg NAME=${IMAGE_NAME} \
-                --build-arg VERSION=${VERSION_TAG} \
-                --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-                --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
-                -t "${IMAGE_FULL_NAME_WITH_TAG}" \
-                -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
-                --push \
-                --cache-from "type=gha,scope=${CACHE_SCOPE}" \
-                --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
-                .
-            fi
-          done
-          echo "--- Finished Jobs and Server ---"
+  release-notifications-service:
+    name: Release Notifications Service
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Go binaries with release version
+        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
+
+      - name: Build and push notifications-service Docker image
+        run: |
+          IMAGE="notifications-service"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE}"
+
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
+
+  release-scheduling-worker:
+    name: Release Scheduling Worker
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Go binaries with release version
+        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
+
+      - name: Build and push scheduling-worker Docker image
+        run: |
+          IMAGE="scheduling-worker"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE}"
+
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
+
+  release-workflow-worker:
+    name: Release Workflow Worker
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Go binaries with release version
+        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
+
+      - name: Build and push workflow-worker Docker image
+        run: |
+          IMAGE="workflow-worker"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE}"
+
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
+
+  release-execution-worker:
+    name: Release Execution Worker
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Go binaries with release version
+        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
+
+      - name: Build and push execution-worker Docker image
+        run: |
+          IMAGE="execution-worker"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE}"
+
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
+
+  release-database-migration:
+    name: Release Database Migration
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Go binaries with release version
+        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
+
+      - name: Build and push database-migration Docker image
+        run: |
+          IMAGE_NAME="database-migration"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE_NAME}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE_NAME}"
+
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE_NAME} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
+
+  release-joblogs-processor:
+    name: Release Job Logs Processor
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Go binaries with release version
+        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
+
+      - name: Build and push joblogs-processor Docker image
+        run: |
+          IMAGE_NAME="joblogs-processor"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE_NAME}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE_NAME}"
+
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE_NAME} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
+
+  release-server:
+    name: Release Server
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Go binaries with release version
+        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
+
+      - name: Build and push server Docker image
+        run: |
+          IMAGE_NAME="server"
+          VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE_NAME}"
+          IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
+          CACHE_SCOPE="buildx-${IMAGE_NAME}"
+
+          echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
+          if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} already exists. Skipping build and push."
+          else
+            echo "Image ${IMAGE_FULL_NAME_WITH_TAG} does not exist. Building and pushing..."
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg NAME=${IMAGE_NAME} \
+              --build-arg VERSION=${VERSION_TAG} \
+              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              -t "${IMAGE_FULL_NAME_WITH_TAG}" \
+              -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
+              --push \
+              --cache-from "type=gha,scope=${CACHE_SCOPE}" \
+              --cache-to "type=gha,scope=${CACHE_SCOPE},mode=max" \
+              .
+          fi
 
   release-dashboard:
     name: Release Dashboard
@@ -290,12 +695,12 @@ jobs:
 
       - name: Build and push Dashboard Docker image
         run: |
-          echo "--- Building Dashboard ---"
+          IMAGE_NAME="dashboard"
           VERSION_TAG="${{ steps.version.outputs.TAG_NAME }}"
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_NAME_SUFFIX="chronoverse/dashboard"
+          IMAGE_NAME_SUFFIX="chronoverse/${IMAGE_NAME}"
           IMAGE_FULL_NAME_WITH_TAG="ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:${VERSION_TAG}"
-          CACHE_SCOPE="buildx-dashboard"
+          CACHE_SCOPE="buildx-${IMAGE_NAME}"
 
           echo "Checking if image ${IMAGE_FULL_NAME_WITH_TAG} already exists..."
           if docker manifest inspect "${IMAGE_FULL_NAME_WITH_TAG}" > /dev/null 2>&1; then
@@ -313,4 +718,3 @@ jobs:
               -f ./Dockerfile.dashboard \
               .
           fi
-          echo "--- Finished Dashboard ---"

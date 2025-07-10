@@ -68,9 +68,6 @@ RUN mkdir -p /certs && \
     chown -R app:app /certs && \
     chmod -R 550 /certs
 
-# Copy certificates and set permissions
-COPY --from=build --chown=app:app /app/certs /certs
-
 # Copy binary and set permissions
 COPY --from=build --chown=app:app /go/bin/service /bin/service
 RUN chmod 500 /bin/service

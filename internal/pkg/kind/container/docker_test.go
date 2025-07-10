@@ -114,7 +114,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			t.Parallel()
 
 			// In the test body
-			logs, errs, err := workflow.Execute(t.Context(), tt.timeout, tt.image, tt.cmd, tt.env)
+			containerID, logs, errs, err := workflow.Execute(t.Context(), tt.timeout, tt.image, tt.cmd, tt.env)
 			if tt.executionError != nil {
 				require.Error(t, err)
 				assert.Equal(t, status.Code(tt.executionError), status.Code(err))
@@ -122,6 +122,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 				return
 			}
 
+			require.NotEmpty(t, containerID)
 			require.NoError(t, err)
 
 			wg := sync.WaitGroup{}
@@ -222,6 +223,71 @@ func TestDockerWorkflow_Build(t *testing.T) {
 			t.Parallel()
 
 			err := workflow.Build(t.Context(), tt.image)
+			if tt.err != nil {
+				require.Error(t, err)
+				assert.Equal(t, status.Code(tt.err), status.Code(err))
+				assert.Contains(t, err.Error(), status.Convert(tt.err).Message())
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestDockerWorkflow_Terminate(t *testing.T) {
+	t.Parallel()
+
+	// Skip if not running in CI environment
+	if testing.Short() {
+		t.Skip("Skipping long-running tests in short mode")
+	}
+
+	workflow, err := container.NewDockerWorkflow()
+	require.NoError(t, err)
+	require.NotNil(t, workflow)
+
+	t.Cleanup(func() {
+		workflow.Close()
+	})
+
+	tests := []struct {
+		name  string
+		image string
+		cmd   []string
+		err   error
+	}{
+		{
+			name:  "successful termination",
+			image: "alpine:latest",
+			cmd:   []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
+			err:   nil,
+		},
+		{
+			name:  "error termination (nonexistent container)",
+			image: "nonexistent:latest",
+			cmd:   []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
+			err:   status.Error(codes.FailedPrecondition, "failed to create container: "),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create a container to terminate
+			containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, tt.image, tt.cmd, nil)
+			if tt.err != nil {
+				require.Error(t, err)
+				assert.Equal(t, status.Code(tt.err), status.Code(err))
+				assert.Contains(t, err.Error(), status.Convert(tt.err).Message())
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotEmpty(t, containerID)
+
+			err = workflow.Terminate(t.Context(), containerID)
 			if tt.err != nil {
 				require.Error(t, err)
 				assert.Equal(t, status.Code(tt.err), status.Code(err))

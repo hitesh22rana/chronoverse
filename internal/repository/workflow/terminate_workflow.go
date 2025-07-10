@@ -2,45 +2,46 @@ package workflow
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
-)
-
-const (
-	containerWorkflowDefaultExecutionTimeout = 10 * time.Second
-	bufferPercentageTimeout                  = 10
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
 
 // cancelJobs cancels the jobs of the workflow.
 // This function is invoked via the cancelJobsWithStatus function.
-func (r *Repository) cancelJobs(parentCtx context.Context, userID, workflowID string, jobs *jobspb.ListJobsResponse) {
-	// Issue necessary headers and tokens for authorization
-	// This context uses the parent context
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	ctx, _ := r.withAuthorization(parentCtx)
-
-	// This context is used for sending notifications, as we don't want to propagate the cancellation
-	// This context does not use the parent context
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	notificationCtx, _ := r.withAuthorization(context.Background())
-
+func (r *Repository) cancelJobs(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID string, jobs *jobspb.ListJobsResponse) {
+	bgCtx := context.Background()
 	// Iterate over the jobs and cancel them
 	for _, job := range jobs.GetJobs() {
+		switch workflow.GetKind() {
+		// If the job is a container job, we need to stop the running container
+		case workflowsmodel.KindContainer.ToString():
+			//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the job execution
+			r.svc.Csvc.Terminate(bgCtx, job.GetContainerId())
+		default:
+		}
+
+		// Issue necessary headers and tokens for authorization
+		// This context uses the parent context
+		//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
+		ctx, _ := r.withAuthorization(parentCtx)
+
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution
 		r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
 			Id:     job.GetId(),
 			Status: jobsmodel.JobStatusCanceled.ToString(),
 		})
+
+		// This context is used for sending notifications, as we don't want to propagate the cancellation
+		// This context does not use the parent context
+		//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
+		notificationCtx, _ := r.withAuthorization(bgCtx)
 
 		// Send notification for the job termination
 		// This is a fire-and-forget operation, so we don't need to wait for it to complete
@@ -48,7 +49,7 @@ func (r *Repository) cancelJobs(parentCtx context.Context, userID, workflowID st
 		go r.sendNotification(
 			notificationCtx,
 			userID,
-			workflowID,
+			workflow.GetId(),
 			job.GetId(),
 			"Job Canceled",
 			"Job has been canceled",
@@ -59,7 +60,7 @@ func (r *Repository) cancelJobs(parentCtx context.Context, userID, workflowID st
 }
 
 // cancelJobs cancels the jobs of the workflow with the specified status.
-func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflowID, userID, status string) error {
+func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID, status string) error {
 	// Get all the jobs of the workflow which are in the specified status
 	cursor := ""
 	for {
@@ -69,7 +70,7 @@ func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflowID,
 		ctx, _ := r.withAuthorization(parentCtx)
 
 		jobs, err := r.svc.Jobs.ListJobs(ctx, &jobspb.ListJobsRequest{
-			WorkflowId: workflowID,
+			WorkflowId: workflow.GetId(),
 			UserId:     userID,
 			Cursor:     cursor,
 			Filters: &jobspb.ListJobsFilters{
@@ -84,7 +85,7 @@ func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflowID,
 			break
 		}
 
-		r.cancelJobs(ctx, userID, workflowID, jobs)
+		r.cancelJobs(ctx, workflow, userID, jobs)
 
 		if jobs.GetCursor() == "" {
 			break
@@ -96,52 +97,18 @@ func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflowID,
 	return nil
 }
 
-// extractWorkflowTimeout extracts the timeout from the workflow payload.
-func extractWorkflowTimeout(workflowPayload string) (time.Duration, error) {
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(workflowPayload), &payload); err != nil {
-		return 0, status.Errorf(codes.InvalidArgument, "invalid workflow payload format: %v", err)
-	}
-
-	timeoutStr, ok := payload["timeout"].(string)
-	if !ok {
-		return containerWorkflowDefaultExecutionTimeout, nil
-	}
-
-	timeout, err := time.ParseDuration(timeoutStr)
-	if err != nil {
-		return 0, status.Errorf(codes.InvalidArgument, "invalid timeout value: %v", err)
-	}
-
-	if timeout <= 0 {
-		return 0, status.Errorf(codes.InvalidArgument, "timeout must be greater than zero")
-	}
-
-	return timeout, nil
-}
-
 // cancelRunningJobs cancels the running jobs of the workflow.
-func (r *Repository) cancelRunningJobs(parentCtx context.Context, workflowID, userID, workflowPayload string) error {
-	// Extract the timeout from the workflow payload
-	workflowTimeOut, err := extractWorkflowTimeout(workflowPayload)
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "failed to extract workflow timeout: %v", err)
-	}
-
-	// Add a buffer to the timeout to account for any delays
-	// This is to ensure that we don't cancel jobs that are still running but close to the timeout
-	workflowTimeOut += workflowTimeOut / bufferPercentageTimeout
-
+func (r *Repository) cancelRunningJobs(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID string) error {
 	// Get all the jobs of the workflow which are in the RUNNING state
 	cursor := ""
 	for {
 		// Issue necessary headers and tokens for authorization
 		// This context uses the parent context
-		//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
+		//nolint:errcheck // Ignore the error as we don't want to block the job termination
 		ctx, _ := r.withAuthorization(parentCtx)
 
 		jobs, err := r.svc.Jobs.ListJobs(ctx, &jobspb.ListJobsRequest{
-			WorkflowId: workflowID,
+			WorkflowId: workflow.GetId(),
 			UserId:     userID,
 			Cursor:     cursor,
 			Filters: &jobspb.ListJobsFilters{
@@ -168,18 +135,15 @@ func (r *Repository) cancelRunningJobs(parentCtx context.Context, workflowID, us
 				continue
 			}
 
-			startTime, err := time.Parse(time.RFC3339Nano, job.GetStartedAt())
 			// Skip the job if the started time is not valid
-			if err != nil {
+			if _, parseError := time.Parse(time.RFC3339Nano, job.GetStartedAt()); parseError != nil {
 				continue
 			}
 
-			if time.Since(startTime) > workflowTimeOut {
-				jobsToCancel = append(jobsToCancel, job)
-			}
+			jobsToCancel = append(jobsToCancel, job)
 		}
 
-		r.cancelJobs(ctx, userID, workflowID, &jobspb.ListJobsResponse{
+		r.cancelJobs(ctx, workflow, userID, &jobspb.ListJobsResponse{
 			Jobs:   jobsToCancel,
 			Cursor: jobs.GetCursor(),
 		})
@@ -212,14 +176,14 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowID, us
 
 	// Cancel all the jobs which are in the QUEUED or PENDING state
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	r.cancelJobsWithStatus(ctx, workflowID, userID, jobsmodel.JobStatusQueued.ToString())
+	r.cancelJobsWithStatus(ctx, workflow, userID, jobsmodel.JobStatusPending.ToString())
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	r.cancelJobsWithStatus(ctx, workflowID, userID, jobsmodel.JobStatusPending.ToString())
+	r.cancelJobsWithStatus(ctx, workflow, userID, jobsmodel.JobStatusQueued.ToString())
 
 	// Cancel all the hanging jobs which are in the RUNNING state
 	// This is to ensure that we don't leave any jobs running after the workflow is terminated
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	r.cancelRunningJobs(ctx, workflowID, userID, workflow.GetPayload())
+	r.cancelRunningJobs(ctx, workflow, userID)
 
 	// This context is used for sending notifications, as we don't want to propagate the cancellation
 	// This context does not use the parent context

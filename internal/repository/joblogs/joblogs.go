@@ -54,7 +54,7 @@ func New(cfg *Config, rdb *redis.Store, ch *clickhouse.Client, kfk *kgo.Client) 
 // Queue for collecting messages before batch processing.
 type queueData struct {
 	record   *kgo.Record
-	logEntry *jobsmodel.JobLogEntry
+	logEntry *jobsmodel.JobLogEvent
 }
 
 // Run start the joblogs execution.
@@ -132,7 +132,7 @@ func (r *Repository) Run(ctx context.Context) error {
 		for !iter.Done() {
 			func(record *kgo.Record) {
 				// Parse log entry from Kafka record
-				var logEntry jobsmodel.JobLogEntry
+				var logEntry jobsmodel.JobLogEvent
 				if err := json.Unmarshal(record.Value, &logEntry); err != nil {
 					logger.Error("failed to unmarshal record",
 						zap.Any("ctx", ctx),
@@ -195,7 +195,7 @@ func (r *Repository) processBatch(ctx context.Context, queue *[]queueData, mutex
 	logger.Info("processing batch", zap.Int("batch_size", len(currentBatch)))
 
 	// Extract logs and records
-	logs := make([]*jobsmodel.JobLogEntry, 0, len(currentBatch))
+	logs := make([]*jobsmodel.JobLogEvent, 0, len(currentBatch))
 	records := make([]*kgo.Record, 0, len(currentBatch))
 
 	for _, item := range currentBatch {
@@ -246,7 +246,7 @@ func (r *Repository) processBatch(ctx context.Context, queue *[]queueData, mutex
 }
 
 // insertLogsBatch inserts a batch of logs into the database.
-func (r *Repository) insertLogsBatch(ctx context.Context, logs []*jobsmodel.JobLogEntry) error {
+func (r *Repository) insertLogsBatch(ctx context.Context, logs []*jobsmodel.JobLogEvent) error {
 	if len(logs) == 0 {
 		return nil
 	}

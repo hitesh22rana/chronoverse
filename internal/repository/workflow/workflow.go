@@ -33,6 +33,7 @@ const (
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
+	Terminate(ctx context.Context, containerID string) error
 }
 
 // Services represents the services used by the workflow.
@@ -115,7 +116,7 @@ func (r *Repository) Run(ctx context.Context) error {
 					ctxWithTrace, span := r.tp.Start(groupCtx, "workflow.Run")
 					defer span.End()
 
-					var workflowEntry workflowsmodel.WorkflowEntry
+					var workflowEntry workflowsmodel.WorkflowEvent
 					if err := json.Unmarshal(record.Value, &workflowEntry); err != nil {
 						logger.Error(
 							"failed to unmarshal record",

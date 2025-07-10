@@ -128,7 +128,7 @@ func (r *Repository) CreateWorkflow(
 	}
 
 	//nolint:errcheck // We don't expect an error here
-	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
+	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
 		ID:     res.ID,
 		UserID: userID,
 		Action: workflowsmodel.ActionBuild,
@@ -137,7 +137,7 @@ func (r *Repository) CreateWorkflow(
 	record := &kgo.Record{
 		Topic: r.cfg.ProducerTopic,
 		Key:   []byte(res.ID),
-		Value: workflowEntryBytes,
+		Value: workflowEventBytes,
 	}
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
@@ -261,7 +261,7 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	//nolint:errcheck // We don't expect an error here
-	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
+	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
 		ID:     workflowID,
 		UserID: userID,
 		Action: workflowsmodel.ActionBuild,
@@ -270,7 +270,7 @@ func (r *Repository) UpdateWorkflow(
 	record := &kgo.Record{
 		Topic: r.cfg.ProducerTopic,
 		Key:   []byte(workflowID),
-		Value: workflowEntryBytes,
+		Value: workflowEventBytes,
 	}
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
@@ -593,7 +593,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	}
 
 	//nolint:errcheck // We don't expect an error here
-	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
+	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
 		ID:     workflowID,
 		UserID: userID,
 		Action: workflowsmodel.ActionTerminate,
@@ -602,7 +602,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	record := &kgo.Record{
 		Topic: r.cfg.ProducerTopic,
 		Key:   []byte(workflowID),
-		Value: workflowEntryBytes,
+		Value: workflowEventBytes,
 	}
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
@@ -779,7 +779,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	}
 
 	//nolint:errcheck // We don't expect an error here
-	workflowEntryBytes, _ := json.Marshal(&workflowsmodel.WorkflowEntry{
+	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
 		ID:     workflowID,
 		UserID: userID,
 		Action: workflowsmodel.ActionDelete,
@@ -788,7 +788,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	record := &kgo.Record{
 		Topic: r.cfg.ProducerTopic,
 		Key:   []byte(workflowID),
-		Value: workflowEntryBytes,
+		Value: workflowEventBytes,
 	}
 	// Publish the workflowID to the Kafka topic for the build step
 	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {

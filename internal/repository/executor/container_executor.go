@@ -10,12 +10,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
 	containerWorkflowDefaultExecutionTimeout = 10 * time.Second
+	containerBufferTimeout                   = 1 * time.Second
 )
 
 type containerDetails struct {
@@ -35,9 +38,9 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 		return err
 	}
 
-	logs, errs, workflowErr := r.svc.Csvc.Execute(
+	containerID, logs, errs, workflowErr := r.svc.Csvc.Execute(
 		ctx,
-		details.TimeOut,
+		details.TimeOut+containerBufferTimeout,
 		details.Image,
 		details.Cmd,
 		details.Env,
@@ -47,6 +50,28 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 	if workflowErr != nil {
 		return workflowErr
 	}
+
+	// If the container ID is empty, return immediately
+	if containerID == "" {
+		return status.Error(codes.Aborted, "container ID is empty")
+	}
+
+	//nolint:errcheck // Ignore the error as we don't want to block the job execution
+	withRetry(func() error {
+		// Issue necessary headers and tokens for authorization
+		// This context uses the parent context
+		//nolint:errcheck // Ignore the error as we don't want to block the job execution
+		jobCtx, _ := r.withAuthorization(ctx)
+		// Update the job status with the container ID
+		if _, err := r.svc.Jobs.UpdateJobStatus(jobCtx, &jobspb.UpdateJobStatusRequest{
+			Id:          jobID,
+			ContainerId: containerID,
+			Status:      jobsmodel.JobStatusRunning.ToString(),
+		}); err != nil {
+			return status.Errorf(codes.Internal, "failed to update job status: %v", err)
+		}
+		return nil
+	})
 
 	// Create a done channel to signal when to stop processing
 	done := make(chan struct{})
@@ -66,7 +91,7 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 				}
 
 				// Serialize the log entry
-				jobEntryBytes, err := json.Marshal(&jobsmodel.JobLogEntry{
+				jobLogEventBytes, err := json.Marshal(&jobsmodel.JobLogEvent{
 					JobID:       jobID,
 					WorkflowID:  workflowID,
 					UserID:      userID,
@@ -82,7 +107,7 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 				record := &kgo.Record{
 					Topic: r.cfg.ProducerTopic,
 					Key:   []byte(jobID),
-					Value: jobEntryBytes,
+					Value: jobLogEventBytes,
 				}
 				// Asynchronously produce the log entry to the Kafka topic
 				r.kfk.Produce(ctx, record, func(_ *kgo.Record, _ error) {})

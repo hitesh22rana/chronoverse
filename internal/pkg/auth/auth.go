@@ -24,7 +24,7 @@ import (
 const (
 	// Expiry is the expiry time for the jwt token.
 	// For security reasons, the token should expire in a short time.
-	Expiry = time.Minute
+	Expiry = time.Minute * 15 // 15 minutes
 
 	// audienceMetadataKey is the key for the audience in the metadata.
 	audienceMetadataKey = "Audience"
@@ -227,6 +227,16 @@ func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
 	}
 
 	return parts[1], nil
+}
+
+// IsInternalService checks if the request is from an internal service.
+func IsInternalService(ctx context.Context) bool {
+	role, err := ExtractRoleFromMetadata(ctx)
+	if err != nil {
+		return false
+	}
+
+	return role == RoleAdmin.String()
 }
 
 // IAuth is the interface for the Auth service.

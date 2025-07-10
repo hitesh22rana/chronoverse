@@ -61,15 +61,16 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 
 // GetJobByIDResponse represents the response of GetJobByID.
 type GetJobByIDResponse struct {
-	ID          string       `db:"id"`
-	WorkflowID  string       `db:"workflow_id"`
-	UserID      string       `db:"user_id"`
-	JobStatus   string       `db:"status"`
-	ScheduledAt time.Time    `db:"scheduled_at"`
-	StartedAt   sql.NullTime `db:"started_at,omitempty"`
-	CompletedAt sql.NullTime `db:"completed_at,omitempty"`
-	CreatedAt   time.Time    `db:"created_at"`
-	UpdatedAt   time.Time    `db:"updated_at"`
+	ID          string         `db:"id"`
+	WorkflowID  string         `db:"workflow_id"`
+	ContainerID sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
+	UserID      string         `db:"user_id"`
+	JobStatus   string         `db:"status"`
+	ScheduledAt time.Time      `db:"scheduled_at"`
+	StartedAt   sql.NullTime   `db:"started_at,omitempty"`
+	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
+	CreatedAt   time.Time      `db:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at"`
 }
 
 // ToProto converts the GetJobByIDResponse to its protobuf representation.
@@ -100,17 +101,6 @@ type ScheduledJobEntry struct {
 	JobID       string
 	WorkflowID  string
 	ScheduledAt string
-}
-
-// JobLogEntry represents the log entry of the job.
-type JobLogEntry struct {
-	JobID       string
-	WorkflowID  string
-	UserID      string
-	Message     string
-	TimeStamp   time.Time
-	SequenceNum uint32
-	Stream      string // "stdout" or "stderr"
 }
 
 // JobLog represents the log of the job.
@@ -157,14 +147,15 @@ func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 
 // JobByWorkflowIDResponse represents the response of ListJobsByID.
 type JobByWorkflowIDResponse struct {
-	ID          string       `db:"id"`
-	WorkflowID  string       `db:"workflow_id"`
-	JobStatus   string       `db:"status"`
-	ScheduledAt time.Time    `db:"scheduled_at"`
-	StartedAt   sql.NullTime `db:"started_at,omitempty"`
-	CompletedAt sql.NullTime `db:"completed_at,omitempty"`
-	CreatedAt   time.Time    `db:"created_at"`
-	UpdatedAt   time.Time    `db:"updated_at"`
+	ID          string         `db:"id"`
+	WorkflowID  string         `db:"workflow_id"`
+	ContainerID sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
+	JobStatus   string         `db:"status"`
+	ScheduledAt time.Time      `db:"scheduled_at"`
+	StartedAt   sql.NullTime   `db:"started_at,omitempty"`
+	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
+	CreatedAt   time.Time      `db:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at"`
 }
 
 // ListJobsResponse represents the response of ListJobsByID.
@@ -174,8 +165,9 @@ type ListJobsResponse struct {
 }
 
 // ToProto converts the ListJobsResponse to its protobuf representation.
-func (r *ListJobsResponse) ToProto() *jobspb.ListJobsResponse {
-	scheduledJobs := make([]*jobspb.JobsResponse, len(r.Jobs))
+// It takes an internalService boolean to determine if the some fields.
+func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsResponse {
+	jobs := make([]*jobspb.JobsResponse, len(r.Jobs))
 	for i := range r.Jobs {
 		j := r.Jobs[i]
 
@@ -187,7 +179,7 @@ func (r *ListJobsResponse) ToProto() *jobspb.ListJobsResponse {
 			completedAt = j.CompletedAt.Time.Format(time.RFC3339Nano)
 		}
 
-		scheduledJobs[i] = &jobspb.JobsResponse{
+		jobs[i] = &jobspb.JobsResponse{
 			Id:          j.ID,
 			WorkflowId:  j.WorkflowID,
 			Status:      j.JobStatus,
@@ -197,10 +189,14 @@ func (r *ListJobsResponse) ToProto() *jobspb.ListJobsResponse {
 			CreatedAt:   j.CreatedAt.Format(time.RFC3339Nano),
 			UpdatedAt:   j.UpdatedAt.Format(time.RFC3339Nano),
 		}
+
+		if internalService {
+			jobs[i].ContainerId = j.ContainerID.String
+		}
 	}
 
 	return &jobspb.ListJobsResponse{
-		Jobs:   scheduledJobs,
+		Jobs:   jobs,
 		Cursor: r.Cursor,
 	}
 }

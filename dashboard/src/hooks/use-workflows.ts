@@ -29,6 +29,14 @@ export type Workflow = {
     terminated_at?: string
 }
 
+export type CreateWorkflowPayload = {
+    name: string
+    kind: string
+    payload: string
+    interval: number
+    max_consecutive_job_failures_allowed: number
+}
+
 export function useWorkflows() {
     const queryClient = useQueryClient()
     const router = useRouter()
@@ -211,16 +219,10 @@ export function useWorkflows() {
     }
 
     const createWorkflowMutation = useMutation({
-        mutationFn: async (workflowData: {
-            name: string
-            kind: string
-            payload: string
-            interval: number
-            maxConsecutiveJobFailuresAllowed: number
-        }) => {
+        mutationFn: async (workflowPayload: CreateWorkflowPayload) => {
             const response = await fetchWithAuth(WORKFLOWS_ENDPOINT, {
                 method: "POST",
-                body: JSON.stringify(workflowData)
+                body: JSON.stringify(workflowPayload)
             })
 
             if (!response.ok) {

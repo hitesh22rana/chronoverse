@@ -196,6 +196,7 @@ export default function JobDetailsPage() {
                     </CardContent>
                 </Card>
 
+                {/* Logs Viewer Panel */}
                 <LogsViewer workflowId={workflowId} jobId={jobId} jobStatus={job?.status || "PENDING"} />
             </div>
         </div>

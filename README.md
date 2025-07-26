@@ -6,7 +6,7 @@
 
 Chronoverse is a distributed job scheduling and orchestration system designed for reliability and scalability. It allows you to define, schedule, and execute various types of jobs across your infrastructure with powerful monitoring and management capabilities.
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/hitesh22rana/chronoverse)](https://goreportcard.com/report/github.com/hitesh22rana/chronoverse) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hitesh22rana/chronoverse)](https://goreportcard.com/report/github.com/hitesh22rana/chronoverse) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hitesh22rana/chronoverse)
 
 ## Features
 
@@ -37,6 +37,7 @@ This dual communication approach ensures both reliability for critical backgroun
 - **Workflows Service**: Handles workflow definitions, configuration storage, and build status management.
 - **Jobs Service**: Manages job lifecycle from scheduling through execution and completion.
 - **Notifications Service**: Provides real-time alerts and status updates.
+- **Analytics Service**: Provides insights into job and workflow performance and trends.
 
 ### Worker Components
 
@@ -44,6 +45,7 @@ This dual communication approach ensures both reliability for critical backgroun
 - **Workflow Worker**: Builds Docker image configurations from workflow definitions and prepares execution templates.
 - **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management, manages execution lifecycle and captures outputs/logs.
 - **JobLogs Processor**: Performs efficient batch insertion of execution logs from Kafka to ClickHouse for persistent storage and optimized querying.
+- **Analytics Processor**: Consumes job and workflow events from Kafka, processes them to generate analytics data, and stores the results for querying.
 - **Database Migration**: Manages database schema evolution and applies necessary migrations for PostgreSQL and ClickHouse during deployments or updates.
 
 All workers communicate through Kafka topics, enabling horizontal scaling and fault tolerance. This message-driven architecture ensures that job processing can continue even if individual components experience temporary outages.

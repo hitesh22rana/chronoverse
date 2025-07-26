@@ -177,7 +177,7 @@ services:
 
         mkdir -p /certs/ca
 
-        SERVICES="users-service workflows-service jobs-service notifications-service"
+        SERVICES="users-service workflows-service jobs-service notifications-service analytics-service"
         for svc in $$SERVICES; do
           mkdir -p /certs/$$svc
         done
@@ -370,7 +370,6 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       KAFKA_BROKERS: kafka:9092
-      KAFKA_PRODUCER_TOPIC: workflows
       GRPC_PORT: 50052
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
@@ -578,13 +577,63 @@ services:
     networks:
       - chronoverse
 
+  analytics-service:
+    image: analytics-service
+    container_name: analytics-service
+    environment:
+      POSTGRES_HOST: postgres
+      GRPC_PORT: 50055
+      GRPC_TLS_ENABLED: true
+      GRPC_TLS_CA_FILE: certs/ca/ca.crt
+      GRPC_TLS_CERT_FILE: certs/analytics-service/analytics-service.crt
+      GRPC_TLS_KEY_FILE: certs/analytics-service/analytics-service.key
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: development
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=analytics-service
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    restart: on-failure
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
+    depends_on:
+      postgres:
+        condition: service_healthy
+      lgtm:
+        condition: service_started
+      init-certs:
+        condition: service_completed_successfully
+      init-service-certs:
+        condition: service_completed_successfully
+      init-database-migration:
+        condition: service_completed_successfully
+    networks:
+      - chronoverse
+
   scheduling-worker:
     image: scheduling-worker
     container_name: scheduling-worker
     environment:
       POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092
-      KAFKA_PRODUCER_TOPIC: jobs
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
@@ -632,9 +681,9 @@ services:
     image: workflow-worker
     container_name: workflow-worker
     environment:
+      REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
       KAFKA_BROKERS: kafka:9092
-      KAFKA_CONSUME_TOPICS: workflows
       KAFKA_CONSUMER_GROUP: workflow-worker
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
@@ -706,9 +755,8 @@ services:
     image: execution-worker
     container_name: execution-worker
     environment:
+      REDIS_HOST: redis
       KAFKA_BROKERS: kafka:9092
-      KAFKA_PRODUCER_TOPIC: job_logs
-      KAFKA_CONSUME_TOPICS: jobs
       KAFKA_CONSUMER_GROUP: execution-worker
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
@@ -782,7 +830,6 @@ services:
       REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
       KAFKA_BROKERS: kafka:9092
-      KAFKA_CONSUME_TOPICS: job_logs
       KAFKA_CONSUMER_GROUP: joblogs-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
@@ -815,6 +862,56 @@ services:
       redis:
         condition: service_healthy
       clickhouse:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-certs:
+        condition: service_completed_successfully
+      init-service-certs:
+        condition: service_completed_successfully
+      init-database-migration:
+        condition: service_completed_successfully
+    networks:
+      - chronoverse
+
+  analytics-processor:
+    image: analytics-processor
+    container_name: analytics-processor
+    environment:
+      POSTGRES_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: analytics-processor
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: 500
+      OTEL_BSP_SCHEDULE_DELAY: 500
+      ENV: development
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=analytics-processor
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    restart: on-failure
+    volumes:
+      - ./certs:/certs
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
+    depends_on:
+      postgres:
         condition: service_healthy
       kafka:
         condition: service_started

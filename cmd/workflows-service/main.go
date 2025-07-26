@@ -95,7 +95,6 @@ func run() int {
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -105,8 +104,7 @@ func run() int {
 
 	// Initialize the workflows repository
 	repo := workflowsrepo.New(&workflowsrepo.Config{
-		FetchLimit:    cfg.WorkflowsServiceConfig.FetchLimit,
-		ProducerTopic: cfg.Kafka.ProducerTopic,
+		FetchLimit: cfg.WorkflowsServiceConfig.FetchLimit,
 	}, pdb, kfk)
 
 	// Initialize the validator utility

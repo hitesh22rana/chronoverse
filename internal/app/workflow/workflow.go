@@ -35,7 +35,7 @@ func (e *Workflow) Run(ctx context.Context) error {
 	if err != nil {
 		e.logger.Error("error occurred while running the workflow job", zap.Error(err))
 	} else {
-		e.logger.Info("successfully exicted the workflow job")
+		e.logger.Info("successfully exited the workflow job")
 	}
 
 	return nil

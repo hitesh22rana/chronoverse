@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -16,19 +15,27 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/datastructures/countminsketch"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	jobLogsPublishChannel = "job_logs"
+	// retryBackoff is the duration to wait before retrying an operation.
+	retryBackoff = time.Second
+
+	// Epsilon is the error rate for the CountMinSketch.
+	Epsilon = 0.0002
+	// Delta is the confidence level for the CountMinSketch.
+	Delta = 0.001
 )
 
 // Config represents the repository constants configuration.
 type Config struct {
-	BatchSizeLimit int
-	BatchTimeLimit time.Duration
+	BatchJobLogsSizeLimit      int
+	BatchJobLogsTimeInterval   time.Duration
+	BatchAnalyticsTimeInterval time.Duration
 }
 
 // Repository provides joblogs repository.
@@ -58,39 +65,116 @@ type queueData struct {
 }
 
 // Run start the joblogs execution.
+//
+//nolint:gocyclo // This function is complex due to the nature of processing logs in batches and analytics.
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
 
 	var (
-		queue   = make([]queueData, 0, r.cfg.BatchSizeLimit)
+		exitCh = make(chan error, 1)
+
+		queue   = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
 		queueMu sync.Mutex
+
+		cms             = countminsketch.NewCountMinSketch(Epsilon, Delta)
+		uniqueWorkflows = sync.Map{}
 	)
 
 	// Context with cancellation for graceful shutdown
 	processingCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Goroutine to process batched messages
-	processingErrCh := make(chan error, 1)
+	// Goroutine to process data
 	go func() {
-		ticker := time.NewTicker(r.cfg.BatchTimeLimit)
-		defer ticker.Stop()
+		logsProcessingTicker := time.NewTicker(r.cfg.BatchJobLogsTimeInterval)
+		defer logsProcessingTicker.Stop()
+
+		analyticsTicker := time.NewTicker(r.cfg.BatchAnalyticsTimeInterval)
+		defer analyticsTicker.Stop()
 
 		for {
 			select {
 			case <-processingCtx.Done():
 				// Process final batch before exiting
+
+				// Copy the queue to a new slice for processing
+				queueMu.Lock()
+				data := make([]*queueData, len(queue))
+				copy(data, queue)
+
+				// Reset the queue
+				queue = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
+				queueMu.Unlock()
+
 				//nolint:errcheck // Ignore error as we are exiting
-				r.processBatch(ctx, &queue, &queueMu, logger)
-				processingErrCh <- nil
+				withRetry(func() error {
+					return r.processLogsBatch(ctx, data)
+				})
+
+				// Process final analytics before exiting
+
+				// Copy the unique workflows to a new map for processing and empty the map
+				uniqueWorkflowsCopy := sync.Map{}
+				uniqueWorkflows.Range(func(key, value any) bool {
+					uniqueWorkflowsCopy.Store(key, value)
+					return true
+				})
+
+				// Clear the original map to avoid reprocessing
+				uniqueWorkflows.Clear()
+
+				// Copy the countminsketch to a new instance for processing
+				cmsCopy := cms.Copy()
+				cms.Reset() // Reset the original sketch for future use
+
+				//nolint:errcheck // Ignore error as we are exiting
+				withRetry(func() error {
+					return r.processLogsAnalytics(ctx, cmsCopy, &uniqueWorkflowsCopy)
+				})
+
+				exitCh <- nil
 				return
 
-			case <-ticker.C:
+			case <-logsProcessingTicker.C:
 				// Process batch on ticker interval
-				if err := r.processBatch(ctx, &queue, &queueMu, logger); err != nil {
+
+				// Copy the queue to a new slice for processing
+				queueMu.Lock()
+				data := make([]*queueData, len(queue))
+				copy(data, queue)
+
+				// Reset the queue
+				queue = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
+				queueMu.Unlock()
+
+				if err := withRetry(func() error {
+					return r.processLogsBatch(ctx, data)
+				}); err != nil {
 					// Continue processing despite errors
 					logger.Error("error processing batch", zap.Error(err))
 				}
+
+			case <-analyticsTicker.C:
+				// Process analytics on ticker interval
+
+				// Copy the unique workflows to a new map for processing and empty the map
+				uniqueWorkflowsCopy := sync.Map{}
+				uniqueWorkflows.Range(func(key, value any) bool {
+					uniqueWorkflowsCopy.Store(key, value)
+					return true
+				})
+
+				// Clear the original map to avoid reprocessing
+				uniqueWorkflows.Clear()
+
+				// Copy the countminsketch to a new instance for processing
+				cmsCopy := cms.Copy()
+				cms.Reset() // Reset the original sketch for future use
+
+				//nolint:errcheck // Ignore error as we are exiting
+				withRetry(func() error {
+					return r.processLogsAnalytics(ctx, cmsCopy, &uniqueWorkflowsCopy)
+				})
 			}
 		}
 	}()
@@ -101,7 +185,7 @@ func (r *Repository) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			// Wait for processor to finish final batch
 			cancel()
-			err := <-processingErrCh
+			err := <-exitCh
 			if err != nil {
 				return err
 			}
@@ -139,7 +223,7 @@ func (r *Repository) Run(ctx context.Context) error {
 						zap.String("topic", record.Topic),
 						zap.Int64("offset", record.Offset),
 						zap.Int32("partition", record.Partition),
-						zap.String("message", string(record.Value)),
+						zap.String("value", string(record.Value)),
 						zap.Error(err),
 					)
 
@@ -150,7 +234,7 @@ func (r *Repository) Run(ctx context.Context) error {
 							zap.String("topic", record.Topic),
 							zap.Int64("offset", record.Offset),
 							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
+							zap.String("value", string(record.Value)),
 							zap.Error(err),
 						)
 					}
@@ -161,126 +245,72 @@ func (r *Repository) Run(ctx context.Context) error {
 
 				// Add log entry to the queue
 				queueMu.Lock()
-				defer queueMu.Unlock()
-				queue = append(queue, queueData{
+
+				// If the queue is full, process the batch
+				if len(queue) >= r.cfg.BatchJobLogsSizeLimit {
+					// Copy the queue to a new slice for processing
+					data := make([]*queueData, len(queue))
+					copy(data, queue)
+
+					// Reset the queue
+					queue = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
+
+					go func() {
+						if err := withRetry(func() error {
+							return r.processLogsBatch(context.WithoutCancel(ctx), data)
+						}); err != nil {
+							// Continue processing despite errors
+							logger.Error("error processing batch", zap.Error(err))
+						}
+					}()
+				}
+
+				queue = append(queue, &queueData{
 					record:   record,
 					logEntry: &logEntry,
 				})
+				queueMu.Unlock()
+
+				// Publish logs to Redis Pub/Sub in a separate goroutine
+				// This allows us to continue processing without waiting for Redis, since it's not critical to block the batch processing on Redis publishing.
+				go func(logEntry *jobsmodel.JobLogEvent) {
+					data, err := json.Marshal(logEntry)
+					if err != nil {
+						return // Skip this log entry
+					}
+
+					// Publish to job-specific channel
+					//nolint:errcheck // Ignore error as we are not blocking on Redis publish
+					r.rdb.Publish(context.WithoutCancel(ctx), redis.GetJobLogsChannel(logEntry.JobID), data)
+				}(&logEntry)
+
+				// Count the log entry in the CountMinSketch
+				// This is done before processing to ensure we count all logs, even if they fail
+				// This allows us to track the number of logs per workflow
+				// This is useful for analytics and monitoring purposes
+				cms.Add(logEntry.WorkflowID)
+				uniqueWorkflows.Store(logEntry.WorkflowID, logEntry.UserID)
 			}(iter.Next())
 		}
 	}
 }
 
-// processBatch processes accumulated messages in a batch.
-func (r *Repository) processBatch(ctx context.Context, queue *[]queueData, mutex *sync.Mutex, logger *zap.Logger) error {
-	ctx, span := r.tp.Start(ctx, "joblogs.Run.processBatch")
-	defer span.End()
-
-	// Lock the queue and get current items
-	mutex.Lock()
-
-	// If queue is empty, nothing to do
-	if len(*queue) == 0 {
-		mutex.Unlock()
+// withRetry executes the given function and retries once if it fails with an error
+// other than codes.FailedPrecondition.
+func withRetry(fn func() error) error {
+	err := fn()
+	if err == nil {
 		return nil
 	}
 
-	// Take the current queue and reset it
-	currentBatch := *queue
-	*queue = make([]queueData, 0, r.cfg.BatchSizeLimit)
-
-	// Unlock to allow more additions while we process
-	mutex.Unlock()
-
-	logger.Info("processing batch", zap.Int("batch_size", len(currentBatch)))
-
-	// Extract logs and records
-	logs := make([]*jobsmodel.JobLogEvent, 0, len(currentBatch))
-	records := make([]*kgo.Record, 0, len(currentBatch))
-
-	for _, item := range currentBatch {
-		logs = append(logs, item.logEntry)
-		records = append(records, item.record)
-	}
-
-	// Publish logs to Redis Pub/Sub in a separate goroutine
-	// This allows us to continue processing without waiting for Redis, since it's not critical to block the batch processing on Redis publishing.
-	go func() {
-		// Send logs to Redis Pub/Sub
-		for _, log := range logs {
-			// Marshal log entry to JSON
-			data, err := json.Marshal(log)
-			if err != nil {
-				logger.Error("failed to marshal log entry",
-					zap.Any("log", log),
-					zap.Error(err),
-				)
-				continue // Skip this log entry
-			}
-
-			// Publish to Redis Pub/Sub
-			if err := r.rdb.Publish(context.WithoutCancel(ctx), jobLogsPublishChannel, data); err != nil {
-				logger.Error("failed to publish log entry to Redis",
-					zap.Any("log", log),
-					zap.Error(err),
-				)
-			}
-		}
-	}()
-
-	// Insert logs into ClickHouse
-	if err := r.insertLogsBatch(ctx, logs); err != nil {
-		logger.Error("failed to insert logs batch", zap.Error(err))
+	// If the error is FailedPrecondition or InvalidArgument, do not retry
+	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
 		return err
 	}
 
-	// Commit Kafka offsets after successful insertion
-	if err := r.kfk.CommitRecords(ctx, records...); err != nil {
-		logger.Error("failed to commit records batch", zap.Error(err))
-		return err
-	}
+	// Wait for the retry backoff duration
+	time.Sleep(retryBackoff)
 
-	logger.Info("successfully processed and committed batch", zap.Int("records", len(records)))
-
-	return nil
-}
-
-// insertLogsBatch inserts a batch of logs into the database.
-func (r *Repository) insertLogsBatch(ctx context.Context, logs []*jobsmodel.JobLogEvent) error {
-	if len(logs) == 0 {
-		return nil
-	}
-
-	// Prepare batch statement
-	stmt := `
-        INSERT INTO job_logs 
-        (job_id, workflow_id, user_id, timestamp, message, sequence_num, stream)
-        VALUES (?, ?, ?, ?, ?, ?, ?);
-    `
-
-	if err := r.ch.BatchInsert(
-		ctx,
-		stmt,
-		func(batch driver.Batch) error {
-			for _, log := range logs {
-				err := batch.Append(
-					log.JobID,
-					log.WorkflowID,
-					log.UserID,
-					log.TimeStamp,
-					log.Message,
-					log.SequenceNum,
-					log.Stream,
-				)
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		},
-	); err != nil {
-		return status.Errorf(codes.Internal, "failed to prepare batch: %v", err)
-	}
-
-	return nil
+	// Execute the function again
+	return fn()
 }

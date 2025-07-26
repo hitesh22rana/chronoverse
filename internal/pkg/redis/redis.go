@@ -16,6 +16,9 @@ import (
 const (
 	// MaxHealthCheckRetries is the maximum number of retries for the health check.
 	MaxHealthCheckRetries = 3
+
+	// distributedLockValue is the value used for distributed locks.
+	distributedLockValue = "locked"
 )
 
 // Config is the configuration for the Redis store.
@@ -247,4 +250,33 @@ func (s *Store) Publish(ctx context.Context, channel string, message any) error 
 // The caller is responsible for closing the PubSub client.
 func (s *Store) Subscribe(ctx context.Context, channels ...string) *redis.PubSub {
 	return s.client.Subscribe(ctx, channels...)
+}
+
+// AcquireDistributedLock attempts to acquire a distributed lock with a specified expiration.
+func (s *Store) AcquireDistributedLock(ctx context.Context, key string, expiration time.Duration) (bool, error) {
+	success, err := s.client.SetNX(ctx, key, distributedLockValue, expiration).Result()
+	if err != nil {
+		return false, status.Errorf(codes.Internal, "failed to acquire lock: %v", err)
+	}
+	return success, nil
+}
+
+// ReleaseDistributedLock releases a previously acquired distributed lock.
+func (s *Store) ReleaseDistributedLock(ctx context.Context, key string) error {
+	luaScript := `
+		if redis.call("GET", KEYS[1]) == ARGV[1] then
+			return redis.call("DEL", KEYS[1])
+		else
+			return 0
+		end
+	`
+	result, err := s.client.Eval(ctx, luaScript, []string{key}, distributedLockValue).Result()
+	if err != nil || result == nil {
+		return status.Errorf(codes.Internal, "failed to release lock: %v", err)
+	}
+	//nolint:errcheck,forcetypeassert // Ignore error as we are checking result
+	if result.(int64) == 0 {
+		return status.Errorf(codes.FailedPrecondition, "lock not held or already released")
+	}
+	return nil
 }

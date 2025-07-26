@@ -78,8 +78,6 @@ type Grpc struct {
 // Kafka holds the configuration for Kafka.
 type Kafka struct {
 	Brokers       []string `envconfig:"KAFKA_BROKERS" required:"true"`
-	ProducerTopic string   `envconfig:"KAFKA_PRODUCER_TOPIC"`
-	ConsumeTopics []string `envconfig:"KAFKA_CONSUME_TOPICS"`
 	ConsumerGroup string   `envconfig:"KAFKA_CONSUMER_GROUP"`
 }
 

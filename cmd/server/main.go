@@ -71,7 +71,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -89,7 +92,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -107,7 +113,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -125,7 +134,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError

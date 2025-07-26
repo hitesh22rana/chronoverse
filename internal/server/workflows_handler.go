@@ -14,7 +14,7 @@ type createWorkflowRequest struct {
 	Payload                          string `json:"payload"`
 	Kind                             string `json:"kind"`
 	Interval                         int32  `json:"interval"`
-	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed,omitempty"`
+	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed"`
 }
 
 // handleCreateWorkflow handles the create workflow request.
@@ -62,7 +62,7 @@ type updateWorkflowRequest struct {
 	Name                             string `json:"name"`
 	Payload                          string `json:"payload"`
 	Interval                         int32  `json:"interval"`
-	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed,omitempty"`
+	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed"`
 }
 
 // handleUpdateWorkflow handles the update workflow request.

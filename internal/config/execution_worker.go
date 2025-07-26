@@ -9,6 +9,7 @@ type ExecutionWorker struct {
 	Environment
 
 	ClientTLS
+	Redis
 	Kafka
 	WorkflowsService
 	JobsService

@@ -22,12 +22,14 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	authSubject  = "internal/workflow"
-	retryBackoff = time.Second
+	authSubject   = "internal/workflow"
+	retryBackoff  = time.Second
+	lockKeyPrefix = "workflow"
 )
 
 // ContainerSvc represents the container service.
@@ -54,20 +56,22 @@ type Repository struct {
 	tp   trace.Tracer
 	cfg  *Config
 	auth auth.IAuth
-	svc  *Services
+	rdb  *redis.Store
 	ch   *clickhouse.Client
 	kfk  *kgo.Client
+	svc  *Services
 }
 
 // New creates a new workflow repository.
-func New(cfg *Config, auth auth.IAuth, svc *Services, ch *clickhouse.Client, kfk *kgo.Client) *Repository {
+func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, ch *clickhouse.Client, kfk *kgo.Client, svc *Services) *Repository {
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
 		auth: auth,
-		svc:  svc,
+		rdb:  rdb,
 		ch:   ch,
 		kfk:  kfk,
+		svc:  svc,
 	}
 }
 
@@ -124,7 +128,7 @@ func (r *Repository) Run(ctx context.Context) error {
 							zap.String("topic", record.Topic),
 							zap.Int64("offset", record.Offset),
 							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
+							zap.String("value", string(record.Value)),
 							zap.Error(err),
 						)
 
@@ -136,7 +140,7 @@ func (r *Repository) Run(ctx context.Context) error {
 								zap.String("topic", record.Topic),
 								zap.Int64("offset", record.Offset),
 								zap.Int32("partition", record.Partition),
-								zap.String("message", string(record.Value)),
+								zap.String("value", string(record.Value)),
 								zap.Error(err),
 							)
 						}
@@ -157,7 +161,7 @@ func (r *Repository) Run(ctx context.Context) error {
 									zap.String("topic", record.Topic),
 									zap.Int64("offset", record.Offset),
 									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
+									zap.String("value", string(record.Value)),
 									zap.Error(err),
 								)
 							} else {
@@ -167,7 +171,7 @@ func (r *Repository) Run(ctx context.Context) error {
 									zap.String("topic", record.Topic),
 									zap.Int64("offset", record.Offset),
 									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
+									zap.String("value", string(record.Value)),
 									zap.Error(err),
 								)
 							}
@@ -183,7 +187,7 @@ func (r *Repository) Run(ctx context.Context) error {
 									zap.String("topic", record.Topic),
 									zap.Int64("offset", record.Offset),
 									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
+									zap.String("value", string(record.Value)),
 									zap.Error(err),
 								)
 							} else {
@@ -193,7 +197,7 @@ func (r *Repository) Run(ctx context.Context) error {
 									zap.String("topic", record.Topic),
 									zap.Int64("offset", record.Offset),
 									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
+									zap.String("value", string(record.Value)),
 									zap.Error(err),
 								)
 							}
@@ -209,7 +213,7 @@ func (r *Repository) Run(ctx context.Context) error {
 									zap.String("topic", record.Topic),
 									zap.Int64("offset", record.Offset),
 									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
+									zap.String("value", string(record.Value)),
 									zap.Error(err),
 								)
 							} else {
@@ -219,11 +223,16 @@ func (r *Repository) Run(ctx context.Context) error {
 									zap.String("topic", record.Topic),
 									zap.Int64("offset", record.Offset),
 									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
+									zap.String("value", string(record.Value)),
 									zap.Error(err),
 								)
 							}
 						}
+					default:
+						logger.Warn("unknown workflow action",
+							zap.Any("ctx", ctxWithTrace),
+							zap.Any("event", workflowEntry),
+						)
 					}
 
 					// Commit the record even if the workflow workflow fails to avoid reprocessing
@@ -234,7 +243,7 @@ func (r *Repository) Run(ctx context.Context) error {
 							zap.String("topic", record.Topic),
 							zap.Int64("offset", record.Offset),
 							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
+							zap.String("value", string(record.Value)),
 							zap.Error(err),
 						)
 					} else {
@@ -243,7 +252,7 @@ func (r *Repository) Run(ctx context.Context) error {
 							zap.String("topic", record.Topic),
 							zap.Int64("offset", record.Offset),
 							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
+							zap.String("value", string(record.Value)),
 						)
 					}
 

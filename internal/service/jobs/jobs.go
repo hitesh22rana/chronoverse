@@ -9,17 +9,17 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	goredis "github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	goredis "github.com/redis/go-redis/v9"
-
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -297,6 +297,8 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 	ch = make(chan *jobsmodel.JobLog)
 	go func() {
 		defer close(ch)
+		//nolint:errcheck // Ignore error as we are closing the channel
+		defer sub.Unsubscribe(ctx, redis.GetJobLogsChannel(req.GetId()))
 		defer sub.Close()
 
 		for {
@@ -315,10 +317,6 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 				payload := data.Payload
 				var log jobsmodel.JobLogEvent
 				if err := json.Unmarshal([]byte(payload), &log); err != nil {
-					continue
-				}
-
-				if log.JobID != req.GetId() || log.WorkflowID != req.GetWorkflowId() || log.UserID != req.GetUserId() {
 					continue
 				}
 

@@ -1,11 +1,12 @@
 package heartbeat_test
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 )
@@ -34,52 +35,150 @@ func TestNew(t *testing.T) {
 
 func TestHeartBeat_Execute(t *testing.T) {
 	tests := []struct {
-		name    string
-		data    string
-		wantErr error
+		name               string
+		timeout            time.Duration
+		endpoint           string
+		expectedStatusCode int
+		headers            map[string][]string
+		wantErr            bool
+		setup              func() *httptest.Server
 	}{
 		{
-			name:    "success",
-			data:    `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-			wantErr: nil,
+			name:               "success",
+			timeout:            30 * time.Second,
+			endpoint:           "",
+			expectedStatusCode: http.StatusOK,
+			headers:            map[string][]string{"Content-Type": {"application/json"}},
+			wantErr:            false,
+			setup: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Verify headers are set correctly
+					assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+					w.WriteHeader(http.StatusOK)
+					//nolint:errcheck // Write response body
+					w.Write([]byte("OK"))
+				}))
+			},
 		},
 		{
-			name:    "success without headers",
-			data:    `{"endpoint": "https://dummyjson.com/test"}`,
-			wantErr: nil,
+			name:               "success: with multiple header values",
+			timeout:            30 * time.Second,
+			endpoint:           "",
+			expectedStatusCode: http.StatusOK,
+			headers:            map[string][]string{"Accept": {"application/json", "text/plain"}},
+			wantErr:            false,
+			setup: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Verify multiple header values are set correctly
+					acceptHeaders := r.Header["Accept"]
+					assert.Contains(t, acceptHeaders, "application/json")
+					assert.Contains(t, acceptHeaders, "text/plain")
+					w.WriteHeader(http.StatusOK)
+					//nolint:errcheck // Write response body
+					w.Write([]byte("OK"))
+				}))
+			},
 		},
 		{
-			name:    "missing endpoint",
-			data:    `{"headers": {"Content-Type": "application/json"}}`,
-			wantErr: status.Errorf(codes.InvalidArgument, "missing endpoint"),
+			name:               "success: without headers",
+			timeout:            30 * time.Second,
+			endpoint:           "",
+			expectedStatusCode: http.StatusOK,
+			headers:            nil,
+			wantErr:            false,
+			setup: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusOK)
+					//nolint:errcheck // Write response body
+					w.Write([]byte("OK"))
+				}))
+			},
 		},
 		{
-			name:    "invalid endpoint",
-			data:    `{"headers": {"Content-Type": "application/json"}, "endpoint": 123}`,
-			wantErr: status.Errorf(codes.InvalidArgument, "invalid endpoint: 123"),
+			name:               "error: server returns 404",
+			timeout:            30 * time.Second,
+			endpoint:           "",
+			expectedStatusCode: http.StatusOK,
+			headers:            nil,
+			wantErr:            true,
+			setup: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNotFound)
+				}))
+			},
 		},
 		{
-			name:    "invalid headers format",
-			data:    `{"headers": "Content-Type: application/json", "endpoint": "https://dummyjson.com/test"}`,
-			wantErr: status.Errorf(codes.InvalidArgument, "invalid headers format"),
+			name:               "error: server returns 500",
+			timeout:            30 * time.Second,
+			endpoint:           "",
+			expectedStatusCode: http.StatusOK,
+			headers:            nil,
+			wantErr:            true,
+			setup: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+				}))
+			},
 		},
 		{
-			name:    "header value must be string",
-			data:    `{"headers": {"Content-Type": ["application/json", 123]}, "endpoint": "https://dummyjson.com/test"}`,
-			wantErr: status.Errorf(codes.InvalidArgument, "header value must be string"),
+			name:               "error: invalid endpoint",
+			timeout:            30 * time.Second,
+			endpoint:           "://invalid-url",
+			expectedStatusCode: http.StatusOK,
+			headers:            nil,
+			wantErr:            true,
+			setup:              nil,
 		},
 		{
-			name:    "invalid header value",
-			data:    `{"headers": {"Content-Type": {"application/json": "application/json"}}, "endpoint": "https://dummyjson.com/test"}`,
-			wantErr: status.Errorf(codes.InvalidArgument, "invalid header value for Content-Type"),
+			name:               "error: timeout",
+			timeout:            1 * time.Millisecond,
+			endpoint:           "",
+			expectedStatusCode: http.StatusOK,
+			headers:            nil,
+			wantErr:            true,
+			setup: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					time.Sleep(10 * time.Millisecond) // Sleep longer than timeout
+					w.WriteHeader(http.StatusOK)
+				}))
+			},
+		},
+		{
+			name:               "error: expected status code does not match",
+			timeout:            30 * time.Second,
+			endpoint:           "",
+			expectedStatusCode: http.StatusOK,
+			headers:            nil,
+			wantErr:            true,
+			setup: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNotFound)
+				}))
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var server *httptest.Server
+			if tt.setup != nil {
+				server = tt.setup()
+				defer server.Close()
+				if tt.endpoint == "" {
+					tt.endpoint = server.URL
+				}
+			}
+
 			h := heartbeat.New()
-			gotErr := h.Execute(t.Context(), tt.data)
-			assert.Equal(t, tt.wantErr, gotErr)
+			ctx := t.Context()
+
+			gotErr := h.Execute(ctx, tt.timeout, tt.endpoint, tt.expectedStatusCode, tt.headers)
+
+			if tt.wantErr {
+				assert.Error(t, gotErr)
+			} else {
+				assert.NoError(t, gotErr)
+			}
 		})
 	}
 }

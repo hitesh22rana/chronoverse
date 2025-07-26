@@ -9,12 +9,20 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/twmb/franz-go/pkg/kgo"
+
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+)
+
+const (
+	buildWorkflowDefaultExpirationTimeout = 5 * time.Minute
 )
 
 // buildWorkflow executes the build workflow.
@@ -51,6 +59,24 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
 
+	// Acquire a distributed lock to ensure only one worker processes the job at a time
+	lockKey := fmt.Sprintf(
+		"%s:%s:%s",
+		lockKeyPrefix,
+		workflowsmodel.ActionBuild.ToString(),
+		workflowID,
+	)
+	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, buildWorkflowDefaultExpirationTimeout)
+	if err != nil || !isLockAcquired {
+		return status.Error(codes.Aborted, "failed to acquire distributed lock")
+	}
+
+	// Release the distributed lock
+	defer func() {
+		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
+		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
+	}()
+
 	// Cancel all the jobs which are in the QUEUED or PENDING state
 	// This handles the condition where the worklow is updated, since the interval might be changed
 	//nolint:govet // Ignore shadow of error variable
@@ -62,6 +88,29 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
 		return err
 	}
+
+	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytes(
+		workflow.GetUserId(),
+		workflowID,
+		analyticsmodel.EventTypeWorkflows,
+		&analyticsmodel.EventTypeWorkflowsData{
+			Kind: workflow.GetKind(),
+		},
+	)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal analytic event: %v", err)
+	}
+
+	record := &kgo.Record{
+		Topic: kafka.TopicAnalytics,
+		Key:   []byte(workflowID),
+		Value: analyticEventBytes,
+	}
+
+	// Asynchronously produce the record to Kafka
+	// This is a fire-and-forget operation, so we don't need to wait for it to complete
+	// This is used to track the number of jobs executed for the workflow
+	r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
 
 	// If the build step is not required, skip the build process
 	if !isBuildStepRequired(workflow.GetKind()) {

@@ -93,7 +93,7 @@ func run() int {
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
-		kafka.WithConsumeTopics(cfg.Kafka.ConsumeTopics...),
+		kafka.WithConsumeTopics(kafka.TopicJobLogs),
 		kafka.WithDisableAutoCommit(),
 	)
 	if err != nil {
@@ -104,8 +104,9 @@ func run() int {
 
 	// Initialize the joblogs job components
 	repo := joblogsrepo.New(&joblogsrepo.Config{
-		BatchSizeLimit: cfg.JobLogsProcessorConfig.BatchSizeLimit,
-		BatchTimeLimit: cfg.JobLogsProcessorConfig.BatchTimeLimit,
+		BatchJobLogsSizeLimit:      cfg.JobLogsProcessorConfig.BatchJobLogsSizeLimit,
+		BatchJobLogsTimeInterval:   cfg.JobLogsProcessorConfig.BatchJobLogsTimeInterval,
+		BatchAnalyticsTimeInterval: cfg.JobLogsProcessorConfig.BatchAnalyticsTimeInterval,
 	}, rdb, cdb, kfk)
 	svc := joblogssvc.New(repo)
 	app := joblogs.New(ctx, svc)

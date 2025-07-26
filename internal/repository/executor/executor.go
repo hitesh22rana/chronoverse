@@ -20,23 +20,22 @@ import (
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	authSubject  = "internal/executor"
-	retryBackoff = time.Second
+	authSubject   = "internal/executor"
+	retryBackoff  = time.Second
+	lockKeyPrefix = "executor:execute"
 )
-
-// Workflow represents a workflow that can be executed.
-type Workflow interface {
-	Execute(ctx context.Context) error
-}
 
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
@@ -45,7 +44,7 @@ type ContainerSvc interface {
 
 // HeartBeatSvc represents the heartbeat service.
 type HeartBeatSvc interface {
-	Execute(ctx context.Context, payload string) error
+	Execute(ctx context.Context, timeout time.Duration, endpoint string, expectedStatusCode int, headers map[string][]string) error
 }
 
 // Services represents the services used by the executor.
@@ -60,7 +59,6 @@ type Services struct {
 // Config represents the repository constants configuration.
 type Config struct {
 	ParallelismLimit int
-	ProducerTopic    string
 }
 
 // kafkaJob defines a job for the worker pool.
@@ -74,19 +72,21 @@ type Repository struct {
 	cfg     *Config
 	kfk     *kgo.Client
 	auth    auth.IAuth
+	rdb     *redis.Store
 	svc     *Services
 	jobChan chan kafkaJob
 	wg      sync.WaitGroup
 }
 
 // New creates a new executor repository.
-func New(cfg *Config, auth auth.IAuth, svc *Services, kfk *kgo.Client) *Repository {
+func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, kfk *kgo.Client, svc *Services) *Repository {
 	r := &Repository{
 		tp:      otel.Tracer(svcpkg.Info().GetName()),
 		cfg:     cfg,
 		auth:    auth,
-		svc:     svc,
+		rdb:     rdb,
 		kfk:     kfk,
+		svc:     svc,
 		jobChan: make(chan kafkaJob, cfg.ParallelismLimit),
 	}
 
@@ -295,6 +295,19 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 		return status.Error(codes.FailedPrecondition, "job is not in QUEUED or PENDING state")
 	}
 
+	// Acquire a distributed lock to ensure only one worker processes the job at a time
+	lockKey := fmt.Sprintf("%s:%s", lockKeyPrefix, jobID)
+	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, getJobExpirationTime(workflow))
+	if err != nil || !isLockAcquired {
+		return status.Error(codes.Aborted, "failed to acquire distributed lock")
+	}
+
+	// Release the distributed lock
+	defer func() {
+		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
+		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
+	}()
+
 	// Schedule a new job based on the last scheduledAt time and interval accordingly
 	if _, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
 		WorkflowId:  workflowID,
@@ -303,6 +316,29 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 	}); err != nil {
 		return err
 	}
+
+	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytes(
+		workflow.GetUserId(),
+		workflowID,
+		analyticsmodel.EventTypeJobs,
+		&analyticsmodel.EventTypeJobsData{
+			Count: 1, // Increment the count by 1 for each job execution
+		},
+	)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal analytic event: %v", err)
+	}
+
+	record := &kgo.Record{
+		Topic: kafka.TopicAnalytics,
+		Key:   []byte(workflowID),
+		Value: analyticEventBytes,
+	}
+
+	// Asynchronously produce the record to Kafka
+	// This is a fire-and-forget operation, so we don't need to wait for it to complete
+	// This is used to track the number of jobs executed for the workflow
+	r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
 
 	executeErr := r.executeWorkflow(ctx, jobID, workflow)
 
@@ -517,5 +553,25 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 		return r.executeContainerWorkflow(ctx, jobID, workflow)
 	default:
 		return status.Error(codes.InvalidArgument, "invalid workflow kind")
+	}
+}
+
+// getJobExpirationTime returns the job expiration time based on the workflow payload and worklow kind.
+func getJobExpirationTime(workflow *workflowspb.GetWorkflowByIDResponse) time.Duration {
+	switch workflow.GetKind() {
+	case workflowsmodel.KindHeartbeat.ToString():
+		details, err := extractHeartbeatDetails(workflow.GetPayload())
+		if err != nil {
+			return heartbeatWorkflowDefaultRequestTimeout
+		}
+		return details.TimeOut
+	case workflowsmodel.KindContainer.ToString():
+		details, err := extractContainerDetails(workflow.GetPayload())
+		if err != nil {
+			return containerWorkflowDefaultExecutionTimeout
+		}
+		return details.TimeOut
+	default:
+		return time.Minute // Default expiration time for unknown workflow kinds
 	}
 }

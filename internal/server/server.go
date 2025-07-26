@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
@@ -37,6 +38,7 @@ type Server struct {
 	workflowsClient     workflowpb.WorkflowsServiceClient
 	jobsClient          jobspb.JobsServiceClient
 	notificationsClient notificationspb.NotificationsServiceClient
+	analyticsClient     analyticspb.AnalyticsServiceClient
 	httpServer          *http.Server
 	validationCfg       *ValidationConfig
 	frontendConfig      *FrontendConfig
@@ -81,6 +83,7 @@ func New(
 	workflowsClient workflowpb.WorkflowsServiceClient,
 	jobsClient jobspb.JobsServiceClient,
 	notificationsClient notificationspb.NotificationsServiceClient,
+	analyticsClient analyticspb.AnalyticsServiceClient,
 ) *Server {
 	logger := loggerpkg.FromContext(ctx)
 	frontend, err := url.Parse(cfg.FrontendURL)
@@ -98,6 +101,7 @@ func New(
 		workflowsClient:     workflowsClient,
 		jobsClient:          jobsClient,
 		notificationsClient: notificationsClient,
+		analyticsClient:     analyticsClient,
 		httpServer: &http.Server{
 			Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 			ReadTimeout:       cfg.ReadTimeout,
@@ -378,6 +382,35 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
 							s.handleMarkNotificationsRead,
 						),
+					),
+				),
+			),
+		),
+	)
+
+	// Analytics routes
+	router.HandleFunc(
+		"/analytics/user",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleGetUserAnalytics,
+					),
+				),
+			),
+		),
+	)
+
+	router.HandleFunc(
+		"/analytics/workflows/{workflow_id}",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleGetWorkflowAnalytics,
 					),
 				),
 			),

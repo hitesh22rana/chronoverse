@@ -52,6 +52,7 @@ import { EmptyState } from "@/components/dashboard/empty-state"
 import { UpdateWorkflowDialog } from "@/components/dashboard/update-workflow-dialog"
 import { TerminateWorkflowDialog } from "@/components/dashboard/terminate-workflow-dialog"
 import { DeleteWorkflowDialog } from "@/components/dashboard/delete-workflow-dialog"
+import { WorkflowAnalytics } from "@/components/dashboard/workflow-analytics"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { useWorkflowJobs, Job } from "@/hooks/use-workflow-jobs"
@@ -346,6 +347,10 @@ export default function WorkflowDetailsPage() {
                                     Last updated {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
                                 </CardFooter>
                             </Card>
+
+                            <div className="my-4">
+                                <WorkflowAnalytics workflowId={workflow.id} />
+                            </div>
                         </Fragment>
 
                     )}

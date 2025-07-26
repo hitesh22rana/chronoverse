@@ -4,6 +4,7 @@ import { useState } from "react"
 import { PlusCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { UserAnalytics } from "@/components/dashboard/user-analytics"
 import { Workflows } from "@/components/dashboard/workflows"
 import { CreateWorkflowDialog } from "@/components/dashboard/create-workflow-dialog"
 
@@ -26,6 +27,10 @@ export default function DashboardPage() {
                     <PlusCircle className="mr-2 h-4 w-4" />
                     Create workflow
                 </Button>
+            </div>
+
+            <div className="my-4">
+                <UserAnalytics />
             </div>
 
             <Workflows />

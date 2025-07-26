@@ -82,8 +82,8 @@ func extractHeartbeatDetails(payload string) (*heartbeatDetails, error) {
 		return details, status.Error(codes.InvalidArgument, "timeout is invalid")
 	}
 
-	if details.TimeOut > containerWorkflowMaxExecutionTimeout {
-		return details, status.Error(codes.FailedPrecondition, "timeout exceeds maximum limit of 1 hour")
+	if details.TimeOut > heartbeatWorkflowMaxRequestTimeout {
+		return details, status.Error(codes.FailedPrecondition, "timeout exceeds maximum limit of 5 minutes")
 	}
 
 	if data["endpoint"] == nil {

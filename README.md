@@ -88,7 +88,7 @@ No other dependencies are required as all services run in containers with automa
 
 - All service ports are exposed for easy debugging and direct access.
 - Database ports (5432, 9000, 6379) accessible from the host.
-- gRPC service ports (50051-50054) available for direct testing.
+- gRPC service ports (50051-50055) available for direct testing.
 - Monitoring ports fully exposed.
 - Dashboard is accessible via port 3001.
 - Suitable for local development and testing.

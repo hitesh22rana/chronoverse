@@ -57,7 +57,7 @@ func (cms *CountMinSketch) Estimate(item string) uint64 {
 	cms.mu.Lock()
 	defer cms.mu.Unlock()
 
-	var estimate uint64 = math.MaxUint64 // Initialize to max int value
+	var estimate uint64 = math.MaxUint64 // Initialize to max uint64 value
 	for i := uint32(0); i < cms.depth; i++ {
 		hashValue := hash(item, i) % cms.width
 		estimate = min(estimate, cms.counts[i][hashValue])

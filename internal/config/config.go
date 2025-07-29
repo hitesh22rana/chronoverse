@@ -120,3 +120,13 @@ type NotificationsService struct {
 		CAFile  string `envconfig:"NOTIFICATIONS_SERVICE_TLS_CA_FILE" default:""`
 	}
 }
+
+// AnalyticsService holds the configuration for the analytics service.
+type AnalyticsService struct {
+	Host string `envconfig:"ANALYTICS_SERVICE_HOST" required:"true"`
+	Port int    `envconfig:"ANALYTICS_SERVICE_PORT" required:"true"`
+	TLS  struct {
+		Enabled bool   `envconfig:"ANALYTICS_SERVICE_TLS_ENABLED" default:"false"`
+		CAFile  string `envconfig:"ANALYTICS_SERVICE_TLS_CA_FILE" default:""`
+	}
+}

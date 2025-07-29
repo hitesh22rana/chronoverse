@@ -146,15 +146,17 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					req.GetUserId(),
 					req.GetWorkflowId(),
 				).Return(&analyticsmodel.GetWorkflowAnalyticsResponse{
-					WorkflowID:   "workflow1",
-					TotalJobs:    50,
-					TotalJoblogs: 1000,
+					WorkflowID:                "workflow1",
+					AvgJobExecutionDurationMs: 20000,
+					TotalJobs:                 50,
+					TotalJoblogs:              1000,
 				}, nil)
 			},
 			want: &analyticsmodel.GetWorkflowAnalyticsResponse{
-				WorkflowID:   "workflow1",
-				TotalJobs:    50,
-				TotalJoblogs: 1000,
+				WorkflowID:                "workflow1",
+				AvgJobExecutionDurationMs: 20000,
+				TotalJobs:                 50,
+				TotalJoblogs:              1000,
 			},
 			isErr: false,
 		},

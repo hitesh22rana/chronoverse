@@ -17,6 +17,7 @@ type ServerConfig struct {
 	WorkflowsService
 	JobsService
 	NotificationsService
+	AnalyticsService
 	Server
 }
 

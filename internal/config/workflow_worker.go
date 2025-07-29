@@ -17,9 +17,7 @@ type WorkflowWorker struct {
 }
 
 // WorkflowWorkerConfig holds the configuration for the workflow worker.
-type WorkflowWorkerConfig struct {
-	ParallelismLimit int `envconfig:"WORKFLOW_WORKER_CONFIG_PARALLELISM_LIMIT" default:"5"`
-}
+type WorkflowWorkerConfig struct{}
 
 // InitWorkflowWorkerConfig initializes the workflow worker configuration.
 func InitWorkflowWorkerConfig() (*WorkflowWorker, error) {

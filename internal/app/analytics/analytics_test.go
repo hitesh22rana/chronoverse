@@ -304,13 +304,17 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&analyticsmodel.GetWorkflowAnalyticsResponse{
-					TotalJobs:    20,
-					TotalJoblogs: 200,
+					WorkflowID:                "workflow_id",
+					AvgJobExecutionDurationMs: 20000,
+					TotalJobs:                 20,
+					TotalJoblogs:              200,
 				}, nil)
 			},
 			res: &analyticspb.GetWorkflowAnalyticsResponse{
-				TotalJobs:    20,
-				TotalJoblogs: 200,
+				WorkflowId:                "workflow_id",
+				AvgJobExecutionDurationMs: 20000,
+				TotalJobs:                 20,
+				TotalJoblogs:              200,
 			},
 			isErr: false,
 		},

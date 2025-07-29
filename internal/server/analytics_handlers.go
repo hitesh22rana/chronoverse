@@ -37,6 +37,8 @@ func (s *Server) handleGetUserAnalytics(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleGetWorkflowAnalytics handles the get workflow analytics request.
+//
+//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleGetWorkflowAnalytics(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {

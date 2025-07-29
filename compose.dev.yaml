@@ -614,6 +614,17 @@ services:
       done
       exec /bin/service
       '
+    healthcheck:
+      test: |
+        if [ "$$GRPC_TLS_ENABLED" = "true" ]; then
+          /bin/grpc-health-probe -addr=localhost:50055 -connect-timeout 250ms -rpc-timeout 250ms -tls -tls-ca-cert certs/ca/ca.crt -tls-client-cert certs/analytics-service/analytics-service.crt -tls-client-key certs/analytics-service/analytics-service.key -tls-server-name=analytics-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        else
+          /bin/grpc-health-probe -addr=localhost:50055 -connect-timeout 250ms -rpc-timeout 250ms -service=analytics-service -rpc-header=Audience:grpc_probe -rpc-header=Role:admin
+        fi
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -950,6 +961,10 @@ services:
       NOTIFICATIONS_SERVICE_PORT: 50054
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+      ANALYTICS_SERVICE_HOST: analytics-service
+      ANALYTICS_SERVICE_PORT: 50055
+      ANALYTICS_SERVICE_TLS_ENABLED: true
+      ANALYTICS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
@@ -995,6 +1010,8 @@ services:
       jobs-service:
         condition: service_healthy
       notifications-service:
+        condition: service_healthy
+      analytics-service:
         condition: service_healthy
     networks:
       - chronoverse

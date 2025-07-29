@@ -361,36 +361,39 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 	// Notifications routes
 	router.HandleFunc(
 		"/notifications",
-		s.withAllowedMethodMiddleware(
-			http.MethodGet,
-			s.withVerifySessionMiddleware(
-				withAttachBasicMetadataHeaderMiddleware(
-					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-						s.handleListNotifications,
-					),
-				),
-			),
-		),
-	)
-	router.HandleFunc(
-		"/notifications/read",
-		s.withAllowedMethodMiddleware(
-			http.MethodPut,
-			s.withVerifyCSRFMiddleware(
-				s.withVerifySessionMiddleware(
-					withAttachBasicMetadataHeaderMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-							s.handleMarkNotificationsRead,
+		func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				s.withAllowedMethodMiddleware(
+					http.MethodGet,
+					s.withVerifySessionMiddleware(
+						withAttachBasicMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+								s.handleListNotifications,
+							),
 						),
 					),
-				),
-			),
-		),
+				).ServeHTTP(w, r)
+			case http.MethodPut:
+				s.withAllowedMethodMiddleware(
+					http.MethodPut,
+					s.withVerifyCSRFMiddleware(
+						s.withVerifySessionMiddleware(
+							withAttachBasicMetadataHeaderMiddleware(
+								s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+									s.handleMarkNotificationsRead,
+								),
+							),
+						),
+					),
+				).ServeHTTP(w, r)
+			}
+		},
 	)
 
 	// Analytics routes
 	router.HandleFunc(
-		"/analytics/user",
+		"/analytics",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
@@ -404,7 +407,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 	)
 
 	router.HandleFunc(
-		"/analytics/workflows/{workflow_id}",
+		"/analytics/{workflow_id}",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(

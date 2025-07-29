@@ -111,6 +111,8 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetWorkflow handles the get workflow by ID and user ID request.
+//
+//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Get the workflow ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")

@@ -18,11 +18,18 @@ export type UpdateWorkflowDetails = {
     max_consecutive_job_failures_allowed: number
 }
 
+export type WorkflowAnalytics = {
+    workflow_id: string;
+    avg_job_execution_duration_ms: number;
+    total_jobs: number;
+    total_joblogs: number;
+}
+
 export function useWorkflowDetails(workflowId: string) {
     const router = useRouter()
     const [workflowNotActive, setWorkflowNotActive] = useState(false)
 
-    const query = useQuery({
+    const getWorkflowQuery = useQuery<Workflow, Error>({
         queryKey: ["workflow", workflowId],
         queryFn: async () => {
             const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`)
@@ -38,11 +45,12 @@ export function useWorkflowDetails(workflowId: string) {
 
             return data
         },
+        enabled: !!workflowId,
         refetchInterval: workflowNotActive ? 5000 : false, // Refetch every 5 seconds if workflow is not active
     })
 
-    if (query.error instanceof Error) {
-        toast.error(query.error.message)
+    if (getWorkflowQuery.error instanceof Error) {
+        toast.error(getWorkflowQuery.error.message)
     }
 
     const updateWorkflowMutation = useMutation({
@@ -58,7 +66,7 @@ export function useWorkflowDetails(workflowId: string) {
         },
         onSuccess: () => {
             toast.success("workflow updated successfully")
-            query.refetch()
+            getWorkflowQuery.refetch()
         },
         onError: (error) => {
             toast.error(error.message)
@@ -79,7 +87,7 @@ export function useWorkflowDetails(workflowId: string) {
         },
         onSuccess: () => {
             toast.success("workflow terminated successfully")
-            query.refetch()
+            getWorkflowQuery.refetch()
             setWorkflowNotActive(false)
         },
         onError: (error) => {
@@ -108,11 +116,25 @@ export function useWorkflowDetails(workflowId: string) {
         }
     })
 
+    const getWorkflowAnalyticsQuery = useQuery<WorkflowAnalytics, Error>({
+        queryKey: ["workflow-analytics", workflowId],
+        queryFn: async () => {
+            const response = await fetchWithAuth(`${API_URL}/analytics/${workflowId}`)
+
+            if (!response.ok) {
+                throw new Error("failed to fetch workflow analytics")
+            }
+
+            return response.json() as Promise<WorkflowAnalytics>
+        },
+        enabled: !!workflowId,
+    })
+
     return {
-        workflow: query.data as Workflow,
-        isLoading: query.isLoading,
-        error: query.error,
-        refetch: query.refetch,
+        workflow: getWorkflowQuery.data as Workflow,
+        isLoading: getWorkflowQuery.isLoading,
+        error: getWorkflowQuery.error,
+        refetch: getWorkflowQuery.refetch,
         updateWorkflow: updateWorkflowMutation.mutate,
         isUpdating: updateWorkflowMutation.isPending,
         updateError: updateWorkflowMutation.error,
@@ -122,5 +144,9 @@ export function useWorkflowDetails(workflowId: string) {
         deleteWorkflow: deleteWorkflowMutation.mutate,
         isDeleting: deleteWorkflowMutation.isPending,
         deleteError: deleteWorkflowMutation.error,
+        workflowAnalytics: getWorkflowAnalyticsQuery.data,
+        isAnalyticsLoading: getWorkflowAnalyticsQuery.isLoading,
+        analyticsError: getWorkflowAnalyticsQuery.error,
+        refetchAnalytics: getWorkflowAnalyticsQuery.refetch,
     }
 }

@@ -45,8 +45,8 @@ export function useWorkflowJobs(workflowId: string) {
         statusFilter = searchParams.get("status") || "ALL"
     }
 
-    // Build query parameters for the API call
-    const queryParams = useMemo(() => {
+    // Build query parameters for the get jobs request
+    const getJobQueryParams = useMemo(() => {
         const params = new URLSearchParams()
 
         if (currentCursor) {
@@ -60,11 +60,11 @@ export function useWorkflowJobs(workflowId: string) {
         return params.toString()
     }, [currentCursor, statusFilter])
 
-    const query = useQuery({
+    const getJobQuery = useQuery({
         queryKey: ["workflow-jobs", workflowId, currentCursor, statusFilter],
         queryFn: async () => {
-            const url = queryParams ?
-                `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs?${queryParams}` :
+            const url = getJobQueryParams ?
+                `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs?${getJobQueryParams}` :
                 `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs`
 
             const response = await fetchWithAuth(url)
@@ -80,14 +80,14 @@ export function useWorkflowJobs(workflowId: string) {
 
     // Pagination functions
     const goToNextPage = useCallback(() => {
-        const nextCursor = query.data?.cursor
+        const nextCursor = getJobQuery.data?.cursor
         if (!nextCursor) return false
 
         const params = new URLSearchParams(searchParams.toString())
         params.set("cursor", nextCursor)
         router.push(`?${params.toString()}`)
         return true
-    }, [query.data?.cursor, router, searchParams])
+    }, [getJobQuery.data?.cursor, router, searchParams])
 
     const goToPreviousPage = useCallback(() => {
         router.back()
@@ -117,20 +117,20 @@ export function useWorkflowJobs(workflowId: string) {
     }, [router, searchParams])
 
     // Handle errors
-    if (query.error instanceof Error) {
-        toast.error(query.error.message)
+    if (getJobQuery.error instanceof Error) {
+        toast.error(getJobQuery.error.message)
     }
 
     return {
-        jobs: query?.data?.jobs || [],
-        isLoading: query.isLoading,
-        error: query.error,
-        refetch: query.refetch,
-        isRefetching: query.isRefetching,
+        jobs: getJobQuery?.data?.jobs || [],
+        isLoading: getJobQuery.isLoading,
+        error: getJobQuery.error,
+        refetch: getJobQuery.refetch,
+        isRefetching: getJobQuery.isRefetching,
         applyAllFilters,
         pagination: {
-            nextCursor: query?.data?.cursor,
-            hasNextPage: !!query?.data?.cursor,
+            nextCursor: getJobQuery?.data?.cursor,
+            hasNextPage: !!getJobQuery?.data?.cursor,
             hasPreviousPage: !!currentCursor,
             goToNextPage,
             goToPreviousPage,

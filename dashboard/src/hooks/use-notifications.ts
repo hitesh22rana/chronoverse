@@ -71,7 +71,7 @@ export function useNotifications() {
             // Send a request for each batch
             for (const batch of batchs) {
                 const _ids = batch
-                const response = await fetchWithAuth(`${NOTIFICATIONS_ENDPOINT}/read`, {
+                const response = await fetchWithAuth(NOTIFICATIONS_ENDPOINT, {
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/json",

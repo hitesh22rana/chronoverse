@@ -188,7 +188,7 @@ func run() int {
 
 	// Initialize the workflow job components
 	repo := workflowrepo.New(&workflowrepo.Config{
-		ParallelismLimit: cfg.WorkflowWorkerConfig.ParallelismLimit,
+		ParallelismLimit: runtime.GOMAXPROCS(0),
 	}, auth, rdb, cdb, kfk, &workflowrepo.Services{
 		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:          jobpb.NewJobsServiceClient(jobsConn),

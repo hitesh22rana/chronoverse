@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.39.0
-	github.com/docker/docker v28.3.2+incompatible
+	github.com/docker/docker v28.3.3+incompatible
 	github.com/eapache/go-resiliency v1.7.0
 	github.com/exaring/otelpgx v0.9.3
 	github.com/go-playground/validator/v10 v10.27.0
@@ -98,8 +98,8 @@ require (
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	golang.org/x/tools v0.35.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250721164621-a45f3dfb1074 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250721164621-a45f3dfb1074 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250728155136-f173205681a0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250728155136-f173205681a0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 )

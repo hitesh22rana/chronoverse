@@ -98,7 +98,8 @@ func (r *Repository) GetWorkflowAnalytics(ctx context.Context, userID, workflowI
 		SELECT
 			workflow_id,
 			jobs_count AS total_jobs,
-			logs_count AS total_joblogs
+			logs_count AS total_joblogs,
+			avg_job_execution_duration_ms
 		FROM %s
 		WHERE user_id = $1 AND workflow_id = $2
 		LIMIT 1

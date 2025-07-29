@@ -22,16 +22,18 @@ func (r *GetUserAnalyticsResponse) ToProto() *analyticspb.GetUserAnalyticsRespon
 
 // GetWorkflowAnalyticsResponse represents the response for workflow analytics.
 type GetWorkflowAnalyticsResponse struct {
-	WorkflowID   string `db:"workflow_id"`
-	TotalJobs    uint32 `db:"total_jobs"`
-	TotalJoblogs uint64 `db:"total_joblogs"`
+	WorkflowID                string `db:"workflow_id"`
+	AvgJobExecutionDurationMs uint64 `db:"avg_job_execution_duration_ms"`
+	TotalJobs                 uint32 `db:"total_jobs"`
+	TotalJoblogs              uint64 `db:"total_joblogs"`
 }
 
 // ToProto converts GetWorkflowAnalyticsResponse to its protobuf representation.
 func (r *GetWorkflowAnalyticsResponse) ToProto() *analyticspb.GetWorkflowAnalyticsResponse {
 	return &analyticspb.GetWorkflowAnalyticsResponse{
-		WorkflowId:   r.WorkflowID,
-		TotalJobs:    r.TotalJobs,
-		TotalJoblogs: r.TotalJoblogs,
+		WorkflowId:                r.WorkflowID,
+		AvgJobExecutionDurationMs: r.AvgJobExecutionDurationMs,
+		TotalJobs:                 r.TotalJobs,
+		TotalJoblogs:              r.TotalJoblogs,
 	}
 }

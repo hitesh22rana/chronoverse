@@ -19,16 +19,11 @@ func (r *Repository) processWorkflowsEvent(ctx context.Context, event *analytics
 	logger := loggerpkg.FromContext(ctx)
 
 	if event.Data == nil {
-		logger.Error("missing event data for workflows event")
 		return status.Error(codes.InvalidArgument, "missing event data for workflows event")
 	}
 
 	var data analyticsmodel.EventTypeWorkflowsData
 	if err := json.Unmarshal(event.Data, &data); err != nil {
-		logger.Error("failed to unmarshal workflows event data",
-			zap.Error(err),
-			zap.Any("event", event),
-		)
 		return status.Error(codes.InvalidArgument, "invalid workflows event data format")
 	}
 

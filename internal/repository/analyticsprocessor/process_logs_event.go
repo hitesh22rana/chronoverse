@@ -1,4 +1,3 @@
-//nolint:dupl // Ignore dupl check as it's a common pattern for processing events
 package analyticsprocessor
 
 import (
@@ -20,17 +19,12 @@ func (r *Repository) processLogsEvent(ctx context.Context, event *analyticsmodel
 	logger := loggerpkg.FromContext(ctx)
 
 	if event.Data == nil {
-		logger.Error("missing event data for logs event")
 		return status.Error(codes.InvalidArgument, "missing event data for logs event")
 	}
 
 	// Unmarshal json.RawMessage to the proper struct
 	var data analyticsmodel.EventTypeLogsData
 	if err := json.Unmarshal(event.Data, &data); err != nil {
-		logger.Error("failed to unmarshal logs event data",
-			zap.Error(err),
-			zap.Any("event", event),
-		)
 		return status.Error(codes.InvalidArgument, "invalid logs event data format")
 	}
 

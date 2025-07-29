@@ -1,4 +1,3 @@
-//nolint:dupl // Ignore dupl check as it's a common pattern for processing events
 package analyticsprocessor
 
 import (
@@ -20,30 +19,26 @@ func (r *Repository) processJobsEvent(ctx context.Context, event *analyticsmodel
 	logger := loggerpkg.FromContext(ctx)
 
 	if event.Data == nil {
-		logger.Error("missing event data for jobs event")
 		return status.Error(codes.InvalidArgument, "missing event data for jobs event")
 	}
 
 	// Unmarshal json.RawMessage to the proper struct
 	var data analyticsmodel.EventTypeJobsData
 	if err := json.Unmarshal(event.Data, &data); err != nil {
-		logger.Error("failed to unmarshal jobs event data",
-			zap.Error(err),
-			zap.Any("event", event),
-		)
 		return status.Error(codes.InvalidArgument, "invalid jobs event data format")
 	}
 
 	query := fmt.Sprintf(`
         INSERT INTO %s
-        (user_id, workflow_id, jobs_count)
-        VALUES ($1, $2, $3)
+        (user_id, workflow_id, jobs_count, avg_job_execution_duration_ms)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (user_id, workflow_id)
         DO UPDATE SET 
-            jobs_count = %s.jobs_count + EXCLUDED.jobs_count
-    `, postgres.TableAnalytics, postgres.TableAnalytics)
+            jobs_count = %s.jobs_count + EXCLUDED.jobs_count,
+            avg_job_execution_duration_ms = (%s.avg_job_execution_duration_ms + EXCLUDED.avg_job_execution_duration_ms) / 2
+    `, postgres.TableAnalytics, postgres.TableAnalytics, postgres.TableAnalytics)
 
-	_, err := r.pg.Exec(ctx, query, event.UserID, event.WorkflowID, data.Count)
+	_, err := r.pg.Exec(ctx, query, event.UserID, event.WorkflowID, 1, data.JobExecutionDurationMs)
 	if err != nil {
 		return status.Error(codes.Internal, "failed to insert/update jobs analytics")
 	}
@@ -51,7 +46,7 @@ func (r *Repository) processJobsEvent(ctx context.Context, event *analyticsmodel
 	logger.Info("successfully processed jobs event",
 		zap.String("user_id", event.UserID),
 		zap.String("workflow_id", event.WorkflowID),
-		zap.Uint32("jobs_count", data.Count),
+		zap.Uint64("job_execution_duration_ms", data.JobExecutionDurationMs),
 	)
 
 	return nil

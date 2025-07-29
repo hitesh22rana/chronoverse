@@ -21,7 +21,7 @@ import {
     Workflow,
     Edit,
     Trash2,
-    HeartPulse
+    HeartPulse,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -71,7 +71,9 @@ export default function WorkflowDetailsPage() {
         workflow,
         isLoading: isWorkflowLoading,
         error: workflowError,
-        refetch: refetchWorkflow
+        refetch: refetchWorkflow,
+        workflowAnalytics,
+        isAnalyticsLoading,
     } = useWorkflowDetails(workflowId as string)
 
     const {
@@ -264,12 +266,9 @@ export default function WorkflowDetailsPage() {
                                 }
                             </div>
                             <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">Workflow Configuration</CardTitle>
-                                </CardHeader>
                                 <CardContent className="space-y-4">
                                     {/* Basic Info */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                         <div className="space-y-2">
                                             <div className="text-sm font-medium">Workflow kind</div>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
@@ -309,15 +308,89 @@ export default function WorkflowDetailsPage() {
 
                                     <Separator />
 
-                                    {/* Payload */}
+                                    {/* Configuration */}
                                     <div className="space-y-2">
-                                        <div className="text-sm font-medium">Payload</div>
+                                        <div className="text-sm font-medium">Configuration</div>
                                         <div className="text-sm text-muted-foreground">
                                             <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
-                                                {workflow?.payload ? JSON.stringify(JSON.parse(workflow.payload), null, 2) : "No payload available"}
+                                                {workflow?.payload ? JSON.stringify(JSON.parse(workflow.payload), null, 2) : "No configuration available"}
                                             </pre>
                                         </div>
                                     </div>
+
+                                    {!!workflowAnalytics && !isAnalyticsLoading ? (
+                                        <div className="h-full w-full my-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                            {/* Total Jobs Card */}
+                                            <Card className="relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20" />
+                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                        Total Jobs Executed
+                                                    </CardTitle>
+                                                    <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                                        <Workflow className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                                    </div>
+                                                </CardHeader>
+                                                <CardContent className="relative">
+                                                    <div className="text-3xl font-bold text-blue-700 dark:text-blue-300">
+                                                        {workflowAnalytics.total_jobs.toLocaleString()}
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Jobs processed by this workflow
+                                                    </p>
+                                                </CardContent>
+                                            </Card>
+
+                                            {/* Total Logs Card */}
+                                            <Card className="relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20" />
+                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                        Log Entries Generated
+                                                    </CardTitle>
+                                                    <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                                        <ScrollText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                                    </div>
+                                                </CardHeader>
+                                                <CardContent className="relative">
+                                                    <div className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">
+                                                        {workflowAnalytics.total_joblogs.toLocaleString()}
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Log entries across all jobs
+                                                    </p>
+                                                </CardContent>
+                                            </Card>
+
+                                            {/* Average Execution Time Card */}
+                                            <Card className="relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20" />
+                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                        Avg Execution Time
+                                                    </CardTitle>
+                                                    <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                                        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                                    </div>
+                                                </CardHeader>
+                                                <CardContent className="relative">
+                                                    <div className="text-3xl font-bold text-amber-700 dark:text-amber-300">
+                                                        {workflowAnalytics.avg_job_execution_duration_ms
+                                                            ? `${Math.round(workflowAnalytics.avg_job_execution_duration_ms / 1000)}s`
+                                                            : "N/A"}
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Average per job execution
+                                                    </p>
+                                                </CardContent>
+                                            </Card>
+                                        </div>
+                                    ) : (
+                                        <EmptyState
+                                            title="No analytics available"
+                                            description="This workflow has no analytics data yet."
+                                        />
+                                    )}
 
                                     <Separator />
 
@@ -347,7 +420,6 @@ export default function WorkflowDetailsPage() {
                                 </CardFooter>
                             </Card>
                         </Fragment>
-
                     )}
                 </TabsContent>
 
@@ -440,7 +512,7 @@ export default function WorkflowDetailsPage() {
                     )}
                 </TabsContent>
             </Tabs>
-        </div >
+        </div>
     )
 }
 
@@ -452,57 +524,83 @@ function WorkflowDetailsSkeleton() {
                 <Skeleton className="h-9 max-w-[180px] w-full" />
             </div>
             <Card className="overflow-hidden space-y-4">
-                <CardHeader>
-                    <Skeleton className="h-6 w-40" />
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-5 md:-mt-2 -mt-3">
-                    <div className="md:space-y-2 space-y-3">
-                        <Skeleton className="h-4 w-24" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-20" />
-                        </div>
-                    </div>
-                    <div className="md:space-y-2 space-y-3">
-                        <Skeleton className="h-4 w-28" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
+                <CardContent className="space-y-4">
+                    {/* Basic Info Skeleton */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="space-y-2">
                             <Skeleton className="h-4 w-24" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-4 w-20" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-28" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-4 w-24" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-14" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-4 w-12" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-40" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-4 w-8" />
+                            </div>
                         </div>
                     </div>
-                    <div className="md:space-y-2 space-y-3">
-                        <Skeleton className="h-4 w-14" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-12" />
-                        </div>
-                    </div>
+
+                    <Separator />
+
+                    {/* Configuration Skeleton */}
                     <div className="space-y-2">
-                        <Skeleton className="h-4 w-40" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-8" />
+                        <Skeleton className="h-4 w-16" />
+                        <Skeleton className="h-36 w-full" />
+                    </div>
+
+                    {/* Analytics Cards Skeleton */}
+                    <div className="h-full w-full my-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        {/* Analytics Card Skeletons */}
+                        {[...Array(3)].map((_, i) => (
+                            <Card key={i} className="relative overflow-hidden">
+                                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                    <Skeleton className="h-4 w-32" />
+                                    <div className="h-8 w-8 rounded-full bg-muted">
+                                        <Skeleton className="h-4 w-4 m-2" />
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    <Skeleton className="h-8 w-16 mb-2" />
+                                    <Skeleton className="h-3 w-full" />
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+
+                    <Separator />
+
+                    {/* Failure Tracking Skeleton */}
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-4 w-24" />
+                            </div>
+                            <Skeleton className="h-4 w-16" />
                         </div>
+                        <Skeleton className="h-1.5 w-full" />
                     </div>
                 </CardContent>
-                <Separator className="mx-6 -mt-6 mb-0" />
-                <div className="flex flex-col gap-2 px-6 -mt-1">
-                    <Skeleton className="h-4 w-16" />
-                    <Skeleton className="h-36 w-full" />
-                </div>
-                <Separator className="mx-6 -mt-6 mb-0" />
-                <div className="flex flex-col w-full gap-2">
-                    <div className="flex flex-row items-center justify-between w-full px-6">
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-24" />
-                        </div>
-                        <Skeleton className="h-4 w-16" />
-                    </div>
-                    <Skeleton className="h-1.5 w-full mx-6" />
-                </div>
-                <Separator />
-                <Skeleton className="h-4 w-36 mx-6 -mt-4" />
+                <CardFooter className="text-xs text-muted-foreground border-t">
+                    <Skeleton className="h-4 w-36" />
+                </CardFooter>
             </Card>
         </Fragment>
     )
@@ -563,11 +661,11 @@ function JobCard({ job }: { job: Job }) {
             <Card className="overflow-hidden">
                 <CardHeader>
                     <div className="flex items-center justify-between">
-                        <div className="flex md:flex-row flex-col justify-start items-start gap-2">
+                        <div className="flex md:flex-row flex-col justify-start items-center gap-2">
                             <Badge
                                 variant="outline"
                                 className={cn(
-                                    "px-2 py-0 h-5 font-medium flex items-center gap-1 border-none",
+                                    "px-2 py-1 font-medium flex items-center gap-1",
                                     statusInfo.colorClass
                                 )}
                             >
@@ -634,7 +732,7 @@ function JobCardSkeleton() {
             <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <Skeleton className="h-5 w-20" />
+                        <Skeleton className="h-6 w-24" />
                         <Skeleton className="h-5 w-80" />
                     </div>
                     <Skeleton className="h-4 w-16" />

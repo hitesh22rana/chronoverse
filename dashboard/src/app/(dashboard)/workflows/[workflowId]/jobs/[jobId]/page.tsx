@@ -247,6 +247,11 @@ function getStatusInfo(status: string) {
                 color: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/30",
                 icon: <Loader2 className="h-4 w-4 animate-spin" />
             }
+        case "CANCELED":
+            return {
+                color: "bg-gray-100 text-orange-600 bg-orange-50 dark:bg-orange-950/30 text-orange-500 dark:text-orange-400 border-orange-200 dark:border-orange-800/30",
+                icon: <XCircle className="h-4 w-4" />
+            }
         default:
             return {
                 color: "bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-800/30",

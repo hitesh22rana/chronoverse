@@ -317,12 +317,16 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 		return err
 	}
 
+	start := time.Now()
+	executeErr := r.executeWorkflow(ctx, jobID, workflow)
+
 	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytes(
 		workflow.GetUserId(),
 		workflowID,
 		analyticsmodel.EventTypeJobs,
 		&analyticsmodel.EventTypeJobsData{
-			Count: 1, // Increment the count by 1 for each job execution
+			//nolint:gosec // G115: This is not a secret, it's just a job execution duration
+			JobExecutionDurationMs: uint64(time.Since(start).Milliseconds()),
 		},
 	)
 	if err != nil {
@@ -339,8 +343,6 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 	// This is a fire-and-forget operation, so we don't need to wait for it to complete
 	// This is used to track the number of jobs executed for the workflow
 	r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
-
-	executeErr := r.executeWorkflow(ctx, jobID, workflow)
 
 	// Since, the workflow execution can take time to execute and can led to authorization issues
 	// So, we need to re-issue the authorization token

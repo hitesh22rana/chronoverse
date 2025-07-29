@@ -162,7 +162,7 @@ func extractContainerDetails(payload string) (*containerDetails, error) {
 	}
 
 	if details.TimeOut > containerWorkflowMaxExecutionTimeout {
-		return details, status.Error(codes.FailedPrecondition, "timeout exceeds maximum limit of 1 hour")
+		return details, status.Errorf(codes.FailedPrecondition, "timeout exceeds maximum limit of %.0f minutes", containerWorkflowMaxExecutionTimeout.Minutes())
 	}
 
 	image, ok := data["image"].(string)

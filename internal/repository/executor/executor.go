@@ -196,7 +196,7 @@ func (r *Repository) Run(ctx context.Context) error {
 		// Check context cancellation before processing
 		select {
 		case <-ctx.Done():
-			logger.Warn("shutting down executor, context canceled", zap.Error(ctx.Err()))
+			logger.Warn("shutting down execution worker, context canceled", zap.Error(ctx.Err()))
 			return ctx.Err()
 		default:
 			// Continue processing
@@ -204,7 +204,7 @@ func (r *Repository) Run(ctx context.Context) error {
 
 		fetches := r.kfk.PollFetches(ctx)
 		if fetches.IsClientClosed() {
-			logger.Info("kafka client closed, shutting down executor")
+			logger.Info("kafka client closed, shutting down execution worker")
 			return nil // Return nil as this is an expected shutdown path
 		}
 

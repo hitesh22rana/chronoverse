@@ -333,7 +333,7 @@ export default function WorkflowDetailsPage() {
                                                 </CardHeader>
                                                 <CardContent className="relative">
                                                     <div className="text-3xl font-bold text-blue-700 dark:text-blue-300">
-                                                        {workflowAnalytics.total_jobs.toLocaleString()}
+                                                        {workflowAnalytics?.total_jobs ? workflowAnalytics.total_jobs.toLocaleString() : "0"}
                                                     </div>
                                                     <p className="text-xs text-muted-foreground mt-1">
                                                         Jobs processed by this workflow
@@ -354,7 +354,7 @@ export default function WorkflowDetailsPage() {
                                                 </CardHeader>
                                                 <CardContent className="relative">
                                                     <div className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">
-                                                        {workflowAnalytics.total_joblogs.toLocaleString()}
+                                                        {workflowAnalytics?.total_joblogs ? workflowAnalytics.total_joblogs.toLocaleString() : "0"}
                                                     </div>
                                                     <p className="text-xs text-muted-foreground mt-1">
                                                         Log entries across all jobs

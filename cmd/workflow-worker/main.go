@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"syscall"
 
+	_ "github.com/KimMachineGun/automemlimit"
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
@@ -206,6 +208,7 @@ func run() int {
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("environment", cfg.Environment.Env),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
+		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
 	// Run the workflow job

@@ -8,7 +8,6 @@ package notifications
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -119,7 +118,7 @@ type UnsafeNotificationsServiceServer interface {
 }
 
 func RegisterNotificationsServiceServer(s grpc.ServiceRegistrar, srv NotificationsServiceServer) {
-	// If the following call panics, it indicates UnimplementedNotificationsServiceServer was
+	// If the following call pancis, it indicates UnimplementedNotificationsServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.

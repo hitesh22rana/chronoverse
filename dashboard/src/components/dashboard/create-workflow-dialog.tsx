@@ -40,7 +40,6 @@ import {
 import {
     Card,
     CardContent,
-    CardDescription,
     CardHeader,
     CardTitle
 } from "@/components/ui/card"
@@ -139,14 +138,8 @@ interface CreateWorkflowDialogProps {
 }
 
 const kindType = {
-    'HEARTBEAT': {
-        title: "Heartbeat workflow",
-        description: "HEARTBEAT workflows are used to monitor the availability of external services. They make HTTP requests to specified endpoints at regular intervals.",
-    },
-    'CONTAINER': {
-        title: "Container workflow",
-        description: "Container workflows are used to run custom code in a containerized environment. They allow you to execute scripts or commands inside a specified container image.",
-    }
+    'HEARTBEAT': "This workflow is used to monitor the availability of your services. It makes HTTP requests to specified endpoints at defined intervals.",
+    'CONTAINER': "This workflow is used to run custom code in a containerized environment. It allows you to execute scripts or commands inside a specified container image."
 }
 
 type KindType = keyof typeof kindType
@@ -193,8 +186,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 // For Container, clean heartbeat fields and set defaults
                 form.setValue("containerPayload", {
                     image: "",
-                    cmd: [""],
-                    env: [""],
+                    cmd: [],
+                    env: [],
                     timeout: ""
                 })
                 form.unregister("heartbeatPayload")
@@ -347,7 +340,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                         </SelectContent>
                                     </Select>
                                     <FormDescription>
-                                        {kindType[selectedKind].description}
+                                        {kindType[selectedKind]}
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>
@@ -356,10 +349,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
 
                         <Card>
                             <CardHeader>
-                                <CardTitle>{kindType[selectedKind].title} Configuration</CardTitle>
-                                <CardDescription>
-                                    Configure the parameters for your {selectedKind.toLowerCase()} workflow
-                                </CardDescription>
+                                <CardTitle>Configuration</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 {selectedKind === "HEARTBEAT" && (

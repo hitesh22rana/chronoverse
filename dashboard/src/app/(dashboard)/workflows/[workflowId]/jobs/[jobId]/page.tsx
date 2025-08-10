@@ -186,7 +186,7 @@ export default function JobDetailsPage() {
                                         ) : (
                                             <div className="flex justify-between text-sm">
                                                 <span className="text-muted-foreground">Duration:</span>
-                                                <span className="text-gray-400">N/A</span>
+                                                <span className="text-gray-400">Not available</span>
                                             </div>
                                         )}
                                     </div>
@@ -197,7 +197,12 @@ export default function JobDetailsPage() {
                 </Card>
 
                 {/* Logs Viewer Panel */}
-                <LogsViewer workflowId={workflowId} jobId={jobId} jobStatus={job?.status || "PENDING"} />
+                <LogsViewer
+                    workflowId={workflowId}
+                    jobId={jobId}
+                    jobStatus={job?.status || "PENDING"}
+                    completedAt={job?.completed_at || ""}
+                />
             </div>
         </div>
     )

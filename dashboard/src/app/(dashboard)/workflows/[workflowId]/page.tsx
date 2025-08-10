@@ -377,7 +377,7 @@ export default function WorkflowDetailsPage() {
                                                     <div className="text-3xl font-bold text-amber-700 dark:text-amber-300">
                                                         {workflowAnalytics.avg_job_execution_duration_ms
                                                             ? `${Math.round(workflowAnalytics.avg_job_execution_duration_ms / 1000)}s`
-                                                            : "N/A"}
+                                                            : "0 seconds"}
                                                     </div>
                                                     <p className="text-xs text-muted-foreground mt-1">
                                                         Average per job execution
@@ -497,10 +497,16 @@ export default function WorkflowDetailsPage() {
                         />
                     ) : jobs.length === 0 ? (
                         <EmptyState
-                            title={`No ${urlStatusFilter.toLowerCase()} jobs found for this workflow.`}
-                            description={urlStatusFilter !== "ALL"
-                                ? 'Try adjusting your search or filters'
-                                : 'This workflow hasn\'t run any jobs yet.'}
+                            title={
+                                urlStatusFilter === "ALL"
+                                    ? "No jobs found for this workflow"
+                                    : `No ${urlStatusFilter.toLowerCase()} jobs found for this workflow`
+                            }
+                            description={
+                                urlStatusFilter !== "ALL"
+                                    ? "Try adjusting your search or filters."
+                                    : "This workflow hasn't run any jobs yet."
+                            }
                         />
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -526,7 +532,7 @@ function WorkflowDetailsSkeleton() {
             <Card className="overflow-hidden space-y-4">
                 <CardContent className="space-y-4">
                     {/* Basic Info Skeleton */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pb-2">
                         <div className="space-y-2">
                             <Skeleton className="h-4 w-24" />
                             <div className="flex flex-row items-center gap-2">
@@ -560,9 +566,9 @@ function WorkflowDetailsSkeleton() {
                     <Separator />
 
                     {/* Configuration Skeleton */}
-                    <div className="space-y-2">
-                        <Skeleton className="h-4 w-16" />
-                        <Skeleton className="h-36 w-full" />
+                    <div className="space-y-3.5">
+                        <Skeleton className="h-3.5 w-24" />
+                        <Skeleton className="h-24 w-full" />
                     </div>
 
                     {/* Analytics Cards Skeleton */}
@@ -578,7 +584,7 @@ function WorkflowDetailsSkeleton() {
                                 </CardHeader>
                                 <CardContent>
                                     <Skeleton className="h-8 w-16 mb-2" />
-                                    <Skeleton className="h-3 w-full" />
+                                    <Skeleton className="h-4 w-36" />
                                 </CardContent>
                             </Card>
                         ))}
@@ -759,7 +765,7 @@ function JobCardSkeleton() {
 function getStatusConfig(status: string) {
     return {
         QUEUED: {
-            label: "Scheduled",
+            label: "Queued",
             icon: Clock,
             colorClass: "text-blue-500 bg-blue-50 dark:bg-blue-950/30",
             glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)] dark:shadow-[0_0_20px_rgba(59,130,246,0.25)] border-blue-200/50 dark:border-blue-800/30",

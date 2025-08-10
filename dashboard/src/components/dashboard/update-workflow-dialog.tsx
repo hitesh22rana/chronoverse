@@ -33,7 +33,6 @@ import { Button } from "@/components/ui/button"
 import {
     Card,
     CardContent,
-    CardDescription,
     CardHeader,
     CardTitle
 } from "@/components/ui/card"
@@ -115,17 +114,6 @@ interface UpdateWorkflowDialogProps {
     onOpenChange: (open: boolean) => void;
 }
 
-const kindType = {
-    'HEARTBEAT': {
-        title: "Heartbeat workflow",
-        description: "HEARTBEAT workflows are used to monitor the availability of external services.",
-    },
-    'CONTAINER': {
-        title: "Container workflow",
-        description: "Container workflows are used to run custom code in a containerized environment.",
-    }
-}
-
 export function UpdateWorkflowDialog({
     workflowId,
     open,
@@ -195,8 +183,8 @@ export function UpdateWorkflowDialog({
 
             form.setValue("containerPayload", {
                 image: parsedPayload.image || "",
-                cmd: parsedPayload.cmd || [""],
-                env: envArray.length > 0 ? envArray : [""],
+                cmd: parsedPayload.cmd,
+                env: envArray,
                 timeout: parsedPayload.timeout || ""
             });
         }
@@ -312,10 +300,7 @@ export function UpdateWorkflowDialog({
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>{workflow.kind} Configuration</CardTitle>
-                                    <CardDescription>
-                                        {kindType[workflow.kind]?.description || "Configure your workflow settings."}
-                                    </CardDescription>
+                                    <CardTitle>Configuration</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     {workflow.kind === "HEARTBEAT" && (

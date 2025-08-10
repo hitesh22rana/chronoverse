@@ -62,36 +62,35 @@ func (cms *CountMinSketch) Estimate(item string) uint64 {
 		hashValue := hash(item, i) % cms.width
 		estimate = min(estimate, cms.counts[i][hashValue])
 	}
+
 	return estimate
 }
 
-// Reset clears the counts in the sketch, allowing it to be reused without creating a new instance.
-// This is useful for scenarios where the sketch needs to be reused for different datasets.
-func (cms *CountMinSketch) Reset() {
+// SnapshotAndReset creates a deep copy (snapshot) of the current sketch and
+// clears the original counts atomically under a single lock. This guarantees
+// that no increments are lost between the snapshot and the reset.
+func (cms *CountMinSketch) SnapshotAndReset() *CountMinSketch {
 	cms.mu.Lock()
 	defer cms.mu.Unlock()
 
+	// Snapshot with identical dimensions and parameters.
+	snapshot := &CountMinSketch{
+		epsilon: cms.epsilon,
+		delta:   cms.delta,
+		width:   cms.width,
+		depth:   cms.depth,
+		counts:  make([][]uint64, cms.depth),
+	}
+
 	for i := range cms.counts {
+		snapshot.counts[i] = make([]uint64, len(cms.counts[i]))
+		copy(snapshot.counts[i], cms.counts[i])
+
+		// Zero original row
 		for j := range cms.counts[i] {
 			cms.counts[i][j] = 0
 		}
 	}
-}
 
-// Copy creates a deep copy of the CountMinSketch instance.
-// This is useful for scenarios where you want to preserve the state of the sketch.
-func (cms *CountMinSketch) Copy() *CountMinSketch {
-	cms.mu.Lock()
-	defer cms.mu.Unlock()
-
-	// Create a new CountMinSketch with the same parameters
-	sketchCopy := NewCountMinSketch(cms.epsilon, cms.delta)
-
-	// Copy the counts from the original sketch
-	for i := range cms.counts {
-		sketchCopy.counts[i] = make([]uint64, len(cms.counts[i]))
-		copy(sketchCopy.counts[i], cms.counts[i])
-	}
-
-	return sketchCopy
+	return snapshot
 }

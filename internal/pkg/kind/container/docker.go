@@ -90,7 +90,7 @@ func (w *DockerWorkflow) Execute(
 		},
 		nil, nil, "",
 	)
-	if err != nil {
+	if err != nil || resp.ID == "" {
 		return "", nil, nil, status.Errorf(codes.FailedPrecondition, "failed to create container: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func (w *DockerWorkflow) Execute(
 
 	// Start the container
 	if err := w.Client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
-		return "", nil, nil, status.Errorf(codes.FailedPrecondition, "failed to start container: %v", err)
+		return containerID, nil, nil, status.Errorf(codes.Aborted, "failed to start container: %v", err)
 	}
 
 	// Channel for logs streaming
@@ -191,7 +191,7 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		if client.IsErrConnectionFailed(err) {
 			errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
 		} else {
-			errs <- status.Errorf(codes.FailedPrecondition, "failed to get container logs: %v", err)
+			errs <- status.Errorf(codes.Aborted, "failed to get container logs: %v", err)
 		}
 		return
 	}
@@ -305,7 +305,7 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	// Read the output to completion, required to properly register the image in Docker desktop
 	_, err = io.Copy(io.Discard, out)
 	if err != nil {
-		return status.Errorf(codes.FailedPrecondition, "failed to read image pull output: %v", err)
+		return status.Errorf(codes.Aborted, "failed to read image pull output: %v", err)
 	}
 
 	return nil

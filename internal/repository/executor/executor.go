@@ -325,8 +325,7 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 		workflowID,
 		analyticsmodel.EventTypeJobs,
 		&analyticsmodel.EventTypeJobsData{
-			//nolint:gosec // G115: This is not a secret, it's just a job execution duration
-			JobExecutionDurationMs: uint64(time.Since(start).Milliseconds()),
+			JobExecutionDuration: uint64(time.Since(start).Seconds()),
 		},
 	)
 	if err != nil {

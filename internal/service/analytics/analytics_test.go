@@ -43,15 +43,17 @@ func TestGetUserAnalytics(t *testing.T) {
 					gomock.Any(),
 					req.GetUserId(),
 				).Return(&analyticsmodel.GetUserAnalyticsResponse{
-					TotalWorkflows: 10,
-					TotalJobs:      200,
-					TotalJoblogs:   5000,
+					TotalWorkflows:            10,
+					TotalJobs:                 200,
+					TotalJoblogs:              5000,
+					TotalJobExecutionDuration: 1000000,
 				}, nil)
 			},
 			want: &analyticsmodel.GetUserAnalyticsResponse{
-				TotalWorkflows: 10,
-				TotalJobs:      200,
-				TotalJoblogs:   5000,
+				TotalWorkflows:            10,
+				TotalJobs:                 200,
+				TotalJoblogs:              5000,
+				TotalJobExecutionDuration: 1000000,
 			},
 			isErr: false,
 		},
@@ -147,14 +149,14 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					req.GetWorkflowId(),
 				).Return(&analyticsmodel.GetWorkflowAnalyticsResponse{
 					WorkflowID:                "workflow1",
-					AvgJobExecutionDurationMs: 20000,
+					TotalJobExecutionDuration: 20000,
 					TotalJobs:                 50,
 					TotalJoblogs:              1000,
 				}, nil)
 			},
 			want: &analyticsmodel.GetWorkflowAnalyticsResponse{
 				WorkflowID:                "workflow1",
-				AvgJobExecutionDurationMs: 20000,
+				TotalJobExecutionDuration: 20000,
 				TotalJobs:                 50,
 				TotalJoblogs:              1000,
 			},

@@ -51,7 +51,8 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 		SELECT
 			COUNT(DISTINCT workflow_id) AS total_workflows,
 			COALESCE(SUM(jobs_count), 0) AS total_jobs,
-			COALESCE(SUM(logs_count), 0) AS total_joblogs
+			COALESCE(SUM(logs_count), 0) AS total_joblogs,
+			COALESCE(SUM(total_job_execution_duration), 0) AS total_job_execution_duration
 		FROM %s
 		WHERE user_id = $1
 	`, postgres.TableAnalytics)
@@ -99,7 +100,7 @@ func (r *Repository) GetWorkflowAnalytics(ctx context.Context, userID, workflowI
 			workflow_id,
 			jobs_count AS total_jobs,
 			logs_count AS total_joblogs,
-			avg_job_execution_duration_ms
+			total_job_execution_duration
 		FROM %s
 		WHERE user_id = $1 AND workflow_id = $2
 		LIMIT 1

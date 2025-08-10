@@ -52,7 +52,7 @@ func initClient(server *grpc.Server) (client analyticspb.AnalyticsServiceClient,
 		}
 	}()
 
-	//nolint:staticcheck // This is required for testing.
+	//nolint:staticcheck // SA1019: This is required for testing.
 	conn, err := grpc.DialContext(
 		ctx,
 		"bufnet",
@@ -125,15 +125,17 @@ func TestGetUserAnalytics(t *testing.T) {
 					gomock.Any(),
 					gomock.Any(),
 				).Return(&analyticsmodel.GetUserAnalyticsResponse{
-					TotalWorkflows: 10,
-					TotalJobs:      100,
-					TotalJoblogs:   1000,
+					TotalWorkflows:            10,
+					TotalJobs:                 100,
+					TotalJoblogs:              1000,
+					TotalJobExecutionDuration: 1000000,
 				}, nil)
 			},
 			res: &analyticspb.GetUserAnalyticsResponse{
-				TotalWorkflows: 10,
-				TotalJobs:      100,
-				TotalJoblogs:   1000,
+				TotalWorkflows:            10,
+				TotalJobs:                 100,
+				TotalJoblogs:              1000,
+				TotalJobExecutionDuration: 1000000,
 			},
 			isErr: false,
 		},
@@ -305,14 +307,14 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(&analyticsmodel.GetWorkflowAnalyticsResponse{
 					WorkflowID:                "workflow_id",
-					AvgJobExecutionDurationMs: 20000,
+					TotalJobExecutionDuration: 20000,
 					TotalJobs:                 20,
 					TotalJoblogs:              200,
 				}, nil)
 			},
 			res: &analyticspb.GetWorkflowAnalyticsResponse{
 				WorkflowId:                "workflow_id",
-				AvgJobExecutionDurationMs: 20000,
+				TotalJobExecutionDuration: 20000,
 				TotalJobs:                 20,
 				TotalJoblogs:              200,
 			},

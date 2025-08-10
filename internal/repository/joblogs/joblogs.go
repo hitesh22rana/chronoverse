@@ -123,9 +123,8 @@ func (r *Repository) Run(ctx context.Context) error {
 				// Clear the original map to avoid reprocessing
 				uniqueWorkflows.Clear()
 
-				// Copy the countminsketch to a new instance for processing
-				cmsCopy := cms.Copy()
-				cms.Reset() // Reset the original sketch for future use
+				// Atomically snapshot and reset the countminsketch for processing
+				cmsCopy := cms.SnapshotAndReset()
 
 				//nolint:errcheck // Ignore error as we are exiting
 				withRetry(func() error {
@@ -167,9 +166,8 @@ func (r *Repository) Run(ctx context.Context) error {
 				// Clear the original map to avoid reprocessing
 				uniqueWorkflows.Clear()
 
-				// Copy the countminsketch to a new instance for processing
-				cmsCopy := cms.Copy()
-				cms.Reset() // Reset the original sketch for future use
+				// Atomically snapshot and reset the countminsketch for processing
+				cmsCopy := cms.SnapshotAndReset()
 
 				//nolint:errcheck // Ignore error as we are exiting
 				withRetry(func() error {

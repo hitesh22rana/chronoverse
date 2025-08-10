@@ -49,13 +49,8 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 	)
 
 	// If there was an error starting the container, return immediately
-	if workflowErr != nil {
+	if status.Code(workflowErr) == codes.FailedPrecondition {
 		return workflowErr
-	}
-
-	// If the container ID is empty, return immediately
-	if containerID == "" {
-		return status.Error(codes.Aborted, "container ID is empty")
 	}
 
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution
@@ -74,6 +69,11 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 		}
 		return nil
 	})
+
+	// If there was an error during execution, return it
+	if workflowErr != nil {
+		return workflowErr
+	}
 
 	// Create a done channel to signal when to stop processing
 	done := make(chan struct{})

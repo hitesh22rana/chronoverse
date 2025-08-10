@@ -25,7 +25,7 @@ type EventTypeWorkflowsData struct {
 
 // EventTypeJobsData represents the data structure for jobs analytics events.
 type EventTypeJobsData struct {
-	JobExecutionDurationMs uint64 `json:"job_execution_duration_ms"` // Job execution duration in milliseconds
+	JobExecutionDuration uint64 `json:"job_execution_duration"` // Job execution duration in seconds
 }
 
 // EventTypeLogsData represents the data structure for logs analytics events.

@@ -30,15 +30,15 @@ func (r *Repository) processJobsEvent(ctx context.Context, event *analyticsmodel
 
 	query := fmt.Sprintf(`
         INSERT INTO %s
-        (user_id, workflow_id, jobs_count, avg_job_execution_duration_ms)
+        (user_id, workflow_id, jobs_count, total_job_execution_duration)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (user_id, workflow_id)
-        DO UPDATE SET 
-            jobs_count = %s.jobs_count + EXCLUDED.jobs_count,
-            avg_job_execution_duration_ms = (%s.avg_job_execution_duration_ms + EXCLUDED.avg_job_execution_duration_ms) / 2
+        DO UPDATE SET
+			jobs_count = %s.jobs_count + EXCLUDED.jobs_count,
+            total_job_execution_duration = %s.total_job_execution_duration + EXCLUDED.total_job_execution_duration
     `, postgres.TableAnalytics, postgres.TableAnalytics, postgres.TableAnalytics)
 
-	_, err := r.pg.Exec(ctx, query, event.UserID, event.WorkflowID, 1, data.JobExecutionDurationMs)
+	_, err := r.pg.Exec(ctx, query, event.UserID, event.WorkflowID, 1, data.JobExecutionDuration)
 	if err != nil {
 		return status.Error(codes.Internal, "failed to insert/update jobs analytics")
 	}
@@ -46,7 +46,7 @@ func (r *Repository) processJobsEvent(ctx context.Context, event *analyticsmodel
 	logger.Info("successfully processed jobs event",
 		zap.String("user_id", event.UserID),
 		zap.String("workflow_id", event.WorkflowID),
-		zap.Uint64("job_execution_duration_ms", data.JobExecutionDurationMs),
+		zap.Uint64("job_execution_duration", data.JobExecutionDuration),
 	)
 
 	return nil

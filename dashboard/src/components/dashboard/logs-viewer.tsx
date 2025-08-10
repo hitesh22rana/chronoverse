@@ -341,11 +341,14 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
                     </CardTitle>
                     <div className="flex items-center gap-2">
                         <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">JSON</span>
+                            <span className={cn("text-sm font-medium", { "text-muted-foreground": !parseJson })}>JSON</span>
                             <Switch
                                 checked={parseJson}
                                 onCheckedChange={setParseJson}
-                                disabled={logs.length === 0}
+                                disabled={
+                                    (jobStatus === "CANCELED" && logs.length === 0) ||
+                                    (logs.length === 0 && !!completedAt) || isPurgedLogs(completedAt)
+                                }
                             />
                         </div>
                         <Button

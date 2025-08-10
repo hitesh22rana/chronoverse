@@ -37,6 +37,7 @@ export default function RootLayout({
       suppressHydrationWarning
       data-lt-installed
       className="hydrated"
+      data-scroll-behavior="smooth"
     >
       <body
         className={cn(

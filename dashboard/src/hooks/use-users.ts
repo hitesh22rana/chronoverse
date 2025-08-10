@@ -21,9 +21,10 @@ export type UpdateUserDetails = {
 }
 
 export type UserAnalytics = {
-    totalWorkflows: number;
-    totalJobs: number;
-    totalJoblogs: number;
+    total_workflows: number;
+    total_jobs: number;
+    total_joblogs: number;
+    total_job_execution_duration: number;
 }
 
 export function useUsers() {
@@ -76,7 +77,8 @@ export function useUsers() {
             }
 
             return response.json() as Promise<UserAnalytics>
-        }
+        },
+        refetchInterval: 60000, // Refetch every minute
     })
 
     if (getUserAnalyticsQuery.error instanceof Error) {

@@ -20,7 +20,7 @@ export type UpdateWorkflowDetails = {
 
 export type WorkflowAnalytics = {
     workflow_id: string;
-    avg_job_execution_duration_ms: number;
+    total_job_execution_duration: number;
     total_jobs: number;
     total_joblogs: number;
 }

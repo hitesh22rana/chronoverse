@@ -25,7 +25,14 @@ const (
 	// retryBackoff is the duration to wait before retrying an operation.
 	retryBackoff = time.Second
 
-	// Epsilon is the error rate for the CountMinSketch.
+	// Epsilon is the error rate parameter for the CountMinSketch.
+	// It determines the maximum allowable error in the frequency estimation of elements.
+	// Specifically, with probability at least (1 - Delta), the estimated count for any element
+	// will exceed the true count by at most Epsilon * total count.
+	// A smaller Epsilon increases accuracy but requires more memory.
+	// The value 0.0002 was chosen to balance memory usage and estimation accuracy,
+	// ensuring that frequency estimates are within 0.02% of the total count, which is suitable
+	// for the expected data volume and application requirements.
 	Epsilon = 0.0002
 	// Delta is the confidence level for the CountMinSketch.
 	Delta = 0.001

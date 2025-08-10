@@ -226,7 +226,7 @@ func (r *Repository) Run(ctx context.Context) error {
 
 		fetches := r.kfk.PollFetches(ctx)
 		if fetches.IsClientClosed() {
-			logger.Info("kafka client closed, shutting down workflow worker")
+			logger.Warn("kafka client closed, shutting down workflow worker")
 			return nil // Return nil as this is an expected shutdown path
 		}
 

@@ -24,7 +24,7 @@ const (
 // GetUserAnalyticsRequest contains the ID of the user whose activity is to be retrieved.
 type GetUserAnalyticsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user whose activity is to retrieve
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // ID of the user whose activity is to be retrieved
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -139,7 +139,7 @@ func (x *GetUserAnalyticsResponse) GetTotalJobExecutionDuration() uint64 {
 type GetWorkflowAnalyticsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`             // ID of the user who owns the workflow
-	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"` // ID of the workflow whose activity is to retrieve
+	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"` // ID of the workflow whose activity is to be retrieved
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

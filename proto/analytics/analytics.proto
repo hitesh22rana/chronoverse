@@ -6,7 +6,7 @@ option go_package = "github.com/hitesh22rana/chronoverse/proto/go/analytics;anal
 
 // GetUserAnalyticsRequest contains the ID of the user whose activity is to be retrieved.
 message GetUserAnalyticsRequest {
-    string user_id = 1; // ID of the user whose activity is to retrieve
+    string user_id = 1; // ID of the user whose activity is to be retrieved
 }
 
 // GetUserAnalyticsResponse contains the activity details of a user.
@@ -20,7 +20,7 @@ message GetUserAnalyticsResponse {
 // GetWorkflowAnalyticsRequest contains the ID of the workflow whose activity is to be retrieved.
 message GetWorkflowAnalyticsRequest {
     string user_id     = 1; // ID of the user who owns the workflow
-    string workflow_id = 2; // ID of the workflow whose activity is to retrieve
+    string workflow_id = 2; // ID of the workflow whose activity is to be retrieved
 }
 
 // GetWorkflowAnalyticsResponse contains the activity details of a workflow.

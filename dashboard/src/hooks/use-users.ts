@@ -20,8 +20,15 @@ export type UpdateUserDetails = {
     notification_preference: string
 }
 
+export type UserAnalytics = {
+    total_workflows: number;
+    total_jobs: number;
+    total_joblogs: number;
+    total_job_execution_duration: number;
+}
+
 export function useUsers() {
-    const query = useQuery({
+    const getUserQuery = useQuery<User, Error>({
         queryKey: ["user"],
         queryFn: async () => {
             const response = await fetchWithAuth(USER_ENDPOINT, {
@@ -49,24 +56,47 @@ export function useUsers() {
         },
         onSuccess: () => {
             toast.success("user updated successfully")
-            query.refetch()
+            getUserQuery.refetch()
         },
         onError: (error) => {
             toast.error(error.message)
         }
     })
 
-    if (query.error instanceof Error) {
-        toast.error(query.error.message)
+    if (getUserQuery.error instanceof Error) {
+        toast.error(getUserQuery.error.message)
+    }
+
+    const getUserAnalyticsQuery = useQuery<UserAnalytics, Error>({
+        queryKey: ["user-analytics"],
+        queryFn: async () => {
+            const response = await fetchWithAuth(`${API_URL}/analytics`)
+
+            if (!response.ok) {
+                throw new Error("failed to fetch user analytics")
+            }
+
+            return response.json() as Promise<UserAnalytics>
+        },
+        refetchInterval: 60000, // Refetch every minute
+    })
+
+    if (getUserAnalyticsQuery.error instanceof Error) {
+        toast.error(getUserAnalyticsQuery.error.message)
     }
 
     return {
-        user: query.data as User,
-        isLoading: query.isLoading,
-        error: query.error,
-        refetch: query.refetch,
+        user: getUserQuery.data as User,
+        isLoading: getUserQuery.isLoading,
+        error: getUserQuery.error,
+        refetch: getUserQuery.refetch,
         updateUser: updateUser.mutate,
         isUpdating: updateUser.isPending,
         updateError: updateUser.error,
+        userAnalytics: getUserAnalyticsQuery.data,
+        isAnalyticsLoading: getUserAnalyticsQuery.isLoading,
+        analyticsError: getUserAnalyticsQuery.error,
+        refetchAnalytics: getUserAnalyticsQuery.refetch,
+        isAnalyticsRefetching: getUserAnalyticsQuery.isRefetching,
     }
 }

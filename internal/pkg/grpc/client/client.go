@@ -1,12 +1,14 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/eapache/go-resiliency/breaker"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,6 +33,42 @@ type ServiceConfig struct {
 	TLS  *TLSConfig
 }
 
+// CircuitBreakerConfig contains circuit breaker configuration.
+type CircuitBreakerConfig struct {
+	ErrorThreshold   int           // Number of errors before opening
+	SuccessThreshold int           // Number of successes needed to close
+	Timeout          time.Duration // How long to stay open
+}
+
+// DefaultCircuitBreakerConfig returns default circuit breaker config.
+func DefaultCircuitBreakerConfig() *CircuitBreakerConfig {
+	return &CircuitBreakerConfig{
+		ErrorThreshold:   5,                // Open after 5 errors
+		SuccessThreshold: 2,                // Close after 2 successes
+		Timeout:          30 * time.Second, // Stay open for 30s
+	}
+}
+
+func circuitBreakerUnaryInterceptor(cb *breaker.Breaker) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		return cb.Run(func() error {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		})
+	}
+}
+
+func circuitBreakerStreamInterceptor(cb *breaker.Breaker) grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		var stream grpc.ClientStream
+		err := cb.Run(func() error {
+			var streamErr error
+			stream, streamErr = streamer(ctx, desc, cc, method, opts...)
+			return streamErr
+		})
+		return stream, err
+	}
+}
+
 // RetryConfig contains the configuration for retry behavior.
 type RetryConfig struct {
 	// MaxRetries is the maximum number of retries for a single request.
@@ -53,13 +91,17 @@ func DefaultRetryConfig() *RetryConfig {
 			codes.ResourceExhausted,
 			codes.Aborted,
 		},
-		PerRetryTimeout: 2 * time.Second,
+		PerRetryTimeout: 5 * time.Second,
 	}
 }
 
 // NewClient creates a new gRPC client connection with retry and tracing support.
-func NewClient(svcCfg *ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, error) {
-	var opts []grpc.DialOption
+func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *RetryConfig) (*grpc.ClientConn, error) {
+	var (
+		opts               []grpc.DialOption
+		unaryInterceptors  []grpc.UnaryClientInterceptor
+		streamInterceptors []grpc.StreamClientInterceptor
+	)
 
 	// Configure TLS or insecure connection
 	if svcCfg.TLS.Enabled {
@@ -71,6 +113,28 @@ func NewClient(svcCfg *ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, 
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
+
+	// Set default circuit breaker config if not provided
+	if cbCfg == nil {
+		cbCfg = DefaultCircuitBreakerConfig()
+	}
+
+	// Configure circuit breaker options
+	cb := breaker.New(
+		cbCfg.ErrorThreshold,
+		cbCfg.SuccessThreshold,
+		cbCfg.Timeout,
+	)
+
+	unaryInterceptors = append(
+		unaryInterceptors,
+		circuitBreakerUnaryInterceptor(cb),
+	)
+
+	streamInterceptors = append(
+		streamInterceptors,
+		circuitBreakerStreamInterceptor(cb),
+	)
 
 	// Set default retry config if not provided
 	if retryCfg == nil {
@@ -85,10 +149,20 @@ func NewClient(svcCfg *ServiceConfig, retryCfg *RetryConfig) (*grpc.ClientConn, 
 		retry.WithPerRetryTimeout(retryCfg.PerRetryTimeout),
 	}
 
+	unaryInterceptors = append(
+		unaryInterceptors,
+		retry.UnaryClientInterceptor(retryOpts...),
+	)
+
+	streamInterceptors = append(
+		streamInterceptors,
+		retry.StreamClientInterceptor(retryOpts...),
+	)
+
 	opts = append(
 		opts,
-		grpc.WithUnaryInterceptor(retry.UnaryClientInterceptor(retryOpts...)),
-		grpc.WithStreamInterceptor(retry.StreamClientInterceptor(retryOpts...)),
+		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
+		grpc.WithChainStreamInterceptor(streamInterceptors...),
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
 	)
 

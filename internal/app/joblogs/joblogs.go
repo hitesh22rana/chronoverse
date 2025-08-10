@@ -33,9 +33,9 @@ func New(ctx context.Context, svc Service) *Joblogs {
 func (e *Joblogs) Run(ctx context.Context) error {
 	err := e.svc.Run(ctx)
 	if err != nil {
-		e.logger.Error("error occurred while running the joblogs job", zap.Error(err))
+		e.logger.Error("error occurred while running the joblogs processor", zap.Error(err))
 	} else {
-		e.logger.Info("successfully exicted the joblogs job")
+		e.logger.Info("successfully exited the joblogs processor")
 	}
 
 	return nil

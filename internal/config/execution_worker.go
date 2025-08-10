@@ -9,6 +9,7 @@ type ExecutionWorker struct {
 	Environment
 
 	ClientTLS
+	Redis
 	Kafka
 	WorkflowsService
 	JobsService
@@ -17,9 +18,7 @@ type ExecutionWorker struct {
 }
 
 // ExecutionWorkerConfig holds the configuration for the execution worker.
-type ExecutionWorkerConfig struct {
-	ParallelismLimit int `envconfig:"EXECUTION_WORKER_PARALLELISM_LIMIT" default:"5"`
-}
+type ExecutionWorkerConfig struct{}
 
 // InitExecutionJobConfig initializes the execution worker configuration.
 func InitExecutionJobConfig() (*ExecutionWorker, error) {

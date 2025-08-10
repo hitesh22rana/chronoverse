@@ -13,11 +13,13 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
-	containerWorkflowDefaultExecutionTimeout = 10 * time.Second
+	containerWorkflowDefaultExecutionTimeout = 30 * time.Second
+	containerWorkflowMaxExecutionTimeout     = 1 * time.Hour
 	containerBufferTimeout                   = 1 * time.Second
 )
 
@@ -47,13 +49,8 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 	)
 
 	// If there was an error starting the container, return immediately
-	if workflowErr != nil {
+	if status.Code(workflowErr) == codes.FailedPrecondition {
 		return workflowErr
-	}
-
-	// If the container ID is empty, return immediately
-	if containerID == "" {
-		return status.Error(codes.Aborted, "container ID is empty")
 	}
 
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution
@@ -72,6 +69,11 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 		}
 		return nil
 	})
+
+	// If there was an error during execution, return it
+	if workflowErr != nil {
+		return workflowErr
+	}
 
 	// Create a done channel to signal when to stop processing
 	done := make(chan struct{})
@@ -105,12 +107,13 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 				}
 
 				record := &kgo.Record{
-					Topic: r.cfg.ProducerTopic,
+					Topic: kafka.TopicJobLogs,
 					Key:   []byte(jobID),
 					Value: jobLogEventBytes,
 				}
-				// Asynchronously produce the log entry to the Kafka topic
-				r.kfk.Produce(ctx, record, func(_ *kgo.Record, _ error) {})
+
+				// Asynchronously produce the record to Kafka
+				r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
 
 			case <-done:
 				// We were signaled to stop processing logs
@@ -146,12 +149,6 @@ func extractContainerDetails(payload string) (*containerDetails, error) {
 		return details, status.Error(codes.InvalidArgument, "invalid payload format")
 	}
 
-	image, ok := data["image"].(string)
-	if !ok || image == "" {
-		return details, status.Error(codes.InvalidArgument, "image is missing or invalid")
-	}
-	details.Image = image
-
 	timeout, ok := data["timeout"].(string)
 	if ok {
 		details.TimeOut, err = time.ParseDuration(timeout)
@@ -163,6 +160,16 @@ func extractContainerDetails(payload string) (*containerDetails, error) {
 	if details.TimeOut <= 0 {
 		return details, status.Error(codes.InvalidArgument, "timeout is invalid")
 	}
+
+	if details.TimeOut > containerWorkflowMaxExecutionTimeout {
+		return details, status.Errorf(codes.FailedPrecondition, "timeout exceeds maximum limit of %.0f minutes", containerWorkflowMaxExecutionTimeout.Minutes())
+	}
+
+	image, ok := data["image"].(string)
+	if !ok || image == "" {
+		return details, status.Error(codes.InvalidArgument, "image is missing or invalid")
+	}
+	details.Image = image
 
 	// Command is an optional field
 	cmd, ok := data["cmd"].([]any)

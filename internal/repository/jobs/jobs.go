@@ -26,10 +26,7 @@ import (
 )
 
 const (
-	jobsTable                  = "jobs"
-	logsTable                  = "job_logs"
-	delimiter                  = '$'
-	jobLogsSubscriptionChannel = "job_logs"
+	delimiter = '$'
 )
 
 // Config represents the repository constants configuration.
@@ -80,7 +77,7 @@ func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedul
 		INSERT INTO %s (workflow_id, user_id, scheduled_at)
 		VALUES ($1, $2, $3)
 		RETURNING id;
-	`, jobsTable)
+	`, postgres.TableJobs)
 
 	row := r.pg.QueryRow(ctx, query, workflowID, userID, scheduledAtTime)
 	if err = row.Scan(&jobID); err != nil {
@@ -112,7 +109,7 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
 
 	query := fmt.Sprintf(`
 	UPDATE %s
-	SET status = $1`, jobsTable)
+	SET status = $1`, postgres.TableJobs)
 	args := []any{jobStatus}
 
 	switch jobStatus {
@@ -178,7 +175,7 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 		FROM %s
 		WHERE id = $1 AND workflow_id = $2 AND user_id = $3
 		LIMIT 1;
-	`, jobsTable)
+	`, postgres.TableJobs)
 
 	rows, err := r.pg.Query(ctx, query, jobID, workflowID, userID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -222,7 +219,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 		FROM %s
 		WHERE id = $1
 		LIMIT 1;
-	`, jobsTable)
+	`, postgres.TableJobs)
 
 	rows, err := r.pg.Query(ctx, query, jobID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -265,7 +262,7 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 		SELECT timestamp, message, sequence_num, stream
 		FROM %s
 		WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
-	`, logsTable)
+	`, clickhouse.TableJobLogs)
 	args := []any{jobID, workflowID, userID}
 
 	if cursor != "" {
@@ -346,7 +343,7 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		FROM %s
 		WHERE id = $1 AND workflow_id = $2 AND user_id = $3
 		LIMIT 1;
-	`, jobsTable)
+	`, postgres.TableJobs)
 	row := r.pg.QueryRow(ctx, query, jobID, workflowID, userID)
 	var id string
 	var jobStatus string
@@ -375,7 +372,8 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		return nil, err
 	}
 
-	return r.rdb.Subscribe(ctx, jobLogsSubscriptionChannel), nil
+	// Subscribe to job-specific channel
+	return r.rdb.Subscribe(ctx, redis.GetJobLogsChannel(jobID)), nil
 }
 
 // ListJobs returns jobs.
@@ -394,7 +392,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
         SELECT id, workflow_id, container_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
         FROM %s
         WHERE workflow_id = $1 AND user_id = $2
-    `, jobsTable)
+    `, postgres.TableJobs)
 	args := []any{workflowID, userID}
 	// This is used to track the parameter index for the query dynamically
 	paramIndex := 3

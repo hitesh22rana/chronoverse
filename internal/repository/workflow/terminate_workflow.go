@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+)
+
+const (
+	terminateWorkflowExpirationTimeout = 5 * time.Minute
 )
 
 // cancelJobs cancels the jobs of the workflow.
@@ -173,6 +180,24 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowID, us
 	if err != nil {
 		return err
 	}
+
+	// Acquire a distributed lock to ensure only one worker processes the job at a time
+	lockKey := fmt.Sprintf(
+		"%s:%s:%s",
+		lockKeyPrefix,
+		workflowsmodel.ActionTerminate.ToString(),
+		workflowID,
+	)
+	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, terminateWorkflowExpirationTimeout)
+	if err != nil || !isLockAcquired {
+		return status.Error(codes.Aborted, "failed to acquire distributed lock")
+	}
+
+	// Release the distributed lock
+	defer func() {
+		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
+		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
+	}()
 
 	// Cancel all the jobs which are in the QUEUED or PENDING state
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process

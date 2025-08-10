@@ -3,13 +3,15 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -22,12 +24,14 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	authSubject  = "internal/workflow"
-	retryBackoff = time.Second
+	authSubject   = "internal/workflow"
+	retryBackoff  = time.Second
+	lockKeyPrefix = "workflow"
 )
 
 // ContainerSvc represents the container service.
@@ -49,38 +53,172 @@ type Config struct {
 	ParallelismLimit int
 }
 
+// kafkaJob defines a job for the worker pool.
+type kafkaJob struct {
+	record *kgo.Record
+}
+
 // Repository provides workflow repository.
 type Repository struct {
-	tp   trace.Tracer
-	cfg  *Config
-	auth auth.IAuth
-	svc  *Services
-	ch   *clickhouse.Client
-	kfk  *kgo.Client
+	tp      trace.Tracer
+	cfg     *Config
+	auth    auth.IAuth
+	rdb     *redis.Store
+	ch      *clickhouse.Client
+	kfk     *kgo.Client
+	svc     *Services
+	jobChan chan kafkaJob
+	wg      sync.WaitGroup
 }
 
 // New creates a new workflow repository.
-func New(cfg *Config, auth auth.IAuth, svc *Services, ch *clickhouse.Client, kfk *kgo.Client) *Repository {
-	return &Repository{
-		tp:   otel.Tracer(svcpkg.Info().GetName()),
-		cfg:  cfg,
-		auth: auth,
-		svc:  svc,
-		ch:   ch,
-		kfk:  kfk,
+func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, ch *clickhouse.Client, kfk *kgo.Client, svc *Services) *Repository {
+	r := &Repository{
+		tp:      otel.Tracer(svcpkg.Info().GetName()),
+		cfg:     cfg,
+		auth:    auth,
+		rdb:     rdb,
+		ch:      ch,
+		kfk:     kfk,
+		svc:     svc,
+		jobChan: make(chan kafkaJob, cfg.ParallelismLimit),
+	}
+
+	return r
+}
+
+// StartWorkers starts the worker goroutines.
+func (r *Repository) StartWorkers(ctx context.Context) {
+	// Start worker goroutines
+	for i := range r.cfg.ParallelismLimit {
+		r.wg.Add(1)
+		go r.worker(ctx, fmt.Sprintf("worker-%d", i))
+	}
+}
+
+// worker processes Kafka messages from the job channel.
+func (r *Repository) worker(ctx context.Context, workerID string) {
+	defer r.wg.Done()
+
+	for {
+		select {
+		case job, ok := <-r.jobChan:
+			if !ok {
+				// Channel closed, exit worker
+				return
+			}
+
+			ctxWithTrace, span := r.tp.Start(
+				ctx,
+				"workflow.worker.processRecord",
+				trace.WithAttributes(
+					attribute.String("worker_id", workerID),
+					attribute.String("topic", job.record.Topic),
+					attribute.Int64("offset", job.record.Offset),
+					attribute.Int64("partition", int64(job.record.Partition)),
+					attribute.String("key", string(job.record.Key)),
+					attribute.String("value", string(job.record.Value)),
+				),
+			)
+
+			logger := loggerpkg.FromContext(ctxWithTrace).With(zap.String("worker_id", workerID))
+
+			var workflowEntry workflowsmodel.WorkflowEvent
+			if err := json.Unmarshal(job.record.Value, &workflowEntry); err != nil {
+				logger.Error(
+					"failed to unmarshal record",
+					zap.Any("ctx", ctxWithTrace),
+					zap.String("topic", job.record.Topic),
+					zap.Int64("offset", job.record.Offset),
+					zap.Int32("partition", job.record.Partition),
+					zap.String("value", string(job.record.Value)),
+					zap.Error(err),
+				)
+			} else if workflowErr := r.runTargetWorkflow(ctxWithTrace, workflowEntry); workflowErr != nil {
+				if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
+					logger.Error(
+						"internal error while executing workflow",
+						zap.Any("ctx", ctxWithTrace),
+						zap.String("topic", job.record.Topic),
+						zap.Int64("offset", job.record.Offset),
+						zap.Int32("partition", job.record.Partition),
+						zap.String("value", string(job.record.Value)),
+						zap.Error(workflowErr),
+					)
+				} else {
+					logger.Warn(
+						"workflow execution failed",
+						zap.Any("ctx", ctxWithTrace),
+						zap.String("topic", job.record.Topic),
+						zap.Int64("offset", job.record.Offset),
+						zap.Int32("partition", job.record.Partition),
+						zap.String("value", string(job.record.Value)),
+						zap.Error(workflowErr),
+					)
+				}
+			}
+
+			// Commit the record even if the workflow workflow fails to avoid reprocessing
+			if err := r.kfk.CommitRecords(ctxWithTrace, job.record); err != nil {
+				logger.Error(
+					"failed to commit record",
+					zap.Any("ctx", ctxWithTrace),
+					zap.String("topic", job.record.Topic),
+					zap.Int64("offset", job.record.Offset),
+					zap.Int32("partition", job.record.Partition),
+					zap.String("value", string(job.record.Value)),
+					zap.Error(err),
+				)
+			} else {
+				logger.Info("record processed and committed successfully",
+					zap.Any("ctx", ctxWithTrace),
+					zap.String("topic", job.record.Topic),
+					zap.Int64("offset", job.record.Offset),
+					zap.Int32("partition", job.record.Partition),
+					zap.String("value", string(job.record.Value)),
+				)
+			}
+			span.End()
+
+		case <-ctx.Done():
+			// Context canceled, exit worker
+			return
+		}
+	}
+}
+
+// runTargetWorkflow runs the target workflow based on the action.
+func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry workflowsmodel.WorkflowEvent) error {
+	switch workflowEntry.Action {
+	case workflowsmodel.ActionBuild:
+		return r.buildWorkflow(ctx, workflowEntry.ID)
+	case workflowsmodel.ActionTerminate:
+		return r.terminateWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
+	case workflowsmodel.ActionDelete:
+		return r.deleteWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
+	default:
+		return status.Errorf(codes.InvalidArgument, "unknown workflow action: %s", workflowEntry.Action)
 	}
 }
 
 // Run start the workflow execution.
-//
-//nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
+
+	// Start workers with the context
+	r.StartWorkers(ctx)
+
+	// Ensures that the job channel is closed and all workers are done before returning
+	defer func() {
+		close(r.jobChan)
+		r.wg.Wait()
+	}()
 
 	for {
 		// Check context cancellation before processing
 		select {
 		case <-ctx.Done():
+			logger.Warn("shutting down workflow worker, context canceled", zap.Error(ctx.Err()))
 			return ctx.Err()
 		default:
 			// Continue processing
@@ -88,7 +226,8 @@ func (r *Repository) Run(ctx context.Context) error {
 
 		fetches := r.kfk.PollFetches(ctx)
 		if fetches.IsClientClosed() {
-			return status.Error(codes.Canceled, "client closed")
+			logger.Warn("kafka client closed, shutting down workflow worker")
+			return nil // Return nil as this is an expected shutdown path
 		}
 
 		if fetches.Empty() {
@@ -102,159 +241,18 @@ func (r *Repository) Run(ctx context.Context) error {
 				zap.Int32("partition", fetchErr.Partition),
 				zap.Error(fetchErr.Err),
 			)
-			continue
 		}
-
-		// Error group for running multiple goroutines
-		eg, groupCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(r.cfg.ParallelismLimit)
 
 		for !iter.Done() {
-			// Process the record in a separate goroutine
-			eg.Go(func(record *kgo.Record) func() error {
-				return func() error {
-					ctxWithTrace, span := r.tp.Start(groupCtx, "workflow.Run")
-					defer span.End()
+			record := iter.Next()
 
-					var workflowEntry workflowsmodel.WorkflowEvent
-					if err := json.Unmarshal(record.Value, &workflowEntry); err != nil {
-						logger.Error(
-							"failed to unmarshal record",
-							zap.Any("ctx", ctxWithTrace),
-							zap.String("topic", record.Topic),
-							zap.Int64("offset", record.Offset),
-							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
-							zap.Error(err),
-						)
-
-						// Skip the record and commit it to avoid reprocessing
-						if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
-							logger.Error(
-								"failed to commit record",
-								zap.Any("ctx", ctxWithTrace),
-								zap.String("topic", record.Topic),
-								zap.Int64("offset", record.Offset),
-								zap.Int32("partition", record.Partition),
-								zap.String("message", string(record.Value)),
-								zap.Error(err),
-							)
-						}
-
-						// Skip processing this record
-						return nil
-					}
-
-					switch workflowEntry.Action {
-					case workflowsmodel.ActionBuild:
-						// Execute the build workflow
-						if err := r.buildWorkflow(ctxWithTrace, workflowEntry.ID); err != nil {
-							// If the build workflow is failed due to internal issues, log the error, else log warning
-							if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
-								logger.Error(
-									"internal error while executing build workflow",
-									zap.Any("ctx", ctxWithTrace),
-									zap.String("topic", record.Topic),
-									zap.Int64("offset", record.Offset),
-									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
-									zap.Error(err),
-								)
-							} else {
-								logger.Warn(
-									"build workflow execution failed",
-									zap.Any("ctx", ctxWithTrace),
-									zap.String("topic", record.Topic),
-									zap.Int64("offset", record.Offset),
-									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
-									zap.Error(err),
-								)
-							}
-						}
-					case workflowsmodel.ActionTerminate:
-						// Execute the terminate workflow
-						if err := r.terminateWorkflow(ctxWithTrace, workflowEntry.ID, workflowEntry.UserID); err != nil {
-							// If the terminate workflow is failed due to internal issues, log the error, else log warning
-							if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
-								logger.Error(
-									"internal error while executing terminate workflow",
-									zap.Any("ctx", ctxWithTrace),
-									zap.String("topic", record.Topic),
-									zap.Int64("offset", record.Offset),
-									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
-									zap.Error(err),
-								)
-							} else {
-								logger.Warn(
-									"terminate workflow execution failed",
-									zap.Any("ctx", ctxWithTrace),
-									zap.String("topic", record.Topic),
-									zap.Int64("offset", record.Offset),
-									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
-									zap.Error(err),
-								)
-							}
-						}
-					case workflowsmodel.ActionDelete:
-						// Execute the delete workflow
-						if err := r.deleteWorkflow(ctxWithTrace, workflowEntry.ID, workflowEntry.UserID); err != nil {
-							// If the delete workflow is failed due to internal issues, log the error, else log warning
-							if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
-								logger.Error(
-									"internal error while executing delete workflow",
-									zap.Any("ctx", ctxWithTrace),
-									zap.String("topic", record.Topic),
-									zap.Int64("offset", record.Offset),
-									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
-									zap.Error(err),
-								)
-							} else {
-								logger.Warn(
-									"delete workflow execution failed",
-									zap.Any("ctx", ctxWithTrace),
-									zap.String("topic", record.Topic),
-									zap.Int64("offset", record.Offset),
-									zap.Int32("partition", record.Partition),
-									zap.String("message", string(record.Value)),
-									zap.Error(err),
-								)
-							}
-						}
-					}
-
-					// Commit the record even if the workflow workflow fails to avoid reprocessing
-					if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
-						logger.Error(
-							"failed to commit record",
-							zap.Any("ctx", ctxWithTrace),
-							zap.String("topic", record.Topic),
-							zap.Int64("offset", record.Offset),
-							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
-							zap.Error(err),
-						)
-					} else {
-						logger.Info("record processed and committed successfully",
-							zap.Any("ctx", ctxWithTrace),
-							zap.String("topic", record.Topic),
-							zap.Int64("offset", record.Offset),
-							zap.Int32("partition", record.Partition),
-							zap.String("message", string(record.Value)),
-						)
-					}
-
-					return nil
-				}
-			}(iter.Next()))
-		}
-
-		// Wait for all the goroutines to finish
-		if err := eg.Wait(); err != nil {
-			logger.Error("error while running goroutines", zap.Error(err))
+			select {
+			case r.jobChan <- kafkaJob{record: record}:
+				// Job dispatched successfully
+			case <-ctx.Done(): // Check for cancellation of the main Run context
+				logger.Warn("shutting down dispatcher, context canceled", zap.Error(ctx.Err()))
+				return ctx.Err() // Exit if main context is canceled
+			}
 		}
 	}
 }

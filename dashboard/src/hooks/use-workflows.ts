@@ -29,6 +29,14 @@ export type Workflow = {
     terminated_at?: string
 }
 
+export type CreateWorkflowPayload = {
+    name: string
+    kind: string
+    payload: string
+    interval: number
+    max_consecutive_job_failures_allowed: number
+}
+
 export function useWorkflows() {
     const queryClient = useQueryClient()
     const router = useRouter()
@@ -60,8 +68,8 @@ export function useWorkflows() {
         intervalMax = searchParams.get("interval_max") || ""
     }
 
-    // Build query parameters for the API call
-    const queryParams = useMemo(() => {
+    // Build query parameters for the get workflows request
+    const getWorkflowQueryParams = useMemo(() => {
         const params = new URLSearchParams()
 
         if (currentCursor) {
@@ -95,11 +103,11 @@ export function useWorkflows() {
         return params.toString()
     }, [currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax])
 
-    const query = useQuery({
+    const getWorkflowQuery = useQuery<WorkflowsResponse, Error>({
         queryKey: ["workflows", currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax],
         queryFn: async () => {
-            const url = queryParams
-                ? `${WORKFLOWS_ENDPOINT}?${queryParams}`
+            const url = getWorkflowQueryParams
+                ? `${WORKFLOWS_ENDPOINT}?${getWorkflowQueryParams}`
                 : WORKFLOWS_ENDPOINT
 
             const response = await fetchWithAuth(url)
@@ -114,14 +122,14 @@ export function useWorkflows() {
     })
 
     const goToNextPage = useCallback(() => {
-        const nextCursor = query?.data?.cursor
+        const nextCursor = getWorkflowQuery?.data?.cursor
         if (!nextCursor) return false
 
         const params = new URLSearchParams(searchParams.toString())
         params.set("cursor", nextCursor)
         router.push(`?${params.toString()}`)
         return true
-    }, [query?.data?.cursor, router, searchParams])
+    }, [getWorkflowQuery?.data?.cursor, router, searchParams])
 
     const goToPreviousPage = useCallback(() => {
         router.back()
@@ -206,21 +214,15 @@ export function useWorkflows() {
         router.push(`?${params.toString()}`)
     }, [router, searchParams])
 
-    if (query.error instanceof Error) {
-        toast.error(query.error.message)
+    if (getWorkflowQuery.error instanceof Error) {
+        toast.error(getWorkflowQuery.error.message)
     }
 
     const createWorkflowMutation = useMutation({
-        mutationFn: async (workflowData: {
-            name: string
-            kind: string
-            payload: string
-            interval: number
-            maxConsecutiveJobFailuresAllowed: number
-        }) => {
+        mutationFn: async (workflowPayload: CreateWorkflowPayload) => {
             const response = await fetchWithAuth(WORKFLOWS_ENDPOINT, {
                 method: "POST",
-                body: JSON.stringify(workflowData)
+                body: JSON.stringify(workflowPayload)
             })
 
             if (!response.ok) {
@@ -238,13 +240,13 @@ export function useWorkflows() {
     })
 
     return {
-        workflows: query?.data?.workflows || [],
-        isLoading: query.isLoading,
-        error: query.error,
+        workflows: getWorkflowQuery?.data?.workflows || [],
+        isLoading: getWorkflowQuery.isLoading,
+        error: getWorkflowQuery.error,
         createWorkflow: createWorkflowMutation.mutate,
         isCreating: createWorkflowMutation.isPending,
-        refetch: query.refetch,
-        refetchLoading: query.isRefetching,
+        refetch: getWorkflowQuery.refetch,
+        refetchLoading: getWorkflowQuery.isRefetching,
         // Search and filter functions
         searchQuery,
         statusFilter,
@@ -255,8 +257,8 @@ export function useWorkflows() {
         applyAllFilters,
         clearAllFilters,
         pagination: {
-            nextCursor: query?.data?.cursor,
-            hasNextPage: !!query?.data?.cursor,
+            nextCursor: getWorkflowQuery?.data?.cursor,
+            hasNextPage: !!getWorkflowQuery?.data?.cursor,
             hasPreviousPage: !!currentCursor,
             goToNextPage,
             goToPreviousPage,

@@ -17,6 +17,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import {
     Card,
     CardContent,
@@ -33,6 +34,15 @@ interface LogViewerProps {
     workflowId: string
     jobId: string
     jobStatus: string
+    completedAt: string
+}
+
+const jsonRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
+
+const sevenDaysAgo = new Date((new Date()).getTime() - 7 * 24 * 60 * 60 * 1000)
+
+function isPurgedLogs(completedAt: string) {
+    return new Date(completedAt) < sevenDaysAgo
 }
 
 // Determine styling based on log stream
@@ -45,11 +55,12 @@ const getLogStreamStyles = (stream: string) => {
     }
 }
 
-export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
+export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogViewerProps) {
     const [searchQuery, setSearchQuery] = useState("")
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
+    const [parseJson, setParseJson] = useState(false)
     const logContainerRef = useRef<HTMLDivElement>(null)
     const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -134,8 +145,28 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
         }
     }, [logs, hasNextPage, isFetchingNextPage, isLogsLoading, fetchNextPage])
 
+    const formatJsonLog = useCallback((message: string) => {
+        if (!parseJson) return message
+
+        try {
+            // Try to parse the entire message as JSON
+            const parsed = JSON.parse(message)
+            return JSON.stringify(parsed, null, 2)
+        } catch {
+            // If that fails, try to find JSON objects within the message
+            return message.replace(jsonRegex, (match) => {
+                try {
+                    const parsed = JSON.parse(match)
+                    return JSON.stringify(parsed, null, 2)
+                } catch {
+                    return match
+                }
+            })
+        }
+    }, [parseJson])
+
     useEffect(() => {
-        // Reset trie if job changed
+        // Reset trie if job changed or parseJson state changed
         if (currentJobRef.current !== jobId) {
             trieRef.current = new Trie()
             processedLogsCountRef.current = 0
@@ -149,21 +180,19 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
             return
         }
 
-        // Only process new logs that haven't been added to the trie yet
-        const newLogsToProcess = logs.slice(processedLogsCountRef.current)
+        // Rebuild trie when parseJson changes to use formatted content for search
+        trieRef.current = new Trie()
 
-        if (newLogsToProcess.length > 0) {
-            newLogsToProcess.forEach((log, relativeIndex) => {
-                if (log.message) {
-                    const absoluteIndex = processedLogsCountRef.current + relativeIndex
-                    trieRef.current.insert(log.message, absoluteIndex)
-                }
-            })
+        logs.forEach((log, index) => {
+            if (log.message) {
+                const searchableMessage = formatJsonLog(log.message)
+                trieRef.current.insert(searchableMessage, index)
+            }
+        })
 
-            // Update the count of processed logs
-            processedLogsCountRef.current = logs.length
-        }
-    }, [logs, jobId])
+        // Update the count of processed logs
+        processedLogsCountRef.current = logs.length
+    }, [logs, jobId, parseJson, formatJsonLog])
 
     // Find all search matches using the Trie
     const searchMatches = useMemo(() => {
@@ -310,15 +339,28 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                     <CardTitle>
                         Logs
                     </CardTitle>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={downloadLogs}
-                        disabled={logs.length === 0}
-                    >
-                        <Download className="h-4 w-4 mr-2" />
-                        Download
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                            <span className={cn("text-sm font-medium", { "text-muted-foreground": !parseJson })}>JSON</span>
+                            <Switch
+                                checked={parseJson}
+                                onCheckedChange={setParseJson}
+                                disabled={
+                                    (jobStatus === "CANCELED" && logs.length === 0) ||
+                                    (logs.length === 0 && !!completedAt) || isPurgedLogs(completedAt)
+                                }
+                            />
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={downloadLogs}
+                            disabled={logs.length === 0}
+                        >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Search Bar */}
@@ -390,6 +432,7 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                     ) : logs.length > 0 ? (
                         <div ref={logContainerRef} className="h-full overflow-auto px-4 pt-4 scroll-smooth">
                             {logs.map((log, index) => {
+                                const formattedMessage = formatJsonLog(log.message)
                                 return (
                                     <div
                                         key={index}
@@ -402,7 +445,7 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                                             {index + 1}
                                         </span>
                                         <span className="flex-1 whitespace-pre-wrap break-all">
-                                            {highlightText(log.message, index)}
+                                            {highlightText(formattedMessage, index)}
                                         </span>
                                     </div>
                                 )
@@ -426,9 +469,11 @@ export function LogsViewer({ workflowId, jobId, jobStatus }: LogViewerProps) {
                                         ? 'Job is waiting to start'
                                         : jobStatus === 'FAILED'
                                             ? 'Job failed to execute, no logs available'
-                                            : jobStatus === 'COMPLETED'
-                                                ? 'Job completed successfully, but no logs were produced'
-                                                : 'This job did not produce any logs'
+                                            : (jobStatus === 'COMPLETED' && logs.length === 0 && isPurgedLogs(completedAt))
+                                                ? 'Logs are older than 7 days and have been purged'
+                                                : jobStatus === 'COMPLETED'
+                                                    ? 'Job completed successfully, but no logs were produced'
+                                                    : 'This job did not produce any logs'
                                 }
                             </div>
                         </div>

@@ -21,20 +21,18 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	workflowsTable = "workflows"
-	jobsTable      = "jobs"
-	delimiter      = '$'
+	delimiter = '$'
 )
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit    int
-	ProducerTopic string
+	FetchLimit int
 }
 
 // Repository provides workflows repository.
@@ -96,21 +94,12 @@ func (r *Repository) CreateWorkflow(
 	var query string
 	var args []any
 
-	if maxConsecutiveJobFailuresAllowed == 0 {
-		query = fmt.Sprintf(`
-			INSERT INTO %s (user_id, name, payload, kind, interval)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at;
-			`, workflowsTable)
-		args = []any{userID, name, payload, kind, interval}
-	} else {
-		query = fmt.Sprintf(`
-			INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			RETURNING id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at;
-			`, workflowsTable)
-		args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed}
-	}
+	query = fmt.Sprintf(`
+		INSERT INTO %s (user_id, name, payload, kind, interval,max_consecutive_job_failures_allowed)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, payload, kind, build_status, interval,consecutive_job_failures_count, max_consecutive_job_failures_allowed,created_at, updated_at, terminated_at;
+	`, postgres.TableWorkflows)
+	args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed}
 
 	rows, err := tx.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -135,7 +124,7 @@ func (r *Repository) CreateWorkflow(
 	})
 
 	record := &kgo.Record{
-		Topic: r.cfg.ProducerTopic,
+		Topic: kafka.TopicWorkflows,
 		Key:   []byte(res.ID),
 		Value: workflowEventBytes,
 	}
@@ -220,21 +209,12 @@ func (r *Repository) UpdateWorkflow(
 	var query string
 	var args []any
 
-	if maxConsecutiveJobFailuresAllowed == 0 {
-		query = fmt.Sprintf(`
-			UPDATE %s
-			SET name = $1, payload = $2, interval = $3, build_status = $4, consecutive_job_failures_count = 0, terminated_at = NULL
-			WHERE id = $5 AND user_id = $6;
-		`, workflowsTable)
-		args = []any{name, payload, interval, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID}
-	} else {
-		query = fmt.Sprintf(`
-			UPDATE %s
-			SET name = $1, payload = $2, interval = $3, max_consecutive_job_failures_allowed = $4, build_status = $5, consecutive_job_failures_count = 0, terminated_at = NULL
-			WHERE id = $6 AND user_id = $7;
-		`, workflowsTable)
-		args = []any{name, payload, interval, maxConsecutiveJobFailuresAllowed, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID}
-	}
+	query = fmt.Sprintf(`
+		UPDATE %s
+		SET name = $1, payload = $2, interval = $3,max_consecutive_job_failures_allowed = $4, build_status = $5,consecutive_job_failures_count = 0, terminated_at = NULL
+		WHERE id = $6 AND user_id = $7;
+	`, postgres.TableWorkflows)
+	args = []any{name, payload, interval, maxConsecutiveJobFailuresAllowed, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID}
 
 	// Execute the query
 	ct, err := tx.Exec(ctx, query, args...)
@@ -268,7 +248,7 @@ func (r *Repository) UpdateWorkflow(
 	})
 
 	record := &kgo.Record{
-		Topic: r.cfg.ProducerTopic,
+		Topic: kafka.TopicWorkflows,
 		Key:   []byte(workflowID),
 		Value: workflowEventBytes,
 	}
@@ -323,7 +303,7 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 		UPDATE %s
 		SET build_status = $1
 		WHERE id = $2 AND user_id = $3;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID)
@@ -368,7 +348,7 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 		FROM %s
 		WHERE id = $1 AND user_id = $2
 		LIMIT 1;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 
 	rows, err := r.pg.Query(ctx, query, workflowID, userID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -412,7 +392,7 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 		FROM %s
 		WHERE id = $1
 		LIMIT 1;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 
 	rows, err := r.pg.Query(ctx, query, workflowID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -457,7 +437,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		SET consecutive_job_failures_count = consecutive_job_failures_count + 1
 		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL
 		RETURNING consecutive_job_failures_count, max_consecutive_job_failures_allowed;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 
 	var consecutiveJobFailuresCount, maxConsecutiveJobFailuresAllowed int32
 	err = r.pg.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
@@ -502,7 +482,7 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		UPDATE %s
 		SET consecutive_job_failures_count = 0
 		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, workflowID, userID)
@@ -565,7 +545,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 		UPDATE %s
 		SET terminated_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 
 	// Execute the query
 	ct, err := tx.Exec(ctx, query, workflowID, userID)
@@ -600,7 +580,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	})
 
 	record := &kgo.Record{
-		Topic: r.cfg.ProducerTopic,
+		Topic: kafka.TopicWorkflows,
 		Key:   []byte(workflowID),
 		Value: workflowEventBytes,
 	}
@@ -677,7 +657,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		FROM %s
 		WHERE id = $1 AND user_id = $2
 		LIMIT 1;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 	var activeWorkflowID string
 	var terminatedAt *time.Time
 	err = tx.QueryRow(ctx, activeWorkflowQuery, workflowID, userID).Scan(&activeWorkflowID, &terminatedAt)
@@ -715,7 +695,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		FROM %s
 		WHERE workflow_id = $1 AND user_id = $2 AND status = $3
 		LIMIT 1;
-	`, jobsTable)
+	`, postgres.TableJobs)
 	var activeJobID string
 	err = tx.QueryRow(ctx, activeJobsQuery, workflowID, userID, jobsmodel.JobStatusRunning.ToString()).Scan(&activeJobID)
 	//nolint:nestif // The ifelse chain is used to handle specific errors
@@ -751,7 +731,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	query := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE id = $1 AND user_id = $2 AND terminated_at IS NOT NULL;
-	`, workflowsTable)
+	`, postgres.TableWorkflows)
 
 	// Execute the query
 	ct, err := tx.Exec(ctx, query, workflowID, userID)
@@ -786,7 +766,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	})
 
 	record := &kgo.Record{
-		Topic: r.cfg.ProducerTopic,
+		Topic: kafka.TopicWorkflows,
 		Key:   []byte(workflowID),
 		Value: workflowEventBytes,
 	}
@@ -844,7 +824,7 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
         SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
         FROM %s
         WHERE user_id = $1
-    `, workflowsTable)
+    `, postgres.TableWorkflows)
 	args := []any{userID}
 	paramIndex := 2 // Start from $2 since $1 is already used for userID
 

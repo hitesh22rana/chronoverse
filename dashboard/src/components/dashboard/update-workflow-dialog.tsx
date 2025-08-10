@@ -33,7 +33,6 @@ import { Button } from "@/components/ui/button"
 import {
     Card,
     CardContent,
-    CardDescription,
     CardHeader,
     CardTitle
 } from "@/components/ui/card"
@@ -53,18 +52,36 @@ const baseUpdateWorkflowSchema = z.object({
         .refine(val => val === undefined || (val >= 1 && val <= 10080), {
             message: "Must be between 1 and 10080 minutes (1 week)"
         }),
-    maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(0).max(100)
+    maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(3).max(100).default(3).refine(val => val >= 3, {
+        message: "Maximum consecutive job failures allowed must be at least 3"
+    })
 })
 
 // Heartbeat payload schema
 const heartbeatPayloadSchema = z.object({
-    endpoint: z.string().trim().url("Please enter a valid URL"),
+    endpoint: z.url().trim().refine(val => val !== "", {
+        message: "Please enter a valid URL"
+    }),
+    expectedStatusCode: z.coerce.number().int().min(100).max(599).refine(val => val >= 100 && val <= 599, {
+        message: "Expected status code must be between 100 and 599"
+    }),
     headers: z.array(
         z.object({
             key: z.string().trim().min(1, "Header key is required"),
             value: z.string().trim()
         })
-    ).default([])
+    ).default([]),
+    timeout: z.string().default("")
+        .refine(val => {
+            if (!val) return true
+            try {
+                const parsed = parseDuration(val as unknown as Duration, 's')
+                return parsed > 0 && parsed <= 300
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch (e) {
+                return false
+            }
+        }, "Timeout must be a valid duration (e.g., '30s', '1m') max up to 5 minutes")
 })
 
 // Container payload schema
@@ -88,24 +105,13 @@ const containerPayloadSchema = z.object({
             } catch (e) {
                 return false
             }
-        }, "Timeout must be a valid duration (e.g., '30s', '5m') up to 1 hour")
+        }, "Timeout must be a valid duration (e.g., '30s', '5m') max up to 1 hour")
 })
 
 interface UpdateWorkflowDialogProps {
     workflowId: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
-}
-
-const kindType = {
-    'HEARTBEAT': {
-        title: "Heartbeat workflow",
-        description: "HEARTBEAT workflows are used to monitor the availability of external services.",
-    },
-    'CONTAINER': {
-        title: "Container workflow",
-        description: "Container workflows are used to run custom code in a containerized environment.",
-    }
 }
 
 export function UpdateWorkflowDialog({
@@ -162,7 +168,9 @@ export function UpdateWorkflowDialog({
 
             form.setValue("heartbeatPayload", {
                 endpoint: parsedPayload.endpoint || "",
-                headers
+                expectedStatusCode: parsedPayload.expected_status_code || 200,
+                headers,
+                timeout: parsedPayload.timeout || ""
             });
         }
         else if (workflow.kind === "CONTAINER") {
@@ -175,8 +183,8 @@ export function UpdateWorkflowDialog({
 
             form.setValue("containerPayload", {
                 image: parsedPayload.image || "",
-                cmd: parsedPayload.cmd || [""],
-                env: envArray.length > 0 ? envArray : [""],
+                cmd: parsedPayload.cmd,
+                env: envArray,
                 timeout: parsedPayload.timeout || ""
             });
         }
@@ -202,7 +210,7 @@ export function UpdateWorkflowDialog({
         let payload = "{}";
 
         if (workflow.kind === "HEARTBEAT") {
-            const { endpoint, headers = [] } = data.heartbeatPayload;
+            const { endpoint, expectedStatusCode, headers = [], timeout } = data.heartbeatPayload;
             const headersObject = headers.reduce((acc, header) => {
                 if (header.key) {
                     acc[header.key] = header.value;
@@ -212,7 +220,9 @@ export function UpdateWorkflowDialog({
 
             payload = JSON.stringify({
                 endpoint,
-                headers: headersObject
+                expected_status_code: expectedStatusCode || 200,
+                headers: headersObject,
+                ...(timeout ? { timeout } : {})
             });
         } else if (workflow.kind === "CONTAINER") {
             const { image, cmd, env, timeout } = data.containerPayload;
@@ -290,10 +300,7 @@ export function UpdateWorkflowDialog({
 
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>{workflow.kind} Configuration</CardTitle>
-                                    <CardDescription>
-                                        {kindType[workflow.kind]?.description || "Configure your workflow settings."}
-                                    </CardDescription>
+                                    <CardTitle>Configuration</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     {workflow.kind === "HEARTBEAT" && (
@@ -312,6 +319,32 @@ export function UpdateWorkflowDialog({
                                                         </FormControl>
                                                         <FormDescription>
                                                             The URL to send the heartbeat request to
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name="heartbeatPayload.expectedStatusCode"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Expected Status Code</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                type="number"
+                                                                min={100}
+                                                                max={599}
+                                                                {...field}
+                                                                value={field.value === undefined ? "" : field.value}
+                                                                onChange={(e) => {
+                                                                    field.onChange(e.target.value === "" ? "" : Number(e.target.value));
+                                                                }}
+                                                            />
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            The expected HTTP status code from the endpoint
                                                         </FormDescription>
                                                         <FormMessage />
                                                     </FormItem>
@@ -387,6 +420,26 @@ export function UpdateWorkflowDialog({
                                                     </div>
                                                 ))}
                                             </div>
+
+                                            <FormField
+                                                control={form.control}
+                                                name="heartbeatPayload.timeout"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Timeout (optional)</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                placeholder="30s"
+                                                                {...field}
+                                                            />
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            Request timeout (e.g., &apos;30s&apos;, &apos;1m&apos;), max up to 5 minutes
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
                                         </Fragment>
                                     )}
 
@@ -537,7 +590,7 @@ export function UpdateWorkflowDialog({
                                                             />
                                                         </FormControl>
                                                         <FormDescription>
-                                                            Maximum execution time (e.g., &quot;30s&quot;, &quot;5m&quot;), up to 1 hour
+                                                            Maximum execution time (e.g., &quot;30s&quot;, &quot;5m&quot;), max up to 1 hour.
                                                         </FormDescription>
                                                         <FormMessage />
                                                     </FormItem>
@@ -582,7 +635,7 @@ export function UpdateWorkflowDialog({
                                         <FormControl>
                                             <Input
                                                 type="number"
-                                                min={0}
+                                                min={3}
                                                 {...field}
                                                 value={field.value === undefined ? "" : field.value}
                                                 onChange={(e) => {
@@ -591,7 +644,7 @@ export function UpdateWorkflowDialog({
                                             />
                                         </FormControl>
                                         <FormDescription>
-                                            Maximum number of consecutive failures before the workflow is disabled
+                                            Maximum number of consecutive failures before the workflow is auto-disabled (default: 3).
                                         </FormDescription>
                                         <FormMessage />
                                     </FormItem>

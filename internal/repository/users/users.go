@@ -20,10 +20,6 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
-const (
-	userTable = "users"
-)
-
 // Repository provides users repository.
 type Repository struct {
 	tp   trace.Tracer
@@ -65,7 +61,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 		INSERT INTO %s (email, password) 
 		VALUES ($1, $2)
 		RETURNING id, email, notification_preference, created_at, updated_at;
-	`, userTable)
+	`, postgres.TableUsers)
 	args := []any{email, string(hashedPassword)}
 
 	rows, err := r.pg.Query(ctx, query, args...)
@@ -120,7 +116,7 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 		SELECT id, email, password, notification_preference, created_at, updated_at
 		FROM %s WHERE email = $1
 		LIMIT 1;
-	`, userTable)
+	`, postgres.TableUsers)
 	args := []any{email}
 
 	rows, err := r.pg.Query(ctx, query, args...)
@@ -184,7 +180,7 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 		SELECT id, email, notification_preference, created_at, updated_at
 		FROM %s WHERE id = $1
 		LIMIT 1;
-	`, userTable)
+	`, postgres.TableUsers)
 	args := []any{id}
 
 	rows, err := r.pg.Query(ctx, query, args...)
@@ -235,7 +231,7 @@ func (r *Repository) UpdateUser(ctx context.Context, id, password, notificationP
 		UPDATE %s
 		SET password = $1, notification_preference = $2
 		WHERE id = $3;
-	`, userTable)
+	`, postgres.TableUsers)
 	args := []any{string(hashedPassword), notificationPreference, id}
 
 	// Execute the query

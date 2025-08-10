@@ -22,6 +22,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	workflowrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflow"
 	workflowsvc "github.com/hitesh22rana/chronoverse/internal/service/workflow"
@@ -65,6 +66,26 @@ func run() int {
 		return ExitError
 	}
 
+	// Initialize the redis store
+	rdb, err := redis.New(ctx, &redis.Config{
+		Host:                     cfg.Redis.Host,
+		Port:                     cfg.Redis.Port,
+		Password:                 cfg.Redis.Password,
+		DB:                       cfg.Redis.DB,
+		PoolSize:                 cfg.Redis.PoolSize,
+		MinIdleConns:             cfg.Redis.MinIdleConns,
+		ReadTimeout:              cfg.Redis.ReadTimeout,
+		WriteTimeout:             cfg.Redis.WriteTimeout,
+		MaxMemory:                cfg.Redis.MaxMemory,
+		EvictionPolicy:           cfg.Redis.EvictionPolicy,
+		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer rdb.Close()
+
 	// Initialize the ClickHouse database
 	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
 		Hosts:           cfg.ClickHouse.Hosts,
@@ -86,7 +107,7 @@ func run() int {
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
-		kafka.WithConsumeTopics(cfg.Kafka.ConsumeTopics...),
+		kafka.WithConsumeTopics(kafka.TopicWorkflows),
 		kafka.WithDisableAutoCommit(),
 	)
 	if err != nil {
@@ -113,7 +134,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -131,7 +155,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -149,7 +176,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -158,13 +188,13 @@ func run() int {
 
 	// Initialize the workflow job components
 	repo := workflowrepo.New(&workflowrepo.Config{
-		ParallelismLimit: cfg.WorkflowWorkerConfig.ParallelismLimit,
-	}, auth, &workflowrepo.Services{
+		ParallelismLimit: runtime.GOMAXPROCS(0),
+	}, auth, rdb, cdb, kfk, &workflowrepo.Services{
 		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
 		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
 		Csvc:          csvc,
-	}, cdb, kfk)
+	})
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)
 

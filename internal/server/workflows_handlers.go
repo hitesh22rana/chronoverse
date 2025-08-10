@@ -14,7 +14,7 @@ type createWorkflowRequest struct {
 	Payload                          string `json:"payload"`
 	Kind                             string `json:"kind"`
 	Interval                         int32  `json:"interval"`
-	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed,omitempty"`
+	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed"`
 }
 
 // handleCreateWorkflow handles the create workflow request.
@@ -62,7 +62,7 @@ type updateWorkflowRequest struct {
 	Name                             string `json:"name"`
 	Payload                          string `json:"payload"`
 	Interval                         int32  `json:"interval"`
-	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed,omitempty"`
+	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed"`
 }
 
 // handleUpdateWorkflow handles the update workflow request.
@@ -111,6 +111,8 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetWorkflow handles the get workflow by ID and user ID request.
+//
+//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Get the workflow ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")

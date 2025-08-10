@@ -12,7 +12,6 @@ import {
     AlertTriangle,
     CheckCircle,
     XCircle,
-    CircleDashed,
     Shield,
     Filter,
     ChevronLeft,
@@ -21,7 +20,8 @@ import {
     Workflow,
     Edit,
     Trash2,
-    HeartPulse
+    HeartPulse,
+    Activity,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -56,7 +56,8 @@ import { DeleteWorkflowDialog } from "@/components/dashboard/delete-workflow-dia
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { useWorkflowJobs, Job } from "@/hooks/use-workflow-jobs"
 
-import { cn } from "@/lib/utils"
+import { cn, formatSeconds } from "@/lib/utils"
+import { getStatusMeta, getStatusLabel } from "@/lib/status"
 
 export default function WorkflowDetailsPage() {
     const { workflowId } = useParams() as { workflowId: string }
@@ -71,7 +72,9 @@ export default function WorkflowDetailsPage() {
         workflow,
         isLoading: isWorkflowLoading,
         error: workflowError,
-        refetch: refetchWorkflow
+        refetch: refetchWorkflow,
+        workflowAnalytics,
+        isAnalyticsLoading,
     } = useWorkflowDetails(workflowId as string)
 
     const {
@@ -90,8 +93,8 @@ export default function WorkflowDetailsPage() {
     // Determine status
     const status = workflow?.terminated_at ? "TERMINATED" : workflow?.build_status
 
-    // Get status configuration
-    const statusConfig = getStatusConfig(status)
+    // Get status meta (unified)
+    const statusMeta = getStatusMeta(status)
 
     // Format interval for display
     const interval = workflow?.interval
@@ -147,11 +150,11 @@ export default function WorkflowDetailsPage() {
                             variant="outline"
                             className={cn(
                                 "px-2 py-0 h-5 font-medium flex items-center gap-1 border-none",
-                                statusConfig.colorClass
+                                statusMeta.badgeClass
                             )}
                         >
-                            <statusConfig.icon className={cn("h-3 w-3", statusConfig.iconClass)} />
-                            <span className="text-xs">{statusConfig.label}</span>
+                            <statusMeta.icon className={cn("h-3 w-3", statusMeta.iconClass)} />
+                            <span className="text-xs">{getStatusLabel(status, "workflow")}</span>
                         </Badge>
                         {workflow?.kind ? (
                             <Badge variant="secondary" className="px-2 py-0 h-5 text-xs font-normal">
@@ -191,7 +194,7 @@ export default function WorkflowDetailsPage() {
                         value="jobs"
                         className="cursor-pointer flex items-center justify-center gap-2 p-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all"
                     >
-                        <Workflow className="h-4 w-4" />
+                        <Activity className="h-4 w-4" />
                         <span>Jobs</span>
                     </TabsTrigger>
                 </TabsList>
@@ -264,14 +267,11 @@ export default function WorkflowDetailsPage() {
                                 }
                             </div>
                             <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">Workflow Configuration</CardTitle>
-                                </CardHeader>
                                 <CardContent className="space-y-4">
                                     {/* Basic Info */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Workflow kind</div>
+                                            <span className="text-sm font-medium">Workflow kind</span>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                 {
                                                     workflow?.kind === "HEARTBEAT" ?
@@ -283,20 +283,21 @@ export default function WorkflowDetailsPage() {
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Execution schedule</div>
+                                            <span className="text-sm font-medium">Execution schedule</span>
                                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                                 <Clock className="h-4 w-4" />
                                                 {interval}
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <div className="text-sm font-medium">Status</div>
-                                            <div className="text-sm flex items-center gap-2">
-                                                <span className={cn("flex items-center gap-1", statusConfig.colorClass)}>
-                                                    <statusConfig.icon className={cn("h-4 w-4", statusConfig.iconClass)} />
-                                                    {statusConfig.label}
-                                                </span>
-                                            </div>
+                                            <span className="text-sm font-medium">Status</span>
+                                            <Badge
+                                                className={cn("text-sm flex items-center h-5",
+                                                    statusMeta.badgeClass
+                                                )}>
+                                                <statusMeta.icon className={statusMeta.iconClass} />
+                                                {getStatusLabel(status, "workflow")}
+                                            </Badge>
                                         </div>
                                         <div className="space-y-2">
                                             <span className="text-sm font-medium">Max consecutive failures allowed</span>
@@ -309,15 +310,95 @@ export default function WorkflowDetailsPage() {
 
                                     <Separator />
 
-                                    {/* Payload */}
+                                    {/* Configuration */}
                                     <div className="space-y-2">
-                                        <div className="text-sm font-medium">Payload</div>
+                                        <span className="text-sm font-medium">Configuration</span>
                                         <div className="text-sm text-muted-foreground">
                                             <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
-                                                {workflow?.payload ? JSON.stringify(JSON.parse(workflow.payload), null, 2) : "No payload available"}
+                                                {workflow?.payload ? JSON.stringify(JSON.parse(workflow.payload), null, 2) : "No configuration available"}
                                             </pre>
                                         </div>
                                     </div>
+
+                                    <Separator />
+
+                                    {/* Workflow Analytics */}
+                                    {!!workflowAnalytics && !isAnalyticsLoading ? (
+                                        <div className="space-y-2">
+                                            <span className="text-sm font-medium">Workflow Analytics</span>
+                                            <div className="h-full w-full grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                                {/* Total Jobs Card */}
+                                                <Card className="relative overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20" />
+                                                    <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                        <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                            Total Jobs Executed
+                                                        </CardTitle>
+                                                        <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                                            <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                                        </div>
+                                                    </CardHeader>
+                                                    <CardContent className="relative">
+                                                        <div className="text-3xl font-bold text-blue-700 dark:text-blue-300">
+                                                            {workflowAnalytics?.total_jobs ? workflowAnalytics.total_jobs.toLocaleString() : "0"}
+                                                        </div>
+                                                        <p className="text-xs text-muted-foreground mt-1">
+                                                            Jobs processed by this workflow
+                                                        </p>
+                                                    </CardContent>
+                                                </Card>
+
+                                                {/* Total Logs Card */}
+                                                <Card className="relative overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20" />
+                                                    <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                        <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                            Log Entries Generated
+                                                        </CardTitle>
+                                                        <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                                            <ScrollText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                                        </div>
+                                                    </CardHeader>
+                                                    <CardContent className="relative">
+                                                        <div className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">
+                                                            {workflowAnalytics?.total_joblogs ? workflowAnalytics.total_joblogs.toLocaleString() : "0"}
+                                                        </div>
+                                                        <p className="text-xs text-muted-foreground mt-1">
+                                                            Log entries across all jobs
+                                                        </p>
+                                                    </CardContent>
+                                                </Card>
+
+                                                {/* Total Execution Time Card */}
+                                                <Card className="relative overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20" />
+                                                    <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                        <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                            Total Execution Time
+                                                        </CardTitle>
+                                                        <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                                            <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                                        </div>
+                                                    </CardHeader>
+                                                    <CardContent className="relative">
+                                                        <div className="text-3xl font-bold text-amber-700 dark:text-amber-500">
+                                                            {workflowAnalytics.total_job_execution_duration
+                                                                ? `${formatSeconds(workflowAnalytics.total_job_execution_duration)}`
+                                                                : "0 seconds"}
+                                                        </div>
+                                                        <p className="text-xs text-muted-foreground mt-1">
+                                                            Total per job execution
+                                                        </p>
+                                                    </CardContent>
+                                                </Card>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <EmptyState
+                                            title="No analytics available"
+                                            description="This workflow has no analytics data yet."
+                                        />
+                                    )}
 
                                     <Separator />
 
@@ -343,11 +424,12 @@ export default function WorkflowDetailsPage() {
                                     </div>
                                 </CardContent>
                                 <CardFooter className="text-xs text-muted-foreground border-t">
-                                    Last updated {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
+                                    <span className="ml-auto">
+                                        Last updated {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
+                                    </span>
                                 </CardFooter>
                             </Card>
                         </Fragment>
-
                     )}
                 </TabsContent>
 
@@ -413,7 +495,7 @@ export default function WorkflowDetailsPage() {
                     </div>
 
                     {isJobsLoading ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                             {Array(10).fill(0).map((_, i) => (
                                 <JobCardSkeleton key={i} />
                             ))}
@@ -425,13 +507,19 @@ export default function WorkflowDetailsPage() {
                         />
                     ) : jobs.length === 0 ? (
                         <EmptyState
-                            title={`No ${urlStatusFilter.toLowerCase()} jobs found for this workflow.`}
-                            description={urlStatusFilter !== "ALL"
-                                ? 'Try adjusting your search or filters'
-                                : 'This workflow hasn\'t run any jobs yet.'}
+                            title={
+                                urlStatusFilter === "ALL"
+                                    ? "No jobs found for this workflow"
+                                    : `No ${urlStatusFilter.toLowerCase()} jobs found for this workflow`
+                            }
+                            description={
+                                urlStatusFilter !== "ALL"
+                                    ? "Try adjusting your search or filters."
+                                    : "This workflow hasn't run any jobs yet."
+                            }
                         />
                     ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                             {/* <JobCardSkeleton /> */}
                             {jobs.map((job) => (
                                 <JobCard key={job.id} job={job} />
@@ -440,7 +528,7 @@ export default function WorkflowDetailsPage() {
                     )}
                 </TabsContent>
             </Tabs>
-        </div >
+        </div>
     )
 }
 
@@ -451,108 +539,96 @@ function WorkflowDetailsSkeleton() {
                 <Skeleton className="h-9 max-w-[140px] w-full" />
                 <Skeleton className="h-9 max-w-[180px] w-full" />
             </div>
-            <Card className="overflow-hidden space-y-4">
-                <CardHeader>
-                    <Skeleton className="h-6 w-40" />
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-5 md:-mt-2 -mt-3">
-                    <div className="md:space-y-2 space-y-3">
-                        <Skeleton className="h-4 w-24" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-20" />
-                        </div>
-                    </div>
-                    <div className="md:space-y-2 space-y-3">
-                        <Skeleton className="h-4 w-28" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
+            <Card>
+                <CardContent className="space-y-2">
+                    {/* Basic Info Skeleton */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 md:gap-4 gap-5 pb-2 pt-1">
+                        <div className="space-y-2">
                             <Skeleton className="h-4 w-24" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-3.5 w-20" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-28" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-3.5 w-24" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-14" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-24 rounded-full" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-40" />
+                            <div className="flex flex-row items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-3.5 w-6" />
+                            </div>
                         </div>
                     </div>
-                    <div className="md:space-y-2 space-y-3">
-                        <Skeleton className="h-4 w-14" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-12" />
+
+                    <Separator />
+
+                    {/* Configuration Skeleton */}
+                    <div className="space-y-1 pt-4 pb-2">
+                        <Skeleton className="h-3.5 w-24" />
+                        <Skeleton className="h-[166px] w-full" />
+                    </div>
+
+                    <Separator />
+
+                    {/* Analytics Cards Skeleton */}
+                    <div className="space-y-1 py-2">
+                        <span className="text-sm font-medium">Workflow Analytics</span>
+                        <div className="h-full w-full grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            {/* Analytics Card Skeletons */}
+                            {[...Array(3)].map((_, i) => (
+                                <Card key={i} className="relative overflow-hidden">
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <Skeleton className="h-4 w-32" />
+                                        <div className="h-8 w-8 rounded-full bg-muted">
+                                            <Skeleton className="h-4 w-4 m-2" />
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <Skeleton className="h-8 w-16 mb-2" />
+                                        <Skeleton className="h-4 w-36" />
+                                    </CardContent>
+                                </Card>
+                            ))}
                         </div>
                     </div>
-                    <div className="space-y-2">
-                        <Skeleton className="h-4 w-40" />
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-8" />
+
+                    <Separator />
+
+                    {/* Failure Tracking Skeleton */}
+                    <div className="space-y-1 pt-2 pb-1">
+                        <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                                <Skeleton className="h-4 w-24" />
+                            </div>
+                            <Skeleton className="h-4 w-16" />
                         </div>
+                        <Skeleton className="h-1.5 w-full" />
                     </div>
                 </CardContent>
-                <Separator className="mx-6 -mt-6 mb-0" />
-                <div className="flex flex-col gap-2 px-6 -mt-1">
-                    <Skeleton className="h-4 w-16" />
-                    <Skeleton className="h-36 w-full" />
-                </div>
-                <Separator className="mx-6 -mt-6 mb-0" />
-                <div className="flex flex-col w-full gap-2">
-                    <div className="flex flex-row items-center justify-between w-full px-6">
-                        <div className="flex flex-row items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-4 w-24" />
-                        </div>
-                        <Skeleton className="h-4 w-16" />
-                    </div>
-                    <Skeleton className="h-1.5 w-full mx-6" />
-                </div>
-                <Separator />
-                <Skeleton className="h-4 w-36 mx-6 -mt-4" />
+                <CardFooter className="text-xs text-muted-foreground border-t">
+                    <Skeleton className="h-4 w-52 ml-auto" />
+                </CardFooter>
             </Card>
         </Fragment>
     )
 }
 
-// Function to get job status information
-const getJobStatusInfo = (status: string) => {
-    return {
-        PENDING: {
-            icon: CircleDashed,
-            colorClass: "text-gray-600 bg-gray-50 dark:bg-gray-950/30",
-            label: "Pending"
-        },
-        QUEUED: {
-            icon: Clock,
-            colorClass: "text-amber-600 bg-amber-50 dark:bg-amber-950/30",
-            label: "Queued"
-        },
-        RUNNING: {
-            icon: RefreshCw,
-            colorClass: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
-            iconClass: "animate-spin",
-            label: "Running"
-        },
-        COMPLETED: {
-            icon: CheckCircle,
-            colorClass: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30",
-            label: "Completed"
-        },
-        FAILED: {
-            icon: AlertTriangle,
-            colorClass: "text-red-600 bg-red-50 dark:bg-red-950/30",
-            label: "Failed"
-        },
-        CANCELED: {
-            icon: XCircle,
-            colorClass: "text-orange-600 bg-orange-50 dark:bg-orange-950/30",
-            label: "Canceled"
-        },
-    }[status] || {
-        icon: CircleDashed,
-        colorClass: "text-gray-600 bg-gray-50 dark:bg-gray-950/30",
-        label: status
-    }
-}
-
-// Job Card Component remains unchanged
 function JobCard({ job }: { job: Job }) {
-    const statusInfo = getJobStatusInfo(job.status)
-    const StatusIcon = statusInfo.icon
+    const statusMeta = getStatusMeta(job.status)
+    const StatusIcon = statusMeta.icon
 
     return (
         <Link
@@ -561,30 +637,28 @@ function JobCard({ job }: { job: Job }) {
             className="block h-full"
         >
             <Card className="overflow-hidden">
-                <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <div className="flex md:flex-row flex-col justify-start items-start gap-2">
-                            <Badge
-                                variant="outline"
-                                className={cn(
-                                    "px-2 py-0 h-5 font-medium flex items-center gap-1 border-none",
-                                    statusInfo.colorClass
-                                )}
-                            >
-                                <StatusIcon className={cn("h-3 w-3", statusInfo.iconClass)} />
-                                <span className="text-xs">{statusInfo.label}</span>
-                            </Badge>
-                            <span className="text-sm font-medium xl:max-w-full md:max-w-[200px] max-w-[140px] w-full truncate">Job: {job.id}</span>
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                            {job.created_at && formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
-                        </span>
+                <CardHeader className="flex md:items-center items-start justify-between">
+                    <div className="flex md:flex-row flex-col justify-start md:items-center items-start gap-2">
+                        <Badge
+                            variant="outline"
+                            className={cn(
+                                "px-2 py-1 font-medium flex items-center gap-1",
+                                statusMeta.badgeClass
+                            )}
+                        >
+                            <StatusIcon className={cn("h-3 w-3", statusMeta.iconClass)} />
+                            <span className="text-xs">{getStatusLabel(job.status, "job")}</span>
+                        </Badge>
+                        <span className="text-sm font-medium md:max-w-full max-w-44 w-full truncate">Job: {job.id}</span>
                     </div>
+                    <span className="text-xs text-muted-foreground">
+                        {job.created_at && formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
+                    </span>
                 </CardHeader>
-                <CardContent className="pt-4 space-y-3">
+                <CardContent className="md:pt-4 pt-0 space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-1">
-                            <div className="text-xs text-muted-foreground">Scheduled</div>
+                            <span className="text-xs text-muted-foreground">Scheduled</span>
                             <div className="text-sm flex items-center gap-1.5">
                                 <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                                 {
@@ -596,7 +670,7 @@ function JobCard({ job }: { job: Job }) {
                         </div>
 
                         <div className="space-y-1">
-                            <div className="text-xs text-muted-foreground">Started</div>
+                            <span className="text-xs text-muted-foreground">Started</span>
                             <div className="text-sm flex items-center gap-1.5">
                                 <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                                 {
@@ -608,7 +682,7 @@ function JobCard({ job }: { job: Job }) {
                         </div>
 
                         <div className="space-y-1">
-                            <div className="text-xs text-muted-foreground">Completed</div>
+                            <span className="text-xs text-muted-foreground">Completed</span>
                             <div className="text-sm flex items-center gap-1.5">
                                 <CheckCircle className={cn(
                                     "h-3.5 w-3.5",
@@ -631,83 +705,26 @@ function JobCard({ job }: { job: Job }) {
 function JobCardSkeleton() {
     return (
         <Card className="overflow-hidden">
-            <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Skeleton className="h-5 w-20" />
-                        <Skeleton className="h-5 w-80" />
-                    </div>
-                    <Skeleton className="h-4 w-16" />
+            <CardHeader className="flex md:items-center items-start justify-between md:pb-3.5 pb-2.5">
+                <div className="flex md:flex-row flex-col justify-start md:items-center items-start gap-2">
+                    <Skeleton className="h-6 w-24" />
+                    <Skeleton className="h-5 md:w-80 w-44" />
                 </div>
+                <Skeleton className="h-4 w-28" />
             </CardHeader>
-            <CardContent className="md:pt-1 pt-8 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <CardContent className="md:pt-4 pt-0 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 md:gap-4 gap-6">
                     {[...Array(3)].map((_, i) => (
-                        <Fragment key={i}>
+                        <div key={i} className="md:space-y-1 space-y-2">
                             <Skeleton className="h-3 w-16" />
                             <div className="flex items-center gap-1.5">
-                                <Skeleton className="h-3 w-3" />
-                                <Skeleton className="h-3 w-28" />
+                                <Skeleton className="h-3.5 w-3.5" />
+                                <Skeleton className="h-4 w-28" />
                             </div>
-                        </Fragment>
+                        </div>
                     ))}
                 </div>
             </CardContent>
         </Card>
     )
-}
-
-// Status configuration function remains unchanged
-function getStatusConfig(status: string) {
-    return {
-        QUEUED: {
-            label: "Scheduled",
-            icon: Clock,
-            colorClass: "text-blue-500 bg-blue-50 dark:bg-blue-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)] dark:shadow-[0_0_20px_rgba(59,130,246,0.25)] border-blue-200/50 dark:border-blue-800/30",
-            dotColor: "#3b82f6"
-        },
-        STARTED: {
-            label: "Building",
-            icon: RefreshCw,
-            colorClass: "text-amber-500 bg-amber-50 dark:bg-amber-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(245,158,11,0.15)] dark:shadow-[0_0_20px_rgba(245,158,11,0.25)] border-amber-200/50 dark:border-amber-800/30",
-            iconClass: "animate-spin",
-            dotColor: "#f59e0b"
-        },
-        COMPLETED: {
-            label: "Active",
-            icon: CheckCircle,
-            colorClass: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-200/50 dark:border-emerald-800/30",
-            dotColor: "#10b981"
-        },
-        FAILED: {
-            label: "Failed",
-            icon: AlertTriangle,
-            colorClass: "text-red-500 bg-red-50 dark:bg-red-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(239,68,68,0.15)] dark:shadow-[0_0_20px_rgba(239,68,68,0.25)] border-red-200/50 dark:border-red-800/30",
-            dotColor: "#ef4444"
-        },
-        CANCELED: {
-            label: "Canceled",
-            icon: XCircle,
-            colorClass: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(107,114,128,0.1)] dark:shadow-[0_0_15px_rgba(107,114,128,0.15)] border-gray-200/50 dark:border-gray-700/30",
-            dotColor: "#6b7280"
-        },
-        TERMINATED: {
-            label: "Terminated",
-            icon: XCircle,
-            colorClass: "text-red-500 bg-red-50 dark:bg-red-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(239,68,68,0.15)] dark:shadow-[0_0_20px_rgba(239,68,68,0.25)] border-red-200/50 dark:border-red-800/30",
-            dotColor: "#ef4444"
-        }
-    }[status] || {
-        label: status || "Unknown",
-        icon: CircleDashed,
-        colorClass: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
-        glowClass: "shadow-none",
-        dotColor: "#6b7280"
-    }
 }

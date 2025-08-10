@@ -24,7 +24,6 @@ const (
 // Config represents the configuration for a Kafka client.
 type Config struct {
 	Brokers             []string
-	ProducerTopic       string
 	ConsumeTopics       []string
 	ConsumerGroup       string
 	TransactionalID     string
@@ -53,10 +52,6 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(c.Brokers...),
 		kgo.AllowAutoTopicCreation(),
-	}
-
-	if c.ProducerTopic != "" {
-		opts = append(opts, kgo.DefaultProduceTopic(c.ProducerTopic))
 	}
 
 	if len(c.ConsumeTopics) != 0 {
@@ -94,13 +89,6 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 func WithBrokers(brokers ...string) Option {
 	return func(c *Config) {
 		c.Brokers = brokers
-	}
-}
-
-// WithProducerTopic sets the Kafka producer topic.
-func WithProducerTopic(topic string) Option {
-	return func(c *Config) {
-		c.ProducerTopic = topic
 	}
 }
 

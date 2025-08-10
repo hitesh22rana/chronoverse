@@ -78,13 +78,13 @@ func serverCodeToLevel(code codes.Code) logging.Level {
 		codes.PermissionDenied,
 		codes.Unauthenticated,
 		codes.FailedPrecondition,
-		codes.OutOfRange,
-		codes.Canceled:
+		codes.OutOfRange:
 		return logging.LevelWarn
 
 	// Server errors - Error level
 	case codes.Unknown,
 		codes.DeadlineExceeded,
+		codes.Canceled,
 		codes.ResourceExhausted,
 		codes.Aborted,
 		codes.Unimplemented,

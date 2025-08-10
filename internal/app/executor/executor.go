@@ -35,7 +35,7 @@ func (e *Executor) Run(ctx context.Context) error {
 	if err != nil {
 		e.logger.Error("error occurred while running the executor job", zap.Error(err))
 	} else {
-		e.logger.Info("successfully exicted the executor job")
+		e.logger.Info("successfully exited the executor job")
 	}
 
 	return nil

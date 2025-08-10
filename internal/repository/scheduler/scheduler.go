@@ -15,19 +15,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
-const (
-	jobsTable = "jobs"
-)
-
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit    int
-	BatchSize     int
-	ProducerTopic string
+	FetchLimit int
+	BatchSize  int
 }
 
 // Repository provides scheduler repository.
@@ -80,7 +76,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			LIMIT %d
 		)
 		RETURNING id, workflow_id, scheduled_at;
-	`, jobsTable, jobsTable, r.cfg.FetchLimit)
+	`, postgres.TableJobs, postgres.TableJobs, r.cfg.FetchLimit)
 
 	// Execute query
 	rows, err := tx.Query(ctx, query)
@@ -112,7 +108,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		}
 
 		record := &kgo.Record{
-			Topic: r.cfg.ProducerTopic,
+			Topic: kafka.TopicJobs,
 			Key:   []byte(id),
 			Value: scheduledJobEntryBytes,
 		}

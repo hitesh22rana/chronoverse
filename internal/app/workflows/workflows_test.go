@@ -53,7 +53,7 @@ func initClient(server *grpc.Server) (client workflowspb.WorkflowsServiceClient,
 		}
 	}()
 
-	//nolint:staticcheck // This is required for testing.
+	//nolint:staticcheck // SA1019: This is required for testing.
 	conn, err := grpc.DialContext(
 		ctx,
 		"bufnet",

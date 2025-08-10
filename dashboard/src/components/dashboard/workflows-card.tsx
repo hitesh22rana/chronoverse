@@ -2,16 +2,11 @@
 
 import Link from "next/link"
 import { formatDistanceToNow } from "date-fns"
-import {
-    Clock,
-    CheckCircle,
-    AlertTriangle,
-    Loader2,
-    XCircle
-} from "lucide-react"
+import { Clock, AlertTriangle } from "lucide-react"
 
 import { Workflow } from "@/hooks/use-workflows"
 import { cn } from "@/lib/utils"
+import { getStatusMeta, getStatusLabel } from "@/lib/status"
 
 import {
     Card,
@@ -26,70 +21,15 @@ interface WorkflowCardProps {
     workflow: Workflow
 }
 
-// Status configuration with enhanced glow effects
-const getStatusConfig = (status: string) => {
-    return {
-        QUEUED: {
-            label: "Queued",
-            icon: Clock,
-            colorClass: "text-blue-500 bg-blue-50 dark:bg-blue-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)] dark:shadow-[0_0_20px_rgba(59,130,246,0.25)] border-blue-200/50 dark:border-blue-800/30",
-            dotColor: "#3b82f6"
-        },
-        STARTED: {
-            label: "Building",
-            icon: Loader2,
-            colorClass: "text-amber-500 bg-amber-50 dark:bg-amber-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(245,158,11,0.15)] dark:shadow-[0_0_20px_rgba(245,158,11,0.25)] border-amber-200/50 dark:border-amber-800/30",
-            iconClass: "animate-spin",
-            dotColor: "#f59e0b"
-        },
-        COMPLETED: {
-            label: "Active",
-            icon: CheckCircle,
-            colorClass: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)] border-emerald-200/50 dark:border-emerald-800/30",
-            dotColor: "#10b981"
-        },
-        FAILED: {
-            label: "Failed",
-            icon: AlertTriangle,
-            colorClass: "text-red-500 bg-red-50 dark:bg-red-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(239,68,68,0.15)] dark:shadow-[0_0_20px_rgba(239,68,68,0.25)] border-red-200/50 dark:border-red-800/30",
-            dotColor: "#ef4444"
-        },
-        CANCELED: {
-            label: "Canceled",
-            icon: XCircle,
-            colorClass: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(107,114,128,0.1)] dark:shadow-[0_0_15px_rgba(107,114,128,0.15)] border-gray-200/50 dark:border-gray-700/30",
-            dotColor: "#6b7280"
-        },
-        TERMINATED: {
-            label: "Terminated",
-            icon: XCircle,
-            colorClass: "text-red-500 bg-red-50 dark:bg-red-950/30",
-            glowClass: "shadow-[0_0_15px_rgba(239,68,68,0.15)] dark:shadow-[0_0_20px_rgba(239,68,68,0.25)] border-red-200/50 dark:border-red-800/30",
-            dotColor: "#ef4444"
-        }
-    }[status] || {
-        label: status,
-        icon: Clock,
-        colorClass: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
-        glowClass: "shadow-[0_0_15px_rgba(107,114,128,0.1)] dark:shadow-[0_0_15px_rgba(107,114,128,0.15)] border-gray-200/50 dark:border-gray-700/30",
-        dotColor: "#6b7280"
-    }
-}
-
 export function WorkflowCard({ workflow }: WorkflowCardProps) {
     // Determine status
     const status = workflow?.terminated_at ? "TERMINATED" : workflow.build_status
 
     // Format dates
     const updatedAt = formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })
-    const statusConfig = getStatusConfig(status)
+    const statusMeta = getStatusMeta(status)
 
-    const StatusIcon = statusConfig.icon
+    const StatusIcon = statusMeta.icon
 
     // Format interval for display
     const interval = workflow.interval === 1440
@@ -102,12 +42,12 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
         <Link href={`/workflows/${workflow.id}`} prefetch={false} className="block h-full">
             <Card className={cn(
                 "h-full relative overflow-hidden transition-all duration-300 rounded-md",
-                statusConfig.glowClass
+                statusMeta.glowClass
             )}>
                 {/* Status indicator dot */}
                 <div
                     className="absolute top-3.5 right-3.5 h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: statusConfig.dotColor }}
+                    style={{ backgroundColor: statusMeta.dotColor }}
                 />
 
                 <CardHeader className="px-4">
@@ -116,11 +56,11 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                             variant="outline"
                             className={cn(
                                 "px-2 py-0 h-5 font-medium flex items-center gap-1 border-none",
-                                statusConfig.colorClass
+                                statusMeta.badgeClass
                             )}
                         >
-                            <StatusIcon className={cn("h-3 w-3", statusConfig.iconClass)} />
-                            <span className="text-xs">{statusConfig.label}</span>
+                            <StatusIcon className={cn("h-3 w-3", statusMeta.iconClass)} />
+                            <span className="text-xs">{getStatusLabel(status, "workflow")}</span>
                         </Badge>
 
                         <Badge
@@ -166,7 +106,9 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
 
                 {workflow.updated_at && (
                     <CardFooter className="px-4 border-t text-xs text-muted-foreground">
-                        Updated {updatedAt}
+                        <span className="ml-auto">
+                            Updated {updatedAt}
+                        </span>
                     </CardFooter>
                 )}
             </Card>
@@ -201,7 +143,7 @@ export function WorkflowCardSkeleton() {
             </CardContent>
 
             <CardFooter className="px-4 border-t">
-                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3.5 w-32 ml-auto" />
             </CardFooter>
         </Card>
     )

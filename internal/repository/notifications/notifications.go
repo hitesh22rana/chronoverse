@@ -24,9 +24,8 @@ import (
 )
 
 const (
-	notificationsTable = "notifications"
-	delimiter          = '$'
-	authSubject        = "internal/notifications"
+	authSubject = "internal/notifications"
+	delimiter   = '$'
 )
 
 // Services represents the services used by the notifications repository.
@@ -74,7 +73,7 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 		INSERT INTO %s (user_id, kind, payload)
 		VALUES ($1, $2, $3)
 		RETURNING id;
-	`, notificationsTable)
+	`, postgres.TableNotifications)
 
 	err = r.pg.QueryRow(ctx, query, userID, kind, payload).Scan(&notificationID)
 	if err != nil {
@@ -108,7 +107,7 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 		UPDATE %s
 		SET read_at = COALESCE(read_at, NOW())
 		WHERE id = ANY($1) AND user_id = $2
-	`, notificationsTable)
+	`, postgres.TableNotifications)
 
 	ct, err := r.pg.Exec(ctx, query, ids, userID)
 	if err != nil {
@@ -195,7 +194,7 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 		SELECT id, kind, payload, read_at, created_at, updated_at
 		FROM %s
 		WHERE user_id = $1 AND read_at IS NULL AND kind = ANY($2)
-	`, notificationsTable)
+	`, postgres.TableNotifications)
 	args := []any{userID, notificationsPreferences}
 
 	// Add cursor pagination

@@ -78,8 +78,6 @@ type Grpc struct {
 // Kafka holds the configuration for Kafka.
 type Kafka struct {
 	Brokers       []string `envconfig:"KAFKA_BROKERS" required:"true"`
-	ProducerTopic string   `envconfig:"KAFKA_PRODUCER_TOPIC"`
-	ConsumeTopics []string `envconfig:"KAFKA_CONSUME_TOPICS"`
 	ConsumerGroup string   `envconfig:"KAFKA_CONSUMER_GROUP"`
 }
 
@@ -120,5 +118,15 @@ type NotificationsService struct {
 	TLS  struct {
 		Enabled bool   `envconfig:"NOTIFICATIONS_SERVICE_TLS_ENABLED" default:"false"`
 		CAFile  string `envconfig:"NOTIFICATIONS_SERVICE_TLS_CA_FILE" default:""`
+	}
+}
+
+// AnalyticsService holds the configuration for the analytics service.
+type AnalyticsService struct {
+	Host string `envconfig:"ANALYTICS_SERVICE_HOST" required:"true"`
+	Port int    `envconfig:"ANALYTICS_SERVICE_PORT" required:"true"`
+	TLS  struct {
+		Enabled bool   `envconfig:"ANALYTICS_SERVICE_TLS_ENABLED" default:"false"`
+		CAFile  string `envconfig:"ANALYTICS_SERVICE_TLS_CA_FILE" default:""`
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	executorrepo "github.com/hitesh22rana/chronoverse/internal/repository/executor"
 	executorsvc "github.com/hitesh22rana/chronoverse/internal/service/executor"
@@ -65,12 +66,31 @@ func run() int {
 		return ExitError
 	}
 
+	// Initialize the redis store
+	rdb, err := redis.New(ctx, &redis.Config{
+		Host:                     cfg.Redis.Host,
+		Port:                     cfg.Redis.Port,
+		Password:                 cfg.Redis.Password,
+		DB:                       cfg.Redis.DB,
+		PoolSize:                 cfg.Redis.PoolSize,
+		MinIdleConns:             cfg.Redis.MinIdleConns,
+		ReadTimeout:              cfg.Redis.ReadTimeout,
+		WriteTimeout:             cfg.Redis.WriteTimeout,
+		MaxMemory:                cfg.Redis.MaxMemory,
+		EvictionPolicy:           cfg.Redis.EvictionPolicy,
+		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer rdb.Close()
+
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
-		kafka.WithConsumeTopics(cfg.Kafka.ConsumeTopics...),
+		kafka.WithConsumeTopics(kafka.TopicJobs),
 		kafka.WithDisableAutoCommit(),
 	)
 	if err != nil {
@@ -97,7 +117,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -115,7 +138,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -133,7 +159,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -142,15 +171,14 @@ func run() int {
 
 	// Initialize the execution job components
 	repo := executorrepo.New(&executorrepo.Config{
-		ParallelismLimit: cfg.ExecutionWorkerConfig.ParallelismLimit,
-		ProducerTopic:    cfg.Kafka.ProducerTopic,
-	}, auth, &executorrepo.Services{
+		ParallelismLimit: runtime.GOMAXPROCS(0),
+	}, auth, rdb, kfk, &executorrepo.Services{
 		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:          jobspb.NewJobsServiceClient(jobsConn),
 		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
 		Csvc:          csvc,
 		Hsvc:          heartbeat.New(),
-	}, kfk)
+	})
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)
 

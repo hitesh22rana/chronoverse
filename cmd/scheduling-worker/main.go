@@ -75,7 +75,6 @@ func run() int {
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithProducerTopic(cfg.Kafka.ProducerTopic),
 		kafka.WithTransactionalID(strconv.FormatInt(int64(os.Getpid()), 10)),
 	)
 	if err != nil {
@@ -86,9 +85,8 @@ func run() int {
 
 	// Initialize the scheduling job components
 	repo := schedulerrepo.New(&schedulerrepo.Config{
-		FetchLimit:    cfg.SchedulingWorkerConfig.FetchLimit,
-		BatchSize:     cfg.SchedulingWorkerConfig.BatchSize,
-		ProducerTopic: cfg.Kafka.ProducerTopic,
+		FetchLimit: cfg.SchedulingWorkerConfig.FetchLimit,
+		BatchSize:  cfg.SchedulingWorkerConfig.BatchSize,
 	}, pdb, kfk)
 	svc := schedulersvc.New(repo)
 	app := scheduler.New(ctx, &scheduler.Config{

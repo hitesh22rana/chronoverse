@@ -8,6 +8,7 @@ import (
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
@@ -71,7 +72,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -89,7 +93,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -107,7 +114,10 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
@@ -125,12 +135,36 @@ func run() int {
 				ClientCertFile: cfg.ClientTLS.CertFile,
 				ClientKeyFile:  cfg.ClientTLS.KeyFile,
 			},
-		}, grpcclient.DefaultRetryConfig())
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return ExitError
 	}
 	defer notificationsConn.Close()
+
+	// Connect to the analytics service
+	analyticsConn, err := grpcclient.NewClient(
+		&grpcclient.ServiceConfig{
+			Host: cfg.AnalyticsService.Host,
+			Port: cfg.AnalyticsService.Port,
+			TLS: &grpcclient.TLSConfig{
+				Enabled:        cfg.AnalyticsService.TLS.Enabled,
+				CAFile:         cfg.AnalyticsService.TLS.CAFile,
+				ClientCertFile: cfg.ClientTLS.CertFile,
+				ClientKeyFile:  cfg.ClientTLS.KeyFile,
+			},
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return ExitError
+	}
+	defer analyticsConn.Close()
 
 	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
@@ -176,6 +210,7 @@ func run() int {
 		workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		jobspb.NewJobsServiceClient(jobsConn),
 		notificationspb.NewNotificationsServiceClient(notificationsConn),
+		analyticspb.NewAnalyticsServiceClient(analyticsConn),
 	)
 
 	// Log the server information

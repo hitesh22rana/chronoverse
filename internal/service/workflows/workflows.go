@@ -77,8 +77,8 @@ type CreateWorkflowRequest struct {
 	Name                             string `validate:"required"`
 	Payload                          string `validate:"required"`
 	Kind                             string `validate:"required"`
-	Interval                         int32  `validate:"required"`
-	MaxConsecutiveJobFailuresAllowed int32  `validate:"omitempty"`
+	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
+	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed
 }
 
 // CreateWorkflow a new job.
@@ -173,8 +173,8 @@ type UpdateWorkflowRequest struct {
 	UserID                           string `validate:"required"`
 	Name                             string `validate:"required"`
 	Payload                          string `validate:"required"`
-	Interval                         int32  `validate:"required"`
-	MaxConsecutiveJobFailuresAllowed int32  `validate:"omitempty"`
+	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
+	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed
 }
 
 // UpdateWorkflow updates the job details.

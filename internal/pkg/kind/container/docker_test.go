@@ -82,7 +82,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			cmd:            []string{"/bin/nonexistent"},
 			env:            nil,
 			timeout:        5 * time.Second,
-			executionError: status.Error(codes.FailedPrecondition, "failed to start container: "),
+			executionError: status.Error(codes.Aborted, "failed to start container: "),
 			errs:           nil,
 			logs:           false,
 		},

@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
@@ -37,6 +38,7 @@ type Server struct {
 	workflowsClient     workflowpb.WorkflowsServiceClient
 	jobsClient          jobspb.JobsServiceClient
 	notificationsClient notificationspb.NotificationsServiceClient
+	analyticsClient     analyticspb.AnalyticsServiceClient
 	httpServer          *http.Server
 	validationCfg       *ValidationConfig
 	frontendConfig      *FrontendConfig
@@ -81,6 +83,7 @@ func New(
 	workflowsClient workflowpb.WorkflowsServiceClient,
 	jobsClient jobspb.JobsServiceClient,
 	notificationsClient notificationspb.NotificationsServiceClient,
+	analyticsClient analyticspb.AnalyticsServiceClient,
 ) *Server {
 	logger := loggerpkg.FromContext(ctx)
 	frontend, err := url.Parse(cfg.FrontendURL)
@@ -98,6 +101,7 @@ func New(
 		workflowsClient:     workflowsClient,
 		jobsClient:          jobsClient,
 		notificationsClient: notificationsClient,
+		analyticsClient:     analyticsClient,
 		httpServer: &http.Server{
 			Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 			ReadTimeout:       cfg.ReadTimeout,
@@ -357,27 +361,59 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 	// Notifications routes
 	router.HandleFunc(
 		"/notifications",
+		func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				s.withAllowedMethodMiddleware(
+					http.MethodGet,
+					s.withVerifySessionMiddleware(
+						withAttachBasicMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+								s.handleListNotifications,
+							),
+						),
+					),
+				).ServeHTTP(w, r)
+			case http.MethodPut:
+				s.withAllowedMethodMiddleware(
+					http.MethodPut,
+					s.withVerifyCSRFMiddleware(
+						s.withVerifySessionMiddleware(
+							withAttachBasicMetadataHeaderMiddleware(
+								s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+									s.handleMarkNotificationsRead,
+								),
+							),
+						),
+					),
+				).ServeHTTP(w, r)
+			}
+		},
+	)
+
+	// Analytics routes
+	router.HandleFunc(
+		"/analytics",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-						s.handleListNotifications,
+						s.handleGetUserAnalytics,
 					),
 				),
 			),
 		),
 	)
+
 	router.HandleFunc(
-		"/notifications/read",
+		"/analytics/{workflow_id}",
 		s.withAllowedMethodMiddleware(
-			http.MethodPut,
-			s.withVerifyCSRFMiddleware(
-				s.withVerifySessionMiddleware(
-					withAttachBasicMetadataHeaderMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
-							s.handleMarkNotificationsRead,
-						),
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleGetWorkflowAnalytics,
 					),
 				),
 			),

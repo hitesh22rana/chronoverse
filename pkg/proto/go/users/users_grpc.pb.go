@@ -8,7 +8,6 @@ package users
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -135,7 +134,7 @@ type UnsafeUsersServiceServer interface {
 }
 
 func RegisterUsersServiceServer(s grpc.ServiceRegistrar, srv UsersServiceServer) {
-	// If the following call panics, it indicates UnimplementedUsersServiceServer was
+	// If the following call pancis, it indicates UnimplementedUsersServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.

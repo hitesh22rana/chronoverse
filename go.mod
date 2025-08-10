@@ -4,6 +4,7 @@ go 1.24.4
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.1
+	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/docker/docker v28.3.3+incompatible
 	github.com/eapache/go-resiliency v1.7.0
 	github.com/exaring/otelpgx v0.9.3
@@ -75,6 +76,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
+	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

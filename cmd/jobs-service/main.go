@@ -5,7 +5,9 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"runtime/debug"
 
+	_ "github.com/KimMachineGun/automemlimit"
 	"github.com/go-playground/validator/v10"
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
@@ -158,6 +160,7 @@ func run() int {
 		zap.String("environment", cfg.Environment.Env),
 		zap.Bool("tls_enabled", cfg.Grpc.TLS.Enabled),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
+		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
 	// Serve the gRPC service

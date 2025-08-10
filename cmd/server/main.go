@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"runtime/debug"
 
+	_ "github.com/KimMachineGun/automemlimit"
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
@@ -223,6 +225,7 @@ func run() int {
 		zap.String("host", cfg.Server.Host),
 		zap.String("env", cfg.Environment.Env),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
+		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
 	// Start the http server

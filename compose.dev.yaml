@@ -743,6 +743,8 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      redis:
+        condition: service_healthy
       clickhouse:
         condition: service_healthy
       kafka:
@@ -816,6 +818,8 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      redis:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:

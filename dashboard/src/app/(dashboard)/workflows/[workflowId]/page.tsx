@@ -382,9 +382,7 @@ export default function WorkflowDetailsPage() {
                                                     </CardHeader>
                                                     <CardContent className="relative">
                                                         <div className="text-3xl font-bold text-amber-700 dark:text-amber-500">
-                                                            {workflowAnalytics.total_job_execution_duration
-                                                                ? `${formatSeconds(workflowAnalytics.total_job_execution_duration)}`
-                                                                : "0 seconds"}
+                                                            {formatSeconds(workflowAnalytics?.total_job_execution_duration ?? 0)}
                                                         </div>
                                                         <p className="text-xs text-muted-foreground mt-1">
                                                             Total per job execution

@@ -682,6 +682,7 @@ services:
     <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
     environment:
+      REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUMER_GROUP: workflow-worker
@@ -722,6 +723,8 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      redis:
+        condition: service_healthy
       clickhouse:
         condition: service_healthy
       kafka:
@@ -747,6 +750,7 @@ services:
     <<: *high-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     environment:
+      REDIS_HOST: redis
       KAFKA_BROKERS: kafka:9092
       KAFKA_CONSUMER_GROUP: execution-worker
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
@@ -786,6 +790,8 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      redis:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:
@@ -851,8 +857,8 @@ services:
       - chronoverse
 
   analytics-processor:
+    <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/analytics-processor:latest
-    container_name: analytics-processor
     environment:
       POSTGRES_HOST: postgres
       KAFKA_BROKERS: kafka:9092

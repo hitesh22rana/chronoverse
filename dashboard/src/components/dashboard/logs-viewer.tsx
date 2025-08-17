@@ -6,6 +6,7 @@ import {
     useRef,
     useMemo,
     useCallback,
+    Fragment,
 } from "react"
 import {
     Loader2,
@@ -42,6 +43,7 @@ const jsonRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
 const sevenDaysAgo = new Date((new Date()).getTime() - 7 * 24 * 60 * 60 * 1000)
 
 function isPurgedLogs(completedAt: string) {
+    if (!completedAt) return false
     return new Date(completedAt) < sevenDaysAgo
 }
 
@@ -55,18 +57,25 @@ const getLogStreamStyles = (stream: string) => {
     }
 }
 
-export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogViewerProps) {
+export function LogsViewer({
+    workflowId,
+    jobId,
+    jobStatus,
+    completedAt
+}: LogViewerProps) {
     const [searchQuery, setSearchQuery] = useState("")
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
-    const [parseJson, setParseJson] = useState(false)
+    const [parseJson, setParseJson] = useState<boolean>(true) // Default to true for JSON parsing
     const logContainerRef = useRef<HTMLDivElement>(null)
+    const sentinelRef = useRef<HTMLDivElement>(null)
     const searchInputRef = useRef<HTMLInputElement>(null)
 
-    const trieRef = useRef<Trie>(new Trie())
-    const processedLogsCountRef = useRef<number>(0)
-    const currentJobRef = useRef<string>(jobId)
+    const trieRef = useRef<Trie>(null)
+    const prevParseJsonRef = useRef<boolean>(parseJson)
+    const prevLogsCountRef = useRef<number>(0)
+    const [reTriggerSearch, setReTriggerSearch] = useState<boolean>(false)
 
     const {
         logs,
@@ -93,59 +102,30 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
         }
     }, [searchQuery])
 
-    // Infinite scroll handler
-    const handleScroll = useCallback(() => {
-        if (!logContainerRef.current || !hasNextPage || isFetchingNextPage) return
-
-        const container = logContainerRef.current
-        const { scrollTop, scrollHeight, clientHeight } = container
-        const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-
-        // Trigger when user is near the bottom (within 200px)
-        if (distanceFromBottom < 200) {
-            fetchNextPage()
-        }
-    }, [hasNextPage, isFetchingNextPage, fetchNextPage])
-
-    // Add scroll listener with throttling
+    // Viewport-based infinite loading via IntersectionObserver
     useEffect(() => {
-        const container = logContainerRef.current
-        if (!container) return
+        const sentinel = sentinelRef.current
+        if (!sentinel) return
 
-        // Add throttling to prevent too many calls
-        let ticking = false
-        const throttledHandleScroll = () => {
-            if (!ticking) {
-                requestAnimationFrame(() => {
-                    handleScroll()
-                    ticking = false
-                })
-                ticking = true
+        const observer = new IntersectionObserver(
+            async (entries) => {
+                const [entry] = entries
+                if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+                    fetchNextPage()
+                }
+            },
+            {
+                root: null, // viewport
+                rootMargin: "0px 0px", // watch for bottom
+                threshold: 0,
             }
-        }
+        )
 
-        container.addEventListener('scroll', throttledHandleScroll, { passive: true })
+        observer.observe(sentinel)
+        return () => observer.disconnect()
+    }, [hasNextPage, isFetchingNextPage, fetchNextPage, jobId])
 
-        // Check on mount if container is too small and needs more logs
-        setTimeout(() => {
-            if (container.scrollHeight <= container.clientHeight && hasNextPage && !isFetchingNextPage) {
-                fetchNextPage()
-            }
-        }, 100)
-
-        return () => {
-            container.removeEventListener('scroll', throttledHandleScroll)
-        }
-    }, [handleScroll, hasNextPage, isFetchingNextPage, fetchNextPage])
-
-    // Auto-load more logs when we have few entries
-    useEffect(() => {
-        if (logs && logs.length > 0 && logs.length < 50 && hasNextPage && !isFetchingNextPage && !isLogsLoading) {
-            fetchNextPage()
-        }
-    }, [logs, hasNextPage, isFetchingNextPage, isLogsLoading, fetchNextPage])
-
-    const formatJsonLog = useCallback((message: string) => {
+    const parseLog = useCallback((message: string) => {
         if (!parseJson) return message
 
         try {
@@ -166,33 +146,27 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
     }, [parseJson])
 
     useEffect(() => {
-        // Reset trie if job changed or parseJson state changed
-        if (currentJobRef.current !== jobId) {
+        if (!trieRef.current || prevParseJsonRef.current !== parseJson) {
             trieRef.current = new Trie()
-            processedLogsCountRef.current = 0
-            currentJobRef.current = jobId
+            // Reset logs count when Trie is re-initialized
+            prevLogsCountRef.current = 0
         }
 
-        if (!logs || logs.length === 0) {
-            // Reset trie and counter when no logs
-            trieRef.current = new Trie()
-            processedLogsCountRef.current = 0
-            return
-        }
-
-        // Rebuild trie when parseJson changes to use formatted content for search
-        trieRef.current = new Trie()
-
+        // Insert only new logs into the Trie, skipping already indexed logs
         logs.forEach((log, index) => {
-            if (log.message) {
-                const searchableMessage = formatJsonLog(log.message)
-                trieRef.current.insert(searchableMessage, index)
+            if (log.message && index >= prevLogsCountRef.current) {
+                trieRef.current!.insert(parseLog(log.message), index)
             }
         })
 
-        // Update the count of processed logs
-        processedLogsCountRef.current = logs.length
-    }, [logs, jobId, parseJson, formatJsonLog])
+        prevParseJsonRef.current = parseJson
+        prevLogsCountRef.current = logs.length
+
+        // Retrigger search since, either length is changed or parseJson is toggled
+        setReTriggerSearch((prev) => !prev)
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jobId, logs.length, parseJson])
 
     // Find all search matches using the Trie
     const searchMatches = useMemo(() => {
@@ -201,7 +175,7 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
         // Only search if we have logs
         if (!logs || logs.length === 0) return []
 
-        const matches = trieRef.current.search(debouncedSearchQuery)
+        const matches = trieRef.current!.search(debouncedSearchQuery)
 
         return matches.sort((a: { lineIndex: number; startIndex: number; endIndex: number }, b: { lineIndex: number; startIndex: number; endIndex: number }) => {
             if (a.lineIndex !== b.lineIndex) {
@@ -209,14 +183,16 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
             }
             return a.startIndex - b.startIndex
         })
-    }, [debouncedSearchQuery, logs]) // Include logs to invalidate when new logs are added
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedSearchQuery, reTriggerSearch])
 
     // Reset current match when search changes
     useEffect(() => {
         setCurrentMatchIndex(0)
     }, [debouncedSearchQuery])
 
-    // Scroll to current match
+    // Scroll to current match only when the selected match index changes
+    // Avoid tying this to `searchMatches` so pagination updates don't snap scroll back to the first match.
     useEffect(() => {
         if (searchMatches.length > 0 && logContainerRef.current) {
             const currentMatch = searchMatches[currentMatchIndex]
@@ -229,7 +205,8 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
                 })
             }
         }
-    }, [currentMatchIndex, searchMatches])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentMatchIndex])
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -333,39 +310,15 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
     }
 
     return (
-        <Card className="flex flex-col flex-1 h-full">
-            <CardHeader className="flex-shrink-0 space-y-4">
-                <div className="flex items-center justify-between">
-                    <CardTitle>
-                        Logs
-                    </CardTitle>
-                    <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-2">
-                            <span className={cn("text-sm font-medium", { "text-muted-foreground": !parseJson })}>JSON</span>
-                            <Switch
-                                checked={parseJson}
-                                onCheckedChange={setParseJson}
-                                disabled={
-                                    (jobStatus === "CANCELED" && logs.length === 0) ||
-                                    (logs.length === 0 && !!completedAt) || isPurgedLogs(completedAt)
-                                }
-                            />
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={downloadLogs}
-                            disabled={logs.length === 0}
-                        >
-                            <Download className="h-4 w-4 mr-2" />
-                            Download
-                        </Button>
-                    </div>
-                </div>
+        <Card className="flex flex-col flex-1 w-full p-0">
+            <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 border-b space-y-4 p-6">
+                <CardTitle>
+                    Logs
+                </CardTitle>
 
-                {/* Search Bar */}
-                {logs.length > 0 && (
-                    <div className="relative max-w-lg w-full flex items-center gap-2">
+                <div className="flex lg:flex-row flex-col items-center justify-between gap-4">
+                    {/* Search Bar */}
+                    <div className="relative lg:max-w-lg w-full flex items-center gap-2">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                             ref={searchInputRef}
@@ -408,78 +361,107 @@ export function LogsViewer({ workflowId, jobId, jobStatus, completedAt }: LogVie
                             </div>
                         )}
                     </div>
-                )}
+
+                    {/* Logs options */}
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                            <span className={cn("text-sm font-medium", { "text-muted-foreground": !parseJson })}>JSON</span>
+                            <Switch
+                                checked={parseJson}
+                                onCheckedChange={setParseJson}
+                                disabled={
+                                    (jobStatus === "CANCELED" && logs.length === 0) ||
+                                    (logs.length === 0 && !!completedAt) || isPurgedLogs(completedAt)
+                                }
+                            />
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={downloadLogs}
+                            disabled={
+                                logs.length === 0 ||
+                                (jobStatus === "RUNNING") ||
+                                isPurgedLogs(completedAt)
+                            }
+                        >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download
+                        </Button>
+                    </div>
+                </div>
             </CardHeader>
 
-            <CardContent className="flex-1 p-0 overflow-hidden">
-                <div className="h-full w-full font-mono text-sm overflow-hidden">
-                    {isLogsLoading ? (
-                        <div className="flex items-center justify-center h-full">
-                            <div className="flex items-center gap-2">
-                                <Loader2 className="h-6 w-6 animate-spin" />
-                                <span>Loading logs...</span>
+            <CardContent
+                ref={logContainerRef}
+                className="w-full font-mono text-sm md:p-2 p-0"
+            >
+                {isLogsLoading ? (
+                    <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center gap-2">
+                            <Loader2 className="h-6 w-6 animate-spin" />
+                            <span>Loading logs...</span>
+                        </div>
+                    </div>
+                ) : logsError ? (
+                    <div className="flex items-center justify-center h-full">
+                        <div className="text-center">
+                            <div className="text-red-500 mb-2">Error loading logs</div>
+                            <div className="text-sm text-muted-foreground">
+                                {logsError.message}
                             </div>
                         </div>
-                    ) : logsError ? (
-                        <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                                <div className="text-red-500 mb-2">Error loading logs</div>
-                                <div className="text-sm text-muted-foreground">
-                                    {logsError.message}
+                    </div>
+                ) : logs.length > 0 ? (
+                    <Fragment>
+                        {logs.map((log, index) => {
+                            const formattedMessage = parseLog(log.message)
+                            return (
+                                <div
+                                    key={index}
+                                    className={cn(
+                                        "flex hover:bg-muted/50 px-2 py-1 group",
+                                        getLogStreamStyles(log.stream)
+                                    )}
+                                >
+                                    <span className="text-muted-foreground mr-4 select-none min-w-[5ch] text-right hover:text-primary">
+                                        {index + 1}
+                                    </span>
+                                    <span className="flex-1 whitespace-pre-wrap break-all">
+                                        {highlightText(formattedMessage, index)}
+                                    </span>
                                 </div>
+                            )
+                        })}
+                        {/* Sentinel for viewport-based infinite load */}
+                        <div ref={sentinelRef} aria-hidden className="h-4" />
+                        {isFetchingNextPage && (
+                            <div className="flex items-center justify-center py-4">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                <span className="text-sm text-muted-foreground">Loading more logs...</span>
                             </div>
+                        )}
+                    </Fragment>
+                ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                        <div className="text-lg mb-2">No logs available</div>
+                        <div className="text-sm text-center">
+                            {jobStatus === 'RUNNING'
+                                ? 'Logs will appear here as the job executes'
+                                : (jobStatus === 'PENDING' || jobStatus === 'QUEUED')
+                                    ? 'Job is waiting to start'
+                                    : jobStatus === 'FAILED'
+                                        ? 'Job failed to execute, no logs available'
+                                        : (jobStatus === 'COMPLETED' && logs.length === 0 && isPurgedLogs(completedAt))
+                                            ? 'Logs are older than 7 days and have been purged'
+                                            : jobStatus === 'COMPLETED'
+                                                ? 'Job completed successfully, but no logs were produced'
+                                                : 'This job did not produce any logs'
+                            }
                         </div>
-                    ) : logs.length > 0 ? (
-                        <div ref={logContainerRef} className="h-full overflow-auto px-4 pt-4 scroll-smooth">
-                            {logs.map((log, index) => {
-                                const formattedMessage = formatJsonLog(log.message)
-                                return (
-                                    <div
-                                        key={index}
-                                        className={cn(
-                                            "flex hover:bg-muted/50 px-2 py-1 group",
-                                            getLogStreamStyles(log.stream)
-                                        )}
-                                    >
-                                        <span className="text-muted-foreground mr-4 select-none min-w-[4ch] text-right hover:text-primary">
-                                            {index + 1}
-                                        </span>
-                                        <span className="flex-1 whitespace-pre-wrap break-all">
-                                            {highlightText(formattedMessage, index)}
-                                        </span>
-                                    </div>
-                                )
-                            })}
-
-                            {/* Loading indicator for infinite scroll */}
-                            {isFetchingNextPage && (
-                                <div className="flex items-center justify-center py-4">
-                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                    <span className="text-sm text-muted-foreground">Loading more logs...</span>
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                            <div className="text-lg mb-2">No logs available</div>
-                            <div className="text-sm text-center">
-                                {jobStatus === 'RUNNING'
-                                    ? 'Logs will appear here as the job executes'
-                                    : (jobStatus === 'PENDING' || jobStatus === 'QUEUED')
-                                        ? 'Job is waiting to start'
-                                        : jobStatus === 'FAILED'
-                                            ? 'Job failed to execute, no logs available'
-                                            : (jobStatus === 'COMPLETED' && logs.length === 0 && isPurgedLogs(completedAt))
-                                                ? 'Logs are older than 7 days and have been purged'
-                                                : jobStatus === 'COMPLETED'
-                                                    ? 'Job completed successfully, but no logs were produced'
-                                                    : 'This job did not produce any logs'
-                                }
-                            </div>
-                        </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </CardContent>
-        </Card>
+        </Card >
     )
 }

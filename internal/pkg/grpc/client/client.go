@@ -43,7 +43,7 @@ type CircuitBreakerConfig struct {
 // DefaultCircuitBreakerConfig returns default circuit breaker config.
 func DefaultCircuitBreakerConfig() *CircuitBreakerConfig {
 	return &CircuitBreakerConfig{
-		ErrorThreshold:   5,                // Open after 5 errors
+		ErrorThreshold:   10,               // Open after 10 errors
 		SuccessThreshold: 2,                // Close after 2 successes
 		Timeout:          30 * time.Second, // Stay open for 30s
 	}

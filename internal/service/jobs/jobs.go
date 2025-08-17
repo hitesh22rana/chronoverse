@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -13,14 +15,21 @@ import (
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+)
+
+const (
+	defaultExpirationTTL = time.Minute * 30
+	cacheTimeout         = time.Second * 2
 )
 
 // Repository provides job related operations.
@@ -34,19 +43,27 @@ type Repository interface {
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
+// Cache provides cache related operations.
+type Cache interface {
+	Set(ctx context.Context, key string, value any, expiration time.Duration) error
+	Get(ctx context.Context, key string, dest any) (any, error)
+}
+
 // Service provides job related operations.
 type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
+	cache     Cache
 }
 
 // New creates a new jobs-service.
-func New(validator *validator.Validate, repo Repository) *Service {
+func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 	return &Service{
 		validator: validator,
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		repo:      repo,
+		cache:     cache,
 	}
 }
 
@@ -227,6 +244,9 @@ type GetJobLogsRequest struct {
 
 // GetJobLogs returns the scheduled job logs.
 func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (res *jobsmodel.GetJobLogsResponse, err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("method", "Service.GetJobLogs"),
+	)
 	ctx, span := s.tp.Start(ctx, "Service.GetJobLogs")
 	defer func() {
 		if err != nil {
@@ -248,10 +268,51 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	// Check if the job logs are cached
+	cachedKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &jobsmodel.GetJobLogsResponse{})
+	if cacheErr != nil {
+		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			return nil, err
+		}
+	} else {
+		// Cache hit, return cached response
+		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
+		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
+	}
+
 	// Get the scheduled job logs
 	res, err = s.repo.GetJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor())
 	if err != nil {
 		return nil, err
+	}
+
+	// Cache the response in the background, only if cursor is present in the response
+	// With cursor present in the response, we ensure that these are not the trailing logs and can be cached
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	//nolint:contextcheck // Ignore context check as we are using a new context
+	if res.Cursor != "" {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+			defer cancel()
+
+			// Cache the job logs
+			if setErr := s.cache.Set(bgCtx, cachedKey, res, defaultExpirationTTL); setErr != nil {
+				logger.Warn("failed to cache job logs",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("job_id", req.GetId()),
+					zap.String("cache_key", cachedKey),
+					zap.Error(setErr),
+				)
+			} else if logger.Core().Enabled(zap.DebugLevel) {
+				logger.Debug("cached job logs",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("job_id", req.GetId()),
+					zap.String("cache_key", cachedKey),
+				)
+			}
+		}()
 	}
 
 	return res, nil

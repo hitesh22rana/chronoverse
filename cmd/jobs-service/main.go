@@ -121,7 +121,7 @@ func run() int {
 	validator := validator.New()
 
 	// Initialize the jobs service
-	svc := jobssvc.New(validator, repo)
+	svc := jobssvc.New(validator, repo, rdb)
 
 	// Initialize the jobs application
 	app := jobs.New(ctx, &jobs.Config{

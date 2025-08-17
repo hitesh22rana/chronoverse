@@ -100,9 +100,9 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Cache the LoginUser response
@@ -164,9 +164,9 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Cache the LoginUser response
@@ -238,9 +238,9 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Cache the GetUser response
@@ -304,9 +304,9 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate the user cache

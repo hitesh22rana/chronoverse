@@ -21,8 +21,8 @@ import (
 // withOtelMiddleware adds OpenTelemetry tracing to the HTTP handler.
 func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip tracing for SSE endpoints
-		if strings.Contains(r.URL.Path, "/events") {
+		// Skip tracing for streaming endpoints
+		if strings.Contains(r.URL.Path, "/logs/raw") || strings.Contains(r.URL.Path, "/events") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -111,8 +111,8 @@ func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
 // withCompressionMiddleware adds HTTP gzip compression for JSON responses.
 func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip compression for SSE endpoints
-		if strings.Contains(r.URL.Path, "/events") {
+		// Skip compression for streaming endpoints
+		if strings.Contains(r.URL.Path, "/logs/raw") || strings.Contains(r.URL.Path, "/events") {
 			next.ServeHTTP(w, r)
 			return
 		}

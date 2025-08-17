@@ -42,14 +42,14 @@ function Layout({
 
   return (
     <div className={cn(
-      "flex flex-col w-full overflow-hidden",
+      "flex flex-col w-full overflow-visible",
       workflows.length == 0 && "h-svh"
     )}>
       <Header
         onNotificationsClick={() => setNotificationsOpen(true)}
         onProfileClick={() => setProfileOpen(true)}
       />
-      <main className="flex-1 flex flex-col overflow-hidden bg-background/95 md:p-6 p-4">
+      <main className="flex-1 flex flex-col overflow-visible bg-background/95 md:p-6 p-4">
         {children}
       </main>
       <NotificationsDrawer

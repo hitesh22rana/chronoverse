@@ -3,6 +3,7 @@ package jobs_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,9 +25,10 @@ func TestScheduleJob(t *testing.T) {
 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := jobs.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		jobID string
@@ -166,9 +168,10 @@ func TestUpdateJobStatus(t *testing.T) {
 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := jobs.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo, cache)
 
 	// Test cases
 	tests := []struct {
@@ -297,9 +300,10 @@ func TestGetJob(t *testing.T) {
 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := jobs.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		*jobsmodel.GetJobResponse
@@ -478,9 +482,10 @@ func TestGetJobByID(t *testing.T) {
 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := jobs.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		*jobsmodel.GetJobByIDResponse
@@ -609,9 +614,10 @@ func TestGetJobLogs(t *testing.T) {
 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := jobs.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		*jobsmodel.GetJobLogsResponse
@@ -636,6 +642,12 @@ func TestGetJobLogs(t *testing.T) {
 				Cursor:     "",
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
+				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cache.EXPECT().Get(
+					gomock.Any(),
+					cacheKey,
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
 				repo.EXPECT().GetJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -684,6 +696,129 @@ func TestGetJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "success: with cache hit",
+			req: &jobspb.GetJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+				Cursor:     "",
+			},
+			mock: func(req *jobspb.GetJobLogsRequest) {
+				cache.EXPECT().Get(gomock.Any(), fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor()), gomock.Any()).Return(&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "log 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+						{
+							Timestamp:   timestamp,
+							Message:     "log 2",
+							SequenceNum: 2,
+							Stream:      "stdout",
+						},
+					},
+					Cursor: "cursor",
+				}, nil)
+			},
+			want: want{
+				&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "log 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+						{
+							Timestamp:   timestamp,
+							Message:     "log 2",
+							SequenceNum: 2,
+							Stream:      "stdout",
+						},
+					},
+					Cursor: "cursor",
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "success: with cache miss",
+			req: &jobspb.GetJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+				Cursor:     "",
+			},
+			mock: func(req *jobspb.GetJobLogsRequest) {
+				data := &jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "log 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+						{
+							Timestamp:   timestamp,
+							Message:     "log 2",
+							SequenceNum: 2,
+							Stream:      "stdout",
+						},
+					},
+					Cursor: "cursor",
+				}
+				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cache.EXPECT().Get(
+					gomock.Any(),
+					cacheKey,
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
+				repo.EXPECT().GetJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+					req.GetCursor(),
+				).Return(data, nil)
+				cache.EXPECT().Set(
+					gomock.Any(),
+					cacheKey,
+					data,
+					gomock.Any(),
+				).AnyTimes()
+			},
+			want: want{
+				&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "log 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+						{
+							Timestamp:   timestamp,
+							Message:     "log 2",
+							SequenceNum: 2,
+							Stream:      "stdout",
+						},
+					},
+					Cursor: "cursor",
+				},
+			},
+			isErr: false,
+		},
+		{
 			name: "error: missing required fields in request",
 			req: &jobspb.GetJobLogsRequest{
 				Id:         "",
@@ -704,6 +839,12 @@ func TestGetJobLogs(t *testing.T) {
 				Cursor:     "",
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
+				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cache.EXPECT().Get(
+					gomock.Any(),
+					cacheKey,
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
 				repo.EXPECT().GetJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -724,6 +865,12 @@ func TestGetJobLogs(t *testing.T) {
 				Cursor:     "",
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
+				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cache.EXPECT().Get(
+					gomock.Any(),
+					cacheKey,
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss"))
 				repo.EXPECT().GetJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -765,9 +912,10 @@ func TestStreamJobLogs(t *testing.T) {
 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := jobs.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		channelType string
@@ -922,9 +1070,10 @@ func TestListJobs(t *testing.T) {
 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
 
 	// Create a new service
-	s := jobs.New(validator.New(), repo)
+	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		*jobsmodel.ListJobsResponse

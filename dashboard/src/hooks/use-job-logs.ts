@@ -4,10 +4,11 @@ import {
     useEffect,
     useMemo,
     useRef,
-    useState
+    useState,
 } from "react"
 import {
     useInfiniteQuery,
+    useMutation,
     useQuery,
     useQueryClient
 } from "@tanstack/react-query"
@@ -40,9 +41,38 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     const logsURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs`
     const sseURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/events`
+    const logsDownloadURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/raw`
+
     const isRunning = jobStatus === "RUNNING"
     const isCompleted = ["COMPLETED", "FAILED", "CANCELED"].includes(jobStatus)
     const shouldFetch = jobStatus !== "PENDING" && jobStatus !== "QUEUED"
+
+    // Download raw logs from backend and trigger browser file download
+    const downloadLogsMutation = useMutation({
+        mutationFn: async () => {
+            const response = await fetchWithAuth(logsDownloadURL)
+            if (!response.ok) {
+                throw new Error("failed to download logs")
+            }
+
+            const blob = await response.blob()
+            const objectUrl = URL.createObjectURL(blob)
+            const a = document.createElement("a")
+            a.href = objectUrl
+            a.download = `${jobId}-logs.txt`
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            URL.revokeObjectURL(objectUrl)
+
+        },
+        onSuccess: () => {
+            toast.success("Logs downloaded successfully")
+        },
+        onError: (error) => {
+            toast.error(error.message)
+        }
+    })
 
     // Helper function to merge logs and remove duplicates
     const mergeLogs = (existingLogs: JobLog[], newLogs: JobLog[]): JobLog[] => {
@@ -234,6 +264,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             isSSEEnabled: false,
             disconnect: () => { },
             getMaxSequenceNum: () => 0,
+            downloadLogsMutation,
+            isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
+            isDownloadLogsMutationError: downloadLogsMutation.error,
         }
     }
 
@@ -256,7 +289,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     setIsConnected(false)
                     setIsSSEEnabled(false)
                 }
-            }
+            },
+            downloadLogsMutation,
+            isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
+            isDownloadLogsMutationError: downloadLogsMutation.error,
         }
     }
 
@@ -273,5 +309,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         isSSEEnabled: false,
         disconnect: () => { },
         getMaxSequenceNum: () => 0,
+        downloadLogsMutation,
+        isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
+        isDownloadLogsMutationError: downloadLogsMutation.error,
     }
 }

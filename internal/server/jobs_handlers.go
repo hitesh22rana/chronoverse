@@ -164,6 +164,93 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+// handleDownloadJobLogs streams job logs to the client for download.
+//
+//nolint:gocyclo // Ignore the cyclomatic complexity as it is required for streaming
+func (s *Server) handleDownloadJobLogs(w http.ResponseWriter, r *http.Request) {
+	workflowID := r.PathValue("workflow_id")
+	if workflowID == "" {
+		http.Error(w, "workflow ID not found", http.StatusBadRequest)
+		return
+	}
+	jobID := r.PathValue("job_id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Check job status
+	res, err := s.jobsClient.GetJob(r.Context(), &jobspb.GetJobRequest{
+		Id:         jobID,
+		WorkflowId: workflowID,
+		UserId:     userID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to get job")
+		return
+	}
+	// Precondition check
+	if res.GetStatus() != "COMPLETED" && res.GetStatus() != "FAILED" {
+		http.Error(w, "job is not yet completed", http.StatusBadRequest)
+		return
+	}
+
+	// Set headers for file download
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+jobID+`-logs.txt"`)
+
+	// Response controller for streaming
+	rc, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	cursor := ""
+	for {
+		res, err := s.jobsClient.GetJobLogs(r.Context(), &jobspb.GetJobLogsRequest{
+			Id:         jobID,
+			WorkflowId: workflowID,
+			UserId:     userID,
+			Cursor:     cursor,
+		})
+		if err != nil {
+			// Handle fetch error
+			fmt.Fprintf(w, "\n--- ERROR: failed to fetch logs ---\n%s\n", err.Error())
+			rc.Flush()
+			break
+		}
+
+		// Write logs to response
+		for _, log := range res.GetLogs() {
+			if _, err := w.Write([]byte(log.Message + "\n")); err != nil {
+				// Handle write error
+				fmt.Fprintf(w, "\n--- ERROR: failed to write log ---\n%s\n", err.Error())
+				rc.Flush()
+				break
+			}
+		}
+		if rc != nil {
+			rc.Flush()
+		}
+
+		cursor = res.GetCursor()
+		if cursor == "" {
+			break
+		}
+	}
+}
+
 // handleJobEvents handles the job events by job ID request.
 func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	// Get the workflow ID from the path parameters
@@ -202,7 +289,7 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Del("Content-Encoding")
 	w.Header().Del("Transfer-Encoding") // Ensure no transfer encoding
 
-	// Create response controller for streaming
+	// Response controller for streaming
 	rc, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)

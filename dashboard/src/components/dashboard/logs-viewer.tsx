@@ -84,6 +84,8 @@ export function LogsViewer({
         fetchNextPage,
         isFetchingNextPage,
         hasNextPage,
+        downloadLogsMutation,
+        isDownloadLogsMutationLoading,
     } = useJobLogs(workflowId, jobId, jobStatus)
 
     // Debounce search query to avoid excessive re-renders
@@ -296,19 +298,6 @@ export function LogsViewer({
         return result
     }
 
-    const downloadLogs = () => {
-        if (!logs || logs.length === 0) return
-
-        const logText = logs.map(log => log.message || '').join("\n")
-        const blob = new Blob([logText], { type: "text/plain" })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = `job-${jobId}-logs.txt`
-        a.click()
-        URL.revokeObjectURL(url)
-    }
-
     return (
         <Card className="flex flex-col flex-1 w-full p-0">
             <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 border-b space-y-4 p-6">
@@ -378,14 +367,17 @@ export function LogsViewer({
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={downloadLogs}
+                            onClick={() => downloadLogsMutation.mutate()}
                             disabled={
+                                isDownloadLogsMutationLoading ||
                                 logs.length === 0 ||
                                 (jobStatus === "RUNNING") ||
                                 isPurgedLogs(completedAt)
                             }
                         >
-                            <Download className="h-4 w-4 mr-2" />
+                            {isDownloadLogsMutationLoading ?
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                : <Download className="h-4 w-4 mr-2" />}
                             Download
                         </Button>
                     </div>

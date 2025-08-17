@@ -138,9 +138,9 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate all list entries for the user
@@ -227,10 +227,10 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
 		// Cache invalidation for the following:
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate specific workflow cache
@@ -296,10 +296,10 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
 		// Cache invalidation for the following:
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate specific workflow cache
@@ -364,9 +364,9 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate all list entries for the user
@@ -466,10 +466,10 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
 		// Cache invalidation for the following:
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate specific workflow cache
@@ -522,10 +522,10 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
 		// Cache invalidation for the following:
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate specific workflow cache
@@ -578,10 +578,10 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
 		// Cache invalidation for the following:
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate specific workflow cache
@@ -634,10 +634,10 @@ func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWor
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
 		// Cache invalidation for the following:
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		// Invalidate specific workflow cache
@@ -735,9 +735,9 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
 		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {

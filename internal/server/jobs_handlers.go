@@ -166,7 +166,7 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 
 // handleDownloadJobLogs streams job logs to the client for download.
 //
-//nolint:gocyclo // Ignore the cyclomatic complexity as it is required for streaming
+
 func (s *Server) handleDownloadJobLogs(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
@@ -240,9 +240,7 @@ func (s *Server) handleDownloadJobLogs(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		if rc != nil {
-			rc.Flush()
-		}
+		rc.Flush()
 
 		cursor = res.GetCursor()
 		if cursor == "" {

@@ -291,10 +291,10 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 	// Cache the response in the background, only if cursor is present in the response
 	// With cursor present in the response, we ensure that these are not the trailing logs and can be cached
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	//nolint:contextcheck // Ignore context check as we are using a new context
+
 	if res.Cursor != "" {
 		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), cacheTimeout)
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
 
 			// Cache the job logs

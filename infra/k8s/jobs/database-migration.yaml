@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-migration
+  namespace: chronoverse
+  labels:
+    app: database-migration
+spec:
+  template:
+    metadata:
+      labels:
+        app: database-migration
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-postgres
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          apk add --no-cache postgresql-client
+          until pg_isready -h postgres -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "✅ PostgreSQL is ready"
+      containers:
+      - name: database-migration
+        image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
+        envFrom:
+        - configMapRef:
+            name: database-config
+        - secretRef:
+            name: database-secrets
+        - configMapRef:
+            name: observability-config
+        command: ["/bin/service"]
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"

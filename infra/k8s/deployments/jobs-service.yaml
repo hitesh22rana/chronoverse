@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jobs-service
+  namespace: chronoverse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jobs-service
+  template:
+    metadata:
+      labels:
+        app: jobs-service
+    spec:
+      initContainers:
+      - name: wait-for-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+            echo "Waiting for certificates..."
+            sleep 1
+          done
+          echo "✅ Certificates found!"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      containers:
+      - name: jobs-service
+        image: ghcr.io/hitesh22rana/chronoverse/jobs-service:latest
+        ports:
+        - containerPort: 50053
+        envFrom:
+        - configMapRef:
+            name: database-config
+        - secretRef:
+            name: database-secrets
+        - configMapRef:
+            name: grpc-config
+        - configMapRef:
+            name: jobs-service-config
+        - configMapRef:
+            name: observability-config
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+        livenessProbe:
+          exec:
+            command:
+            - /bin/grpc-health-probe
+            - -addr=localhost:50053
+            - -connect-timeout=250ms
+            - -rpc-timeout=250ms
+            - -tls
+            - -tls-ca-cert=certs/ca/ca.crt
+            - -tls-client-cert=certs/jobs-service/jobs-service.crt
+            - -tls-client-key=certs/jobs-service/jobs-service.key
+            - -tls-server-name=jobs-service
+            - -rpc-header=Audience:grpc_probe
+            - -rpc-header=Role:admin
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - /bin/grpc-health-probe
+            - -addr=localhost:50053
+            - -connect-timeout=250ms
+            - -rpc-timeout=250ms
+            - -tls
+            - -tls-ca-cert=certs/ca/ca.crt
+            - -tls-client-cert=certs/jobs-service/jobs-service.crt
+            - -tls-client-key=certs/jobs-service/jobs-service.key
+            - -tls-server-name=jobs-service
+            - -rpc-header=Audience:grpc_probe
+            - -rpc-header=Role:admin
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      volumes:
+      - name: certs-storage
+        hostPath:
+          path: /tmp/chronoverse-certs
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jobs-service
+  namespace: chronoverse
+spec:
+  selector:
+    app: jobs-service
+  ports:
+  - port: 50053
+    targetPort: 50053

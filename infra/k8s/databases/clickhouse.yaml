@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: chronoverse
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+    spec:
+      containers:
+      - name: clickhouse
+        image: clickhouse/clickhouse-server:latest
+        ports:
+        - containerPort: 9000
+          name: clickhouse
+        - containerPort: 8123
+          name: http
+        envFrom:
+        - configMapRef:
+            name: database-config
+        resources:
+          limits:
+            cpu: "2"
+            memory: "3Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: clickhouse-storage
+          mountPath: /var/lib/clickhouse
+        livenessProbe:
+          exec:
+            command:
+            - clickhouse-client
+            - --host=localhost
+            - --query=SELECT 1
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        readinessProbe:
+          exec:
+            command:
+            - clickhouse-client
+            - --host=localhost
+            - --query=SELECT 1
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+      volumes:
+      - name: clickhouse-storage
+        persistentVolumeClaim:
+          claimName: clickhouse-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: chronoverse
+spec:
+  selector:
+    app: clickhouse
+  ports:
+  - port: 9000
+    targetPort: 9000
+    name: clickhouse
+  - port: 8123
+    targetPort: 8123
+    name: http
+  clusterIP: None

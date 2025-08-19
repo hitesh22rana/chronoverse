@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scheduling-worker-config
+  namespace: chronoverse
+data:
+  # Based on compose.prod.yaml scheduling-worker configuration
+  KAFKA_BROKERS: "kafka:9092"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-worker-config
+  namespace: chronoverse
+data:
+  # Based on compose.prod.yaml workflow-worker configuration
+  KAFKA_BROKERS: "kafka:9092"
+  KAFKA_CONSUMER_GROUP: "workflow-worker"
+  CLIENT_TLS_CERT_FILE: "certs/clients/client.crt"
+  CLIENT_TLS_KEY_FILE: "certs/clients/client.key"
+  WORKFLOWS_SERVICE_HOST: "workflows-service"
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  JOBS_SERVICE_HOST: "jobs-service"
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  NOTIFICATIONS_SERVICE_HOST: "notifications-service"
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  DOCKER_HOST: "tcp://docker-proxy:2375"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: execution-worker-config
+  namespace: chronoverse
+data:
+  # Based on compose.prod.yaml execution-worker configuration
+  KAFKA_BROKERS: "kafka:9092"
+  KAFKA_CONSUMER_GROUP: "execution-worker"
+  CLIENT_TLS_CERT_FILE: "certs/clients/client.crt"
+  CLIENT_TLS_KEY_FILE: "certs/clients/client.key"
+  WORKFLOWS_SERVICE_HOST: "workflows-service"
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  JOBS_SERVICE_HOST: "jobs-service"
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  NOTIFICATIONS_SERVICE_HOST: "notifications-service"
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  DOCKER_HOST: "tcp://docker-proxy:2375"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: joblogs-processor-config
+  namespace: chronoverse
+data:
+  # Based on compose.prod.yaml joblogs-processor configuration
+  KAFKA_BROKERS: "kafka:9092"
+  KAFKA_CONSUMER_GROUP: "joblogs-processor"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-processor-config
+  namespace: chronoverse
+data:
+  # Based on compose.prod.yaml analytics-processor configuration
+  KAFKA_BROKERS: "kafka:9092"
+  KAFKA_CONSUMER_GROUP: "analytics-processor"

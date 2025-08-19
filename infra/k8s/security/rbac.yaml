@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chronoverse-sa
+  namespace: chronoverse
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: chronoverse
+  name: chronoverse-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chronoverse-rolebinding
+  namespace: chronoverse
+subjects:
+- kind: ServiceAccount
+  name: chronoverse-sa
+  namespace: chronoverse
+roleRef:
+  kind: Role
+  name: chronoverse-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chronoverse-secrets
+  namespace: chronoverse
+type: Opaque
+data:
+  postgres-password: cG9zdGdyZXM=  # base64 encoded "postgres"
+  redis-password: ""  # empty for now
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: chronoverse
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: services-pdb
+  namespace: chronoverse
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: service

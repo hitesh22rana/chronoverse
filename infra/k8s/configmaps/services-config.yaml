@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grpc-config
+  namespace: chronoverse
+data:
+  GRPC_REQUEST_TIMEOUT: "500ms"
+  GRPC_TLS_ENABLED: "true"
+  GRPC_TLS_CA_FILE: "certs/ca/ca.crt"
+  CLIENT_TLS_CERT_FILE: "certs/clients/client.crt"
+  CLIENT_TLS_KEY_FILE: "certs/clients/client.key"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: users-service-config
+  namespace: chronoverse
+data:
+  GRPC_PORT: "50051"
+  GRPC_TLS_CERT_FILE: "certs/users-service/users-service.crt"
+  GRPC_TLS_KEY_FILE: "certs/users-service/users-service.key"
+  USERS_SERVICE_HOST: "users-service"
+  USERS_SERVICE_PORT: "50051"
+  USERS_SERVICE_TLS_ENABLED: "true"
+  USERS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflows-service-config
+  namespace: chronoverse
+data:
+  GRPC_PORT: "50052"
+  GRPC_TLS_CERT_FILE: "certs/workflows-service/workflows-service.crt"
+  GRPC_TLS_KEY_FILE: "certs/workflows-service/workflows-service.key"
+  WORKFLOWS_SERVICE_HOST: "workflows-service"
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jobs-service-config
+  namespace: chronoverse
+data:
+  GRPC_PORT: "50053"
+  GRPC_TLS_CERT_FILE: "certs/jobs-service/jobs-service.crt"
+  GRPC_TLS_KEY_FILE: "certs/jobs-service/jobs-service.key"
+  JOBS_SERVICE_HOST: "jobs-service"
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-service-config
+  namespace: chronoverse
+data:
+  GRPC_PORT: "50054"
+  GRPC_TLS_CERT_FILE: "certs/notifications-service/notifications-service.crt"
+  GRPC_TLS_KEY_FILE: "certs/notifications-service/notifications-service.key"
+  CLIENT_TLS_CERT_FILE: "certs/clients/client.crt"
+  CLIENT_TLS_KEY_FILE: "certs/clients/client.key"
+  NOTIFICATIONS_SERVICE_HOST: "notifications-service"
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  USERS_SERVICE_HOST: "users-service"
+  USERS_SERVICE_PORT: "50051"
+  USERS_SERVICE_TLS_ENABLED: "true"
+  USERS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-service-config
+  namespace: chronoverse
+data:
+  GRPC_PORT: "50055"
+  GRPC_TLS_CERT_FILE: "certs/analytics-service/analytics-service.crt"
+  GRPC_TLS_KEY_FILE: "certs/analytics-service/analytics-service.key"
+  ANALYTICS_SERVICE_HOST: "analytics-service"
+  ANALYTICS_SERVICE_PORT: "50055"
+  ANALYTICS_SERVICE_TLS_ENABLED: "true"
+  ANALYTICS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-config
+  namespace: chronoverse
+data:
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "8080"
+  SERVER_FRONTEND_URL: "http://localhost:80"
+  CLIENT_TLS_CERT_FILE: "certs/clients/client.crt"
+  CLIENT_TLS_KEY_FILE: "certs/clients/client.key"
+  USERS_SERVICE_HOST: "users-service"
+  USERS_SERVICE_PORT: "50051"
+  USERS_SERVICE_TLS_ENABLED: "true"
+  USERS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  WORKFLOWS_SERVICE_HOST: "workflows-service"
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  JOBS_SERVICE_HOST: "jobs-service"
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  NOTIFICATIONS_SERVICE_HOST: "notifications-service"
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  ANALYTICS_SERVICE_HOST: "analytics-service"
+  ANALYTICS_SERVICE_PORT: "50055"
+  ANALYTICS_SERVICE_TLS_ENABLED: "true"
+  ANALYTICS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docker-proxy-config
+  namespace: chronoverse
+data:
+  IMAGES: "1"
+  IMAGE_CREATE: "1"
+  CONTAINERS: "1"
+  CONTAINER_CREATE: "1"
+  CONTAINER_START: "1"
+  CONTAINER_LOGS: "1"
+  CONTAINER_ATTACH: "1"
+  CONTAINER_WAIT: "1"
+  CONTAINER_DELETE: "1"
+  CONTAINER_STOP: "1"
+  POST: "1"
+  AUTH: "1"
+  NETWORKS: "0"
+  VOLUMES: "0"
+  DOCKER_HOST: "tcp://docker-proxy:2375"

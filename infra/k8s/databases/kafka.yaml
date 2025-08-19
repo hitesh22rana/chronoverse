@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: chronoverse
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      hostname: kafka
+      initContainers:
+      - name: fix-permissions
+        image: busybox
+        command: ['sh', '-c', 'chown -R 1000:1000 /var/lib/kafka/data && chmod 755 /var/lib/kafka/data']
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+        securityContext:
+          runAsUser: 0
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:latest
+        ports:
+        - containerPort: 9092
+          name: kafka
+        - containerPort: 9093
+          name: controller
+        envFrom:
+        - configMapRef:
+            name: kafka-config
+        - secretRef:
+            name: kafka-secrets
+        resources:
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+        - name: kafka-secrets-storage
+          mountPath: /etc/kafka/secrets
+      volumes:
+      - name: kafka-storage
+        persistentVolumeClaim:
+          claimName: kafka-pvc
+      - name: kafka-secrets-storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: chronoverse
+spec:
+  selector:
+    app: kafka
+  ports:
+  - port: 9092
+    targetPort: 9092
+    name: kafka
+  - port: 9093
+    targetPort: 9093
+    name: controller
+  clusterIP: None

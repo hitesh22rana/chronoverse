@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: chronoverse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server
+  template:
+    metadata:
+      labels:
+        app: server
+    spec:
+      initContainers:
+      - name: wait-for-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+            echo "Waiting for certificates..."
+            sleep 1
+          done
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      containers:
+      - name: server
+        image: ghcr.io/hitesh22rana/chronoverse/server:latest
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: database-config
+        - configMapRef:
+            name: grpc-config
+        - configMapRef:
+            name: server-config
+        - configMapRef:
+            name: users-service-config
+        - configMapRef:
+            name: workflows-service-config
+        - configMapRef:
+            name: jobs-service-config
+        - configMapRef:
+            name: notifications-service-config
+        - configMapRef:
+            name: analytics-service-config
+        - configMapRef:
+            name: observability-config
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      volumes:
+      - name: certs-storage
+        hostPath:
+          path: /tmp/chronoverse-certs
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: chronoverse
+spec:
+  selector:
+    app: server
+  ports:
+  - port: 8080
+    targetPort: 8080

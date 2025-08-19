@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+  namespace: chronoverse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lgtm
+  template:
+    metadata:
+      labels:
+        app: lgtm
+    spec:
+      containers:
+      - name: lgtm
+        image: grafana/otel-lgtm
+        ports:
+        - containerPort: 3000
+          name: grafana
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        envFrom:
+        - configMapRef:
+            name: lgtm-config
+        volumeMounts:
+        - name: lgtm-storage
+          mountPath: /data
+      volumes:
+      - name: lgtm-storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+  namespace: chronoverse
+spec:
+  selector:
+    app: lgtm
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: grafana
+  - port: 4317
+    targetPort: 4317
+    name: otlp-grpc
+  - port: 4318
+    targetPort: 4318
+    name: otlp-http

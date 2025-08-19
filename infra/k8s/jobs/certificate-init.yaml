@@ -1,0 +1,259 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-certs-v1
+  namespace: chronoverse
+  labels:
+    app: init-certs
+    version: v1
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: init-certs
+        version: v1
+    spec:
+      serviceAccountName: chronoverse-sa
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        fsGroup: 0
+      containers:
+      - name: init-certs
+        image: alpine:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: false
+          runAsUser: 0
+          capabilities:
+            drop:
+            - ALL
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "🔐 Starting certificate initialization..."
+          
+          # Install required packages
+          apk update && apk add --no-cache openssl
+          
+          # Create directory structure
+          mkdir -p /certs/ca /certs/clients
+          
+          # Generate auth certificates
+          if [ ! -f /certs/auth.ed ]; then
+            echo "🔐 Generating auth certificates..."
+            openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
+            openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+            chmod 644 /certs/auth.ed*
+            echo "✅ Auth certificates generated"
+          fi
+          
+          # Generate CA certificate
+          if [ ! -f /certs/ca/ca.key ]; then
+            echo "🛡️ Generating CA certificate..."
+            openssl genrsa -out /certs/ca/ca.key 4096
+            openssl req -x509 -new -nodes -key /certs/ca/ca.key -sha256 \
+              -days 365 -out /certs/ca/ca.crt \
+              -subj "/C=US/ST=CA/L=SanFrancisco/O=Chronoverse/CN=Chronoverse CA"
+            chmod 644 /certs/ca/*
+            echo "✅ CA certificate created"
+          fi
+          
+          # Generate service certificates
+          SERVICES="users-service workflows-service jobs-service notifications-service analytics-service"
+          for svc in $SERVICES; do
+            mkdir -p /certs/$svc
+            if [ ! -f /certs/$svc/$svc.key ]; then
+              echo "🔧 Generating certificate for $svc..."
+              
+              # Generate private key
+              openssl genrsa -out /certs/$svc/$svc.key 4096
+              
+              # Create certificate signing request
+              openssl req -new -key /certs/$svc/$svc.key \
+                -out /certs/$svc/$svc.csr \
+                -subj "/C=US/ST=CA/L=SanFrancisco/O=Chronoverse/CN=$svc"
+              
+              # Create extensions file
+              cat > /certs/$svc/$svc.ext << EOF
+          authorityKeyIdentifier=keyid,issuer
+          basicConstraints=CA:FALSE
+          keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+          subjectAltName = @alt_names
+          
+          [alt_names]
+          DNS.1 = $svc
+          DNS.2 = $svc.chronoverse
+          DNS.3 = $svc.chronoverse.svc
+          DNS.4 = $svc.chronoverse.svc.cluster.local
+          DNS.5 = localhost
+          IP.1 = 127.0.0.1
+          EOF
+              
+              # Sign certificate
+              openssl x509 -req -in /certs/$svc/$svc.csr \
+                -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+                -CAcreateserial -out /certs/$svc/$svc.crt -days 365 \
+                -extensions v3_req -extfile /certs/$svc/$svc.ext
+              
+              # Cleanup
+              rm /certs/$svc/$svc.csr /certs/$svc/$svc.ext
+              chmod 644 /certs/$svc/*
+              
+              echo "✅ Certificate created for $svc"
+            fi
+          done
+          
+          # Generate client certificate
+          if [ ! -f /certs/clients/client.key ]; then
+            echo "🔐 Generating client certificate for mTLS..."
+            openssl genrsa -out /certs/clients/client.key 4096
+            openssl req -new -key /certs/clients/client.key \
+              -out /certs/clients/client.csr \
+              -subj "/C=US/ST=CA/L=SanFrancisco/O=Chronoverse/CN=Chronoverse Client"
+            
+            cat > /certs/clients/client.ext << EOF
+          authorityKeyIdentifier=keyid,issuer
+          basicConstraints=CA:FALSE
+          keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+          subjectAltName = DNS:client
+          EOF
+            
+            openssl x509 -req -in /certs/clients/client.csr \
+              -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+              -CAcreateserial -out /certs/clients/client.crt -days 365 \
+              -extensions v3_req -extfile /certs/clients/client.ext
+            
+            rm /certs/clients/client.csr /certs/clients/client.ext
+            chmod 644 /certs/clients/*
+            echo "✅ Client certificate created"
+          fi
+          
+          # Set final permissions
+          find /certs -type f -exec chmod 644 {} \;
+          find /certs -type d -exec chmod 755 {} \;
+          
+          echo "🎉 All certificates initialized successfully!"
+          ls -la /certs/
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      volumes:
+      - name: certs-storage
+        hostPath:
+          path: /tmp/chronoverse-certs
+          type: DirectoryOrCreate
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-migration-v1
+  namespace: chronoverse
+  labels:
+    app: database-migration
+    version: v1
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: database-migration
+        version: v1
+    spec:
+      serviceAccountName: chronoverse-sa
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+      - name: wait-for-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for certificates..."
+          while [ ! -f /certs/auth.ed ] || [ ! -f /certs/ca/ca.crt ]; do 
+            echo "Certificates not ready, waiting..."
+            sleep 5
+          done
+          echo "Certificates found, proceeding..."
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+          readOnly: true
+      - name: wait-for-postgres
+        image: postgres:alpine
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for PostgreSQL..."
+          until pg_isready -h postgres -p 5432 -U postgres; do
+            echo "PostgreSQL not ready, waiting..."
+            sleep 5
+          done
+          echo "PostgreSQL is ready!"
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chronoverse-secrets
+              key: postgres-password
+      containers:
+      - name: migration
+        image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+        envFrom:
+        - configMapRef:
+            name: database-config
+        - configMapRef:
+            name: observability-config
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chronoverse-secrets
+              key: postgres-password
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+          readOnly: true
+        - name: tmp-volume
+          mountPath: /tmp
+      volumes:
+      - name: certs-storage
+        hostPath:
+          path: /tmp/chronoverse-certs
+          type: DirectoryOrCreate
+      - name: tmp-volume
+        emptyDir: {}

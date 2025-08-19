@@ -63,44 +63,62 @@ No other dependencies are required as all services run in containers with automa
 
 1. Clone the repository:
 
-   ```
+   ```bash
    git clone https://github.com/hitesh22rana/chronoverse.git
    cd chronoverse
    ```
 
-2. Choose the appropriate deployment environment:
+2. **For production deployment, see the [infra/](./infra/) directory for deployment options.**
 
-   **For Development:**
+## 🚀 Production Deployment
 
-   ```
-   docker compose -f compose.dev.yaml up -d
-   ```
+Chronoverse supports multiple production deployment methods. **For production deployments, refer to the [infra/](./infra/) directory.**
 
-   **For Production:**
+### Quick Start Options
 
-   ```
-   docker compose -f compose.prod.yaml up -d
-   ```
+#### 🐳 **Docker Compose** (Single-server production)
+```bash
+cd infra/
+docker compose -f compose.prod.yaml up -d
+```
 
-### Deployment Environments
+#### ☸️ **Kubernetes** (Distributed, scalable production)
+```bash
+cd infra/k8s/
+./deploy.sh --local    # Local development
+./deploy.sh            # Cloud production
+```
 
-#### 1. Development Environment (compose.dev.yaml)
+### 🤔 **Which Deployment to Choose?**
 
-- All service ports are exposed for easy debugging and direct access.
-- Database ports (5432, 9000, 6379) accessible from the host.
-- gRPC service ports (50051-50055) available for direct testing.
-- Monitoring ports fully exposed.
-- Dashboard is accessible via port 3001.
-- Suitable for local development and testing.
+| Use Case | Recommended | Documentation |
+|----------|------------|---------------|
+| **Small-medium production** (< 1000 users) | 🐳 Docker Compose | [infra/README.md](./infra/README.md) |
+| **Enterprise production** (1000+ users) | ☸️ Kubernetes | [infra/k8s/README.md](./infra/k8s/README.md) |
+| **Local development** | 🐳 Docker Compose | [compose.dev.yaml](./compose.dev.yaml) |
 
-#### 2. Production Environment (compose.prod.yaml)
+**👉 See [infra/README.md](./infra/README.md) for detailed comparison and decision guidance.**
 
-- Enhanced security with minimal port exposure.
-- Dashboard is accessible via port 80/443 through Nginx/reverse proxy.
-- Monitoring dashboard can be accessed via port 3000.
-- All internal services communicate via Docker's internal network.
-- No direct external access to databases or internal microservices.
-- gRPC reflection disabled for additional security.
+## 🛠️ Development Setup
+
+For local development and testing:
+
+```bash
+# Start development environment
+docker compose -f compose.dev.yaml up -d
+
+# Access the dashboard
+http://localhost:3001
+
+# Access monitoring
+http://localhost:3000
+```
+
+**Development Features:**
+- All service ports exposed for debugging
+- Database ports (5432, 9000, 6379) accessible from host  
+- gRPC service ports (50051-50055) available for testing
+- Hot-reload enabled for faster development
 
 ### Configuration
 

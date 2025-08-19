@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: chronoverse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: ghcr.io/hitesh22rana/chronoverse/dashboard:latest
+        ports:
+        - containerPort: 3000
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: chronoverse
+spec:
+  selector:
+    app: dashboard
+  ports:
+  - port: 3000
+    targetPort: 3000

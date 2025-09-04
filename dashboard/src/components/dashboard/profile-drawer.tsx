@@ -1,7 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { toast } from "sonner"
+import { Fragment, useMemo, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
 import {
     Bell,
@@ -49,12 +48,10 @@ import {
     DialogTitle
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 
 import { useUsers } from "@/hooks/use-users"
 import { useAuth } from "@/hooks/use-auth"
 import { useNotifications } from "@/hooks/use-notifications"
-
 
 interface ProfileDrawerProps {
     open: boolean;
@@ -68,7 +65,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
 
     // State for password confirmation dialog
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
-    const [password, setPassword] = useState("")
     const [newPreference, setNewPreference] = useState("")
 
     const initials = useMemo(() => {
@@ -92,18 +88,11 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
 
     // Handler for password confirmation and update
     const handleConfirmUpdate = () => {
-        if (!password.trim()) {
-            toast.error("Password is required")
-            return
-        }
-
         updateUser({
-            password,
             notification_preference: newPreference
         }, {
             onSuccess: () => {
                 setConfirmDialogOpen(false)
-                setPassword("")
                 refetchNotifications()
             }
         })
@@ -117,7 +106,7 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
     if (!user) return null
 
     return (
-        <>
+        <Fragment>
             <Sheet open={open} onOpenChange={onClose}>
                 <SheetContent className="w-full sm:max-w-md p-0 gap-0 h-full flex flex-col">
                     {/* Header */}
@@ -203,34 +192,21 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
                 </SheetContent>
             </Sheet>
 
-            {/* Password Confirmation Dialog */}
+            {/* Confirmation Dialog */}
             <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-sm">
                     <DialogHeader>
-                        <DialogTitle>Confirm Password</DialogTitle>
+                        <DialogTitle>Confirm Changes</DialogTitle>
                         <DialogDescription>
-                            Please enter your password to change notification preferences
+                            Your notification preferences will be updated after confirmation.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                placeholder="Enter your password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
-                        </div>
-                    </div>
                     <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => {
                                 setConfirmDialogOpen(false)
-                                setPassword("")
                             }}
                             disabled={isUpdating}
                             className="cursor-pointer w-full"
@@ -240,7 +216,7 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
                         <Button
                             type="button"
                             onClick={handleConfirmUpdate}
-                            disabled={!password || isUpdating}
+                            disabled={!newPreference || isUpdating}
                             className="cursor-pointer w-full"
                         >
                             {isUpdating ? "Updating..." : "Confirm"}
@@ -248,6 +224,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </>
+        </Fragment>
     )
 }

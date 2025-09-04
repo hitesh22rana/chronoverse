@@ -638,7 +638,6 @@ func TestUpdateUser(t *testing.T) {
 				},
 				req: &userpb.UpdateUserRequest{
 					Id:                     "user1",
-					Password:               "password12345",
 					NotificationPreference: "ALERTS",
 				},
 			},
@@ -668,7 +667,6 @@ func TestUpdateUser(t *testing.T) {
 				},
 				req: &userpb.UpdateUserRequest{
 					Id:                     "user1",
-					Password:               "password12345",
 					NotificationPreference: "ALERTS",
 				},
 			},
@@ -694,7 +692,6 @@ func TestUpdateUser(t *testing.T) {
 				},
 				req: &userpb.UpdateUserRequest{
 					Id:                     "",
-					Password:               "",
 					NotificationPreference: "",
 				},
 			},
@@ -718,7 +715,6 @@ func TestUpdateUser(t *testing.T) {
 				},
 				req: &userpb.UpdateUserRequest{
 					Id:                     "user1",
-					Password:               "password12345",
 					NotificationPreference: "ALERTS",
 				},
 			},
@@ -742,7 +738,6 @@ func TestUpdateUser(t *testing.T) {
 				},
 				req: &userpb.UpdateUserRequest{
 					Id:                     "user1",
-					Password:               "password12345",
 					NotificationPreference: "ALERTS",
 				},
 			},
@@ -772,7 +767,6 @@ func TestUpdateUser(t *testing.T) {
 				},
 				req: &userpb.UpdateUserRequest{
 					Id:                     "user1",
-					Password:               "password12345",
 					NotificationPreference: "ALERTS",
 				},
 			},

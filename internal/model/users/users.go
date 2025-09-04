@@ -28,6 +28,13 @@ type GetUserResponse struct {
 	UpdatedAt              time.Time `db:"updated_at"`
 }
 
+// GetUserPreUpdateResponse represents the response of GetUser before an update.
+// This is used to fetch the current password for validation before updating.
+type GetUserPreUpdateResponse struct {
+	ID       string `db:"id"`
+	Password string `db:"password"`
+}
+
 // ToProto converts the GetUserResponse to its protobuf representation.
 func (r *GetUserResponse) ToProto() *userspb.GetUserResponse {
 	return &userspb.GetUserResponse{

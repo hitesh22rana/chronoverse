@@ -90,17 +90,17 @@ func (mr *MockRepositoryMockRecorder) RegisterUser(ctx, email, password any) *go
 }
 
 // UpdateUser mocks base method.
-func (m *MockRepository) UpdateUser(ctx context.Context, id, password, notificationPreference string) error {
+func (m *MockRepository) UpdateUser(ctx context.Context, id, notificationPreference string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateUser", ctx, id, password, notificationPreference)
+	ret := m.ctrl.Call(m, "UpdateUser", ctx, id, notificationPreference)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateUser indicates an expected call of UpdateUser.
-func (mr *MockRepositoryMockRecorder) UpdateUser(ctx, id, password, notificationPreference any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateUser(ctx, id, notificationPreference any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUser", reflect.TypeOf((*MockRepository)(nil).UpdateUser), ctx, id, password, notificationPreference)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUser", reflect.TypeOf((*MockRepository)(nil).UpdateUser), ctx, id, notificationPreference)
 }
 
 // MockCache is a mock of Cache interface.

@@ -465,14 +465,12 @@ func TestUpdateUser(t *testing.T) {
 			name: "success",
 			req: &userspb.UpdateUserRequest{
 				Id:                     "userID",
-				Password:               "newpassword",
 				NotificationPreference: "ALERTS",
 			},
 			mock: func(req *userspb.UpdateUserRequest) {
 				repo.EXPECT().UpdateUser(
 					gomock.Any(),
 					req.GetId(),
-					req.GetPassword(),
 					req.GetNotificationPreference(),
 				).Return(nil)
 
@@ -488,7 +486,6 @@ func TestUpdateUser(t *testing.T) {
 			name: "error: missing required fields in request",
 			req: &userspb.UpdateUserRequest{
 				Id:                     "",
-				Password:               "",
 				NotificationPreference: "",
 			},
 			mock:  func(_ *userspb.UpdateUserRequest) {},
@@ -498,14 +495,12 @@ func TestUpdateUser(t *testing.T) {
 			name: "error: invalid user",
 			req: &userspb.UpdateUserRequest{
 				Id:                     "invalid_user_id",
-				Password:               "newpassword",
 				NotificationPreference: "ALERTS",
 			},
 			mock: func(req *userspb.UpdateUserRequest) {
 				repo.EXPECT().UpdateUser(
 					gomock.Any(),
 					req.GetId(),
-					req.GetPassword(),
 					req.GetNotificationPreference(),
 				).Return(status.Error(codes.NotFound, "invalid user"))
 			},
@@ -515,14 +510,12 @@ func TestUpdateUser(t *testing.T) {
 			name: "error: user not found",
 			req: &userspb.UpdateUserRequest{
 				Id:                     "invalid_user_id",
-				Password:               "newpassword",
 				NotificationPreference: "ALERTS",
 			},
 			mock: func(req *userspb.UpdateUserRequest) {
 				repo.EXPECT().UpdateUser(
 					gomock.Any(),
 					req.GetId(),
-					req.GetPassword(),
 					req.GetNotificationPreference(),
 				).Return(status.Error(codes.NotFound, "user not found"))
 			},
@@ -532,14 +525,12 @@ func TestUpdateUser(t *testing.T) {
 			name: "error: invalid notification preference",
 			req: &userspb.UpdateUserRequest{
 				Id:                     "user_id",
-				Password:               "newpassword",
 				NotificationPreference: "INVALID_PREFERENCE",
 			},
 			mock: func(req *userspb.UpdateUserRequest) {
 				repo.EXPECT().UpdateUser(
 					gomock.Any(),
 					req.GetId(),
-					req.GetPassword(),
 					req.GetNotificationPreference(),
 				).Return(status.Error(codes.InvalidArgument, "invalid notification preference"))
 			},
@@ -549,14 +540,12 @@ func TestUpdateUser(t *testing.T) {
 			name: "error: internal server error",
 			req: &userspb.UpdateUserRequest{
 				Id:                     "user_id",
-				Password:               "newpassword",
 				NotificationPreference: "ALERTS",
 			},
 			mock: func(req *userspb.UpdateUserRequest) {
 				repo.EXPECT().UpdateUser(
 					gomock.Any(),
 					req.GetId(),
-					req.GetPassword(),
 					req.GetNotificationPreference(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},

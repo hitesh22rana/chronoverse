@@ -16,7 +16,6 @@ type User = {
 }
 
 export type UpdateUserDetails = {
-    password: string
     notification_preference: string
 }
 

@@ -210,7 +210,7 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 }
 
 // UpdateUser updates the user.
-func (r *Repository) UpdateUser(ctx context.Context, id, password, notificationPreference string) (err error) {
+func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateUser")
 	defer func() {
 		if err != nil {
@@ -220,19 +220,12 @@ func (r *Repository) UpdateUser(ctx context.Context, id, password, notificationP
 		span.End()
 	}()
 
-	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		err = status.Errorf(codes.Internal, "failed to hash password: %v", err)
-		return err
-	}
-
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET password = $1, notification_preference = $2
-		WHERE id = $3;
+		SET notification_preference = $1
+		WHERE id = $2;
 	`, postgres.TableUsers)
-	args := []any{string(hashedPassword), notificationPreference, id}
+	args := []any{notificationPreference, id}
 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, args...)

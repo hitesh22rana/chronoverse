@@ -33,7 +33,7 @@ type Repository interface {
 	RegisterUser(ctx context.Context, email, password string) (*usersmodel.GetUserResponse, string, error)
 	LoginUser(ctx context.Context, email, password string) (*usersmodel.GetUserResponse, string, error)
 	GetUser(ctx context.Context, id string) (*usersmodel.GetUserResponse, error)
-	UpdateUser(ctx context.Context, id, password, notificationPreference string) error
+	UpdateUser(ctx context.Context, id, notificationPreference string) error
 }
 
 // Cache provides cache related operations.
@@ -264,7 +264,7 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 
 // UpdateUserRequest holds the request parameters for updating a user.
 type UpdateUserRequest struct {
-	Password               string `validate:"required,min=8,max=100"`
+	ID                     string `validate:"required"`
 	NotificationPreference string `validate:"required"`
 }
 
@@ -284,7 +284,7 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 
 	// Validate the request
 	err = s.validator.Struct(&UpdateUserRequest{
-		Password:               req.GetPassword(),
+		ID:                     req.GetId(),
 		NotificationPreference: req.GetNotificationPreference(),
 	})
 	if err != nil {
@@ -295,7 +295,6 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 	err = s.repo.UpdateUser(
 		ctx,
 		req.GetId(),
-		req.GetPassword(),
 		req.GetNotificationPreference(),
 	)
 	if err != nil {

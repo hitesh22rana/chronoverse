@@ -203,7 +203,6 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := s.usersClient.UpdateUser(r.Context(), &userspb.UpdateUserRequest{
 		Id:                     userID,
-		Password:               req.Password,
 		NotificationPreference: req.NotificationPreference,
 	}); err != nil {
 		handleError(w, err, "failed to update user")

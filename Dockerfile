@@ -1,5 +1,5 @@
 # Base image
-FROM golang:1.24.4 AS build
+FROM golang:1.25.1 AS build
 
 # Build arguments
 ARG VERSION

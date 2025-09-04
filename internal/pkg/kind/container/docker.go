@@ -165,8 +165,7 @@ func (w *DockerWorkflow) Execute(
 
 		case containerStatus := <-statusCh:
 			// Check exit code after logs finish
-			//nolint:gosimple // Ignore error, as this is a best-effort operation
-			_ = <-logsDone
+			<-logsDone
 
 			if containerStatus.StatusCode != 0 {
 				errs <- status.Errorf(codes.Aborted, "container exited with non-zero code: %d", containerStatus.StatusCode)

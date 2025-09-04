@@ -257,7 +257,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                         <p className="text-sm font-medium">{selected.size || 0} selected</p>
                     </div>
                     <Button size="sm" variant="ghost" className="gap-1 cursor-pointer" onClick={bulkRead} disabled={!selected.size}>
-                        <Check className="h-4 w-4" /> Mark read
+                        <Check className="h-4 w-4" /> Mark as read
                     </Button>
                 </div>
 

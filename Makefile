@@ -31,7 +31,7 @@ test: dependencies
 .PHONY: tools
 tools:
 	@mkdir -p ${GO_BIN}
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GO_BIN} v1.64.8
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GO_BIN} v2.4.0
 	@cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % sh -c 'GOBIN=${GO_BIN} go install %@latest'
 
 .PHONY: mockgen

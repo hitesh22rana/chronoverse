@@ -118,6 +118,13 @@ export function Workflows() {
         intervalMax,
     ].filter(Boolean).length
 
+    const intervalMinNum = filterState.intervalMin === "" ? NaN : Number(filterState.intervalMin)
+    const intervalMaxNum = filterState.intervalMax === "" ? NaN : Number(filterState.intervalMax)
+
+    const isMinInvalid = !isNaN(intervalMinNum) && intervalMinNum < 0
+    const isMaxInvalid = !isNaN(intervalMaxNum) && intervalMaxNum < 0
+    const isRangeInvalid = !isNaN(intervalMinNum) && !isNaN(intervalMaxNum) && intervalMaxNum < intervalMinNum
+
     return (
         <div className="flex flex-col h-full w-full mt-8">
             {/* Clean control bar */}
@@ -133,6 +140,21 @@ export function Workflows() {
                             onChange={e => setSearchInput(e.target.value)}
                             className="w-full pl-9 h-9"
                         />
+                        {(searchInput || activeFiltersCount > 0) && (
+                            <X
+                                className={cn(
+                                    "absolute right-2.5 top-2.5 cursor-pointer",
+                                    "size-4 text-muted-foreground hover:text-foreground"
+                                )}
+                                onClick={() => {
+                                    setSearchInput("")
+                                    updateSearchQuery("")
+                                    handleClearFilters()
+                                }}
+                                role="button"
+                                aria-label="Clear search and filters"
+                            />
+                        )}
                     </div>
 
                     <div className="flex items-center gap-2 justify-end">
@@ -157,7 +179,7 @@ export function Workflows() {
                             <PopoverContent className="max-w-xs w-full m-2" align="center">
                                 <div className="space-y-4">
                                     <div className="flex items-center justify-between">
-                                        <h4 className="font-medium">Filter Workflows</h4>
+                                        <h4 className="font-medium">Filter by</h4>
                                         {activeFiltersCount > 0 && (
                                             <Button
                                                 variant="ghost"
@@ -230,16 +252,19 @@ export function Workflows() {
                                                     type="number"
                                                     placeholder="Min"
                                                     value={filterState.intervalMin}
+                                                    min={0}
                                                     onChange={(e) =>
                                                         setFilterState(prev => ({ ...prev, intervalMin: e.target.value }))
                                                     }
                                                 />
+
                                             </div>
                                             <div>
                                                 <Input
                                                     type="number"
                                                     placeholder="Max"
                                                     value={filterState.intervalMax}
+                                                    min={0}
                                                     onChange={(e) =>
                                                         setFilterState(prev => ({ ...prev, intervalMax: e.target.value }))
                                                     }
@@ -251,7 +276,7 @@ export function Workflows() {
                                     <Separator />
 
                                     {/* Apply button */}
-                                    <Button onClick={handleApplyFilters} className="w-full">
+                                    <Button onClick={handleApplyFilters} className="w-full" disabled={isMinInvalid || isMaxInvalid || isRangeInvalid}>
                                         Apply Filters
                                     </Button>
                                 </div>

@@ -1,0 +1,137 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-certs
+  namespace: chronoverse
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
+            echo "✅ Certificates already exist, skipping generation"
+          else
+            echo "🔐 Generating new certificates..."
+            apk update
+            apk add --no-cache openssl
+            openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
+            openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+            echo "✅ Certificates generated successfully"
+          fi
+
+          echo "Setting certificate permissions..."
+          chmod 444 /certs/auth.ed.pub
+          chmod 444 /certs/auth.ed
+          echo "🎉 Certificate permissions set successfully"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      volumes:
+      - name: certs-storage
+        hostPath:
+          path: /tmp/chronoverse-certs
+          type: DirectoryOrCreate
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-service-certs
+  namespace: chronoverse
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init-service-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "🔐 Initializing TLS certificates for services..."
+
+          apk update && apk add --no-cache openssl
+
+          mkdir -p /certs/ca
+
+          SERVICES="users-service workflows-service jobs-service notifications-service analytics-service"
+          for svc in $SERVICES; do
+            mkdir -p /certs/$svc
+          done
+
+          if [ ! -f /certs/ca/ca.key ]; then
+            echo "🛡️ Generating CA certificate..."
+            openssl genrsa -out /certs/ca/ca.key 4096
+            openssl req -x509 -new -nodes -key /certs/ca/ca.key -sha256 \
+              -days 365 -out /certs/ca/ca.crt \
+              -subj "/CN=Chronoverse CA"
+            echo "✅ CA certificate created"
+          fi
+
+          for svc in $SERVICES; do
+            CERT_PATH="/certs/$svc"
+            echo "🔧 Generating certificate for $svc..."
+            openssl genrsa -out "$CERT_PATH/$svc.key" 4096
+            openssl req -new -key "$CERT_PATH/$svc.key" \
+              -out "$CERT_PATH/$svc.csr" \
+              -subj "/CN=Chronoverse $svc"
+
+            echo "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:$svc" > "$CERT_PATH/$svc-ext.cnf"
+
+            openssl x509 -req -in "$CERT_PATH/$svc.csr" \
+              -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+              -CAcreateserial -out "$CERT_PATH/$svc.crt" -days 365 \
+              -extfile "$CERT_PATH/$svc-ext.cnf"
+
+            rm "$CERT_PATH/$svc.csr" "$CERT_PATH/$svc-ext.cnf"
+
+            echo "✅ Certificate created for $svc"
+          done
+
+          echo "🔐 Generating client certificate for mTLS..."
+          mkdir -p /certs/clients
+          openssl genrsa -out /certs/clients/client.key 4096
+          openssl req -new -key /certs/clients/client.key \
+            -out /certs/clients/client.csr \
+            -subj "/CN=Chronoverse Client"
+
+          echo "subjectAltName=DNS:client" > /certs/clients/client-ext.cnf
+
+          openssl x509 -req -in /certs/clients/client.csr \
+            -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+            -CAcreateserial -out /certs/clients/client.crt -days 365 \
+            -extfile /certs/clients/client-ext.cnf
+
+          rm /certs/clients/client.csr /certs/clients/client-ext.cnf
+          rm /certs/ca/ca.srl
+          echo "✅ Client certificate created"
+
+          echo "Setting permissions for all certificates..."
+
+          chmod 444 /certs/ca/ca.crt
+          chmod 444 /certs/ca/ca.key
+
+          for svc in $SERVICES; do
+            chmod 444 /certs/$svc/$svc.crt
+            chmod 444 /certs/$svc/$svc.key
+          done
+
+          chmod 444 /certs/clients/client.crt
+          chmod 444 /certs/clients/client.key
+
+          echo "✅ Permissions set successfully"
+          echo "🎉 TLS certificates initialized successfully!"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      volumes:
+      - name: certs-storage
+        hostPath:
+          path: /tmp/chronoverse-certs
+          type: DirectoryOrCreate

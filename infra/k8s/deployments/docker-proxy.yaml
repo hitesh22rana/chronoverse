@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-proxy
+  namespace: chronoverse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docker-proxy
+  template:
+    metadata:
+      labels:
+        app: docker-proxy
+    spec:
+      containers:
+      - name: docker-proxy
+        image: tecnativa/docker-socket-proxy
+        ports:
+        - containerPort: 2375
+        envFrom:
+        - configMapRef:
+            name: docker-proxy-config
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: docker-socket
+          mountPath: /var/run/docker.sock
+      volumes:
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docker-proxy
+  namespace: chronoverse
+spec:
+  selector:
+    app: docker-proxy
+  ports:
+  - port: 2375
+    targetPort: 2375

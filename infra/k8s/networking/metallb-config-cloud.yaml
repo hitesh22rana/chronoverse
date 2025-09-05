@@ -1,0 +1,25 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: chronoverse-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  # For cloud/VPS deployments, update these IP ranges based on your provider:
+  # - AWS: Use subnet CIDR ranges from your VPC
+  # - GCP: Use subnet ranges from your GKE cluster
+  # - Azure: Use subnet ranges from your AKS cluster  
+  # - VPS/Bare Metal: Use available public IP ranges from your provider
+  # Example ranges (REPLACE WITH YOUR ACTUAL IPs):
+  - 192.168.1.100-192.168.1.110  # Replace with your actual IP range
+  autoAssign: true
+  avoidBuggyIPs: false
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: chronoverse-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - chronoverse-pool

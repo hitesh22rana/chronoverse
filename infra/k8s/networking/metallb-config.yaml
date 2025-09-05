@@ -1,0 +1,17 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: chronoverse-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.65.100-192.168.65.150
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: chronoverse-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - chronoverse-pool

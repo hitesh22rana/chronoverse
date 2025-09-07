@@ -451,7 +451,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
       KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
@@ -698,7 +698,7 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/scheduling-worker:latest
     environment:
       POSTGRES_HOST: postgres
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
       KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
@@ -744,7 +744,7 @@ services:
     environment:
       REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
       KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
@@ -815,7 +815,7 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     environment:
       REDIS_HOST: redis
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
       KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
@@ -885,7 +885,7 @@ services:
     environment:
       REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
       KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
@@ -933,7 +933,7 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/analytics-processor:latest
     environment:
       POSTGRES_HOST: postgres
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
       KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"

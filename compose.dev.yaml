@@ -59,7 +59,7 @@ services:
     hostname: kafka
     container_name: kafka
     ports:
-      - '9092:9092'
+      - '9094:9094'
       - '9093:9093'
     restart: on-failure
     environment:
@@ -67,11 +67,21 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: controller,broker
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: SSL://kafka:9094,CONTROLLER://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SSL:SSL,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: SSL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: SSL://kafka:9094
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds.txt
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore_creds.txt
+      KAFKA_SSL_KEY_CREDENTIALS: key_creds.txt
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.jks
+      KAFKA_SSL_CLIENT_AUTH: required
+      KAFKA_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      KAFKA_SSL_PROTOCOL: TLS
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
@@ -86,7 +96,10 @@ services:
       CLUSTER_ID: chronoverse
     volumes:
       - kafka:/var/lib/kafka/data
-      - kafka-secrets:/etc/kafka/secrets
+      - ./certs/kafka:/etc/kafka/secrets:ro
+    depends_on:
+      init-service-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -141,7 +154,7 @@ services:
     image: alpine:latest
     container_name: init-certs
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:rw
     entrypoint: |
       sh -c '
       if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
@@ -168,20 +181,22 @@ services:
     image: alpine:latest
     container_name: init-service-certs
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:rw
     entrypoint: |
       sh -c '
         echo "🔐 Initializing TLS certificates for services..."
 
-        apk update && apk add --no-cache openssl
+        apk update && apk add --no-cache openssl openjdk11-jre-headless
+        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
 
         mkdir -p /certs/ca
 
-        SERVICES="users-service workflows-service jobs-service notifications-service analytics-service"
+        SERVICES="kafka users-service workflows-service jobs-service notifications-service analytics-service"
         for svc in $$SERVICES; do
           mkdir -p /certs/$$svc
         done
 
+        # Generate CA if not exists
         if [ ! -f /certs/ca/ca.key ]; then
           echo "🛡️ Generating CA certificate..."
           openssl genrsa -out /certs/ca/ca.key 4096
@@ -211,6 +226,35 @@ services:
           echo "✅ Certificate created for $$svc"
         done
 
+        # Convert Kafka PEM to PKCS12
+        echo "🔄 Converting Kafka PEM to PKCS12..."
+        openssl pkcs12 -export \
+          -in /certs/kafka/kafka.crt \
+          -inkey /certs/kafka/kafka.key \
+          -certfile /certs/ca/ca.crt \
+          -out /certs/kafka/kafka.p12 \
+          -name kafka \
+          -password pass:chronoverse
+
+        # Import PKCS12 to JKS keystore
+        echo "🔄 Importing PKCS12 to JKS keystore..."
+        keytool -importkeystore \
+          -deststorepass chronoverse \
+          -destkeypass chronoverse \
+          -destkeystore /certs/kafka/kafka.keystore.jks \
+          -srckeystore /certs/kafka/kafka.p12 \
+          -srcstoretype PKCS12 \
+          -srcstorepass chronoverse \
+          -alias kafka
+
+        # Create Kafka truststore
+        echo "🔄 Creating Kafka truststore..."
+        keytool -import -trustcacerts -alias CARoot \
+          -file /certs/ca/ca.crt \
+          -keystore /certs/kafka/kafka.truststore.jks \
+          -storepass chronoverse -noprompt
+
+        # Client certificate for mTLS
         echo "🔐 Generating client certificate for mTLS..."
         mkdir -p /certs/clients
         openssl genrsa -out /certs/clients/client.key 4096
@@ -229,10 +273,18 @@ services:
         rm /certs/ca/ca.srl
         echo "✅ Client certificate created"
 
-        echo "Setting permissions for all certificates..."
+        echo "🔐 Setting permissions for all certificates..."
 
         chmod 444 /certs/ca/ca.crt
         chmod 444 /certs/ca/ca.key
+
+        chmod 444 /certs/kafka/kafka.crt /certs/kafka/kafka.key /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
+
+        echo "🔐 Creating Kafka keystore credentials files..."
+        echo "chronoverse" > /certs/kafka/keystore_creds.txt
+        echo "chronoverse" > /certs/kafka/truststore_creds.txt
+        echo "chronoverse" > /certs/kafka/key_creds.txt
+        chmod 444 /certs/kafka/*_creds.txt
 
         for svc in $$SERVICES; do
           chmod 444 /certs/$$svc/$$svc.crt
@@ -273,7 +325,7 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: "no"
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -327,7 +379,7 @@ services:
       - '50051:50051'
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -369,7 +421,11 @@ services:
     environment:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
+      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50052
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
@@ -395,7 +451,7 @@ services:
       - '50052:50052'
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -465,7 +521,7 @@ services:
       - '50053:50053'
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -541,7 +597,7 @@ services:
       - '50054:50054'
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -607,7 +663,7 @@ services:
       - '50055:50055'
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -646,7 +702,11 @@ services:
     container_name: scheduling-worker
     environment:
       POSTGRES_HOST: postgres
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
+      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
@@ -665,7 +725,7 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -696,7 +756,11 @@ services:
     environment:
       REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
+      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: workflow-worker
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
@@ -731,7 +795,7 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -771,7 +835,11 @@ services:
     container_name: execution-worker
     environment:
       REDIS_HOST: redis
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
+      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: execution-worker
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
@@ -806,7 +874,7 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -845,7 +913,11 @@ services:
     environment:
       REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
+      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: joblogs-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
@@ -865,7 +937,7 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -897,7 +969,11 @@ services:
     container_name: analytics-processor
     environment:
       POSTGRES_HOST: postgres
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:9094
+      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: analytics-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
@@ -917,7 +993,7 @@ services:
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
@@ -990,7 +1066,7 @@ services:
       - '8080:8080'
     restart: on-failure
     volumes:
-      - ./certs:/certs
+      - ./certs:/certs:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 

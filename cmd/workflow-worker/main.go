@@ -111,6 +111,7 @@ func run() int {
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
 		kafka.WithConsumeTopics(kafka.TopicWorkflows),
 		kafka.WithDisableAutoCommit(),
+		kafka.WithTLS(&cfg.Kafka),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

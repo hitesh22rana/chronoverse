@@ -2,11 +2,16 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"os"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/hitesh22rana/chronoverse/internal/config"
 )
 
 // IsolationLevel represents the Kafka isolation level.
@@ -29,6 +34,7 @@ type Config struct {
 	TransactionalID     string
 	FetchIsolationLevel IsolationLevel
 	DisableAutoCommit   bool
+	TLS                 *tls.Config
 }
 
 // Option is a functional option type that allows us to configure the Kafka client.
@@ -52,6 +58,10 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(c.Brokers...),
 		kgo.AllowAutoTopicCreation(),
+	}
+
+	if c.TLS != nil {
+		opts = append(opts, kgo.DialTLSConfig(c.TLS))
 	}
 
 	if len(c.ConsumeTopics) != 0 {
@@ -125,4 +135,41 @@ func WithDisableAutoCommit() Option {
 	return func(c *Config) {
 		c.DisableAutoCommit = true
 	}
+}
+
+// WithTLS sets the Kafka TLS config.
+func WithTLS(cfg *config.Kafka) Option {
+	return func(c *Config) {
+		if !cfg.TLS.Enabled {
+			return
+		}
+
+		tlsConfig, err := newTLSConfig(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
+		if err != nil {
+			return
+		}
+		c.TLS = tlsConfig
+	}
+}
+
+// newTLSConfig creates a new TLS config for the Kafka client.
+func newTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load client key pair: %v", err)
+	}
+
+	caCert, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read CA certificate: %v", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caCertPool,
+		MinVersion:   tls.VersionTLS12,
+	}, nil
 }

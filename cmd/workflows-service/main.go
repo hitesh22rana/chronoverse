@@ -97,6 +97,7 @@ func run() int {
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
+		kafka.WithTLS(&cfg.Kafka),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

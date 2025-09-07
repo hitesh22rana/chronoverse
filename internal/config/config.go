@@ -79,6 +79,12 @@ type Grpc struct {
 type Kafka struct {
 	Brokers       []string `envconfig:"KAFKA_BROKERS" required:"true"`
 	ConsumerGroup string   `envconfig:"KAFKA_CONSUMER_GROUP"`
+	TLS           struct {
+		Enabled  bool   `envconfig:"KAFKA_TLS_ENABLED" default:"false"`
+		CAFile   string `envconfig:"KAFKA_TLS_CA_FILE" default:""`
+		CertFile string `envconfig:"KAFKA_TLS_CERT_FILE" default:""`
+		KeyFile  string `envconfig:"KAFKA_TLS_KEY_FILE" default:""`
+	}
 }
 
 // UsersService holds the configuration for the users service.

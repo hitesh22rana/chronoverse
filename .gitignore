@@ -38,3 +38,6 @@ bin/
 *.crt
 *.key
 *.cnf
+*.jks
+*.p12
+*_creds.txt

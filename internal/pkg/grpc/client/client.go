@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -49,26 +48,6 @@ func DefaultCircuitBreakerConfig() *CircuitBreakerConfig {
 	}
 }
 
-func circuitBreakerUnaryInterceptor(cb *breaker.Breaker) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		return cb.Run(func() error {
-			return invoker(ctx, method, req, reply, cc, opts...)
-		})
-	}
-}
-
-func circuitBreakerStreamInterceptor(cb *breaker.Breaker) grpc.StreamClientInterceptor {
-	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		var stream grpc.ClientStream
-		err := cb.Run(func() error {
-			var streamErr error
-			stream, streamErr = streamer(ctx, desc, cc, method, opts...)
-			return streamErr
-		})
-		return stream, err
-	}
-}
-
 // RetryConfig contains the configuration for retry behavior.
 type RetryConfig struct {
 	// MaxRetries is the maximum number of retries for a single request.
@@ -101,6 +80,12 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		opts               []grpc.DialOption
 		unaryInterceptors  []grpc.UnaryClientInterceptor
 		streamInterceptors []grpc.StreamClientInterceptor
+	)
+
+	// Load balancing policy
+	opts = append(
+		opts,
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
 	)
 
 	// Configure TLS or insecure connection

@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: joblogs-processor-config
+  namespace: chronoverse
+  labels:
+    app: joblogs-processor
+    component: backend
+data:
+  KAFKA_CONSUMER_GROUP: "joblogs-processor"
+  ENV: "production"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: joblogs-processor
+  namespace: chronoverse
+  labels:
+    app: joblogs-processor
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: joblogs-processor
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: joblogs-processor
+        component: backend
+    spec:
+      initContainers:
+      - name: wait-for-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+            echo "Waiting for certificates..."
+            sleep 1
+          done
+          echo "✅ Certificates found!"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      containers:
+      - name: joblogs-processor
+        image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
+        envFrom:
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: joblogs-processor-config
+        - configMapRef:
+            name: docker-proxy-connection-config
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      volumes:
+      - name: certs-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc

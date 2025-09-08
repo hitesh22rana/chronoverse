@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-migration
+  namespace: chronoverse
+  labels:
+    app: database-migration
+    component: init-job
+spec:
+  template:
+    metadata:
+      labels:
+        app: database-migration
+        component: init-job
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+            echo "Waiting for certificates..."
+            sleep 1
+          done
+          echo "✅ Certificates found!"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      containers:
+      - name: database-migration
+        image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        - configMapRef:
+            name: observability-config
+        - secretRef:
+            name: postgres-secret
+        command: ["/bin/service"]
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+      volumes:
+      - name: certs-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc

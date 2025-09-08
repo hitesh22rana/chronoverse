@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-certs
+  namespace: chronoverse
+  labels:
+    app: init-certs
+    component: init-container
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
+            echo "✅ Certificates already exist, skipping generation"
+          else
+            echo "🔐 Generating new certificates..."
+            apk update
+            apk add --no-cache openssl
+            openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
+            openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+            echo "✅ Certificates generated successfully"
+          fi
+
+          echo "Setting certificate permissions..."
+          chmod 444 /certs/auth.ed.pub
+          chmod 444 /certs/auth.ed
+          echo "🎉 Certificate permissions set successfully"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      volumes:
+      - name: certs-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc

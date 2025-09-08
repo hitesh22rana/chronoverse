@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docker-proxy-config
+  namespace: chronoverse
+  labels:
+    app: docker-proxy
+    component: proxy
+data:
+  IMAGES: "1"
+  IMAGE_CREATE: "1"
+  CONTAINERS: "1"
+  CONTAINER_CREATE: "1"
+  CONTAINER_START: "1"
+  CONTAINER_LOGS: "1"
+  CONTAINER_ATTACH: "1"
+  CONTAINER_WAIT: "1"
+  CONTAINER_DELETE: "1"
+  CONTAINER_STOP: "1"
+  POST: "1"
+  AUTH: "1"
+  NETWORKS: "0"
+  VOLUMES: "0"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docker-proxy-connection-config
+  namespace: chronoverse
+  labels:
+    app: docker-proxy
+    component: proxy
+data:
+  DOCKER_HOST: "tcp://docker-proxy:2375"
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: docker-proxy
+  namespace: chronoverse
+  labels:
+    app: docker-proxy
+    component: proxy
+spec:
+  selector:
+    matchLabels:
+      app: docker-proxy
+      component: proxy
+  template:
+    metadata:
+      labels:
+        app: docker-proxy
+        component: proxy
+    spec:
+      containers:
+      - name: docker-proxy
+        image: tecnativa/docker-socket-proxy
+        ports:
+        - containerPort: 2375
+        envFrom:
+        - configMapRef:
+            name: docker-proxy-config
+        resources:
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: docker-socket
+          mountPath: /var/run/docker.sock
+      volumes:
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docker-proxy
+  namespace: chronoverse
+  labels:
+    app: docker-proxy
+    component: proxy
+spec:
+  type: ClusterIP
+  selector:
+    app: docker-proxy
+    component: proxy
+  ports:
+  - port: 2375
+    targetPort: 2375

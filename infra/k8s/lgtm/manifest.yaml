@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lgtm-config
+  namespace: chronoverse
+  labels:
+    app: lgtm
+    component: monitoring
+data:
+  GF_AUTH_ANONYMOUS_ENABLED: "true"
+  GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-config
+  namespace: chronoverse
+  labels:
+    app: lgtm
+    component: monitoring
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://lgtm:4317"
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://lgtm:4317"
+  OTEL_EXPORTER_OTLP_LOGS_INSECURE: "true"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_METRIC_EXPORT_INTERVAL: "500"
+  OTEL_BSP_SCHEDULE_DELAY: "500"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+  namespace: chronoverse
+  labels:
+    app: lgtm
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lgtm
+  template:
+    metadata:
+      labels:
+        app: lgtm
+        component: monitoring
+    spec:
+      containers:
+      - name: lgtm
+        image: grafana/otel-lgtm
+        ports:
+        - containerPort: 3000
+          name: grafana
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        envFrom:
+        - configMapRef:
+            name: lgtm-config
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1536Mi"
+          requests:
+            cpu: "500m"
+            memory: "768Mi"
+        volumeMounts:
+        - name: lgtm-storage
+          mountPath: /data
+      volumes:
+      - name: lgtm-storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+  namespace: chronoverse
+  labels:
+    app: lgtm
+    component: monitoring
+spec:
+  type: ClusterIP
+  selector:
+    app: lgtm
+    component: monitoring
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: grafana
+  - port: 4317
+    targetPort: 4317
+    name: otlp-grpc
+  - port: 4318
+    targetPort: 4318
+    name: otlp-http

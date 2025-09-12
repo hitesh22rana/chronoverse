@@ -1,3 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: localstorage
+provisioner: docker.io/hostpath
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -10,10 +19,12 @@ spec:
     storage: 10Gi
   accessModes:
     - ReadWriteOnce
+  storageClassName: localstorage
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
+  volumeMode: Filesystem
   hostPath:
-    path: /tmp/chronoverse-data/postgres
+    path: /var/lib/chronoverse-data/postgres
+    type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -27,10 +38,12 @@ spec:
     storage: 5Gi
   accessModes:
     - ReadWriteOnce
+  storageClassName: localstorage
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
+  volumeMode: Filesystem
   hostPath:
-    path: /tmp/chronoverse-data/redis
+    path: /var/lib/chronoverse-data/redis
+    type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -44,10 +57,12 @@ spec:
     storage: 20Gi
   accessModes:
     - ReadWriteOnce
+  storageClassName: localstorage
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
+  volumeMode: Filesystem
   hostPath:
-    path: /tmp/chronoverse-data/clickhouse
+    path: /var/lib/chronoverse-data/clickhouse
+    type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -61,10 +76,12 @@ spec:
     storage: 10Gi
   accessModes:
     - ReadWriteOnce
+  storageClassName: localstorage
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
+  volumeMode: Filesystem
   hostPath:
-    path: /tmp/chronoverse-data/kafka
+    path: /var/lib/chronoverse-data/kafka
+    type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -78,10 +95,12 @@ spec:
     storage: 1Gi
   accessModes:
     - ReadWriteOnce
+  storageClassName: localstorage
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
+  volumeMode: Filesystem
   hostPath:
-    path: /tmp/chronoverse-certs
+    path: /var/lib/chronoverse-data/certs
+    type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -94,7 +113,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ""
+  storageClassName: localstorage
   resources:
     requests:
       storage: 10Gi
@@ -111,7 +130,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ""
+  storageClassName: localstorage
   resources:
     requests:
       storage: 5Gi
@@ -128,7 +147,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ""
+  storageClassName: localstorage
   resources:
     requests:
       storage: 20Gi
@@ -145,7 +164,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ""
+  storageClassName: localstorage
   resources:
     requests:
       storage: 10Gi
@@ -162,7 +181,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ""
+  storageClassName: localstorage
   resources:
     requests:
       storage: 1Gi

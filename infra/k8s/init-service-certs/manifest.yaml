@@ -8,6 +8,10 @@ metadata:
     component: init-container
 spec:
   template:
+    metadata:
+      labels:
+        app: init-service-certs
+        component: init-container
     spec:
       restartPolicy: OnFailure
       containers:
@@ -162,6 +166,13 @@ spec:
 
           echo "✅ Permissions set successfully"
           echo "🎉 TLS certificates initialized successfully!"
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
         volumeMounts:
         - name: certs-storage
           mountPath: /certs

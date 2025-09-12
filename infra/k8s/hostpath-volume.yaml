@@ -1,0 +1,188 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: localstorage
+provisioner: docker.io/hostpath
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+  labels:
+    app: postgres
+    type: hostpath-volume
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  hostPath:
+    path: /var/lib/chronoverse-data/postgres
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv
+  labels:
+    app: redis
+    type: hostpath-volume
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  hostPath:
+    path: /var/lib/chronoverse-data/redis
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: clickhouse-pv
+  labels:
+    app: clickhouse
+    type: hostpath-volume
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  hostPath:
+    path: /var/lib/chronoverse-data/clickhouse
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv
+  labels:
+    app: kafka
+    type: hostpath-volume
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  hostPath:
+    path: /var/lib/chronoverse-data/kafka
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: certs-pv
+  labels:
+    app: certs
+    type: hostpath-volume
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  hostPath:
+    path: /var/lib/chronoverse-data/certs
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: chronoverse
+  labels:
+    app: postgres
+    type: hostpath-volume-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  resources:
+    requests:
+      storage: 10Gi
+  volumeName: postgres-pv
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: chronoverse
+  labels:
+    app: redis
+    type: hostpath-volume-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  resources:
+    requests:
+      storage: 5Gi
+  volumeName: redis-pv
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clickhouse-pvc
+  namespace: chronoverse
+  labels:
+    app: clickhouse
+    type: hostpath-volume-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  resources:
+    requests:
+      storage: 20Gi
+  volumeName: clickhouse-pv
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-pvc
+  namespace: chronoverse
+  labels:
+    app: kafka
+    type: hostpath-volume-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  resources:
+    requests:
+      storage: 10Gi
+  volumeName: kafka-pv
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: certs-pvc
+  namespace: chronoverse
+  labels:
+    app: certs
+    type: hostpath-volume-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: localstorage
+  resources:
+    requests:
+      storage: 1Gi
+  volumeName: certs-pv

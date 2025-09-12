@@ -60,7 +60,7 @@ spec:
             name: scheduling-worker-config
         resources:
           limits:
-            cpu: "250m"
+            cpu: "200m"
             memory: "256Mi"
           requests:
             cpu: "100m"

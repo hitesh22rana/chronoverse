@@ -8,6 +8,10 @@ metadata:
     component: init-container
 spec:
   template:
+    metadata:
+      labels:
+        app: init-certs
+        component: init-container
     spec:
       restartPolicy: OnFailure
       containers:
@@ -32,6 +36,13 @@ spec:
           chmod 444 /certs/auth.ed.pub
           chmod 444 /certs/auth.ed
           echo "🎉 Certificate permissions set successfully"
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
         volumeMounts:
         - name: certs-storage
           mountPath: /certs

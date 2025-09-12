@@ -63,11 +63,11 @@ spec:
             name: docker-proxy-connection-config
         resources:
           limits:
-            cpu: "250m"
-            memory: "256Mi"
-          requests:
             cpu: "100m"
             memory: "128Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
         volumeMounts:
         - name: certs-storage
           mountPath: /certs

@@ -7,7 +7,7 @@ metadata:
     app: notifications-service
     component: backend
 data:
-  GRPC_REQUEST_TIMEOUT: "500ms"
+  GRPC_REQUEST_TIMEOUT: "1s"
   GRPC_TLS_ENABLED: "true"
   GRPC_TLS_CA_FILE: "certs/ca/ca.crt"
   GRPC_PORT: "50054"
@@ -72,11 +72,11 @@ spec:
             name: notifications-service-config
         resources:
           limits:
-            cpu: "250m"
-            memory: "256Mi"
-          requests:
             cpu: "100m"
             memory: "128Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
         volumeMounts:
         - name: certs-storage
           mountPath: /certs

@@ -439,6 +439,7 @@ services:
       OTEL_METRIC_EXPORT_INTERVAL: 500
       OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
+      DOCKER_HOST: tcp://docker-proxy:2375
     build:
       context: .
       dockerfile: Dockerfile
@@ -472,6 +473,8 @@ services:
       retries: 5
       start_period: 30s
     depends_on:
+      docker-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:

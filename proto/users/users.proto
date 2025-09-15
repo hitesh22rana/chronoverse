@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package users;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/go/users;users";
+option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/users;users";
 
 // RegisterUserRequest contains the details needed to register a new user.
 message RegisterUserRequest {

@@ -1243,16 +1243,9 @@ func TestStreamJobLogs(t *testing.T) {
 					defer close(ch)
 					ticker := time.NewTicker(10 * time.Millisecond)
 					defer ticker.Stop()
-					var i uint32 = 1
 					for {
 						select {
 						case <-ticker.C:
-							ch <- &jobsmodel.JobLog{
-								Timestamp:   time.Now(),
-								Message:     fmt.Sprintf("Log message %d", i),
-								SequenceNum: i,
-							}
-							i++
 						case <-time.After(200 * time.Millisecond):
 							return // Exit after timeout
 						}
@@ -1422,8 +1415,10 @@ func TestStreamJobLogs(t *testing.T) {
 			}
 
 			// Read logs from the stream
-			var logCount int
-			var streamClosed bool
+			var (
+				logCount     int
+				streamClosed bool
+			)
 
 			// Use a timeout to prevent test from hanging
 			timeout := time.After(300 * time.Millisecond)
@@ -1461,7 +1456,7 @@ func TestStreamJobLogs(t *testing.T) {
 				t.Errorf("expected stream to be closed, but it's still open")
 			}
 
-			if tt.want.logCount > 0 && logCount != tt.want.logCount {
+			if logCount != tt.want.logCount {
 				t.Errorf("expected %d logs, got %d", tt.want.logCount, logCount)
 			}
 

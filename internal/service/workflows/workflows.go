@@ -5,7 +5,6 @@ package workflows
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,7 +20,10 @@ import (
 
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -53,21 +55,37 @@ type Cache interface {
 	DeleteByPattern(ctx context.Context, pattern string) (int64, error)
 }
 
+// ContainerSvc represents the container service.
+type ContainerSvc interface {
+	Build(ctx context.Context, imageName string) error
+	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (string, <-chan *jobsmodel.JobLog, <-chan error, error)
+	Terminate(ctx context.Context, containerID string) error
+}
+
+// HeartBeatSvc represents the heartbeat service.
+type HeartBeatSvc interface {
+	Execute(ctx context.Context, timeout time.Duration, endpoint string, expectedStatusCode int, headers map[string][]string) error
+}
+
 // Service provides job related operations.
 type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
 	cache     Cache
+	csvc      ContainerSvc
+	hsvc      HeartBeatSvc
 }
 
 // New creates a new workflows-service.
-func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
+func New(validator *validator.Validate, repo Repository, cache Cache, csvc ContainerSvc, hsvc HeartBeatSvc) *Service {
 	return &Service{
 		validator: validator,
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		repo:      repo,
 		cache:     cache,
+		csvc:      csvc,
+		hsvc:      hsvc,
 	}
 }
 
@@ -109,17 +127,20 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the kind
-	err = validateKind(req.GetKind())
-	if err != nil {
-		return "", err
-	}
-
-	// Validate the JSON payload
-	var _payload map[string]any
-	if err = json.Unmarshal([]byte(req.GetPayload()), &_payload); err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
-		return "", err
+	// Validation based on kind
+	switch req.GetKind() {
+	case workflowsmodel.KindHeartbeat.ToString():
+		_, err = heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
+		if err != nil {
+			return "", err
+		}
+	case workflowsmodel.KindContainer.ToString():
+		_, err = container.ExtractAndValidateContainerDetails(req.GetPayload())
+		if err != nil {
+			return "", err
+		}
+	default:
+		return "", status.Errorf(codes.InvalidArgument, "invalid kind: %s", req.GetKind())
 	}
 
 	// CreateWorkflow the job
@@ -204,10 +225,12 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		return err
 	}
 
-	// Validate the JSON payload
-	var _payload map[string]any
-	if err = json.Unmarshal([]byte(req.GetPayload()), &_payload); err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
+	// Validate payload
+	_, heartBeatPayloadErr := heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
+	_, containerPayloadErr := container.ExtractAndValidateContainerDetails(req.GetPayload())
+
+	if heartBeatPayloadErr != nil && containerPayloadErr != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid payload")
 		return err
 	}
 
@@ -757,6 +780,189 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 	return res, nil
 }
 
+// StreamTestWorkflowRun streams the logs of a test workflow run.
+//
+//nolint:gocyclo // This function is not complex enough to warrant a refactor
+func (s *Service) StreamTestWorkflowRun(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (ch chan *workflowsmodel.StreamTestWorkflowRunResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.StreamTestWorkflowRun")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	// Validate the request
+	err = s.validator.Struct(&CreateWorkflowRequest{
+		UserID:                           req.GetUserId(),
+		Name:                             req.GetName(),
+		Payload:                          req.GetPayload(),
+		Kind:                             req.GetKind(),
+		Interval:                         req.GetInterval(),
+		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Validation based on kind
+	var (
+		heartbeatDetails *heartbeat.Details
+		containerDetails *container.Details
+	)
+	switch req.GetKind() {
+	case workflowsmodel.KindHeartbeat.ToString():
+		heartbeatDetails, err = heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
+		if err != nil {
+			return nil, err
+		}
+	case workflowsmodel.KindContainer.ToString():
+		containerDetails, err = container.ExtractAndValidateContainerDetails(req.GetPayload())
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "invalid kind: %s", req.GetKind())
+	}
+
+	ch = make(chan *workflowsmodel.StreamTestWorkflowRunResponse)
+	go func() {
+		defer close(ch)
+
+		// Start the build process, if the kind supports.
+		if isBuildStepRequired(req.GetKind()) {
+			select {
+			case <-ctx.Done():
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status:  workflowsmodel.TestWorkflowRunStatusCanceled,
+					Message: fmt.Sprintf("Build process canceled for %s", req.GetName()),
+				}
+				return
+			default:
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status:  workflowsmodel.TestWorkflowRunStatusBuilding,
+					Message: fmt.Sprintf("Building %s for test run", req.GetName()),
+				}
+				if err = s.csvc.Build(ctx, containerDetails.Image); err != nil {
+					ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+						Status:  workflowsmodel.TestWorkflowRunStatusFailed,
+						Message: err.Error(),
+					}
+					return
+				}
+			}
+		}
+
+		// Start the streaming logs only if it's supported.
+		if !isLogsGenerationSupported(req.Kind) {
+			select {
+			case <-ctx.Done():
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status:  workflowsmodel.TestWorkflowRunStatusCanceled,
+					Message: fmt.Sprintf("Test run canceled during %s execution", req.GetName()),
+				}
+				return
+			default:
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status:  workflowsmodel.TestWorkflowRunStatusRunning,
+					Kind:    workflowsmodel.KindHeartbeat,
+					Message: fmt.Sprintf("Test run started for %s", req.GetName()),
+				}
+				if err = s.hsvc.Execute(ctx, heartbeatDetails.TimeOut, heartbeatDetails.Endpoint, heartbeatDetails.ExpectedStatusCode, heartbeatDetails.Headers); err != nil {
+					ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+						Status:  workflowsmodel.TestWorkflowRunStatusFailed,
+						Message: err.Error(),
+					}
+					return
+				}
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status:  workflowsmodel.TestWorkflowRunStatusCompleted,
+					Message: fmt.Sprintf("Test run completed for %s", req.GetName()),
+				}
+				return
+			}
+		}
+
+		containerID, logs, errs, workflowErr := s.csvc.Execute(
+			ctx,
+			containerDetails.TimeOut,
+			containerDetails.Image,
+			containerDetails.Cmd,
+			containerDetails.Env,
+		)
+
+		if workflowErr != nil {
+			ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+				Status:  workflowsmodel.TestWorkflowRunStatusFailed,
+				Message: err.Error(),
+			}
+			return
+		}
+
+		for logs != nil || errs != nil {
+			select {
+			case <-ctx.Done():
+				var status workflowsmodel.TestWorkflowRunStatus
+				var reason string
+
+				switch ctx.Err() {
+				case context.Canceled:
+					status = workflowsmodel.TestWorkflowRunStatusCanceled
+					reason = fmt.Sprintf("Test run canceled for %s", req.GetName())
+				case context.DeadlineExceeded:
+					status = workflowsmodel.TestWorkflowRunStatusFailed
+					reason = fmt.Sprintf("Test run timed out for %s", req.GetName())
+				default:
+					status = workflowsmodel.TestWorkflowRunStatusFailed
+					reason = fmt.Sprintf("Test run stopped for %s: unknown context error", req.GetName())
+				}
+
+				// Terminate the running container.
+				//nolint:errcheck // It's safe to ignore all lint errors here.
+				_ = s.csvc.Terminate(context.WithoutCancel(ctx), containerID)
+
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status:  status,
+					Message: reason,
+				}
+				return
+			case data, ok := <-logs:
+				if !ok {
+					logs = nil
+					continue
+				}
+				if data == nil {
+					continue
+				}
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status: workflowsmodel.TestWorkflowRunStatusRunning,
+					Kind:   workflowsmodel.KindContainer,
+					Log:    data,
+				}
+			case err, ok := <-errs:
+				if !ok {
+					errs = nil
+					continue
+				}
+				ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+					Status:  workflowsmodel.TestWorkflowRunStatusFailed,
+					Message: err.Error(),
+				}
+				return
+			}
+		}
+
+		ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+			Status:  workflowsmodel.TestWorkflowRunStatusCompleted,
+			Message: fmt.Sprintf("Test run completed for %s", req.GetName()),
+		}
+	}()
+
+	return ch, nil
+}
+
 func validateWorkflowBuildStatus(s string) error {
 	switch s {
 	case workflowsmodel.WorkflowBuildStatusQueued.ToString(),
@@ -767,6 +973,24 @@ func validateWorkflowBuildStatus(s string) error {
 		return nil
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid build status: %s", s)
+	}
+}
+
+func isBuildStepRequired(kind string) bool {
+	switch kind {
+	case workflowsmodel.KindHeartbeat.ToString():
+		return false
+	default:
+		return true
+	}
+}
+
+func isLogsGenerationSupported(kind string) bool {
+	switch kind {
+	case workflowsmodel.KindHeartbeat.ToString():
+		return false
+	default:
+		return true
 	}
 }
 

@@ -145,6 +145,21 @@ func (mr *MockServiceMockRecorder) ResetWorkflowConsecutiveJobFailuresCount(ctx,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockService)(nil).ResetWorkflowConsecutiveJobFailuresCount), ctx, req)
 }
 
+// StreamTestWorkflowRun mocks base method.
+func (m *MockService) StreamTestWorkflowRun(ctx context.Context, req *workflows0.CreateWorkflowRequest) (chan *workflows.StreamTestWorkflowRunResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StreamTestWorkflowRun", ctx, req)
+	ret0, _ := ret[0].(chan *workflows.StreamTestWorkflowRunResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StreamTestWorkflowRun indicates an expected call of StreamTestWorkflowRun.
+func (mr *MockServiceMockRecorder) StreamTestWorkflowRun(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamTestWorkflowRun", reflect.TypeOf((*MockService)(nil).StreamTestWorkflowRun), ctx, req)
+}
+
 // TerminateWorkflow mocks base method.
 func (m *MockService) TerminateWorkflow(ctx context.Context, req *workflows0.TerminateWorkflowRequest) error {
 	m.ctrl.T.Helper()

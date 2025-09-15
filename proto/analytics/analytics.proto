@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package analytics;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/go/analytics;analytics";
+option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics;analytics";
 
 // GetUserAnalyticsRequest contains the ID of the user whose activity is to be retrieved.
 message GetUserAnalyticsRequest {

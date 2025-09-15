@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package jobs;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/go/jobs;jobs";
+option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs;jobs";
 
 // ScheduleJobRequest contains the details needed to create a new job.
 message ScheduleJobRequest {

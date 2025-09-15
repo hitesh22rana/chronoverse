@@ -22,6 +22,7 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/app/workflows"
 	workflowsmock "github.com/hitesh22rana/chronoverse/internal/app/workflows/mock"
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
@@ -2080,6 +2081,327 @@ func TestListWorkflows(t *testing.T) {
 					t.Error("ListWorkflows() error = nil, want error")
 				}
 				return
+			}
+		})
+	}
+}
+
+//nolint:gocyclo // This function is complex due to the nature of streaming logs and context cancellation.
+func TestStreamTestWorkflowRun(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := workflowsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(workflows.New(t.Context(), &workflows.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *workflowspb.CreateWorkflowRequest
+	}
+
+	type want struct {
+		messageCount int
+		logCount     int
+		expectClosed bool
+	}
+
+	// Test cases
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*workflowspb.CreateWorkflowRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success: stream logs",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &workflowspb.CreateWorkflowRequest{
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"image": "alpine:latest","cmd": ["sh", "-c", 'for i in $(seq 1 20); do echo "hello world $i";sleep 1; done'], "timeout": "25s"}`,
+					Kind:                             "CONTAINER",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
+				},
+			},
+			mock: func(_ *workflowspb.CreateWorkflowRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+
+				// Create a channel that will send response then close
+				ch := make(chan *workflowsmodel.StreamTestWorkflowRunResponse, 3)
+				go func() {
+					defer close(ch)
+					ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+						Status:  workflowsmodel.TestWorkflowRunStatusBuilding,
+						Message: "Building",
+					}
+					ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+						Status: workflowsmodel.TestWorkflowRunStatusRunning,
+						Kind:   workflowsmodel.KindContainer,
+						Log: &jobsmodel.JobLog{
+							Timestamp:   time.Now(),
+							Message:     "Log message 1",
+							SequenceNum: 1,
+						},
+					}
+					ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+						Status: workflowsmodel.TestWorkflowRunStatusRunning,
+						Kind:   workflowsmodel.KindContainer,
+						Log: &jobsmodel.JobLog{
+							Timestamp:   time.Now(),
+							Message:     "Log message 2",
+							SequenceNum: 2,
+						},
+					}
+					ch <- &workflowsmodel.StreamTestWorkflowRunResponse{
+						Status:  workflowsmodel.TestWorkflowRunStatusCompleted,
+						Message: "Completed",
+					}
+				}()
+
+				svc.EXPECT().StreamTestWorkflowRun(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(ch, nil)
+			},
+			want: want{
+				messageCount: 2,
+				logCount:     2,
+				expectClosed: true,
+			},
+			isErr: false,
+		},
+		{
+			name: "success: context cancellation",
+			args: args{
+				getCtx: func() context.Context {
+					ctx := auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+					ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+					// Cancel after a short delay to test context cancellation
+					go func() {
+						time.Sleep(50 * time.Millisecond)
+						cancel()
+					}()
+					return ctx
+				},
+				req: &workflowspb.CreateWorkflowRequest{
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"image": "alpine:latest","cmd": ["sh", "-c", 'for i in $(seq 1 20); do echo "hello world $i";sleep 1; done'], "timeout": "25s"}`,
+					Kind:                             "CONTAINER",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
+				},
+			},
+			mock: func(_ *workflowspb.CreateWorkflowRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+
+				// Create a channel that sends logs continuously
+				ch := make(chan *workflowsmodel.StreamTestWorkflowRunResponse)
+				go func() {
+					defer close(ch)
+					ticker := time.NewTicker(10 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-ticker.C:
+						case <-time.After(200 * time.Millisecond):
+							return // Exit after timeout
+						}
+					}
+				}()
+
+				svc.EXPECT().StreamTestWorkflowRun(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(ch, nil)
+			},
+			// We don't expect any specific count due to context cancellation
+			want: want{
+				messageCount: 0,
+				logCount:     0,
+				expectClosed: false,
+			},
+			isErr: false, // Context cancellation should not return an error from the gRPC method
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &workflowspb.CreateWorkflowRequest{
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"image": "alpine:latest","cmd": ["sh", "-c", 'for i in $(seq 1 20); do echo "hello world $i";sleep 1; done'], "timeout": "25s"}`,
+					Kind:                             "CONTAINER",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
+				},
+			},
+			mock: func(_ *workflowspb.CreateWorkflowRequest) {},
+			want: want{
+				logCount:     0,
+				expectClosed: false,
+			},
+			isErr: true,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &workflowspb.CreateWorkflowRequest{
+					UserId:                           "user1",
+					Name:                             "job1",
+					Payload:                          `{"image": "alpine:latest","cmd": ["sh", "-c", 'for i in $(seq 1 20); do echo "hello world $i";sleep 1; done'], "timeout": "25s"}`,
+					Kind:                             "CONTAINER",
+					Interval:                         1,
+					MaxConsecutiveJobFailuresAllowed: 5,
+				},
+			},
+			mock: func(_ *workflowspb.CreateWorkflowRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(nil, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			want: want{
+				logCount:     0,
+				expectClosed: false,
+			},
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.mock(tt.args.req)
+			stream, err := client.StreamTestWorkflowRun(tt.args.getCtx(), tt.args.req)
+			if err != nil && tt.isErr {
+				return
+			}
+
+			if tt.isErr {
+				if stream == nil {
+					t.Error("StreamTestWorkflowRun() returned nil stream, want error")
+					return
+				}
+
+				_, err = stream.Recv()
+				if err == nil {
+					t.Error("StreamTestWorkflowRun() error = nil, want error")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("StreamTestWorkflowRun() error = %v, want nil", err)
+				return
+			}
+
+			if stream == nil {
+				t.Errorf("StreamTestWorkflowRun() stream = nil, want stream")
+				return
+			}
+
+			// Read logs from the stream
+			var (
+				logCount     int
+				messageCount int
+				streamClosed bool
+			)
+
+			// Timeout to prevent test from hanging
+			timeout := time.After(300 * time.Millisecond)
+			for {
+				select {
+				case <-timeout:
+					// Test timeout - exit the loop
+					goto done
+				default:
+					data, err := stream.Recv()
+					if err != nil {
+						// Stream ended or error occurred
+						streamClosed = true
+						goto done
+					}
+					switch v := data.Data.(type) {
+					case *workflowspb.StreamTestWorkflowRunResponse_Log:
+						log := v.Log
+						if log != nil {
+							logCount++
+							if log.Message == "" {
+								t.Errorf("received log with empty message")
+							}
+							if log.SequenceNum == 0 {
+								t.Errorf("received log with zero sequence number")
+							}
+							if log.Timestamp == "" {
+								t.Errorf("received log with empty timestamp")
+							}
+						}
+					case *workflowspb.StreamTestWorkflowRunResponse_Message:
+						messageCount++
+					default:
+						// Unknown type
+					}
+				}
+			}
+
+		done:
+			// Verify expectations based on test case
+			if tt.want.expectClosed && !streamClosed {
+				t.Errorf("expected stream to be closed, but it's still open")
+			}
+
+			if messageCount != tt.want.messageCount {
+				t.Errorf("expected %d message, got %d", tt.want.messageCount, messageCount)
+			}
+
+			if tt.want.logCount > 0 && logCount != tt.want.logCount {
+				t.Errorf("expected %d logs, got %d", tt.want.logCount, logCount)
+			}
+
+			// Ensures stream is properly closed
+			if !streamClosed {
+				if err := stream.CloseSend(); err != nil {
+					t.Errorf("failed to close stream: %v", err)
+				}
 			}
 		})
 	}

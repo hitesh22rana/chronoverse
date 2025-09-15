@@ -91,8 +91,9 @@ func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, ch *clickhouse.Client, 
 func (r *Repository) StartWorkers(ctx context.Context) {
 	// Start worker goroutines
 	for i := range r.cfg.ParallelismLimit {
-		r.wg.Add(1)
-		go r.worker(ctx, fmt.Sprintf("worker-%d", i))
+		r.wg.Go(func() {
+			r.worker(ctx, fmt.Sprintf("worker-%d", i))
+		})
 	}
 }
 

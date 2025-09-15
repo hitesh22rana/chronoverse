@@ -29,6 +29,7 @@ const (
 	WorkflowsService_TerminateWorkflow_FullMethodName                            = "/workflows.WorkflowsService/TerminateWorkflow"
 	WorkflowsService_DeleteWorkflow_FullMethodName                               = "/workflows.WorkflowsService/DeleteWorkflow"
 	WorkflowsService_ListWorkflows_FullMethodName                                = "/workflows.WorkflowsService/ListWorkflows"
+	WorkflowsService_StreamTestWorkflowRun_FullMethodName                        = "/workflows.WorkflowsService/StreamTestWorkflowRun"
 )
 
 // WorkflowsServiceClient is the client API for WorkflowsService service.
@@ -61,6 +62,8 @@ type WorkflowsServiceClient interface {
 	DeleteWorkflow(ctx context.Context, in *DeleteWorkflowRequest, opts ...grpc.CallOption) (*DeleteWorkflowResponse, error)
 	// ListWorkflows returns a list of all workflows owned by a user.
 	ListWorkflows(ctx context.Context, in *ListWorkflowsRequest, opts ...grpc.CallOption) (*ListWorkflowsResponse, error)
+	// StreamTestWorkflowRun tests the workflow run and streams the logs.
+	StreamTestWorkflowRun(ctx context.Context, in *CreateWorkflowRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamTestWorkflowRunResponse], error)
 }
 
 type workflowsServiceClient struct {
@@ -171,6 +174,25 @@ func (c *workflowsServiceClient) ListWorkflows(ctx context.Context, in *ListWork
 	return out, nil
 }
 
+func (c *workflowsServiceClient) StreamTestWorkflowRun(ctx context.Context, in *CreateWorkflowRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamTestWorkflowRunResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &WorkflowsService_ServiceDesc.Streams[0], WorkflowsService_StreamTestWorkflowRun_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[CreateWorkflowRequest, StreamTestWorkflowRunResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type WorkflowsService_StreamTestWorkflowRunClient = grpc.ServerStreamingClient[StreamTestWorkflowRunResponse]
+
 // WorkflowsServiceServer is the server API for WorkflowsService service.
 // All implementations should embed UnimplementedWorkflowsServiceServer
 // for forward compatibility.
@@ -201,6 +223,8 @@ type WorkflowsServiceServer interface {
 	DeleteWorkflow(context.Context, *DeleteWorkflowRequest) (*DeleteWorkflowResponse, error)
 	// ListWorkflows returns a list of all workflows owned by a user.
 	ListWorkflows(context.Context, *ListWorkflowsRequest) (*ListWorkflowsResponse, error)
+	// StreamTestWorkflowRun tests the workflow run and streams the logs.
+	StreamTestWorkflowRun(*CreateWorkflowRequest, grpc.ServerStreamingServer[StreamTestWorkflowRunResponse]) error
 }
 
 // UnimplementedWorkflowsServiceServer should be embedded to have
@@ -239,6 +263,9 @@ func (UnimplementedWorkflowsServiceServer) DeleteWorkflow(context.Context, *Dele
 }
 func (UnimplementedWorkflowsServiceServer) ListWorkflows(context.Context, *ListWorkflowsRequest) (*ListWorkflowsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListWorkflows not implemented")
+}
+func (UnimplementedWorkflowsServiceServer) StreamTestWorkflowRun(*CreateWorkflowRequest, grpc.ServerStreamingServer[StreamTestWorkflowRunResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method StreamTestWorkflowRun not implemented")
 }
 func (UnimplementedWorkflowsServiceServer) testEmbeddedByValue() {}
 
@@ -440,6 +467,17 @@ func _WorkflowsService_ListWorkflows_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowsService_StreamTestWorkflowRun_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CreateWorkflowRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(WorkflowsServiceServer).StreamTestWorkflowRun(m, &grpc.GenericServerStream[CreateWorkflowRequest, StreamTestWorkflowRunResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type WorkflowsService_StreamTestWorkflowRunServer = grpc.ServerStreamingServer[StreamTestWorkflowRunResponse]
+
 // WorkflowsService_ServiceDesc is the grpc.ServiceDesc for WorkflowsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -488,6 +526,12 @@ var WorkflowsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WorkflowsService_ListWorkflows_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamTestWorkflowRun",
+			Handler:       _WorkflowsService_StreamTestWorkflowRun_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "workflows/workflows.proto",
 }

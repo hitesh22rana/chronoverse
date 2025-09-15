@@ -22,7 +22,8 @@ import (
 
 const (
 	// containerStopTimeout is the default timeout for stopping a container.
-	containerStopTimeout = 2 * time.Second
+	containerStopTimeout   = 2 * time.Second
+	containerBufferTimeout = 1 * time.Second
 )
 
 // DockerWorkflow represents a Docker workflow.
@@ -74,7 +75,7 @@ func (w *DockerWorkflow) Execute(
 		return "", nil, nil, err
 	}
 
-	containerTimeout := int(timeout.Seconds())
+	containerTimeout := int((timeout + containerBufferTimeout).Seconds())
 
 	// Create container with auto-removal
 	resp, err := w.Client.ContainerCreate(
@@ -222,9 +223,7 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 	var wg sync.WaitGroup
 
 	// Read from stdout
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		defer stdoutReader.Close()
 
 		scanner := bufio.NewScanner(stdoutReader)
@@ -240,12 +239,10 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 				}
 			}
 		}
-	}()
+	})
 
 	// Read from stderr
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		defer stderrReader.Close()
 
 		scanner := bufio.NewScanner(stderrReader)
@@ -261,7 +258,7 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 				}
 			}
 		}
-	}()
+	})
 
 	// Close logMessages when both readers are done
 	go func() {

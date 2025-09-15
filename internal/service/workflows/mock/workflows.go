@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 	time "time"
 
+	jobs "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflows "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -267,4 +268,111 @@ func (m *MockCache) Set(ctx context.Context, key string, value any, expiration t
 func (mr *MockCacheMockRecorder) Set(ctx, key, value, expiration any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockCache)(nil).Set), ctx, key, value, expiration)
+}
+
+// MockContainerSvc is a mock of ContainerSvc interface.
+type MockContainerSvc struct {
+	ctrl     *gomock.Controller
+	recorder *MockContainerSvcMockRecorder
+	isgomock struct{}
+}
+
+// MockContainerSvcMockRecorder is the mock recorder for MockContainerSvc.
+type MockContainerSvcMockRecorder struct {
+	mock *MockContainerSvc
+}
+
+// NewMockContainerSvc creates a new mock instance.
+func NewMockContainerSvc(ctrl *gomock.Controller) *MockContainerSvc {
+	mock := &MockContainerSvc{ctrl: ctrl}
+	mock.recorder = &MockContainerSvcMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockContainerSvc) EXPECT() *MockContainerSvcMockRecorder {
+	return m.recorder
+}
+
+// Build mocks base method.
+func (m *MockContainerSvc) Build(ctx context.Context, imageName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Build", ctx, imageName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Build indicates an expected call of Build.
+func (mr *MockContainerSvcMockRecorder) Build(ctx, imageName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Build", reflect.TypeOf((*MockContainerSvc)(nil).Build), ctx, imageName)
+}
+
+// Execute mocks base method.
+func (m *MockContainerSvc) Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (string, <-chan *jobs.JobLog, <-chan error, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Execute", ctx, timeout, image, cmd, env)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(<-chan *jobs.JobLog)
+	ret2, _ := ret[2].(<-chan error)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
+}
+
+// Execute indicates an expected call of Execute.
+func (mr *MockContainerSvcMockRecorder) Execute(ctx, timeout, image, cmd, env any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*MockContainerSvc)(nil).Execute), ctx, timeout, image, cmd, env)
+}
+
+// Terminate mocks base method.
+func (m *MockContainerSvc) Terminate(ctx context.Context, containerID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Terminate", ctx, containerID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Terminate indicates an expected call of Terminate.
+func (mr *MockContainerSvcMockRecorder) Terminate(ctx, containerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Terminate", reflect.TypeOf((*MockContainerSvc)(nil).Terminate), ctx, containerID)
+}
+
+// MockHeartBeatSvc is a mock of HeartBeatSvc interface.
+type MockHeartBeatSvc struct {
+	ctrl     *gomock.Controller
+	recorder *MockHeartBeatSvcMockRecorder
+	isgomock struct{}
+}
+
+// MockHeartBeatSvcMockRecorder is the mock recorder for MockHeartBeatSvc.
+type MockHeartBeatSvcMockRecorder struct {
+	mock *MockHeartBeatSvc
+}
+
+// NewMockHeartBeatSvc creates a new mock instance.
+func NewMockHeartBeatSvc(ctrl *gomock.Controller) *MockHeartBeatSvc {
+	mock := &MockHeartBeatSvc{ctrl: ctrl}
+	mock.recorder = &MockHeartBeatSvcMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockHeartBeatSvc) EXPECT() *MockHeartBeatSvcMockRecorder {
+	return m.recorder
+}
+
+// Execute mocks base method.
+func (m *MockHeartBeatSvc) Execute(ctx context.Context, timeout time.Duration, endpoint string, expectedStatusCode int, headers map[string][]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Execute", ctx, timeout, endpoint, expectedStatusCode, headers)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Execute indicates an expected call of Execute.
+func (mr *MockHeartBeatSvcMockRecorder) Execute(ctx, timeout, endpoint, expectedStatusCode, headers any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*MockHeartBeatSvc)(nil).Execute), ctx, timeout, endpoint, expectedStatusCode, headers)
 }

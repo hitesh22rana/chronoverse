@@ -16,6 +16,8 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
@@ -113,8 +115,15 @@ func run() int {
 	// Initialize the validator utility
 	validator := validator.New()
 
+	// Initialize the container service
+	csvc, err := container.NewDockerWorkflow()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
 	// Initialize the workflows service
-	svc := workflowssvc.New(validator, repo, rdb)
+	svc := workflowssvc.New(validator, repo, rdb, csvc, heartbeat.New())
 
 	// Initialize the workflows application
 	app := workflows.New(ctx, &workflows.Config{

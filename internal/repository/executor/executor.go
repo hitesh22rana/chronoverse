@@ -26,6 +26,8 @@ import (
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -97,8 +99,9 @@ func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, kfk *kgo.Client, svc *S
 func (r *Repository) StartWorkers(ctx context.Context) {
 	// Start worker goroutines
 	for i := range r.cfg.ParallelismLimit {
-		r.wg.Add(1)
-		go r.worker(ctx, fmt.Sprintf("worker-%d", i))
+		r.wg.Go(func() {
+			r.worker(ctx, fmt.Sprintf("worker-%d", i))
+		})
 	}
 }
 
@@ -561,16 +564,12 @@ func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow
 func getJobExpirationTime(workflow *workflowspb.GetWorkflowByIDResponse) time.Duration {
 	switch workflow.GetKind() {
 	case workflowsmodel.KindHeartbeat.ToString():
-		details, err := extractHeartbeatDetails(workflow.GetPayload())
-		if err != nil {
-			return heartbeatWorkflowDefaultRequestTimeout
-		}
+		//nolint:errcheck // Ignore the error as we don't want to block the job execution.
+		details, _ := heartbeat.ExtractAndValidateHeartbeatDetails(workflow.GetPayload())
 		return details.TimeOut
 	case workflowsmodel.KindContainer.ToString():
-		details, err := extractContainerDetails(workflow.GetPayload())
-		if err != nil {
-			return containerWorkflowDefaultExecutionTimeout
-		}
+		//nolint:errcheck // Ignore the error as we don't want to block the job execution.
+		details, _ := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 		return details.TimeOut
 	default:
 		return time.Minute // Default expiration time for unknown workflow kinds

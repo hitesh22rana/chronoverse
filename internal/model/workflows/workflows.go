@@ -5,6 +5,8 @@ import (
 	"time"
 
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
+
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
 
 // Kind represents the kind of the job.
@@ -175,4 +177,88 @@ type ListWorkflowsFilters struct {
 	IsTerminated bool   `validate:"omitempty"`
 	IntervalMin  int32  `validate:"omitempty"`
 	IntervalMax  int32  `validate:"omitempty"`
+}
+
+// TestWorkflowRunStatus represents the status of a test workflow run.
+type TestWorkflowRunStatus int64
+
+// TestWorkflowRunStatus represents the status of a test workflow run.
+const (
+	TestWorkflowRunStatusUnspecified TestWorkflowRunStatus = 0
+	TestWorkflowRunStatusBuilding    TestWorkflowRunStatus = 1
+	TestWorkflowRunStatusRunning     TestWorkflowRunStatus = 2
+	TestWorkflowRunStatusCompleted   TestWorkflowRunStatus = 3
+	TestWorkflowRunStatusFailed      TestWorkflowRunStatus = 4
+	TestWorkflowRunStatusCanceled    TestWorkflowRunStatus = 5
+)
+
+// StreamTestWorkflowRunResponse represents the response of StreamTestWorkflowRun.
+type StreamTestWorkflowRunResponse struct {
+	Status  TestWorkflowRunStatus
+	Kind    Kind
+	Log     *jobsmodel.JobLog
+	Message string
+}
+
+// ToProto converts the StreamTestWorkflowRunResponse to its protobuf representation.
+//
+//nolint:exhaustive // Skip un-necessary switch cases
+func (r *StreamTestWorkflowRunResponse) ToProto() *workflowspb.StreamTestWorkflowRunResponse {
+	switch r.Status {
+	case TestWorkflowRunStatusUnspecified:
+		return &workflowspb.StreamTestWorkflowRunResponse{
+			Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_UNSPECIFIED,
+			Data:   nil,
+		}
+	case TestWorkflowRunStatusBuilding:
+		return &workflowspb.StreamTestWorkflowRunResponse{
+			Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_BUILDING,
+			Data: &workflowspb.StreamTestWorkflowRunResponse_Message{
+				Message: r.Message,
+			},
+		}
+	case TestWorkflowRunStatusRunning:
+		switch r.Kind {
+		case KindContainer:
+			return &workflowspb.StreamTestWorkflowRunResponse{
+				Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_RUNNING,
+				Data: &workflowspb.StreamTestWorkflowRunResponse_Log{
+					Log: r.Log.ToProto(),
+				},
+			}
+		default:
+			return &workflowspb.StreamTestWorkflowRunResponse{
+				Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_RUNNING,
+				Data: &workflowspb.StreamTestWorkflowRunResponse_Message{
+					Message: r.Message,
+				},
+			}
+		}
+	case TestWorkflowRunStatusCompleted:
+		return &workflowspb.StreamTestWorkflowRunResponse{
+			Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_COMPLETED,
+			Data: &workflowspb.StreamTestWorkflowRunResponse_Message{
+				Message: r.Message,
+			},
+		}
+	case TestWorkflowRunStatusFailed:
+		return &workflowspb.StreamTestWorkflowRunResponse{
+			Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_FAILED,
+			Data: &workflowspb.StreamTestWorkflowRunResponse_Message{
+				Message: r.Message,
+			},
+		}
+	case TestWorkflowRunStatusCanceled:
+		return &workflowspb.StreamTestWorkflowRunResponse{
+			Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_CANCELED,
+			Data: &workflowspb.StreamTestWorkflowRunResponse_Message{
+				Message: r.Message,
+			},
+		}
+	default:
+		return &workflowspb.StreamTestWorkflowRunResponse{
+			Status: workflowspb.TestWorkflowRunStatus_TEST_WORKFLOW_RUN_STATUS_UNSPECIFIED,
+			Data:   nil,
+		}
+	}
 }

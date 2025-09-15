@@ -243,7 +243,23 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
-		})
+		},
+	)
+	router.HandleFunc(
+		"/workflows/test",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifyCSRFMiddleware(
+				s.withVerifySessionMiddleware(
+					withAttachBasicMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.handleTestWorkflowRunEvents,
+						),
+					),
+				),
+			),
+		),
+	)
 	router.HandleFunc(
 		"/workflows/{workflow_id}",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -418,7 +434,6 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			),
 		),
 	)
-
 	router.HandleFunc(
 		"/analytics/{workflow_id}",
 		s.withAllowedMethodMiddleware(

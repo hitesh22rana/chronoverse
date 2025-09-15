@@ -1,6 +1,7 @@
 package workflows_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -11,7 +12,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	"github.com/hitesh22rana/chronoverse/internal/service/workflows"
 	workflowsmock "github.com/hitesh22rana/chronoverse/internal/service/workflows/mock"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -23,9 +27,11 @@ func TestCreateWorkflow(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	type want struct {
 		workflowID string
@@ -190,9 +196,11 @@ func TestUpdateWorkflow(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	// Test cases
 	tests := []struct {
@@ -347,9 +355,11 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	// Test cases
 	tests := []struct {
@@ -480,9 +490,11 @@ func TestGetWorkflow(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	type want struct {
 		*workflowsmodel.GetWorkflowResponse
@@ -721,9 +733,11 @@ func TestGetWorkflowByID(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	type want struct {
 		*workflowsmodel.GetWorkflowByIDResponse
@@ -856,9 +870,11 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	type want struct {
 		thresholdReached bool
@@ -997,9 +1013,11 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	// Test cases
 	tests := []struct {
@@ -1103,9 +1121,11 @@ func TestTerminateWorkflow(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	// Test cases
 	tests := []struct {
@@ -1218,9 +1238,11 @@ func TestDeleteWorkflow(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	// Test cases
 	tests := []struct {
@@ -1334,9 +1356,11 @@ func TestListWorkflows(t *testing.T) {
 	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
 
 	// Create a new service
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
 
 	type want struct {
 		*workflowsmodel.ListWorkflowsResponse
@@ -1563,6 +1587,195 @@ func TestListWorkflows(t *testing.T) {
 			assert.Equal(t, len(workflows.Workflows), len(tt.want.ListWorkflowsResponse.Workflows))
 			assert.Equal(t, workflows.Workflows, tt.want.ListWorkflowsResponse.Workflows)
 			assert.Equal(t, workflows.Cursor, tt.want.ListWorkflowsResponse.Cursor)
+		})
+	}
+}
+
+//nolint:gocyclo // This function is complex due to the nature of streaming logs and context cancellation.
+func TestStreamTestWorkflowRun(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create mock dependencies
+	repo := workflowsmock.NewMockRepository(ctrl)
+	cache := workflowsmock.NewMockCache(ctrl)
+	csvc := workflowsmock.NewMockContainerSvc(ctrl)
+	hsvc := workflowsmock.NewMockHeartBeatSvc(ctrl)
+
+	// Create a new service
+	s := workflows.New(validator.New(), repo, cache, csvc, hsvc)
+
+	type want struct {
+		messageCount int
+		logCount     int
+		finalStatus  workflowsmodel.TestWorkflowRunStatus
+	}
+
+	tests := []struct {
+		name  string
+		req   *workflowspb.CreateWorkflowRequest
+		mock  func(req *workflowspb.CreateWorkflowRequest)
+		want  want
+		isErr bool
+	}{
+		{
+			name: "success: container execution with logs streaming",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "user1",
+				Name:                             "job1",
+				Payload:                          `{"image": "alpine:latest", "cmd": ["echo", "Hello from Docker!"], "timeout": "5s"}`,
+				Kind:                             "CONTAINER",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+			},
+			mock: func(req *workflowspb.CreateWorkflowRequest) {
+				containerDetails, err := container.ExtractAndValidateContainerDetails(req.GetPayload())
+				if err != nil {
+					t.Fatalf("failed to parse container details: %v", err)
+				}
+				csvc.EXPECT().Build(
+					gomock.Any(),
+					containerDetails.Image,
+				).Return(nil)
+
+				logsChannel := make(chan *jobsmodel.JobLog, 2)
+				errChannel := make(chan error, 1)
+
+				logsChannel <- &jobsmodel.JobLog{
+					Timestamp:   time.Now(),
+					Message:     "Log message 1",
+					SequenceNum: 1,
+					Stream:      "stdout",
+				}
+				logsChannel <- &jobsmodel.JobLog{
+					Timestamp:   time.Now(),
+					Message:     "Log message 2",
+					SequenceNum: 2,
+					Stream:      "stdout",
+				}
+				close(logsChannel) // No more logs
+				close(errChannel)  // No errors
+
+				csvc.EXPECT().Execute(
+					gomock.Any(),
+					containerDetails.TimeOut,
+					containerDetails.Image,
+					containerDetails.Cmd,
+					containerDetails.Env,
+				).Return("id", logsChannel, errChannel, nil)
+			},
+			want: want{
+				messageCount: 2,
+				logCount:     2,
+				finalStatus:  workflowsmodel.TestWorkflowRunStatusCompleted,
+			},
+			isErr: false,
+		},
+		{
+			name: "success: heartbeat execution",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "user1",
+				Name:                             "job2",
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+				Kind:                             "HEARTBEAT",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+			},
+			mock: func(req *workflowspb.CreateWorkflowRequest) {
+				heartbeatDetails, err := heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
+				if err != nil {
+					t.Fatalf("failed to parse heartbeat details: %v", err)
+				}
+				hsvc.EXPECT().
+					Execute(
+						gomock.Any(),
+						heartbeatDetails.TimeOut,
+						heartbeatDetails.Endpoint,
+						heartbeatDetails.ExpectedStatusCode,
+						heartbeatDetails.Headers,
+					).Return(nil)
+			},
+			want: want{
+				messageCount: 2,
+				logCount:     0,
+				finalStatus:  workflowsmodel.TestWorkflowRunStatusCompleted,
+			},
+			isErr: false,
+		},
+		{
+			name: "error: missing required fields in request",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "",
+				Name:                             "",
+				Payload:                          "",
+				Kind:                             "",
+				Interval:                         0,
+				MaxConsecutiveJobFailuresAllowed: 0,
+			},
+			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		// capture range variable
+		t.Run(tt.name, func(t *testing.T) {
+			tt.mock(tt.req)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			ch, err := s.StreamTestWorkflowRun(ctx, tt.req)
+			if tt.isErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				if ch != nil {
+					t.Errorf("expected nil channel on error, got channel")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if ch == nil {
+				t.Errorf("expected channel, got nil")
+				return
+			}
+
+			var (
+				messageCount int
+				logCount     int
+				finalStatus  workflowsmodel.TestWorkflowRunStatus
+			)
+			timeout := time.After(1 * time.Second)
+		loop:
+			for {
+				select {
+				case resp, ok := <-ch:
+					if !ok {
+						break loop
+					}
+
+					if resp.Log != nil {
+						logCount++
+					} else if resp.Message != "" {
+						messageCount++
+					}
+					finalStatus = resp.Status
+				case <-timeout:
+					t.Fatal("test timed out waiting for channel data")
+				}
+			}
+
+			if logCount != tt.want.logCount {
+				t.Errorf("expected %d logs, got %d", tt.want.logCount, logCount)
+			}
+			if finalStatus != tt.want.finalStatus {
+				t.Errorf("expected final status %v, got %v", tt.want.finalStatus, finalStatus)
+			}
 		})
 	}
 }

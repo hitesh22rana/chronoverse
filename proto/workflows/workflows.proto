@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package workflows;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/go/workflows;workflows";
+option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows;workflows";
+
+import "jobs/jobs.proto";
 
 // CreateWorkflowRequest contains the details needed to create a new workflow.
 message CreateWorkflowRequest {
@@ -159,6 +161,24 @@ message ListWorkflowsResponse {
     string cursor                                = 2; // Cursor for pagination
 }
 
+enum TestWorkflowRunStatus {
+    TEST_WORKFLOW_RUN_STATUS_UNSPECIFIED = 0; // Unspecified status
+    TEST_WORKFLOW_RUN_STATUS_BUILDING    = 1; // Workflow run is building
+    TEST_WORKFLOW_RUN_STATUS_RUNNING     = 2; // Workflow run is in progress
+    TEST_WORKFLOW_RUN_STATUS_COMPLETED   = 3; // Workflow run has completed successfully
+    TEST_WORKFLOW_RUN_STATUS_FAILED      = 4; // Workflow run has failed
+    TEST_WORKFLOW_RUN_STATUS_CANCELED    = 5; // Workflow run was canceled
+}
+
+// StreamTestWorkflowRunResponse contains the streamed response for a test workflow run.
+message StreamTestWorkflowRunResponse {
+    TestWorkflowRunStatus status = 1; // Current status of the test workflow run
+    oneof data {
+        jobs.Log log             = 2; // Log data from the test workflow run
+        string message           = 3; // Message data from the test workflow run
+    }
+}
+
 // WorkflowsService contains the service definition for the Workflow service.
 service WorkflowsService {
     // CreateWorkflow a new workflow.
@@ -176,7 +196,7 @@ service WorkflowsService {
 
     // GetWorkflowByID a workflow by ID.
     // This is an internal API and should not be exposed to the public.
-    rpc GetWorkflowByID(GetWorkflowByIDRequest) returns (GetWorkflowByIDResponse){}
+    rpc GetWorkflowByID(GetWorkflowByIDRequest) returns (GetWorkflowByIDResponse) {}
 
     // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count of a workflow.
     // This is an internal API and should not be exposed to the public.
@@ -194,4 +214,7 @@ service WorkflowsService {
 
     // ListWorkflows returns a list of all workflows owned by a user.
     rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse) {}
+
+    // StreamTestWorkflowRun tests the workflow run and streams the logs.
+    rpc StreamTestWorkflowRun(CreateWorkflowRequest) returns (stream StreamTestWorkflowRunResponse) {}
 }

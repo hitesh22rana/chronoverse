@@ -66,7 +66,7 @@ export default function JobDetailsPage() {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Link
-                        href={`/workflows/${workflowId}`}
+                        href={`/workflows/${workflowId}?tab=jobs`}
                         prefetch={false}
                         className="h-8 w-8 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
                     >

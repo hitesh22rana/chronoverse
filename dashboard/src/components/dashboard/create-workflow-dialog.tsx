@@ -8,7 +8,8 @@ import { Duration, parseDuration } from '@alwatr/parse-duration'
 import {
     Loader2,
     Plus,
-    Trash2
+    Trash2,
+    Play,
 } from "lucide-react"
 
 import {
@@ -43,8 +44,11 @@ import {
     CardHeader,
     CardTitle
 } from "@/components/ui/card"
+import { TestLogsViewer } from "@/components/dashboard/test-logs-viewer"
 
-import { useWorkflows } from "@/hooks/use-workflows"
+import { type CreateWorkflowPayload, useWorkflows } from "@/hooks/use-workflows"
+
+import { cn } from "@/lib/utils"
 
 // Base schema for common fields
 const baseCreateWorkflowSchema = z.object({
@@ -147,6 +151,7 @@ type KindType = keyof typeof kindType
 export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const { createWorkflow, isCreating } = useWorkflows()
     const [selectedKind, setSelectedKind] = useState<KindType>("HEARTBEAT")
+    const [testWorkflowData, setTestWorkflowData] = useState<CreateWorkflowPayload | null>(null)
 
     const form = useForm({
         resolver: zodResolver(workflowSchema),
@@ -214,7 +219,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         }
     }, [open, form])
 
-    const handleSubmit = (data: WorkflowFormValues) => {
+    const getConstructedPayload = (data: WorkflowFormValues): string => {
         let payload: string = "{}"
 
         if (data.kind === "HEARTBEAT") {
@@ -251,16 +256,34 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
             })
         }
 
+        return payload
+    }
+
+    const handleSubmit = (data: WorkflowFormValues) => {
         // Submit the workflow with the constructed payload
         createWorkflow({
             name: data.name,
             kind: data.kind,
-            payload: payload,
+            payload: getConstructedPayload(data),
             interval: data.interval as number,
             max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed
         })
         form.reset()
         onOpenChange(false)
+    }
+
+    const handleTestWorkflow = (data: WorkflowFormValues) => {
+        setTestWorkflowData({
+            name: data.name,
+            kind: data.kind,
+            payload: getConstructedPayload(data),
+            interval: data.interval as number,
+            max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed,
+        })
+    }
+
+    const handleBackToCreate = () => {
+        setTestWorkflowData(null)
     }
 
     // Get current field values based on selected kind
@@ -272,463 +295,447 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         ? form.watch("containerPayload.cmd") || []
         : []
 
+    const isTestMode = !!testWorkflowData
+
     return (
         <Dialog
             open={open}
             onOpenChange={(newOpen) => {
+                // Prevent closing in test-mode
+                if (isTestMode) {
+                    return
+                }
                 // Prevent closing if creating
-                if (isCreating && !newOpen) return;
+                if (isCreating && !newOpen) return
+                setTestWorkflowData(null)
                 onOpenChange(newOpen)
             }}
         >
-            <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle>Create new workflow</DialogTitle>
-                    <DialogDescription>
-                        Define a new workflow to be executed on a schedule.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent
+                className={cn(
+                    "overflow-y-auto md:p-6 p-4",
+                    isTestMode
+                        ? "w-full h-full sm:max-w-full p-2"
+                        : "sm:max-w-2xl max-h-[95vh]",
+                )}
+            >
+                {isTestMode ? (
+                    <TestLogsViewer
+                        workflowData={testWorkflowData}
+                        onBackToCreate={handleBackToCreate}
+                    />
+                ) : (
+                    <Fragment>
+                        <DialogHeader>
+                            <DialogTitle>Create new workflow</DialogTitle>
+                            <DialogDescription>
+                                Define a new workflow to be executed on a schedule.
+                            </DialogDescription>
+                        </DialogHeader>
 
-                <Form {...form}>
-                    <form onSubmit={(e) => {
-                        e.preventDefault();
-                        form.handleSubmit((data) => {
-                            handleSubmit(data);
-                        })(e);
-                    }} className="space-y-6 pt-2">
-                        <FormField
-                            control={form.control}
-                            name="name"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Name</FormLabel>
-                                    <FormControl>
-                                        <Input placeholder="My workflow" {...field} value={field.value || ""} />
-                                    </FormControl>
-                                    <FormDescription>
-                                        A descriptive name for your workflow.
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <Form {...form}>
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault()
+                                    form.handleSubmit((data) => {
+                                        handleSubmit(data)
+                                    })(e)
+                                }}
+                                className="space-y-6 pt-2"
+                            >
+                                <FormField
+                                    control={form.control}
+                                    name="name"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Name</FormLabel>
+                                            <FormControl>
+                                                <Input placeholder="My workflow" {...field} value={field.value || ""} />
+                                            </FormControl>
+                                            <FormDescription>A descriptive name for your workflow.</FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
 
-                        <FormField
-                            control={form.control}
-                            name="kind"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Workflow kind</FormLabel>
-                                    <Select
-                                        onValueChange={(value) => {
-                                            field.onChange(value);
-                                        }}
-                                        value={field.value}
-                                    >
-                                        <FormControl>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select a workflow kind" />
-                                            </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                            <SelectItem value="HEARTBEAT">
-                                                <span>Heartbeat</span>
-                                            </SelectItem>
-                                            <SelectItem value="CONTAINER">
-                                                <span>Container</span>
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <FormDescription>
-                                        {kindType[selectedKind]}
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                                <FormField
+                                    control={form.control}
+                                    name="kind"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Workflow kind</FormLabel>
+                                            <Select
+                                                onValueChange={(value) => {
+                                                    field.onChange(value)
+                                                }}
+                                                value={field.value}
+                                            >
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select a workflow kind" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    <SelectItem value="HEARTBEAT">
+                                                        <span>Heartbeat</span>
+                                                    </SelectItem>
+                                                    <SelectItem value="CONTAINER">
+                                                        <span>Container</span>
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <FormDescription>{kindType[selectedKind]}</FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
 
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Configuration</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                {selectedKind === "HEARTBEAT" && (
-                                    <Fragment>
-                                        <FormField
-                                            control={form.control}
-                                            name="heartbeatPayload.endpoint"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Endpoint URL</FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            placeholder="https://example.com/api/health"
-                                                            {...field}
-                                                            value={field.value || ""}
-                                                        />
-                                                    </FormControl>
-                                                    <FormDescription>
-                                                        The URL to send the heartbeat request to
-                                                    </FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>Configuration</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        {selectedKind === "HEARTBEAT" && (
+                                            <Fragment>
+                                                <FormField
+                                                    control={form.control}
+                                                    name="heartbeatPayload.endpoint"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormLabel>Endpoint URL</FormLabel>
+                                                            <FormControl>
+                                                                <Input
+                                                                    placeholder="https://example.com/api/health"
+                                                                    {...field}
+                                                                    value={field.value || ""}
+                                                                />
+                                                            </FormControl>
+                                                            <FormDescription>The URL to send the heartbeat request to</FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
 
-                                        <FormField
-                                            control={form.control}
-                                            name="heartbeatPayload.expectedStatusCode"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Expected Status Code</FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            type="number"
-                                                            min={100}
-                                                            max={599}
-                                                            {...field}
-                                                            value={field.value === undefined ? "" : field.value}
-                                                            onChange={(e) => {
-                                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
+                                                <FormField
+                                                    control={form.control}
+                                                    name="heartbeatPayload.expectedStatusCode"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormLabel>Expected Status Code</FormLabel>
+                                                            <FormControl>
+                                                                <Input
+                                                                    type="number"
+                                                                    min={100}
+                                                                    max={599}
+                                                                    {...field}
+                                                                    value={field.value === undefined ? "" : field.value}
+                                                                    onChange={(e) => {
+                                                                        field.onChange(e.target.value === "" ? "" : Number(e.target.value))
+                                                                    }}
+                                                                />
+                                                            </FormControl>
+                                                            <FormDescription>
+                                                                The HTTP status code expected from the endpoint (default: 200)
+                                                            </FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+
+                                                <div className="space-y-2">
+                                                    <FormLabel>
+                                                        Headers (optional)
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="ml-2 bg-transparent"
+                                                            onClick={() => {
+                                                                form.setValue("heartbeatPayload.headers", [...headerFields, { key: "", value: "" }])
                                                             }}
-                                                        />
-                                                    </FormControl>
-                                                    <FormDescription>
-                                                        The HTTP status code expected from the endpoint (default: 200)
-                                                    </FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
+                                                        >
+                                                            <Plus className="mr-1 h-3 w-3" /> Add header
+                                                        </Button>
+                                                    </FormLabel>
+                                                    <FormDescription>Optional HTTP headers to include with the request</FormDescription>
 
-                                        <div className="space-y-2">
-                                            <FormLabel>
-                                                Headers (optional)
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="ml-2"
-                                                    onClick={() => {
-                                                        form.setValue("heartbeatPayload.headers", [
-                                                            ...headerFields,
-                                                            { key: "", value: "" }
-                                                        ])
-                                                    }}
-                                                >
-                                                    <Plus className="mr-1 h-3 w-3" /> Add header
-                                                </Button>
-                                            </FormLabel>
-                                            <FormDescription>
-                                                Optional HTTP headers to include with the request
-                                            </FormDescription>
-
-                                            {headerFields.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
-                                                    <FormField
-                                                        control={form.control}
-                                                        name={`heartbeatPayload.headers.${index}.key`}
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex-1">
-                                                                <FormControl>
-                                                                    <Input
-                                                                        placeholder="Header name"
-                                                                        {...field}
-                                                                        value={field.value || ""}
-                                                                    />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <FormField
-                                                        control={form.control}
-                                                        name={`heartbeatPayload.headers.${index}.value`}
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex-1">
-                                                                <FormControl>
-                                                                    <Input
-                                                                        placeholder="Value"
-                                                                        {...field}
-                                                                        value={field.value || ""}
-                                                                    />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            const updatedHeaders = [...headerFields]
-                                                            updatedHeaders.splice(index, 1)
-                                                            form.setValue("heartbeatPayload.headers", updatedHeaders)
-                                                        }}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
+                                                    {headerFields.map((_, index) => (
+                                                        <div key={index} className="flex items-center gap-2 mt-2">
+                                                            <FormField
+                                                                control={form.control}
+                                                                name={`heartbeatPayload.headers.${index}.key`}
+                                                                render={({ field }) => (
+                                                                    <FormItem className="flex-1">
+                                                                        <FormControl>
+                                                                            <Input placeholder="Header name" {...field} value={field.value || ""} />
+                                                                        </FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )}
+                                                            />
+                                                            <FormField
+                                                                control={form.control}
+                                                                name={`heartbeatPayload.headers.${index}.value`}
+                                                                render={({ field }) => (
+                                                                    <FormItem className="flex-1">
+                                                                        <FormControl>
+                                                                            <Input placeholder="Value" {...field} value={field.value || ""} />
+                                                                        </FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )}
+                                                            />
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    const updatedHeaders = [...headerFields]
+                                                                    updatedHeaders.splice(index, 1)
+                                                                    form.setValue("heartbeatPayload.headers", updatedHeaders)
+                                                                }}
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            ))}
-                                        </div>
 
-                                        <FormField
-                                            control={form.control}
-                                            name="heartbeatPayload.timeout"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Timeout (optional)</FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            placeholder="10s"
-                                                            {...field}
-                                                            value={field.value || ""}
-                                                        />
-                                                    </FormControl>
-                                                    <FormDescription>
-                                                        Request timeout (e.g., &apos;30s&apos;, &apos;1m&apos;), max up to 5 minutes
-                                                    </FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                    </Fragment>
-                                )}
+                                                <FormField
+                                                    control={form.control}
+                                                    name="heartbeatPayload.timeout"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormLabel>Timeout (optional)</FormLabel>
+                                                            <FormControl>
+                                                                <Input placeholder="10s" {...field} value={field.value || ""} />
+                                                            </FormControl>
+                                                            <FormDescription>
+                                                                Request timeout (e.g., &apos;30s&apos;, &apos;1m&apos;), max up to 5 minutes
+                                                            </FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </Fragment>
+                                        )}
 
-                                {selectedKind === "CONTAINER" && (
-                                    <Fragment>
-                                        <FormField
-                                            control={form.control}
-                                            name="containerPayload.image"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Image</FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            placeholder="alpine:latest"
-                                                            {...field}
-                                                            value={field.value || ""}
-                                                        />
-                                                    </FormControl>
-                                                    <FormDescription>
-                                                        Docker image to run (e.g., alpine:latest)
-                                                    </FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
+                                        {selectedKind === "CONTAINER" && (
+                                            <Fragment>
+                                                <FormField
+                                                    control={form.control}
+                                                    name="containerPayload.image"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormLabel>Image</FormLabel>
+                                                            <FormControl>
+                                                                <Input placeholder="alpine:latest" {...field} value={field.value || ""} />
+                                                            </FormControl>
+                                                            <FormDescription>Docker image to run (e.g., alpine:latest)</FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
 
-                                        <div className="space-y-2">
-                                            <FormLabel>
-                                                Command (optional)
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="ml-2"
-                                                    onClick={() => {
-                                                        const currentCmds = form.watch("containerPayload.cmd") || []
-                                                        form.setValue("containerPayload.cmd", [
-                                                            ...currentCmds,
-                                                            ""
-                                                        ])
-                                                    }}
-                                                >
-                                                    <Plus className="mr-1 h-3 w-3" /> Add argument
-                                                </Button>
-                                            </FormLabel>
-                                            <FormDescription>
-                                                Optional command and arguments to run in the container
-                                            </FormDescription>
+                                                <div className="space-y-2">
+                                                    <FormLabel>
+                                                        Command (optional)
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="ml-2 bg-transparent"
+                                                            onClick={() => {
+                                                                const currentCmds = form.watch("containerPayload.cmd") || []
+                                                                form.setValue("containerPayload.cmd", [...currentCmds, ""])
+                                                            }}
+                                                        >
+                                                            <Plus className="mr-1 h-3 w-3" /> Add argument
+                                                        </Button>
+                                                    </FormLabel>
+                                                    <FormDescription>Optional command and arguments to run in the container</FormDescription>
 
-                                            {cmdFields?.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
-                                                    <FormField
-                                                        control={form.control}
-                                                        name={`containerPayload.cmd.${index}`}
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex-1">
-                                                                <FormControl>
-                                                                    <Input
-                                                                        placeholder={"sh -c 'echo hello'"}
-                                                                        {...field}
-                                                                        value={field.value || ""}
-                                                                    />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            const updatedCmds = [...(form.watch("containerPayload.cmd") || [])]
-                                                            updatedCmds.splice(index, 1)
-                                                            form.setValue("containerPayload.cmd", updatedCmds)
-                                                        }}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
+                                                    {cmdFields?.map((_, index) => (
+                                                        <div key={index} className="flex items-center gap-2 mt-2">
+                                                            <FormField
+                                                                control={form.control}
+                                                                name={`containerPayload.cmd.${index}`}
+                                                                render={({ field }) => (
+                                                                    <FormItem className="flex-1">
+                                                                        <FormControl>
+                                                                            <Input placeholder={"sh -c 'echo hello'"} {...field} value={field.value || ""} />
+                                                                        </FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )}
+                                                            />
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    const updatedCmds = [...(form.watch("containerPayload.cmd") || [])]
+                                                                    updatedCmds.splice(index, 1)
+                                                                    form.setValue("containerPayload.cmd", updatedCmds)
+                                                                }}
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            ))}
-                                        </div>
 
-                                        <div className="space-y-2">
-                                            <FormLabel>
-                                                Environment variables (optional)
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="ml-2"
-                                                    onClick={() => {
-                                                        const currentEnvs = form.watch("containerPayload.env") || []
-                                                        form.setValue("containerPayload.env", [
-                                                            ...currentEnvs,
-                                                            ""
-                                                        ])
-                                                    }}
-                                                >
-                                                    <Plus className="mr-1 h-3 w-3" /> Add variable
-                                                </Button>
-                                            </FormLabel>
-                                            <FormDescription>
-                                                Optional environment variables to set in the container
-                                            </FormDescription>
+                                                <div className="space-y-2">
+                                                    <FormLabel>
+                                                        Environment variables (optional)
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="ml-2 bg-transparent"
+                                                            onClick={() => {
+                                                                const currentEnvs = form.watch("containerPayload.env") || []
+                                                                form.setValue("containerPayload.env", [...currentEnvs, ""])
+                                                            }}
+                                                        >
+                                                            <Plus className="mr-1 h-3 w-3" /> Add variable
+                                                        </Button>
+                                                    </FormLabel>
+                                                    <FormDescription>Optional environment variables to set in the container</FormDescription>
 
-                                            {form.watch("containerPayload.env")?.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
-                                                    <FormField
-                                                        control={form.control}
-                                                        name={`containerPayload.env.${index}`}
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex-1">
-                                                                <FormControl>
-                                                                    <Input
-                                                                        placeholder={"MY_ENV=VALUE"}
-                                                                        {...field}
-                                                                        value={field.value || ""}
-                                                                    />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            const updatedEnvs = [...(form.watch("containerPayload.env") || [])]
-                                                            updatedEnvs.splice(index, 1)
-                                                            form.setValue("containerPayload.env", updatedEnvs)
-                                                        }}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
+                                                    {form.watch("containerPayload.env")?.map((_, index) => (
+                                                        <div key={index} className="flex items-center gap-2 mt-2">
+                                                            <FormField
+                                                                control={form.control}
+                                                                name={`containerPayload.env.${index}`}
+                                                                render={({ field }) => (
+                                                                    <FormItem className="flex-1">
+                                                                        <FormControl>
+                                                                            <Input placeholder={"MY_ENV=VALUE"} {...field} value={field.value || ""} />
+                                                                        </FormControl>
+                                                                        <FormMessage />
+                                                                    </FormItem>
+                                                                )}
+                                                            />
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    const updatedEnvs = [...(form.watch("containerPayload.env") || [])]
+                                                                    updatedEnvs.splice(index, 1)
+                                                                    form.setValue("containerPayload.env", updatedEnvs)
+                                                                }}
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            ))}
-                                        </div>
 
-                                        <FormField
-                                            control={form.control}
-                                            name="containerPayload.timeout"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Timeout (optional)</FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            placeholder="30s"
-                                                            {...field}
-                                                            value={field.value || ""}
-                                                        />
-                                                    </FormControl>
-                                                    <FormDescription>
-                                                        Maximum execution time (e.g., &quot;30s&quot;, &quot;5m&quot;), max up to 1 hour.
-                                                    </FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                    </Fragment>
-                                )}
-                            </CardContent>
-                        </Card>
+                                                <FormField
+                                                    control={form.control}
+                                                    name="containerPayload.timeout"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormLabel>Timeout (optional)</FormLabel>
+                                                            <FormControl>
+                                                                <Input placeholder="30s" {...field} value={field.value || ""} />
+                                                            </FormControl>
+                                                            <FormDescription>
+                                                                Maximum execution time (e.g., &quot;30s&quot;, &quot;5m&quot;), max up to 1 hour.
+                                                            </FormDescription>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </Fragment>
+                                        )}
+                                    </CardContent>
+                                </Card>
 
-                        <FormField
-                            control={form.control}
-                            name="interval"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Interval (minutes)</FormLabel>
-                                    <FormControl>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            {...field}
-                                            value={field.value === undefined ? "" : field.value}
-                                            onChange={(e) => {
-                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <FormDescription>
-                                        How often to run this workflow.
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                                <FormField
+                                    control={form.control}
+                                    name="interval"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Interval (minutes)</FormLabel>
+                                            <FormControl>
+                                                <Input
+                                                    type="number"
+                                                    min={1}
+                                                    {...field}
+                                                    value={field.value === undefined ? "" : field.value}
+                                                    onChange={(e) => {
+                                                        field.onChange(e.target.value === "" ? "" : Number(e.target.value))
+                                                    }}
+                                                />
+                                            </FormControl>
+                                            <FormDescription>How often to run this workflow.</FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
 
-                        <FormField
-                            control={form.control}
-                            name="maxConsecutiveJobFailuresAllowed"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Max consecutive failures allowed</FormLabel>
-                                    <FormControl>
-                                        <Input
-                                            type="number"
-                                            min={3}
-                                            {...field}
-                                            value={field.value === undefined ? "" : field.value}
-                                            onChange={(e) => {
-                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <FormDescription>
-                                        Maximum number of consecutive failures before the workflow is auto-disabled (default: 3).
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                                <FormField
+                                    control={form.control}
+                                    name="maxConsecutiveJobFailuresAllowed"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Max consecutive failures allowed</FormLabel>
+                                            <FormControl>
+                                                <Input
+                                                    type="number"
+                                                    min={3}
+                                                    {...field}
+                                                    value={field.value === undefined ? "" : field.value}
+                                                    onChange={(e) => {
+                                                        field.onChange(e.target.value === "" ? "" : Number(e.target.value))
+                                                    }}
+                                                />
+                                            </FormControl>
+                                            <FormDescription>
+                                                Maximum number of consecutive failures before the workflow is auto-disabled (default: 3).
+                                            </FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
 
-                        <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => onOpenChange(false)}
-                                disabled={isCreating}
-                                className="cursor-pointer w-full"
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                type="submit"
-                                disabled={isCreating}
-                                className="cursor-pointer w-full"
-                            >
-                                {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Create workflow
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </Form>
+                                <DialogFooter className="grid grid-cols-1 sm:grid-cols-3 md:gap-4 gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => onOpenChange(false)}
+                                        disabled={isCreating}
+                                        className="cursor-pointer w-full"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            form.handleSubmit((data) => {
+                                                handleTestWorkflow(data)
+                                            })(e)
+                                        }}
+                                        disabled={isCreating || !form.formState.isValid}
+                                        className="cursor-pointer w-full"
+                                    >
+                                        <Play className="mr-2 h-4 w-4" />
+                                        Test Workflow
+                                    </Button>
+                                    <Button type="submit" disabled={isCreating} className="cursor-pointer w-full">
+                                        {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        Create workflow
+                                    </Button>
+                                </DialogFooter>
+                            </form>
+                        </Form>
+                    </Fragment>
+                )}
             </DialogContent>
         </Dialog>
     )

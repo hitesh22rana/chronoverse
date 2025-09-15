@@ -1,6 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import {
+    useState,
+    useEffect,
+    useTransition,
+} from "react"
 import { useSearchParams } from "next/navigation"
 import {
     Search,
@@ -9,6 +13,7 @@ import {
     ChevronLeft,
     ChevronRight,
     X,
+    Loader2,
 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -41,6 +46,7 @@ export function Workflows() {
 
     const urlSearchQuery = searchParams.get("query") || ""
 
+    const [isSearchPending, startSearchTransition] = useTransition()
     const [searchInput, setSearchInput] = useState(urlSearchQuery)
     const [isFiltersOpen, setIsFiltersOpen] = useState(false)
 
@@ -87,7 +93,9 @@ export function Workflows() {
     useEffect(() => {
         const timer = setTimeout(() => {
             if (searchInput !== searchQuery) {
-                updateSearchQuery(searchInput)
+                startSearchTransition(() => {
+                    updateSearchQuery(searchInput)
+                })
             }
         }, 500)
 
@@ -95,8 +103,10 @@ export function Workflows() {
     }, [searchInput, searchQuery, updateSearchQuery])
 
     const handleApplyFilters = () => {
-        applyAllFilters(filterState)
-        setIsFiltersOpen(false)
+        startSearchTransition(() => {
+            applyAllFilters(filterState)
+            setIsFiltersOpen(false)
+        })
     }
 
     const handleClearFilters = () => {
@@ -140,7 +150,16 @@ export function Workflows() {
                             onChange={e => setSearchInput(e.target.value)}
                             className="w-full pl-9 h-9"
                         />
-                        {(searchInput || activeFiltersCount > 0) && (
+                        {isSearchPending ? (
+                            <Loader2
+                                className={cn(
+                                    "absolute right-2.5 top-2.5 cursor-pointer animate-spin",
+                                    "size-4 text-muted-foreground hover:text-foreground"
+                                )}
+                                role="progressbar"
+                                aria-label="spinner"
+                            />
+                        ) : (searchInput || activeFiltersCount > 0) && (
                             <X
                                 className={cn(
                                     "absolute right-2.5 top-2.5 cursor-pointer",

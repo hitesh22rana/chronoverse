@@ -4,9 +4,6 @@ import Link from "next/link"
 import { formatDistanceToNow } from "date-fns"
 import { Clock, AlertTriangle } from "lucide-react"
 
-import { Workflow } from "@/hooks/use-workflows"
-import { cn } from "@/lib/utils"
-import { getStatusMeta, getStatusLabel } from "@/lib/status"
 
 import {
     Card,
@@ -17,6 +14,10 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 
+import { Workflow } from "@/hooks/use-workflows"
+
+import { cn } from "@/lib/utils"
+import { getStatusMeta, getStatusLabel } from "@/lib/status"
 interface WorkflowCardProps {
     workflow: Workflow
 }

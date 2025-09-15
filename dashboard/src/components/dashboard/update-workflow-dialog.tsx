@@ -269,7 +269,9 @@ export function UpdateWorkflowDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
+            <DialogContent
+                className="sm:max-w-2xl max-h-[95vh] overflow-y-auto md:p-6 p-4"
+            >
                 <DialogHeader>
                     <DialogTitle>Update workflow</DialogTitle>
                     <DialogDescription>
@@ -651,7 +653,7 @@ export function UpdateWorkflowDialog({
                                 )}
                             />
 
-                            <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 md:gap-4 gap-2">
                                 <Button
                                     type="button"
                                     variant="outline"

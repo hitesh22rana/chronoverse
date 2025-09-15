@@ -1,12 +1,13 @@
 "use client"
 
 import {
-    useState,
-    useEffect,
-    useRef,
-    useMemo,
-    useCallback,
     Fragment,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    useTransition,
 } from "react"
 import {
     Loader2,
@@ -28,7 +29,7 @@ import {
 
 import { useJobLogs } from "@/hooks/use-job-logs"
 
-import { cn } from "@/lib/utils"
+import { cn, jsonRegex } from "@/lib/utils"
 import { Trie } from "@/lib/trie"
 
 interface LogViewerProps {
@@ -37,8 +38,6 @@ interface LogViewerProps {
     jobStatus: string
     completedAt: string
 }
-
-const jsonRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
 
 const sevenDaysAgo = new Date((new Date()).getTime() - 7 * 24 * 60 * 60 * 1000)
 
@@ -63,6 +62,7 @@ export function LogsViewer({
     jobStatus,
     completedAt
 }: LogViewerProps) {
+    const [isSearchPending, startSearchTransition] = useTransition()
     const [searchQuery, setSearchQuery] = useState("")
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
@@ -91,9 +91,10 @@ export function LogsViewer({
     // Debounce search query to avoid excessive re-renders
     useEffect(() => {
         const timer = setTimeout(() => {
-            setDebouncedSearchQuery(searchQuery)
-        }, 150) // 150ms debounce
-
+            startSearchTransition(() => {
+                setDebouncedSearchQuery(searchQuery)
+            })
+        }, 150)
         return () => clearTimeout(timer)
     }, [searchQuery])
 
@@ -300,7 +301,7 @@ export function LogsViewer({
 
     return (
         <Card className="flex flex-col flex-1 w-full p-0">
-            <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 border-b space-y-4 p-6">
+            <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 border-b space-y-4 p-6 rounded-t-2xl">
                 <CardTitle>
                     Logs
                 </CardTitle>
@@ -312,7 +313,6 @@ export function LogsViewer({
                         <Input
                             ref={searchInputRef}
                             placeholder="Search logs... (Ctrl+F)"
-                            value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onFocus={() => setIsSearchFocused(true)}
                             onBlur={() => setIsSearchFocused(false)}
@@ -321,9 +321,11 @@ export function LogsViewer({
                         {searchQuery && (
                             <div className="absolute right-0 flex items-center">
                                 <span className="text-sm text-muted-foreground whitespace-nowrap">
-                                    {searchMatches.length > 0
-                                        ? `${currentMatchIndex + 1}/${searchMatches.length}`
-                                        : '0/0'
+                                    {isSearchPending ?
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        : searchMatches.length > 0
+                                            ? `${currentMatchIndex + 1}/${searchMatches.length}`
+                                            : '0/0'
                                     }
                                 </span>
 

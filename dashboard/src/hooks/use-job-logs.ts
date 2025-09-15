@@ -19,7 +19,7 @@ import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
-type JobLog = {
+export type JobLog = {
     timestamp: string
     message: string
     sequence_num: number
@@ -186,6 +186,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             return
         }
 
+        let firstPass: boolean = true;
+
         // Enable SSE after initial fetch is complete
         setIsSSEEnabled(true)
 
@@ -199,7 +201,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             setIsConnected(true)
         }
 
-        // Handle specific event types
         eventSource.addEventListener('log', (event) => {
             try {
                 const messageEvent = event as MessageEvent
@@ -207,6 +208,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
                 queryClient.setQueryData(sseQueryKey, (oldData: JobLog[] | undefined) => {
                     const existingLogs = oldData || []
+                    if (!firstPass) {
+                        return [...existingLogs, logData]
+                    }
+                    firstPass = false;
                     return mergeLogs(existingLogs, [logData])
                 })
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars

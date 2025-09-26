@@ -1,7 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
+import {
+    useEffect,
+    useRef,
+    useState,
+    useTransition,
+} from "react"
 import {
     Search,
     Filter,
@@ -9,6 +13,7 @@ import {
     ChevronLeft,
     ChevronRight,
     X,
+    Loader2,
 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -37,12 +42,10 @@ import { useWorkflows } from "@/hooks/use-workflows"
 import { cn } from "@/lib/utils"
 
 export function Workflows() {
-    const searchParams = useSearchParams()
-
-    const urlSearchQuery = searchParams.get("query") || ""
-
-    const [searchInput, setSearchInput] = useState(urlSearchQuery)
+    const [isSearchPending, startSearchTransition] = useTransition()
     const [isFiltersOpen, setIsFiltersOpen] = useState(false)
+    const [isSearchFocused, setIsSearchFocused] = useState(false)
+    const searchInputRef = useRef<HTMLInputElement>(null)
 
     // Local state for filter inputs (to be applied when "Apply Filters" is clicked)
     const [filterState, setFilterState] = useState({
@@ -68,10 +71,7 @@ export function Workflows() {
         refetchLoading
     } = useWorkflows()
 
-    // Sync local search input with URL when URL changes
-    useEffect(() => {
-        setSearchInput(urlSearchQuery)
-    }, [urlSearchQuery])
+    const [searchInput, setSearchInput] = useState(searchQuery)
 
     // Sync filter state with current URL params
     useEffect(() => {
@@ -87,16 +87,39 @@ export function Workflows() {
     useEffect(() => {
         const timer = setTimeout(() => {
             if (searchInput !== searchQuery) {
-                updateSearchQuery(searchInput)
+                startSearchTransition(() => {
+                    updateSearchQuery(searchInput)
+                })
             }
         }, 500)
 
         return () => clearTimeout(timer)
     }, [searchInput, searchQuery, updateSearchQuery])
 
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+                e.preventDefault()
+                searchInputRef.current?.focus()
+                setIsSearchFocused(true)
+            }
+
+            if (e.key === "Escape" && isSearchFocused) {
+                setIsSearchFocused(false)
+                searchInputRef.current?.blur()
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyDown)
+        return () => window.removeEventListener("keydown", handleKeyDown)
+    }, [isSearchFocused])
+
     const handleApplyFilters = () => {
-        applyAllFilters(filterState)
-        setIsFiltersOpen(false)
+        startSearchTransition(() => {
+            applyAllFilters(filterState)
+            setIsFiltersOpen(false)
+        })
     }
 
     const handleClearFilters = () => {
@@ -135,12 +158,24 @@ export function Workflows() {
                     <div className="relative flex w-full">
                         <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                         <Input
-                            placeholder="Search workflows..."
+                            ref={searchInputRef}
+                            placeholder="Search workflows...(Ctrl+F)"
                             value={searchInput}
                             onChange={e => setSearchInput(e.target.value)}
+                            onFocus={() => setIsSearchFocused(true)}
+                            onBlur={() => setIsSearchFocused(false)}
                             className="w-full pl-9 h-9"
                         />
-                        {(searchInput || activeFiltersCount > 0) && (
+                        {isSearchPending ? (
+                            <Loader2
+                                className={cn(
+                                    "absolute right-2.5 top-2.5 cursor-pointer animate-spin",
+                                    "size-4 text-muted-foreground hover:text-foreground"
+                                )}
+                                role="progressbar"
+                                aria-label="spinner"
+                            />
+                        ) : (searchInput || activeFiltersCount > 0) && (
                             <X
                                 className={cn(
                                     "absolute right-2.5 top-2.5 cursor-pointer",

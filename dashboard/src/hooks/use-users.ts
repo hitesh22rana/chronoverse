@@ -10,7 +10,7 @@ const USER_ENDPOINT = `${API_URL}/users`
 
 type User = {
     email: string
-    notification_preference: string
+    notification_preference: 'ALERTS' | 'ALL' | 'NONE'
     created_at: string
     updated_at: string
 }

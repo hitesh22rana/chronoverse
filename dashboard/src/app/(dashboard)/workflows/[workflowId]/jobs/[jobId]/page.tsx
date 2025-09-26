@@ -4,7 +4,12 @@ import { Fragment } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { format, formatDistanceToNow } from "date-fns"
-import { RefreshCw, ArrowLeft, Loader2, AlertTriangle } from "lucide-react"
+import {
+    RefreshCw,
+    ArrowLeft,
+    Loader2,
+    AlertTriangle
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -22,7 +27,7 @@ import { useJobDetails } from "@/hooks/use-job-details"
 import { cn } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/lib/status"
 
-export default function JobDetailsPage() {
+export default function JobDetailsAndLogsPage() {
     const { workflowId, jobId } = useParams() as { workflowId: string, jobId: string }
     const router = useRouter()
 
@@ -61,12 +66,12 @@ export default function JobDetailsPage() {
     }
 
     return (
-        <div className="flex flex-col h-full space-y-6">
+        <div className="flex flex-col flex-1 w-full h-full space-y-6">
             {/* Header with back button */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Link
-                        href={`/workflows/${workflowId}`}
+                        href={`/workflows/${workflowId}?tab=jobs`}
                         prefetch={false}
                         className="h-8 w-8 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
                     >
@@ -93,9 +98,9 @@ export default function JobDetailsPage() {
             </div>
 
             {/* Simple two-column grid layout */}
-            <div className="grid grid-row-2 w-full gap-4">
+            <div className="w-full h-full flex flex-col flex-1 gap-4">
                 {/* Details Panel */}
-                <Card className="overflow-auto">
+                <Card>
                     <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                             <CardTitle>Job Details</CardTitle>
@@ -200,7 +205,7 @@ export default function JobDetailsPage() {
                 <LogsViewer
                     workflowId={workflowId}
                     jobId={jobId}
-                    jobStatus={job?.status || "PENDING"}
+                    jobStatus={job?.status}
                     completedAt={job?.completed_at || ""}
                 />
             </div>

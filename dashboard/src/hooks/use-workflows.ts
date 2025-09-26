@@ -143,12 +143,12 @@ export function useWorkflows() {
     }, [router, searchParams])
 
     // Update search query in URL params
-    const updateSearchQuery = useCallback((newQuery: string) => {
+    const updateSearchQuery = useCallback((newSearchQuery: string) => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when searching
 
-        if (newQuery) {
-            params.set("query", newQuery)
+        if (newSearchQuery) {
+            params.set("query", newSearchQuery)
         } else {
             params.delete("query")
         }

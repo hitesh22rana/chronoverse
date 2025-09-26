@@ -1,11 +1,16 @@
 "use client"
 
 import {
+    useCallback,
     useEffect,
     useMemo,
     useRef,
     useState,
 } from "react"
+import {
+    useRouter,
+    useSearchParams,
+} from "next/navigation"
 import {
     useInfiniteQuery,
     useMutation,
@@ -15,11 +20,13 @@ import {
 import { EventSourcePolyfill } from "event-source-polyfill"
 import { toast } from "sonner"
 
+import { useWorkflowDetails } from "@/hooks/use-workflow-details"
+
 import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
-type JobLog = {
+export type JobLog = {
     timestamp: string
     message: string
     sequence_num: number
@@ -33,8 +40,17 @@ export type JobLogsResponseData = {
     cursor?: string
 }
 
+const kindsWithLogs = ['CONTAINER']
+
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
+    const { workflow } = useWorkflowDetails(workflowId)
+    const router = useRouter()
     const queryClient = useQueryClient()
+    const searchParams = useSearchParams()
+
+    const searchQuery = searchParams.get("q") || ""
+    const streamFilter = searchParams.get("stream") || ""
+
     const [isConnected, setIsConnected] = useState(false)
     const [isSSEEnabled, setIsSSEEnabled] = useState(false)
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
@@ -42,10 +58,52 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const logsURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs`
     const sseURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/events`
     const logsDownloadURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/raw`
+    const searchURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/search`
 
     const isRunning = jobStatus === "RUNNING"
-    const isCompleted = ["COMPLETED", "FAILED", "CANCELED"].includes(jobStatus)
-    const shouldFetch = jobStatus !== "PENDING" && jobStatus !== "QUEUED"
+    const isCompleted = ["COMPLETED", "FAILED"].includes(jobStatus)
+    const shouldFetch = !!workflow && kindsWithLogs.includes(workflow.kind) && jobStatus !== "PENDING" && jobStatus !== "QUEUED" && jobStatus !== "CANCELED"
+
+    // Update search query in URL params
+    const updateSearchQuery = useCallback((newSearchQuery: string) => {
+        const params = new URLSearchParams(searchParams.toString())
+
+        if (newSearchQuery) {
+            params.set("q", newSearchQuery)
+        } else {
+            params.delete("q")
+        }
+
+        router.push(`?${params.toString()}`)
+    }, [router, searchParams])
+
+    // Apply stream filter in URL params
+    const applyStreamFilter = useCallback((newStreamFilter: string) => {
+        const params = new URLSearchParams(searchParams.toString())
+
+        if (newStreamFilter) {
+            params.set("stream", newStreamFilter)
+        } else {
+            params.delete("stream")
+        }
+
+        router.push(`?${params.toString()}`)
+    }, [router, searchParams])
+
+    // Build query parameters for the search job logs request
+    const getSearchQueryParams = useMemo(() => {
+        const params = new URLSearchParams()
+
+        if (searchQuery) {
+            params.set("q", searchQuery)
+        }
+
+        if (streamFilter) {
+            params.set("stream", streamFilter)
+        }
+
+        return params.toString()
+    }, [searchQuery, streamFilter])
 
     // Download raw logs from backend and trigger browser file download
     const downloadLogsMutation = useMutation({
@@ -91,8 +149,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }
 
     // For completed jobs, use infinite query with pagination
-    const infiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
-        queryKey: ["job", workflowId, jobId, jobStatus],
+    const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
+        queryKey: ["job-logs", workflowId, jobId, jobStatus],
         queryFn: async ({ pageParam }) => {
             const url = pageParam
                 ? `${logsURL}?cursor=${pageParam}`
@@ -126,13 +184,52 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        enabled: shouldFetch && isCompleted,
+        enabled: shouldFetch && !searchQuery && isCompleted && !!workflowId && !!jobId,
     })
 
+    // Search job logs query
+    const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
+        queryKey: ["job-logs/search", workflowId, jobId, searchQuery, streamFilter],
+        queryFn: async ({ pageParam }) => {
+            const url = pageParam
+                ? `${searchURL}?${getSearchQueryParams}&cursor=${pageParam}`
+                : `${searchURL}?${getSearchQueryParams}`
+
+            const response = await fetchWithAuth(url);
+
+            if (!response.ok) {
+                throw new Error("failed to fetch job logs");
+            }
+
+            const res = await response.json() as JobLogsResponseData
+
+            if (!res.logs) {
+                return {
+                    id: jobId,
+                    workflow_id: workflowId,
+                    logs: [],
+                    cursor: undefined,
+                }
+            }
+
+            const data: JobLogsResponseData = {
+                id: res.id,
+                workflow_id: res.workflow_id,
+                logs: res.logs,
+                cursor: res.cursor || undefined,
+            }
+
+            return data
+        },
+        initialPageParam: null,
+        getNextPageParam: (lastPage) => lastPage?.cursor || null,
+        enabled: shouldFetch && !!searchQuery && !!getSearchQueryParams && !!workflowId && !!jobId,
+    });
+
     // For running jobs, use regular query + SSE
-    const sseQueryKey = useMemo(() => [`job/events`, workflowId, jobId], [workflowId, jobId])
-    const sseQuery = useQuery({
-        queryKey: sseQueryKey,
+    const jobLogsSSEQueryKey = useMemo(() => [`job-logs/events`, workflowId, jobId], [workflowId, jobId])
+    const jobLogsSSEQuery = useQuery({
+        queryKey: jobLogsSSEQueryKey,
         queryFn: async (): Promise<JobLog[]> => {
             try {
                 const allLogs: JobLog[] = []
@@ -169,7 +266,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                 throw error
             }
         },
-        enabled: shouldFetch && isRunning,
+        enabled: shouldFetch && !searchQuery && isRunning && !!workflowId && !!jobId,
         staleTime: Infinity,
         gcTime: Infinity,
     })
@@ -180,11 +277,13 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         // 1. Job is running
         // 2. Initial logs have been fetched successfully
         // 3. We have workflowId and jobId
-        if (!isRunning || !sseQuery.isSuccess || !workflowId || !jobId) {
+        if (!isRunning || !jobLogsSSEQuery.isSuccess || !workflowId || !jobId) {
             setIsConnected(false)
             setIsSSEEnabled(false)
             return
         }
+
+        let firstPass: boolean = true;
 
         // Enable SSE after initial fetch is complete
         setIsSSEEnabled(true)
@@ -205,8 +304,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                 const messageEvent = event as MessageEvent
                 const logData: JobLog = JSON.parse(messageEvent.data)
 
-                queryClient.setQueryData(sseQueryKey, (oldData: JobLog[] | undefined) => {
+                queryClient.setQueryData(jobLogsSSEQueryKey, (oldData: JobLog[] | undefined) => {
                     const existingLogs = oldData || []
+                    if (!firstPass) {
+                        return [...existingLogs, logData]
+                    }
+                    firstPass = false;
                     return mergeLogs(existingLogs, [logData])
                 })
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -236,30 +339,58 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             eventSourceRef.current = null
             setIsConnected(false)
         }
-    }, [queryClient, sseQueryKey, sseURL, isRunning, sseQuery.isSuccess, workflowId, jobId])
+    }, [queryClient, jobLogsSSEQueryKey, sseURL, isRunning, jobLogsSSEQuery.isSuccess, workflowId, jobId])
 
     useEffect(() => {
-        if (infiniteQuery.error instanceof Error) {
-            toast.error(infiniteQuery.error.message)
+        if (jobLogsSearchInfiniteQuery.error instanceof Error) {
+            toast.error(jobLogsSearchInfiniteQuery.error.message)
         }
-        if (sseQuery.error instanceof Error) {
-            toast.error(sseQuery.error.message)
+        if (jobLogsInfiniteQuery.error instanceof Error) {
+            toast.error(jobLogsInfiniteQuery.error.message)
         }
-    }, [infiniteQuery.error, sseQuery.error])
+        if (jobLogsSSEQuery.error instanceof Error) {
+            toast.error(jobLogsSSEQuery.error.message)
+        }
+    }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error, jobLogsSSEQuery.error])
+
+    if (shouldFetch && !!searchQuery) {
+        const allPages = jobLogsSearchInfiniteQuery.data?.pages || [];
+        const logs = allPages.length > 0 ? allPages.flatMap((page) => page?.logs || []) : [];
+
+        return {
+            logs,
+            isLoading: jobLogsSearchInfiniteQuery.isLoading,
+            error: jobLogsSearchInfiniteQuery.error,
+            fetchNextPage: jobLogsSearchInfiniteQuery.fetchNextPage,
+            isFetchingNextPage: jobLogsSearchInfiniteQuery.isFetchingNextPage,
+            hasNextPage: jobLogsSearchInfiniteQuery.hasNextPage,
+            refetch: jobLogsSearchInfiniteQuery.refetch,
+            searchQuery: searchQuery,
+            updateSearchQuery: updateSearchQuery,
+            streamFilter: streamFilter,
+            applyStreamFilter: applyStreamFilter,
+            downloadLogsMutation,
+            isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
+            isDownloadLogsMutationError: downloadLogsMutation.error,
+        };
+    }
 
     if (isCompleted) {
-        const allPages = infiniteQuery.data?.pages || []
+        const allPages = jobLogsInfiniteQuery.data?.pages || []
         const logs = allPages.length > 0 ? allPages.flatMap((page) => page?.logs || []) : []
 
         return {
             logs,
-            isLoading: infiniteQuery.isLoading,
-            error: infiniteQuery.error,
-            fetchNextPage: infiniteQuery.fetchNextPage,
-            isFetchingNextPage: infiniteQuery.isFetchingNextPage,
-            hasNextPage: infiniteQuery.hasNextPage,
-            refetch: infiniteQuery.refetch,
-            // SSE-specific properties (not available for completed jobs)
+            isLoading: jobLogsInfiniteQuery.isLoading,
+            error: jobLogsInfiniteQuery.error,
+            fetchNextPage: jobLogsInfiniteQuery.fetchNextPage,
+            isFetchingNextPage: jobLogsInfiniteQuery.isFetchingNextPage,
+            hasNextPage: jobLogsInfiniteQuery.hasNextPage,
+            refetch: jobLogsInfiniteQuery.refetch,
+            searchQuery: searchQuery,
+            updateSearchQuery: updateSearchQuery,
+            streamFilter: streamFilter,
+            applyStreamFilter: applyStreamFilter,
             isConnected: false,
             isSSEEnabled: false,
             disconnect: () => { },
@@ -272,14 +403,17 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     if (isRunning) {
         return {
-            logs: sseQuery.data || [],
-            isLoading: sseQuery.isLoading,
-            error: sseQuery.error,
+            logs: jobLogsSSEQuery.data || [],
+            isLoading: jobLogsSSEQuery.isLoading,
+            error: jobLogsSSEQuery.error,
             fetchNextPage: () => Promise.resolve(),
             isFetchingNextPage: false,
             hasNextPage: false,
-            refetch: sseQuery.refetch,
-            // SSE-specific properties
+            refetch: jobLogsSSEQuery.refetch,
+            searchQuery: searchQuery,
+            updateSearchQuery: updateSearchQuery,
+            streamFilter: streamFilter,
+            applyStreamFilter: applyStreamFilter,
             isConnected,
             isSSEEnabled,
             disconnect: () => {
@@ -305,6 +439,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         isFetchingNextPage: false,
         hasNextPage: false,
         refetch: () => Promise.resolve(),
+        searchQuery: searchQuery,
+        updateSearchQuery: updateSearchQuery,
+        streamFilter: streamFilter,
+        applyStreamFilter: applyStreamFilter,
         isConnected: false,
         isSSEEnabled: false,
         disconnect: () => { },

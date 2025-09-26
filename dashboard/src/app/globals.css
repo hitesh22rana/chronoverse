@@ -139,3 +139,11 @@
     --chart-5: oklch(0.645 0.246 16.439);
   }
 }
+
+em {
+  background-color: var(--color-orange-400);
+  color: var(--color-white);
+  font-style: normal;
+  padding-block: calc(var(--spacing) * 0.5);
+  border-radius: var(--radius-xs)
+}

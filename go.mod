@@ -17,7 +17,7 @@ require (
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/meilisearch/meilisearch-go v0.34.0
 	github.com/redis/go-redis/extra/redisotel/v9 v9.14.0
-	github.com/redis/go-redis/v9 v9.14.0
+	github.com/redis/go-redis/v9 v9.15.0
 	github.com/stretchr/testify v1.11.1
 	github.com/twmb/franz-go v1.19.5
 	go.opentelemetry.io/contrib/bridges/otelzap v0.13.0

@@ -1,7 +1,7 @@
 name: chronoverse
 services:
   postgres:
-    image: postgres:alpine
+    image: postgres:18.0-alpine3.22
     container_name: postgres
     environment:
       POSTGRES_USER: postgres
@@ -11,7 +11,7 @@ services:
       - "5432:5432"
     restart: on-failure
     volumes:
-      - postgres:/var/lib/postgresql/data
+      - postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -q -d chronoverse -U postgres"]
       timeout: 10s
@@ -21,7 +21,7 @@ services:
       - chronoverse
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse:25.8.7.3
     container_name: clickhouse
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -39,7 +39,7 @@ services:
       - chronoverse
 
   redis:
-    image: redis:alpine
+    image: redis:8.2.1-alpine
     container_name: redis
     ports:
       - "6379:6379"
@@ -87,7 +87,7 @@ services:
       - chronoverse
 
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.6.7
     hostname: kafka
     container_name: kafka
     ports:
@@ -104,6 +104,8 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: SSL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_ADVERTISED_LISTENERS: SSL://kafka:9094
+
+      # SSL config...
       KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets
       KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
       KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds.txt
@@ -114,18 +116,31 @@ services:
       KAFKA_SSL_CLIENT_AUTH: required
       KAFKA_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
       KAFKA_SSL_PROTOCOL: TLS
+
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # Internal topics replication factors
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      # Ensure min ISR = 1 for single-broker
+      KAFKA_OFFSETS_TOPIC_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Optional: global default
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+
+      # Other Confluent internal topics left at RF=1
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_DURABILITY_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_TIER_METADATA_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      CLUSTER_ID: chronoverse
+      CLUSTER_ID: EDofQNqcSCa63isOyHHO9g
     volumes:
       - kafka:/var/lib/kafka/data
       - ./certs/kafka:/etc/kafka/secrets:ro
@@ -136,7 +151,7 @@ services:
       - chronoverse
 
   lgtm:
-    image: grafana/otel-lgtm
+    image: grafana/otel-lgtm:0.11.10
     container_name: lgtm
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: true
@@ -153,7 +168,7 @@ services:
       - chronoverse
 
   docker-proxy:
-    image: tecnativa/docker-socket-proxy
+    image: tecnativa/docker-socket-proxy:v0.4.1
     container_name: docker-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

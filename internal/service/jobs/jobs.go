@@ -40,6 +40,7 @@ type Repository interface {
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, error)
 	StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*goredis.PubSub, error)
+	SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.SearchJobLogsFilters) (*jobsmodel.GetJobLogsResponse, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -398,6 +399,65 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 	return ch, nil
 }
 
+// SearchJobLogsRequest holds the request parameters for getting filtered logs of a job.
+type SearchJobLogsRequest struct {
+	ID         string                          `validate:"required"`
+	WorkflowID string                          `validate:"required"`
+	UserID     string                          `validate:"required"`
+	Cursor     string                          `validate:"omitempty"`
+	Filters    *jobsmodel.SearchJobLogsFilters `validate:"required"`
+}
+
+// SearchJobLogs returns the filtered logs of a job.
+func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRequest) (res *jobsmodel.GetJobLogsResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.SearchJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	var filters *jobsmodel.SearchJobLogsFilters
+	if req.GetFilters() != nil {
+		filters = &jobsmodel.SearchJobLogsFilters{
+			Stream:  int(req.GetFilters().GetStream()),
+			Message: req.GetFilters().GetMessage(),
+		}
+	} else {
+		filters = &jobsmodel.SearchJobLogsFilters{}
+	}
+
+	// Validate the struct
+	err = s.validator.Struct(&SearchJobLogsRequest{
+		ID:         req.GetId(),
+		WorkflowID: req.GetWorkflowId(),
+		UserID:     req.GetUserId(),
+		Cursor:     req.GetCursor(),
+		Filters:    filters,
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Get all the filtered job logs
+	res, err = s.repo.SearchJobLogs(
+		ctx,
+		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetUserId(),
+		req.GetCursor(),
+		filters,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
 // ListJobsRequest holds the request parameters for listing scheduled jobs.
 type ListJobsRequest struct {
 	WorkflowID string                     `validate:"required"`
@@ -441,7 +501,7 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
-		cursor, err = decodeCursor(req.GetCursor())
+		cursor, err = decodeListJobsCursor(req.GetCursor())
 		if err != nil {
 			err = status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
 			return nil, err
@@ -449,7 +509,7 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 	}
 
 	// Validate the filters
-	if err = validateFilters(filters); err != nil {
+	if err = validateListJobsFilters(filters); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid filters: %v", err)
 		return nil, err
 	}
@@ -486,7 +546,7 @@ func validateJobStatus(s string) error {
 	}
 }
 
-func validateFilters(filters *jobsmodel.ListJobsFilters) error {
+func validateListJobsFilters(filters *jobsmodel.ListJobsFilters) error {
 	if filters == nil {
 		return nil
 	}
@@ -501,7 +561,7 @@ func validateFilters(filters *jobsmodel.ListJobsFilters) error {
 	return nil
 }
 
-func decodeCursor(token string) (string, error) {
+func decodeListJobsCursor(token string) (string, error) {
 	decoded, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
 		return "", err

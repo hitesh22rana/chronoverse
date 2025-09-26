@@ -50,6 +50,7 @@ type Service interface {
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (*jobsmodel.GetJobLogsResponse, error)
 	StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRequest) (chan *jobsmodel.JobLog, error)
+	SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRequest) (*jobsmodel.GetJobLogsResponse, error)
 	ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -100,8 +101,8 @@ func (j *Jobs) unaryAuthTokenInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// StreamAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the streaming RPC calls.
-func (j *Jobs) StreamAuthTokenInterceptor() grpc.StreamServerInterceptor {
+// streamAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the streaming RPC calls.
+func (j *Jobs) streamAuthTokenInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(stream.Context())
@@ -169,7 +170,7 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 				return false
 			}),
 			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows us to modify the context.
-			jobs.StreamAuthTokenInterceptor(),
+			jobs.streamAuthTokenInterceptor(),
 		),
 	)
 
@@ -451,6 +452,39 @@ func (j *Jobs) StreamJobLogs(req *jobspb.StreamJobLogsRequest, stream jobspb.Job
 	}
 }
 
+// SearchJobLogs returns the filtered logs of a job.
+func (j *Jobs) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRequest) (res *jobspb.GetJobLogsResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.SearchJobLogs",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("workflow_id", req.GetWorkflowId()),
+			attribute.String("user_id", req.GetUserId()),
+			attribute.String("cursor", req.GetCursor()),
+			attribute.String("filters.stream", req.GetFilters().GetStream().String()),
+			attribute.String("filters.message", req.GetFilters().GetMessage()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	logs, err := j.svc.SearchJobLogs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return logs.ToProto(), nil
+}
+
 // ListJobs returns the jobs by job ID.
 func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *jobspb.ListJobsResponse, err error) {
 	ctx, span := j.tp.Start(
@@ -460,6 +494,7 @@ func (j *Jobs) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (res *
 			attribute.String("workflow_id", req.GetWorkflowId()),
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("cursor", req.GetCursor()),
+			attribute.String("filters.status", req.GetFilters().GetStatus()),
 		),
 	)
 	defer func() {

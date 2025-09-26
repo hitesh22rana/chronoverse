@@ -41,7 +41,8 @@ type Server struct {
 	analyticsClient     analyticspb.AnalyticsServiceClient
 	httpServer          *http.Server
 	validationCfg       *ValidationConfig
-	frontendConfig      *FrontendConfig
+	hostConfig          *HostConfig
+	allowedOrigins      map[string]struct{}
 }
 
 // ValidationConfig represents the configuration of the validation.
@@ -52,11 +53,12 @@ type ValidationConfig struct {
 	CSRFHMACSecret   string
 }
 
-// FrontendConfig represents the configuration of the frontend.
-type FrontendConfig struct {
-	URL    string
-	Host   string
-	Secure bool
+// HostConfig represents the configuration of the backend host.
+type HostConfig struct {
+	URL      string
+	Host     string
+	Secure   bool
+	SameSite http.SameSite
 }
 
 // Config represents the configuration of the HTTP server.
@@ -69,7 +71,9 @@ type Config struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	ValidationConfig  *ValidationConfig
-	FrontendURL       string
+	HostURL           string
+	AllowedOrigins    []string
+	SameSiteMode      string
 }
 
 // New creates a new HTTP server.
@@ -86,9 +90,24 @@ func New(
 	analyticsClient analyticspb.AnalyticsServiceClient,
 ) *Server {
 	logger := loggerpkg.FromContext(ctx)
-	frontend, err := url.Parse(cfg.FrontendURL)
+	host, err := url.Parse(cfg.HostURL)
 	if err != nil {
-		logger.Fatal("failed to parse frontend URL", zap.Error(err))
+		logger.Fatal("failed to parse host URL", zap.Error(err))
+	}
+
+	allowedOrigins := make(map[string]struct{})
+	for _, origin := range cfg.AllowedOrigins {
+		allowedOrigins[origin] = struct{}{}
+	}
+
+	var sameSite http.SameSite
+	switch cfg.SameSiteMode {
+	case "LAX":
+		sameSite = http.SameSiteLaxMode
+	case "STRICT":
+		sameSite = http.SameSiteStrictMode
+	case "NONE":
+		sameSite = http.SameSiteNoneMode
 	}
 
 	srv := &Server{
@@ -109,11 +128,13 @@ func New(
 			IdleTimeout:       cfg.IdleTimeout,
 		},
 		validationCfg: cfg.ValidationConfig,
-		frontendConfig: &FrontendConfig{
-			URL:    cfg.FrontendURL,
-			Host:   frontend.Hostname(),
-			Secure: frontend.Scheme == "https",
+		hostConfig: &HostConfig{
+			URL:      cfg.HostURL,
+			Host:     host.Hostname(),
+			Secure:   host.Scheme == "https",
+			SameSite: sameSite,
 		},
+		allowedOrigins: allowedOrigins,
 	}
 
 	router := http.NewServeMux()
@@ -339,6 +360,19 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				withAttachBasicMetadataHeaderMiddleware(
 					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
 						s.handleGetJobLogs,
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
+		"/workflows/{workflow_id}/jobs/{job_id}/logs/search",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				withAttachBasicMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.handleSearchJobLogs,
 					),
 				),
 			),

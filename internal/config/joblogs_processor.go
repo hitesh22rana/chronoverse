@@ -12,6 +12,7 @@ type JobLogsProcessor struct {
 
 	Redis
 	ClickHouse
+	MeiliSearch
 	Kafka
 	JobLogsProcessorConfig
 }

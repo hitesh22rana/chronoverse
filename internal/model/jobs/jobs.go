@@ -205,3 +205,9 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 type ListJobsFilters struct {
 	Status string `validate:"omitempty"`
 }
+
+// SearchJobLogsFilters represents the filters for searching jobs.
+type SearchJobLogsFilters struct {
+	Stream  int    `validate:"required,min=1,max=3"`
+	Message string `validate:"required"`
+}

@@ -16,6 +16,7 @@ import (
 type Repository interface {
 	MigratePostgres(ctx context.Context) error
 	MigrateClickHouse(ctx context.Context) error
+	SetupMeiliSearch(ctx context.Context) error
 }
 
 // Service provides database migration related operations.
@@ -44,10 +45,21 @@ func (s *Service) Run(ctx context.Context) (err error) {
 	}()
 
 	// Migrate PostgreSQL database.
-	if migrateErr := s.repo.MigratePostgres(ctx); migrateErr != nil {
-		return migrateErr
+	err = s.repo.MigratePostgres(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Migrate ClickHouse database.
-	return s.repo.MigrateClickHouse(ctx)
+	err = s.repo.MigrateClickHouse(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = s.repo.SetupMeiliSearch(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

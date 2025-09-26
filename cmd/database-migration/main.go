@@ -15,6 +15,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/databasemigration"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	databasemigrationrepo "github.com/hitesh22rana/chronoverse/internal/repository/databasemigration"
 	databasemigrationsvc "github.com/hitesh22rana/chronoverse/internal/service/databasemigration"
@@ -74,10 +75,23 @@ func run() int {
 		cfg.ClickHouse.Database,
 	)
 
+	// Initialize the MeiliSearch client
+	meilisearchClient, err := meilisearch.New(
+		ctx,
+		meilisearch.WithURI(cfg.MeiliSearch.URI),
+		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
+		meilisearch.WithTLS(&cfg.MeiliSearch),
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
 	// Initialize the database migration components
 	repo := databasemigrationrepo.New(&databasemigrationrepo.Config{
-		PostgresDSN:   pgDSN,
-		ClickHouseDSN: chDSN,
+		PostgresDSN:       pgDSN,
+		ClickHouseDSN:     chDSN,
+		MeiliSearchClient: meilisearchClient,
 	})
 	svc := databasemigrationsvc.New(repo)
 	app := databasemigration.New(ctx, svc)

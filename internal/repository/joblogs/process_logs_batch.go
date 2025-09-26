@@ -13,6 +13,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 )
 
 // processLogsBatch processes accumulated logs in a batch.
@@ -32,16 +33,35 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 	// Extract logs and records
 	logs := make([]*jobsmodel.JobLogEvent, 0, len(batch))
 	records := make([]*kgo.Record, 0, len(batch))
+	documents := make([]*map[string]any, 0, len(batch))
 
 	for _, item := range batch {
-		logs = append(logs, item.logEntry)
+		log := item.logEntry
+
+		logs = append(logs, log)
 		records = append(records, item.record)
+		documents = append(documents, &map[string]any{
+			"id":           fmt.Sprintf("%s-%d-%s", log.JobID, log.SequenceNum, log.Stream),
+			"job_id":       log.JobID,
+			"workflow_id":  log.WorkflowID,
+			"user_id":      log.UserID,
+			"message":      log.Message,
+			"timestamp":    log.TimeStamp,
+			"sequence_num": log.SequenceNum,
+			"stream":       log.Stream,
+		})
 	}
 
 	// Insert logs into ClickHouse
-	if err := r.insertLogsBatch(ctx, logs); err != nil {
+	if err := r.insertLogsBatchToClickhouse(ctx, logs); err != nil {
 		logger.Error("failed to insert logs batch", zap.Error(err))
 		return err
+	}
+
+	// Don't fail the complete flow only log the error as we don't want to block the process
+	// Insert logs documents into the meilisearch database.
+	if err := r.insertLogsDocumentsToMeiliSearch(ctx, documents); err != nil {
+		logger.Error("failed to add documents", zap.Error(err))
 	}
 
 	// Commit Kafka offsets after successful insertion
@@ -58,8 +78,8 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 	return nil
 }
 
-// insertLogsBatch inserts a batch of logs into the database.
-func (r *Repository) insertLogsBatch(ctx context.Context, logs []*jobsmodel.JobLogEvent) error {
+// insertLogsBatchToClickhouse inserts a batch of logs into the clickhouse database.
+func (r *Repository) insertLogsBatchToClickhouse(ctx context.Context, logs []*jobsmodel.JobLogEvent) error {
 	if len(logs) == 0 {
 		return nil
 	}
@@ -93,6 +113,21 @@ func (r *Repository) insertLogsBatch(ctx context.Context, logs []*jobsmodel.JobL
 		},
 	); err != nil {
 		return status.Errorf(codes.Internal, "failed to prepare batch: %v", err)
+	}
+
+	return nil
+}
+
+// insertLogsDocumentsToMeiliSearch inserts logs documents into the meilisearch database.
+func (r *Repository) insertLogsDocumentsToMeiliSearch(ctx context.Context, documents []*map[string]any) error {
+	if len(documents) == 0 {
+		return nil
+	}
+
+	indexJobLogs := meilisearchpkg.Indexes[meilisearchpkg.IndexJobLogs]
+
+	if _, err := r.ms.Index(indexJobLogs.Name).AddDocumentsWithContext(ctx, documents, &indexJobLogs.PrimaryKey); err != nil {
+		return status.Errorf(codes.Internal, "failed to add documents: %v", err)
 	}
 
 	return nil

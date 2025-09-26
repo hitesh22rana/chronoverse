@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -16,10 +18,12 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/meilisearch/meilisearch-go"
 	goredis "github.com/redis/go-redis/v9"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -42,16 +46,18 @@ type Repository struct {
 	pg  *postgres.Postgres
 	rdb *redis.Store
 	ch  *clickhouse.Client
+	ms  meilisearch.ServiceManager
 }
 
 // New creates a new jobs repository.
-func New(cfg *Config, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client) *Repository {
+func New(cfg *Config, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		pg:  pg,
 		rdb: rdb,
 		ch:  ch,
+		ms:  ms,
 	}
 }
 
@@ -374,6 +380,129 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 
 	// Subscribe to job-specific channel
 	return r.rdb.Subscribe(ctx, redis.GetJobLogsChannel(jobID)), nil
+}
+
+// SearchJobLogs returns the filtered logs of a job.
+//
+//nolint:gocyclo // This function is complex and has multiple responsibilities.
+func (r *Repository) SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, searchJobLogsFilters *jobsmodel.SearchJobLogsFilters) (res *jobsmodel.GetJobLogsResponse, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.SearchJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	filter := fmt.Sprintf(
+		`user_id = %q AND workflow_id = %q AND job_id = %q`,
+		userID,
+		workflowID,
+		jobID,
+	)
+
+	switch searchJobLogsFilters.Stream {
+	case 1:
+		filter += fmt.Sprintf(` AND stream = %q`, "stdout")
+	case 2:
+		filter += fmt.Sprintf(` AND stream = %q`, "stderr")
+	}
+
+	if cursor != "" {
+		sequenceNum, _err := extractDataFromGetJobLogsCursor(cursor)
+		if _err != nil {
+			err = _err
+			return nil, err
+		}
+
+		filter += fmt.Sprintf(` AND sequence_num >= %d`, sequenceNum)
+	}
+
+	searchRes, _err := r.ms.Index(meilisearchpkg.IndexJobLogs).SearchWithContext(
+		ctx,
+		searchJobLogsFilters.Message,
+		&meilisearch.SearchRequest{
+			Filter:                filter,
+			AttributesToRetrieve:  []string{"message", "sequence_num", "stream", "timestamp"},
+			AttributesToHighlight: []string{"message"},
+			AttributesToSearchOn:  []string{"message"},
+			Sort:                  []string{"sequence_num:asc"},
+			Limit:                 int64(r.cfg.LogsFetchLimit + 1),
+		},
+	)
+	if _err != nil {
+		err = status.Errorf(codes.Internal, "failed to search job logs: %v", _err)
+		return nil, err
+	}
+
+	logs := make([]*jobsmodel.JobLog, 0)
+	for _, hit := range searchRes.Hits {
+		var source map[string]any
+
+		// Prefer _formatted if present
+		if formattedRaw, ok := hit["_formatted"]; ok {
+			if _err := json.Unmarshal(formattedRaw, &source); _err != nil {
+				err = status.Errorf(codes.Internal, "failed to unmarshal data: %v", _err)
+				return nil, err
+			}
+		} else {
+			source = make(map[string]any)
+			for k, v := range hit {
+				var val any
+				if _err := json.Unmarshal(v, &val); _err != nil {
+					err = status.Errorf(codes.Internal, "failed to unmarshal data: %v", _err)
+					return nil, err
+				}
+				source[k] = val
+			}
+		}
+
+		log := &jobsmodel.JobLog{}
+		if ts, ok := source["timestamp"].(string); ok {
+			parsed, _err := time.Parse(time.RFC3339Nano, ts)
+			if _err != nil {
+				err = status.Errorf(codes.Internal, "invalid timestamp format: %v", _err)
+				return nil, err
+			}
+			log.Timestamp = parsed
+		}
+
+		if msg, ok := source["message"].(string); ok {
+			log.Message = msg
+		}
+
+		switch sn := source["sequence_num"].(type) {
+		case string:
+			snVal, err := strconv.ParseUint(sn, 10, 32)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "invalid sequence_num format: %v", sn)
+			}
+			log.SequenceNum = uint32(snVal)
+		case float64:
+			log.SequenceNum = uint32(sn)
+		}
+
+		if stream, ok := source["stream"].(string); ok {
+			log.Stream = stream
+		}
+
+		logs = append(logs, log)
+	}
+
+	// Check if there are more logs
+	var sequenceNum uint32
+	if len(logs) > r.cfg.LogsFetchLimit {
+		sequenceNum = logs[r.cfg.LogsFetchLimit].SequenceNum
+		logs = logs[:r.cfg.LogsFetchLimit]
+	}
+
+	return &jobsmodel.GetJobLogsResponse{
+		ID:         jobID,
+		WorkflowID: workflowID,
+		JobLogs:    logs,
+		Cursor:     encodeJobLogsCursor(sequenceNum),
+	}, nil
 }
 
 // ListJobs returns jobs.

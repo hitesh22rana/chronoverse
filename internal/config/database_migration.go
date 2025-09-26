@@ -10,6 +10,7 @@ type DatabaseMigration struct {
 
 	Postgres
 	ClickHouse
+	MeiliSearch
 }
 
 // InitDatabaseMigrationConfig initializes the database migration configuration.

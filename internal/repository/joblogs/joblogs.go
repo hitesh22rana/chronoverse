@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -51,16 +52,24 @@ type Repository struct {
 	cfg *Config
 	rdb *redis.Store
 	ch  *clickhouse.Client
+	ms  meilisearch.ServiceManager
 	kfk *kgo.Client
 }
 
 // New creates a new joblogs repository.
-func New(cfg *Config, rdb *redis.Store, ch *clickhouse.Client, kfk *kgo.Client) *Repository {
+func New(
+	cfg *Config,
+	rdb *redis.Store,
+	ch *clickhouse.Client,
+	ms meilisearch.ServiceManager,
+	kfk *kgo.Client,
+) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		rdb: rdb,
 		ch:  ch,
+		ms:  ms,
 		kfk: kfk,
 	}
 }

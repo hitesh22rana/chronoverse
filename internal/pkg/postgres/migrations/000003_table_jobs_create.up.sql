@@ -3,7 +3,7 @@ DROP TYPE IF EXISTS JOB_STATUS;
 CREATE TYPE JOB_STATUS AS ENUM ('PENDING', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELED');
 
 CREATE TABLE IF NOT EXISTS jobs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE, -- Foreign key constraint
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
     container_id TEXT NULL, -- Unique identifier for the container, if applicable

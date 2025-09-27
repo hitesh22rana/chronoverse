@@ -126,10 +126,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			require.NoError(t, err)
 
 			wg := sync.WaitGroup{}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
+			wg.Go(func() {
 				logsCollected, logsCollectedErr := collect(t, logs)
 				if tt.timeoutError != nil {
 					require.Error(t, logsCollectedErr)
@@ -142,7 +139,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 				if tt.logs {
 					assert.NotEmpty(t, logsCollected)
 				}
-			}()
+			})
 
 			errsCollected, errsCollectedErr := collect(t, errs)
 

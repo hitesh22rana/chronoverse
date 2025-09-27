@@ -1243,16 +1243,9 @@ func TestStreamJobLogs(t *testing.T) {
 					defer close(ch)
 					ticker := time.NewTicker(10 * time.Millisecond)
 					defer ticker.Stop()
-					var i uint32 = 1
 					for {
 						select {
 						case <-ticker.C:
-							ch <- &jobsmodel.JobLog{
-								Timestamp:   time.Now(),
-								Message:     fmt.Sprintf("Log message %d", i),
-								SequenceNum: i,
-							}
-							i++
 						case <-time.After(200 * time.Millisecond):
 							return // Exit after timeout
 						}
@@ -1422,8 +1415,10 @@ func TestStreamJobLogs(t *testing.T) {
 			}
 
 			// Read logs from the stream
-			var logCount int
-			var streamClosed bool
+			var (
+				logCount     int
+				streamClosed bool
+			)
 
 			// Use a timeout to prevent test from hanging
 			timeout := time.After(300 * time.Millisecond)
@@ -1461,7 +1456,7 @@ func TestStreamJobLogs(t *testing.T) {
 				t.Errorf("expected stream to be closed, but it's still open")
 			}
 
-			if tt.want.logCount > 0 && logCount != tt.want.logCount {
+			if logCount != tt.want.logCount {
 				t.Errorf("expected %d logs, got %d", tt.want.logCount, logCount)
 			}
 
@@ -1470,6 +1465,236 @@ func TestStreamJobLogs(t *testing.T) {
 				if err := stream.CloseSend(); err != nil {
 					t.Errorf("failed to close stream: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestSearchJobLogs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	svc := jobsmock.NewMockService(ctrl)
+	_auth := authmock.NewMockIAuth(ctrl)
+
+	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
+		Deadline: 500 * time.Millisecond,
+	}, _auth, svc))
+	defer _close()
+
+	type args struct {
+		getCtx func() context.Context
+		req    *jobspb.SearchJobLogsRequest
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		mock  func(*jobspb.SearchJobLogsRequest)
+		res   *jobspb.GetJobLogsResponse
+		isErr bool
+	}{
+		{
+			name: "success",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.SearchJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user1",
+					Cursor:     "",
+					Filters: &jobspb.SearchJobLogsFilters{
+						Stream:  jobspb.LogStream_LOG_STREAM_ALL,
+						Message: "message",
+					},
+				},
+			},
+			mock: func(_ *jobspb.SearchJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().SearchJobLogs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   time.Now(),
+							Message:     "message 1",
+							SequenceNum: 1,
+						},
+						{
+							Timestamp:   time.Now(),
+							Message:     "message 2",
+							SequenceNum: 2,
+						},
+					},
+				}, nil)
+			},
+			res: &jobspb.GetJobLogsResponse{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				Logs: []*jobspb.Log{
+					{
+						Timestamp:   time.Now().Format(time.RFC3339),
+						Message:     "message 1",
+						SequenceNum: 1,
+					},
+					{
+						Timestamp:   time.Now().Format(time.RFC3339),
+						Message:     "message 2",
+						SequenceNum: 2,
+					},
+				},
+				Cursor: "",
+			},
+			isErr: false,
+		},
+		{
+			name: "error: invalid token",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"invalid-token",
+					)
+				},
+				req: &jobspb.SearchJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user1",
+					Cursor:     "",
+					Filters: &jobspb.SearchJobLogsFilters{
+						Stream:  jobspb.LogStream_LOG_STREAM_ALL,
+						Message: "message",
+					},
+				},
+			},
+			mock: func(_ *jobspb.SearchJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required fields in request",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.SearchJobLogsRequest{
+					Id:         "",
+					WorkflowId: "",
+					UserId:     "",
+					Cursor:     "",
+					Filters:    &jobspb.SearchJobLogsFilters{},
+				},
+			},
+			mock: func(_ *jobspb.SearchJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().SearchJobLogs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.InvalidArgument, "job_id, workflow_id and user_id are required"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: missing required headers in metadata",
+			args: args{
+				getCtx: func() context.Context {
+					return metadata.AppendToOutgoingContext(
+						t.Context(),
+					)
+				},
+				req: &jobspb.SearchJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user1",
+					Cursor:     "",
+					Filters:    &jobspb.SearchJobLogsFilters{},
+				},
+			},
+			mock:  func(_ *jobspb.SearchJobLogsRequest) {},
+			res:   nil,
+			isErr: true,
+		},
+		{
+			name: "error: internal server error",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(
+						auth.WithRoleInMetadata(
+							auth.WithAudienceInMetadata(
+								t.Context(), "server-test",
+							),
+							auth.RoleUser,
+						),
+						"token",
+					)
+				},
+				req: &jobspb.SearchJobLogsRequest{
+					Id:         "job_id",
+					WorkflowId: "workflow_id",
+					UserId:     "user1",
+					Cursor:     "",
+					Filters: &jobspb.SearchJobLogsFilters{
+						Stream:  jobspb.LogStream_LOG_STREAM_ALL,
+						Message: "message",
+					},
+				},
+			},
+			mock: func(_ *jobspb.SearchJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				svc.EXPECT().SearchJobLogs(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
+			},
+			res:   nil,
+			isErr: true,
+		},
+	}
+
+	defer ctrl.Finish()
+
+	for _, tt := range tests {
+		tt.mock(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.SearchJobLogs(tt.args.getCtx(), tt.args.req)
+			if (err != nil) != tt.isErr {
+				t.Errorf("SearchJobLogs() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+
+			if tt.isErr {
+				if err == nil {
+					t.Error("SearchJobLogs() error = nil, want error")
+				}
+				return
 			}
 		})
 	}

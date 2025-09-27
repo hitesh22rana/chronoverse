@@ -5,7 +5,6 @@ package workflows
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,13 +21,15 @@ import (
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
 	defaultExpirationTTL = time.Minute * 30
-	cacheTimeout         = time.Second * 2
+	cacheTimeout         = time.Second * 5
 )
 
 // Repository provides job related operations.
@@ -109,17 +110,20 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the kind
-	err = validateKind(req.GetKind())
-	if err != nil {
-		return "", err
-	}
-
-	// Validate the JSON payload
-	var _payload map[string]any
-	if err = json.Unmarshal([]byte(req.GetPayload()), &_payload); err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
-		return "", err
+	// Validation based on kind
+	switch req.GetKind() {
+	case workflowsmodel.KindHeartbeat.ToString():
+		_, err = heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
+		if err != nil {
+			return "", err
+		}
+	case workflowsmodel.KindContainer.ToString():
+		_, err = container.ExtractAndValidateContainerDetails(req.GetPayload())
+		if err != nil {
+			return "", err
+		}
+	default:
+		return "", status.Errorf(codes.InvalidArgument, "invalid kind: %s", req.GetKind())
 	}
 
 	// CreateWorkflow the job
@@ -138,7 +142,6 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -204,10 +207,12 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		return err
 	}
 
-	// Validate the JSON payload
-	var _payload map[string]any
-	if err = json.Unmarshal([]byte(req.GetPayload()), &_payload); err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
+	// Validate payload
+	_, heartBeatPayloadErr := heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
+	_, containerPayloadErr := container.ExtractAndValidateContainerDetails(req.GetPayload())
+
+	if heartBeatPayloadErr != nil && containerPayloadErr != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid payload")
 		return err
 	}
 
@@ -227,7 +232,6 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
@@ -296,7 +300,6 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
@@ -364,7 +367,6 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -466,7 +468,6 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
@@ -522,7 +523,6 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
@@ -578,7 +578,6 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
@@ -634,7 +633,6 @@ func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWor
 
 	// Invalidate the cache in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
@@ -735,7 +733,6 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 
 	// Cache the response in the background
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()

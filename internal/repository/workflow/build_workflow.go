@@ -2,7 +2,6 @@ package workflow
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 )
 
 const (
@@ -174,14 +174,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 
 	// Execute the build process with retry enabled
 	workflowErr := withRetry(func() error {
-		// Extract the image from the workflow
-		var imageName string
-		imageName, err = extractImageName(workflow.GetPayload())
+		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 		if err != nil {
 			return err
 		}
 
-		return r.svc.Csvc.Build(ctx, imageName)
+		return r.svc.Csvc.Build(ctx, details.Image)
 	})
 
 	// Since, build process can take time to execute and can led to authorization issues
@@ -256,21 +254,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 	)
 
 	return nil
-}
-
-// extractImageName extracts the image name from the workflow payload.
-func extractImageName(payload string) (string, error) {
-	var data map[string]any
-	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		return "", status.Error(codes.InvalidArgument, "invalid payload format")
-	}
-
-	imageName, ok := data["image"].(string)
-	if !ok || imageName == "" {
-		return "", status.Error(codes.InvalidArgument, "invalid image name")
-	}
-
-	return imageName, nil
 }
 
 // isBuildStepRequired checks if the build step is required for the given kind.

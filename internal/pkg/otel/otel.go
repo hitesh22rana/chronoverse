@@ -25,7 +25,11 @@ func InitResource(ctx context.Context, serviceName, serviceVersion string) (*res
 		return nil, status.Errorf(codes.Internal, "failed to get hostname: %v", err)
 	}
 
-	res, err := resource.New(ctx,
+	res, err := resource.New(
+		ctx,
+		resource.WithFromEnv(),
+		resource.WithProcess(),
+		resource.WithContainer(),
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(serviceVersion),

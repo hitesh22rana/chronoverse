@@ -162,7 +162,6 @@ services:
       - otel-lgtm:/otel-lgtm
     ports:
       - "4317:4317"
-      - "4318:4318"
       - "3000:3000"
     networks:
       - chronoverse
@@ -351,12 +350,7 @@ services:
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
       MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -404,12 +398,7 @@ services:
       GRPC_TLS_CERT_FILE: certs/users-service/users-service.crt
       GRPC_TLS_KEY_FILE: certs/users-service/users-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -475,12 +464,7 @@ services:
       GRPC_TLS_CERT_FILE: certs/workflows-service/workflows-service.crt
       GRPC_TLS_KEY_FILE: certs/workflows-service/workflows-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -550,12 +534,7 @@ services:
       GRPC_TLS_CERT_FILE: certs/jobs-service/jobs-service.crt
       GRPC_TLS_KEY_FILE: certs/jobs-service/jobs-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -625,12 +604,7 @@ services:
       USERS_SERVICE_TLS_ENABLED: true
       USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -690,12 +664,7 @@ services:
       GRPC_TLS_CERT_FILE: certs/analytics-service/analytics-service.crt
       GRPC_TLS_KEY_FILE: certs/analytics-service/analytics-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -753,12 +722,7 @@ services:
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -820,12 +784,7 @@ services:
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
     build:
@@ -897,12 +856,7 @@ services:
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
     build:
@@ -965,12 +919,7 @@ services:
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: joblogs-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -1022,12 +971,7 @@ services:
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: analytics-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -1091,12 +1035,7 @@ services:
       ANALYTICS_SERVICE_TLS_ENABLED: true
       ANALYTICS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .

@@ -17,6 +17,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	joblogsrepo "github.com/hitesh22rana/chronoverse/internal/repository/joblogs"
@@ -91,6 +92,18 @@ func run() int {
 	}
 	defer cdb.Close()
 
+	// Initialize the MeiliSearch client
+	msdb, err := meilisearch.New(
+		ctx,
+		meilisearch.WithURI(cfg.MeiliSearch.URI),
+		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
+		meilisearch.WithTLS(&cfg.MeiliSearch),
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
 	// Initialize the kafka client
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
@@ -110,7 +123,7 @@ func run() int {
 		BatchJobLogsSizeLimit:      cfg.JobLogsProcessorConfig.BatchJobLogsSizeLimit,
 		BatchJobLogsTimeInterval:   cfg.JobLogsProcessorConfig.BatchJobLogsTimeInterval,
 		BatchAnalyticsTimeInterval: cfg.JobLogsProcessorConfig.BatchAnalyticsTimeInterval,
-	}, rdb, cdb, kfk)
+	}, rdb, cdb, msdb, kfk)
 	svc := joblogssvc.New(repo)
 	app := joblogs.New(ctx, svc)
 

@@ -67,3 +67,17 @@ func (mr *MockRepositoryMockRecorder) MigratePostgres(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MigratePostgres", reflect.TypeOf((*MockRepository)(nil).MigratePostgres), ctx)
 }
+
+// SetupMeiliSearch mocks base method.
+func (m *MockRepository) SetupMeiliSearch(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupMeiliSearch", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetupMeiliSearch indicates an expected call of SetupMeiliSearch.
+func (mr *MockRepositoryMockRecorder) SetupMeiliSearch(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupMeiliSearch", reflect.TypeOf((*MockRepository)(nil).SetupMeiliSearch), ctx)
+}

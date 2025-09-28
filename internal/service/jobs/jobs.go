@@ -28,8 +28,9 @@ import (
 )
 
 const (
-	defaultExpirationTTL = time.Minute * 30
-	cacheTimeout         = time.Second * 2
+	defaultExpirationTTL      = time.Minute * 30
+	jobLogSearchExpirationTTL = time.Minute * 15
+	cacheTimeout              = time.Second * 5
 )
 
 // Repository provides job related operations.
@@ -38,8 +39,9 @@ type Repository interface {
 	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
-	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, error)
+	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, string, error)
 	StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*goredis.PubSub, error)
+	SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.SearchJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -269,8 +271,13 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 	}
 
 	// Check if the job logs are cached
-	cachedKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
-	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &jobsmodel.GetJobLogsResponse{})
+	cacheKey := fmt.Sprintf(
+		"job_logs:%s:%s:%s",
+		req.GetUserId(),
+		req.GetId(),
+		req.GetCursor(),
+	)
+	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
 	if cacheErr != nil {
 		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
 			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
@@ -283,33 +290,32 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 	}
 
 	// Get the scheduled job logs
-	res, err = s.repo.GetJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor())
+	var jobStatus string
+	res, jobStatus, err = s.repo.GetJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor())
 	if err != nil {
 		return nil, err
 	}
 
-	// Cache the response in the background, only if cursor is present in the response
-	// With cursor present in the response, we ensure that these are not the trailing logs and can be cached
+	// Cache the response in the background, only if job status is in terminal state(which ensures the job status won't change further)
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-
-	if res.Cursor != "" {
+	if isTerminalJobStatus(jobStatus) {
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
 
 			// Cache the job logs
-			if setErr := s.cache.Set(bgCtx, cachedKey, res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
 				logger.Warn("failed to cache job logs",
 					zap.String("user_id", req.GetUserId()),
 					zap.String("job_id", req.GetId()),
-					zap.String("cache_key", cachedKey),
+					zap.String("cache_key", cacheKey),
 					zap.Error(setErr),
 				)
 			} else if logger.Core().Enabled(zap.DebugLevel) {
 				logger.Debug("cached job logs",
 					zap.String("user_id", req.GetUserId()),
 					zap.String("job_id", req.GetId()),
-					zap.String("cache_key", cachedKey),
+					zap.String("cache_key", cacheKey),
 				)
 			}
 		}()
@@ -398,6 +404,115 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 	return ch, nil
 }
 
+// SearchJobLogsRequest holds the request parameters for getting filtered logs of a job.
+type SearchJobLogsRequest struct {
+	ID         string                          `validate:"required"`
+	WorkflowID string                          `validate:"required"`
+	UserID     string                          `validate:"required"`
+	Cursor     string                          `validate:"omitempty"`
+	Filters    *jobsmodel.SearchJobLogsFilters `validate:"required"`
+}
+
+// SearchJobLogs returns the filtered logs of a job.
+func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRequest) (res *jobsmodel.GetJobLogsResponse, err error) {
+	logger := loggerpkg.FromContext(ctx).With(
+		zap.String("method", "Service.SearchJobLogs"),
+	)
+	ctx, span := s.tp.Start(ctx, "Service.SearchJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	var filters *jobsmodel.SearchJobLogsFilters
+	if req.GetFilters() != nil {
+		filters = &jobsmodel.SearchJobLogsFilters{
+			Stream:  int(req.GetFilters().GetStream()),
+			Message: req.GetFilters().GetMessage(),
+		}
+	} else {
+		filters = &jobsmodel.SearchJobLogsFilters{}
+	}
+
+	// Validate the struct
+	err = s.validator.Struct(&SearchJobLogsRequest{
+		ID:         req.GetId(),
+		WorkflowID: req.GetWorkflowId(),
+		UserID:     req.GetUserId(),
+		Cursor:     req.GetCursor(),
+		Filters:    filters,
+	})
+	if err != nil {
+		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Check if the job logs are cached
+	cacheKey := fmt.Sprintf(
+		"job_logs:%s:%s:%s:%s:%s",
+		req.GetUserId(),
+		req.GetId(),
+		req.GetCursor(),
+		req.GetFilters().GetMessage(),
+		req.GetFilters().GetStream(),
+	)
+	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
+	if cacheErr != nil {
+		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
+			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			return nil, err
+		}
+	} else {
+		// Cache hit, return cached response
+		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
+		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
+	}
+
+	// Get all the filtered job logs
+	var jobStatus string
+	res, jobStatus, err = s.repo.SearchJobLogs(
+		ctx,
+		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetUserId(),
+		req.GetCursor(),
+		filters,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the response in the background, only if job status is in terminal state(which ensures the job status won't change further)
+	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	if isTerminalJobStatus(jobStatus) {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
+			defer cancel()
+
+			// Cache the job logs
+			if setErr := s.cache.Set(bgCtx, cacheKey, res, jobLogSearchExpirationTTL); setErr != nil {
+				logger.Warn("failed to cache job logs",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("job_id", req.GetId()),
+					zap.String("cache_key", cacheKey),
+					zap.Error(setErr),
+				)
+			} else if logger.Core().Enabled(zap.DebugLevel) {
+				logger.Debug("cached job logs",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("job_id", req.GetId()),
+					zap.String("cache_key", cacheKey),
+				)
+			}
+		}()
+	}
+
+	return res, nil
+}
+
 // ListJobsRequest holds the request parameters for listing scheduled jobs.
 type ListJobsRequest struct {
 	WorkflowID string                     `validate:"required"`
@@ -441,7 +556,7 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
-		cursor, err = decodeCursor(req.GetCursor())
+		cursor, err = decodeListJobsCursor(req.GetCursor())
 		if err != nil {
 			err = status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
 			return nil, err
@@ -449,7 +564,7 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 	}
 
 	// Validate the filters
-	if err = validateFilters(filters); err != nil {
+	if err = validateListJobsFilters(filters); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid filters: %v", err)
 		return nil, err
 	}
@@ -486,7 +601,18 @@ func validateJobStatus(s string) error {
 	}
 }
 
-func validateFilters(filters *jobsmodel.ListJobsFilters) error {
+func isTerminalJobStatus(jobStatus string) bool {
+	switch jobStatus {
+	case jobsmodel.JobStatusCompleted.ToString(),
+		jobsmodel.JobStatusCanceled.ToString(),
+		jobsmodel.JobStatusFailed.ToString():
+		return true
+	default:
+		return false
+	}
+}
+
+func validateListJobsFilters(filters *jobsmodel.ListJobsFilters) error {
 	if filters == nil {
 		return nil
 	}
@@ -501,7 +627,7 @@ func validateFilters(filters *jobsmodel.ListJobsFilters) error {
 	return nil
 }
 
-func decodeCursor(token string) (string, error) {
+func decodeListJobsCursor(token string) (string, error) {
 	decoded, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
 		return "", err

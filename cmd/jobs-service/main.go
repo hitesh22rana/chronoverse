@@ -17,6 +17,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -111,11 +112,23 @@ func run() int {
 	}
 	defer cdb.Close()
 
+	// Initialize the MeiliSearch client
+	msdb, err := meilisearch.New(
+		ctx,
+		meilisearch.WithURI(cfg.MeiliSearch.URI),
+		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
+		meilisearch.WithTLS(&cfg.MeiliSearch),
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
 	// Initialize the jobs repository
 	repo := jobsrepo.New(&jobsrepo.Config{
 		FetchLimit:     cfg.JobsServiceConfig.FetchLimit,
 		LogsFetchLimit: cfg.JobsServiceConfig.LogsFetchLimit,
-	}, pdb, rdb, cdb)
+	}, pdb, rdb, cdb, msdb)
 
 	// Initialize the validator utility
 	validator := validator.New()

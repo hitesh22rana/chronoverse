@@ -117,6 +117,21 @@ func (mr *MockServiceMockRecorder) ScheduleJob(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockService)(nil).ScheduleJob), ctx, req)
 }
 
+// SearchJobLogs mocks base method.
+func (m *MockService) SearchJobLogs(ctx context.Context, req *jobs0.SearchJobLogsRequest) (*jobs.GetJobLogsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SearchJobLogs", ctx, req)
+	ret0, _ := ret[0].(*jobs.GetJobLogsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SearchJobLogs indicates an expected call of SearchJobLogs.
+func (mr *MockServiceMockRecorder) SearchJobLogs(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchJobLogs", reflect.TypeOf((*MockService)(nil).SearchJobLogs), ctx, req)
+}
+
 // StreamJobLogs mocks base method.
 func (m *MockService) StreamJobLogs(ctx context.Context, req *jobs0.StreamJobLogsRequest) (chan *jobs.JobLog, error) {
 	m.ctrl.T.Helper()

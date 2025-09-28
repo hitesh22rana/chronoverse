@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { unstable_ViewTransition as ViewTransition } from "react";
 import { Poppins as FontPoppins } from 'next/font/google'
 import { Toaster } from "sonner";
 
@@ -53,7 +54,9 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <Providers>
-            {children}
+            <ViewTransition>
+              {children}
+            </ViewTransition>
             <Toaster position="top-right" />
           </Providers>
         </ThemeProvider>

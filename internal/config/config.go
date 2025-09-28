@@ -62,6 +62,18 @@ type ClickHouse struct {
 	DialTimeout     time.Duration `envconfig:"CLICKHOUSE_DIAL_TIMEOUT" default:"5s"`
 }
 
+// MeiliSearch holds the MeiliSearch configuration.
+type MeiliSearch struct {
+	URI       string `envconfig:"MEILISEARCH_URI" default:"localhost:7700"`
+	MasterKey string `envconfig:"MEILISEARCH_MASTER_KEY" required:"true"`
+	TLS       struct {
+		Enabled  bool   `envconfig:"MEILISEARCH_TLS_ENABLED" default:"false"`
+		CAFile   string `envconfig:"MEILISEARCH_TLS_CA_FILE" default:""`
+		CertFile string `envconfig:"MEILISEARCH_TLS_CERT_FILE" default:""`
+		KeyFile  string `envconfig:"MEILISEARCH_TLS_KEY_FILE" default:""`
+	}
+}
+
 // Grpc holds the gRPC configuration.
 type Grpc struct {
 	Host           string        `envconfig:"GRPC_HOST" default:"localhost"`

@@ -33,7 +33,9 @@ type Server struct {
 	SessionExpiry     time.Duration `envconfig:"SERVER_SESSION_EXPIRY" default:"2h"`
 	CSRFExpiry        time.Duration `envconfig:"SERVER_CSRF_EXPIRY" default:"2h"`
 	CSRFHMACSecret    string        `envconfig:"SERVER_CSRF_HMAC_SECRET" default:"a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?"`
-	FrontendURL       string        `envconfig:"SERVER_FRONTEND_URL" default:"http://localhost:3001"`
+	HostURL           string        `envconfig:"SERVER_HOST_URL" default:"http://localhost:8080"`
+	AllowedOrigins    []string      `envconfig:"SERVER_ALLOWED_ORIGINS" default:"http://localhost:3001,"`
+	SameSiteMode      string        `envconfig:"SERVER_SAME_SITE_MODE" default:"STRICT"`
 }
 
 // InitServerConfig initializes the server configuration.

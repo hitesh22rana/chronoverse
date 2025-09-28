@@ -3,30 +3,37 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/meilisearch/meilisearch-go"
 	goredis "github.com/redis/go-redis/v9"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	delimiter = '$'
+	delimiter             = '$'
+	jobStatusUpdateBuffer = time.Minute // 1 minute
 )
 
 // Config represents the repository constants configuration.
@@ -42,16 +49,18 @@ type Repository struct {
 	pg  *postgres.Postgres
 	rdb *redis.Store
 	ch  *clickhouse.Client
+	ms  meilisearch.ServiceManager
 }
 
 // New creates a new jobs repository.
-func New(cfg *Config, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client) *Repository {
+func New(cfg *Config, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		pg:  pg,
 		rdb: rdb,
 		ch:  ch,
+		ms:  ms,
 	}
 }
 
@@ -248,7 +257,9 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 }
 
 // GetJobLogs returns the job logs by ID.
-func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (res *jobsmodel.GetJobLogsResponse, err error) {
+//
+//nolint:gocyclo  // This function is complex due to the nature of having two separate queries.
+func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJobLogs")
 	defer func() {
 		if err != nil {
@@ -258,72 +269,123 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 		span.End()
 	}()
 
-	query := fmt.Sprintf(`
-		SELECT timestamp, message, sequence_num, stream
-		FROM %s
-		WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
+	logQueryArgs := []any{jobID, workflowID, userID}
+	logsQuery := fmt.Sprintf(`
+	SELECT timestamp, message, sequence_num, stream
+	FROM %s
+	WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
 	`, clickhouse.TableJobLogs)
-	args := []any{jobID, workflowID, userID}
 
 	if cursor != "" {
 		sequenceNum, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
 			err = _err
-			return nil, err
+			return nil, "", err
 		}
 
-		query += ` AND sequence_num >= $4`
-		args = append(args, sequenceNum)
+		logsQuery += ` AND sequence_num >= $4`
+		logQueryArgs = append(logQueryArgs, sequenceNum)
 	}
 
-	query += fmt.Sprintf(` ORDER BY sequence_num ASC LIMIT %d;`, r.cfg.LogsFetchLimit+1)
+	logsQuery += fmt.Sprintf(` ORDER BY sequence_num ASC LIMIT %d;`, r.cfg.LogsFetchLimit+1)
 
-	rows, err := r.ch.Query(ctx, query, args...)
+	statusQueryArgs := []any{jobID, workflowID, userID}
+	statusQuery := fmt.Sprintf(`
+		SELECT status, completed_at
+		FROM %s
+		WHERE id = $1 AND workflow_id = $2 AND user_id = $3
+	`, postgres.TableJobs)
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	var (
+		logs          []*jobsmodel.JobLog
+		nextCursorSeq uint32
+		fetchedStatus string
+		completedAt   sql.NullTime
+	)
+
+	eg.Go(func() error {
+		rows, qErr := r.ch.Query(egCtx, logsQuery, logQueryArgs...)
+		if qErr != nil {
+			if errors.Is(qErr, context.DeadlineExceeded) {
+				return status.Error(codes.DeadlineExceeded, qErr.Error())
+			} else if errors.Is(qErr, context.Canceled) {
+				return status.Error(codes.Canceled, qErr.Error())
+			}
+			return status.Errorf(codes.NotFound, "no logs found for job: %v", qErr)
+		}
+		defer rows.Close()
+
+		tmp := make([]*jobsmodel.JobLog, 0, r.cfg.LogsFetchLimit+1)
+		for rows.Next() {
+			var (
+				ts   time.Time
+				msg  string
+				seq  uint32
+				strm string
+			)
+			if scanErr := rows.Scan(&ts, &msg, &seq, &strm); scanErr != nil {
+				return status.Errorf(codes.Internal, "failed to scan logs: %v", scanErr)
+			}
+			tmp = append(tmp, &jobsmodel.JobLog{
+				Timestamp:   ts,
+				Message:     msg,
+				SequenceNum: seq,
+				Stream:      strm,
+			})
+		}
+		if rowsErr := rows.Err(); rowsErr != nil {
+			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
+		}
+
+		// Check if there are more logs
+		if len(tmp) > r.cfg.LogsFetchLimit {
+			nextCursorSeq = tmp[r.cfg.LogsFetchLimit].SequenceNum
+			tmp = tmp[:r.cfg.LogsFetchLimit]
+		}
+		logs = tmp
+		return nil
+	})
+
+	eg.Go(func() error {
+		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
+
+		//nolint:gocritic // Ifelse is used to handle different error types
+		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
+			if errors.Is(scanErr, context.DeadlineExceeded) {
+				return status.Error(codes.DeadlineExceeded, scanErr.Error())
+			} else if errors.Is(scanErr, context.Canceled) {
+				return status.Error(codes.Canceled, scanErr.Error())
+			} else if r.pg.IsNoRows(scanErr) {
+				return status.Errorf(codes.NotFound, "job not found or not owned by user: %v", scanErr)
+			} else if r.pg.IsInvalidTextRepresentation(scanErr) {
+				return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", scanErr)
+			}
+
+			return status.Errorf(codes.Internal, "failed to get job: %v", scanErr)
+		}
+
+		return nil
+	})
+
+	err = eg.Wait()
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return nil, err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return nil, err
-		}
-
-		err = status.Errorf(codes.NotFound, "no logs found for job: %v", err)
-		return nil, err
+		return nil, "", err
 	}
 
-	logs := make([]*jobsmodel.JobLog, 0)
-	for rows.Next() {
-		var timestamp time.Time
-		var message string
-		var sequenceNum uint32
-		var stream string
-		if err = rows.Scan(&timestamp, &message, &sequenceNum, &stream); err != nil {
-			err = status.Errorf(codes.Internal, "failed to scan logs: %v", err)
-			return nil, err
-		}
-
-		logs = append(logs, &jobsmodel.JobLog{
-			Timestamp:   timestamp,
-			Message:     message,
-			SequenceNum: sequenceNum,
-			Stream:      stream,
-		})
-	}
-
-	// Check if there are more logs
-	var sequenceNum uint32
-	if len(logs) > r.cfg.LogsFetchLimit {
-		sequenceNum = logs[r.cfg.LogsFetchLimit].SequenceNum
-		logs = logs[:r.cfg.LogsFetchLimit]
+	// Buffer-based status override:
+	// If the job just completed within the buffer window, we may not have all logs yet.
+	// Treat it as "RUNNING" temporarily.
+	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
+		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
 	}
 
 	return &jobsmodel.GetJobLogsResponse{
 		ID:         jobID,
 		WorkflowID: workflowID,
 		JobLogs:    logs,
-		Cursor:     encodeJobLogsCursor(sequenceNum),
-	}, nil
+		Cursor:     encodeJobLogsCursor(nextCursorSeq),
+	}, fetchedStatus, nil
 }
 
 // StreamJobLogs returns a subscription to stream job logs.
@@ -374,6 +436,183 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 
 	// Subscribe to job-specific channel
 	return r.rdb.Subscribe(ctx, redis.GetJobLogsChannel(jobID)), nil
+}
+
+// SearchJobLogs returns the filtered logs of a job.
+//
+//nolint:gocyclo // This function is complex and has multiple responsibilities.
+func (r *Repository) SearchJobLogs(
+	ctx context.Context,
+	jobID,
+	workflowID,
+	userID,
+	cursor string,
+	searchJobLogsFilters *jobsmodel.SearchJobLogsFilters,
+) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.SearchJobLogs")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	filter := fmt.Sprintf(
+		`user_id = %q AND workflow_id = %q AND job_id = %q`,
+		userID,
+		workflowID,
+		jobID,
+	)
+
+	switch searchJobLogsFilters.Stream {
+	case 1:
+		filter += fmt.Sprintf(` AND stream = %q`, "stdout")
+	case 2:
+		filter += fmt.Sprintf(` AND stream = %q`, "stderr")
+	}
+
+	if cursor != "" {
+		sequenceNum, _err := extractDataFromGetJobLogsCursor(cursor)
+		if _err != nil {
+			err = _err
+			return nil, "", err
+		}
+
+		filter += fmt.Sprintf(` AND sequence_num >= %d`, sequenceNum)
+	}
+
+	statusQueryArgs := []any{jobID, workflowID, userID}
+	statusQuery := fmt.Sprintf(`
+		SELECT status, completed_at
+		FROM %s
+		WHERE id = $1 AND workflow_id = $2 AND user_id = $3
+	`, postgres.TableJobs)
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	var (
+		logs          []*jobsmodel.JobLog
+		nextCursorSeq uint32
+		fetchedStatus string
+		completedAt   sql.NullTime
+	)
+
+	eg.Go(func() error {
+		searchRes, searchErr := r.ms.Index(meilisearchpkg.IndexJobLogs).SearchWithContext(
+			egCtx,
+			searchJobLogsFilters.Message,
+			&meilisearch.SearchRequest{
+				Filter:                filter,
+				AttributesToRetrieve:  []string{"message", "sequence_num", "stream", "timestamp"},
+				AttributesToHighlight: []string{"message"},
+				AttributesToSearchOn:  []string{"message"},
+				Sort:                  []string{"sequence_num:asc"},
+				Limit:                 int64(r.cfg.LogsFetchLimit + 1),
+			},
+		)
+		if searchErr != nil {
+			return status.Errorf(codes.Internal, "failed to search job logs: %v", searchErr)
+		}
+
+		tmp := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
+		for _, hit := range searchRes.Hits {
+			var source map[string]any
+
+			// Prefer _formatted if present
+			if formattedRaw, ok := hit["_formatted"]; ok {
+				if scanErr := json.Unmarshal(formattedRaw, &source); scanErr != nil {
+					return status.Errorf(codes.Internal, "failed to unmarshal data: %v", scanErr)
+				}
+			} else {
+				source = make(map[string]any)
+				for k, v := range hit {
+					var val any
+					if scanErr := json.Unmarshal(v, &val); scanErr != nil {
+						return status.Errorf(codes.Internal, "failed to unmarshal data: %v", scanErr)
+					}
+					source[k] = val
+				}
+			}
+
+			log := &jobsmodel.JobLog{}
+			if ts, ok := source["timestamp"].(string); ok {
+				parsed, scanErr := time.Parse(time.RFC3339Nano, ts)
+				if scanErr != nil {
+					return status.Errorf(codes.Internal, "invalid timestamp format: %v", scanErr)
+				}
+				log.Timestamp = parsed
+			}
+
+			if msg, ok := source["message"].(string); ok {
+				log.Message = msg
+			}
+
+			switch sn := source["sequence_num"].(type) {
+			case string:
+				snVal, scanErr := strconv.ParseUint(sn, 10, 32)
+				if scanErr != nil {
+					return status.Errorf(codes.Internal, "invalid sequence_num format: %v", sn)
+				}
+				log.SequenceNum = uint32(snVal)
+			case float64:
+				log.SequenceNum = uint32(sn)
+			}
+
+			if stream, ok := source["stream"].(string); ok {
+				log.Stream = stream
+			}
+
+			tmp = append(tmp, log)
+		}
+
+		// Check if there are more logs
+		if len(tmp) > r.cfg.LogsFetchLimit {
+			nextCursorSeq = tmp[r.cfg.LogsFetchLimit].SequenceNum
+			tmp = tmp[:r.cfg.LogsFetchLimit]
+		}
+		logs = tmp
+		return nil
+	})
+
+	eg.Go(func() error {
+		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
+
+		//nolint:gocritic // Ifelse is used to handle different error types
+		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
+			if errors.Is(scanErr, context.DeadlineExceeded) {
+				return status.Error(codes.DeadlineExceeded, scanErr.Error())
+			} else if errors.Is(scanErr, context.Canceled) {
+				return status.Error(codes.Canceled, scanErr.Error())
+			} else if r.pg.IsNoRows(scanErr) {
+				return status.Errorf(codes.NotFound, "job not found or not owned by user: %v", scanErr)
+			} else if r.pg.IsInvalidTextRepresentation(scanErr) {
+				return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", scanErr)
+			}
+
+			return status.Errorf(codes.Internal, "failed to get job: %v", scanErr)
+		}
+
+		return nil
+	})
+
+	err = eg.Wait()
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Buffer-based status override:
+	// If the job just completed within the buffer window, we may not have all logs yet.
+	// Treat it as "RUNNING" temporarily.
+	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
+		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
+	}
+
+	return &jobsmodel.GetJobLogsResponse{
+		ID:         jobID,
+		WorkflowID: workflowID,
+		JobLogs:    logs,
+		Cursor:     encodeJobLogsCursor(nextCursorSeq),
+	}, fetchedStatus, nil
 }
 
 // ListJobs returns jobs.

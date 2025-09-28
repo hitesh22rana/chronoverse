@@ -2,6 +2,9 @@
 
 import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query"
 import { toast } from "sonner"
+
+import { useUsers } from "@/hooks/use-users"
+
 import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
@@ -30,6 +33,7 @@ export type Notification = {
 }
 
 export function useNotifications() {
+    const { user } = useUsers()
     const queryClient = useQueryClient()
 
     const query = useInfiniteQuery<Notifications, Error>({
@@ -49,6 +53,7 @@ export function useNotifications() {
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
         refetchInterval: 10000, // 10 seconds
+        enabled: !!user && user?.notification_preference !== 'NONE'
     })
 
     if (query.error instanceof Error) {

@@ -39,6 +39,9 @@ func TestRun(t *testing.T) {
 				mockRepo.EXPECT().MigrateClickHouse(
 					gomock.Any(),
 				).Return(nil)
+				mockRepo.EXPECT().SetupMeiliSearch(
+					gomock.Any(),
+				).Return(nil)
 			},
 			want: want{
 				err: nil,

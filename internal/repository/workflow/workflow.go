@@ -91,15 +91,14 @@ func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, ch *clickhouse.Client, 
 func (r *Repository) StartWorkers(ctx context.Context) {
 	// Start worker goroutines
 	for i := range r.cfg.ParallelismLimit {
-		r.wg.Add(1)
-		go r.worker(ctx, fmt.Sprintf("worker-%d", i))
+		r.wg.Go(func() {
+			r.worker(ctx, fmt.Sprintf("worker-%d", i))
+		})
 	}
 }
 
 // worker processes Kafka messages from the job channel.
 func (r *Repository) worker(ctx context.Context, workerID string) {
-	defer r.wg.Done()
-
 	for {
 		select {
 		case job, ok := <-r.jobChan:

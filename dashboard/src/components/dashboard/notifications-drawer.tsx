@@ -1,9 +1,6 @@
-"use client"
-
 import {
     useEffect,
     useMemo,
-    useRef,
     useState,
 } from "react";
 import Link from "next/link";
@@ -17,31 +14,31 @@ import {
     Bell,
     Check,
 } from "lucide-react";
+
 import {
-    VariableSizeList as List,
-    ListChildComponentProps,
-} from "react-window";
-import AutoSizer from "react-virtualized-auto-sizer";
+    Virtuoso,
+    Components
+} from "react-virtuoso"
 
 import {
     Sheet,
     SheetContent,
     SheetHeader,
     SheetTitle,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/components/ui/sheet"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Skeleton } from "@/components/ui/skeleton"
 
 import {
     useNotifications,
     type Notification,
     type NotificationPayload,
-} from "@/hooks/use-notifications";
+} from "@/hooks/use-notifications"
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
 
-type Severity = "ERROR" | "ALERT" | "INFO" | "SUCCESS";
+type Severity = "ERROR" | "ALERT" | "INFO" | "SUCCESS"
 
 const KIND_TO_SEVERITY: Record<string, Severity> = {
     WEB_ERROR: "ERROR",
@@ -49,7 +46,7 @@ const KIND_TO_SEVERITY: Record<string, Severity> = {
     WEB_WARN: "ALERT",
     WEB_INFO: "INFO",
     WEB_SUCCESS: "SUCCESS",
-};
+}
 
 const SEVERITY_META: Record<Severity, { color: string }> = {
     ALERT: {
@@ -68,13 +65,13 @@ const SEVERITY_META: Record<Severity, { color: string }> = {
         color:
             "border-l-4 border-green-500 bg-green-500/5 dark:bg-green-900/20 dark:text-green-100 text-green-900",
     },
-};
+}
 
 function dateHeading(iso: string) {
-    const d = new Date(iso);
-    if (isToday(d)) return "Today";
-    if (isYesterday(d)) return "Yesterday";
-    return format(d, "MMM d, yyyy");
+    const d = new Date(iso)
+    if (isToday(d)) return "Today"
+    if (isYesterday(d)) return "Yesterday"
+    return format(d, "MMM d, yyyy")
 }
 
 function highlightNotification(message: string): string {
@@ -85,9 +82,13 @@ function highlightNotification(message: string): string {
 }
 
 interface NotificationsDrawerProps {
-    open: boolean;
-    onClose: () => void;
+    open: boolean
+    onClose: () => void
 }
+
+type FlatRow =
+    | { type: "heading"; heading: string }
+    | { type: "item"; n: Notification }
 
 export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps) {
     const {
@@ -97,143 +98,142 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         fetchNextPage,
         isFetchingNextPage,
         hasNextPage,
-    } = useNotifications();
+    } = useNotifications()
 
-    const listRef = useRef<List>(null);
+    // Group notifications by date and flatten with headings
+    const flat = useMemo<FlatRow[]>(() => {
+        if (notifications.length === 0) return []
+        const groups = new Map<string, Notification[]>()
 
-    const flat = useMemo(() => {
-        const result: { type: "heading" | "item"; heading?: string; n?: Notification }[] = [];
-        const groups = new Map<string, Notification[]>();
-        notifications.forEach((n) => {
-            const key = dateHeading(n.created_at);
-            const arr = groups.get(key) ?? [];
-            arr.push(n);
-            groups.set(key, arr);
-        });
-        groups.forEach((arr, heading) => {
-            result.push({ type: "heading", heading });
-            arr.forEach((n) => result.push({ type: "item", n }));
-        });
-        return result;
-    }, [notifications]);
+        for (const n of notifications) {
+            const key = dateHeading(n.created_at)
+            const arr = groups.get(key) ?? []
+            arr.push(n)
+            groups.set(key, arr)
+        }
 
-    useEffect(() => {
-        // reset from index 0 so every row is re-measured
-        listRef.current?.resetAfterIndex(0, true);
-    }, [flat]);
+        const result: FlatRow[] = []
+        for (const [heading, arr] of groups.entries()) {
+            result.push({ type: "heading", heading })
+            for (const n of arr) result.push({ type: "item", n })
+        }
+        return result
+    }, [notifications])
 
-    const itemKey = (index: number) =>
-        flat[index].type === "heading"
-            ? `heading-${flat[index].heading}`
-            : (flat[index].n as Notification).id;
-
-    // bulk selection
-    const [selected, setSelected] = useState<Set<string>>(new Set());
-    const [selectAll, setSelectAll] = useState(false);
+    // Bulk selection
+    const [selected, setSelected] = useState<Set<string>>(new Set())
+    const [selectAll, setSelectAll] = useState(false)
 
     const toggleSelect = (id: string) => {
         setSelected((prev) => {
-            const next = new Set(prev);
+            const next = new Set(prev)
             // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-            next.has(id) ? next.delete(id) : next.add(id);
-            return next;
-        });
-    };
+            next.has(id) ? next.delete(id) : next.add(id)
+            return next
+        })
+    }
 
     const handleSelectAll = () => {
         if (selectAll) {
-            setSelected(new Set());
-            setSelectAll(false);
+            setSelected(new Set())
+            setSelectAll(false)
         } else {
-            const allNotificationIds = new Set(notifications.map(n => n.id));
-            setSelected(allNotificationIds);
-            setSelectAll(true);
+            const allIds = new Set(notifications.map((n) => n.id))
+            setSelected(allIds)
+            setSelectAll(true)
         }
-    };
+    }
 
     const clearSelection = () => {
-        setSelected(new Set());
-        setSelectAll(false);
-    };
+        setSelected(new Set())
+        setSelectAll(false)
+    }
 
     useEffect(() => {
         if (notifications.length === 0) {
-            setSelectAll(false);
-            return;
+            setSelectAll(false)
+            return
         }
-
-        const allSelected = notifications.length > 0 && notifications.every(n => selected.has(n.id));
-        setSelectAll(allSelected);
-    }, [selected, notifications]);
+        const allSelected =
+            notifications.length > 0 && notifications.every((n) => selected.has(n.id))
+        setSelectAll(allSelected)
+    }, [selected, notifications])
 
     const bulkRead = () => {
-        if (selected.size === 0) return;
-        markAsRead(Array.from(selected));
-        clearSelection();
-    };
+        if (selected.size === 0) return
+        markAsRead(Array.from(selected))
+        clearSelection()
+    }
 
-    const Row = ({ index, style }: ListChildComponentProps) => {
-        const d = flat[index];
-
-        if (index === flat.length - 1 && hasNextPage && !isFetchingNextPage) fetchNextPage();
+    // Item renderer
+    const renderRow = (index: number) => {
+        const d = flat[index]
+        if (!d) return null
 
         if (d.type === "heading") {
             return (
-                <div
-                    style={style}
-                    key={index}
-                    className="sticky bg-background text-sm font-semibold border-b px-4 py-2"
-                >
+                <div className="sticky bg-background text-sm font-semibold border-b px-4 py-2">
                     {d.heading}
                 </div>
-            );
+            )
         }
 
-        const n = d.n!;
-        const payload: NotificationPayload = JSON.parse(n.payload);
-        const sev = KIND_TO_SEVERITY[n.kind] ?? "INFO";
-        const meta = SEVERITY_META[sev];
+        const n = d.n
+        const payload: NotificationPayload = JSON.parse(n.payload)
+        const sev = KIND_TO_SEVERITY[n.kind] ?? "INFO"
+        const meta = SEVERITY_META[sev]
 
         return (
             <div
-                style={style}
                 className={cn(
                     "relative px-2 py-4 flex gap-3 group hover:bg-muted/30 transition-colors cursor-pointer",
                     meta.color,
                     !n.read_at && "ring-1 ring-white/5"
                 )}
                 onClick={() => {
-                    if (!n.read_at) markAsRead([n.id]);
+                    if (!n.read_at) markAsRead([n.id])
                 }}
-                key={index}
             >
                 <div
                     onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSelect(n.id);
+                        e.stopPropagation()
+                        toggleSelect(n.id)
                     }}
                 >
                     <Checkbox checked={selected.has(n.id)} />
                 </div>
-                <Link
-                    href={payload.action_url}
-                    prefetch={false}
-                    className="flex-1 min-w-0 flex flex-col gap-2">
+
+                <Link href={payload.action_url} prefetch={false} className="flex-1 min-w-0 flex flex-col gap-2">
                     <div className="flex items-center justify-between gap-2">
                         <p className="font-medium text-sm truncate">{payload.title}</p>
                         <span className="text-xs text-muted-foreground shrink-0">
                             {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
                         </span>
                     </div>
-                    <p className="text-xs font-medium text-muted-foreground line-clamp-2"
-                        dangerouslySetInnerHTML={{
-                            __html: highlightNotification(payload.message),
-                        }}
+
+                    <p
+                        className="text-xs font-medium text-muted-foreground line-clamp-2"
+                        dangerouslySetInnerHTML={{ __html: highlightNotification(payload.message) }}
                     />
                 </Link>
             </div>
-        );
-    };
+        )
+    }
+
+    const handleEndReached = () => {
+        if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage()
+        }
+    }
+
+    const virtuosoComponents: Components = {
+        Footer: () =>
+            isFetchingNextPage ? (
+                <div className="flex items-center justify-center py-3">
+                    <Skeleton className="h-4 w-24" />
+                </div>
+            ) : null,
+    }
 
     return (
         <Sheet open={open} onOpenChange={onClose}>
@@ -256,7 +256,13 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                         />
                         <p className="text-sm font-medium">{selected.size || 0} selected</p>
                     </div>
-                    <Button size="sm" variant="ghost" className="gap-1 cursor-pointer" onClick={bulkRead} disabled={!selected.size}>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1 cursor-pointer"
+                        onClick={bulkRead}
+                        disabled={!selected.size}
+                    >
                         <Check className="h-4 w-4" /> Mark as read
                     </Button>
                 </div>
@@ -278,26 +284,19 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                             <p className="text-sm">We&apos;ll notify you when there&apos;s new activity.</p>
                         </div>
                     ) : (
-                        <AutoSizer disableWidth>
-                            {({ height }) => (
-                                <List
-                                    ref={listRef}
-                                    height={height}
-                                    width="100%"
-                                    itemCount={flat.length}
-                                    itemKey={itemKey}
-                                    itemSize={(idx) =>
-                                        flat[idx].type === "heading" ? 36 : 90
-                                    }
-                                    overscanCount={5}
-                                >
-                                    {Row}
-                                </List>
-                            )}
-                        </AutoSizer>
+                        <div className="h-full">
+                            <Virtuoso
+                                style={{ height: "100%", width: "100%" }}
+                                totalCount={flat.length}
+                                itemContent={renderRow}
+                                endReached={handleEndReached}
+                                overscan={250}
+                                components={virtuosoComponents}
+                            />
+                        </div>
                     )}
                 </div>
             </SheetContent>
         </Sheet>
-    );
+    )
 }

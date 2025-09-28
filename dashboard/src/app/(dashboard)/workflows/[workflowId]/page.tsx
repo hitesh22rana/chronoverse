@@ -59,7 +59,7 @@ import { useWorkflowJobs, Job } from "@/hooks/use-workflow-jobs"
 import { cn, formatSeconds } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/lib/status"
 
-export default function WorkflowDetailsPage() {
+export default function WorkflowDetailsAndJobsPage() {
     const { workflowId } = useParams() as { workflowId: string }
 
     const router = useRouter()
@@ -75,7 +75,7 @@ export default function WorkflowDetailsPage() {
         refetch: refetchWorkflow,
         workflowAnalytics,
         isAnalyticsLoading,
-    } = useWorkflowDetails(workflowId as string)
+    } = useWorkflowDetails(workflowId)
 
     const {
         jobs,
@@ -84,7 +84,7 @@ export default function WorkflowDetailsPage() {
         error: jobsError,
         applyAllFilters,
         pagination
-    } = useWorkflowJobs(workflowId as string)
+    } = useWorkflowJobs(workflowId)
 
     const [showUpdateWorkflowDialog, setShowUpdateWorkflowDialog] = useState(false)
     const [showTerminateWorkflowDialog, setShowTerminateWorkflowDialog] = useState(false)
@@ -127,7 +127,7 @@ export default function WorkflowDetailsPage() {
     }
 
     return (
-        <div className="flex flex-col gap-6 h-full">
+        <div className="flex flex-1 flex-col gap-6 h-full">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
@@ -174,10 +174,9 @@ export default function WorkflowDetailsPage() {
                 </div>
             </div>
 
-            {/* Tabs */}
             <Tabs
                 defaultValue={urlTabFilter}
-                className="w-full h-full"
+                className="w-full h-full flex-1"
                 onValueChange={handleTabsChange}
             >
                 <TabsList
@@ -199,311 +198,18 @@ export default function WorkflowDetailsPage() {
                     </TabsTrigger>
                 </TabsList>
 
-                {/* Details Tab */}
-                <TabsContent value="details" className="h-full w-full">
-                    {isWorkflowLoading ? (
-                        <WorkflowDetailsSkeleton />
-                    ) : !!workflowError ? (
-                        <EmptyState
-                            title="Error loading workflow details"
-                            description="Please try again later."
-                        />
-                    ) : (
-                        <Fragment>
-                            {/* UpdateWorkflow Dialog */}
-                            <UpdateWorkflowDialog
-                                workflowId={workflow.id}
-                                open={showUpdateWorkflowDialog}
-                                onOpenChange={setShowUpdateWorkflowDialog}
-                            />
-
-                            {/* TerminateWorkflow Dialog */}
-                            <TerminateWorkflowDialog
-                                workflow={workflow}
-                                open={showTerminateWorkflowDialog}
-                                onOpenChange={setShowTerminateWorkflowDialog}
-                            />
-
-                            {/* DeleteWorkflow Dialog */}
-                            <DeleteWorkflowDialog
-                                workflow={workflow}
-                                open={showDeleteWorkflowDialog}
-                                onOpenChange={setShowDeleteWorkflowDialog}
-                            />
-
-                            <div className="flex items-center justify-end mb-4 h-9 gap-5">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="cursor-pointer shrink-0 max-w-[140px] w-full"
-                                    onClick={() => setShowUpdateWorkflowDialog(true)}
-                                >
-                                    <Edit className="h-4 w-4" />
-                                    Edit workflow
-                                </Button>
-
-                                {
-                                    !!workflow?.terminated_at ? (
-                                        <Button
-                                            variant="destructive"
-                                            size="sm"
-                                            className="cursor-pointer shrink-0 max-w-[180px] w-full"
-                                            onClick={() => setShowDeleteWorkflowDialog(true)}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            Delete workflow
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            className="cursor-pointer shrink-0 max-w-[180px] w-full"
-                                            onClick={() => setShowTerminateWorkflowDialog(true)}
-                                        >
-                                            <XCircle className="h-4 w-4" />
-                                            Terminate workflow
-                                        </Button>
-                                    )
-                                }
-                            </div>
-                            <Card>
-                                <CardContent className="space-y-4">
-                                    {/* Basic Info */}
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                        <div className="space-y-2">
-                                            <span className="text-sm font-medium">Workflow kind</span>
-                                            <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                                {
-                                                    workflow?.kind === "HEARTBEAT" ?
-                                                        <HeartPulse className="h-4 w-4" />
-                                                        :
-                                                        <Workflow className="h-4 w-4" />
-                                                }
-                                                {workflow?.kind}
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <span className="text-sm font-medium">Execution schedule</span>
-                                            <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                                <Clock className="h-4 w-4" />
-                                                {interval}
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <span className="text-sm font-medium">Status</span>
-                                            <Badge
-                                                className={cn("text-sm flex items-center h-5",
-                                                    statusMeta.badgeClass
-                                                )}>
-                                                <statusMeta.icon className={statusMeta.iconClass} />
-                                                {getStatusLabel(status, "workflow")}
-                                            </Badge>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <span className="text-sm font-medium">Max consecutive failures allowed</span>
-                                            <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                                <Shield className="h-4 w-4" />
-                                                {workflow?.max_consecutive_job_failures_allowed}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    {/* Configuration */}
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium">Configuration</span>
-                                        <div className="text-sm text-muted-foreground">
-                                            <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
-                                                {workflow?.payload ? JSON.stringify(JSON.parse(workflow.payload), null, 2) : "No configuration available"}
-                                            </pre>
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    {/* Workflow Analytics */}
-                                    {!!workflowAnalytics && !isAnalyticsLoading ? (
-                                        <div className="space-y-2">
-                                            <span className="text-sm font-medium">Workflow Analytics</span>
-                                            <div className="h-full w-full grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                                {/* Total Jobs Card */}
-                                                <Card className="relative overflow-hidden">
-                                                    <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20" />
-                                                    <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                                                        <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                            Total Jobs Executed
-                                                        </CardTitle>
-                                                        <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                                                            <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                                        </div>
-                                                    </CardHeader>
-                                                    <CardContent className="relative">
-                                                        <div className="text-3xl font-bold text-blue-700 dark:text-blue-300">
-                                                            {workflowAnalytics?.total_jobs ? workflowAnalytics.total_jobs.toLocaleString() : "0"}
-                                                        </div>
-                                                        <p className="text-xs text-muted-foreground mt-1">
-                                                            Jobs processed by this workflow
-                                                        </p>
-                                                    </CardContent>
-                                                </Card>
-
-                                                {/* Total Logs Card */}
-                                                <Card className="relative overflow-hidden">
-                                                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20" />
-                                                    <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                                                        <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                            Log Entries Generated
-                                                        </CardTitle>
-                                                        <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                                                            <ScrollText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                                                        </div>
-                                                    </CardHeader>
-                                                    <CardContent className="relative">
-                                                        <div className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">
-                                                            {workflowAnalytics?.total_joblogs ? workflowAnalytics.total_joblogs.toLocaleString() : "0"}
-                                                        </div>
-                                                        <p className="text-xs text-muted-foreground mt-1">
-                                                            Log entries across all jobs
-                                                        </p>
-                                                    </CardContent>
-                                                </Card>
-
-                                                {/* Total Execution Time Card */}
-                                                <Card className="relative overflow-hidden">
-                                                    <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20" />
-                                                    <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                                                        <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                            Total Execution Time
-                                                        </CardTitle>
-                                                        <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                                                            <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                                                        </div>
-                                                    </CardHeader>
-                                                    <CardContent className="relative">
-                                                        <div className="text-3xl font-bold text-amber-700 dark:text-amber-500">
-                                                            {formatSeconds(workflowAnalytics?.total_job_execution_duration ?? 0)}
-                                                        </div>
-                                                        <p className="text-xs text-muted-foreground mt-1">
-                                                            Total per job execution
-                                                        </p>
-                                                    </CardContent>
-                                                </Card>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <EmptyState
-                                            title="No analytics available"
-                                            description="This workflow has no analytics data yet."
-                                        />
-                                    )}
-
-                                    <Separator />
-
-                                    {/* Failure tracking */}
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <div className="flex items-center text-orange-600 dark:text-orange-400">
-                                                <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
-                                                <span className="text-sm font-medium">Failure tracking</span>
-                                            </div>
-                                            <span className="text-sm font-medium">
-                                                {workflow?.consecutive_job_failures_count ?? 0} / {workflow?.max_consecutive_job_failures_allowed ?? 1}
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                                            <div
-                                                className="bg-orange-500 h-1.5 rounded-full"
-                                                style={{
-                                                    width: `${(workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1) * 100}%`
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                </CardContent>
-                                <CardFooter className="text-xs text-muted-foreground border-t">
-                                    <span className="ml-auto">
-                                        Last updated {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
-                                    </span>
-                                </CardFooter>
-                            </Card>
-                        </Fragment>
-                    )}
-                </TabsContent>
-
-                {/* Jobs Tab */}
-                <TabsContent value="jobs" className="h-full w-full">
-                    <div className="flex items-center justify-end gap-2 w-full mb-4">
-                        {/* Updated status filter to use local state */}
-                        <Select
-                            value={urlStatusFilter}
-                            onValueChange={handleStatusFilter}
-                        >
-                            <SelectTrigger className="sm:max-w-[150px] w-full h-9">
-                                <div className="flex items-center gap-2 text-sm">
-                                    <Filter className="size-3.5" />
-                                    <SelectValue placeholder="Filter by status" />
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="ALL">All statuses</SelectItem>
-                                <SelectItem value="PENDING">Pending</SelectItem>
-                                <SelectItem value="QUEUED">Queued</SelectItem>
-                                <SelectItem value="RUNNING">Running</SelectItem>
-                                <SelectItem value="COMPLETED">Completed</SelectItem>
-                                <SelectItem value="FAILED">Failed</SelectItem>
-                                <SelectItem value="CANCELED">Canceled</SelectItem>
-                            </SelectContent>
-                        </Select>
-
-                        {/* Refresh Button */}
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={handleRefresh}
-                        >
-                            <RefreshCw className="h-4 w-4" />
-                            <span className="sr-only">Refresh</span>
-                        </Button>
-
-                        {/* Pagination controls */}
-                        <div className="flex items-center border-l pl-4 ml-1">
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => pagination.goToPreviousPage()}
-                                disabled={!pagination.hasPreviousPage}
-                                className="h-9 w-9"
-                            >
-                                <ChevronLeft className="size-4" />
-                                <span className="sr-only">Previous page</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => pagination.goToNextPage()}
-                                disabled={!pagination.hasNextPage}
-                                className="h-9 w-9 ml-2"
-                            >
-                                <ChevronRight className="size-4" />
-                                <span className="sr-only">Next page</span>
-                            </Button>
-                        </div>
-                    </div>
-
-                    {isJobsLoading ? (
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                            {Array(10).fill(0).map((_, i) => (
-                                <JobCardSkeleton key={i} />
-                            ))}
-                        </div>
-                    ) : !!jobsError ? (
+                {urlTabFilter === "details" && !!workflowError ? (
+                    <EmptyState
+                        title="Error loading workflow details"
+                        description="Please try again later.."
+                    />
+                ) : urlTabFilter === "jobs" ?
+                    !!jobsError ? (
                         <EmptyState
                             title="Error loading jobs"
                             description="Please try again later."
                         />
-                    ) : jobs.length === 0 ? (
+                    ) : (!isJobsLoading && jobs.length === 0) && (
                         <EmptyState
                             title={
                                 urlStatusFilter === "ALL"
@@ -516,15 +222,306 @@ export default function WorkflowDetailsPage() {
                                     : "This workflow hasn't run any jobs yet."
                             }
                         />
-                    ) : (
+                    ) : urlTabFilter !== "details" && urlTabFilter !== "jobs" && (
+                        <EmptyState
+                            title="Unknown tab"
+                            description="Please choose the correct tab"
+                        />
+                    )}
+
+                {urlTabFilter === "details" && isWorkflowLoading ? (
+                    <WorkflowDetailsSkeleton />
+                ) : (urlTabFilter === "details" && !isWorkflowLoading && !workflowError) && (
+                    // Details Tab
+                    <TabsContent value="details" className="h-full w-full">
+                        {/* UpdateWorkflow Dialog */}
+                        <UpdateWorkflowDialog
+                            workflowId={workflow.id}
+                            open={showUpdateWorkflowDialog}
+                            onOpenChange={setShowUpdateWorkflowDialog}
+                        />
+
+                        {/* TerminateWorkflow Dialog */}
+                        <TerminateWorkflowDialog
+                            workflow={workflow}
+                            open={showTerminateWorkflowDialog}
+                            onOpenChange={setShowTerminateWorkflowDialog}
+                        />
+
+                        {/* DeleteWorkflow Dialog */}
+                        <DeleteWorkflowDialog
+                            workflow={workflow}
+                            open={showDeleteWorkflowDialog}
+                            onOpenChange={setShowDeleteWorkflowDialog}
+                        />
+
+                        <div className="flex items-center justify-end mb-4 h-9 gap-5">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="cursor-pointer shrink-0 max-w-[140px] w-full"
+                                onClick={() => setShowUpdateWorkflowDialog(true)}
+                            >
+                                <Edit className="h-4 w-4" />
+                                Edit workflow
+                            </Button>
+                            {!!workflow?.terminated_at ? (
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="cursor-pointer shrink-0 max-w-[180px] w-full"
+                                    onClick={() => setShowDeleteWorkflowDialog(true)}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete workflow
+                                </Button>
+                            ) : (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="cursor-pointer shrink-0 max-w-[180px] w-full"
+                                    onClick={() => setShowTerminateWorkflowDialog(true)}
+                                >
+                                    <XCircle className="h-4 w-4" />
+                                    Terminate workflow
+                                </Button>
+                            )}
+                        </div>
+                        <Card>
+                            <CardContent className="space-y-4">
+                                {/* Basic Info */}
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="space-y-2">
+                                        <span className="text-sm font-medium">Workflow kind</span>
+                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                            {
+                                                workflow?.kind === "HEARTBEAT" ?
+                                                    <HeartPulse className="h-4 w-4" />
+                                                    :
+                                                    <Workflow className="h-4 w-4" />
+                                            }
+                                            {workflow?.kind}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <span className="text-sm font-medium">Execution schedule</span>
+                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                            <Clock className="h-4 w-4" />
+                                            {interval}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <span className="text-sm font-medium">Status</span>
+                                        <Badge
+                                            className={cn("text-sm flex items-center h-5",
+                                                statusMeta.badgeClass
+                                            )}>
+                                            <statusMeta.icon className={statusMeta.iconClass} />
+                                            {getStatusLabel(status, "workflow")}
+                                        </Badge>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <span className="text-sm font-medium">Max consecutive failures allowed</span>
+                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                            <Shield className="h-4 w-4" />
+                                            {workflow?.max_consecutive_job_failures_allowed}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <Separator />
+
+                                {/* Configuration */}
+                                <div className="space-y-2">
+                                    <span className="text-sm font-medium">Configuration</span>
+                                    <div className="text-sm text-muted-foreground">
+                                        <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
+                                            {workflow?.payload ? JSON.stringify(JSON.parse(workflow.payload), null, 2) : "No configuration available"}
+                                        </pre>
+                                    </div>
+                                </div>
+
+                                <Separator />
+
+                                {/* Workflow Analytics */}
+                                {!!workflowAnalytics && !isAnalyticsLoading ? (
+                                    <div className="space-y-2">
+                                        <span className="text-sm font-medium">Workflow Analytics</span>
+                                        <div className="h-full w-full grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                            {/* Total Jobs Card */}
+                                            <Card className="relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20" />
+                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                        Total Jobs Executed
+                                                    </CardTitle>
+                                                    <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                                        <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                                    </div>
+                                                </CardHeader>
+                                                <CardContent className="relative">
+                                                    <div className="text-3xl font-bold text-blue-700 dark:text-blue-300">
+                                                        {workflowAnalytics?.total_jobs ? workflowAnalytics.total_jobs.toLocaleString() : "0"}
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Jobs processed by this workflow
+                                                    </p>
+                                                </CardContent>
+                                            </Card>
+
+                                            {/* Total Logs Card */}
+                                            <Card className="relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20" />
+                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                        Log Entries Generated
+                                                    </CardTitle>
+                                                    <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                                        <ScrollText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                                    </div>
+                                                </CardHeader>
+                                                <CardContent className="relative">
+                                                    <div className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">
+                                                        {workflowAnalytics?.total_joblogs ? workflowAnalytics.total_joblogs.toLocaleString() : "0"}
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Log entries across all jobs
+                                                    </p>
+                                                </CardContent>
+                                            </Card>
+
+                                            {/* Total Execution Time Card */}
+                                            <Card className="relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20" />
+                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                                                        Total Execution Time
+                                                    </CardTitle>
+                                                    <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                                        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                                    </div>
+                                                </CardHeader>
+                                                <CardContent className="relative">
+                                                    <div className="text-3xl font-bold text-amber-700 dark:text-amber-500">
+                                                        {formatSeconds(workflowAnalytics?.total_job_execution_duration ?? 0)}
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Total per job execution
+                                                    </p>
+                                                </CardContent>
+                                            </Card>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <EmptyState
+                                        title="No analytics available"
+                                        description="This workflow has no analytics data yet."
+                                    />
+                                )}
+
+                                <Separator />
+
+                                {/* Failure tracking */}
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center text-orange-600 dark:text-orange-400">
+                                            <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
+                                            <span className="text-sm font-medium">Failure tracking</span>
+                                        </div>
+                                        <span className="text-sm font-medium">
+                                            {workflow?.consecutive_job_failures_count ?? 0} / {workflow?.max_consecutive_job_failures_allowed ?? 1}
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                        <div
+                                            className="bg-orange-500 h-1.5 rounded-full"
+                                            style={{
+                                                width: `${(workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1) * 100}%`
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            </CardContent>
+                            <CardFooter className="text-xs text-muted-foreground border-t">
+                                <span className="ml-auto">
+                                    Last updated {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
+                                </span>
+                            </CardFooter>
+                        </Card>
+                    </TabsContent>
+                )}
+
+                {/* Jobs Tab */}
+                {urlTabFilter === "jobs" && isJobsLoading ? (
+                    <WorkflowJobsSkeleton />
+                ) : (urlTabFilter === "jobs" && !isJobsLoading && !jobsError && !!jobs.length) && (
+                    <TabsContent value="jobs" className="h-full w-full flex-1">
+                        <div className="flex items-center justify-end gap-2 w-full mb-4">
+                            {/* Updated status filter to use local state */}
+                            <Select
+                                value={urlStatusFilter}
+                                onValueChange={handleStatusFilter}
+                            >
+                                <SelectTrigger className="sm:max-w-40 w-full h-9">
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Filter className="size-3.5" />
+                                        <SelectValue placeholder="Filter by status" />
+                                    </div>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL">All statuses</SelectItem>
+                                    <SelectItem value="PENDING">Pending</SelectItem>
+                                    <SelectItem value="QUEUED">Queued</SelectItem>
+                                    <SelectItem value="RUNNING">Running</SelectItem>
+                                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                                    <SelectItem value="FAILED">Failed</SelectItem>
+                                    <SelectItem value="CANCELED">Canceled</SelectItem>
+                                </SelectContent>
+                            </Select>
+
+                            {/* Refresh Button */}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0"
+                                onClick={handleRefresh}
+                            >
+                                <RefreshCw className="h-4 w-4" />
+                                <span className="sr-only">Refresh</span>
+                            </Button>
+
+                            {/* Pagination controls */}
+                            <div className="flex items-center border-l pl-4 ml-1">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => pagination.goToPreviousPage()}
+                                    disabled={!pagination.hasPreviousPage}
+                                    className="h-9 w-9"
+                                >
+                                    <ChevronLeft className="size-4" />
+                                    <span className="sr-only">Previous page</span>
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => pagination.goToNextPage()}
+                                    disabled={!pagination.hasNextPage}
+                                    className="h-9 w-9 ml-2"
+                                >
+                                    <ChevronRight className="size-4" />
+                                    <span className="sr-only">Next page</span>
+                                </Button>
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                            {/* <JobCardSkeleton /> */}
-                            {jobs.map((job) => (
+                            {jobs?.map((job) => (
                                 <JobCard key={job.id} job={job} />
                             ))}
                         </div>
-                    )}
-                </TabsContent>
+                    </TabsContent>
+                )}
             </Tabs>
         </div>
     )
@@ -533,7 +530,7 @@ export default function WorkflowDetailsPage() {
 function WorkflowDetailsSkeleton() {
     return (
         <Fragment>
-            <div className="flex items-center justify-end mb-4 h-9 gap-5">
+            <div className="flex items-center justify-end mb-2 h-9 gap-5">
                 <Skeleton className="h-9 max-w-[140px] w-full" />
                 <Skeleton className="h-9 max-w-[180px] w-full" />
             </div>
@@ -582,7 +579,7 @@ function WorkflowDetailsSkeleton() {
 
                     {/* Analytics Cards Skeleton */}
                     <div className="space-y-1 py-2">
-                        <span className="text-sm font-medium">Workflow Analytics</span>
+                        <Skeleton className="h-5 w-36" />
                         <div className="h-full w-full grid grid-cols-1 lg:grid-cols-3 gap-4">
                             {/* Analytics Card Skeletons */}
                             {[...Array(3)].map((_, i) => (
@@ -697,6 +694,29 @@ function JobCard({ job }: { job: Job }) {
                 </CardContent>
             </Card>
         </Link>
+    )
+}
+
+function WorkflowJobsSkeleton() {
+    return (
+        <Fragment>
+            <div className="flex flex-row items-center justify-end mb-2 h-9 gap-2 w-full">
+                <div className="flex flex-row w-full gap-2 justify-end items-center">
+                    <Skeleton className="sm:max-w-40 w-full h-9" />
+                    <Skeleton className="h-8 w-12 sm:w-[38px] rounded-md" />
+                </div>
+
+                <div className="flex flex-row gap-2 items-center border-l pl-4 ml-1">
+                    <Skeleton className="h-9 w-9" />
+                    <Skeleton className="h-9 w-9" />
+                </div>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {Array(10).fill(0).map((_, i) => (
+                    <JobCardSkeleton key={i} />
+                ))}
+            </div>
+        </Fragment>
     )
 }
 

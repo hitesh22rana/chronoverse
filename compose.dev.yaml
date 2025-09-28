@@ -1,19 +1,19 @@
 name: chronoverse
 services:
   postgres:
-    image: postgres:alpine
+    image: postgres:18.0-alpine3.22
     container_name: postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: chronoverse
     ports:
-      - '5432:5432'
+      - "5432:5432"
     restart: on-failure
     volumes:
-      - postgres:/var/lib/postgresql/data
+      - postgres:/var/lib/postgresql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -q -d chronoverse -U postgres']
+      test: ["CMD-SHELL", "pg_isready -q -d chronoverse -U postgres"]
       timeout: 10s
       interval: 5s
       retries: 10
@@ -21,12 +21,12 @@ services:
       - chronoverse
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse:25.8.7.3
     container_name: clickhouse
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     ports:
-      - '9000:9000'
+      - "9000:9000"
     restart: on-failure
     volumes:
       - clickhouse:/var/lib/clickhouse
@@ -39,28 +39,60 @@ services:
       - chronoverse
 
   redis:
-    image: redis:alpine
+    image: redis:8.2.1-alpine
     container_name: redis
     ports:
-      - '6379:6379'
+      - "6379:6379"
     restart: on-failure
     volumes:
       - redis:/data
     healthcheck:
-      test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
     networks:
       - chronoverse
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.15.0
+    container_name: meilisearch
+    ports:
+      - "7700:7700"
+    restart: on-failure
+    environment:
+      MEILI_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILI_SSL_AUTH_PATH: /certs/ca/ca.crt
+      MEILI_SSL_CERT_PATH: /certs/meilisearch/meilisearch.crt
+      MEILI_SSL_KEY_PATH: /certs/meilisearch/meilisearch.key
+    volumes:
+      - meilisearch:/meili_data
+      - ./certs:/certs:ro
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
+    healthcheck:
+      test: |
+        sh -c '
+          if [ -n "$$MEILI_SSL_AUTH_PATH" ] && [ -n "$$MEILI_SSL_CERT_PATH" ] && [ -n "$$MEILI_SSL_KEY_PATH" ]; then
+            curl --cert "$$MEILI_SSL_CERT_PATH" --key "$$MEILI_SSL_KEY_PATH" --cacert "$$MEILI_SSL_AUTH_PATH" -f https://meilisearch:7700/health
+          else
+            curl -f http://meilisearch:7700/health
+          fi
+        '
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chronoverse
+
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.6.7
     hostname: kafka
     container_name: kafka
     ports:
-      - '9094:9094'
-      - '9093:9093'
+      - "9094:9094"
+      - "9093:9093"
     restart: on-failure
     environment:
       KAFKA_KRAFT_MODE: "true"
@@ -72,6 +104,8 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: SSL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_ADVERTISED_LISTENERS: SSL://kafka:9094
+
+      # SSL config...
       KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets
       KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
       KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds.txt
@@ -82,29 +116,42 @@ services:
       KAFKA_SSL_CLIENT_AUTH: required
       KAFKA_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
       KAFKA_SSL_PROTOCOL: TLS
+
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # Internal topics replication factors
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      # Ensure min ISR = 1 for single-broker
+      KAFKA_OFFSETS_TOPIC_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Optional: global default
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+
+      # Other Confluent internal topics left at RF=1
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_DURABILITY_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_TIER_METADATA_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      CLUSTER_ID: chronoverse
+      CLUSTER_ID: EDofQNqcSCa63isOyHHO9g
     volumes:
       - kafka:/var/lib/kafka/data
       - ./certs/kafka:/etc/kafka/secrets:ro
     depends_on:
-      init-service-certs:
+      init-certs:
         condition: service_completed_successfully
     networks:
       - chronoverse
 
   lgtm:
-    image: grafana/otel-lgtm
+    image: grafana/otel-lgtm:0.11.10
     container_name: lgtm
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: true
@@ -114,14 +161,13 @@ services:
       - lgtm:/data
       - otel-lgtm:/otel-lgtm
     ports:
-      - '4317:4317'
-      - '4318:4318'
-      - '3000:3000'
+      - "4317:4317"
+      - "3000:3000"
     networks:
       - chronoverse
 
   docker-proxy:
-    image: tecnativa/docker-socket-proxy
+    image: tecnativa/docker-socket-proxy:v0.4.1
     container_name: docker-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -129,21 +175,21 @@ services:
       # Image-related permissions
       IMAGES: 1
       IMAGE_CREATE: 1
-      
+
       # Container-related permissions
-      CONTAINERS: 1         # Basic container operations
-      CONTAINER_CREATE: 1   # Needed for ContainerCreate
-      CONTAINER_START: 1    # Needed for ContainerStart
-      CONTAINER_LOGS: 1     # Needed for streaming logs
-      CONTAINER_ATTACH: 1   # Might be needed for log streaming
-      CONTAINER_WAIT: 1     # Needed for waiting on container exit
-      CONTAINER_DELETE: 1   # Needed for container cleanup
-      CONTAINER_STOP: 1     # Might be needed to stop containers
-      
+      CONTAINERS: 1 # Basic container operations
+      CONTAINER_CREATE: 1 # Needed for ContainerCreate
+      CONTAINER_START: 1 # Needed for ContainerStart
+      CONTAINER_LOGS: 1 # Needed for streaming logs
+      CONTAINER_ATTACH: 1 # Might be needed for log streaming
+      CONTAINER_WAIT: 1 # Needed for waiting on container exit
+      CONTAINER_DELETE: 1 # Needed for container cleanup
+      CONTAINER_STOP: 1 # Might be needed to stop containers
+
       # General permissions
-      POST: 1               # Allow POST requests
-      AUTH: 1               # Allow registry authentication
-      
+      POST: 1 # Allow POST requests
+      AUTH: 1 # Allow registry authentication
+
       # Network permissions
       NETWORKS: 0
       VOLUMES: 0
@@ -157,33 +203,22 @@ services:
       - ./certs:/certs:rw
     entrypoint: |
       sh -c '
-      if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
-        echo "✅ Certificates already exist, skipping generation"
-      else
-        echo "🔐 Generating new certificates..."
-        apk update
-        apk add --no-cache openssl
-        openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
-        openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
-        echo "✅ Certificates generated successfully"
-      fi
+        if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
+          echo "✅ Certificates already exist, skipping generation"
+        else
+          echo "🔐 Generating new certificates..."
+          apk update
+          apk add --no-cache openssl
+          openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
+          openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+          echo "✅ Certificates generated successfully"
+        fi
 
-      echo "Setting certificate permissions..."
-      chmod 444 /certs/auth.ed.pub
-      chmod 444 /certs/auth.ed
-      echo "🎉 Certificate permissions set successfully"
-      '
-    restart: "no"
-    networks:
-      - chronoverse
-
-  init-service-certs:
-    image: alpine:latest
-    container_name: init-service-certs
-    volumes:
-      - ./certs:/certs:rw
-    entrypoint: |
-      sh -c '
+        echo "Setting certificate permissions..."
+        chmod 444 /certs/auth.ed.pub
+        chmod 444 /certs/auth.ed
+        echo "🎉 Certificate permissions set successfully"
+        
         echo "🔐 Initializing TLS certificates for services..."
 
         apk update && apk add --no-cache openssl openjdk11-jre-headless
@@ -191,7 +226,7 @@ services:
 
         mkdir -p /certs/ca
 
-        SERVICES="kafka users-service workflows-service jobs-service notifications-service analytics-service"
+        SERVICES="kafka meilisearch users-service workflows-service jobs-service notifications-service analytics-service"
         for svc in $$SERVICES; do
           mkdir -p /certs/$$svc
         done
@@ -306,14 +341,16 @@ services:
     container_name: init-database-migration
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       CLICKHOUSE_HOSTS: clickhouse:9000
+      MEILISEARCH_URI: https://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_TLS_ENABLED: true
+      MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+      MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+      MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -339,11 +376,11 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      meilisearch:
+        condition: service_healthy
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
     networks:
       - chronoverse
@@ -353,6 +390,7 @@ services:
     container_name: users-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
       GRPC_PORT: 50051
       GRPC_TLS_ENABLED: true
@@ -360,12 +398,7 @@ services:
       GRPC_TLS_CERT_FILE: certs/users-service/users-service.crt
       GRPC_TLS_KEY_FILE: certs/users-service/users-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -376,7 +409,7 @@ services:
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
-      - '50051:50051'
+      - "50051:50051"
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -408,8 +441,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -420,6 +451,7 @@ services:
     container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
       KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
@@ -432,12 +464,7 @@ services:
       GRPC_TLS_CERT_FILE: certs/workflows-service/workflows-service.crt
       GRPC_TLS_KEY_FILE: certs/workflows-service/workflows-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -448,7 +475,7 @@ services:
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
-      - '50052:50052'
+      - "50052:50052"
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -482,8 +509,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -494,20 +519,22 @@ services:
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
+      MEILISEARCH_URI: https://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_TLS_ENABLED: true
+      MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+      MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+      MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50053
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/jobs-service/jobs-service.crt
       GRPC_TLS_KEY_FILE: certs/jobs-service/jobs-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -518,7 +545,7 @@ services:
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
-      - '50053:50053'
+      - "50053:50053"
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -548,13 +575,11 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      meilisearch:
+        condition: service_healthy
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -566,6 +591,7 @@ services:
     container_name: notifications-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       GRPC_PORT: 50054
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
@@ -578,12 +604,7 @@ services:
       USERS_SERVICE_TLS_ENABLED: true
       USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -594,7 +615,7 @@ services:
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
-      - '50054:50054'
+      - "50054:50054"
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -624,8 +645,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
       users-service:
@@ -638,18 +657,14 @@ services:
     container_name: analytics-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       GRPC_PORT: 50055
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/analytics-service/analytics-service.crt
       GRPC_TLS_KEY_FILE: certs/analytics-service/analytics-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -660,7 +675,7 @@ services:
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
-      - '50055:50055'
+      - "50055:50055"
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -690,8 +705,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -702,18 +715,14 @@ services:
     container_name: scheduling-worker
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -742,8 +751,6 @@ services:
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -777,12 +784,7 @@ services:
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
     build:
@@ -816,8 +818,6 @@ services:
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -856,12 +856,7 @@ services:
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
     build:
@@ -894,8 +889,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
       workflows-service:
@@ -913,6 +906,12 @@ services:
     environment:
       REDIS_HOST: redis
       CLICKHOUSE_HOSTS: clickhouse:9000
+      MEILISEARCH_URI: https://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_TLS_ENABLED: true
+      MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+      MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+      MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
@@ -920,12 +919,7 @@ services:
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: joblogs-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -951,13 +945,13 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      meilisearch:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -969,6 +963,7 @@ services:
     container_name: analytics-processor
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_MIN_CONNS: 2
       KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: "true"
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
@@ -976,12 +971,7 @@ services:
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: analytics-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -1010,8 +1000,6 @@ services:
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -1047,12 +1035,7 @@ services:
       ANALYTICS_SERVICE_TLS_ENABLED: true
       ANALYTICS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: development
     build:
       context: .
@@ -1063,7 +1046,7 @@ services:
         - PRIVATE_KEY_PATH=certs/auth.ed
         - PUBLIC_KEY_PATH=certs/auth.ed.pub
     ports:
-      - '8080:8080'
+      - "8080:8080"
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -1079,8 +1062,6 @@ services:
       redis:
         condition: service_healthy
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -1106,7 +1087,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8080
     ports:
-      - '3001:3000'
+      - "3001:3000"
     restart: on-failure
     depends_on:
       server:
@@ -1128,6 +1109,7 @@ volumes:
   postgres:
   clickhouse:
   redis:
+  meilisearch:
   kafka:
   kafka-secrets:
   lgtm:

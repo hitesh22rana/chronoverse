@@ -16,3 +16,5 @@ export function formatSeconds(totalSeconds: number): string {
   if (seconds || parts.length === 0) parts.push(`${seconds}s`)
   return parts.join(" ")
 }
+
+export const jsonRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g

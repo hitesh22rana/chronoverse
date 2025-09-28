@@ -10,6 +10,7 @@ type JobsConfig struct {
 	Postgres
 	Redis
 	ClickHouse
+	MeiliSearch
 	JobsServiceConfig
 }
 

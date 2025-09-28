@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState } from "react"
+import { Suspense, useState, unstable_ViewTransition as ViewTransition } from "react"
 
 import { Header } from "@/components/dashboard/header"
 import { NotificationsDrawer } from "@/components/dashboard/notifications-drawer"
@@ -23,9 +23,11 @@ export default function DashboardLayout({
         <Loader className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     }>
-      <Layout>
-        {children}
-      </Layout>
+      <ViewTransition>
+        <Layout>
+          {children}
+        </Layout>
+      </ViewTransition>
     </Suspense>
   )
 }
@@ -42,14 +44,14 @@ function Layout({
 
   return (
     <div className={cn(
-      "flex flex-col w-full overflow-visible",
+      "flex flex-col w-full h-full overflow-visible",
       workflows.length == 0 && "h-svh"
     )}>
       <Header
         onNotificationsClick={() => setNotificationsOpen(true)}
         onProfileClick={() => setProfileOpen(true)}
       />
-      <main className="flex-1 flex flex-col overflow-visible bg-background/95 md:p-6 p-4">
+      <main className="flex-1 flex flex-col overflow-visible min-h-[calc(100dvh-theme('spacing.16'))] h-full bg-background/95 md:p-6 p-4">
         {children}
       </main>
       <NotificationsDrawer

@@ -10,6 +10,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
 const (
@@ -57,19 +59,19 @@ func sessionFromContext(ctx context.Context) (string, error) {
 }
 
 // setCookie sets a cookie in the response.
-func setCookie(w http.ResponseWriter, name, value, host string, secure bool, expires time.Duration) {
+func setCookie(w http.ResponseWriter, name, value, host string, secure bool, expires time.Duration, sameSite http.SameSite) {
 	cookie := &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
-		Expires:  time.Now().Add(expires),
-		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(expires.Seconds()),
+		SameSite: sameSite,
 	}
 
-	// Set domain only for non-localhost
-	if host != "localhost" {
+	// Only set Domain for non-localhost and non-127.0.0.1
+	if !strings.Contains(host, "localhost") && !strings.Contains(host, "127.0.0.1") {
 		cookie.Domain = host
 	}
 
@@ -175,4 +177,18 @@ func isValidBuildStatus(buildStatus string) bool {
 // isValidJobStatus checks if the given job status is valid.
 func isValidJobStatus(status string) bool {
 	return slices.Contains(validJobStatuses, status)
+}
+
+// getJobLogsStreamType returns the joblogs stream type.
+func getJobLogsStreamType(stream string) (jobspb.LogStream, error) {
+	switch stream {
+	case "stdout":
+		return jobspb.LogStream_LOG_STREAM_STDOUT, nil
+	case "stderr":
+		return jobspb.LogStream_LOG_STREAM_STDERR, nil
+	case "":
+		return jobspb.LogStream_LOG_STREAM_ALL, nil
+	default:
+		return jobspb.LogStream_LOG_STREAM_UNSPECIFIED, status.Errorf(codes.InvalidArgument, "invalid log stream type")
+	}
 }

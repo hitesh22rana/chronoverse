@@ -1,5 +1,5 @@
 CREATE TABLE if NOT EXISTS analytics (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
     workflow_id UUID NOT NULL, -- No foreign key constraint, allows orphaned analytics
     -- This allows analytics to remain even if the workflow is deleted.

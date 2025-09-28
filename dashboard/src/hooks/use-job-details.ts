@@ -11,13 +11,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL
 export type Job = {
     id: string
     workflow_id: string
-    status: string
+    status: 'PENDING' | 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED'
     scheduled_at: string
     started_at?: string
     completed_at?: string
     created_at: string
     updated_at: string
 }
+
+const refetchableJobStatus = ['PENDING', 'QUEUED', 'RUNNING']
 
 export function useJobDetails(workflowId: string, jobId: string) {
     const [disableRefetch, setDisableRefetch] = useState(false)
@@ -33,7 +35,7 @@ export function useJobDetails(workflowId: string, jobId: string) {
 
             const data = await (await response.json() as Promise<Job>)
             // Check if the job is completed
-            if (data.completed_at) {
+            if (!!data.status && !refetchableJobStatus.includes(data.status)) {
                 setDisableRefetch(true)
             }
             return data

@@ -1,7 +1,12 @@
 "use client"
 
-import { Suspense, useState, unstable_ViewTransition as ViewTransition } from "react"
+import {
+  Suspense,
+  useState,
+  unstable_ViewTransition as ViewTransition
+} from "react"
 
+import { KVProvider } from "@/components/kv-provider"
 import { Header } from "@/components/dashboard/header"
 import { NotificationsDrawer } from "@/components/dashboard/notifications-drawer"
 import { ProfileDrawer } from "@/components/dashboard/profile-drawer"
@@ -16,18 +21,19 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center w-full h-full">
         <Loader className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     }>
-      <ViewTransition>
-        <Layout>
-          {children}
-        </Layout>
-      </ViewTransition>
+      <KVProvider>
+        <ViewTransition>
+          <Layout>
+            {children}
+          </Layout>
+        </ViewTransition>
+      </KVProvider>
     </Suspense>
   )
 }

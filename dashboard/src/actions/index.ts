@@ -2,7 +2,8 @@
 
 import { cookies } from "next/headers"
 
-// This is a server action
+import { hashStringSHA256 } from "@/lib/utils"
+
 export async function logout() {
     const cookieStore = await cookies()
 
@@ -11,4 +12,10 @@ export async function logout() {
 
     // Remove the CSRF cookie
     cookieStore.delete("csrf")
+}
+
+export async function getSessionHash() {
+    const cookieStore = await cookies()
+
+    return await hashStringSHA256(cookieStore.get("session")?.value)
 }

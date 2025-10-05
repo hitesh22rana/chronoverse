@@ -296,9 +296,11 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return nil, err
 	}
 
-	// Cache the response in the background, only if job status is in terminal state(which ensures the job status won't change further)
+	// Cache the response in the background, if any of the following conditions are satisfied:
+	// 1. The job status is in terminal state(which ensures the job status won't change further)
+	// 2. Next cursor exists(which ensure that these are not the trailing logs and can be cached)
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	if isTerminalJobStatus(jobStatus) {
+	if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
@@ -485,9 +487,11 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		return nil, err
 	}
 
-	// Cache the response in the background, only if job status is in terminal state(which ensures the job status won't change further)
+	// Cache the response in the background, if any of the following conditions are satisfied:
+	// 1. The job status is in terminal state(which ensures the job status won't change further)
+	// 2. Next cursor exists(which ensure that these are not the trailing logs and can be cached)
 	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	if isTerminalJobStatus(jobStatus) {
+	if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()

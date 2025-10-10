@@ -2,7 +2,6 @@
 
 import { cookies } from "next/headers"
 
-// This is a server action
 export async function logout() {
     const cookieStore = await cookies()
 

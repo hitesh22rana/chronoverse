@@ -1,6 +1,10 @@
 "use client"
 
-import { Suspense, useState, unstable_ViewTransition as ViewTransition } from "react"
+import {
+  Suspense,
+  useState,
+  unstable_ViewTransition as ViewTransition
+} from "react"
 
 import { Header } from "@/components/dashboard/header"
 import { NotificationsDrawer } from "@/components/dashboard/notifications-drawer"
@@ -16,7 +20,6 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center w-full h-full">

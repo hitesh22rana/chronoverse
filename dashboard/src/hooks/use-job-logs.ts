@@ -41,6 +41,7 @@ export type JobLogsResponseData = {
 }
 
 const kindsWithLogs = ['CONTAINER']
+const terminalJobStatus = ['COMPLETED', 'FAILED']
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow } = useWorkflowDetails(workflowId)
@@ -56,13 +57,15 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
     const logsURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs`
+
     const sseURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/events`
     const logsDownloadURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/raw`
+
     const searchURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/search`
 
     const isRunning = jobStatus === "RUNNING"
-    const isCompleted = ["COMPLETED", "FAILED"].includes(jobStatus)
-    const shouldFetch = !!workflow && kindsWithLogs.includes(workflow.kind) && jobStatus !== "PENDING" && jobStatus !== "QUEUED" && jobStatus !== "CANCELED"
+    const isCompleted = terminalJobStatus.includes(jobStatus)
+    const shouldFetch = !!workflow && kindsWithLogs.includes(workflow.kind) && (isCompleted || isRunning)
 
     // Update search query in URL params
     const updateSearchQuery = useCallback((newSearchQuery: string) => {
@@ -164,27 +167,16 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
             const res = await response.json() as JobLogsResponseData
 
-            if (!res.logs) {
-                return {
-                    id: jobId,
-                    workflow_id: workflowId,
-                    logs: [],
-                    cursor: undefined,
-                }
-            }
-
-            const data: JobLogsResponseData = {
+            return {
                 id: res.id,
                 workflow_id: res.workflow_id,
-                logs: res.logs,
+                logs: res.logs || [],
                 cursor: res.cursor || undefined,
             }
-
-            return data
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        enabled: shouldFetch && !searchQuery && isCompleted && !!workflowId && !!jobId,
+        enabled: shouldFetch && !searchQuery && !!workflowId && !!jobId,
     })
 
     // Search job logs query
@@ -203,23 +195,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
             const res = await response.json() as JobLogsResponseData
 
-            if (!res.logs) {
-                return {
-                    id: jobId,
-                    workflow_id: workflowId,
-                    logs: [],
-                    cursor: undefined,
-                }
-            }
-
-            const data: JobLogsResponseData = {
-                id: res.id,
-                workflow_id: res.workflow_id,
-                logs: res.logs,
+            return {
+                id: jobId,
+                workflow_id: workflowId,
+                logs: res.logs || [],
                 cursor: res.cursor || undefined,
             }
-
-            return data
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
@@ -313,8 +294,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     return mergeLogs(existingLogs, [logData])
                 })
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            } catch (_) {
-            }
+            } catch (_) { }
         })
 
         eventSource.addEventListener('error', () => {

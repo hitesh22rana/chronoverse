@@ -3,8 +3,8 @@ import { unstable_ViewTransition as ViewTransition } from "react";
 import { Poppins as FontPoppins } from 'next/font/google'
 import { Toaster } from "sonner";
 
-import { Providers } from "@/app/providers";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ReactQueryProvider } from "@/components/reactquery-provider";
 
 import { cn } from "@/lib/utils";
 
@@ -53,12 +53,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Providers>
+          <ReactQueryProvider>
             <ViewTransition>
               {children}
             </ViewTransition>
             <Toaster position="top-right" />
-          </Providers>
+          </ReactQueryProvider>
         </ThemeProvider>
       </body>
     </html>

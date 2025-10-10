@@ -80,7 +80,7 @@ export function LogsViewer({
         hasNextPage,
         downloadLogsMutation,
         isDownloadLogsMutationLoading,
-    } = useJobLogs(workflowId, jobId, jobStatus, completedAt)
+    } = useJobLogs(workflowId, jobId, jobStatus)
 
     const [searchInput, setSearchInput] = useState(searchQuery)
     const [stream, setStream] = useState(streamFilter || "all")

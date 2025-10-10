@@ -2,7 +2,6 @@
 
 import {
     useCallback,
-    useContext,
     useEffect,
     useMemo,
     useRef,
@@ -20,8 +19,6 @@ import {
 } from "@tanstack/react-query"
 import { EventSourcePolyfill } from "event-source-polyfill"
 import { toast } from "sonner"
-
-import { KVContext } from "@/components/kv-provider"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 
@@ -45,11 +42,8 @@ export type JobLogsResponseData = {
 
 const kindsWithLogs = ['CONTAINER']
 const terminalJobStatus = ['COMPLETED', 'FAILED']
-const jobStatusUpdateBuffer = 2 * 60 * 1000 // 2m
-const kvCacheTTL = 2 * 60 * 60 * 1000 // 2h
 
-export function useJobLogs(workflowId: string, jobId: string, jobStatus: string, completedAt: string) {
-    const { kv } = useContext(KVContext)
+export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow } = useWorkflowDetails(workflowId)
     const router = useRouter()
     const queryClient = useQueryClient()
@@ -63,18 +57,15 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string,
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
     const logsURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs`
-    const logsCacheKey = `workflows/${workflowId}/jobs/${jobId}/logs`
 
     const sseURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/events`
     const logsDownloadURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/raw`
 
     const searchURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/search`
-    const searchCacheKey = `workflows/${workflowId}/jobs/${jobId}/logs/search`
 
     const isRunning = jobStatus === "RUNNING"
     const isCompleted = terminalJobStatus.includes(jobStatus)
     const shouldFetch = !!workflow && kindsWithLogs.includes(workflow.kind) && (isCompleted || isRunning)
-    const isCacheAllowed = !!completedAt && (Date.now() - new Date(completedAt).getTime()) > jobStatusUpdateBuffer
 
     // Update search query in URL params
     const updateSearchQuery = useCallback((newSearchQuery: string) => {
@@ -168,20 +159,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string,
                 ? `${logsURL}?cursor=${pageParam}`
                 : logsURL
 
-            const cacheKey = pageParam
-                ? `${logsCacheKey}?cursor=${pageParam}`
-                : logsCacheKey
-
-            const cachedResponse = await kv?.get<JobLogsResponseData>(cacheKey)
-            if (!!cachedResponse) {
-                return {
-                    id: jobId,
-                    workflow_id: workflowId,
-                    logs: cachedResponse.logs || [],
-                    cursor: cachedResponse.cursor || undefined,
-                }
-            }
-
             const response = await fetchWithAuth(url)
 
             if (!response.ok) {
@@ -190,17 +167,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string,
 
             const res = await response.json() as JobLogsResponseData
 
-            const data: JobLogsResponseData = {
+            return {
                 id: res.id,
                 workflow_id: res.workflow_id,
                 logs: res.logs || [],
                 cursor: res.cursor || undefined,
             }
-
-            if (isCacheAllowed || !!res.cursor) {
-                kv?.set<JobLogsResponseData>(cacheKey, data, kvCacheTTL)
-            }
-            return data
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
@@ -215,20 +187,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string,
                 ? `${searchURL}?${getSearchQueryParams}&cursor=${pageParam}`
                 : `${searchURL}?${getSearchQueryParams}`
 
-            const cacheKey = pageParam
-                ? `${searchCacheKey}?${getSearchQueryParams}&cursor=${pageParam}`
-                : `${searchCacheKey}?${getSearchQueryParams}`
-
-            const cachedResponse = await kv?.get<JobLogsResponseData>(cacheKey)
-            if (!!cachedResponse) {
-                return {
-                    id: jobId,
-                    workflow_id: workflowId,
-                    logs: cachedResponse.logs || [],
-                    cursor: cachedResponse.cursor || undefined,
-                }
-            }
-
             const response = await fetchWithAuth(url);
 
             if (!response.ok) {
@@ -237,17 +195,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string,
 
             const res = await response.json() as JobLogsResponseData
 
-            const data: JobLogsResponseData = {
+            return {
                 id: jobId,
                 workflow_id: workflowId,
                 logs: res.logs || [],
                 cursor: res.cursor || undefined,
             }
-
-            if (isCacheAllowed || !!res.cursor) {
-                kv?.set<JobLogsResponseData>(cacheKey, data, kvCacheTTL)
-            }
-            return data
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,

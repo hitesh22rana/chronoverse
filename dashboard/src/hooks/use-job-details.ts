@@ -34,7 +34,6 @@ export function useJobDetails(workflowId: string, jobId: string) {
             }
 
             const data = await (await response.json() as Promise<Job>)
-            // Check if the job is completed
             if (!!data.status && !refetchableJobStatus.includes(data.status)) {
                 setDisableRefetch(true)
             }

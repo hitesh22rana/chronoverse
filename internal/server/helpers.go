@@ -40,6 +40,11 @@ var (
 		"FAILED",
 		"CANCELED",
 	}
+	terminalJobStatuses = []string{
+		"COMPLETED",
+		"FAILED",
+		"CANCELED",
+	}
 )
 
 // sessionKey is the key used to store the session in the context.
@@ -191,4 +196,9 @@ func getJobLogsStreamType(stream string) (jobspb.LogStream, error) {
 	default:
 		return jobspb.LogStream_LOG_STREAM_UNSPECIFIED, status.Errorf(codes.InvalidArgument, "invalid log stream type")
 	}
+}
+
+// isTerminalJobStatus checks if the given job status is terminal(will no longer change).
+func isTerminalJobStatus(status string) bool {
+	return slices.Contains(terminalJobStatuses, status)
 }

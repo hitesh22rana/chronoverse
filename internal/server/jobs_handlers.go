@@ -108,6 +108,10 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 
 	// Write the response
 	w.Header().Set("Content-Type", "application/json")
+	if isTerminalJobStatus(res.GetStatus()) {
+		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
+	}
+
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
@@ -159,6 +163,83 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 
 	// Write the response
 	w.Header().Set("Content-Type", "application/json")
+	if res.GetCursor() != "" {
+		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
+	}
+
+	w.WriteHeader(http.StatusOK)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(res)
+}
+
+// handleSearchJobLogs handles the search job logs by job ID and filters request.
+func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
+	// Get the job ID from the path	parameters
+	workflowID := r.PathValue("workflow_id")
+	if workflowID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the job ID from the path parameters
+	jobID := r.PathValue("job_id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get cursor from the query parameters
+	cursor := r.URL.Query().Get("cursor")
+
+	// Get status from the query parameters
+	stream, err := getJobLogsStreamType(r.URL.Query().Get("stream"))
+	if err != nil {
+		http.Error(w, "invalid log stream type", http.StatusBadRequest)
+		return
+	}
+
+	// Get the query from the query parameters
+	message := r.URL.Query().Get("q")
+	if message == "" {
+		http.Error(w, "invalid message", http.StatusBadRequest)
+		return
+	}
+
+	// SearchJobLogs gets the filtered logs of a job.
+	res, err := s.jobsClient.SearchJobLogs(r.Context(), &jobspb.SearchJobLogsRequest{
+		Id:         jobID,
+		WorkflowId: workflowID,
+		UserId:     userID,
+		Cursor:     cursor,
+		Filters: &jobspb.SearchJobLogsFilters{
+			Stream:  stream,
+			Message: message,
+		},
+	})
+	if err != nil {
+		handleError(w, err, "failed to get job logs")
+		return
+	}
+
+	// Write the response
+	w.Header().Set("Content-Type", "application/json")
+	if res.GetCursor() != "" {
+		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
+	}
+
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
@@ -351,73 +432,4 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 			rc.Flush()
 		}
 	}
-}
-
-// handleSearchJobLogs handles the search job logs by job ID and filters request.
-func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
-	// Get the job ID from the path	parameters
-	workflowID := r.PathValue("workflow_id")
-	if workflowID == "" {
-		http.Error(w, "job ID not found", http.StatusBadRequest)
-		return
-	}
-
-	// Get the job ID from the path parameters
-	jobID := r.PathValue("job_id")
-	if jobID == "" {
-		http.Error(w, "job ID not found", http.StatusBadRequest)
-		return
-	}
-
-	// Get the user ID from the context
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	// Get cursor from the query parameters
-	cursor := r.URL.Query().Get("cursor")
-
-	// Get status from the query parameters
-	stream, err := getJobLogsStreamType(r.URL.Query().Get("stream"))
-	if err != nil {
-		http.Error(w, "invalid log stream type", http.StatusBadRequest)
-		return
-	}
-
-	// Get the query from the query parameters
-	message := r.URL.Query().Get("q")
-	if message == "" {
-		http.Error(w, "invalid message", http.StatusBadRequest)
-		return
-	}
-
-	// SearchJobLogs gets the filtered logs of a job.
-	res, err := s.jobsClient.SearchJobLogs(r.Context(), &jobspb.SearchJobLogsRequest{
-		Id:         jobID,
-		WorkflowId: workflowID,
-		UserId:     userID,
-		Cursor:     cursor,
-		Filters: &jobspb.SearchJobLogsFilters{
-			Stream:  stream,
-			Message: message,
-		},
-	})
-	if err != nil {
-		handleError(w, err, "failed to get job logs")
-		return
-	}
-
-	// Write the response
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	//nolint:errcheck // The error is always nil
-	json.NewEncoder(w).Encode(res)
 }

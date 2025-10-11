@@ -155,6 +155,9 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 		WorkflowId: workflowID,
 		UserId:     userID,
 		Cursor:     cursor,
+		Filters: &jobspb.GetJobLogsFilters{
+			Stream: jobspb.LogStream_LOG_STREAM_ALL,
+		},
 	})
 	if err != nil {
 		handleError(w, err, "failed to get job logs")
@@ -211,24 +214,36 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the query from the query parameters
+	// Get the search query from the query parameters
 	message := r.URL.Query().Get("q")
-	if message == "" {
-		http.Error(w, "invalid message", http.StatusBadRequest)
-		return
+
+	var res *jobspb.GetJobLogsResponse
+	switch message {
+	case "":
+		// GetJobLogs gets the filtered logs for a job with only stream specified.
+		res, err = s.jobsClient.GetJobLogs(r.Context(), &jobspb.GetJobLogsRequest{
+			Id:         jobID,
+			WorkflowId: workflowID,
+			UserId:     userID,
+			Cursor:     cursor,
+			Filters: &jobspb.GetJobLogsFilters{
+				Stream: stream,
+			},
+		})
+	default:
+		// SearchJobLogs gets the filtered logs of a jobs with both message and stream present
+		res, err = s.jobsClient.SearchJobLogs(r.Context(), &jobspb.SearchJobLogsRequest{
+			Id:         jobID,
+			WorkflowId: workflowID,
+			UserId:     userID,
+			Cursor:     cursor,
+			Filters: &jobspb.SearchJobLogsFilters{
+				Stream:  stream,
+				Message: message,
+			},
+		})
 	}
 
-	// SearchJobLogs gets the filtered logs of a job.
-	res, err := s.jobsClient.SearchJobLogs(r.Context(), &jobspb.SearchJobLogsRequest{
-		Id:         jobID,
-		WorkflowId: workflowID,
-		UserId:     userID,
-		Cursor:     cursor,
-		Filters: &jobspb.SearchJobLogsFilters{
-			Stream:  stream,
-			Message: message,
-		},
-	})
 	if err != nil {
 		handleError(w, err, "failed to get job logs")
 		return

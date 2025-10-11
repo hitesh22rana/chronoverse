@@ -121,6 +121,11 @@ func (l *JobLog) ToProto() *jobspb.Log {
 	}
 }
 
+// GetJobLogsFilters represents the filters for filtering job logs.
+type GetJobLogsFilters struct {
+	Stream int `validate:"required,min=1,max=3"`
+}
+
 // GetJobLogsResponse represents the response of GetJobLogs.
 type GetJobLogsResponse struct {
 	ID         string
@@ -145,6 +150,12 @@ func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 	}
 }
 
+// SearchJobLogsFilters represents the filters for searching job logs.
+type SearchJobLogsFilters struct {
+	Stream  int    `validate:"required,min=1,max=3"`
+	Message string `validate:"required"`
+}
+
 // JobByWorkflowIDResponse represents the response of ListJobsByID.
 type JobByWorkflowIDResponse struct {
 	ID          string         `db:"id"`
@@ -156,6 +167,11 @@ type JobByWorkflowIDResponse struct {
 	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
 	CreatedAt   time.Time      `db:"created_at"`
 	UpdatedAt   time.Time      `db:"updated_at"`
+}
+
+// ListJobsFilters represents the filters for listing jobs.
+type ListJobsFilters struct {
+	Status string `validate:"omitempty"`
 }
 
 // ListJobsResponse represents the response of ListJobsByID.
@@ -199,15 +215,4 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 		Jobs:   jobs,
 		Cursor: r.Cursor,
 	}
-}
-
-// ListJobsFilters represents the filters for listing jobs.
-type ListJobsFilters struct {
-	Status string `validate:"omitempty"`
-}
-
-// SearchJobLogsFilters represents the filters for searching jobs.
-type SearchJobLogsFilters struct {
-	Stream  int    `validate:"required,min=1,max=3"`
-	Message string `validate:"required"`
 }

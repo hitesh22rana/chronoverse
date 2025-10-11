@@ -39,7 +39,7 @@ type Repository interface {
 	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
-	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (*jobsmodel.GetJobLogsResponse, string, error)
+	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
 	StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*goredis.PubSub, error)
 	SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.SearchJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
@@ -238,10 +238,11 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 
 // GetJobLogsRequest holds the request parameters for getting scheduled job logs.
 type GetJobLogsRequest struct {
-	ID         string `validate:"required"`
-	WorkflowID string `validate:"required"`
-	UserID     string `validate:"required"`
-	Cursor     string `validate:"omitempty"`
+	ID         string                       `validate:"required"`
+	WorkflowID string                       `validate:"required"`
+	UserID     string                       `validate:"required"`
+	Cursor     string                       `validate:"omitempty"`
+	Filters    *jobsmodel.GetJobLogsFilters `validate:"required"`
 }
 
 // GetJobLogs returns the scheduled job logs.
@@ -258,12 +259,22 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		span.End()
 	}()
 
+	var filters *jobsmodel.GetJobLogsFilters
+	if req.GetFilters() != nil {
+		filters = &jobsmodel.GetJobLogsFilters{
+			Stream: int(req.GetFilters().GetStream()),
+		}
+	} else {
+		filters = &jobsmodel.GetJobLogsFilters{}
+	}
+
 	// Validate the request
 	err = s.validator.Struct(&GetJobLogsRequest{
 		ID:         req.GetId(),
 		WorkflowID: req.GetWorkflowId(),
 		UserID:     req.GetUserId(),
 		Cursor:     req.GetCursor(),
+		Filters:    filters,
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -272,10 +283,11 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 
 	// Check if the job logs are cached
 	cacheKey := fmt.Sprintf(
-		"job_logs:%s:%s:%s",
+		"job_logs:%s:%s:%s:%s",
 		req.GetUserId(),
 		req.GetId(),
 		req.GetCursor(),
+		req.GetFilters().GetStream(),
 	)
 	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
 	if cacheErr != nil {
@@ -291,7 +303,14 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 
 	// Get the scheduled job logs
 	var jobStatus string
-	res, jobStatus, err = s.repo.GetJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor())
+	res, jobStatus, err = s.repo.GetJobLogs(
+		ctx,
+		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetUserId(),
+		req.GetCursor(),
+		filters,
+	)
 	if err != nil {
 		return nil, err
 	}

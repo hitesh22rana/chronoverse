@@ -374,6 +374,7 @@ func (j *Jobs) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (r
 			attribute.String("workflow_id", req.GetWorkflowId()),
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("cursor", req.GetCursor()),
+			attribute.String("filters.stream", req.GetFilters().GetStream().String()),
 		),
 	)
 	defer func() {

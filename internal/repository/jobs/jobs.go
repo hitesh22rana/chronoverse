@@ -259,7 +259,14 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 // GetJobLogs returns the job logs by ID.
 //
 //nolint:gocyclo  // This function is complex due to the nature of having two separate queries.
-func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
+func (r *Repository) GetJobLogs(
+	ctx context.Context,
+	jobID,
+	workflowID,
+	userID,
+	cursor string,
+	getJobLogsFilters *jobsmodel.GetJobLogsFilters,
+) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJobLogs")
 	defer func() {
 		if err != nil {
@@ -275,6 +282,13 @@ func (r *Repository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, 
 	FROM %s
 	WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
 	`, clickhouse.TableJobLogs)
+
+	switch getJobLogsFilters.Stream {
+	case 1:
+		logsQuery += ` AND stream = 'stdout'`
+	case 2:
+		logsQuery += ` AND stream = 'stderr'`
+	}
 
 	if cursor != "" {
 		sequenceNum, _err := extractDataFromGetJobLogsCursor(cursor)

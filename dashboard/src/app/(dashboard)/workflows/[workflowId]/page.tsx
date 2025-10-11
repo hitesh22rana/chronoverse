@@ -218,7 +218,7 @@ export default function WorkflowDetailsAndJobsPage() {
                             }
                             description={
                                 urlStatusFilter !== "ALL"
-                                    ? "Try adjusting your search or filters."
+                                    ? "Try adjusting your search query or filters."
                                     : "This workflow hasn't run any jobs yet."
                             }
                         />

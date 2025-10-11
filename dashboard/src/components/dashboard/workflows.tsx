@@ -374,7 +374,7 @@ export function Workflows() {
                     <EmptyState
                         title="No workflows found"
                         description={activeFiltersCount > 0 || searchQuery
-                            ? 'Try adjusting your search or filters'
+                            ? 'Try adjusting your search query or filters'
                             : 'Create your first workflow to get started'}
                     />
                 ) : (

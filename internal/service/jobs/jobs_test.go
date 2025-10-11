@@ -640,6 +640,9 @@ func TestGetJobLogs(t *testing.T) {
 				WorkflowId: "workflow_id",
 				UserId:     "user_id",
 				Cursor:     "",
+				Filters: &jobspb.GetJobLogsFilters{
+					Stream: jobspb.LogStream_LOG_STREAM_ALL,
+				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
 				data := &jobsmodel.GetJobLogsResponse{
@@ -660,7 +663,21 @@ func TestGetJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cacheKey := fmt.Sprintf(
+					"job_logs:%s:%s:%s:%s",
+					req.GetUserId(),
+					req.GetId(),
+					req.GetCursor(),
+					req.GetFilters().GetStream(),
+				)
+				var filters *jobsmodel.GetJobLogsFilters
+				if req.GetFilters() != nil {
+					filters = &jobsmodel.GetJobLogsFilters{
+						Stream: int(req.GetFilters().GetStream()),
+					}
+				} else {
+					filters = &jobsmodel.GetJobLogsFilters{}
+				}
 				cache.EXPECT().Get(
 					gomock.Any(),
 					cacheKey,
@@ -672,6 +689,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetCursor(),
+					filters,
 				).Return(data, "COMPLETED", nil)
 				cache.EXPECT().Set(
 					gomock.Any(),
@@ -709,9 +727,22 @@ func TestGetJobLogs(t *testing.T) {
 				WorkflowId: "workflow_id",
 				UserId:     "user_id",
 				Cursor:     "",
+				Filters: &jobspb.GetJobLogsFilters{
+					Stream: jobspb.LogStream_LOG_STREAM_ALL,
+				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
-				cache.EXPECT().Get(gomock.Any(), fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor()), gomock.Any()).Return(&jobsmodel.GetJobLogsResponse{
+				cache.EXPECT().Get(
+					gomock.Any(),
+					fmt.Sprintf(
+						"job_logs:%s:%s:%s:%s",
+						req.GetUserId(),
+						req.GetId(),
+						req.GetCursor(),
+						req.GetFilters().GetStream(),
+					),
+					gomock.Any(),
+				).Return(&jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
 					WorkflowID: "workflow_id",
 					JobLogs: []*jobsmodel.JobLog{
@@ -761,6 +792,9 @@ func TestGetJobLogs(t *testing.T) {
 				WorkflowId: "workflow_id",
 				UserId:     "user_id",
 				Cursor:     "",
+				Filters: &jobspb.GetJobLogsFilters{
+					Stream: jobspb.LogStream_LOG_STREAM_ALL,
+				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
 				data := &jobsmodel.GetJobLogsResponse{
@@ -782,7 +816,21 @@ func TestGetJobLogs(t *testing.T) {
 					},
 					Cursor: "cursor",
 				}
-				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cacheKey := fmt.Sprintf(
+					"job_logs:%s:%s:%s:%s",
+					req.GetUserId(),
+					req.GetId(),
+					req.GetCursor(),
+					req.GetFilters().GetStream(),
+				)
+				var filters *jobsmodel.GetJobLogsFilters
+				if req.GetFilters() != nil {
+					filters = &jobsmodel.GetJobLogsFilters{
+						Stream: int(req.GetFilters().GetStream()),
+					}
+				} else {
+					filters = &jobsmodel.GetJobLogsFilters{}
+				}
 				cache.EXPECT().Get(
 					gomock.Any(),
 					cacheKey,
@@ -794,6 +842,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetCursor(),
+					filters,
 				).Return(data, "COMPLETED", nil)
 				cache.EXPECT().Set(
 					gomock.Any(),
@@ -844,9 +893,26 @@ func TestGetJobLogs(t *testing.T) {
 				WorkflowId: "workflow_id",
 				UserId:     "user_id",
 				Cursor:     "",
+				Filters: &jobspb.GetJobLogsFilters{
+					Stream: jobspb.LogStream_LOG_STREAM_ALL,
+				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
-				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cacheKey := fmt.Sprintf(
+					"job_logs:%s:%s:%s:%s",
+					req.GetUserId(),
+					req.GetId(),
+					req.GetCursor(),
+					req.GetFilters().GetStream(),
+				)
+				var filters *jobsmodel.GetJobLogsFilters
+				if req.GetFilters() != nil {
+					filters = &jobsmodel.GetJobLogsFilters{
+						Stream: int(req.GetFilters().GetStream()),
+					}
+				} else {
+					filters = &jobsmodel.GetJobLogsFilters{}
+				}
 				cache.EXPECT().Get(
 					gomock.Any(),
 					cacheKey,
@@ -858,6 +924,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetCursor(),
+					filters,
 				).Return(nil, "", status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
@@ -870,9 +937,26 @@ func TestGetJobLogs(t *testing.T) {
 				WorkflowId: "workflow_id",
 				UserId:     "user_id",
 				Cursor:     "",
+				Filters: &jobspb.GetJobLogsFilters{
+					Stream: jobspb.LogStream_LOG_STREAM_ALL,
+				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
-				cacheKey := fmt.Sprintf("job_logs:%s:%s:%s", req.GetUserId(), req.GetId(), req.GetCursor())
+				cacheKey := fmt.Sprintf(
+					"job_logs:%s:%s:%s:%s",
+					req.GetUserId(),
+					req.GetId(),
+					req.GetCursor(),
+					req.GetFilters().GetStream(),
+				)
+				var filters *jobsmodel.GetJobLogsFilters
+				if req.GetFilters() != nil {
+					filters = &jobsmodel.GetJobLogsFilters{
+						Stream: int(req.GetFilters().GetStream()),
+					}
+				} else {
+					filters = &jobsmodel.GetJobLogsFilters{}
+				}
 				cache.EXPECT().Get(
 					gomock.Any(),
 					cacheKey,
@@ -884,6 +968,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetCursor(),
+					filters,
 				).Return(nil, "", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},

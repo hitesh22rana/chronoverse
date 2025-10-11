@@ -210,14 +210,13 @@ export function LogsViewer({
                                         onValueChange={(value) => {
                                             setStream(value)
                                             setPopoverOpen(false)
-                                            if (!!searchInput) {
+                                            if (value !== (streamFilter || "all")) {
                                                 startSearchTransition(() => {
                                                     applyStreamFilter(value === "all" ? "" : value)
                                                 })
                                             }
                                         }}
                                         className="flex flex-col gap-2"
-                                        disabled={!searchInput}
                                     >
                                         <div className="flex items-center gap-2">
                                             <RadioGroupItem value="all" id="stream-all" />
@@ -294,13 +293,12 @@ export function LogsViewer({
                         endReached={handleEndReached}
                         overscan={200}
                         className="flex flex-1 w-full h-full"
-                        // followOutput={jobStatus === "RUNNING"}
                         followOutput={jobStatus === "RUNNING" && "smooth"}
                     />
-                ) : !!searchQuery ? (
+                ) : (!!searchQuery || !!streamFilter) ? (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
                         <div className="text-lg mb-2">No logs found</div>
-                        <div className="text-sm text-center">Try adjusting your search or filters</div>
+                        <div className="text-sm text-center">Try adjusting your search query or filters</div>
                     </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">

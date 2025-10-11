@@ -13,9 +13,10 @@ CREATE TABLE IF NOT EXISTS job_logs (
 
     -- Indexes
     INDEX idx_job_logs_user (user_id) TYPE minmax GRANULARITY 1,
-    INDEX idx_job_logs_workflow (workflow_id) TYPE minmax GRANULARITY 1
+    INDEX idx_job_logs_workflow (workflow_id) TYPE minmax GRANULARITY 1,
+    INDEX idx_job_logs_stream (stream) TYPE tokenbf_v1(512, 2, 0) GRANULARITY 1
 ) 
 ENGINE = MergeTree()
 PARTITION BY toDate(timestamp)
-ORDER BY (user_id, workflow_id, job_id, timestamp, sequence_num)
+ORDER BY (user_id, workflow_id, job_id, stream, timestamp, sequence_num)
 SETTINGS index_granularity = 8192;

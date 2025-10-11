@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package notifications;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/go/notifications;notifications";
+option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications;notifications";
 
 // CreateNotificationRequest contains the details needed to create a new notification.
 message CreateNotificationRequest {

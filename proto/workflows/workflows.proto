@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package workflows;
 
-option go_package = "github.com/hitesh22rana/chronoverse/proto/go/workflows;workflows";
+option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows;workflows";
 
 // CreateWorkflowRequest contains the details needed to create a new workflow.
 message CreateWorkflowRequest {

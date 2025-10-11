@@ -176,7 +176,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        enabled: shouldFetch && !searchQuery && !!workflowId && !!jobId,
+        enabled: shouldFetch && !getSearchQueryParams && !!workflowId && !!jobId,
     })
 
     // Search job logs query
@@ -204,7 +204,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        enabled: shouldFetch && !!searchQuery && !!getSearchQueryParams && !!workflowId && !!jobId,
+        enabled: shouldFetch && !!getSearchQueryParams && !!workflowId && !!jobId,
     });
 
     // For running jobs, use regular query + SSE
@@ -247,7 +247,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                 throw error
             }
         },
-        enabled: shouldFetch && !searchQuery && isRunning && !!workflowId && !!jobId,
+        enabled: shouldFetch && !getSearchQueryParams && isRunning && !!workflowId && !!jobId,
         staleTime: Infinity,
         gcTime: Infinity,
     })
@@ -333,7 +333,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error, jobLogsSSEQuery.error])
 
-    if (shouldFetch && !!searchQuery) {
+    if (shouldFetch && !!getSearchQueryParams) {
         const allPages = jobLogsSearchInfiniteQuery.data?.pages || [];
         const logs = allPages.length > 0 ? allPages.flatMap((page) => page?.logs || []) : [];
 

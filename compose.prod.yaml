@@ -578,8 +578,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -1299,7 +1297,7 @@ services:
       - chronoverse
 
   nginx:
-    image: nginx:alpine
+    image: nginx:alpine3.22
     container_name: nginx
     tmpfs:
       - /etc/nginx/conf.d

@@ -64,7 +64,12 @@ func run() int {
 		MaxConnLife: cfg.Postgres.MaxConnLife,
 		MaxConnIdle: cfg.Postgres.MaxConnIdle,
 		DialTimeout: cfg.Postgres.DialTimeout,
-		SSLMode:     cfg.Postgres.SSLMode,
+		TLSConfig: &postgres.TLSConfig{
+			Enabled:  cfg.Postgres.TLS.Enabled,
+			CAFile:   cfg.Postgres.TLS.CAFile,
+			CertFile: cfg.Postgres.TLS.CertFile,
+			KeyFile:  cfg.Postgres.TLS.KeyFile,
+		},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

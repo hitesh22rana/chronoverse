@@ -41,3 +41,7 @@ bin/
 *.jks
 *.p12
 *_creds.txt
+*.conf
+config.xml
+tls.xml
+users.xml

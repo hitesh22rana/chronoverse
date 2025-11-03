@@ -68,6 +68,12 @@ func run() int {
 		MaxMemory:                cfg.Redis.MaxMemory,
 		EvictionPolicy:           cfg.Redis.EvictionPolicy,
 		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+		TLSConfig: &redis.TLSConfig{
+			Enabled:  cfg.Redis.TLS.Enabled,
+			CAFile:   cfg.Redis.TLS.CAFile,
+			CertFile: cfg.Redis.TLS.CertFile,
+			KeyFile:  cfg.Redis.TLS.KeyFile,
+		},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -85,6 +91,12 @@ func run() int {
 		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
 		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
 		DialTimeout:     cfg.ClickHouse.DialTimeout,
+		TLSConfig: &clickhouse.TLSConfig{
+			Enabled:  cfg.ClickHouse.TLS.Enabled,
+			CAFile:   cfg.ClickHouse.TLS.CAFile,
+			CertFile: cfg.ClickHouse.TLS.CertFile,
+			KeyFile:  cfg.ClickHouse.TLS.KeyFile,
+		},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

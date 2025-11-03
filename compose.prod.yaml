@@ -3,25 +3,25 @@ name: chronoverse
 x-limits:
   # Database requires more cpu and memory
   database-limits: &database-limits
-      deploy:
-        resources:
-          limits:
-            cpus: '1'     # 1 CPU
-            memory: 1G    # 1 GB
-          reservations:
-            cpus: '0.5'   # 500 m CPU
-            memory: 512M  # 512 MB
+    deploy:
+      resources:
+        limits:
+          cpus: "1" # 1 CPU
+          memory: 1G # 1 GB
+        reservations:
+          cpus: "0.5" # 500 m CPU
+          memory: 512M # 512 MB
 
   # Services require less cpu and memory
   services-limit: &services-limit
     deploy:
       resources:
         limits:
-          cpus: '0.25'   # 250 m CPU
-          memory: 256M   # 256 MB
+          cpus: "0.25" # 250 m CPU
+          memory: 256M # 256 MB
         reservations:
-          cpus: '0.1'    # 100 m CPU
-          memory: 128M   # 128 MB
+          cpus: "0.1" # 100 m CPU
+          memory: 128M # 128 MB
 
   # Low resources workers require a bit more cpu and memory
   # but still less than the database
@@ -30,11 +30,11 @@ x-limits:
       replicas: 2
       resources:
         limits:
-          cpus: '0.5'    # 500 m CPU
-          memory: 2G     # 2 GB
+          cpus: "0.5" # 500 m CPU
+          memory: 2G # 2 GB
         reservations:
-          cpus: '0.25'   # 250 m CPU
-          memory: 1G     # 1 GB
+          cpus: "0.25" # 250 m CPU
+          memory: 1G # 1 GB
 
   # High resources workers require a bit more cpu and memory
   high-resources-workers-limit: &high-resources-workers-limit
@@ -42,67 +42,143 @@ x-limits:
       replicas: 2
       resources:
         limits:
-          cpus: '2'     # 2 CPU
-          memory: 4G    # 4 GB
+          cpus: "2" # 2 CPU
+          memory: 4G # 4 GB
         reservations:
-          cpus: '1'     # 1 CPU
-          memory: 2G    # 2 GB
+          cpus: "1" # 1 CPU
+          memory: 2G # 2 GB
 
 services:
   postgres:
     <<: *database-limits
-    image: postgres:alpine
+    image: postgres:18.0-alpine3.22
     container_name: postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
       POSTGRES_DB: chronoverse
     restart: on-failure
     volumes:
-      - postgres:/var/lib/postgresql/data
+      - postgres:/var/lib/postgresql
+      - ./certs:/certs:ro
+      - ./certs/postgres/config:/etc/postgresql
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -q -d chronoverse -U postgres']
-      timeout: 10s
-      interval: 5s
-      retries: 10
+      test:
+        [
+          "CMD-SHELL",
+          "psql 'host=0.0.0.0 user=primary dbname=postgres sslmode=verify-full sslrootcert=/certs/ca/ca.crt sslcert=/certs/clients/client.crt sslkey=/certs/clients/client.key' -c 'SELECT 1;'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
   clickhouse:
     <<: *database-limits
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse:25.8.7.3
     container_name: clickhouse
     environment:
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_USER: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
     restart: on-failure
     volumes:
       - clickhouse:/var/lib/clickhouse
+      - ./certs/clickhouse:/etc/clickhouse-server/certs:ro
+      - ./certs/ca:/etc/clickhouse-server/ca:ro
+      - ./certs/clickhouse/config:/etc/clickhouse-server/conf.d:ro
+      - ./certs/clickhouse/clients/config.xml:/etc/clickhouse-client/config.xml:ro
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--host=localhost", "--query=SELECT 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --secure --host=localhost --port=9440 --user=chronoverse-client --password=chronoverse --query 'SELECT 1'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 5s
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
   redis:
     <<: *database-limits
-    image: redis:alpine
+    image: redis:8.2.1-alpine
     container_name: redis
     restart: on-failure
     volumes:
       - redis:/data
+      - ./certs:/certs:ro
+    command:
+      [
+        "--port 0",
+        "--tls-port 6379",
+        "--tls-cert-file /certs/redis/redis.crt",
+        "--tls-key-file /certs/redis/redis.key",
+        "--tls-ca-cert-file /certs/ca/ca.crt",
+        "--tls-auth-clients yes",
+      ]
     healthcheck:
-      test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli --tls --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -p 6379 ping | grep PONG",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 5s
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
+    networks:
+      - chronoverse
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.15.0
+    container_name: meilisearch
+    restart: on-failure
+    environment:
+      MEILI_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILI_SSL_AUTH_PATH: /certs/ca/ca.crt
+      MEILI_SSL_CERT_PATH: /certs/meilisearch/meilisearch.crt
+      MEILI_SSL_KEY_PATH: /certs/meilisearch/meilisearch.key
+      ENV: production
+    volumes:
+      - meilisearch:/meili_data
+      - ./certs:/certs:ro
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
+    healthcheck:
+      test: |
+        sh -c '
+          if [ -n "$$MEILI_SSL_AUTH_PATH" ] && [ -n "$$MEILI_SSL_CERT_PATH" ] && [ -n "$$MEILI_SSL_KEY_PATH" ]; then
+            curl --cert "$$MEILI_SSL_CERT_PATH" --key "$$MEILI_SSL_KEY_PATH" --cacert "$$MEILI_SSL_AUTH_PATH" -f https://meilisearch:7700/health
+          else
+            curl -f http://meilisearch:7700/health
+          fi
+        '
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - chronoverse
 
   kafka:
     <<: *database-limits
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.6.7
     hostname: kafka
     container_name: kafka
     restart: on-failure
@@ -116,6 +192,8 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: SSL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_ADVERTISED_LISTENERS: SSL://kafka:9094
+
+      # SSL config...
       KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets
       KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
       KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds.txt
@@ -126,30 +204,42 @@ services:
       KAFKA_SSL_CLIENT_AUTH: required
       KAFKA_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
       KAFKA_SSL_PROTOCOL: TLS
+
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # Internal topics replication factors
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      # Ensure min ISR = 1 for single-broker
+      KAFKA_OFFSETS_TOPIC_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Optional: global default
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+
+      # Other Confluent internal topics left at RF=1
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_DURABILITY_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_TIER_METADATA_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: 2
-      CLUSTER_ID: chronoverse
+      CLUSTER_ID: EDofQNqcSCa63isOyHHO9g
     volumes:
       - kafka:/var/lib/kafka/data
       - ./certs/kafka:/etc/kafka/secrets:ro
     depends_on:
-      init-service-certs:
+      init-certs:
         condition: service_completed_successfully
     networks:
       - chronoverse
 
   lgtm:
-    image: grafana/otel-lgtm
+    image: grafana/otel-lgtm:0.11.10
     container_name: lgtm
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: true
@@ -159,13 +249,13 @@ services:
       - lgtm:/data
       - otel-lgtm:/otel-lgtm
     ports:
-      - '3000:3000'
+      - "3000:3000"
     networks:
       - chronoverse
 
   docker-proxy:
     <<: *services-limit
-    image: tecnativa/docker-socket-proxy
+    image: tecnativa/docker-socket-proxy:v0.4.1
     container_name: docker-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -173,21 +263,21 @@ services:
       # Image-related permissions
       IMAGES: 1
       IMAGE_CREATE: 1
-      
+
       # Container-related permissions
-      CONTAINERS: 1         # Basic container operations
-      CONTAINER_CREATE: 1   # Needed for ContainerCreate
-      CONTAINER_START: 1    # Needed for ContainerStart
-      CONTAINER_LOGS: 1     # Needed for streaming logs
-      CONTAINER_ATTACH: 1   # Might be needed for log streaming
-      CONTAINER_WAIT: 1     # Needed for waiting on container exit
-      CONTAINER_DELETE: 1   # Needed for container cleanup
-      CONTAINER_STOP: 1     # Might be needed to stop containers
-      
+      CONTAINERS: 1 # Basic container operations
+      CONTAINER_CREATE: 1 # Needed for ContainerCreate
+      CONTAINER_START: 1 # Needed for ContainerStart
+      CONTAINER_LOGS: 1 # Needed for streaming logs
+      CONTAINER_ATTACH: 1 # Might be needed for log streaming
+      CONTAINER_WAIT: 1 # Needed for waiting on container exit
+      CONTAINER_DELETE: 1 # Needed for container cleanup
+      CONTAINER_STOP: 1 # Might be needed to stop containers
+
       # General permissions
-      POST: 1               # Allow POST requests
-      AUTH: 1               # Allow registry authentication
-      
+      POST: 1 # Allow POST requests
+      AUTH: 1 # Allow registry authentication
+
       # Network permissions
       NETWORKS: 0
       VOLUMES: 0
@@ -195,79 +285,67 @@ services:
       - chronoverse
 
   init-certs:
-    image: alpine:latest
+    image: alpine:3.22.2
     container_name: init-certs
     volumes:
       - ./certs:/certs:rw
     entrypoint: |
       sh -c '
-      if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
-        echo "✅ Certificates already exist, skipping generation"
-      else
-        echo "🔐 Generating new certificates..."
-        apk update
-        apk add --no-cache openssl
-        openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
-        openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
-        echo "✅ Certificates generated successfully"
-      fi
+        if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
+          echo "✅ Certificates already exist, skipping generation"
+        else
+          echo "🔐 Generating new certificates..."
+          apk update
+          apk add --no-cache openssl
+          openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
+          openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+          echo "✅ Certificates generated successfully"
+        fi
 
-      echo "Setting certificate permissions..."
-      chmod 444 /certs/auth.ed.pub
-      chmod 444 /certs/auth.ed
-      echo "🎉 Certificate permissions set successfully"
-      '
-    restart: "no"
-    networks:
-      - chronoverse
+        echo "Setting certificate permissions..."
+        chmod 444 /certs/auth.ed.pub
+        chmod 444 /certs/auth.ed
+        echo "🎉 Certificate permissions set successfully"
 
-  init-service-certs:
-    image: alpine:latest
-    container_name: init-service-certs
-    volumes:
-      - ./certs:/certs:rw
-    entrypoint: |
-      sh -c '
         echo "🔐 Initializing TLS certificates for services..."
 
         apk update && apk add --no-cache openssl openjdk11-jre-headless
         export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
 
         mkdir -p /certs/ca
-
-        SERVICES="kafka users-service workflows-service jobs-service notifications-service analytics-service"
-        for svc in $$SERVICES; do
-          mkdir -p /certs/$$svc
-        done
-
         # Generate CA if not exists
         if [ ! -f /certs/ca/ca.key ]; then
           echo "🛡️ Generating CA certificate..."
           openssl genrsa -out /certs/ca/ca.key 4096
           openssl req -x509 -new -nodes -key /certs/ca/ca.key -sha256 \
             -days 365 -out /certs/ca/ca.crt \
-            -subj "/CN=Chronoverse CA"
+            -subj "/CN=chronoverse-ca"
           echo "✅ CA certificate created"
         fi
 
+        SERVICES="postgres redis clickhouse kafka meilisearch users-service workflows-service jobs-service notifications-service analytics-service"
         for svc in $$SERVICES; do
-          CERT_PATH="/certs/$$svc"
-          echo "🔧 Generating certificate for $$svc..."
-          openssl genrsa -out "$$CERT_PATH/$$svc.key" 4096
-          openssl req -new -key "$$CERT_PATH/$$svc.key" \
-            -out "$$CERT_PATH/$$svc.csr" \
-            -subj "/CN=Chronoverse $$svc"
+          mkdir -p /certs/$$svc
 
-          echo "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:$$svc" > "$$CERT_PATH/$$svc-ext.cnf"
+          if [ ! -f /certs/$$svc/$$svc.key ]; then
+            CERT_PATH="/certs/$$svc"
+            echo "🔧 Generating certificate for $$svc..."
+            openssl genrsa -out "$$CERT_PATH/$$svc.key" 4096
+            openssl req -new -key "$$CERT_PATH/$$svc.key" \
+              -out "$$CERT_PATH/$$svc.csr" \
+              -subj "/CN=chronoverse-$$svc"
 
-          openssl x509 -req -in "$$CERT_PATH/$$svc.csr" \
-            -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
-            -CAcreateserial -out "$$CERT_PATH/$$svc.crt" -days 365 \
-            -extfile "$$CERT_PATH/$$svc-ext.cnf"
+            echo "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:$$svc" > "$$CERT_PATH/$$svc-ext.cnf"
 
-          rm "$$CERT_PATH/$$svc.csr" "$$CERT_PATH/$$svc-ext.cnf"
+            openssl x509 -req -in "$$CERT_PATH/$$svc.csr" \
+              -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+              -CAcreateserial -out "$$CERT_PATH/$$svc.crt" -days 365 \
+              -extfile "$$CERT_PATH/$$svc-ext.cnf"
 
-          echo "✅ Certificate created for $$svc"
+            rm "$$CERT_PATH/$$svc.csr" "$$CERT_PATH/$$svc-ext.cnf"
+
+            echo "✅ Certificate created for $$svc"
+          fi
         done
 
         # Convert Kafka PEM to PKCS12
@@ -301,21 +379,23 @@ services:
         # Client certificate for mTLS
         echo "🔐 Generating client certificate for mTLS..."
         mkdir -p /certs/clients
-        openssl genrsa -out /certs/clients/client.key 4096
-        openssl req -new -key /certs/clients/client.key \
-          -out /certs/clients/client.csr \
-          -subj "/CN=Chronoverse Client"
+        if [ ! -f /certs/clients/client.key ]; then
+          openssl genrsa -out /certs/clients/client.key 4096
+          openssl req -new -key /certs/clients/client.key \
+            -out /certs/clients/client.csr \
+            -subj "/CN=chronoverse-client"
 
-        echo "subjectAltName=DNS:client" > /certs/clients/client-ext.cnf
+          echo "subjectAltName=DNS:client" > /certs/clients/client-ext.cnf
 
-        openssl x509 -req -in /certs/clients/client.csr \
-          -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
-          -CAcreateserial -out /certs/clients/client.crt -days 365 \
-          -extfile /certs/clients/client-ext.cnf
+          openssl x509 -req -in /certs/clients/client.csr \
+            -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+            -CAcreateserial -out /certs/clients/client.crt -days 365 \
+            -extfile /certs/clients/client-ext.cnf
 
-        rm /certs/clients/client.csr /certs/clients/client-ext.cnf
-        rm /certs/ca/ca.srl
-        echo "✅ Client certificate created"
+          rm /certs/clients/client.csr /certs/clients/client-ext.cnf
+          rm /certs/ca/ca.srl
+          echo "✅ Client certificate created"
+        fi
 
         echo "🔐 Setting permissions for all certificates..."
 
@@ -335,10 +415,113 @@ services:
           chmod 444 /certs/$$svc/$$svc.key
         done
 
+        chmod 600 /certs/postgres/postgres.key
+        chmod 600 /certs/clients/client.key
+
         chmod 444 /certs/clients/client.crt
-        chmod 444 /certs/clients/client.key
+
+        # ClickHouse server files: make readable by clickhouse user (UID/GID 101).
+        chown 101:101 /certs/clickhouse/clickhouse.key /certs/clickhouse/clickhouse.crt
+        chmod 640 /certs/clickhouse/clickhouse.key
+        chmod 444 /certs/clickhouse/clickhouse.crt
+
+        # Create ClickHouse-specific copies of client certs for mTLS inside the ClickHouse container.
+        mkdir -p /certs/clickhouse/clients
+        cp -f /certs/clients/client.key /certs/clickhouse/clients/client.key
+        cp -f /certs/clients/client.crt /certs/clickhouse/clients/client.crt
+        chown 101:101 /certs/clickhouse/clients/client.key /certs/clickhouse/clients/client.crt
+        chmod 640 /certs/clickhouse/clients/client.key
+        chmod 444 /certs/clickhouse/clients/client.crt
 
         echo "✅ Permissions set successfully"
+
+        mkdir -p /certs/postgres/config
+        POSTGRES_CONF=/certs/postgres/config/postgresql.conf
+        POSTGRES_HBA_CONF=/certs/postgres/config/pg_hba.conf
+
+        if [ ! -f "$$POSTGRES_CONF" ]; then
+          echo "📝 Creating postgresql.conf..."
+
+          echo "listen_addresses='\''*'\''" > "$$POSTGRES_CONF"
+          echo "ssl=on" >> "$$POSTGRES_CONF"
+          echo "ssl_cert_file='\''/certs/postgres/postgres.crt'\''" >> "$$POSTGRES_CONF"
+          echo "ssl_key_file='\''/certs/postgres/postgres.key'\''" >> "$$POSTGRES_CONF"
+          echo "ssl_ca_file='\''/certs/ca/ca.crt'\''" >> "$$POSTGRES_CONF"
+          echo "ssl_max_protocol_version='\''TLSv1.3'\''" >> "$$POSTGRES_CONF"
+          echo "password_encryption='\''scram-sha-256'\''" >> "$$POSTGRES_CONF"
+        fi
+
+        if [ ! -f "$$POSTGRES_HBA_CONF" ]; then
+          echo "📝 Creating pg_hba.conf..."
+
+          echo "# TYPE  DATABASE        USER            ADDRESS                 METHOD" > "$$POSTGRES_HBA_CONF"
+          echo "hostssl all             all             0.0.0.0/0               scram-sha-256 clientcert=verify-full" >> "$$POSTGRES_HBA_CONF"
+        fi
+
+        mkdir -p /certs/clickhouse/config
+        CLICKHOUSE_TLS_CONF=/certs/clickhouse/config/tls.xml
+        CLICKHOUSE_USERS_CONF=/certs/clickhouse/config/users.xml
+        CLICKHOUSE_CLIENT_CONF=/certs/clickhouse/clients/config.xml
+
+        cat > "$$CLICKHOUSE_TLS_CONF" << 'EOF'
+      <?xml version="1.0"?>
+      <clickhouse>
+        <tcp_port>0</tcp_port>
+        <tcp_port_secure>9440</tcp_port_secure>
+        <openSSL>
+          <server>
+            <certificateFile>/etc/clickhouse-server/certs/clickhouse.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/clickhouse.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+            <verificationMode>strict</verificationMode>
+            <minVersion>TLSv1_2</minVersion>
+            <maxVersion>TLSv1_3</maxVersion>
+          </server>
+          <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+            <verificationMode>strict</verificationMode>
+            <minVersion>TLSv1_2</minVersion>
+          </client>
+        </openSSL>
+      </clickhouse>
+      EOF
+
+        cat > "$$CLICKHOUSE_USERS_CONF" << 'EOF'
+      <?xml version="1.0"?>
+      <clickhouse>
+        <users>
+          <chronoverse-client>
+            <password>chronoverse</password>
+            <networks>
+              <ip>::/0</ip>
+              <ip>0.0.0.0/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+          </chronoverse-client>
+        </users>
+      </clickhouse>
+      EOF
+
+        cat > "$$CLICKHOUSE_CLIENT_CONF" << 'EOF'
+      <?xml version="1.0"?>
+      <config>
+        <secure>true</secure>
+        <openSSL>
+          <client>
+            <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+            <verificationMode>strict</verificationMode>
+            <minVersion>TLSv1_2</minVersion>
+          </client>
+        </openSSL>
+      </config>
+      EOF
+
         echo "🎉 TLS certificates initialized successfully!"
       '
     restart: "no"
@@ -351,14 +534,29 @@ services:
     container_name: init-database-migration
     environment:
       POSTGRES_HOST: postgres
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
+      MEILISEARCH_URI: https://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_TLS_ENABLED: true
+      MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+      MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+      MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: "no"
     volumes:
@@ -391,20 +589,26 @@ services:
     container_name: users-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50051
-      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/users-service/users-service.crt
       GRPC_TLS_KEY_FILE: certs/users-service/users-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -437,8 +641,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -450,25 +652,31 @@ services:
     container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
-      KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
-      KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
-      KAFKA_TLS_KEY_FILE: "certs/clients/client.key"
+      KAFKA_TLS_ENABLED: true
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50052
-      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/workflows-service/workflows-service.crt
       GRPC_TLS_KEY_FILE: certs/workflows-service/workflows-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -503,8 +711,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -516,21 +722,39 @@ services:
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
+      MEILISEARCH_URI: https://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_TLS_ENABLED: true
+      MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+      MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+      MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50053
-      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/jobs-service/jobs-service.crt
       GRPC_TLS_KEY_FILE: certs/jobs-service/jobs-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -561,13 +785,11 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      meilisearch:
+        condition: service_healthy
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -580,8 +802,15 @@ services:
     container_name: notifications-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       GRPC_PORT: 50054
-      GRPC_REQUEST_TIMEOUT: 500ms
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/notifications-service/notifications-service.crt
@@ -593,12 +822,7 @@ services:
       USERS_SERVICE_TLS_ENABLED: true
       USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -629,8 +853,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
       users-service:
@@ -644,18 +866,21 @@ services:
     container_name: analytics-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       GRPC_PORT: 50055
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/analytics-service/analytics-service.crt
       GRPC_TLS_KEY_FILE: certs/analytics-service/analytics-service.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -686,8 +911,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -698,18 +921,21 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/scheduling-worker:latest
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
-      KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
-      KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
-      KAFKA_TLS_KEY_FILE: "certs/clients/client.key"
+      KAFKA_TLS_ENABLED: true
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -731,8 +957,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -743,12 +967,22 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
     environment:
       REDIS_HOST: redis
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
-      KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
-      KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
-      KAFKA_TLS_KEY_FILE: "certs/clients/client.key"
+      KAFKA_TLS_ENABLED: true
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: workflow-worker
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
@@ -765,14 +999,9 @@ services:
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
       DOCKER_HOST: tcp://docker-proxy:2375
+      ENV: production
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -796,8 +1025,6 @@ services:
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -815,11 +1042,15 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     environment:
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
-      KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
-      KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
-      KAFKA_TLS_KEY_FILE: "certs/clients/client.key"
+      KAFKA_TLS_ENABLED: true
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: execution-worker
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
@@ -836,14 +1067,9 @@ services:
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
-      ENV: production
       DOCKER_HOST: tcp://docker-proxy:2375
+      ENV: production
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
@@ -866,8 +1092,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
       workflows-service:
@@ -884,20 +1108,31 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
     environment:
       REDIS_HOST: redis
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
+      MEILISEARCH_URI: https://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_TLS_ENABLED: true
+      MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+      MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+      MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
-      KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
-      KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
-      KAFKA_TLS_KEY_FILE: "certs/clients/client.key"
+      KAFKA_TLS_ENABLED: true
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: joblogs-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -915,13 +1150,13 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      meilisearch:
+        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:
         condition: service_started
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -933,19 +1168,22 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/analytics-processor:latest
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
-      KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
-      KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
-      KAFKA_TLS_KEY_FILE: "certs/clients/client.key"
+      KAFKA_TLS_ENABLED: true
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: analytics-processor
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -967,8 +1205,6 @@ services:
         condition: service_started
       init-certs:
         condition: service_completed_successfully
-      init-service-certs:
-        condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
     networks:
@@ -980,8 +1216,12 @@ services:
     container_name: server
     environment:
       SERVER_HOST: 0.0.0.0
-      SERVER_FRONTEND_URL: http://localhost:80
+      SERVER_PORT: 80
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
       USERS_SERVICE_HOST: users-service
@@ -1005,12 +1245,7 @@ services:
       ANALYTICS_SERVICE_TLS_ENABLED: true
       ANALYTICS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
-      OTEL_EXPORTER_OTLP_LOGS_INSECURE: true
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: otlp
-      OTEL_METRIC_EXPORT_INTERVAL: 500
-      OTEL_BSP_SCHEDULE_DELAY: 500
       ENV: production
     restart: on-failure
     volumes:
@@ -1027,8 +1262,6 @@ services:
       redis:
         condition: service_healthy
       init-certs:
-        condition: service_completed_successfully
-      init-service-certs:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
@@ -1131,10 +1364,12 @@ services:
       exec nginx -g "daemon off;"
       '
     ports:
-      - '80:80'
+      - "80:80"
     depends_on:
-      - dashboard
-      - server
+      dashboard:
+        condition: service_started
+      server:
+        condition: service_healthy
     restart: on-failure
     networks:
       - chronoverse
@@ -1143,6 +1378,7 @@ volumes:
   postgres:
   clickhouse:
   redis:
+  meilisearch:
   kafka:
   kafka-secrets:
   lgtm:

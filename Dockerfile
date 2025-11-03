@@ -1,5 +1,5 @@
 # Base image
-FROM golang:1.25.1 AS build
+FROM golang:1.25.2 AS build
 
 # Build arguments
 ARG VERSION
@@ -39,8 +39,14 @@ COPY go.sum .
 # Download the Go module dependencies
 RUN go mod download
 
-# Copy the source code
-COPY . .
+# Copy only the specific service subdirectory and other necessary files
+COPY ./cmd/${NAME} ./cmd/${NAME}
+COPY ./internal ./internal
+COPY ./pkg ./pkg
+COPY ./proto ./proto
+
+# Copy the buf files required for proto generation
+COPY buf.* .
 
 # Compile the protocol buffer files and generate the Go files
 RUN rm -rf pkg/proto && buf dep update && buf generate
@@ -55,7 +61,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -trimpath \
     -o /go/bin/service cmd/${NAME}/main.go
 
 # Final minimal stage
-FROM alpine:latest
+FROM alpine:3.22.2
 
 # Create a non-root user and group
 RUN addgroup -S app && adduser -S -G app app

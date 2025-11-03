@@ -66,7 +66,12 @@ func run() int {
 		MaxConnLife: cfg.Postgres.MaxConnLife,
 		MaxConnIdle: cfg.Postgres.MaxConnIdle,
 		DialTimeout: cfg.Postgres.DialTimeout,
-		SSLMode:     cfg.Postgres.SSLMode,
+		TLSConfig: &postgres.TLSConfig{
+			Enabled:  cfg.Postgres.TLS.Enabled,
+			CAFile:   cfg.Postgres.TLS.CAFile,
+			CertFile: cfg.Postgres.TLS.CertFile,
+			KeyFile:  cfg.Postgres.TLS.KeyFile,
+		},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -87,6 +92,12 @@ func run() int {
 		MaxMemory:                cfg.Redis.MaxMemory,
 		EvictionPolicy:           cfg.Redis.EvictionPolicy,
 		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+		TLSConfig: &redis.TLSConfig{
+			Enabled:  cfg.Redis.TLS.Enabled,
+			CAFile:   cfg.Redis.TLS.CAFile,
+			CertFile: cfg.Redis.TLS.CertFile,
+			KeyFile:  cfg.Redis.TLS.KeyFile,
+		},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -66,13 +66,13 @@ export function UserAnalyticsDrawer() {
                                     tone="blue"
                                 />
                                 <StatCard
-                                    label="Jobs Executed"
+                                    label="Total Jobs Executed"
                                     value={(userAnalytics?.total_jobs ?? 0).toLocaleString()}
                                     icon={<Activity className="h-3.5 w-3.5" />}
                                     tone="emerald"
                                 />
                                 <StatCard
-                                    label="Log Entries"
+                                    label="Total Log Entries"
                                     value={(userAnalytics?.total_joblogs ?? 0).toLocaleString()}
                                     icon={<ScrollText className="h-3.5 w-3.5" />}
                                     tone="amber"
@@ -123,7 +123,7 @@ function StatCard({ label, value, icon, tone = "blue" }: StatCardProps) {
 
     return (
         <Card className="relative overflow-hidden border">
-            <div className={`absolute inset-0 bg-gradient-to-br ${bgMap[tone]}`} />
+            <div className={`absolute inset-0 bg-linear-to-br ${bgMap[tone]}`} />
             <CardHeader className="relative pb-1 flex flex-row items-center justify-between">
                 <CardTitle className="text-[11px] tracking-wide text-muted-foreground font-medium">
                     {label}

@@ -286,7 +286,7 @@ func (r *Repository) Run(ctx context.Context) error {
 				queueMu.Unlock()
 
 				// Publish logs to Redis Pub/Sub in a separate goroutine
-				// This allows us to continue processing without waiting for Redis, since it's not critical to block the batch processing on Redis publishing.
+				// This allows to continue processing without waiting for Redis, since it's not critical to block the batch processing on Redis publishing.
 				go func(logEntry *jobsmodel.JobLogEvent) {
 					data, err := json.Marshal(logEntry)
 					if err != nil {
@@ -300,7 +300,7 @@ func (r *Repository) Run(ctx context.Context) error {
 
 				// Count the log entry in the CountMinSketch
 				// This is done before processing to ensure we count all logs, even if they fail
-				// This allows us to track the number of logs per workflow
+				// This allows to track the number of logs per workflow
 				// This is useful for analytics and monitoring purposes
 				cms.Add(logEntry.WorkflowID)
 				uniqueWorkflows.Store(logEntry.WorkflowID, logEntry.UserID)

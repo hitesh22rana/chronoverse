@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/app/databasemigration"
 	"github.com/hitesh22rana/chronoverse/internal/config"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -54,26 +56,54 @@ func run() int {
 
 	// DSN's for database connections
 	pgDSN := fmt.Sprintf(
-		"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
-		cfg.Postgres.User,
-		cfg.Postgres.Password,
+		"postgresql://%s:%s@%s:%d/%s",
+		url.QueryEscape(cfg.Postgres.User),
+		url.QueryEscape(cfg.Postgres.Password),
 		cfg.Postgres.Host,
 		cfg.Postgres.Port,
 		cfg.Postgres.Database,
-		cfg.Postgres.SSLMode,
 	)
+	if cfg.Postgres.TLS.Enabled {
+		// Enable mutual TLS with full verification
+		pgDSN += fmt.Sprintf("?sslmode=%s", "verify-full")
 
-	if len(cfg.ClickHouse.Hosts) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: ClickHouse hosts configuration is empty")
+		// Append certificate paths if they are configured
+		if cfg.Postgres.TLS.CAFile != "" {
+			pgDSN += fmt.Sprintf("&sslrootcert=%s", url.QueryEscape(cfg.Postgres.TLS.CAFile))
+		}
+		if cfg.Postgres.TLS.CertFile != "" {
+			pgDSN += fmt.Sprintf("&sslcert=%s", url.QueryEscape(cfg.Postgres.TLS.CertFile))
+		}
+		if cfg.Postgres.TLS.KeyFile != "" {
+			pgDSN += fmt.Sprintf("&sslkey=%s", url.QueryEscape(cfg.Postgres.TLS.KeyFile))
+		}
+	} else {
+		// Use a non-TLS DSN if TLS is not enabled
+		pgDSN += fmt.Sprintf("?sslmode=%s", "disable")
+	}
+
+	// Initialize the ClickHouse database client
+	clickhouseClient, err := clickhouse.New(ctx, &clickhouse.Config{
+		Hosts:           cfg.ClickHouse.Hosts,
+		Database:        cfg.ClickHouse.Database,
+		Username:        cfg.ClickHouse.Username,
+		Password:        cfg.ClickHouse.Password,
+		MaxOpenConns:    cfg.ClickHouse.MaxOpenConns,
+		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
+		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
+		DialTimeout:     cfg.ClickHouse.DialTimeout,
+		TLSConfig: &clickhouse.TLSConfig{
+			Enabled:  cfg.ClickHouse.TLS.Enabled,
+			CAFile:   cfg.ClickHouse.TLS.CAFile,
+			CertFile: cfg.ClickHouse.TLS.CertFile,
+			KeyFile:  cfg.ClickHouse.TLS.KeyFile,
+		},
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-	chDSN := fmt.Sprintf(
-		"clickhouse://%s?username=%s&password=%s&database=%s&x-multi-statement=true",
-		cfg.ClickHouse.Hosts[0],
-		cfg.ClickHouse.Username,
-		cfg.ClickHouse.Password,
-		cfg.ClickHouse.Database,
-	)
+	defer clickhouseClient.Close()
 
 	// Initialize the MeiliSearch client
 	meilisearchClient, err := meilisearch.New(
@@ -90,7 +120,7 @@ func run() int {
 	// Initialize the database migration components
 	repo := databasemigrationrepo.New(&databasemigrationrepo.Config{
 		PostgresDSN:       pgDSN,
-		ClickHouseDSN:     chDSN,
+		ClickHouseClient:  clickhouseClient,
 		MeiliSearchClient: meilisearchClient,
 	})
 	svc := databasemigrationsvc.New(repo)

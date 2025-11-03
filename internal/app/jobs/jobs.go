@@ -165,11 +165,11 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 		grpc.ChainStreamInterceptor(
 			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.StreamAudienceInterceptor(),
-			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows us to modify the context.
+			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.
 			grpcmiddlewares.StreamRoleInterceptor(func(_, _ string) bool {
 				return false
 			}),
-			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows us to modify the context.
+			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.
 			jobs.streamAuthTokenInterceptor(),
 		),
 	)

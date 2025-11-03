@@ -2,7 +2,10 @@ package clickhouse
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"embed"
+	"os"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -23,6 +26,14 @@ const (
 //go:embed migrations/*.sql
 var MigrationsFS embed.FS
 
+// TLSConfig holds the Clickhouse tls config.
+type TLSConfig struct {
+	Enabled  bool
+	CAFile   string
+	CertFile string
+	KeyFile  string
+}
+
 // Config represents the configuration for the ClickHouse client.
 type Config struct {
 	Hosts           []string
@@ -33,6 +44,7 @@ type Config struct {
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
 	DialTimeout     time.Duration
+	TLSConfig       *TLSConfig
 }
 
 // Client represents a ClickHouse client.
@@ -56,6 +68,28 @@ func healthCheck(ctx context.Context, conn driver.Conn) error {
 	}
 
 	return err
+}
+
+// newTLSConfig creates a new TLS config for the Clickhouse client.
+func newTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load client key pair: %v", err)
+	}
+
+	caCert, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read CA certificate: %v", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caCertPool,
+		MinVersion:   tls.VersionTLS12,
+	}, nil
 }
 
 // New creates a new ClickHouse client.
@@ -88,6 +122,15 @@ func New(ctx context.Context, cfg *Config) (*Client, error) {
 				},
 			},
 		},
+	}
+
+	if cfg.TLSConfig.Enabled {
+		tlsConfig, err := newTLSConfig(cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile, cfg.TLSConfig.CAFile)
+		if err != nil {
+			return nil, err
+		}
+
+		options.TLS = tlsConfig
 	}
 
 	conn, err := clickhouse.Open(options)

@@ -20,6 +20,44 @@ type ClientTLS struct {
 	KeyFile  string `envconfig:"CLIENT_TLS_KEY_FILE" default:""`
 }
 
+// Postgres holds the PostgreSQL configuration.
+type Postgres struct {
+	Host        string        `envconfig:"POSTGRES_HOST" default:"localhost"`
+	Port        int           `envconfig:"POSTGRES_PORT" default:"5432"`
+	User        string        `envconfig:"POSTGRES_USER" default:"postgres"`
+	Password    string        `envconfig:"POSTGRES_PASSWORD" default:"postgres"`
+	Database    string        `envconfig:"POSTGRES_DB" default:"chronoverse"`
+	MaxConns    int32         `envconfig:"POSTGRES_MAX_CONNS" default:"10"`
+	MinConns    int32         `envconfig:"POSTGRES_MIN_CONNS" default:"5"`
+	MaxConnLife time.Duration `envconfig:"POSTGRES_MAX_CONN_LIFE" default:"1h"`
+	MaxConnIdle time.Duration `envconfig:"POSTGRES_MAX_CONN_IDLE" default:"30m"`
+	DialTimeout time.Duration `envconfig:"POSTGRES_DIAL_TIMEOUT" default:"5s"`
+	TLS         struct {
+		Enabled  bool   `envconfig:"POSTGRES_TLS_ENABLED" default:"false"`
+		CAFile   string `envconfig:"POSTGRES_TLS_CA_FILE" default:""`
+		CertFile string `envconfig:"POSTGRES_TLS_CERT_FILE" default:""`
+		KeyFile  string `envconfig:"POSTGRES_TLS_KEY_FILE" default:""`
+	}
+}
+
+// ClickHouse holds the ClickHouse configuration.
+type ClickHouse struct {
+	Hosts           []string      `envconfig:"CLICKHOUSE_HOSTS" default:"localhost:9000"`
+	Database        string        `envconfig:"CLICKHOUSE_DATABASE" default:"default"`
+	Username        string        `envconfig:"CLICKHOUSE_USERNAME" default:"default"`
+	Password        string        `envconfig:"CLICKHOUSE_PASSWORD" default:""`
+	MaxOpenConns    int           `envconfig:"CLICKHOUSE_MAX_OPEN_CONNS" default:"10"`
+	MaxIdleConns    int           `envconfig:"CLICKHOUSE_MAX_IDLE_CONNS" default:"5"`
+	ConnMaxLifetime time.Duration `envconfig:"CLICKHOUSE_CONN_MAX_LIFETIME" default:"1h"`
+	DialTimeout     time.Duration `envconfig:"CLICKHOUSE_DIAL_TIMEOUT" default:"5s"`
+	TLS             struct {
+		Enabled  bool   `envconfig:"CLICKHOUSE_TLS_ENABLED" default:"false"`
+		CAFile   string `envconfig:"CLICKHOUSE_TLS_CA_FILE" default:""`
+		CertFile string `envconfig:"CLICKHOUSE_TLS_CERT_FILE" default:""`
+		KeyFile  string `envconfig:"CLICKHOUSE_TLS_KEY_FILE" default:""`
+	}
+}
+
 // Redis holds the Redis configuration.
 type Redis struct {
 	Host                     string        `envconfig:"REDIS_HOST" default:"localhost"`
@@ -33,33 +71,12 @@ type Redis struct {
 	MaxMemory                string        `envconfig:"REDIS_MAX_MEMORY" default:"100mb"`
 	EvictionPolicy           string        `envconfig:"REDIS_EVICTION_POLICY" default:"allkeys-lru"`
 	EvictionPolicySampleSize int           `envconfig:"REDIS_EVICTION_POLICY_SAMPLE_SIZE" default:"5"`
-}
-
-// Postgres holds the PostgreSQL configuration.
-type Postgres struct {
-	Host        string        `envconfig:"POSTGRES_HOST" default:"localhost"`
-	Port        int           `envconfig:"POSTGRES_PORT" default:"5432"`
-	User        string        `envconfig:"POSTGRES_USER" default:"postgres"`
-	Password    string        `envconfig:"POSTGRES_PASSWORD" default:"postgres"`
-	Database    string        `envconfig:"POSTGRES_DB" default:"chronoverse"`
-	MaxConns    int32         `envconfig:"POSTGRES_MAX_CONNS" default:"10"`
-	MinConns    int32         `envconfig:"POSTGRES_MIN_CONNS" default:"5"`
-	MaxConnLife time.Duration `envconfig:"POSTGRES_MAX_CONN_LIFE" default:"1h"`
-	MaxConnIdle time.Duration `envconfig:"POSTGRES_MAX_CONN_IDLE" default:"30m"`
-	DialTimeout time.Duration `envconfig:"POSTGRES_DIAL_TIMEOUT" default:"5s"`
-	SSLMode     string        `envconfig:"POSTGRES_SSL_MODE" default:"disable"`
-}
-
-// ClickHouse holds the ClickHouse configuration.
-type ClickHouse struct {
-	Hosts           []string      `envconfig:"CLICKHOUSE_HOSTS" default:"localhost:9000"`
-	Database        string        `envconfig:"CLICKHOUSE_DATABASE" default:"default"`
-	Username        string        `envconfig:"CLICKHOUSE_USERNAME" default:"default"`
-	Password        string        `envconfig:"CLICKHOUSE_PASSWORD" default:""`
-	MaxOpenConns    int           `envconfig:"CLICKHOUSE_MAX_OPEN_CONNS" default:"10"`
-	MaxIdleConns    int           `envconfig:"CLICKHOUSE_MAX_IDLE_CONNS" default:"5"`
-	ConnMaxLifetime time.Duration `envconfig:"CLICKHOUSE_CONN_MAX_LIFETIME" default:"1h"`
-	DialTimeout     time.Duration `envconfig:"CLICKHOUSE_DIAL_TIMEOUT" default:"5s"`
+	TLS                      struct {
+		Enabled  bool   `envconfig:"REDIS_TLS_ENABLED" default:"false"`
+		CAFile   string `envconfig:"REDIS_TLS_CA_FILE" default:""`
+		CertFile string `envconfig:"REDIS_TLS_CERT_FILE" default:""`
+		KeyFile  string `envconfig:"REDIS_TLS_KEY_FILE" default:""`
+	}
 }
 
 // MeiliSearch holds the MeiliSearch configuration.

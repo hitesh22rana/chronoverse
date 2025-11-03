@@ -81,6 +81,12 @@ func run() int {
 		MaxMemory:                cfg.Redis.MaxMemory,
 		EvictionPolicy:           cfg.Redis.EvictionPolicy,
 		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+		TLSConfig: &redis.TLSConfig{
+			Enabled:  cfg.Redis.TLS.Enabled,
+			CAFile:   cfg.Redis.TLS.CAFile,
+			CertFile: cfg.Redis.TLS.CertFile,
+			KeyFile:  cfg.Redis.TLS.KeyFile,
+		},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

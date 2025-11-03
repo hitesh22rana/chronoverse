@@ -24,6 +24,14 @@ const (
 //go:embed migrations/*.sql
 var MigrationsFS embed.FS
 
+// TLSConfig holds the PostgreSQL tls config.
+type TLSConfig struct {
+	Enabled  bool
+	CAFile   string
+	CertFile string
+	KeyFile  string
+}
+
 // Config holds PostgreSQL connection configuration.
 type Config struct {
 	Host        string
@@ -36,7 +44,7 @@ type Config struct {
 	MaxConnLife time.Duration
 	MaxConnIdle time.Duration
 	DialTimeout time.Duration
-	SSLMode     string
+	TLSConfig   *TLSConfig
 }
 
 // Postgres represents a PostgreSQL connection pool.
@@ -79,21 +87,49 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 5 * time.Second
 	}
-	if cfg.SSLMode == "" {
-		cfg.SSLMode = "disable"
+
+	// DSN's for database connections
+	var pgDSN string
+	if cfg.TLSConfig.Enabled {
+		// Enable mutual TLS with full verification
+		sslMode := "verify-full"
+
+		// Start with the base DSN
+		pgDSN = fmt.Sprintf(
+			"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
+			cfg.User,
+			cfg.Password,
+			cfg.Host,
+			cfg.Port,
+			cfg.Database,
+			sslMode,
+		)
+
+		// Append certificate paths if they are configured
+		if cfg.TLSConfig.CAFile != "" {
+			pgDSN += fmt.Sprintf("&sslrootcert=%s", cfg.TLSConfig.CAFile)
+		}
+		if cfg.TLSConfig.CertFile != "" {
+			pgDSN += fmt.Sprintf("&sslcert=%s", cfg.TLSConfig.CertFile)
+		}
+		if cfg.TLSConfig.KeyFile != "" {
+			pgDSN += fmt.Sprintf("&sslkey=%s", cfg.TLSConfig.KeyFile)
+		}
+	} else {
+		// Use a non-TLS DSN if TLS is not enabled
+		sslMode := "disable"
+		pgDSN = fmt.Sprintf(
+			"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
+			cfg.User,
+			cfg.Password,
+			cfg.Host,
+			cfg.Port,
+			cfg.Database,
+			sslMode,
+		)
 	}
 
-	connString := fmt.Sprintf(
-		"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
-		cfg.User,
-		cfg.Password,
-		cfg.Host,
-		cfg.Port,
-		cfg.Database,
-		cfg.SSLMode,
-	)
-
-	poolConfig, err := pgxpool.ParseConfig(connString)
+	poolConfig, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to parse connection string: %v", err)
 	}

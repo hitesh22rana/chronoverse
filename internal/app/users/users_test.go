@@ -52,7 +52,7 @@ func initClient(server *grpc.Server) (client userpb.UsersServiceClient, _close f
 		}
 	}()
 
-	//nolint:staticcheck // SA1019: This is required for testing.
+	//nolint:staticcheck,nolintlint // SA1019: This is required for testing.
 	conn, err := grpc.DialContext(
 		ctx,
 		"bufnet",

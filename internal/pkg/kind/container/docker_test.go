@@ -48,7 +48,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 	}{
 		{
 			name:           "successful execution",
-			image:          "alpine:latest",
+			image:          "alpine:3.22.2",
 			cmd:            []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
 			env:            nil,
 			timeout:        10 * time.Second,
@@ -58,7 +58,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		},
 		{
 			name:           "successful execution with environment variables",
-			image:          "alpine:latest",
+			image:          "alpine:3.22.2",
 			cmd:            []string{"/bin/sh", "-c", "echo $MY_ENV_VAR1 && sleep 5 && echo $MY_ENV_VAR2"},
 			env:            []string{"MY_ENV_VAR1=Hello from Docker!", "MY_ENV_VAR2=Goodbye from Docker!"},
 			timeout:        10 * time.Second,
@@ -78,7 +78,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		},
 		{
 			name:           "error during execution (nonexistent command)",
-			image:          "alpine:latest",
+			image:          "alpine:3.22.2",
 			cmd:            []string{"/bin/nonexistent"},
 			env:            nil,
 			timeout:        5 * time.Second,
@@ -88,7 +88,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		},
 		{
 			name:           "error failure during runtime",
-			image:          "alpine:latest",
+			image:          "alpine:3.22.2",
 			cmd:            []string{"/bin/sh", "-c", "echo 'About to fail...' >&2 && sleep 2 && exit 1"},
 			env:            nil,
 			timeout:        5 * time.Second,
@@ -98,7 +98,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 		},
 		{
 			name:           "error workflow timeout",
-			image:          "alpine:latest",
+			image:          "alpine:3.22.2",
 			cmd:            []string{"/bin/sh", "-c", "sleep 5"},
 			env:            nil,
 			timeout:        2 * time.Second,
@@ -256,7 +256,7 @@ func TestDockerWorkflow_Terminate(t *testing.T) {
 	}{
 		{
 			name:  "successful termination",
-			image: "alpine:latest",
+			image: "alpine:3.22.2",
 			cmd:   []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
 			err:   nil,
 		},

@@ -16,7 +16,7 @@ import (
 
 // WrappedServerStream implements grpc.ServerStream and wraps the original stream to provide a custom context.
 //
-//nolint:containedctx // WrappedServerStream is a wrapper around grpc.ServerStream that allows us to modify the context.
+//nolint:containedctx // WrappedServerStream is a wrapper around grpc.ServerStream that allows to modify the context.
 type WrappedServerStream struct {
 	grpc.ServerStream
 	Ctx context.Context

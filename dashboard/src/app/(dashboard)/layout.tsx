@@ -3,7 +3,7 @@
 import {
   Suspense,
   useState,
-  unstable_ViewTransition as ViewTransition
+  ViewTransition
 } from "react"
 
 import { Header } from "@/components/dashboard/header"
@@ -54,7 +54,7 @@ function Layout({
         onNotificationsClick={() => setNotificationsOpen(true)}
         onProfileClick={() => setProfileOpen(true)}
       />
-      <main className="flex-1 flex flex-col overflow-visible min-h-[calc(100dvh-theme('spacing.16'))] h-full bg-background/95 md:p-6 p-4">
+      <main className="flex-1 flex flex-col overflow-visible min-h-[calc(100dvh-(--spacing(16)))] h-full bg-background/95 md:p-6 p-4">
         {children}
       </main>
       <NotificationsDrawer

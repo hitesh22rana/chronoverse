@@ -4,19 +4,33 @@ services:
     image: postgres:18.0-alpine3.22
     container_name: postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
       POSTGRES_DB: chronoverse
     ports:
       - "5432:5432"
     restart: on-failure
     volumes:
       - postgres:/var/lib/postgresql
+      - ./certs:/certs:ro
+      - ./certs/postgres/config:/etc/postgresql
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -q -d chronoverse -U postgres"]
-      timeout: 10s
-      interval: 5s
-      retries: 10
+      test:
+        [
+          "CMD-SHELL",
+          "psql 'host=0.0.0.0 user=primary dbname=postgres sslmode=verify-full sslrootcert=/certs/ca/ca.crt sslcert=/certs/clients/client.crt sslkey=/certs/clients/client.key' -c 'SELECT 1;'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -24,17 +38,30 @@ services:
     image: clickhouse:25.8.7.3
     container_name: clickhouse
     environment:
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_USER: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
     ports:
-      - "9000:9000"
+      - "9440:9440"
     restart: on-failure
     volumes:
       - clickhouse:/var/lib/clickhouse
+      - ./certs/clickhouse:/etc/clickhouse-server/certs:ro
+      - ./certs/ca:/etc/clickhouse-server/ca:ro
+      - ./certs/clickhouse/config:/etc/clickhouse-server/conf.d:ro
+      - ./certs/clickhouse/clients/config.xml:/etc/clickhouse-client/config.xml:ro
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--host=localhost", "--query=SELECT 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --secure --host=localhost --port=9440 --user=chronoverse-client --password=chronoverse --query 'SELECT 1'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 5s
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -46,11 +73,29 @@ services:
     restart: on-failure
     volumes:
       - redis:/data
+      - ./certs:/certs:ro
+    command:
+      [
+        "--port 0",
+        "--tls-port 6379",
+        "--tls-cert-file /certs/redis/redis.crt",
+        "--tls-key-file /certs/redis/redis.key",
+        "--tls-ca-cert-file /certs/ca/ca.crt",
+        "--tls-auth-clients yes",
+      ]
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli --tls --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -p 6379 ping | grep PONG",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 5s
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
     networks:
       - chronoverse
 
@@ -197,7 +242,7 @@ services:
       - chronoverse
 
   init-certs:
-    image: alpine:latest
+    image: alpine:3.22.2
     container_name: init-certs
     volumes:
       - ./certs:/certs:rw
@@ -218,47 +263,46 @@ services:
         chmod 444 /certs/auth.ed.pub
         chmod 444 /certs/auth.ed
         echo "🎉 Certificate permissions set successfully"
-        
+
         echo "🔐 Initializing TLS certificates for services..."
 
         apk update && apk add --no-cache openssl openjdk11-jre-headless
         export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
 
         mkdir -p /certs/ca
-
-        SERVICES="kafka meilisearch users-service workflows-service jobs-service notifications-service analytics-service"
-        for svc in $$SERVICES; do
-          mkdir -p /certs/$$svc
-        done
-
         # Generate CA if not exists
         if [ ! -f /certs/ca/ca.key ]; then
           echo "🛡️ Generating CA certificate..."
           openssl genrsa -out /certs/ca/ca.key 4096
           openssl req -x509 -new -nodes -key /certs/ca/ca.key -sha256 \
             -days 365 -out /certs/ca/ca.crt \
-            -subj "/CN=Chronoverse CA"
+            -subj "/CN=chronoverse-ca"
           echo "✅ CA certificate created"
         fi
 
+        SERVICES="postgres redis clickhouse kafka meilisearch users-service workflows-service jobs-service notifications-service analytics-service"
         for svc in $$SERVICES; do
-          CERT_PATH="/certs/$$svc"
-          echo "🔧 Generating certificate for $$svc..."
-          openssl genrsa -out "$$CERT_PATH/$$svc.key" 4096
-          openssl req -new -key "$$CERT_PATH/$$svc.key" \
-            -out "$$CERT_PATH/$$svc.csr" \
-            -subj "/CN=Chronoverse $$svc"
+          mkdir -p /certs/$$svc
 
-          echo "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:$$svc" > "$$CERT_PATH/$$svc-ext.cnf"
+          if [ ! -f /certs/$$svc/$$svc.key ]; then
+            CERT_PATH="/certs/$$svc"
+            echo "🔧 Generating certificate for $$svc..."
+            openssl genrsa -out "$$CERT_PATH/$$svc.key" 4096
+            openssl req -new -key "$$CERT_PATH/$$svc.key" \
+              -out "$$CERT_PATH/$$svc.csr" \
+              -subj "/CN=chronoverse-$$svc"
 
-          openssl x509 -req -in "$$CERT_PATH/$$svc.csr" \
-            -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
-            -CAcreateserial -out "$$CERT_PATH/$$svc.crt" -days 365 \
-            -extfile "$$CERT_PATH/$$svc-ext.cnf"
+            echo "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:$$svc" > "$$CERT_PATH/$$svc-ext.cnf"
 
-          rm "$$CERT_PATH/$$svc.csr" "$$CERT_PATH/$$svc-ext.cnf"
+            openssl x509 -req -in "$$CERT_PATH/$$svc.csr" \
+              -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+              -CAcreateserial -out "$$CERT_PATH/$$svc.crt" -days 365 \
+              -extfile "$$CERT_PATH/$$svc-ext.cnf"
 
-          echo "✅ Certificate created for $$svc"
+            rm "$$CERT_PATH/$$svc.csr" "$$CERT_PATH/$$svc-ext.cnf"
+
+            echo "✅ Certificate created for $$svc"
+          fi
         done
 
         # Convert Kafka PEM to PKCS12
@@ -292,21 +336,23 @@ services:
         # Client certificate for mTLS
         echo "🔐 Generating client certificate for mTLS..."
         mkdir -p /certs/clients
-        openssl genrsa -out /certs/clients/client.key 4096
-        openssl req -new -key /certs/clients/client.key \
-          -out /certs/clients/client.csr \
-          -subj "/CN=Chronoverse Client"
+        if [ ! -f /certs/clients/client.key ]; then
+          openssl genrsa -out /certs/clients/client.key 4096
+          openssl req -new -key /certs/clients/client.key \
+            -out /certs/clients/client.csr \
+            -subj "/CN=chronoverse-client"
 
-        echo "subjectAltName=DNS:client" > /certs/clients/client-ext.cnf
+          echo "subjectAltName=DNS:client" > /certs/clients/client-ext.cnf
 
-        openssl x509 -req -in /certs/clients/client.csr \
-          -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
-          -CAcreateserial -out /certs/clients/client.crt -days 365 \
-          -extfile /certs/clients/client-ext.cnf
+          openssl x509 -req -in /certs/clients/client.csr \
+            -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+            -CAcreateserial -out /certs/clients/client.crt -days 365 \
+            -extfile /certs/clients/client-ext.cnf
 
-        rm /certs/clients/client.csr /certs/clients/client-ext.cnf
-        rm /certs/ca/ca.srl
-        echo "✅ Client certificate created"
+          rm /certs/clients/client.csr /certs/clients/client-ext.cnf
+          rm /certs/ca/ca.srl
+          echo "✅ Client certificate created"
+        fi
 
         echo "🔐 Setting permissions for all certificates..."
 
@@ -326,10 +372,113 @@ services:
           chmod 444 /certs/$$svc/$$svc.key
         done
 
+        chmod 600 /certs/postgres/postgres.key
+        chmod 600 /certs/clients/client.key
+
         chmod 444 /certs/clients/client.crt
-        chmod 444 /certs/clients/client.key
+
+        # ClickHouse server files: make readable by clickhouse user (UID/GID 101).
+        chown 101:101 /certs/clickhouse/clickhouse.key /certs/clickhouse/clickhouse.crt
+        chmod 640 /certs/clickhouse/clickhouse.key
+        chmod 444 /certs/clickhouse/clickhouse.crt
+
+        # Create ClickHouse-specific copies of client certs for mTLS inside the ClickHouse container.
+        mkdir -p /certs/clickhouse/clients
+        cp -f /certs/clients/client.key /certs/clickhouse/clients/client.key
+        cp -f /certs/clients/client.crt /certs/clickhouse/clients/client.crt
+        chown 101:101 /certs/clickhouse/clients/client.key /certs/clickhouse/clients/client.crt
+        chmod 640 /certs/clickhouse/clients/client.key
+        chmod 444 /certs/clickhouse/clients/client.crt
 
         echo "✅ Permissions set successfully"
+
+        mkdir -p /certs/postgres/config
+        POSTGRES_CONF=/certs/postgres/config/postgresql.conf
+        POSTGRES_HBA_CONF=/certs/postgres/config/pg_hba.conf
+
+        if [ ! -f "$$POSTGRES_CONF" ]; then
+          echo "📝 Creating postgresql.conf..."
+
+          echo "listen_addresses='\''*'\''" > "$$POSTGRES_CONF"
+          echo "ssl=on" >> "$$POSTGRES_CONF"
+          echo "ssl_cert_file='\''/certs/postgres/postgres.crt'\''" >> "$$POSTGRES_CONF"
+          echo "ssl_key_file='\''/certs/postgres/postgres.key'\''" >> "$$POSTGRES_CONF"
+          echo "ssl_ca_file='\''/certs/ca/ca.crt'\''" >> "$$POSTGRES_CONF"
+          echo "ssl_max_protocol_version='\''TLSv1.3'\''" >> "$$POSTGRES_CONF"
+          echo "password_encryption='\''scram-sha-256'\''" >> "$$POSTGRES_CONF"
+        fi
+
+        if [ ! -f "$$POSTGRES_HBA_CONF" ]; then
+          echo "📝 Creating pg_hba.conf..."
+
+          echo "# TYPE  DATABASE        USER            ADDRESS                 METHOD" > "$$POSTGRES_HBA_CONF"
+          echo "hostssl all             all             0.0.0.0/0               scram-sha-256 clientcert=verify-full" >> "$$POSTGRES_HBA_CONF"
+        fi
+
+        mkdir -p /certs/clickhouse/config
+        CLICKHOUSE_TLS_CONF=/certs/clickhouse/config/tls.xml
+        CLICKHOUSE_USERS_CONF=/certs/clickhouse/config/users.xml
+        CLICKHOUSE_CLIENT_CONF=/certs/clickhouse/clients/config.xml
+
+        cat > "$$CLICKHOUSE_TLS_CONF" << 'EOF'
+      <?xml version="1.0"?>
+      <clickhouse>
+        <tcp_port>0</tcp_port>
+        <tcp_port_secure>9440</tcp_port_secure>
+        <openSSL>
+          <server>
+            <certificateFile>/etc/clickhouse-server/certs/clickhouse.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/clickhouse.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+            <verificationMode>strict</verificationMode>
+            <minVersion>TLSv1_2</minVersion>
+            <maxVersion>TLSv1_3</maxVersion>
+          </server>
+          <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+            <verificationMode>strict</verificationMode>
+            <minVersion>TLSv1_2</minVersion>
+          </client>
+        </openSSL>
+      </clickhouse>
+      EOF
+
+        cat > "$$CLICKHOUSE_USERS_CONF" << 'EOF'
+      <?xml version="1.0"?>
+      <clickhouse>
+        <users>
+          <chronoverse-client>
+            <password>chronoverse</password>
+            <networks>
+              <ip>::/0</ip>
+              <ip>0.0.0.0/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+          </chronoverse-client>
+        </users>
+      </clickhouse>
+      EOF
+
+        cat > "$$CLICKHOUSE_CLIENT_CONF" << 'EOF'
+      <?xml version="1.0"?>
+      <config>
+        <secure>true</secure>
+        <openSSL>
+          <client>
+            <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+            <verificationMode>strict</verificationMode>
+            <minVersion>TLSv1_2</minVersion>
+          </client>
+        </openSSL>
+      </config>
+      EOF
+
         echo "🎉 TLS certificates initialized successfully!"
       '
     restart: "no"
@@ -341,8 +490,21 @@ services:
     container_name: init-database-migration
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
       MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
       MEILISEARCH_TLS_ENABLED: true
@@ -390,8 +552,19 @@ services:
     container_name: users-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50051
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
@@ -451,10 +624,21 @@ services:
     container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
@@ -519,9 +703,26 @@ services:
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
       MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
       MEILISEARCH_TLS_ENABLED: true
@@ -591,6 +792,13 @@ services:
     container_name: notifications-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       GRPC_PORT: 50054
       GRPC_TLS_ENABLED: true
@@ -657,6 +865,13 @@ services:
     container_name: analytics-service
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       GRPC_PORT: 50055
       GRPC_TLS_ENABLED: true
@@ -715,9 +930,16 @@ services:
     container_name: scheduling-worker
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
@@ -762,9 +984,19 @@ services:
     container_name: workflow-worker
     environment:
       REDIS_HOST: redis
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
@@ -785,8 +1017,8 @@ services:
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -835,8 +1067,12 @@ services:
     container_name: execution-worker
     environment:
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
@@ -857,8 +1093,8 @@ services:
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      ENV: development
       DOCKER_HOST: tcp://docker-proxy:2375
+      ENV: development
     build:
       context: .
       dockerfile: Dockerfile
@@ -905,7 +1141,17 @@ services:
     container_name: joblogs-processor
     environment:
       REDIS_HOST: redis
-      CLICKHOUSE_HOSTS: clickhouse:9000
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
+      CLICKHOUSE_HOSTS: clickhouse:9440
+      CLICKHOUSE_USERNAME: chronoverse-client
+      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_TLS_ENABLED: true
+      CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+      CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+      CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
       MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
       MEILISEARCH_TLS_ENABLED: true
@@ -913,7 +1159,7 @@ services:
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
       MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
@@ -963,9 +1209,16 @@ services:
     container_name: analytics-processor
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: "true"
+      KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
@@ -1012,6 +1265,10 @@ services:
     environment:
       SERVER_HOST: 0.0.0.0
       REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       CLIENT_TLS_CERT_FILE: certs/clients/client.crt
       CLIENT_TLS_KEY_FILE: certs/clients/client.key
       USERS_SERVICE_HOST: users-service

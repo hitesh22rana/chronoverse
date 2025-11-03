@@ -2,9 +2,12 @@ package redis
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/redis/go-redis/extra/redisotel/v9"
@@ -21,6 +24,14 @@ const (
 	distributedLockValue = "locked"
 )
 
+// TLSConfig holds the Redis tls config.
+type TLSConfig struct {
+	Enabled  bool
+	CAFile   string
+	CertFile string
+	KeyFile  string
+}
+
 // Config is the configuration for the Redis store.
 type Config struct {
 	Host                     string
@@ -34,6 +45,7 @@ type Config struct {
 	MaxMemory                string
 	EvictionPolicy           string
 	EvictionPolicySampleSize int
+	TLSConfig                *TLSConfig
 }
 
 // Store is a Redis store.
@@ -59,17 +71,60 @@ func healthCheck(ctx context.Context, client *redis.Client) error {
 	return err
 }
 
+// newTLSConfig creates a new TLS config for the Redis client.
+func newTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load client key pair: %v", err)
+	}
+
+	caCert, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read CA certificate: %v", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caCertPool,
+		MinVersion:   tls.VersionTLS12,
+	}, nil
+}
+
 // New creates a new Redis store instance.
 func New(ctx context.Context, cfg *Config) (*Store, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Password:     cfg.Password,
-		DB:           cfg.DB,
-		PoolSize:     cfg.PoolSize,
-		MinIdleConns: cfg.MinIdleConns,
-		ReadTimeout:  cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
-	})
+	var redisOptions *redis.Options
+	if !cfg.TLSConfig.Enabled {
+		redisOptions = &redis.Options{
+			Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+			Password:     cfg.Password,
+			DB:           cfg.DB,
+			PoolSize:     cfg.PoolSize,
+			MinIdleConns: cfg.MinIdleConns,
+			ReadTimeout:  cfg.ReadTimeout,
+			WriteTimeout: cfg.WriteTimeout,
+		}
+	} else {
+		tlsConfig, err := newTLSConfig(cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile, cfg.TLSConfig.CAFile)
+		if err != nil {
+			return nil, err
+		}
+
+		redisOptions = &redis.Options{
+			Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+			Password:     cfg.Password,
+			DB:           cfg.DB,
+			PoolSize:     cfg.PoolSize,
+			MinIdleConns: cfg.MinIdleConns,
+			ReadTimeout:  cfg.ReadTimeout,
+			WriteTimeout: cfg.WriteTimeout,
+			TLSConfig:    tlsConfig,
+		}
+	}
+
+	client := redis.NewClient(redisOptions)
 
 	// Set the max memory
 	if err := client.ConfigSet(ctx, "maxmemory", cfg.MaxMemory).Err(); err != nil {

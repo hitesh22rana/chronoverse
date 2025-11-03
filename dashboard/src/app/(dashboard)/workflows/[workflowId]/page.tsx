@@ -374,7 +374,7 @@ export default function WorkflowDetailsAndJobsPage() {
                                                 <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20" />
                                                 <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
                                                     <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                        Log Entries Generated
+                                                        Total Log Entries Generated
                                                     </CardTitle>
                                                     <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
                                                         <ScrollText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />

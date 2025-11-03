@@ -37,7 +37,7 @@ type Config struct {
 	TLS                 *tls.Config
 }
 
-// Option is a functional option type that allows us to configure the Kafka client.
+// Option is a functional option type that allows to configure the Kafka client.
 type Option func(*Config)
 
 // New creates a new Kafka client.

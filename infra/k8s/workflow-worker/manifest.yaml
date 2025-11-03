@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-worker-config
+  namespace: chronoverse
+  labels:
+    app: workflow-worker
+    component: backend
+data:
+  KAFKA_CONSUMER_GROUP: "workflow-worker"
+  CLIENT_TLS_CERT_FILE: "certs/clients/client.crt"
+  CLIENT_TLS_KEY_FILE: "certs/clients/client.key"
+  WORKFLOWS_SERVICE_HOST: "dns:///workflows-service.chronoverse.svc.cluster.local"
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  JOBS_SERVICE_HOST: "dns:///jobs-service.chronoverse.svc.cluster.local"
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  NOTIFICATIONS_SERVICE_HOST: "dns:///notifications-service.chronoverse.svc.cluster.local"
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  ENV: "production"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-worker
+  namespace: chronoverse
+  labels:
+    app: workflow-worker
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: workflow-worker
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: workflow-worker
+        component: backend
+    spec:
+      initContainers:
+      - name: wait-for-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+            echo "Waiting for certificates..."
+            sleep 1
+          done
+          echo "✅ Certificates found!"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      containers:
+      - name: workflow-worker
+        image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
+        envFrom:
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: workflow-worker-config
+        - configMapRef:
+            name: docker-proxy-connection-config
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - docker-proxy
+            topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - execution-worker
+              topologyKey: kubernetes.io/hostname
+      volumes:
+      - name: certs-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc

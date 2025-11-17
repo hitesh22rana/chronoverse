@@ -93,6 +93,16 @@ func TestRegisterUser(t *testing.T) {
 			isErr: true,
 		},
 		{
+			name: "error: password too long",
+			req: &userspb.RegisterUserRequest{
+				Email:    "test@gmail.com",
+				Password: "password1234567890123456789012345678901234567890123456789012345678901234567890",
+			},
+			mock:  func(_ *userspb.RegisterUserRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
 			name: "error: already exists",
 			req: &userspb.RegisterUserRequest{
 				Email:    "test@gmail.com",
@@ -203,6 +213,16 @@ func TestLoginUser(t *testing.T) {
 			req: &userspb.LoginUserRequest{
 				Email:    "test@gmail.com",
 				Password: "pass",
+			},
+			mock:  func(_ *userspb.LoginUserRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: password too long",
+			req: &userspb.LoginUserRequest{
+				Email:    "test@gmail.com",
+				Password: "password1234567890123456789012345678901234567890123456789012345678901234567890",
 			},
 			mock:  func(_ *userspb.LoginUserRequest) {},
 			want:  want{},

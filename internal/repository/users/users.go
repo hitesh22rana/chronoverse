@@ -52,6 +52,11 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+			err = status.Errorf(codes.InvalidArgument, "password too long: %v", err)
+			return nil, "", err
+		}
+
 		err = status.Errorf(codes.Internal, "failed to hash password: %v", err)
 		return nil, "", err
 	}

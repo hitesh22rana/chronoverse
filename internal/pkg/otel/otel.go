@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 
+	hostmetrics "go.opentelemetry.io/contrib/instrumentation/host"
+	runtimemetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -79,6 +81,14 @@ func InitMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
 	)
 	otel.SetMeterProvider(mp)
+
+	if err := hostmetrics.Start(hostmetrics.WithMeterProvider(mp)); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to start hostmetrics: %v", err)
+	}
+
+	if err := runtimemetrics.Start(runtimemetrics.WithMeterProvider(mp)); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to start runtime: %v", err)
+	}
 
 	return mp, nil
 }

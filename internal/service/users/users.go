@@ -64,7 +64,7 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 // RegisterUserRequest holds the request parameters for registering a new user.
 type RegisterUserRequest struct {
 	Email    string `validate:"required,email"`
-	Password string `validate:"required,min=8,max=100"`
+	Password string `validate:"required,min=8,max=72"`
 }
 
 // RegisterUser a new user.
@@ -127,7 +127,7 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 // LoginUserRequest holds the request parameters for logging in a user.
 type LoginUserRequest struct {
 	Email    string `validate:"required,email"`
-	Password string `validate:"required,min=8,max=100"`
+	Password string `validate:"required,min=8,max=72"`
 }
 
 // LoginUser user.

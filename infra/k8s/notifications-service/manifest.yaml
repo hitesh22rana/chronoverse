@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-service-config
+  namespace: chronoverse
+  labels:
+    app: notifications-service
+    component: backend
+data:
+  GRPC_REQUEST_TIMEOUT: "1s"
+  GRPC_TLS_ENABLED: "true"
+  GRPC_TLS_CA_FILE: "certs/ca/ca.crt"
+  GRPC_PORT: "50054"
+  GRPC_TLS_CERT_FILE: "certs/notifications-service/notifications-service.crt"
+  GRPC_TLS_KEY_FILE: "certs/notifications-service/notifications-service.key"
+  CLIENT_TLS_CERT_FILE: "certs/clients/client.crt"
+  CLIENT_TLS_KEY_FILE: "certs/clients/client.key"
+  USERS_SERVICE_HOST: "dns:///users-service.chronoverse.svc.cluster.local"
+  USERS_SERVICE_PORT: "50051"
+  USERS_SERVICE_TLS_ENABLED: "true"
+  USERS_SERVICE_TLS_CA_FILE: "certs/ca/ca.crt"
+  ENV: "production"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-service
+  namespace: chronoverse
+  labels:
+    app: notifications-service
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notifications-service
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: notifications-service
+        component: backend
+    spec:
+      initContainers:
+      - name: wait-for-certs
+        image: alpine:latest
+        command:
+        - sh
+        - -c
+        - |
+          while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+            echo "Waiting for certificates..."
+            sleep 1
+          done
+          echo "✅ Certificates found!"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+      containers:
+      - name: notifications-service
+        image: ghcr.io/hitesh22rana/chronoverse/notifications-service:latest
+        ports:
+        - containerPort: 50054
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: notifications-service-config
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+        volumeMounts:
+        - name: certs-storage
+          mountPath: /certs
+        livenessProbe:
+          exec:
+            command:
+            - /bin/grpc-health-probe
+            - -addr=localhost:50054
+            - -connect-timeout=250ms
+            - -rpc-timeout=250ms
+            - -tls
+            - -tls-ca-cert=certs/ca/ca.crt
+            - -tls-client-cert=certs/notifications-service/notifications-service.crt
+            - -tls-client-key=certs/notifications-service/notifications-service.key
+            - -tls-server-name=notifications-service
+            - -rpc-header=Audience:grpc_probe
+            - -rpc-header=Role:admin
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - /bin/grpc-health-probe
+            - -addr=localhost:50054
+            - -connect-timeout=250ms
+            - -rpc-timeout=250ms
+            - -tls
+            - -tls-ca-cert=certs/ca/ca.crt
+            - -tls-client-cert=certs/notifications-service/notifications-service.crt
+            - -tls-client-key=certs/notifications-service/notifications-service.key
+            - -tls-server-name=notifications-service
+            - -rpc-header=Audience:grpc_probe
+            - -rpc-header=Role:admin
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      volumes:
+      - name: certs-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-service
+  namespace: chronoverse
+  labels:
+    app: notifications-service
+    component: backend
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: notifications-service
+    component: backend
+  ports:
+  - port: 50054
+    targetPort: 50054

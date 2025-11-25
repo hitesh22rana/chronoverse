@@ -128,6 +128,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 			WorkflowId:  workflowID,
 			UserId:      workflow.GetUserId(),
 			ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+			Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
 		}); _err != nil {
 			return _err
 		}
@@ -235,6 +236,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		WorkflowId:  workflowID,
 		UserId:      workflow.GetUserId(),
 		ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
 	}); _err != nil {
 		return _err
 	}

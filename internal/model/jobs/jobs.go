@@ -25,11 +25,26 @@ func (s JobStatus) ToString() string {
 	return string(s)
 }
 
+// JobTrigger represents the trigger type of the job.
+type JobTrigger string
+
+// JobTriggers for the scheduled job.
+const (
+	JobTriggerAutomatic JobTrigger = "AUTOMATIC"
+	JobTriggerManual    JobTrigger = "MANUAL"
+)
+
+// ToString converts the JobTrigger to its string representation.
+func (t JobTrigger) ToString() string {
+	return string(t)
+}
+
 // GetJobResponse represents the response of GetJob.
 type GetJobResponse struct {
 	ID          string       `db:"id"`
 	WorkflowID  string       `db:"workflow_id"`
 	JobStatus   string       `db:"status"`
+	JobTrigger  string       `db:"trigger"`
 	ScheduledAt time.Time    `db:"scheduled_at"`
 	StartedAt   sql.NullTime `db:"started_at,omitempty"`
 	CompletedAt sql.NullTime `db:"completed_at,omitempty"`
@@ -51,6 +66,7 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 		Id:          r.ID,
 		WorkflowId:  r.WorkflowID,
 		Status:      r.JobStatus,
+		Trigger:     r.JobTrigger,
 		ScheduledAt: r.ScheduledAt.Format(time.RFC3339Nano),
 		StartedAt:   startedAt,
 		CompletedAt: completedAt,
@@ -66,6 +82,7 @@ type GetJobByIDResponse struct {
 	ContainerID sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
 	UserID      string         `db:"user_id"`
 	JobStatus   string         `db:"status"`
+	JobTrigger  string         `db:"trigger"`
 	ScheduledAt time.Time      `db:"scheduled_at"`
 	StartedAt   sql.NullTime   `db:"started_at,omitempty"`
 	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
@@ -88,6 +105,7 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 		WorkflowId:  r.WorkflowID,
 		UserId:      r.UserID,
 		Status:      r.JobStatus,
+		Trigger:     r.JobTrigger,
 		ScheduledAt: r.ScheduledAt.Format(time.RFC3339Nano),
 		StartedAt:   startedAt,
 		CompletedAt: completedAt,
@@ -162,6 +180,7 @@ type JobByWorkflowIDResponse struct {
 	WorkflowID  string         `db:"workflow_id"`
 	ContainerID sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
 	JobStatus   string         `db:"status"`
+	JobTrigger  string         `db:"trigger"`
 	ScheduledAt time.Time      `db:"scheduled_at"`
 	StartedAt   sql.NullTime   `db:"started_at,omitempty"`
 	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
@@ -171,7 +190,8 @@ type JobByWorkflowIDResponse struct {
 
 // ListJobsFilters represents the filters for listing jobs.
 type ListJobsFilters struct {
-	Status string `validate:"omitempty"`
+	Status  string `validate:"omitempty"`
+	Trigger string `validate:"omitempty"`
 }
 
 // ListJobsResponse represents the response of ListJobsByID.
@@ -199,6 +219,7 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 			Id:          j.ID,
 			WorkflowId:  j.WorkflowID,
 			Status:      j.JobStatus,
+			Trigger:     j.JobTrigger,
 			ScheduledAt: j.ScheduledAt.Format(time.RFC3339Nano),
 			StartedAt:   startedAt,
 			CompletedAt: completedAt,

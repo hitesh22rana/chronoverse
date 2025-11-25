@@ -340,6 +340,21 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		),
 	)
 	router.HandleFunc(
+		"/workflows/{workflow_id}/jobs/schedule",
+		s.withAllowedMethodMiddleware(
+			http.MethodPost,
+			s.withVerifyCSRFMiddleware(
+				s.withVerifySessionMiddleware(
+					withAttachBasicMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.handleManualScheduleJob,
+						),
+					),
+				),
+			),
+		),
+	)
+	router.HandleFunc(
 		"/workflows/{workflow_id}/jobs/{job_id}",
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,

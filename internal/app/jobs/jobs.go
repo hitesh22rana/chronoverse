@@ -37,7 +37,6 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
-	"ScheduleJob":     true,
 	"UpdateJobStatus": true,
 	"GetJobByID":      true,
 }
@@ -239,7 +238,6 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 }
 
 // ScheduleJob schedules a job.
-// This is an internal method used by internal services, and it should not be exposed to the public.
 func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (res *jobspb.ScheduleJobResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,
@@ -248,6 +246,7 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 			attribute.String("workflow_id", req.GetWorkflowId()),
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("scheduled_at", req.GetScheduledAt()),
+			attribute.String("trigger", req.GetTrigger()),
 		),
 	)
 

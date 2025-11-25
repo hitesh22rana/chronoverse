@@ -36,7 +36,6 @@ const (
 // JobsService handles job related operations.
 type JobsServiceClient interface {
 	// ScheduleJob schedules a job to run at a specific time.
-	// This is an internal API and should not be exposed to the public.
 	ScheduleJob(ctx context.Context, in *ScheduleJobRequest, opts ...grpc.CallOption) (*ScheduleJobResponse, error)
 	// UpdateJobStatus updates the status of a job.
 	// This is an internal API and should not be exposed to the public.
@@ -160,7 +159,6 @@ func (c *jobsServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, o
 // JobsService handles job related operations.
 type JobsServiceServer interface {
 	// ScheduleJob schedules a job to run at a specific time.
-	// This is an internal API and should not be exposed to the public.
 	ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error)
 	// UpdateJobStatus updates the status of a job.
 	// This is an internal API and should not be exposed to the public.

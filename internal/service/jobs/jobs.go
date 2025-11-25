@@ -35,7 +35,7 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
-	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt string) (string, error)
+	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (string, error)
 	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
@@ -74,6 +74,7 @@ type ScheduleJobRequest struct {
 	WorkflowID  string `validate:"required"`
 	UserID      string `validate:"required"`
 	ScheduledAt string `validate:"required"`
+	Trigger     string `validate:"required"`
 }
 
 // ScheduleJob schedules a job.
@@ -92,6 +93,7 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		WorkflowID:  req.GetWorkflowId(),
 		UserID:      req.GetUserId(),
 		ScheduledAt: req.GetScheduledAt(),
+		Trigger:     req.GetTrigger(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -104,12 +106,19 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		return "", err
 	}
 
+	// Validate the job trigger
+	err = validateJobTrigger(req.GetTrigger())
+	if err != nil {
+		return "", err
+	}
+
 	// Schedule the job
 	res, err := s.repo.ScheduleJob(
 		ctx,
 		req.GetWorkflowId(),
 		req.GetUserId(),
 		req.GetScheduledAt(),
+		req.GetTrigger(),
 	)
 	if err != nil {
 		return "", err
@@ -147,7 +156,7 @@ func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStat
 		return err
 	}
 
-	// Validate the status
+	// Validate the job status
 	err = validateJobStatus(req.GetStatus())
 	if err != nil {
 		return err
@@ -558,7 +567,8 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 	var filters *jobsmodel.ListJobsFilters
 	if req.GetFilters() != nil {
 		filters = &jobsmodel.ListJobsFilters{
-			Status: req.GetFilters().GetStatus(),
+			Status:  req.GetFilters().GetStatus(),
+			Trigger: req.GetFilters().GetTrigger(),
 		}
 	} else {
 		filters = &jobsmodel.ListJobsFilters{}
@@ -621,6 +631,16 @@ func validateJobStatus(s string) error {
 		return nil
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid status: %s", s)
+	}
+}
+
+func validateJobTrigger(t string) error {
+	switch t {
+	case jobsmodel.JobTriggerAutomatic.ToString(),
+		jobsmodel.JobTriggerManual.ToString():
+		return nil
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid trigger: %s", t)
 	}
 }
 

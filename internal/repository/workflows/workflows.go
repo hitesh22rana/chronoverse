@@ -9,15 +9,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"

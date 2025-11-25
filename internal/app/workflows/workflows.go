@@ -233,12 +233,12 @@ func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateW
 	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	jobID, err := w.svc.CreateWorkflow(ctx, req)
+	workflowID, err := w.svc.CreateWorkflow(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return &workflowspb.CreateWorkflowResponse{Id: jobID}, nil
+	return &workflowspb.CreateWorkflowResponse{Id: workflowID}, nil
 }
 
 // UpdateWorkflow updates the job details.
@@ -329,12 +329,12 @@ func (w *Workflows) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflo
 	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	job, err := w.svc.GetWorkflow(ctx, req)
+	workflow, err := w.svc.GetWorkflow(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return job.ToProto(), nil
+	return workflow.ToProto(), nil
 }
 
 // GetWorkflowByID returns the job details by ID.
@@ -358,12 +358,12 @@ func (w *Workflows) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWor
 	ctx, cancel := context.WithTimeout(ctx, w.cfg.Deadline)
 	defer cancel()
 
-	job, err := w.svc.GetWorkflowByID(ctx, req)
+	workflow, err := w.svc.GetWorkflowByID(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return job.ToProto(), nil
+	return workflow.ToProto(), nil
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count.

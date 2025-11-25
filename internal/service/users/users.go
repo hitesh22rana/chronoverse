@@ -298,28 +298,23 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 		return err
 	}
 
-	// Invalidate the cache in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
+	// Invalidate the user cache
+	// The key is in the format "user:{user_id}"
+	cacheKey := fmt.Sprintf("user:%s", req.GetId())
+	if delErr := s.cache.Delete(ctx, cacheKey); delErr != nil && status.Code(delErr) != codes.NotFound {
+		logger.Warn("failed to delete user cache",
+			zap.String("user_id", req.GetId()),
+			zap.String("cache_key", cacheKey),
+			zap.Error(delErr),
+		)
 
-		// Invalidate the user cache
-		// The key is in the format "user:{user_id}"
-		cacheKey := fmt.Sprintf("user:%s", req.GetId())
-		if delErr := s.cache.Delete(bgCtx, cacheKey); delErr != nil && status.Code(delErr) != codes.NotFound {
-			logger.Warn("failed to delete user cache",
-				zap.String("user_id", req.GetId()),
-				zap.String("cache_key", cacheKey),
-				zap.Error(delErr),
-			)
-		} else if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("deleted user cache",
-				zap.String("user_id", req.GetId()),
-				zap.String("cache_key", cacheKey),
-			)
-		}
-	}()
+		return status.Errorf(codes.Internal, "failed to delete user cache: %v", delErr)
+	} else if logger.Core().Enabled(zap.DebugLevel) {
+		logger.Debug("deleted user cache",
+			zap.String("user_id", req.GetId()),
+			zap.String("cache_key", cacheKey),
+		)
+	}
 
 	return err
 }

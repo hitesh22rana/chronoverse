@@ -65,7 +65,7 @@ func New(cfg *Config, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Cl
 }
 
 // ScheduleJob schedules a job.
-func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt string) (jobID string, err error) {
+func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (jobID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ScheduleJob")
 	defer func() {
 		if err != nil {
@@ -83,12 +83,12 @@ func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedul
 
 	// Insert job into database
 	query := fmt.Sprintf(`
-		INSERT INTO %s (workflow_id, user_id, scheduled_at)
-		VALUES ($1, $2, $3)
+		INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id;
 	`, postgres.TableJobs)
 
-	row := r.pg.QueryRow(ctx, query, workflowID, userID, scheduledAtTime)
+	row := r.pg.QueryRow(ctx, query, workflowID, userID, scheduledAtTime, trigger)
 	if err = row.Scan(&jobID); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -180,7 +180,7 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, workflow_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+		SELECT id, workflow_id, status, trigger, scheduled_at, started_at, completed_at, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND workflow_id = $2 AND user_id = $3
 		LIMIT 1;
@@ -224,7 +224,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, workflow_id, container_id, user_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+		SELECT id, workflow_id, container_id, user_id, status, trigger, scheduled_at, started_at, completed_at, created_at, updated_at
 		FROM %s
 		WHERE id = $1
 		LIMIT 1;
@@ -642,7 +642,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 
 	// Add the cursor to the query
 	query := fmt.Sprintf(`
-        SELECT id, workflow_id, container_id, status, scheduled_at, started_at, completed_at, created_at, updated_at
+        SELECT id, workflow_id, container_id, status, trigger, scheduled_at, started_at, completed_at, created_at, updated_at
         FROM %s
         WHERE workflow_id = $1 AND user_id = $2
     `, postgres.TableJobs)
@@ -655,6 +655,12 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		if filters.Status != "" {
 			query += fmt.Sprintf(` AND status = $%d`, paramIndex)
 			args = append(args, filters.Status)
+			paramIndex++
+		}
+
+		if filters.Trigger != "" {
+			query += fmt.Sprintf(` AND trigger = $%d`, paramIndex)
+			args = append(args, filters.Trigger)
 			paramIndex++
 		}
 	}

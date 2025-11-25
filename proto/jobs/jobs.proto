@@ -9,6 +9,7 @@ message ScheduleJobRequest {
     string workflow_id  = 1; // ID of the workflow
     string user_id      = 2; // ID of the user
     string scheduled_at = 3; // Time the job is scheduled to run
+    string trigger      = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
 }
 
 // ScheduleJobResponse contains the result of a job creation attempt.
@@ -39,11 +40,12 @@ message GetJobResponse {
     string id           = 1; // ID of the job
     string workflow_id  = 2; // ID of the workflow
     string status       = 3; // Status of the job
-    string scheduled_at = 4; // Time the job is scheduled to run
-    string started_at   = 5; // Time the job was started
-    string completed_at = 6; // Time the job was completed
-    string created_at   = 7; // Time the job was created
-    string updated_at   = 8; // Time the job was last updated
+    string trigger      = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
+    string scheduled_at = 5; // Time the job is scheduled to run
+    string started_at   = 6; // Time the job was started
+    string completed_at = 7; // Time the job was completed
+    string created_at   = 8; // Time the job was created
+    string updated_at   = 9; // Time the job was last updated
 }
 
 // GetJobByIDRequest contains the details needed to get a job by ID.
@@ -58,11 +60,12 @@ message GetJobByIDResponse {
     string user_id      = 3; // ID of the user
     string container_id = 4; // ID of the container (if applicable)
     string status       = 5; // Status of the job
-    string scheduled_at = 6; // Time the job is scheduled to run
-    string started_at   = 7; // Time the job was started
-    string completed_at = 8; // Time the job was completed
-    string created_at   = 9; // Time the job was created
-    string updated_at   = 10; // Time the job was last updated
+    string trigger      = 6; // Trigger type of the job (AUTOMATIC or MANUAL)
+    string scheduled_at = 7; // Time the job is scheduled to run
+    string started_at   = 8; // Time the job was started
+    string completed_at = 9; // Time the job was completed
+    string created_at   = 10; // Time the job was created
+    string updated_at   = 11; // Time the job was last updated
 }
 
 // LogStream represents the type of log stream.
@@ -127,7 +130,8 @@ message SearchJobLogsRequest {
 
 // ListJobsFilters contains the filters for listing jobs.
 message ListJobsFilters {
-    string status = 1; // Status of the job (optional)
+    string status  = 1; // Status of the job (optional)
+    string trigger = 2; // Trigger type of the job (optional)
 }
 
 // ListJobsRequest contains the details needed to list all jobs for a workflow_id.
@@ -144,11 +148,12 @@ message JobsResponse {
     string workflow_id  = 2; // ID of the workflow
     string container_id = 3; // ID of the container (if applicable)
     string status       = 4; // Status of the job
-    string scheduled_at = 5; // Time the job is scheduled to run
-    string started_at   = 6; // Time the job was started
-    string completed_at = 7; // Time the job was completed
-    string created_at   = 8; // Time the job was created
-    string updated_at   = 9; // Time the job was last updated
+    string trigger      = 5; // Trigger type of the job (AUTOMATIC or MANUAL)
+    string scheduled_at = 6; // Time the job is scheduled to run
+    string started_at   = 7; // Time the job was started
+    string completed_at = 8; // Time the job was completed
+    string created_at   = 9; // Time the job was created
+    string updated_at   = 10; // Time the job was last updated
 }
 
 message ListJobsResponse {
@@ -159,7 +164,6 @@ message ListJobsResponse {
 // JobsService handles job related operations.
 service JobsService {
     // ScheduleJob schedules a job to run at a specific time.
-    // This is an internal API and should not be exposed to the public.
     rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
 
     // UpdateJobStatus updates the status of a job.

@@ -110,9 +110,9 @@ func TestScheduleJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
+								t.Context(), "server-test",
 							),
-							auth.RoleAdmin,
+							auth.RoleUser,
 						),
 						"token",
 					)
@@ -136,39 +136,15 @@ func TestScheduleJob(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name: "error: unauthorized access (invalid role)",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
-						"token",
-					)
-				},
-				req: &jobspb.ScheduleJobRequest{
-					WorkflowId:  "workflow_id",
-					UserId:      "user1",
-					ScheduledAt: time.Now().Format(time.RFC3339Nano),
-				},
-			},
-			mock:  func(_ *jobspb.ScheduleJobRequest) {},
-			res:   nil,
-			isErr: true,
-		},
-		{
 			name: "error: invalid token",
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
+								t.Context(), "server-test",
 							),
-							auth.RoleAdmin,
+							auth.RoleUser,
 						),
 						"invalid-token",
 					)
@@ -192,9 +168,9 @@ func TestScheduleJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
+								t.Context(), "server-test",
 							),
-							auth.RoleAdmin,
+							auth.RoleUser,
 						),
 						"token",
 					)
@@ -240,9 +216,9 @@ func TestScheduleJob(t *testing.T) {
 					return auth.WithAuthorizationTokenInMetadata(
 						auth.WithRoleInMetadata(
 							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
+								t.Context(), "server-test",
 							),
-							auth.RoleAdmin,
+							auth.RoleUser,
 						),
 						"token",
 					)

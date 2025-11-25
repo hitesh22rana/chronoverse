@@ -105,18 +105,18 @@ func (mr *MockRepositoryMockRecorder) ListJobs(ctx, workflowID, userID, cursor, 
 }
 
 // ScheduleJob mocks base method.
-func (m *MockRepository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt string) (string, error) {
+func (m *MockRepository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ScheduleJob", ctx, workflowID, userID, scheduledAt)
+	ret := m.ctrl.Call(m, "ScheduleJob", ctx, workflowID, userID, scheduledAt, trigger)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ScheduleJob indicates an expected call of ScheduleJob.
-func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, workflowID, userID, scheduledAt any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, workflowID, userID, scheduledAt, trigger any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockRepository)(nil).ScheduleJob), ctx, workflowID, userID, scheduledAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockRepository)(nil).ScheduleJob), ctx, workflowID, userID, scheduledAt, trigger)
 }
 
 // SearchJobLogs mocks base method.

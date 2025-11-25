@@ -33,7 +33,7 @@ import { Workflow } from "@/hooks/use-workflows"
 interface DeleteWorkflowDialogProps {
     workflow: Workflow
     open: boolean
-    onOpenChange: (open: boolean) => void
+    onOpenChange: (_open: boolean) => void
 }
 
 export function DeleteWorkflowDialog({
@@ -77,7 +77,7 @@ export function DeleteWorkflowDialog({
 
                 <div className="py-2">
                     <div className="rounded-md bg-destructive/10 p-4 mb-4">
-                        <p className="flex-grow sm:text-sm text-xs text-destructive">
+                        <p className="grow sm:text-sm text-xs text-destructive">
                             Deleting this workflow will remove it permanently from the system, including all its jobs and history. This action cannot be undone.
                         </p>
                     </div>

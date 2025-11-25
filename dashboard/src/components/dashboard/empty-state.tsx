@@ -26,7 +26,7 @@ export function EmptyState({
             className={cn(
                 "flex flex-1 flex-col items-center justify-center h-full w-full",
                 "rounded-lg border border-dashed",
-                "bg-gradient-to-b from-muted/10 to-muted/20",
+                "bg-linear-to-b from-muted/10 to-muted/20",
                 className,
             )}
         >

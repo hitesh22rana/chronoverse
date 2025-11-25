@@ -48,6 +48,7 @@ func TestScheduleJob(t *testing.T) {
 				WorkflowId:  "workflow_id",
 				UserId:      "user1",
 				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:     "AUTOMATIC",
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -55,6 +56,7 @@ func TestScheduleJob(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetScheduledAt(),
+					req.GetTrigger(),
 				).Return("job_id", nil)
 			},
 			want: want{
@@ -68,28 +70,31 @@ func TestScheduleJob(t *testing.T) {
 				WorkflowId:  "",
 				UserId:      "user1",
 				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:     "AUTOMATIC",
 			},
 			mock:  func(_ *jobspb.ScheduleJobRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
-			name: "error: invalid at time",
+			name: "error: invalid scheduled_at time",
 			req: &jobspb.ScheduleJobRequest{
 				WorkflowId:  "workflow_id",
 				UserId:      "user1",
 				ScheduledAt: "invalid_time",
+				Trigger:     "AUTOMATIC",
 			},
 			mock:  func(_ *jobspb.ScheduleJobRequest) {},
 			want:  want{},
 			isErr: true,
 		},
 		{
-			name: "error: job not found",
+			name: "error: workflow not found",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "invalid_job_id",
+				WorkflowId:  "invalid_workflow_id",
 				UserId:      "user1",
 				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:     "AUTOMATIC",
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -97,17 +102,19 @@ func TestScheduleJob(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetScheduledAt(),
-				).Return("", status.Error(codes.NotFound, "job not found"))
+					req.GetTrigger(),
+				).Return("", status.Error(codes.NotFound, "workflow not found"))
 			},
 			want:  want{},
 			isErr: true,
 		},
 		{
-			name: "error: job not owned by user",
+			name: "error: workflow not owned by user",
 			req: &jobspb.ScheduleJobRequest{
 				WorkflowId:  "workflow_id",
 				UserId:      "invalid_user_id",
 				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:     "AUTOMATIC",
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -115,7 +122,8 @@ func TestScheduleJob(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetScheduledAt(),
-				).Return("", status.Error(codes.NotFound, "job not found or not owned by user"))
+					req.GetTrigger(),
+				).Return("", status.Error(codes.NotFound, "workflow not found or not owned by user"))
 			},
 			want:  want{},
 			isErr: true,
@@ -126,6 +134,7 @@ func TestScheduleJob(t *testing.T) {
 				WorkflowId:  "workflow_id",
 				UserId:      "user1",
 				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:     "AUTOMATIC",
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -133,6 +142,7 @@ func TestScheduleJob(t *testing.T) {
 					req.GetWorkflowId(),
 					req.GetUserId(),
 					req.GetScheduledAt(),
+					req.GetTrigger(),
 				).Return("", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -348,6 +358,7 @@ func TestGetJob(t *testing.T) {
 					ID:          "job_id",
 					WorkflowID:  "workflow_id",
 					JobStatus:   "PENDING",
+					JobTrigger:  "AUTOMATIC",
 					ScheduledAt: scheduledAt,
 					StartedAt:   startedAt,
 					CompletedAt: completedAt,
@@ -360,6 +371,7 @@ func TestGetJob(t *testing.T) {
 					ID:          "job_id",
 					WorkflowID:  "workflow_id",
 					JobStatus:   "PENDING",
+					JobTrigger:  "AUTOMATIC",
 					ScheduledAt: scheduledAt,
 					StartedAt:   startedAt,
 					CompletedAt: completedAt,
@@ -526,6 +538,7 @@ func TestGetJobByID(t *testing.T) {
 					WorkflowID:  "workflow_id",
 					UserID:      "user1",
 					JobStatus:   "PENDING",
+					JobTrigger:  "AUTOMATIC",
 					ScheduledAt: scheduledAt,
 					StartedAt:   startedAt,
 					CompletedAt: completedAt,
@@ -538,6 +551,7 @@ func TestGetJobByID(t *testing.T) {
 					WorkflowID:  "workflow_id",
 					UserID:      "user1",
 					JobStatus:   "PENDING",
+					JobTrigger:  "AUTOMATIC",
 					ScheduledAt: scheduledAt,
 					StartedAt:   startedAt,
 					CompletedAt: completedAt,
@@ -1631,6 +1645,61 @@ func TestListJobs(t *testing.T) {
 							ID:          "job_id",
 							WorkflowID:  "workflow_id",
 							JobStatus:   "PENDING",
+							ScheduledAt: scheduledAt,
+							StartedAt:   startedAt,
+							CompletedAt: completedAt,
+							CreatedAt:   createdAt,
+							UpdatedAt:   updatedAt,
+						},
+					},
+					Cursor: "",
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "success: with filters",
+			req: &jobspb.ListJobsRequest{
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+				Cursor:     "",
+				Filters: &jobspb.ListJobsFilters{
+					Status:  "PENDING",
+					Trigger: "AUTOMATIC",
+				},
+			},
+			mock: func(req *jobspb.ListJobsRequest) {
+				repo.EXPECT().ListJobs(
+					gomock.Any(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+					req.GetCursor(),
+					gomock.Any(),
+				).Return(&jobsmodel.ListJobsResponse{
+					Jobs: []*jobsmodel.JobByWorkflowIDResponse{
+						{
+							ID:          "job_id",
+							WorkflowID:  "workflow_id",
+							JobStatus:   "PENDING",
+							JobTrigger:  "AUTOMATIC",
+							ScheduledAt: scheduledAt,
+							StartedAt:   startedAt,
+							CompletedAt: completedAt,
+							CreatedAt:   createdAt,
+							UpdatedAt:   updatedAt,
+						},
+					},
+					Cursor: "",
+				}, nil)
+			},
+			want: want{
+				&jobsmodel.ListJobsResponse{
+					Jobs: []*jobsmodel.JobByWorkflowIDResponse{
+						{
+							ID:          "job_id",
+							WorkflowID:  "workflow_id",
+							JobStatus:   "PENDING",
+							JobTrigger:  "AUTOMATIC",
 							ScheduledAt: scheduledAt,
 							StartedAt:   startedAt,
 							CompletedAt: completedAt,

@@ -184,7 +184,6 @@ export function Workflows() {
                                 onClick={() => {
                                     setSearchInput("")
                                     updateSearchQuery("")
-                                    handleClearFilters()
                                 }}
                                 role="button"
                                 aria-label="Clear search and filters"

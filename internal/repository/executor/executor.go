@@ -9,7 +9,6 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -309,13 +308,21 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
 	}()
 
-	// Schedule a new job based on the last scheduledAt time and interval accordingly
-	if _, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		WorkflowId:  workflowID,
-		UserId:      workflow.GetUserId(),
-		ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-	}); err != nil {
-		return err
+	switch job.GetTrigger() {
+	case jobsmodel.JobTriggerAutomatic.ToString():
+		// Schedule a new job based on the last scheduledAt time and interval accordingly
+		if _, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+			WorkflowId:  workflowID,
+			UserId:      workflow.GetUserId(),
+			ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+			Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
+		}); err != nil {
+			return err
+		}
+	case jobsmodel.JobTriggerManual.ToString():
+		// For manual trigger, we do not schedule a new job
+	default:
+		return status.Errorf(codes.FailedPrecondition, "unknown job trigger: %s", job.GetTrigger())
 	}
 
 	start := time.Now()

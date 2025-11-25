@@ -40,6 +40,10 @@ var (
 		"FAILED",
 		"CANCELED",
 	}
+	validJobTriggers = []string{
+		"AUTOMATIC",
+		"MANUAL",
+	}
 	terminalJobStatuses = []string{
 		"COMPLETED",
 		"FAILED",
@@ -182,6 +186,11 @@ func isValidBuildStatus(buildStatus string) bool {
 // isValidJobStatus checks if the given job status is valid.
 func isValidJobStatus(status string) bool {
 	return slices.Contains(validJobStatuses, status)
+}
+
+// isValidJobTrigger checks if the given job trigger is valid.
+func isValidJobTrigger(trigger string) bool {
+	return slices.Contains(validJobTriggers, trigger)
 }
 
 // getJobLogsStreamType returns the joblogs stream type.

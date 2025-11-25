@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
 
 // handleListJobs handles the list jobs by job ID request.
@@ -45,13 +48,24 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get trigger from the query parameters
+	trigger := r.URL.Query().Get("trigger")
+	if trigger != "" {
+		// Validate the job trigger
+		if !isValidJobTrigger(trigger) {
+			http.Error(w, "invalid trigger", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// ListJobs lists the jobs by job ID.
 	res, err := s.jobsClient.ListJobs(r.Context(), &jobspb.ListJobsRequest{
 		WorkflowId: workflowID,
 		UserId:     userID,
 		Cursor:     cursor,
 		Filters: &jobspb.ListJobsFilters{
-			Status: status,
+			Status:  status,
+			Trigger: trigger,
 		},
 	})
 	if err != nil {
@@ -64,6 +78,44 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
+}
+
+// handleManualScheduleJob handles the manual schedule job request.
+func (s *Server) handleManualScheduleJob(w http.ResponseWriter, r *http.Request) {
+	// Get the job ID from the path	parameters
+	workflowID := r.PathValue("workflow_id")
+	if workflowID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// Get the user ID from the context
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return
+	}
+
+	// ScheduleJob schedules the job manually.
+	_, err := s.jobsClient.ScheduleJob(r.Context(), &jobspb.ScheduleJobRequest{
+		WorkflowId:  workflowID,
+		UserId:      userID,
+		ScheduledAt: time.Now().Format(time.RFC3339Nano),
+		Trigger:     jobsmodel.JobTriggerManual.ToString(),
+	})
+	if err != nil {
+		handleError(w, err, "failed to schedule job")
+		return
+	}
+
+	// Write the response
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleGetJob handles the get job by job ID request.

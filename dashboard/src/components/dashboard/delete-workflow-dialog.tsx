@@ -33,7 +33,7 @@ import { Workflow } from "@/hooks/use-workflows"
 interface DeleteWorkflowDialogProps {
     workflow: Workflow
     open: boolean
-    onOpenChange: (open: boolean) => void
+    onOpenChange: (_open: boolean) => void
 }
 
 export function DeleteWorkflowDialog({

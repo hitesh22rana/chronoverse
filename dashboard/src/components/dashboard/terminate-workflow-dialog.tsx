@@ -33,7 +33,7 @@ import { Workflow } from "@/hooks/use-workflows"
 interface TerminateWorkflowDialogProps {
     workflow: Workflow
     open: boolean
-    onOpenChange: (open: boolean) => void
+    onOpenChange: (_open: boolean) => void
 }
 
 export function TerminateWorkflowDialog({
@@ -77,7 +77,7 @@ export function TerminateWorkflowDialog({
 
                 <div className="py-2">
                     <div className="rounded-md bg-destructive/10 p-4 mb-4">
-                        <p className="flex-grow sm:text-sm text-xs text-destructive">
+                        <p className="grow sm:text-sm text-xs text-destructive">
                             Terminating this workflow will terminate all ongoing jobs
                             and prevent any future scheduled executions.
                         </p>

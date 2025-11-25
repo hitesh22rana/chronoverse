@@ -212,40 +212,36 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const jobLogsSSEQuery = useQuery({
         queryKey: jobLogsSSEQueryKey,
         queryFn: async (): Promise<JobLog[]> => {
-            try {
-                const allLogs: JobLog[] = []
-                let cursor: string | undefined = undefined
+            const allLogs: JobLog[] = []
+            let cursor: string | undefined = undefined
 
-                // Fetch all pages of logs
-                while (true) {
-                    const url = cursor
-                        ? `${logsURL}?cursor=${cursor}`
-                        : logsURL
+            // Fetch all pages of logs
+            while (true) {
+                const url = cursor
+                    ? `${logsURL}?cursor=${cursor}`
+                    : logsURL
 
-                    const response = await fetchWithAuth(url)
+                const response = await fetchWithAuth(url)
 
-                    if (!response.ok) {
-                        throw new Error("Failed to fetch job logs")
-                    }
-
-                    const res = await response.json() as JobLogsResponseData
-
-                    if (res.logs && res.logs.length > 0) {
-                        allLogs.push(...res.logs)
-                    }
-
-                    // If there's no cursor, we've fetched all pages
-                    if (!res.cursor) {
-                        break
-                    }
-
-                    cursor = res.cursor
+                if (!response.ok) {
+                    throw new Error("Failed to fetch job logs")
                 }
 
-                return allLogs
-            } catch (error) {
-                throw error
+                const res = await response.json() as JobLogsResponseData
+
+                if (res.logs && res.logs.length > 0) {
+                    allLogs.push(...res.logs)
+                }
+
+                // If there's no cursor, we've fetched all pages
+                if (!res.cursor) {
+                    break
+                }
+
+                cursor = res.cursor
             }
+
+            return allLogs
         },
         enabled: shouldFetch && !getSearchQueryParams && isRunning && !!workflowId && !!jobId,
         staleTime: Infinity,
@@ -293,8 +289,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     firstPass = false;
                     return mergeLogs(existingLogs, [logData])
                 })
-                 
-            } catch (_) { }
+            } catch { /* ignore parsing errors */ }
         })
 
         eventSource.addEventListener('error', () => {

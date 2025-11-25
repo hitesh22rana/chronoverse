@@ -35,7 +35,7 @@ export function Header({ onNotificationsClick, onProfileClick }: HeaderProps) {
                             className="absolute right-0 top-0 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
                         >
                             {count > 9 ?
-                                <span className="absolute -top-0 -right-0.5">
+                                <span className="absolute top-0 -right-0.5">
                                     9+
                                 </span>
                                 : (

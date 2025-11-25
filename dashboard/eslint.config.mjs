@@ -4,6 +4,7 @@ import typescriptPlugin from '@typescript-eslint/eslint-plugin';
 import reactPlugin from 'eslint-plugin-react';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import nextPlugin from '@next/eslint-plugin-next';
+import globals from 'globals';
 
 export default [
   // Recommended rules from ESLint core
@@ -30,8 +31,15 @@ export default [
           jsx: true,
         },
       },
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        React: 'readonly',
+      },
     },
-    rules: {},
+    rules: {
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
     settings: {
       react: {
         version: 'detect',

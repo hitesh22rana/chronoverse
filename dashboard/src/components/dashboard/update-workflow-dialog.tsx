@@ -77,7 +77,7 @@ const heartbeatPayloadSchema = z.object({
             try {
                 const parsed = parseDuration(val as unknown as Duration, 's')
                 return parsed > 0 && parsed <= 300
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                 
             } catch (e) {
                 return false
             }
@@ -101,7 +101,7 @@ const containerPayloadSchema = z.object({
             try {
                 const parsed = parseDuration(val as unknown as Duration, 's')
                 return parsed > 0 && parsed <= 3600
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                 
             } catch (e) {
                 return false
             }

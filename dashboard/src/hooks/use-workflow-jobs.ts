@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { fetchWithAuth } from "@/lib/api-client"
@@ -14,6 +14,7 @@ export type Job = {
     id: string
     workflow_id: string
     status: string
+    trigger: 'AUTOMATIC' | 'MANUAL'
     scheduled_at: string
     started_at?: string
     completed_at?: string
@@ -35,14 +36,17 @@ export function useWorkflowJobs(workflowId: string) {
 
     // Get URL parameters
     let currentCursor = ""
-    let statusFilter = "ALL"
+    let statusFilter = ""
+    let triggerFilter = ""
 
     if (isNotWorkflowPath) {
         currentCursor = ""
-        statusFilter = "ALL"
+        statusFilter = ""
+        triggerFilter = ""
     } else {
         currentCursor = searchParams.get("cursor") || ""
-        statusFilter = searchParams.get("status") || "ALL"
+        statusFilter = searchParams.get("status") || ""
+        triggerFilter = searchParams.get("trigger") || ""
     }
 
     // Build query parameters for the get jobs request
@@ -57,11 +61,15 @@ export function useWorkflowJobs(workflowId: string) {
             params.set("status", statusFilter)
         }
 
+        if (triggerFilter && triggerFilter !== "ALL") {
+            params.set("trigger", triggerFilter)
+        }
+
         return params.toString()
-    }, [currentCursor, statusFilter])
+    }, [currentCursor, statusFilter, triggerFilter])
 
     const getJobQuery = useQuery({
-        queryKey: ["workflow-jobs", workflowId, currentCursor, statusFilter],
+        queryKey: ["workflow-jobs", workflowId, currentCursor, statusFilter, triggerFilter],
         queryFn: async () => {
             const url = getJobQueryParams ?
                 `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs?${getJobQueryParams}` :
@@ -105,7 +113,7 @@ export function useWorkflowJobs(workflowId: string) {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
 
-        const { status } = filters as { status?: string }
+        const { status, trigger } = filters as { status?: string, trigger?: string }
 
         if (status && status !== "ALL") {
             params.set("status", status)
@@ -113,13 +121,50 @@ export function useWorkflowJobs(workflowId: string) {
             params.delete("status")
         }
 
+        if (trigger && trigger !== "ALL") {
+            params.set("trigger", trigger)
+        } else {
+            params.delete("trigger")
+        }
+
         router.push(`?${params.toString()}`)
     }, [router, searchParams])
 
-    // Handle errors
+    // Clear all filters
+    const clearAllFilters = useCallback(() => {
+        const oldParams = new URLSearchParams(searchParams.toString())
+        const tab = oldParams.get("tab")
+
+        const params = new URLSearchParams()
+        if (tab) {
+            params.set("tab", tab)
+        }
+
+        router.push(`?${params.toString()}`)
+    }, [router, searchParams])
+
     if (getJobQuery.error instanceof Error) {
         toast.error(getJobQuery.error.message)
     }
+
+    const manualRunJobMutation = useMutation({
+        mutationFn: async () => {
+            const response = await fetchWithAuth(`${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs/schedule`, {
+                method: "POST",
+            })
+
+            if (!response.ok) {
+                throw new Error("Failed to schedule job")
+            }
+        },
+        onSuccess: () => {
+            toast.success("Job scheduled successfully")
+            getJobQuery.refetch()
+        },
+        onError: (error) => {
+            toast.error(error.message)
+        }
+    })
 
     return {
         jobs: getJobQuery?.data?.jobs || [],
@@ -127,7 +172,10 @@ export function useWorkflowJobs(workflowId: string) {
         error: getJobQuery.error,
         refetch: getJobQuery.refetch,
         isRefetching: getJobQuery.isRefetching,
+        statusFilter,
+        triggerFilter,
         applyAllFilters,
+        clearAllFilters,
         pagination: {
             nextCursor: getJobQuery?.data?.cursor,
             hasNextPage: !!getJobQuery?.data?.cursor,
@@ -136,6 +184,9 @@ export function useWorkflowJobs(workflowId: string) {
             goToPreviousPage,
             resetPagination,
             currentPage: currentCursor ? 'paginated' : 'first'
-        }
+        },
+        manualRunJob: manualRunJobMutation.mutate,
+        isManualRunJobPending: manualRunJobMutation.isPending,
+        manualRunJobError: manualRunJobMutation.error,
     }
 }

@@ -13,7 +13,6 @@ import { ProfileDrawer } from "@/components/dashboard/profile-drawer"
 import { useWorkflows } from "@/hooks/use-workflows"
 
 import { cn } from "@/lib/utils"
-import { Loader } from "lucide-react"
 
 export default function DashboardLayout({
   children,
@@ -21,11 +20,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center w-full h-full">
-        <Loader className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    }>
+    <Suspense>
       <ViewTransition>
         <Layout>
           {children}

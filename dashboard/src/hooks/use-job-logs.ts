@@ -293,7 +293,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     firstPass = false;
                     return mergeLogs(existingLogs, [logData])
                 })
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                 
             } catch (_) { }
         })
 

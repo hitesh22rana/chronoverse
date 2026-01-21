@@ -1,0 +1,1 @@
+ALTER TABLE workflows ADD COLUMN "log_retention" BOOLEAN NOT NULL DEFAULT TRUE;

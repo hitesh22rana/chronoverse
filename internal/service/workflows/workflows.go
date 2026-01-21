@@ -34,7 +34,7 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
-	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32) (*workflowsmodel.GetWorkflowResponse, error)
+	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32, logRetention bool) (*workflowsmodel.GetWorkflowResponse, error)
 	UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error
 	UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) error
 	GetWorkflow(ctx context.Context, workflowID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
@@ -80,6 +80,7 @@ type CreateWorkflowRequest struct {
 	Kind                             string `validate:"required"`
 	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
 	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed
+	LogRetention                     bool   `validate:"required"`
 }
 
 // CreateWorkflow a new job.
@@ -104,6 +105,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		Kind:                             req.GetKind(),
 		Interval:                         req.GetInterval(),
 		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
+		LogRetention:                     req.GetLogRetention(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -135,6 +137,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		req.GetKind(),
 		req.GetInterval(),
 		req.GetMaxConsecutiveJobFailuresAllowed(),
+		req.GetLogRetention(),
 	)
 	if err != nil {
 		return "", err

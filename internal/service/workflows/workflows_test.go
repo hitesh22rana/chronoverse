@@ -48,6 +48,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     true,
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -58,6 +59,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetKind(),
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
+					req.GetLogRetention(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
@@ -73,6 +75,7 @@ func TestCreateWorkflow(t *testing.T) {
 						Time:  time.Now(),
 						Valid: true,
 					},
+					LogRetention: true,
 				}, nil)
 
 				// Simulate a cache delete by pattern
@@ -97,11 +100,12 @@ func TestCreateWorkflow(t *testing.T) {
 		{
 			name: "error: missing required fields in request",
 			req: &workflowspb.CreateWorkflowRequest{
-				UserId:   "",
-				Name:     "workflow1",
-				Payload:  `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-				Kind:     "",
-				Interval: 1,
+				UserId:       "",
+				Name:         "workflow1",
+				Payload:      `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+				Kind:         "",
+				Interval:     1,
+				LogRetention: true,
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -116,6 +120,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         0,
 				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     true,
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -130,6 +135,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 0,
+				LogRetention:                     true,
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -144,6 +150,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     true,
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -154,6 +161,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetKind(),
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
+					req.GetLogRetention(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -535,6 +543,7 @@ func TestGetWorkflow(t *testing.T) {
 					CreatedAt:                        createdAt,
 					UpdatedAt:                        updatedAt,
 					TerminatedAt:                     terminatedAt,
+					LogRetention:                     true,
 				}, nil)
 
 				// Simulate a cache delete by pattern
@@ -564,6 +573,7 @@ func TestGetWorkflow(t *testing.T) {
 					CreatedAt:                        createdAt,
 					UpdatedAt:                        updatedAt,
 					TerminatedAt:                     terminatedAt,
+					LogRetention:                     true,
 				},
 			},
 			isErr: false,
@@ -592,6 +602,7 @@ func TestGetWorkflow(t *testing.T) {
 					CreatedAt:                        createdAt,
 					UpdatedAt:                        updatedAt,
 					TerminatedAt:                     terminatedAt,
+					LogRetention:                     true,
 				}, nil)
 			},
 			want: want{
@@ -607,6 +618,7 @@ func TestGetWorkflow(t *testing.T) {
 					CreatedAt:                        createdAt,
 					UpdatedAt:                        updatedAt,
 					TerminatedAt:                     terminatedAt,
+					LogRetention:                     true,
 				},
 			},
 			isErr: false,
@@ -768,6 +780,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					CreatedAt:                        createdAt,
 					UpdatedAt:                        updatedAt,
 					TerminatedAt:                     terminatedAt,
+					LogRetention:                     true,
 				}, nil)
 			},
 			want: want{
@@ -784,6 +797,7 @@ func TestGetWorkflowByID(t *testing.T) {
 					CreatedAt:                        createdAt,
 					UpdatedAt:                        updatedAt,
 					TerminatedAt:                     terminatedAt,
+					LogRetention:                     true,
 				},
 			},
 			isErr: false,
@@ -1392,6 +1406,7 @@ func TestListWorkflows(t *testing.T) {
 							CreatedAt:                        createdAt,
 							UpdatedAt:                        updatedAt,
 							TerminatedAt:                     terminatedAt,
+							LogRetention:                     true,
 						},
 					},
 					Cursor: "",
@@ -1420,6 +1435,7 @@ func TestListWorkflows(t *testing.T) {
 							CreatedAt:                        createdAt,
 							UpdatedAt:                        updatedAt,
 							TerminatedAt:                     terminatedAt,
+							LogRetention:                     true,
 						},
 					},
 					Cursor: "",
@@ -1453,6 +1469,7 @@ func TestListWorkflows(t *testing.T) {
 							CreatedAt:                        createdAt,
 							UpdatedAt:                        updatedAt,
 							TerminatedAt:                     terminatedAt,
+							LogRetention:                     true,
 						},
 					},
 					Cursor: "",
@@ -1473,6 +1490,7 @@ func TestListWorkflows(t *testing.T) {
 							CreatedAt:                        createdAt,
 							UpdatedAt:                        updatedAt,
 							TerminatedAt:                     terminatedAt,
+							LogRetention:                     true,
 						},
 					},
 					Cursor: "",

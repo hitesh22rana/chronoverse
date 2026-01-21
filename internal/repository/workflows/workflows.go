@@ -63,6 +63,7 @@ func (r *Repository) CreateWorkflow(
 	kind string,
 	interval,
 	maxConsecutiveJobFailuresAllowed int32,
+	logRetention bool,
 ) (res *workflowsmodel.GetWorkflowResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CreateWorkflow")
 	defer func() {
@@ -94,11 +95,11 @@ func (r *Repository) CreateWorkflow(
 	var args []any
 
 	query = fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, payload, kind, interval,max_consecutive_job_failures_allowed)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, payload, kind, build_status, interval,consecutive_job_failures_count, max_consecutive_job_failures_allowed,created_at, updated_at, terminated_at;
+		INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed, log_retention)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, name, payload, kind, build_status, interval,consecutive_job_failures_count, max_consecutive_job_failures_allowed,created_at, updated_at, terminated_at, log_retention;
 	`, postgres.TableWorkflows)
-	args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed}
+	args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed, logRetention}
 
 	rows, err := tx.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -343,7 +344,7 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
+		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at, log_retention
 		FROM %s
 		WHERE id = $1 AND user_id = $2
 		LIMIT 1;
@@ -387,7 +388,7 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
+		SELECT id, user_id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at, log_retention
 		FROM %s
 		WHERE id = $1
 		LIMIT 1;
@@ -820,7 +821,7 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 
 	// Base query for user's workflows
 	query := fmt.Sprintf(`
-        SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at
+        SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at, log_retention
         FROM %s
         WHERE user_id = $1
     `, postgres.TableWorkflows)

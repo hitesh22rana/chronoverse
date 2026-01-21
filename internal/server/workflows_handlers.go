@@ -15,6 +15,7 @@ type createWorkflowRequest struct {
 	Kind                             string `json:"kind"`
 	Interval                         int32  `json:"interval"`
 	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed"`
+	LogRetention                     bool   `json:"log_retention"`
 }
 
 // handleCreateWorkflow handles the create workflow request.
@@ -46,6 +47,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		Kind:                             req.Kind,
 		Interval:                         req.Interval,
 		MaxConsecutiveJobFailuresAllowed: req.MaxConsecutiveJobFailuresAllowed,
+		LogRetention:                     req.LogRetention,
 	})
 	if err != nil {
 		handleError(w, err, "failed to create workflow")

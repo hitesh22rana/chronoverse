@@ -30,6 +30,7 @@ type CreateWorkflowRequest struct {
 	Kind                             string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                                        // Kind of workflow
 	Interval                         int32                  `protobuf:"varint,5,opt,name=interval,proto3" json:"interval,omitempty"`                                                                                               // Interval measured in minutes
 	MaxConsecutiveJobFailuresAllowed int32                  `protobuf:"varint,6,opt,name=max_consecutive_job_failures_allowed,json=maxConsecutiveJobFailuresAllowed,proto3" json:"max_consecutive_job_failures_allowed,omitempty"` // Maximum number of consecutive job failures allowed
+	LogRetention                     bool                   `protobuf:"varint,7,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                   // Indicates log retention status
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -104,6 +105,13 @@ func (x *CreateWorkflowRequest) GetMaxConsecutiveJobFailuresAllowed() int32 {
 		return x.MaxConsecutiveJobFailuresAllowed
 	}
 	return 0
+}
+
+func (x *CreateWorkflowRequest) GetLogRetention() bool {
+	if x != nil {
+		return x.LogRetention
+	}
+	return false
 }
 
 // CreateWorkflowResponse contains the result of a workflow creation attempt.
@@ -438,6 +446,7 @@ type GetWorkflowResponse struct {
 	CreatedAt                        string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                                                             // Time the workflow was created
 	UpdatedAt                        string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
 	TerminatedAt                     string                 `protobuf:"bytes,11,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
+	LogRetention                     bool                   `protobuf:"varint,12,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -549,6 +558,13 @@ func (x *GetWorkflowResponse) GetTerminatedAt() string {
 	return ""
 }
 
+func (x *GetWorkflowResponse) GetLogRetention() bool {
+	if x != nil {
+		return x.LogRetention
+	}
+	return false
+}
+
 // GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
 type GetWorkflowByIDRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -609,6 +625,7 @@ type GetWorkflowByIDResponse struct {
 	CreatedAt                        string                 `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                                                            // Time the workflow was created
 	UpdatedAt                        string                 `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
 	TerminatedAt                     string                 `protobuf:"bytes,12,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
+	LogRetention                     bool                   `protobuf:"varint,13,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -725,6 +742,13 @@ func (x *GetWorkflowByIDResponse) GetTerminatedAt() string {
 		return x.TerminatedAt
 	}
 	return ""
+}
+
+func (x *GetWorkflowByIDResponse) GetLogRetention() bool {
+	if x != nil {
+		return x.LogRetention
+	}
+	return false
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
@@ -1254,6 +1278,7 @@ type WorkflowsByUserIDResponse struct {
 	CreatedAt                        string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                                                             // Time the workflow was created
 	UpdatedAt                        string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
 	TerminatedAt                     string                 `protobuf:"bytes,12,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
+	LogRetention                     bool                   `protobuf:"varint,11,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -1365,6 +1390,13 @@ func (x *WorkflowsByUserIDResponse) GetTerminatedAt() string {
 	return ""
 }
 
+func (x *WorkflowsByUserIDResponse) GetLogRetention() bool {
+	if x != nil {
+		return x.LogRetention
+	}
+	return false
+}
+
 // ListWorkflowsResponse contains the result of a workflow listing attempt.
 type ListWorkflowsResponse struct {
 	state         protoimpl.MessageState       `protogen:"open.v1"`
@@ -1422,14 +1454,15 @@ var File_workflows_workflows_proto protoreflect.FileDescriptor
 
 const file_workflows_workflows_proto_rawDesc = "" +
 	"\n" +
-	"\x19workflows/workflows.proto\x12\tworkflows\"\xde\x01\n" +
+	"\x19workflows/workflows.proto\x12\tworkflows\"\x83\x02\n" +
 	"\x15CreateWorkflowRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x1a\n" +
 	"\binterval\x18\x05 \x01(\x05R\binterval\x12N\n" +
-	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\"(\n" +
+	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\x12#\n" +
+	"\rlog_retention\x18\a \x01(\bR\flogRetention\"(\n" +
 	"\x16CreateWorkflowResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\xda\x01\n" +
 	"\x15UpdateWorkflowRequest\x12\x0e\n" +
@@ -1447,7 +1480,7 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"!UpdateWorkflowBuildStatusResponse\"=\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x9e\x03\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\xc3\x03\n" +
 	"\x13GetWorkflowResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -1462,9 +1495,10 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\n" +
 	" \x01(\tR\tupdatedAt\x12#\n" +
-	"\rterminated_at\x18\v \x01(\tR\fterminatedAt\"(\n" +
+	"\rterminated_at\x18\v \x01(\tR\fterminatedAt\x12#\n" +
+	"\rlog_retention\x18\f \x01(\bR\flogRetention\"(\n" +
 	"\x16GetWorkflowByIDRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xbb\x03\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xe0\x03\n" +
 	"\x17GetWorkflowByIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
@@ -1480,7 +1514,8 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	" \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"updated_at\x18\v \x01(\tR\tupdatedAt\x12#\n" +
-	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\"^\n" +
+	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\x12#\n" +
+	"\rlog_retention\x18\r \x01(\bR\flogRetention\"^\n" +
 	"3IncrementWorkflowConsecutiveJobFailuresCountRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"c\n" +
@@ -1510,7 +1545,7 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12>\n" +
 	"\afilters\x18\x03 \x01(\v2\x1f.workflows.ListWorkflowsFiltersH\x00R\afilters\x88\x01\x01B\n" +
 	"\n" +
-	"\b_filters\"\xa4\x03\n" +
+	"\b_filters\"\xc9\x03\n" +
 	"\x19WorkflowsByUserIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -1525,7 +1560,8 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\n" +
 	" \x01(\tR\tupdatedAt\x12#\n" +
-	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\"s\n" +
+	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\x12#\n" +
+	"\rlog_retention\x18\v \x01(\bR\flogRetention\"s\n" +
 	"\x15ListWorkflowsResponse\x12B\n" +
 	"\tworkflows\x18\x01 \x03(\v2$.workflows.WorkflowsByUserIDResponseR\tworkflows\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor2\xd7\b\n" +

@@ -12,6 +12,7 @@ message CreateWorkflowRequest {
     string kind                                = 4; // Kind of workflow
     int32 interval                             = 5; // Interval measured in minutes
     int32 max_consecutive_job_failures_allowed = 6; // Maximum number of consecutive job failures allowed
+    bool log_retention                         = 7; // Indicates log retention status
 }
 
 // CreateWorkflowResponse contains the result of a workflow creation attempt.
@@ -61,6 +62,7 @@ message GetWorkflowResponse {
     string created_at                          = 9; // Time the workflow was created
     string updated_at                          = 10; // Time the workflow was last updated
     string terminated_at                       = 11; // Time the workflow was terminated
+    bool log_retention                         = 12; // Indicates log retention status
 }
 
 // GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
@@ -82,6 +84,7 @@ message GetWorkflowByIDResponse {
     string created_at                          = 10; // Time the workflow was created
     string updated_at                          = 11; // Time the workflow was last updated
     string terminated_at                       = 12; // Time the workflow was terminated
+    bool log_retention                         = 13; // Indicates log retention status
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
@@ -151,6 +154,7 @@ message WorkflowsByUserIDResponse {
     string created_at                          = 9; // Time the workflow was created
     string updated_at                          = 10; // Time the workflow was last updated
     string terminated_at                       = 12; // Time the workflow was terminated
+    bool log_retention                         = 11; // Indicates log retention status
 }
 
 // ListWorkflowsResponse contains the result of a workflow listing attempt.

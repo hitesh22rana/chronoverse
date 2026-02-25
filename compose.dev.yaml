@@ -734,6 +734,12 @@ services:
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
       GRPC_TLS_CERT_FILE: certs/jobs-service/jobs-service.crt
       GRPC_TLS_KEY_FILE: certs/jobs-service/jobs-service.key
+      CLIENT_TLS_CERT_FILE: certs/clients/client.crt
+      CLIENT_TLS_KEY_FILE: certs/clients/client.key
+      WORKFLOWS_SERVICE_HOST: workflows-service
+      WORKFLOWS_SERVICE_PORT: 50052
+      WORKFLOWS_SERVICE_TLS_ENABLED: true
+      WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       ENV: development
@@ -784,6 +790,8 @@ services:
         condition: service_completed_successfully
       init-database-migration:
         condition: service_completed_successfully
+      workflows-service:
+        condition: service_healthy
     networks:
       - chronoverse
 

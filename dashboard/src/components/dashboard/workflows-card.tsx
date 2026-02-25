@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { formatDistanceToNow } from "date-fns"
-import { Clock, AlertTriangle } from "lucide-react"
+import { Clock, AlertTriangle, Database } from "lucide-react"
 
 import {
     Card,
@@ -83,6 +83,18 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                         <span>Runs {interval}</span>
                     </div>
 
+                    {workflow.log_retention ? (
+                        <div className="flex items-center text-xs text-green-600 dark:text-green-400 mt-1.5">
+                            <Database className="h-3.5 w-3.5 mr-1.5" />
+                            <span>Logs retained</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center text-xs text-red-600 dark:text-red-400 mt-1.5">
+                            <Database className="h-3.5 w-3.5 mr-1.5" />
+                            <span>Logs not retained</span>
+                        </div>
+                    )}
+
                     <div className="mt-3">
                         <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center text-orange-600 dark:text-orange-400">
@@ -134,16 +146,24 @@ export function WorkflowCardSkeleton() {
                     <Skeleton className="h-3.5 w-28" />
                 </div>
 
-                <div className="mt-3">
+                <div className="flex items-center text-xs text-muted-foreground mt-1.5">
+                    <Skeleton className="h-3.5 w-3.5 mr-1.5 rounded-full" />
+                    <Skeleton className="h-3.5 w-28" />
+                </div>
+
+                <div className="mt-3.5">
                     <div className="flex items-center justify-between mb-1">
-                        <Skeleton className="h-3.5 w-16" />
+                        <div className="flex">
+                            <Skeleton className="h-3.5 w-3.5 mr-0.5 rounded-full" />
+                            <Skeleton className="h-3.5 w-16" />
+                        </div>
                         <Skeleton className="h-3.5 w-8" />
                     </div>
                     <Skeleton className="h-1 w-full rounded-full" />
                 </div>
             </CardContent>
 
-            <CardFooter className="px-4 border-t">
+            <CardFooter className="px-4 pb-0.5 border-t">
                 <Skeleton className="h-3.5 w-32 ml-auto" />
             </CardFooter>
         </Card>

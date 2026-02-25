@@ -8,8 +8,11 @@ import { Duration, parseDuration } from '@alwatr/parse-duration'
 import {
     Loader2,
     Plus,
-    Trash2
+    Trash2,
+    Database
 } from "lucide-react"
+
+import { Switch } from "@/components/ui/switch"
 
 import {
     Dialog,
@@ -59,7 +62,8 @@ const baseCreateWorkflowSchema = z.object({
         .refine(val => val === undefined || (val >= 1 && val <= 10080), {
             message: "Must be between 1 and 10080 minutes (1 week)"
         }),
-    maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(3).max(100).default(3)
+    maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(3).max(100).default(3),
+    retainLogs: z.boolean().default(true)
 })
 
 // Heartbeat payload schema
@@ -82,7 +86,6 @@ const heartbeatPayloadSchema = z.object({
             try {
                 const parsed = parseDuration(val as unknown as Duration, 's')
                 return parsed > 0 && parsed <= 300
-                 
             } catch {
                 return false
             }
@@ -106,7 +109,6 @@ const containerPayloadSchema = z.object({
             try {
                 const parsed = parseDuration(val as unknown as Duration, 's')
                 return parsed > 0 && parsed <= 3600
-                 
             } catch {
                 return false
             }
@@ -117,7 +119,10 @@ const containerPayloadSchema = z.object({
 const heartbeatWorkflowSchema = baseCreateWorkflowSchema.extend({
     kind: z.literal("HEARTBEAT"),
     heartbeatPayload: heartbeatPayloadSchema,
-})
+}).transform(data => ({
+    ...data,
+    retainLogs: false // HEARTBEAT workflows always have log_retention as false
+}))
 
 const containerWorkflowSchema = baseCreateWorkflowSchema.extend({
     kind: z.literal("CONTAINER"),
@@ -155,6 +160,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
             kind: "HEARTBEAT",
             interval: 5,
             maxConsecutiveJobFailuresAllowed: 3,
+            retainLogs: true,
             heartbeatPayload: {
                 endpoint: "",
                 expectedStatusCode: 200,
@@ -204,6 +210,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 kind: "HEARTBEAT",
                 interval: 5,
                 maxConsecutiveJobFailuresAllowed: 3,
+                retainLogs: true,
                 heartbeatPayload: {
                     endpoint: "",
                     expectedStatusCode: 200,
@@ -257,7 +264,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
             kind: data.kind,
             payload: payload,
             interval: data.interval as number,
-            max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed
+            max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed,
+            log_retention: data.retainLogs
         })
         form.reset()
         onOpenChange(false)
@@ -707,6 +715,32 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                 </FormItem>
                             )}
                         />
+
+                        {selectedKind === "CONTAINER" && (
+                            <FormField
+                                control={form.control}
+                                name="retainLogs"
+                                render={({ field }) => (
+                                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                        <div className="space-y-0.5">
+                                            <div className="flex items-center gap-2">
+                                                <Database className="h-4 w-4" />
+                                                <FormLabel>Retain logs</FormLabel>
+                                            </div>
+                                            <FormDescription>
+                                                Keep job logs for historical records and debugging purposes
+                                            </FormDescription>
+                                        </div>
+                                        <FormControl>
+                                            <Switch
+                                                checked={field.value}
+                                                onCheckedChange={field.onChange}
+                                            />
+                                        </FormControl>
+                                    </FormItem>
+                                )}
+                            />
+                        )}
 
                         <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <Button

@@ -22,6 +22,7 @@ import {
     ChevronRight,
     ScrollText,
     Workflow,
+    Database,
     Edit,
     Trash2,
     HeartPulse,
@@ -496,7 +497,7 @@ export default function WorkflowDetailsAndJobsPage() {
                         <Card>
                             <CardContent className="space-y-4">
                                 {/* Basic Info */}
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                                     <div className="space-y-2">
                                         <span className="text-sm font-medium">Workflow kind</span>
                                         <div className="text-sm text-muted-foreground flex items-center gap-2">
@@ -531,6 +532,13 @@ export default function WorkflowDetailsAndJobsPage() {
                                         <div className="text-sm text-muted-foreground flex items-center gap-2">
                                             <Shield className="h-4 w-4" />
                                             {workflow?.max_consecutive_job_failures_allowed}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <span className="text-sm font-medium">Log retention</span>
+                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                            <Database className="h-4 w-4" />
+                                            {workflow?.log_retention ? "Enabled" : "Disabled"}
                                         </div>
                                     </div>
                                 </div>
@@ -679,7 +687,7 @@ function WorkflowDetailsSkeleton() {
         <Card>
             <CardContent className="space-y-2">
                 {/* Basic Info Skeleton */}
-                <div className="grid grid-cols-1 md:grid-cols-4 md:gap-4 gap-5 pb-2 pt-1">
+                <div className="grid grid-cols-1 md:grid-cols-5 md:gap-4 gap-5 pb-2 pt-1">
                     <div className="space-y-2">
                         <Skeleton className="h-4 w-24" />
                         <div className="flex flex-row items-center gap-2">
@@ -705,6 +713,13 @@ function WorkflowDetailsSkeleton() {
                         <div className="flex flex-row items-center gap-2">
                             <Skeleton className="h-4 w-4 rounded-full" />
                             <Skeleton className="h-3.5 w-6" />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Skeleton className="h-4 w-24" />
+                        <div className="flex flex-row items-center gap-2">
+                            <Skeleton className="h-4 w-4 rounded-full" />
+                            <Skeleton className="h-3.5 w-16" />
                         </div>
                     </div>
                 </div>

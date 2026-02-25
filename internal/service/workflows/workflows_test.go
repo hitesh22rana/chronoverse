@@ -48,7 +48,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
-				LogRetention:                     true,
+				LogRetention:                     false,
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -75,7 +75,7 @@ func TestCreateWorkflow(t *testing.T) {
 						Time:  time.Now(),
 						Valid: true,
 					},
-					LogRetention: true,
+					LogRetention: false,
 				}, nil)
 
 				// Simulate a cache delete by pattern
@@ -150,7 +150,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
-				LogRetention:                     true,
+				LogRetention:                     false,
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(

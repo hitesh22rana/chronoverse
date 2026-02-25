@@ -23,7 +23,10 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 	goredis "github.com/redis/go-redis/v9"
 
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
+
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -32,9 +35,15 @@ import (
 )
 
 const (
+	authSubject           = "internal/jobs"
 	delimiter             = '$'
 	jobStatusUpdateBuffer = time.Minute // 1 minute
 )
+
+// Services represents the services used by the executor.
+type Services struct {
+	Workflows workflowspb.WorkflowsServiceClient
+}
 
 // Config represents the repository constants configuration.
 type Config struct {
@@ -44,28 +53,32 @@ type Config struct {
 
 // Repository provides jobs repository.
 type Repository struct {
-	tp  trace.Tracer
-	cfg *Config
-	pg  *postgres.Postgres
-	rdb *redis.Store
-	ch  *clickhouse.Client
-	ms  meilisearch.ServiceManager
+	tp   trace.Tracer
+	cfg  *Config
+	auth auth.IAuth
+	pg   *postgres.Postgres
+	rdb  *redis.Store
+	ch   *clickhouse.Client
+	ms   meilisearch.ServiceManager
+	svc  *Services
 }
 
 // New creates a new jobs repository.
-func New(cfg *Config, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager) *Repository {
+func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager, svc *Services) *Repository {
 	return &Repository{
-		tp:  otel.Tracer(svcpkg.Info().GetName()),
-		cfg: cfg,
-		pg:  pg,
-		rdb: rdb,
-		ch:  ch,
-		ms:  ms,
+		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		cfg:  cfg,
+		auth: auth,
+		pg:   pg,
+		rdb:  rdb,
+		ch:   ch,
+		ms:   ms,
+		svc:  svc,
 	}
 }
 
 // ScheduleJob schedules a job.
-func (r Repository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (jobID string, err error) {
+func (r *Repository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (jobID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ScheduleJob")
 	defer func() {
 		if err != nil {
@@ -276,6 +289,27 @@ func (r *Repository) GetJobLogs(
 		span.End()
 	}()
 
+	// Issue necessary headers and tokens for authorization
+	ctx, ctxErr := r.withAuthorization(ctx)
+	if ctxErr != nil {
+		err = ctxErr
+		return nil, "", err
+	}
+
+	// Validate workflow retention policy
+	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
+		Id:     workflowID,
+		UserId: userID,
+	})
+	if workflowErr != nil {
+		err = workflowErr
+		return nil, "", err
+	}
+	if !workflow.GetLogRetention() {
+		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
+		return nil, "", err
+	}
+
 	logQueryArgs := []any{jobID, workflowID, userID}
 	logsQuery := fmt.Sprintf(`
 	SELECT timestamp, message, sequence_num, stream
@@ -413,6 +447,27 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		span.End()
 	}()
 
+	// Issue necessary headers and tokens for authorization
+	ctx, ctxErr := r.withAuthorization(ctx)
+	if ctxErr != nil {
+		err = ctxErr
+		return nil, err
+	}
+
+	// Validate workflow retention policy
+	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
+		Id:     workflowID,
+		UserId: userID,
+	})
+	if workflowErr != nil {
+		err = workflowErr
+		return nil, err
+	}
+	if !workflow.GetLogRetention() {
+		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
+		return nil, err
+	}
+
 	// Validate whether the user has access to the job
 	query := fmt.Sprintf(`
 		SELECT id, status
@@ -471,6 +526,27 @@ func (r *Repository) SearchJobLogs(
 		}
 		span.End()
 	}()
+
+	// Issue necessary headers and tokens for authorization
+	ctx, ctxErr := r.withAuthorization(ctx)
+	if ctxErr != nil {
+		err = ctxErr
+		return nil, "", err
+	}
+
+	// Validate workflow retention policy
+	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
+		Id:     workflowID,
+		UserId: userID,
+	})
+	if workflowErr != nil {
+		err = workflowErr
+		return nil, "", err
+	}
+	if !workflow.GetLogRetention() {
+		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
+		return nil, "", err
+	}
 
 	filter := fmt.Sprintf(
 		`user_id = %q AND workflow_id = %q AND job_id = %q`,
@@ -714,6 +790,26 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		Jobs:   data,
 		Cursor: encodeListJobsCursor(cursor),
 	}, nil
+}
+
+// withAuthorization issues the necessary headers and tokens for authorization.
+func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
+	// Attach the audience and role to the context
+	ctx = auth.WithAudience(ctx, svcpkg.Info().GetName())
+	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
+
+	// Issue a new token
+	authToken, err := r.auth.IssueToken(ctx, authSubject)
+	if err != nil {
+		return nil, err
+	}
+
+	// Attach all the necessary headers and tokens to the context
+	ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
+	ctx = auth.WithRoleInMetadata(ctx, auth.RoleAdmin)
+	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
+
+	return ctx, nil
 }
 
 // parseTime parses the time.

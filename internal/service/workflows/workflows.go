@@ -80,7 +80,7 @@ type CreateWorkflowRequest struct {
 	Kind                             string `validate:"required"`
 	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
 	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed
-	LogRetention                     bool   `validate:"required"`
+	LogRetention                     bool   `validate:"omitempty"`                // Whether to retain logs for the workflow. Optional, defaults to false.
 }
 
 // CreateWorkflow a new job.
@@ -115,6 +115,10 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 	// Validation based on kind
 	switch req.GetKind() {
 	case workflowsmodel.KindHeartbeat.ToString():
+		if req.GetLogRetention() {
+			return "", status.Errorf(codes.InvalidArgument, "log retention is not supported for heartbeat kind")
+		}
+
 		_, err = heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
 		if err != nil {
 			return "", err

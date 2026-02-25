@@ -288,6 +288,11 @@ func (r *Repository) Run(ctx context.Context) error {
 				// Publish logs to Redis Pub/Sub in a separate goroutine
 				// This allows to continue processing without waiting for Redis, since it's not critical to block the batch processing on Redis publishing.
 				go func(logEntry *jobsmodel.JobLogEvent) {
+					// Skip if log retention is disabled
+					if !logEntry.Retention {
+						return
+					}
+
 					data, err := json.Marshal(logEntry)
 					if err != nil {
 						return // Skip this log entry

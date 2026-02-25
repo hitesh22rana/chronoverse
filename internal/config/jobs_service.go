@@ -11,6 +11,8 @@ type JobsConfig struct {
 	Redis
 	ClickHouse
 	MeiliSearch
+	ClientTLS
+	WorkflowsService
 	JobsServiceConfig
 }
 

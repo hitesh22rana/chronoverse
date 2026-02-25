@@ -87,6 +87,7 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 					TimeStamp:   log.Timestamp,
 					SequenceNum: log.SequenceNum,
 					Stream:      log.Stream,
+					Retention:   workflow.GetLogRetention(),
 				})
 				if err != nil {
 					continue

@@ -80,10 +80,15 @@ export function LogsViewer({
         hasNextPage,
         downloadLogsMutation,
         isDownloadLogsMutationLoading,
+        isRetentionDisabled,
+        isLogsUnsupportedForKind,
+        workflowKind,
+        isWorkflowLoading,
     } = useJobLogs(workflowId, jobId, jobStatus)
 
     const [searchInput, setSearchInput] = useState(searchQuery)
     const [stream, setStream] = useState(streamFilter || "all")
+    const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
 
     // Debounced search update
     useEffect(() => {
@@ -189,6 +194,7 @@ export function LogsViewer({
                             onFocus={() => setIsSearchFocused(true)}
                             onBlur={() => setIsSearchFocused(false)}
                             className="pl-10 pr-8 w-full"
+                            disabled={disableLogInteractions}
                         />
                         <div className="absolute right-14 flex items-center">
                             {isSearchPending && <Loader2 className="size-4 animate-spin" />}
@@ -196,7 +202,7 @@ export function LogsViewer({
                         <div className="flex items-center gap-2">
                             <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                                 <PopoverTrigger asChild>
-                                    <Button variant="outline" size="icon" aria-label="Filter logs">
+                                    <Button variant="outline" size="icon" aria-label="Filter logs" disabled={disableLogInteractions}>
                                         <Filter className="size-4" />
                                     </Button>
                                 </PopoverTrigger>
@@ -258,7 +264,7 @@ export function LogsViewer({
                             variant="outline"
                             size="sm"
                             onClick={() => downloadLogsMutation.mutate()}
-                            disabled={isDownloadLogsMutationLoading || logs.length === 0 || jobStatus === "RUNNING"}
+                            disabled={disableLogInteractions || isDownloadLogsMutationLoading || logs.length === 0 || jobStatus === "RUNNING"}
                         >
                             {isDownloadLogsMutationLoading ? (
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -272,7 +278,7 @@ export function LogsViewer({
             </CardHeader>
 
             <CardContent className="flex flex-col flex-1 w-full h-full font-mono text-sm md:p-2 p-0">
-                {isLogsLoading || !jobStatus ? (
+                {isLogsLoading || !jobStatus || isWorkflowLoading ? (
                     <div className="flex items-center justify-center h-full m-auto">
                         <div className="flex items-center gap-2">
                             <Loader2 className="h-6 w-6 animate-spin" />
@@ -295,6 +301,18 @@ export function LogsViewer({
                         className="flex flex-1 w-full h-full"
                         followOutput={jobStatus === "RUNNING" && "smooth"}
                     />
+                ) : isLogsUnsupportedForKind ? (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
+                        <div className="text-lg mb-2">No logs available</div>
+                        <div className="text-sm text-center">
+                            Logs are not available for <span className="dark:text-white text-black font-semibold">{workflowKind?.charAt(0) + workflowKind?.substring(1).toLowerCase()}</span> workflows.
+                        </div>
+                    </div>
+                ) : isRetentionDisabled ? (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
+                        <div className="text-lg mb-2">No logs available</div>
+                        <div className="text-sm text-center">Log retention is disabled for this <span className="dark:text-white text-black font-semibold">{workflowKind?.charAt(0) + workflowKind?.substring(1).toLowerCase()}</span> workflow</div>
+                    </div>
                 ) : (!!searchQuery || !!streamFilter) ? (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
                         <div className="text-lg mb-2">No logs found</div>

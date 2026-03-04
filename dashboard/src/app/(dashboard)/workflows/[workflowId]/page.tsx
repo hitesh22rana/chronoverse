@@ -625,6 +625,22 @@ export default function WorkflowDetailsAndJobsPage() {
                                                 </CardContent>
                                             </Card>
                                         </div>
+                                        {!workflow?.log_retention && (
+                                            <div
+                                                className={cn(
+                                                    "mt-2 rounded-md border px-3 py-2 text-xs font-semibold",
+                                                    workflow?.kind === "CONTAINER"
+                                                        ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200"
+                                                        : "border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-800/50 dark:bg-blue-950/30 dark:text-blue-200"
+                                                )}
+                                            >
+                                                {workflow?.kind === "CONTAINER"
+                                                    ? "Logs are generated but not persisted."
+                                                    : workflow?.kind
+                                                        ? `${workflow?.kind.charAt(0) + workflow?.kind.substring(1).toLowerCase()} workflows do not generate execution logs.`
+                                                        : "This workflow kind does not generate execution logs."}
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <EmptyState
@@ -753,6 +769,9 @@ function WorkflowDetailsSkeleton() {
                                 </CardContent>
                             </Card>
                         ))}
+                    </div>
+                    <div className="mt-2 rounded-md border p-2">
+                        <Skeleton className="h-4 w-80" />
                     </div>
                 </div>
 

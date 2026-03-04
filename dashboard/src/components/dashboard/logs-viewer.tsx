@@ -179,7 +179,7 @@ export function LogsViewer({
     return (
         <Card className="flex flex-col flex-1 w-full min-h-dvh h-full">
             {/* Header sticks to top of page */}
-            <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 border-b space-y-4 p-6 rounded-t-2xl">
+            <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/60 border-b space-y-4 p-6 rounded-t-2xl">
                 <CardTitle>Logs</CardTitle>
 
                 <div className="flex lg:flex-row flex-col items-center justify-between gap-4">

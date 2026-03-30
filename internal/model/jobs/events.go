@@ -11,4 +11,5 @@ type JobLogEvent struct {
 	TimeStamp   time.Time
 	SequenceNum uint32
 	Stream      string // "stdout" or "stderr"
+	Retention   bool   // whether the log is retained or ephemeral
 }

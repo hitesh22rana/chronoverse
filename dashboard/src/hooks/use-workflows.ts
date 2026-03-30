@@ -24,6 +24,7 @@ export type Workflow = {
     interval: number
     consecutive_job_failures_count?: number
     max_consecutive_job_failures_allowed: number
+    log_retention: boolean
     created_at: string
     updated_at: string
     terminated_at?: string
@@ -35,6 +36,7 @@ export type CreateWorkflowPayload = {
     payload: string
     interval: number
     max_consecutive_job_failures_allowed: number
+    log_retention: boolean
 }
 
 export function useWorkflows() {

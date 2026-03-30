@@ -44,7 +44,7 @@ const kindsWithLogs = ['CONTAINER']
 const terminalJobStatus = ['COMPLETED', 'FAILED']
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
-    const { workflow } = useWorkflowDetails(workflowId)
+    const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
     const router = useRouter()
     const queryClient = useQueryClient()
     const searchParams = useSearchParams()
@@ -65,7 +65,15 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     const isRunning = jobStatus === "RUNNING"
     const isCompleted = terminalJobStatus.includes(jobStatus)
-    const shouldFetch = !!workflow && kindsWithLogs.includes(workflow.kind) && (isCompleted || isRunning)
+    const workflowKind = workflow?.kind || ""
+    const isLogsUnsupportedForKind = Boolean(workflow && !kindsWithLogs.includes(workflow.kind))
+    const isRetentionDisabled = Boolean(workflow && !isLogsUnsupportedForKind && !workflow.log_retention)
+    const shouldFetch = Boolean(
+        workflow &&
+        !isLogsUnsupportedForKind &&
+        workflow.log_retention &&
+        (isCompleted || isRunning)
+    )
 
     // Update search query in URL params
     const updateSearchQuery = useCallback((newSearchQuery: string) => {
@@ -176,7 +184,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        enabled: shouldFetch && !getSearchQueryParams && !!workflowId && !!jobId,
+        enabled: shouldFetch && !getSearchQueryParams && Boolean(workflowId) && Boolean(jobId),
     })
 
     // Search job logs query
@@ -204,7 +212,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        enabled: shouldFetch && !!getSearchQueryParams && !!workflowId && !!jobId,
+        enabled: shouldFetch && Boolean(getSearchQueryParams) && Boolean(workflowId) && Boolean(jobId),
     });
 
     // For running jobs, use regular query + SSE
@@ -243,7 +251,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
             return allLogs
         },
-        enabled: shouldFetch && !getSearchQueryParams && isRunning && !!workflowId && !!jobId,
+        enabled: shouldFetch && !getSearchQueryParams && isRunning && Boolean(workflowId) && Boolean(jobId),
         staleTime: Infinity,
         gcTime: Infinity,
     })
@@ -254,7 +262,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         // 1. Job is running
         // 2. Initial logs have been fetched successfully
         // 3. We have workflowId and jobId
-        if (!isRunning || !jobLogsSSEQuery.isSuccess || !workflowId || !jobId) {
+        if (!shouldFetch || !isRunning || !jobLogsSSEQuery.isSuccess || !workflowId || !jobId) {
             setIsConnected(false)
             setIsSSEEnabled(false)
             return
@@ -314,7 +322,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             eventSourceRef.current = null
             setIsConnected(false)
         }
-    }, [queryClient, jobLogsSSEQueryKey, sseURL, isRunning, jobLogsSSEQuery.isSuccess, workflowId, jobId])
+    }, [queryClient, jobLogsSSEQueryKey, sseURL, isRunning, shouldFetch, jobLogsSSEQuery.isSuccess, workflowId, jobId])
 
     useEffect(() => {
         if (jobLogsSearchInfiniteQuery.error instanceof Error) {
@@ -328,7 +336,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error, jobLogsSSEQuery.error])
 
-    if (shouldFetch && !!getSearchQueryParams) {
+    if (shouldFetch && Boolean(getSearchQueryParams)) {
         const allPages = jobLogsSearchInfiniteQuery.data?.pages || [];
         const logs = allPages.length > 0 ? allPages.flatMap((page) => page?.logs || []) : [];
 
@@ -347,6 +355,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             downloadLogsMutation,
             isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
             isDownloadLogsMutationError: downloadLogsMutation.error,
+            isRetentionDisabled,
+            isLogsUnsupportedForKind,
+            workflowKind,
+            isWorkflowLoading,
         };
     }
 
@@ -373,6 +385,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             downloadLogsMutation,
             isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
             isDownloadLogsMutationError: downloadLogsMutation.error,
+            isRetentionDisabled,
+            isLogsUnsupportedForKind,
+            workflowKind,
+            isWorkflowLoading,
         }
     }
 
@@ -402,6 +418,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             downloadLogsMutation,
             isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
             isDownloadLogsMutationError: downloadLogsMutation.error,
+            isRetentionDisabled,
+            isLogsUnsupportedForKind,
+            workflowKind,
+            isWorkflowLoading,
         }
     }
 
@@ -425,5 +445,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         downloadLogsMutation,
         isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
         isDownloadLogsMutationError: downloadLogsMutation.error,
+        isRetentionDisabled,
+        isLogsUnsupportedForKind,
+        workflowKind,
+        isWorkflowLoading,
     }
 }

@@ -13,10 +13,11 @@ Chronoverse is a distributed job scheduling and orchestration system designed fo
 - **Workflow Management**: Create, update, and monitor scheduled workflows.
 - **Flexible Scheduling**: Configure workflows with precise time intervals in minutes.
 - **Multiple Workflow Types Support**:
-  - `HEARTBEAT`: Simple health check job.
+  - `HEARTBEAT`: Simple health check job (does not generate execution logs).
   - `CONTAINER`: Execute custom containerized applications and scripts.
-- **Job Logs**: Comprehensive execution history with logs stored in ClickHouse for efficient storage and retrieval.
+- **Job Logs**: Comprehensive execution history with logs stored in ClickHouse when log retention is enabled.
 - **Live Log Streaming**: Real-time job log streaming using Server-Sent Events (SSE) for running jobs with automatic fallback to static logs for completed jobs.
+- **Log Retention Controls**: Configure per-workflow log retention; log read APIs return precondition failure when retention is disabled.
 - **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes.
 - **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs.
 - **Security**: JWT-based authentication and authorization.
@@ -28,7 +29,7 @@ Chronoverse implements a message-driven microservices architecture where compone
 1. **Kafka**: For reliable, asynchronous processing and event-driven workflows.
 2. **gRPC**: For efficient, low-latency synchronous service-to-service communication.
 
-This dual communication approach ensures both reliability for critical background processes and responsiveness for user-facing operations. Data persistence is handled by PostgreSQL for transactional data and ClickHouse for analytics and high-volume job logs.
+This dual communication approach ensures both reliability for critical background processes and responsiveness for user-facing operations. Data persistence is handled by PostgreSQL for transactional data and ClickHouse for analytics and retained job logs.
 
 ### Core Services
 
@@ -44,7 +45,7 @@ This dual communication approach ensures both reliability for critical backgroun
 - **Scheduling Worker**: Identifies jobs due for execution based on their schedules and processes them through Kafka.
 - **Workflow Worker**: Builds Docker image configurations from workflow definitions and prepares execution templates.
 - **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management, manages execution lifecycle and captures outputs/logs.
-- **JobLogs Processor**: Performs efficient batch insertion of execution logs from Kafka to ClickHouse for persistent storage and optimized querying.
+- **JobLogs Processor**: Performs efficient batch insertion of execution logs from Kafka to ClickHouse for persistent storage and optimized querying when retention is enabled.
 - **Analytics Processor**: Consumes job and workflow events from Kafka, processes them to generate analytics data, and stores the results for querying.
 - **Database Migration**: Manages database schema evolution and applies necessary migrations for PostgreSQL and ClickHouse during deployments or updates.
 
@@ -100,6 +101,7 @@ No other dependencies are required as all services run in containers with automa
 - Monitoring dashboard can be accessed via port 3000.
 - All internal services communicate via Docker's internal network.
 - No direct external access to databases or internal microservices.
+- Jobs service is wired to workflows service over internal TLS for retention-aware log access checks.
 - gRPC reflection disabled for additional security.
 
 ### Configuration

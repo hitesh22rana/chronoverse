@@ -34,7 +34,7 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
-	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32) (*workflowsmodel.GetWorkflowResponse, error)
+	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32, logRetention bool) (*workflowsmodel.GetWorkflowResponse, error)
 	UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error
 	UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) error
 	GetWorkflow(ctx context.Context, workflowID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
@@ -80,6 +80,7 @@ type CreateWorkflowRequest struct {
 	Kind                             string `validate:"required"`
 	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
 	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed
+	LogRetention                     bool   `validate:"omitempty"`                // Whether to retain logs for the workflow. Optional, defaults to false.
 }
 
 // CreateWorkflow a new job.
@@ -96,6 +97,11 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		span.End()
 	}()
 
+	logRetentionEnabled := true
+	if req.LogRetention != nil {
+		logRetentionEnabled = req.GetLogRetention()
+	}
+
 	// Validate the request
 	err = s.validator.Struct(&CreateWorkflowRequest{
 		UserID:                           req.GetUserId(),
@@ -104,6 +110,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		Kind:                             req.GetKind(),
 		Interval:                         req.GetInterval(),
 		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
+		LogRetention:                     logRetentionEnabled,
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -113,6 +120,12 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 	// Validation based on kind
 	switch req.GetKind() {
 	case workflowsmodel.KindHeartbeat.ToString():
+		// Heartbeat kind does not support log retention, so if log retention is enabled, return an error.
+		if req.LogRetention != nil && req.GetLogRetention() {
+			return "", status.Errorf(codes.InvalidArgument, "log retention is not supported for heartbeat kind")
+		}
+		logRetentionEnabled = false
+
 		_, err = heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
 		if err != nil {
 			return "", err
@@ -135,6 +148,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		req.GetKind(),
 		req.GetInterval(),
 		req.GetMaxConsecutiveJobFailuresAllowed(),
+		logRetentionEnabled,
 	)
 	if err != nil {
 		return "", err

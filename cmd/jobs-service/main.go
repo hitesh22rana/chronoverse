@@ -12,10 +12,13 @@ import (
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
+
 	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -141,11 +144,34 @@ func run() int {
 		return ExitError
 	}
 
+	// Connect to the workflows service
+	workflowsConn, err := grpcclient.NewClient(
+		&grpcclient.ServiceConfig{
+			Host: cfg.WorkflowsService.Host,
+			Port: cfg.WorkflowsService.Port,
+			TLS: &grpcclient.TLSConfig{
+				Enabled:        cfg.WorkflowsService.TLS.Enabled,
+				CAFile:         cfg.WorkflowsService.TLS.CAFile,
+				ClientCertFile: cfg.ClientTLS.CertFile,
+				ClientKeyFile:  cfg.ClientTLS.KeyFile,
+			},
+		},
+		grpcclient.DefaultCircuitBreakerConfig(),
+		grpcclient.DefaultRetryConfig(),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return ExitError
+	}
+	defer workflowsConn.Close()
+
 	// Initialize the jobs repository
 	repo := jobsrepo.New(&jobsrepo.Config{
 		FetchLimit:     cfg.JobsServiceConfig.FetchLimit,
 		LogsFetchLimit: cfg.JobsServiceConfig.LogsFetchLimit,
-	}, pdb, rdb, cdb, msdb)
+	}, auth, pdb, rdb, cdb, msdb, &jobsrepo.Services{
+		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
+	})
 
 	// Initialize the validator utility
 	validator := validator.New()

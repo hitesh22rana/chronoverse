@@ -28,18 +28,22 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 		return nil
 	}
 
-	logger.Info("processing batch", zap.Int("batch_size", len(batch)))
-
 	// Extract logs and records
 	logs := make([]*jobsmodel.JobLogEvent, 0, len(batch))
 	records := make([]*kgo.Record, 0, len(batch))
 	documents := make([]*map[string]any, 0, len(batch))
 
 	for _, item := range batch {
+		records = append(records, item.record)
+
 		log := item.logEntry
 
+		// Skip if log retention is disabled
+		if !log.Retention {
+			continue
+		}
+
 		logs = append(logs, log)
-		records = append(records, item.record)
 		documents = append(documents, &map[string]any{
 			"id":           fmt.Sprintf("%s-%d-%s", log.JobID, log.SequenceNum, log.Stream),
 			"job_id":       log.JobID,
@@ -51,6 +55,8 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 			"stream":       log.Stream,
 		})
 	}
+
+	logger.Info("processing batch", zap.Int("batch_size", len(logs)))
 
 	// Insert logs into ClickHouse
 	if err := r.insertLogsBatchToClickhouse(ctx, logs); err != nil {

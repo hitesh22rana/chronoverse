@@ -51,6 +51,7 @@ type GetWorkflowResponse struct {
 	CreatedAt                        time.Time    `db:"created_at"`
 	UpdatedAt                        time.Time    `db:"updated_at"`
 	TerminatedAt                     sql.NullTime `db:"terminated_at,omitempty"`
+	LogRetention                     bool         `db:"log_retention"`
 }
 
 // ToProto converts the GetWorkflowResponse to its protobuf representation.
@@ -72,6 +73,7 @@ func (r *GetWorkflowResponse) ToProto() *workflowspb.GetWorkflowResponse {
 		CreatedAt:                        r.CreatedAt.Format(time.RFC3339Nano),
 		UpdatedAt:                        r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt:                     terminatedAt,
+		LogRetention:                     r.LogRetention,
 	}
 }
 
@@ -89,6 +91,7 @@ type GetWorkflowByIDResponse struct {
 	CreatedAt                        time.Time    `db:"created_at"`
 	UpdatedAt                        time.Time    `db:"updated_at"`
 	TerminatedAt                     sql.NullTime `db:"terminated_at,omitempty"`
+	LogRetention                     bool         `db:"log_retention"`
 }
 
 // ToProto converts the GetWorkflowByIDResponse to its protobuf representation.
@@ -111,6 +114,7 @@ func (r *GetWorkflowByIDResponse) ToProto() *workflowspb.GetWorkflowByIDResponse
 		CreatedAt:                        r.CreatedAt.Format(time.RFC3339Nano),
 		UpdatedAt:                        r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt:                     terminatedAt,
+		LogRetention:                     r.LogRetention,
 	}
 }
 
@@ -127,6 +131,7 @@ type WorkflowByUserIDResponse struct {
 	CreatedAt                        time.Time    `db:"created_at"`
 	UpdatedAt                        time.Time    `db:"updated_at"`
 	TerminatedAt                     sql.NullTime `db:"terminated_at,omitempty"`
+	LogRetention                     bool         `db:"log_retention"`
 }
 
 // ListWorkflowsResponse represents the response of ListWorkflowsByUserID.
@@ -158,6 +163,7 @@ func (r *ListWorkflowsResponse) ToProto() *workflowspb.ListWorkflowsResponse {
 			CreatedAt:                        j.CreatedAt.Format(time.RFC3339Nano),
 			UpdatedAt:                        j.UpdatedAt.Format(time.RFC3339Nano),
 			TerminatedAt:                     terminatedAt,
+			LogRetention:                     j.LogRetention,
 		}
 	}
 

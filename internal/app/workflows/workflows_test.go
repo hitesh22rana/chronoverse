@@ -27,6 +27,10 @@ import (
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 )
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -123,6 +127,7 @@ func TestCreateWorkflow(t *testing.T) {
 					Kind:                             "HEARTBEAT",
 					Interval:                         1,
 					MaxConsecutiveJobFailuresAllowed: 5,
+					LogRetention:                     boolPtr(true),
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
@@ -158,6 +163,7 @@ func TestCreateWorkflow(t *testing.T) {
 					Kind:                             "HEARTBEAT",
 					Interval:                         1,
 					MaxConsecutiveJobFailuresAllowed: 5,
+					LogRetention:                     boolPtr(true),
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
@@ -181,11 +187,12 @@ func TestCreateWorkflow(t *testing.T) {
 					)
 				},
 				req: &workflowspb.CreateWorkflowRequest{
-					UserId:   "",
-					Name:     "",
-					Payload:  "",
-					Kind:     "",
-					Interval: 0,
+					UserId:       "",
+					Name:         "",
+					Payload:      "",
+					Kind:         "",
+					Interval:     0,
+					LogRetention: boolPtr(false),
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
@@ -213,6 +220,7 @@ func TestCreateWorkflow(t *testing.T) {
 					Kind:                             "HEARTBEAT",
 					Interval:                         1,
 					MaxConsecutiveJobFailuresAllowed: 5,
+					LogRetention:                     boolPtr(true),
 				},
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
@@ -240,6 +248,7 @@ func TestCreateWorkflow(t *testing.T) {
 					Kind:                             "HEARTBEAT",
 					Interval:                         1,
 					MaxConsecutiveJobFailuresAllowed: 5,
+					LogRetention:                     boolPtr(true),
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
@@ -735,6 +744,7 @@ func TestGetWorkflow(t *testing.T) {
 						Time:  time.Now(),
 						Valid: true,
 					},
+					LogRetention: true,
 				}, nil)
 			},
 			res: &workflowspb.GetWorkflowResponse{
@@ -749,6 +759,7 @@ func TestGetWorkflow(t *testing.T) {
 				CreatedAt:                        time.Now().Format(time.RFC3339Nano),
 				UpdatedAt:                        time.Now().Format(time.RFC3339Nano),
 				TerminatedAt:                     time.Now().Format(time.RFC3339Nano),
+				LogRetention:                     true,
 			},
 			isErr: false,
 		},
@@ -937,6 +948,7 @@ func TestGetWorkflowByID(t *testing.T) {
 						Time:  time.Now(),
 						Valid: true,
 					},
+					LogRetention: true,
 				}, nil)
 			},
 			res: &workflowspb.GetWorkflowByIDResponse{
@@ -952,6 +964,7 @@ func TestGetWorkflowByID(t *testing.T) {
 				CreatedAt:                        time.Now().Format(time.RFC3339Nano),
 				UpdatedAt:                        time.Now().Format(time.RFC3339Nano),
 				TerminatedAt:                     time.Now().Format(time.RFC3339Nano),
+				LogRetention:                     true,
 			},
 			isErr: false,
 		},
@@ -1937,6 +1950,7 @@ func TestListWorkflows(t *testing.T) {
 								Time:  time.Now(),
 								Valid: true,
 							},
+							LogRetention: true,
 						},
 					},
 					Cursor: "",
@@ -1956,6 +1970,7 @@ func TestListWorkflows(t *testing.T) {
 						CreatedAt:                        time.Now().Format(time.RFC3339Nano),
 						UpdatedAt:                        time.Now().Format(time.RFC3339Nano),
 						TerminatedAt:                     time.Now().Format(time.RFC3339Nano),
+						LogRetention:                     true,
 					},
 				},
 				Cursor: "",

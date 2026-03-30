@@ -30,7 +30,7 @@ type CreateWorkflowRequest struct {
 	Kind                             string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                                        // Kind of workflow
 	Interval                         int32                  `protobuf:"varint,5,opt,name=interval,proto3" json:"interval,omitempty"`                                                                                               // Interval measured in minutes
 	MaxConsecutiveJobFailuresAllowed int32                  `protobuf:"varint,6,opt,name=max_consecutive_job_failures_allowed,json=maxConsecutiveJobFailuresAllowed,proto3" json:"max_consecutive_job_failures_allowed,omitempty"` // Maximum number of consecutive job failures allowed
-	LogRetention                     bool                   `protobuf:"varint,7,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                   // Indicates log retention status
+	LogRetention                     *bool                  `protobuf:"varint,7,opt,name=log_retention,json=logRetention,proto3,oneof" json:"log_retention,omitempty"`                                                             // Indicates log retention status
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -108,8 +108,8 @@ func (x *CreateWorkflowRequest) GetMaxConsecutiveJobFailuresAllowed() int32 {
 }
 
 func (x *CreateWorkflowRequest) GetLogRetention() bool {
-	if x != nil {
-		return x.LogRetention
+	if x != nil && x.LogRetention != nil {
+		return *x.LogRetention
 	}
 	return false
 }
@@ -1454,15 +1454,16 @@ var File_workflows_workflows_proto protoreflect.FileDescriptor
 
 const file_workflows_workflows_proto_rawDesc = "" +
 	"\n" +
-	"\x19workflows/workflows.proto\x12\tworkflows\"\x83\x02\n" +
+	"\x19workflows/workflows.proto\x12\tworkflows\"\x9a\x02\n" +
 	"\x15CreateWorkflowRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\tR\apayload\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x1a\n" +
 	"\binterval\x18\x05 \x01(\x05R\binterval\x12N\n" +
-	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\x12#\n" +
-	"\rlog_retention\x18\a \x01(\bR\flogRetention\"(\n" +
+	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\x12(\n" +
+	"\rlog_retention\x18\a \x01(\bH\x00R\flogRetention\x88\x01\x01B\x10\n" +
+	"\x0e_log_retention\"(\n" +
 	"\x16CreateWorkflowResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\xda\x01\n" +
 	"\x15UpdateWorkflowRequest\x12\x0e\n" +
@@ -1649,6 +1650,7 @@ func file_workflows_workflows_proto_init() {
 	if File_workflows_workflows_proto != nil {
 		return
 	}
+	file_workflows_workflows_proto_msgTypes[0].OneofWrappers = []any{}
 	file_workflows_workflows_proto_msgTypes[19].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

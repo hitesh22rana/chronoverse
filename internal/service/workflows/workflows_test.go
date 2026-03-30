@@ -17,6 +17,10 @@ import (
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 func TestCreateWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -48,7 +52,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
-				LogRetention:                     false,
+				LogRetention:                     boolPtr(false),
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -98,6 +102,252 @@ func TestCreateWorkflow(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "success: container defaults log retention to true when unset",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`,
+				Kind:                             "CONTAINER",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+			},
+			mock: func(req *workflowspb.CreateWorkflowRequest) {
+				repo.EXPECT().CreateWorkflow(
+					gomock.Any(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
+					true, // logRetentionEnabled
+				).Return(&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`,
+					Kind:                             "CONTAINER",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        time.Now(),
+					UpdatedAt:                        time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					LogRetention: true,
+				}, nil)
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+
+				// Simulate a cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+			},
+			want: want{
+				workflowID: "workflow_id",
+			},
+			isErr: false,
+		},
+		{
+			name: "success: container honors explicit false log retention",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`,
+				Kind:                             "CONTAINER",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     boolPtr(false),
+			},
+			mock: func(req *workflowspb.CreateWorkflowRequest) {
+				repo.EXPECT().CreateWorkflow(
+					gomock.Any(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
+					false, // logRetentionEnabled
+				).Return(&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`,
+					Kind:                             "CONTAINER",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        time.Now(),
+					UpdatedAt:                        time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					LogRetention: false,
+				}, nil)
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+
+				// Simulate a cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+			},
+			want: want{
+				workflowID: "workflow_id",
+			},
+			isErr: false,
+		},
+		{
+			name: "success: container honors explicit true log retention",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`,
+				Kind:                             "CONTAINER",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     boolPtr(true),
+			},
+			mock: func(req *workflowspb.CreateWorkflowRequest) {
+				repo.EXPECT().CreateWorkflow(
+					gomock.Any(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
+					true, // logRetentionEnabled
+				).Return(&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`,
+					Kind:                             "CONTAINER",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        time.Now(),
+					UpdatedAt:                        time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					LogRetention: true,
+				}, nil)
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+
+				// Simulate a cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+			},
+			want: want{
+				workflowID: "workflow_id",
+			},
+			isErr: false,
+		},
+		{
+			name: "success: heartbeat ignores unset log retention and persists false",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+				Kind:                             "HEARTBEAT",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     nil,
+			},
+			mock: func(req *workflowspb.CreateWorkflowRequest) {
+				repo.EXPECT().CreateWorkflow(
+					gomock.Any(),
+					req.GetUserId(),
+					req.GetName(),
+					req.GetPayload(),
+					req.GetKind(),
+					req.GetInterval(),
+					req.GetMaxConsecutiveJobFailuresAllowed(),
+					false, // logRetentionEnabled
+				).Return(&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        time.Now(),
+					UpdatedAt:                        time.Now(),
+					TerminatedAt: sql.NullTime{
+						Time:  time.Now(),
+						Valid: true,
+					},
+					LogRetention: false,
+				}, nil)
+
+				// Simulate a cache delete by pattern
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+
+				// Simulate a cache set
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+			},
+			want: want{
+				workflowID: "workflow_id",
+			},
+			isErr: false,
+		},
+		{
+			name: "error: heartbeat rejects explicit true log retention",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId:                           "user1",
+				Name:                             "workflow1",
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+				Kind:                             "HEARTBEAT",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     boolPtr(true),
+			},
+			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
 			name: "error: missing required fields in request",
 			req: &workflowspb.CreateWorkflowRequest{
 				UserId:       "",
@@ -105,7 +355,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Payload:      `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Kind:         "",
 				Interval:     1,
-				LogRetention: true,
+				LogRetention: boolPtr(true),
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -120,7 +370,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         0,
 				MaxConsecutiveJobFailuresAllowed: 5,
-				LogRetention:                     true,
+				LogRetention:                     boolPtr(true),
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -135,7 +385,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 0,
-				LogRetention:                     true,
+				LogRetention:                     boolPtr(true),
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -150,7 +400,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "HEARTBEAT",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
-				LogRetention:                     false,
+				LogRetention:                     boolPtr(false),
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(

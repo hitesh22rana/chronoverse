@@ -12,7 +12,7 @@ message CreateWorkflowRequest {
     string kind                                = 4; // Kind of workflow
     int32 interval                             = 5; // Interval measured in minutes
     int32 max_consecutive_job_failures_allowed = 6; // Maximum number of consecutive job failures allowed
-    bool log_retention                         = 7; // Indicates log retention status
+    optional bool log_retention                = 7; // Indicates log retention status
 }
 
 // CreateWorkflowResponse contains the result of a workflow creation attempt.

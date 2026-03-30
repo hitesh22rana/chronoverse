@@ -15,7 +15,7 @@ type createWorkflowRequest struct {
 	Kind                             string `json:"kind"`
 	Interval                         int32  `json:"interval"`
 	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed"`
-	LogRetention                     bool   `json:"log_retention"`
+	LogRetention                     *bool  `json:"log_retention"`
 }
 
 // handleCreateWorkflow handles the create workflow request.
@@ -39,16 +39,22 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// CreateWorkflow creates a new workflow.
-	res, err := s.workflowsClient.CreateWorkflow(r.Context(), &workflowspb.CreateWorkflowRequest{
+	protoReq := &workflowspb.CreateWorkflowRequest{
 		UserId:                           userID,
 		Name:                             req.Name,
 		Payload:                          req.Payload,
 		Kind:                             req.Kind,
 		Interval:                         req.Interval,
 		MaxConsecutiveJobFailuresAllowed: req.MaxConsecutiveJobFailuresAllowed,
-		LogRetention:                     req.LogRetention,
-	})
+	}
+
+	// If log retention is provided, set it in the proto request, otherwise it will be set to the default value in the service layer.
+	if req.LogRetention != nil {
+		protoReq.LogRetention = req.LogRetention
+	}
+
+	// CreateWorkflow creates a new workflow.
+	res, err := s.workflowsClient.CreateWorkflow(r.Context(), protoReq)
 	if err != nil {
 		handleError(w, err, "failed to create workflow")
 		return

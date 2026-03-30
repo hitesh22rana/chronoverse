@@ -97,6 +97,11 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		span.End()
 	}()
 
+	logRetentionEnabled := true
+	if req.LogRetention != nil {
+		logRetentionEnabled = req.GetLogRetention()
+	}
+
 	// Validate the request
 	err = s.validator.Struct(&CreateWorkflowRequest{
 		UserID:                           req.GetUserId(),
@@ -105,7 +110,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		Kind:                             req.GetKind(),
 		Interval:                         req.GetInterval(),
 		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
-		LogRetention:                     req.GetLogRetention(),
+		LogRetention:                     logRetentionEnabled,
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -115,9 +120,11 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 	// Validation based on kind
 	switch req.GetKind() {
 	case workflowsmodel.KindHeartbeat.ToString():
-		if req.GetLogRetention() {
+		// Heartbeat kind does not support log retention, so if log retention is enabled, return an error.
+		if req.LogRetention != nil && req.GetLogRetention() {
 			return "", status.Errorf(codes.InvalidArgument, "log retention is not supported for heartbeat kind")
 		}
+		logRetentionEnabled = false
 
 		_, err = heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
 		if err != nil {
@@ -141,7 +148,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		req.GetKind(),
 		req.GetInterval(),
 		req.GetMaxConsecutiveJobFailuresAllowed(),
-		req.GetLogRetention(),
+		logRetentionEnabled,
 	)
 	if err != nil {
 		return "", err

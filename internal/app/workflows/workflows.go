@@ -220,6 +220,7 @@ func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateW
 			attribute.String("kind", req.GetKind()),
 			attribute.Int("interval", int(req.GetInterval())),
 			attribute.Int("max_consecutive_job_failures_allowed", int(req.GetMaxConsecutiveJobFailuresAllowed())),
+			attribute.Bool("log_retention_set", req.LogRetention != nil),
 			attribute.Bool("log_retention", req.GetLogRetention()),
 		),
 	)

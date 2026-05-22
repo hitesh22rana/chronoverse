@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -29,6 +30,7 @@ const (
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
+	pullGroup singleflight.Group
 }
 
 // NewDockerWorkflow creates a new DockerWorkflow.
@@ -292,19 +294,32 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 		return err
 	}
 
-	out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
-	if err != nil {
-		return status.Errorf(codes.NotFound, "failed to pull image: %v", err)
-	}
-	defer out.Close()
+	resultCh := w.pullGroup.DoChan(imageName, func() (any, error) {
+		out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
+		if err != nil {
+			return nil, status.Errorf(codes.NotFound, "failed to pull image: %v", err)
+		}
+		defer out.Close()
 
-	// Read the output to completion, required to properly register the image in Docker desktop
-	_, err = io.Copy(io.Discard, out)
-	if err != nil {
-		return status.Errorf(codes.Aborted, "failed to read image pull output: %v", err)
-	}
+		// Read the output to completion so the pulled image is registered locally.
+		if _, err = io.Copy(io.Discard, out); err != nil {
+			return nil, status.Errorf(codes.Aborted, "failed to read image pull output: %v", err)
+		}
 
-	return nil
+		// Return a non-nil dummy value to satisfy the linter; callers ignore Val anyway.
+		return struct{}{}, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+		}
+
+		return status.Error(codes.Canceled, ctx.Err().Error())
+	case result := <-resultCh:
+		return result.Err
+	}
 }
 
 // Terminate stops a running container by its unique containerID.

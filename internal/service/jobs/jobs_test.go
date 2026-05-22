@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -637,15 +639,20 @@ func TestGetJobLogs(t *testing.T) {
 		*jobsmodel.GetJobLogsResponse
 	}
 
-	timestamp := time.Now()
+	var (
+		timestamp               = time.Now()
+		singleflightRepoCalls   int32
+		singleflightReleaseChan chan struct{}
+	)
 
 	// Test cases
 	tests := []struct {
-		name  string
-		req   *jobspb.GetJobLogsRequest
-		mock  func(req *jobspb.GetJobLogsRequest)
-		want  want
-		isErr bool
+		name    string
+		req     *jobspb.GetJobLogsRequest
+		mock    func(req *jobspb.GetJobLogsRequest)
+		execute func(t *testing.T, req *jobspb.GetJobLogsRequest, want want)
+		want    want
+		isErr   bool
 	}{
 		{
 			name: "success",
@@ -889,6 +896,102 @@ func TestGetJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "success: singleflight deduplicates cache miss",
+			req: &jobspb.GetJobLogsRequest{
+				Id:         "job_id",
+				WorkflowId: "workflow_id",
+				UserId:     "user_id",
+				Filters: &jobspb.GetJobLogsFilters{
+					Stream: jobspb.LogStream_LOG_STREAM_ALL,
+				},
+			},
+			mock: func(req *jobspb.GetJobLogsRequest) {
+				cacheKey := fmt.Sprintf(
+					"job_logs:%s:%s:%s:%s",
+					req.GetUserId(),
+					req.GetId(),
+					req.GetCursor(),
+					req.GetFilters().GetStream(),
+				)
+				filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
+
+				cache.EXPECT().
+					Get(gomock.Any(), cacheKey, gomock.Any()).
+					Return(nil, status.Error(codes.NotFound, "cache miss")).
+					Times(2)
+				cache.EXPECT().
+					Set(gomock.Any(), cacheKey, gomock.Any(), gomock.Any()).
+					Return(nil).
+					AnyTimes()
+
+				singleflightRepoCalls = 0
+				singleflightReleaseChan = make(chan struct{})
+				repo.EXPECT().
+					GetJobLogs(gomock.Any(), req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor(), filters).
+					DoAndReturn(func(_ any, _, _, _, _ string, _ *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error) {
+						atomic.AddInt32(&singleflightRepoCalls, 1)
+						<-singleflightReleaseChan
+						return &jobsmodel.GetJobLogsResponse{
+							ID:         "job_id",
+							WorkflowID: "workflow_id",
+							JobLogs: []*jobsmodel.JobLog{
+								{
+									Timestamp:   timestamp,
+									Message:     "log 1",
+									SequenceNum: 1,
+									Stream:      "stdout",
+								},
+							},
+						}, "COMPLETED", nil
+					}).Times(1)
+			},
+			execute: func(t *testing.T, req *jobspb.GetJobLogsRequest, want want) {
+				t.Helper()
+
+				var wg sync.WaitGroup
+				results := make([]*jobsmodel.GetJobLogsResponse, 2)
+				errs := make([]error, 2)
+
+				for i := range 2 {
+					wg.Add(1)
+					go func(idx int) {
+						defer wg.Done()
+						results[idx], errs[idx] = s.GetJobLogs(t.Context(), req)
+					}(i)
+				}
+
+				for range 50 {
+					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				close(singleflightReleaseChan)
+				wg.Wait()
+
+				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
+				assert.NoError(t, errs[0])
+				assert.NoError(t, errs[1])
+				assert.Equal(t, want.GetJobLogsResponse, results[0])
+				assert.Equal(t, want.GetJobLogsResponse, results[1])
+			},
+			want: want{
+				&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "log 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+					},
+				},
+			},
+			isErr: false,
+		},
+		{
 			name: "error: missing required fields in request",
 			req: &jobspb.GetJobLogsRequest{
 				Id:         "",
@@ -995,6 +1098,11 @@ func TestGetJobLogs(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.execute != nil {
+				tt.execute(t, tt.req, tt.want)
+				return
+			}
+
 			jobLogs, err := s.GetJobLogs(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {

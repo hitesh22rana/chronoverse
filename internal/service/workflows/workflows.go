@@ -15,6 +15,7 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -60,6 +61,7 @@ type Service struct {
 	tp        trace.Tracer
 	repo      Repository
 	cache     Cache
+	sf        singleflight.Group
 }
 
 // New creates a new workflows-service.
@@ -373,35 +375,40 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 		return cacheRes.(*workflowsmodel.GetWorkflowResponse), nil
 	}
 
-	// Get the job details
-	res, err = s.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
+	resultCh := s.sf.DoChan(cachedKey, func() (any, error) {
+		_res, _err := s.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
+		if _err != nil {
+			return nil, _err
+		}
+
+		// Refresh the cached item and clear list entries once for the shared result.
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
+			defer cancel()
+
+			s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+
+			if setErr := s.cache.Set(bgCtx, cachedKey, _res, defaultExpirationTTL); setErr != nil {
+				logger.Warn("failed to cache workflow",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("cache_key", cachedKey),
+					zap.Error(setErr),
+				)
+			} else if logger.Core().Enabled(zap.DebugLevel) {
+				logger.Debug("cached workflow",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("cache_key", cachedKey),
+				)
+			}
+		}()
+
+		return _res, nil
+	})
+
+	res, err = waitSingleflightResult[*workflowsmodel.GetWorkflowResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
-
-	// Cache the response in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		// Invalidate all list entries for the user
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-
-		// Cache the workflow details
-		if setErr := s.cache.Set(bgCtx, cachedKey, res, defaultExpirationTTL); setErr != nil {
-			logger.Warn("failed to cache workflow",
-				zap.String("user_id", req.GetUserId()),
-				zap.String("cache_key", cachedKey),
-				zap.Error(setErr),
-			)
-		} else if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("cached workflow",
-				zap.String("user_id", req.GetUserId()),
-				zap.String("cache_key", cachedKey),
-			)
-		}
-	}()
 
 	return res, nil
 }
@@ -432,8 +439,11 @@ func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkf
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Get the job details
-	res, err = s.repo.GetWorkflowByID(ctx, req.GetId())
+	resultCh := s.sf.DoChan(fmt.Sprintf("workflow_by_id:%s", req.GetId()), func() (any, error) {
+		return s.repo.GetWorkflowByID(ctx, req.GetId())
+	})
+
+	res, err = waitSingleflightResult[*workflowsmodel.GetWorkflowByIDResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -739,31 +749,37 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		return cacheRes.(*workflowsmodel.ListWorkflowsResponse), nil
 	}
 
-	// List all workflows by user ID
-	res, err = s.repo.ListWorkflows(ctx, req.GetUserId(), cursor, filters)
+	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
+		_res, _err := s.repo.ListWorkflows(ctx, req.GetUserId(), cursor, filters)
+		if _err != nil {
+			return nil, _err
+		}
+
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
+			defer cancel()
+
+			if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
+				logger.Warn("failed to cache workflows list",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("cache_key", cacheKey),
+					zap.Error(setErr),
+				)
+			} else if logger.Core().Enabled(zap.DebugLevel) {
+				logger.Debug("cached workflows list",
+					zap.String("user_id", req.GetUserId()),
+					zap.String("cache_key", cacheKey),
+				)
+			}
+		}()
+
+		return _res, nil
+	})
+
+	res, err = waitSingleflightResult[*workflowsmodel.ListWorkflowsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
-
-	// Cache the response in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
-			logger.Warn("failed to cache workflows list",
-				zap.String("user_id", req.GetUserId()),
-				zap.String("cache_key", cacheKey),
-				zap.Error(setErr),
-			)
-		} else if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("cached workflows list",
-				zap.String("user_id", req.GetUserId()),
-				zap.String("cache_key", cacheKey),
-			)
-		}
-	}()
 
 	return res, nil
 }
@@ -879,5 +895,29 @@ func (s *Service) invalidateWorkflowsCache(ctx context.Context, userID string, l
 			zap.String("user_id", userID),
 			zap.String("cache_key", cacheKey),
 			zap.Int64("count", count))
+	}
+}
+
+func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
+	var zero T
+
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+		}
+
+		return zero, status.Error(codes.Canceled, ctx.Err().Error())
+	case result := <-resultCh:
+		if result.Err != nil {
+			return zero, result.Err
+		}
+
+		typed, ok := result.Val.(T)
+		if !ok {
+			return zero, status.Error(codes.Internal, "invalid singleflight result type")
+		}
+
+		return typed, nil
 	}
 }

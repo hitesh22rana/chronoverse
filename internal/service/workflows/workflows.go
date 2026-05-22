@@ -376,9 +376,9 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 	}
 
 	resultCh := s.sf.DoChan(cachedKey, func() (any, error) {
-		res, err := s.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
-		if err != nil {
-			return nil, err
+		_res, _err := s.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
+		if _err != nil {
+			return nil, _err
 		}
 
 		// Refresh the cached item and clear list entries once for the shared result.
@@ -388,7 +388,7 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 
 			s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 
-			if setErr := s.cache.Set(bgCtx, cachedKey, res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cachedKey, _res, defaultExpirationTTL); setErr != nil {
 				logger.Warn("failed to cache workflow",
 					zap.String("user_id", req.GetUserId()),
 					zap.String("cache_key", cachedKey),
@@ -402,7 +402,7 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 			}
 		}()
 
-		return res, nil
+		return _res, nil
 	})
 
 	res, err = waitSingleflightResult[*workflowsmodel.GetWorkflowResponse](ctx, resultCh)
@@ -750,16 +750,16 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 	}
 
 	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		res, err := s.repo.ListWorkflows(ctx, req.GetUserId(), cursor, filters)
-		if err != nil {
-			return nil, err
+		_res, _err := s.repo.ListWorkflows(ctx, req.GetUserId(), cursor, filters)
+		if _err != nil {
+			return nil, _err
 		}
 
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
 
-			if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
 				logger.Warn("failed to cache workflows list",
 					zap.String("user_id", req.GetUserId()),
 					zap.String("cache_key", cacheKey),
@@ -773,7 +773,7 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 			}
 		}()
 
-		return res, nil
+		return _res, nil
 	})
 
 	res, err = waitSingleflightResult[*workflowsmodel.ListWorkflowsResponse](ctx, resultCh)

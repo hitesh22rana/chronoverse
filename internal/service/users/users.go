@@ -232,9 +232,9 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 	}
 
 	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		res, err := s.repo.GetUser(ctx, req.GetId())
-		if err != nil {
-			return nil, err
+		_res, _err := s.repo.GetUser(ctx, req.GetId())
+		if _err != nil {
+			return nil, _err
 		}
 
 		// Cache the GetUser response in the background once for the shared result.
@@ -242,21 +242,21 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
 
-			if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
 				logger.Warn("failed to cache user",
-					zap.String("user_id", res.ID),
+					zap.String("user_id", _res.ID),
 					zap.String("cache_key", cacheKey),
 					zap.Error(setErr),
 				)
 			} else if logger.Core().Enabled(zap.DebugLevel) {
 				logger.Debug("cached user",
-					zap.String("user_id", res.ID),
+					zap.String("user_id", _res.ID),
 					zap.String("cache_key", cacheKey),
 				)
 			}
 		}()
 
-		return res, nil
+		return _res, nil
 	})
 
 	res, err = waitSingleflightResult[*usersmodel.GetUserResponse](ctx, resultCh)

@@ -315,8 +315,9 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 	}
 
+	//nolint:dupl // The logic for fetching job logs and searching job logs is similar, we can ignore the duplication here
 	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		res, jobStatus, err := s.repo.GetJobLogs(
+		_res, jobStatus, _err := s.repo.GetJobLogs(
 			ctx,
 			req.GetId(),
 			req.GetWorkflowId(),
@@ -324,17 +325,17 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 			req.GetCursor(),
 			filters,
 		)
-		if err != nil {
-			return nil, err
+		if _err != nil {
+			return nil, _err
 		}
 
 		// Cache stable pages once for the shared result.
-		if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
+		if isTerminalJobStatus(jobStatus) || _res.Cursor != "" {
 			go func() {
 				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 				defer cancel()
 
-				if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+				if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
 					logger.Warn("failed to cache job logs",
 						zap.String("user_id", req.GetUserId()),
 						zap.String("job_id", req.GetId()),
@@ -351,7 +352,7 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 			}()
 		}
 
-		return res, nil
+		return _res, nil
 	})
 
 	res, err = waitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
@@ -509,8 +510,9 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 	}
 
+	//nolint:dupl // The logic for fetching job logs and searching job logs is similar, we can ignore the duplication here
 	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		res, jobStatus, err := s.repo.SearchJobLogs(
+		_res, jobStatus, _err := s.repo.SearchJobLogs(
 			ctx,
 			req.GetId(),
 			req.GetWorkflowId(),
@@ -518,16 +520,16 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 			req.GetCursor(),
 			filters,
 		)
-		if err != nil {
-			return nil, err
+		if _err != nil {
+			return nil, _err
 		}
 
-		if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
+		if isTerminalJobStatus(jobStatus) || _res.Cursor != "" {
 			go func() {
 				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 				defer cancel()
 
-				if setErr := s.cache.Set(bgCtx, cacheKey, res, jobLogSearchExpirationTTL); setErr != nil {
+				if setErr := s.cache.Set(bgCtx, cacheKey, _res, jobLogSearchExpirationTTL); setErr != nil {
 					logger.Warn("failed to cache job logs",
 						zap.String("user_id", req.GetUserId()),
 						zap.String("job_id", req.GetId()),
@@ -544,7 +546,7 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 			}()
 		}
 
-		return res, nil
+		return _res, nil
 	})
 
 	res, err = waitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)

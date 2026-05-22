@@ -306,7 +306,8 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 			return nil, status.Errorf(codes.Aborted, "failed to read image pull output: %v", err)
 		}
 
-		return nil, nil
+		// Return a non-nil dummy value to satisfy the linter; callers ignore Val anyway.
+		return struct{}{}, nil
 	})
 
 	select {

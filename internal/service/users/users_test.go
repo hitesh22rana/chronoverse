@@ -1,6 +1,8 @@
 package users_test
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -283,17 +285,20 @@ func TestGetUser(t *testing.T) {
 	}
 
 	var (
-		createdAt = time.Now()
-		updatedAt = time.Now()
+		createdAt               = time.Now()
+		updatedAt               = time.Now()
+		singleflightRepoCalls   int32
+		singleflightReleaseChan chan struct{}
 	)
 
 	// Test cases
 	tests := []struct {
-		name  string
-		req   *userspb.GetUserRequest
-		mock  func(req *userspb.GetUserRequest)
-		want  want
-		isErr bool
+		name    string
+		req     *userspb.GetUserRequest
+		mock    func(req *userspb.GetUserRequest)
+		execute func(t *testing.T, req *userspb.GetUserRequest, want want)
+		want    want
+		isErr   bool
 	}{
 		{
 			name: "success: no cache hit",
@@ -356,6 +361,83 @@ func TestGetUser(t *testing.T) {
 					CreatedAt:              createdAt,
 					UpdatedAt:              updatedAt,
 				}, nil)
+			},
+			want: want{
+				GetUserResponse: &usersmodel.GetUserResponse{
+					ID:                     "userID",
+					Email:                  "user@example.com",
+					NotificationPreference: "ALERTS",
+					CreatedAt:              createdAt,
+					UpdatedAt:              updatedAt,
+				},
+			},
+			isErr: false,
+		},
+		{
+			name: "success: singleflight deduplicates cache miss",
+			req: &userspb.GetUserRequest{
+				Id: "userID",
+			},
+			mock: func(req *userspb.GetUserRequest) {
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss")).Times(2)
+
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				singleflightRepoCalls = 0
+				singleflightReleaseChan = make(chan struct{})
+				repo.EXPECT().GetUser(
+					gomock.Any(),
+					req.GetId(),
+				).DoAndReturn(func(_ any, _ string) (*usersmodel.GetUserResponse, error) {
+					atomic.AddInt32(&singleflightRepoCalls, 1)
+					<-singleflightReleaseChan
+					return &usersmodel.GetUserResponse{
+						ID:                     "userID",
+						Email:                  "user@example.com",
+						NotificationPreference: "ALERTS",
+						CreatedAt:              createdAt,
+						UpdatedAt:              updatedAt,
+					}, nil
+				}).Times(1)
+			},
+			execute: func(t *testing.T, req *userspb.GetUserRequest, want want) {
+				t.Helper()
+
+				var wg sync.WaitGroup
+				results := make([]*usersmodel.GetUserResponse, 2)
+				errs := make([]error, 2)
+
+				for i := range 2 {
+					wg.Add(1)
+					go func(idx int) {
+						defer wg.Done()
+						results[idx], errs[idx] = s.GetUser(t.Context(), req)
+					}(i)
+				}
+
+				for range 50 {
+					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				close(singleflightReleaseChan)
+				wg.Wait()
+
+				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
+				assert.NoError(t, errs[0])
+				assert.NoError(t, errs[1])
+				assert.Equal(t, want.GetUserResponse, results[0])
+				assert.Equal(t, want.GetUserResponse, results[1])
 			},
 			want: want{
 				GetUserResponse: &usersmodel.GetUserResponse{
@@ -447,6 +529,11 @@ func TestGetUser(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.execute != nil {
+				tt.execute(t, tt.req, tt.want)
+				return
+			}
+
 			user, err := s.GetUser(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {

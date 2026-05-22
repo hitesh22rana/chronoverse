@@ -4,11 +4,14 @@ package analytics
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -28,6 +31,7 @@ type Service struct {
 	tp        trace.Tracer
 	validator *validator.Validate
 	repo      Repository
+	sf        singleflight.Group
 }
 
 // New creates a new analytics service.
@@ -63,7 +67,11 @@ func (s *Service) GetUserAnalytics(ctx context.Context, req *analyticspb.GetUser
 		return nil, err
 	}
 
-	res, err = s.repo.GetUserAnalytics(ctx, req.GetUserId())
+	resultCh := s.sf.DoChan(fmt.Sprintf("analytics:user:%s", req.GetUserId()), func() (any, error) {
+		return s.repo.GetUserAnalytics(ctx, req.GetUserId())
+	})
+
+	res, err = waitSingleflightResult[*analyticsmodel.GetUserAnalyticsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -97,10 +105,41 @@ func (s *Service) GetWorkflowAnalytics(ctx context.Context, req *analyticspb.Get
 		return nil, err
 	}
 
-	res, err = s.repo.GetWorkflowAnalytics(ctx, req.GetUserId(), req.GetWorkflowId())
+	resultCh := s.sf.DoChan(
+		fmt.Sprintf("analytics:workflow:%s:%s", req.GetUserId(), req.GetWorkflowId()),
+		func() (any, error) {
+			return s.repo.GetWorkflowAnalytics(ctx, req.GetUserId(), req.GetWorkflowId())
+		},
+	)
+
+	res, err = waitSingleflightResult[*analyticsmodel.GetWorkflowAnalyticsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
 
 	return res, nil
+}
+
+func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
+	var zero T
+
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+		}
+
+		return zero, status.Error(codes.Canceled, ctx.Err().Error())
+	case result := <-resultCh:
+		if result.Err != nil {
+			return zero, result.Err
+		}
+
+		typed, ok := result.Val.(T)
+		if !ok {
+			return zero, status.Error(codes.Internal, "invalid singleflight result type")
+		}
+
+		return typed, nil
+	}
 }

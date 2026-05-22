@@ -6,11 +6,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -31,6 +34,7 @@ type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
+	sf        singleflight.Group
 }
 
 // New creates a new notifications service.
@@ -164,8 +168,14 @@ func (s *Service) ListNotifications(
 		}
 	}
 
-	// List the notifications
-	res, err = s.repo.ListNotifications(ctx, req.GetUserId(), cursor)
+	resultCh := s.sf.DoChan(
+		fmt.Sprintf("notifications:%s:cursor=%s", req.GetUserId(), req.GetCursor()),
+		func() (any, error) {
+			return s.repo.ListNotifications(ctx, req.GetUserId(), cursor)
+		},
+	)
+
+	res, err = waitSingleflightResult[*notificationsmodel.ListNotificationsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -180,4 +190,28 @@ func decodeCursor(token string) (string, error) {
 	}
 
 	return string(decoded), nil
+}
+
+func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
+	var zero T
+
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+		}
+
+		return zero, status.Error(codes.Canceled, ctx.Err().Error())
+	case result := <-resultCh:
+		if result.Err != nil {
+			return zero, result.Err
+		}
+
+		typed, ok := result.Val.(T)
+		if !ok {
+			return zero, status.Error(codes.Internal, "invalid singleflight result type")
+		}
+
+		return typed, nil
+	}
 }

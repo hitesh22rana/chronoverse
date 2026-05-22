@@ -2,6 +2,8 @@ package workflows_test
 
 import (
 	"database/sql"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -747,9 +749,11 @@ func TestGetWorkflow(t *testing.T) {
 	}
 
 	var (
-		createdAt    = time.Now()
-		updatedAt    = time.Now()
-		terminatedAt = sql.NullTime{
+		createdAt               = time.Now()
+		updatedAt               = time.Now()
+		singleflightRepoCalls   int32
+		singleflightReleaseChan chan struct{}
+		terminatedAt            = sql.NullTime{
 			Time:  time.Now(),
 			Valid: true,
 		}
@@ -757,11 +761,12 @@ func TestGetWorkflow(t *testing.T) {
 
 	// Test cases
 	tests := []struct {
-		name  string
-		req   *workflowspb.GetWorkflowRequest
-		mock  func(req *workflowspb.GetWorkflowRequest)
-		want  want
-		isErr bool
+		name    string
+		req     *workflowspb.GetWorkflowRequest
+		mock    func(req *workflowspb.GetWorkflowRequest)
+		execute func(t *testing.T, req *workflowspb.GetWorkflowRequest, want want)
+		want    want
+		isErr   bool
 	}{
 		{
 			name: "success: no cache hit",
@@ -874,6 +879,104 @@ func TestGetWorkflow(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "success: singleflight deduplicates cache miss",
+			req: &workflowspb.GetWorkflowRequest{
+				Id:     "workflow_id",
+				UserId: "user_id",
+			},
+			mock: func(req *workflowspb.GetWorkflowRequest) {
+				cache.EXPECT().Get(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil, status.Error(codes.NotFound, "cache miss")).Times(2)
+
+				cache.EXPECT().DeleteByPattern(
+					gomock.Any(),
+					gomock.Any(),
+				).Return(int64(0), nil).AnyTimes()
+
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+
+				singleflightRepoCalls = 0
+				singleflightReleaseChan = make(chan struct{})
+				repo.EXPECT().GetWorkflow(
+					gomock.Any(),
+					req.GetId(),
+					req.GetUserId(),
+				).DoAndReturn(func(_ any, _, _ string) (*workflowsmodel.GetWorkflowResponse, error) {
+					atomic.AddInt32(&singleflightRepoCalls, 1)
+					<-singleflightReleaseChan
+					return &workflowsmodel.GetWorkflowResponse{
+						ID:                               "workflow_id",
+						Name:                             "workflow1",
+						Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+						Kind:                             "HEARTBEAT",
+						WorkflowBuildStatus:              "COMPLETED",
+						Interval:                         1,
+						ConsecutiveJobFailuresCount:      0,
+						MaxConsecutiveJobFailuresAllowed: 5,
+						CreatedAt:                        createdAt,
+						UpdatedAt:                        updatedAt,
+						TerminatedAt:                     terminatedAt,
+						LogRetention:                     true,
+					}, nil
+				}).Times(1)
+			},
+			execute: func(t *testing.T, req *workflowspb.GetWorkflowRequest, want want) {
+				t.Helper()
+
+				var wg sync.WaitGroup
+				results := make([]*workflowsmodel.GetWorkflowResponse, 2)
+				errs := make([]error, 2)
+
+				for i := range 2 {
+					wg.Add(1)
+					go func(idx int) {
+						defer wg.Done()
+						results[idx], errs[idx] = s.GetWorkflow(t.Context(), req)
+					}(i)
+				}
+
+				for range 50 {
+					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				close(singleflightReleaseChan)
+				wg.Wait()
+
+				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
+				assert.NoError(t, errs[0])
+				assert.NoError(t, errs[1])
+				assert.Equal(t, want.GetWorkflowResponse, results[0])
+				assert.Equal(t, want.GetWorkflowResponse, results[1])
+			},
+			want: want{
+				&workflowsmodel.GetWorkflowResponse{
+					ID:                               "workflow_id",
+					Name:                             "workflow1",
+					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+					Kind:                             "HEARTBEAT",
+					WorkflowBuildStatus:              "COMPLETED",
+					Interval:                         1,
+					ConsecutiveJobFailuresCount:      0,
+					MaxConsecutiveJobFailuresAllowed: 5,
+					CreatedAt:                        createdAt,
+					UpdatedAt:                        updatedAt,
+					TerminatedAt:                     terminatedAt,
+					LogRetention:                     true,
+				},
+			},
+			isErr: false,
+		},
+		{
 			name: "error: missing required fields in request",
 			req: &workflowspb.GetWorkflowRequest{
 				Id:     "",
@@ -959,6 +1062,11 @@ func TestGetWorkflow(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.execute != nil {
+				tt.execute(t, tt.req, tt.want)
+				return
+			}
+
 			workflow, err := s.GetWorkflow(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {

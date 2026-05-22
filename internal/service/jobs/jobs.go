@@ -16,6 +16,7 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -57,6 +58,7 @@ type Service struct {
 	tp        trace.Tracer
 	repo      Repository
 	cache     Cache
+	sf        singleflight.Group
 }
 
 // New creates a new jobs-service.
@@ -236,8 +238,11 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Get the scheduled job details
-	res, err = s.repo.GetJobByID(ctx, req.GetId())
+	resultCh := s.sf.DoChan(fmt.Sprintf("job_by_id:%s", req.GetId()), func() (any, error) {
+		return s.repo.GetJobByID(ctx, req.GetId())
+	})
+
+	res, err = waitSingleflightResult[*jobsmodel.GetJobByIDResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -310,45 +315,48 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 	}
 
-	// Get the scheduled job logs
-	var jobStatus string
-	res, jobStatus, err = s.repo.GetJobLogs(
-		ctx,
-		req.GetId(),
-		req.GetWorkflowId(),
-		req.GetUserId(),
-		req.GetCursor(),
-		filters,
-	)
+	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
+		res, jobStatus, err := s.repo.GetJobLogs(
+			ctx,
+			req.GetId(),
+			req.GetWorkflowId(),
+			req.GetUserId(),
+			req.GetCursor(),
+			filters,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Cache stable pages once for the shared result.
+		if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
+				defer cancel()
+
+				if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+					logger.Warn("failed to cache job logs",
+						zap.String("user_id", req.GetUserId()),
+						zap.String("job_id", req.GetId()),
+						zap.String("cache_key", cacheKey),
+						zap.Error(setErr),
+					)
+				} else if logger.Core().Enabled(zap.DebugLevel) {
+					logger.Debug("cached job logs",
+						zap.String("user_id", req.GetUserId()),
+						zap.String("job_id", req.GetId()),
+						zap.String("cache_key", cacheKey),
+					)
+				}
+			}()
+		}
+
+		return res, nil
+	})
+
+	res, err = waitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
-	}
-
-	// Cache the response in the background, if any of the following conditions are satisfied:
-	// 1. The job status is in terminal state(which ensures the job status won't change further)
-	// 2. Next cursor exists(which ensure that these are not the trailing logs and can be cached)
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-			defer cancel()
-
-			// Cache the job logs
-			if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
-				logger.Warn("failed to cache job logs",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("job_id", req.GetId()),
-					zap.String("cache_key", cacheKey),
-					zap.Error(setErr),
-				)
-			} else if logger.Core().Enabled(zap.DebugLevel) {
-				logger.Debug("cached job logs",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("job_id", req.GetId()),
-					zap.String("cache_key", cacheKey),
-				)
-			}
-		}()
 	}
 
 	return res, nil
@@ -501,45 +509,47 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 	}
 
-	// Get all the filtered job logs
-	var jobStatus string
-	res, jobStatus, err = s.repo.SearchJobLogs(
-		ctx,
-		req.GetId(),
-		req.GetWorkflowId(),
-		req.GetUserId(),
-		req.GetCursor(),
-		filters,
-	)
+	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
+		res, jobStatus, err := s.repo.SearchJobLogs(
+			ctx,
+			req.GetId(),
+			req.GetWorkflowId(),
+			req.GetUserId(),
+			req.GetCursor(),
+			filters,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
+				defer cancel()
+
+				if setErr := s.cache.Set(bgCtx, cacheKey, res, jobLogSearchExpirationTTL); setErr != nil {
+					logger.Warn("failed to cache job logs",
+						zap.String("user_id", req.GetUserId()),
+						zap.String("job_id", req.GetId()),
+						zap.String("cache_key", cacheKey),
+						zap.Error(setErr),
+					)
+				} else if logger.Core().Enabled(zap.DebugLevel) {
+					logger.Debug("cached job logs",
+						zap.String("user_id", req.GetUserId()),
+						zap.String("job_id", req.GetId()),
+						zap.String("cache_key", cacheKey),
+					)
+				}
+			}()
+		}
+
+		return res, nil
+	})
+
+	res, err = waitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
-	}
-
-	// Cache the response in the background, if any of the following conditions are satisfied:
-	// 1. The job status is in terminal state(which ensures the job status won't change further)
-	// 2. Next cursor exists(which ensure that these are not the trailing logs and can be cached)
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	if isTerminalJobStatus(jobStatus) || res.Cursor != "" {
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-			defer cancel()
-
-			// Cache the job logs
-			if setErr := s.cache.Set(bgCtx, cacheKey, res, jobLogSearchExpirationTTL); setErr != nil {
-				logger.Warn("failed to cache job logs",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("job_id", req.GetId()),
-					zap.String("cache_key", cacheKey),
-					zap.Error(setErr),
-				)
-			} else if logger.Core().Enabled(zap.DebugLevel) {
-				logger.Debug("cached job logs",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("job_id", req.GetId()),
-					zap.String("cache_key", cacheKey),
-				)
-			}
-		}()
 	}
 
 	return res, nil
@@ -602,8 +612,19 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		return nil, err
 	}
 
-	// List all scheduled jobs by job ID
-	res, err = s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, filters)
+	listKey := fmt.Sprintf(
+		"jobs:%s:%s:cursor=%s&status=%s&trigger=%s",
+		req.GetUserId(),
+		req.GetWorkflowId(),
+		req.GetCursor(),
+		filters.Status,
+		filters.Trigger,
+	)
+	resultCh := s.sf.DoChan(listKey, func() (any, error) {
+		return s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, filters)
+	})
+
+	res, err = waitSingleflightResult[*jobsmodel.ListJobsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -677,4 +698,28 @@ func decodeListJobsCursor(token string) (string, error) {
 	}
 
 	return string(decoded), nil
+}
+
+func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
+	var zero T
+
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+		}
+
+		return zero, status.Error(codes.Canceled, ctx.Err().Error())
+	case result := <-resultCh:
+		if result.Err != nil {
+			return zero, result.Err
+		}
+
+		typed, ok := result.Val.(T)
+		if !ok {
+			return zero, status.Error(codes.Internal, "invalid singleflight result type")
+		}
+
+		return typed, nil
+	}
 }

@@ -2,6 +2,8 @@ package notifications_test
 
 import (
 	"database/sql"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -260,18 +262,21 @@ func TestService_ListNotifications(t *testing.T) {
 	}
 
 	var (
-		createdAt = time.Now()
-		updatedAt = time.Now()
-		readAt    = sql.NullTime{}
+		createdAt               = time.Now()
+		updatedAt               = time.Now()
+		readAt                  = sql.NullTime{}
+		singleflightRepoCalls   int32
+		singleflightReleaseChan chan struct{}
 	)
 
 	// Test cases
 	tests := []struct {
-		name  string
-		req   *notificationspb.ListNotificationsRequest
-		mock  func(req *notificationspb.ListNotificationsRequest)
-		want  want
-		isErr bool
+		name    string
+		req     *notificationspb.ListNotificationsRequest
+		mock    func(req *notificationspb.ListNotificationsRequest)
+		execute func(t *testing.T, req *notificationspb.ListNotificationsRequest, want want)
+		want    want
+		isErr   bool
 	}{
 		{
 			name: "success",
@@ -332,6 +337,84 @@ func TestService_ListNotifications(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "success: singleflight deduplicates concurrent request",
+			req: &notificationspb.ListNotificationsRequest{
+				UserId: "user1",
+				Cursor: "",
+			},
+			mock: func(req *notificationspb.ListNotificationsRequest) {
+				singleflightRepoCalls = 0
+				singleflightReleaseChan = make(chan struct{})
+				repo.EXPECT().ListNotifications(
+					gomock.Any(),
+					req.GetUserId(),
+					req.GetCursor(),
+				).DoAndReturn(func(_ any, _, _ string) (*notificationsmodel.ListNotificationsResponse, error) {
+					atomic.AddInt32(&singleflightRepoCalls, 1)
+					<-singleflightReleaseChan
+					return &notificationsmodel.ListNotificationsResponse{
+						Notifications: []*notificationsmodel.NotificationResponse{
+							{
+								ID:        "notification_id_1",
+								Kind:      "kind1",
+								Payload:   `{"key": "value"}`,
+								ReadAt:    readAt,
+								CreatedAt: createdAt,
+								UpdatedAt: updatedAt,
+							},
+						},
+						Cursor: "",
+					}, nil
+				}).Times(1)
+			},
+			execute: func(t *testing.T, req *notificationspb.ListNotificationsRequest, want want) {
+				t.Helper()
+
+				var wg sync.WaitGroup
+				results := make([]*notificationsmodel.ListNotificationsResponse, 2)
+				errs := make([]error, 2)
+
+				for i := range 2 {
+					wg.Add(1)
+					go func(idx int) {
+						defer wg.Done()
+						results[idx], errs[idx] = s.ListNotifications(t.Context(), req)
+					}(i)
+				}
+
+				for range 50 {
+					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				close(singleflightReleaseChan)
+				wg.Wait()
+
+				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
+				assert.NoError(t, errs[0])
+				assert.NoError(t, errs[1])
+				assert.Equal(t, want.ListNotificationsResponse, results[0])
+				assert.Equal(t, want.ListNotificationsResponse, results[1])
+			},
+			want: want{
+				ListNotificationsResponse: &notificationsmodel.ListNotificationsResponse{
+					Notifications: []*notificationsmodel.NotificationResponse{
+						{
+							ID:        "notification_id_1",
+							Kind:      "kind1",
+							Payload:   `{"key": "value"}`,
+							ReadAt:    readAt,
+							CreatedAt: createdAt,
+							UpdatedAt: updatedAt,
+						},
+					},
+					Cursor: "",
+				},
+			},
+			isErr: false,
+		},
+		{
 			name: "error: missing user ID",
 			req: &notificationspb.ListNotificationsRequest{
 				UserId: "",
@@ -380,6 +463,11 @@ func TestService_ListNotifications(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.execute != nil {
+				tt.execute(t, tt.req, tt.want)
+				return
+			}
+
 			notifications, err := s.ListNotifications(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {

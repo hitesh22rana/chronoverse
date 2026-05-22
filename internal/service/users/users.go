@@ -13,6 +13,7 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -49,6 +50,7 @@ type Service struct {
 	tp        trace.Tracer
 	repo      Repository
 	cache     Cache
+	sf        singleflight.Group
 }
 
 // New creates a new users-service.
@@ -229,32 +231,38 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 		return cacheRes.(*usersmodel.GetUserResponse), nil
 	}
 
-	res, err = s.repo.GetUser(ctx, req.GetId())
+	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
+		res, err := s.repo.GetUser(ctx, req.GetId())
+		if err != nil {
+			return nil, err
+		}
+
+		// Cache the GetUser response in the background once for the shared result.
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
+			defer cancel()
+
+			if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+				logger.Warn("failed to cache user",
+					zap.String("user_id", res.ID),
+					zap.String("cache_key", cacheKey),
+					zap.Error(setErr),
+				)
+			} else if logger.Core().Enabled(zap.DebugLevel) {
+				logger.Debug("cached user",
+					zap.String("user_id", res.ID),
+					zap.String("cache_key", cacheKey),
+				)
+			}
+		}()
+
+		return res, nil
+	})
+
+	res, err = waitSingleflightResult[*usersmodel.GetUserResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
-
-	// Cache the response in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		// Cache the GetUser response
-		// The key is in the format "user:{user_id}"
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
-			logger.Warn("failed to cache user",
-				zap.String("user_id", res.ID),
-				zap.String("cache_key", cacheKey),
-				zap.Error(setErr),
-			)
-		} else if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("cached user",
-				zap.String("user_id", res.ID),
-				zap.String("cache_key", cacheKey),
-			)
-		}
-	}()
 
 	return res, nil
 }
@@ -317,4 +325,28 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 	}
 
 	return err
+}
+
+func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
+	var zero T
+
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+		}
+
+		return zero, status.Error(codes.Canceled, ctx.Err().Error())
+	case result := <-resultCh:
+		if result.Err != nil {
+			return zero, result.Err
+		}
+
+		typed, ok := result.Val.(T)
+		if !ok {
+			return zero, status.Error(codes.Internal, "invalid singleflight result type")
+		}
+
+		return typed, nil
+	}
 }

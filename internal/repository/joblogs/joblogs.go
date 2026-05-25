@@ -16,8 +16,8 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/datastructures/countminsketch"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -51,15 +51,19 @@ type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
 	rdb *redis.Store
+	pg  *postgres.Postgres
 	ch  *clickhouse.Client
 	ms  meilisearch.ServiceManager
 	kfk *kgo.Client
+
+	batchMu sync.Mutex
 }
 
 // New creates a new joblogs repository.
 func New(
 	cfg *Config,
 	rdb *redis.Store,
+	pg *postgres.Postgres,
 	ch *clickhouse.Client,
 	ms meilisearch.ServiceManager,
 	kfk *kgo.Client,
@@ -68,6 +72,7 @@ func New(
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		rdb: rdb,
+		pg:  pg,
 		ch:  ch,
 		ms:  ms,
 		kfk: kfk,
@@ -91,9 +96,6 @@ func (r *Repository) Run(ctx context.Context) error {
 
 		queue   = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
 		queueMu sync.Mutex
-
-		cms             = countminsketch.NewCountMinSketch(Epsilon, Delta)
-		uniqueWorkflows = sync.Map{}
 	)
 
 	// Context with cancellation for graceful shutdown
@@ -127,26 +129,6 @@ func (r *Repository) Run(ctx context.Context) error {
 					return r.processLogsBatch(ctx, data)
 				})
 
-				// Process final analytics before exiting
-
-				// Copy the unique workflows to a new map for processing and empty the map
-				uniqueWorkflowsCopy := sync.Map{}
-				uniqueWorkflows.Range(func(key, value any) bool {
-					uniqueWorkflowsCopy.Store(key, value)
-					return true
-				})
-
-				// Clear the original map to avoid reprocessing
-				uniqueWorkflows.Clear()
-
-				// Atomically snapshot and reset the countminsketch for processing
-				cmsCopy := cms.SnapshotAndReset()
-
-				//nolint:errcheck // Ignore error as we are exiting
-				withRetry(func() error {
-					return r.processLogsAnalytics(ctx, cmsCopy, &uniqueWorkflowsCopy)
-				})
-
 				exitCh <- nil
 				return
 
@@ -170,25 +152,9 @@ func (r *Repository) Run(ctx context.Context) error {
 				}
 
 			case <-analyticsTicker.C:
-				// Process analytics on ticker interval
-
-				// Copy the unique workflows to a new map for processing and empty the map
-				uniqueWorkflowsCopy := sync.Map{}
-				uniqueWorkflows.Range(func(key, value any) bool {
-					uniqueWorkflowsCopy.Store(key, value)
-					return true
-				})
-
-				// Clear the original map to avoid reprocessing
-				uniqueWorkflows.Clear()
-
-				// Atomically snapshot and reset the countminsketch for processing
-				cmsCopy := cms.SnapshotAndReset()
-
-				//nolint:errcheck // Ignore error as we are exiting
-				withRetry(func() error {
-					return r.processLogsAnalytics(ctx, cmsCopy, &uniqueWorkflowsCopy)
-				})
+				// Durable log analytics are processed with log batches so Kafka source offsets
+				// can be used as the replay-safe identity. Keep this ticker only as a pacing
+				// hook for compatibility with the existing configuration.
 			}
 		}
 	}()
@@ -268,15 +234,16 @@ func (r *Repository) Run(ctx context.Context) error {
 
 					// Reset the queue
 					queue = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
+					queueMu.Unlock()
 
-					go func() {
-						if err := withRetry(func() error {
-							return r.processLogsBatch(context.WithoutCancel(ctx), data)
-						}); err != nil {
-							// Continue processing despite errors
-							logger.Error("error processing batch", zap.Error(err))
-						}
-					}()
+					if err := withRetry(func() error {
+						return r.processLogsBatch(context.WithoutCancel(ctx), data)
+					}); err != nil {
+						// Continue processing despite errors
+						logger.Error("error processing batch", zap.Error(err))
+					}
+
+					queueMu.Lock()
 				}
 
 				queue = append(queue, &queueData{
@@ -302,13 +269,6 @@ func (r *Repository) Run(ctx context.Context) error {
 					//nolint:errcheck // Ignore error as we are not blocking on Redis publish
 					r.rdb.Publish(context.WithoutCancel(ctx), redis.GetJobLogsChannel(logEntry.JobID), data)
 				}(&logEntry)
-
-				// Count the log entry in the CountMinSketch
-				// This is done before processing to ensure we count all logs, even if they fail
-				// This allows to track the number of logs per workflow
-				// This is useful for analytics and monitoring purposes
-				cms.Add(logEntry.WorkflowID)
-				uniqueWorkflows.Store(logEntry.WorkflowID, logEntry.UserID)
 			}(iter.Next())
 		}
 	}

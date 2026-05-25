@@ -12,12 +12,16 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 )
 
 // processLogsBatch processes accumulated logs in a batch.
 func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) error {
+	r.batchMu.Lock()
+	defer r.batchMu.Unlock()
+
 	logger := loggerpkg.FromContext(ctx)
 
 	ctx, span := r.tp.Start(ctx, "joblogs.Run.processLogsBatch")
@@ -31,12 +35,14 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 	// Extract logs and records
 	logs := make([]*jobsmodel.JobLogEvent, 0, len(batch))
 	records := make([]*kgo.Record, 0, len(batch))
-	documents := make([]*map[string]any, 0, len(batch))
 
 	for _, item := range batch {
 		records = append(records, item.record)
 
 		log := item.logEntry
+		if log.EventKey == "" {
+			log.EventKey = idempotency.LogEventKey(log.JobID, log.Stream, log.SequenceNum)
+		}
 
 		// Skip if log retention is disabled
 		if !log.Retention {
@@ -44,8 +50,13 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 		}
 
 		logs = append(logs, log)
+	}
+
+	logs = dedupeLogsInBatch(logs)
+	documents := make([]*map[string]any, 0, len(logs))
+	for _, log := range logs {
 		documents = append(documents, &map[string]any{
-			"id":           fmt.Sprintf("%s-%d-%s", log.JobID, log.SequenceNum, log.Stream),
+			"id":           log.EventKey,
 			"job_id":       log.JobID,
 			"workflow_id":  log.WorkflowID,
 			"user_id":      log.UserID,
@@ -70,6 +81,11 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 		logger.Error("failed to add documents", zap.Error(err))
 	}
 
+	if err := r.processLogsAnalytics(ctx, batch); err != nil {
+		logger.Error("failed to process logs analytics", zap.Error(err))
+		return err
+	}
+
 	// Commit Kafka offsets after successful insertion
 	if err := r.kfk.CommitRecords(ctx, records...); err != nil {
 		logger.Error("failed to commit records batch", zap.Error(err))
@@ -84,6 +100,28 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 	return nil
 }
 
+func dedupeLogsInBatch(logs []*jobsmodel.JobLogEvent) []*jobsmodel.JobLogEvent {
+	if len(logs) == 0 {
+		return logs
+	}
+
+	seen := make(map[string]struct{}, len(logs))
+	filtered := make([]*jobsmodel.JobLogEvent, 0, len(logs))
+	for _, log := range logs {
+		if log.EventKey == "" {
+			filtered = append(filtered, log)
+			continue
+		}
+		if _, ok := seen[log.EventKey]; ok {
+			continue
+		}
+		seen[log.EventKey] = struct{}{}
+		filtered = append(filtered, log)
+	}
+
+	return filtered
+}
+
 // insertLogsBatchToClickhouse inserts a batch of logs into the clickhouse database.
 func (r *Repository) insertLogsBatchToClickhouse(ctx context.Context, logs []*jobsmodel.JobLogEvent) error {
 	if len(logs) == 0 {
@@ -93,8 +131,8 @@ func (r *Repository) insertLogsBatchToClickhouse(ctx context.Context, logs []*jo
 	// Prepare batch statement
 	stmt := fmt.Sprintf(`
         INSERT INTO %s 
-        (job_id, workflow_id, user_id, timestamp, message, sequence_num, stream)
-        VALUES (?, ?, ?, ?, ?, ?, ?);
+        (event_id, job_id, workflow_id, user_id, timestamp, message, sequence_num, stream)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
     `, clickhouse.TableJobLogs)
 
 	if err := r.ch.BatchInsert(
@@ -103,6 +141,7 @@ func (r *Repository) insertLogsBatchToClickhouse(ctx context.Context, logs []*jo
 		func(batch driver.Batch) error {
 			for _, log := range logs {
 				err := batch.Append(
+					log.EventKey,
 					log.JobID,
 					log.WorkflowID,
 					log.UserID,

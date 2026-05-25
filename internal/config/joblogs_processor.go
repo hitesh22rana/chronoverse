@@ -11,6 +11,7 @@ type JobLogsProcessor struct {
 	Environment
 
 	Redis
+	Postgres
 	ClickHouse
 	MeiliSearch
 	Kafka

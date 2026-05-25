@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"syscall"
 
 	_ "github.com/KimMachineGun/automemlimit"
@@ -74,7 +73,6 @@ func run() int {
 
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithTransactionalID(strconv.FormatInt(int64(os.Getpid()), 10)),
 		kafka.WithTLS(&cfg.Kafka),
 	)
 	if err != nil {

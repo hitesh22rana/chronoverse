@@ -91,6 +91,10 @@ CREATE INDEX IF NOT EXISTS idx_outbox_events_processing_locked
 ON outbox_events (locked_at)
 WHERE status = 'PROCESSING';
 
+CREATE INDEX IF NOT EXISTS idx_outbox_events_published_cleanup
+ON outbox_events (published_at)
+WHERE status = 'PUBLISHED';
+
 CREATE TABLE IF NOT EXISTS processed_events (
     consumer TEXT NOT NULL,
     event_key TEXT NOT NULL,

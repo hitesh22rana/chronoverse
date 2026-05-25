@@ -97,7 +97,7 @@ func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
 			if _, ok := s.allowedOrigins[origin]; ok {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key")
 				w.Header().Set("Access-Control-Allow-Credentials", "true") // Critical for cookies
 				w.Header().Set("Access-Control-Max-Age", "86400")          // 24 hours
 

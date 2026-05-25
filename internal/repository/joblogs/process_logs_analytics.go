@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/hitesh22rana/chronoverse/internal/pkg/datastructures/countminsketch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
@@ -20,10 +19,14 @@ type logAnalyticsPartition struct {
 	partition int32
 }
 
-type logAnalyticsEstimate struct {
-	cms           *countminsketch.CountMinSketch
-	workflowUsers map[string]string
-	maxOffset     int64
+type workflowLogCount struct {
+	userID string
+	count  uint64
+}
+
+type logAnalyticsCounts struct {
+	workflowCounts map[string]workflowLogCount
+	maxOffset      int64
 }
 
 // processLogsAnalytics updates durable log counters using Kafka source offsets as replay-safe identity.
@@ -107,12 +110,12 @@ func (r *Repository) processLogsAnalyticsPartition(
 		return err
 	}
 
-	estimate := estimatePartitionLogCounts(records, lastOffset)
-	if updateErr := updatePartitionLogCounts(ctx, tx, estimate.cms, estimate.workflowUsers); updateErr != nil {
+	counts := countPartitionLogs(records, lastOffset)
+	if updateErr := updatePartitionLogCounts(ctx, tx, counts.workflowCounts); updateErr != nil {
 		return updateErr
 	}
 
-	if estimate.maxOffset <= lastOffset {
+	if counts.maxOffset <= lastOffset {
 		return nil
 	}
 
@@ -120,7 +123,7 @@ func (r *Repository) processLogsAnalyticsPartition(
 		UPDATE %s
 		SET last_offset = $4
 		WHERE consumer = $1 AND topic = $2 AND partition = $3;
-	`, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition, estimate.maxOffset); err != nil {
+	`, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition, counts.maxOffset); err != nil {
 		return status.Errorf(codes.Internal, "failed to advance log analytics offset: %v", err)
 	}
 
@@ -141,12 +144,15 @@ func lockLogAnalyticsOffset(ctx context.Context, tx pgx.Tx, partition logAnalyti
 	return lastOffset, nil
 }
 
-func estimatePartitionLogCounts(records []*queueData, lastOffset int64) *logAnalyticsEstimate {
-	cms := countminsketch.NewCountMinSketch(Epsilon, Delta)
-	workflowUsers := make(map[string]string)
+func countPartitionLogs(records []*queueData, lastOffset int64) *logAnalyticsCounts {
+	workflowCounts := make(map[string]workflowLogCount)
 	maxOffset := lastOffset
 
 	for _, item := range records {
+		if item == nil || item.record == nil || item.logEntry == nil {
+			continue
+		}
+
 		if item.record.Offset <= lastOffset {
 			continue
 		}
@@ -159,28 +165,28 @@ func estimatePartitionLogCounts(records []*queueData, lastOffset int64) *logAnal
 			continue
 		}
 
-		cms.Add(item.logEntry.WorkflowID)
-		if _, ok := workflowUsers[item.logEntry.WorkflowID]; !ok {
-			workflowUsers[item.logEntry.WorkflowID] = item.logEntry.UserID
+		workflowID := item.logEntry.WorkflowID
+		entry := workflowCounts[workflowID]
+		if entry.userID == "" {
+			entry.userID = item.logEntry.UserID
 		}
+		entry.count++
+		workflowCounts[workflowID] = entry
 	}
 
-	return &logAnalyticsEstimate{
-		cms:           cms,
-		workflowUsers: workflowUsers,
-		maxOffset:     maxOffset,
+	return &logAnalyticsCounts{
+		workflowCounts: workflowCounts,
+		maxOffset:      maxOffset,
 	}
 }
 
 func updatePartitionLogCounts(
 	ctx context.Context,
 	tx pgx.Tx,
-	cms *countminsketch.CountMinSketch,
-	workflowUsers map[string]string,
+	workflowCounts map[string]workflowLogCount,
 ) error {
-	for workflowID, userID := range workflowUsers {
-		estimateLogsCount := cms.Estimate(workflowID)
-		if estimateLogsCount == 0 {
+	for workflowID, entry := range workflowCounts {
+		if entry.count == 0 {
 			continue
 		}
 
@@ -191,7 +197,7 @@ func updatePartitionLogCounts(
 			ON CONFLICT (user_id, workflow_id)
 			DO UPDATE SET
 				logs_count = %s.logs_count + EXCLUDED.logs_count;
-		`, postgres.TableAnalytics, postgres.TableAnalytics), userID, workflowID, estimateLogsCount); err != nil {
+		`, postgres.TableAnalytics, postgres.TableAnalytics), entry.userID, workflowID, entry.count); err != nil {
 			return status.Errorf(codes.Internal, "failed to update logs analytics: %v", err)
 		}
 	}

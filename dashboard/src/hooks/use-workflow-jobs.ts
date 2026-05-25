@@ -38,8 +38,9 @@ export function useWorkflowJobs(workflowId: string) {
     let currentCursor = ""
     let statusFilter = ""
     let triggerFilter = ""
+    const isJobsTab = searchParams.get("tab") === "jobs"
 
-    if (isNotWorkflowPath) {
+    if (isNotWorkflowPath || !isJobsTab) {
         currentCursor = ""
         statusFilter = ""
         triggerFilter = ""

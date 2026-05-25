@@ -32,6 +32,12 @@ type Repository struct {
 	pg  *postgres.Postgres
 }
 
+type jobDispatchOutboxEvent struct {
+	jobID    string
+	eventKey string
+	payload  json.RawMessage
+}
+
 // New creates a new scheduler repository.
 func New(cfg *Config, pg *postgres.Postgres) *Repository {
 	return &Repository{
@@ -81,6 +87,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	}
 	defer rows.Close()
 
+	events := make([]jobDispatchOutboxEvent, 0, r.cfg.FetchLimit)
 	for rows.Next() {
 		var id string
 		var workflowID string
@@ -102,17 +109,11 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			continue
 		}
 
-		insertErr := outbox.InsertTx(ctx, tx, &outbox.Event{
-			Topic:         kafka.TopicJobs,
-			KafkaKey:      id,
-			EventKey:      eventKey,
-			AggregateType: "job",
-			AggregateID:   id,
-			Payload:       json.RawMessage(scheduledJobEntryBytes),
+		events = append(events, jobDispatchOutboxEvent{
+			jobID:    id,
+			eventKey: eventKey,
+			payload:  json.RawMessage(scheduledJobEntryBytes),
 		})
-		if insertErr != nil {
-			return 0, insertErr
-		}
 		total++
 	}
 
@@ -120,6 +121,21 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	if err = rows.Err(); err != nil {
 		err = status.Errorf(codes.Internal, "failed to iterate over jobs: %v", err)
 		return 0, err
+	}
+	rows.Close()
+
+	for _, event := range events {
+		insertErr := outbox.InsertTx(ctx, tx, &outbox.Event{
+			Topic:         kafka.TopicJobs,
+			KafkaKey:      event.jobID,
+			EventKey:      event.eventKey,
+			AggregateType: "job",
+			AggregateID:   event.jobID,
+			Payload:       event.payload,
+		})
+		if insertErr != nil {
+			return 0, insertErr
+		}
 	}
 
 	if total == 0 {

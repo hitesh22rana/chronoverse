@@ -650,6 +650,8 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 }
 
 // TerminateWorkflow terminates a workflow.
+//
+//nolint:gocyclo // The transactional error handling has several distinct database failure branches.
 func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.TerminateWorkflow")
 	defer func() {
@@ -677,15 +679,46 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
+	var generation int64
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET terminated_at = NOW()
-		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
+		SELECT generation
+		FROM %s
+		WHERE id = $1 AND user_id = $2
+		FOR UPDATE
+		LIMIT 1;
 	`, postgres.TableWorkflows)
 
-	// Execute the query
-	ct, err := tx.Exec(ctx, query, workflowID, userID)
+	// Lock the workflow first so a retry against an already-terminated workflow can
+	// still enqueue the terminate cleanup event for pending/running jobs.
+	err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&generation)
 	if err != nil {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		case errors.Is(err, context.Canceled):
+			err = status.Error(codes.Canceled, err.Error())
+			return err
+		case r.pg.IsNoRows(err):
+			err = status.Errorf(codes.NotFound, "workflow not found or not owned by user")
+			return err
+		}
+
+		if r.pg.IsInvalidTextRepresentation(err) {
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to terminate workflow: %v", err)
+		return err
+	}
+
+	query = fmt.Sprintf(`
+		UPDATE %s
+		SET terminated_at = COALESCE(terminated_at, NOW())
+		WHERE id = $1 AND user_id = $2;
+	`, postgres.TableWorkflows)
+	if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
 			return err
@@ -703,12 +736,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 		return err
 	}
 
-	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "workflow not found or not owned by user")
-		return err
-	}
-
-	event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionTerminate, 0)
+	event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionTerminate, generation)
 	insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
 	if insertErr != nil {
 		return insertErr

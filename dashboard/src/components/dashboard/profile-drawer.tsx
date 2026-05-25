@@ -110,7 +110,7 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
             <Sheet open={open} onOpenChange={onClose}>
                 <SheetContent className="w-full sm:max-w-md p-0 gap-0 h-full flex flex-col">
                     {/* Header */}
-                    <SheetHeader className="px-6 py-4 border-b flex-shrink-0">
+                    <SheetHeader className="px-6 py-4 border-b shrink-0">
                         <div className="flex items-center gap-2">
                             <User className="h-5 w-5" />
                             <SheetTitle>Profile</SheetTitle>

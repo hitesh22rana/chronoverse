@@ -239,19 +239,28 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	var (
-		kind              string
-		currentBuildHash  sql.NullString
-		currentGeneration int64
-		currentInterval   int32
+		kind                string
+		currentBuildHash    sql.NullString
+		currentGeneration   int64
+		currentInterval     int32
+		currentBuildStatus  string
+		currentTerminatedAt sql.NullTime
 	)
 	query := fmt.Sprintf(`
-		SELECT kind, build_hash, generation, interval
+		SELECT kind, build_hash, generation, interval, build_status, terminated_at
 		FROM %s
 		WHERE id = $1 AND user_id = $2
 		FOR UPDATE
 		LIMIT 1;
 	`, postgres.TableWorkflows)
-	if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&kind, &currentBuildHash, &currentGeneration, &currentInterval); err != nil {
+	if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(
+		&kind,
+		&currentBuildHash,
+		&currentGeneration,
+		&currentInterval,
+		&currentBuildStatus,
+		&currentTerminatedAt,
+	); err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -279,14 +288,21 @@ func (r *Repository) UpdateWorkflow(
 	newBuildHashValid := newBuildHash != ""
 	buildHashChanged := currentBuildHash.Valid != newBuildHashValid || currentBuildHash.String != newBuildHash
 	rescheduleRequired := currentInterval != interval
+	reactivatingTerminatedWorkflow := currentTerminatedAt.Valid
+	workflowNeedsBuild := currentBuildStatus != workflowsmodel.WorkflowBuildStatusCompleted.ToString() &&
+		currentBuildStatus != workflowsmodel.WorkflowBuildStatusStarted.ToString()
+	buildRequired := buildHashChanged || workflowNeedsBuild
+	rescheduleRequired = rescheduleRequired || (reactivatingTerminatedWorkflow && !buildRequired)
 	nextGeneration := currentGeneration
 	buildStatus := "build_status"
 	var buildHashArg any
 	if newBuildHashValid {
 		buildHashArg = newBuildHash
 	}
-	if buildHashChanged {
+	if buildRequired || rescheduleRequired {
 		nextGeneration++
+	}
+	if buildRequired {
 		buildStatus = fmt.Sprintf("'%s'", workflowsmodel.WorkflowBuildStatusQueued.ToString())
 	}
 
@@ -321,7 +337,7 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	switch {
-	case buildHashChanged:
+	case buildRequired:
 		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionBuild, nextGeneration)
 		insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
 		if insertErr != nil {

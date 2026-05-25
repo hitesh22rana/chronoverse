@@ -330,10 +330,10 @@ func (r *Repository) GetJobLogs(
 
 	logQueryArgs := []any{jobID, workflowID, userID}
 	logsQuery := fmt.Sprintf(`
-	SELECT timestamp, message, sequence_num, stream
+	SELECT latest_timestamp AS timestamp, message, sequence_num, stream
 	FROM (
 		SELECT
-			max(timestamp) AS timestamp,
+			max(timestamp) AS latest_timestamp,
 			argMax(message, timestamp) AS message,
 			sequence_num,
 			stream

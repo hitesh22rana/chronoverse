@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { fetchWithAuth } from "@/lib/api-client"
+import { createIdempotencyKey, fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 const WORKFLOWS_ENDPOINT = `${API_URL}/workflows`
@@ -224,6 +224,9 @@ export function useWorkflows() {
         mutationFn: async (workflowPayload: CreateWorkflowPayload) => {
             const response = await fetchWithAuth(WORKFLOWS_ENDPOINT, {
                 method: "POST",
+                headers: {
+                    "Idempotency-Key": createIdempotencyKey(),
+                },
                 body: JSON.stringify(workflowPayload)
             })
 

@@ -663,11 +663,9 @@ services:
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt
       REDIS_TLS_KEY_FILE: certs/clients/client.key
-      KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: true
-      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
-      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
-      KAFKA_TLS_KEY_FILE: certs/clients/client.key
+      WORKFLOWS_CLEANUP_ENABLED: true
+      WORKFLOWS_CLEANUP_INTERVAL: 15m
+      WORKFLOWS_CLEANUP_BATCH_SIZE: 1000
       GRPC_PORT: 50052
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
@@ -703,8 +701,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      kafka:
-        condition: service_started
       lgtm:
         condition: service_started
       init-certs:
@@ -935,11 +931,6 @@ services:
       POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
-      KAFKA_BROKERS: kafka:9094
-      KAFKA_TLS_ENABLED: true
-      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
-      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
-      KAFKA_TLS_KEY_FILE: certs/clients/client.key
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       ENV: production
@@ -1113,6 +1104,15 @@ services:
     <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
     environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
@@ -1152,6 +1152,8 @@ services:
       exec /bin/service
       '
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       clickhouse:
@@ -1188,6 +1190,61 @@ services:
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_CONSUMER_GROUP: analytics-processor
+      ANALYTICS_PROCESSOR_CLEANUP_ENABLED: true
+      ANALYTICS_PROCESSOR_CLEANUP_INTERVAL: 15m
+      ANALYTICS_PROCESSOR_CLEANUP_BATCH_SIZE: 1000
+      ANALYTICS_PROCESSED_EVENTS_RETENTION: 336h
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      ENV: production
+    restart: on-failure
+    volumes:
+      - ./certs:/certs:ro
+    entrypoint: |
+      sh -c '
+      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+        echo "Waiting for certificates..."
+        sleep 1
+      done
+      exec /bin/service
+      '
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      lgtm:
+        condition: service_started
+      init-certs:
+        condition: service_completed_successfully
+      init-database-migration:
+        condition: service_completed_successfully
+    networks:
+      - chronoverse
+
+  outbox-relay:
+    <<: *low-resources-workers-limit
+    image: ghcr.io/hitesh22rana/chronoverse/outbox-relay:latest
+    container_name: outbox-relay
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 2
+      KAFKA_BROKERS: kafka:9094
+      KAFKA_TLS_ENABLED: true
+      KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+      KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+      KAFKA_TLS_KEY_FILE: certs/clients/client.key
+      OUTBOX_RELAY_CLEANUP_ENABLED: true
+      OUTBOX_RELAY_CLEANUP_INTERVAL: 15m
+      OUTBOX_RELAY_CLEANUP_BATCH_SIZE: 1000
+      OUTBOX_RELAY_PUBLISHED_RETENTION: 168h
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       ENV: production
@@ -1300,6 +1357,8 @@ services:
       joblogs-processor:
         condition: service_started
       analytics-processor:
+        condition: service_started
+      outbox-relay:
         condition: service_started
     networks:
       - chronoverse

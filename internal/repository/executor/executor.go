@@ -24,6 +24,7 @@ import (
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
@@ -328,7 +329,8 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 	start := time.Now()
 	executeErr := r.executeWorkflow(ctx, jobID, workflow)
 
-	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytes(
+	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytesWithKey(
+		idempotency.JobCompletedAnalyticsEventKey(jobID),
 		workflow.GetUserId(),
 		workflowID,
 		analyticsmodel.EventTypeJobs,
@@ -377,6 +379,7 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 		res, _err := r.svc.Workflows.IncrementWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
 			Id:     workflowID,
 			UserId: workflow.GetUserId(),
+			JobId:  jobID,
 		})
 		if _err != nil {
 			return _err
@@ -467,9 +470,10 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 		// Create a new notification
 		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
+			UserId:         userID,
+			Kind:           kind,
+			Payload:        payload,
+			IdempotencyKey: idempotency.NotificationEventKey(notificationType, jobID, title),
 		}); err != nil {
 			return err
 		}
@@ -481,9 +485,10 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 		// Create a new notification
 		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
+			UserId:         userID,
+			Kind:           kind,
+			Payload:        payload,
+			IdempotencyKey: idempotency.NotificationEventKey(notificationType, workflowID, title),
 		}); err != nil {
 			return err
 		}

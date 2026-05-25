@@ -39,6 +39,12 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idempotencyKey, ok := idempotencyKeyFromHeader(r)
+	if !ok {
+		http.Error(w, "idempotency key is required", http.StatusBadRequest)
+		return
+	}
+
 	protoReq := &workflowspb.CreateWorkflowRequest{
 		UserId:                           userID,
 		Name:                             req.Name,
@@ -46,6 +52,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		Kind:                             req.Kind,
 		Interval:                         req.Interval,
 		MaxConsecutiveJobFailuresAllowed: req.MaxConsecutiveJobFailuresAllowed,
+		IdempotencyKey:                   idempotencyKey,
 	}
 
 	// If log retention is provided, set it in the proto request, otherwise it will be set to the default value in the service layer.
@@ -101,6 +108,12 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idempotencyKey, ok := idempotencyKeyFromHeader(r)
+	if !ok {
+		http.Error(w, "idempotency key is required", http.StatusBadRequest)
+		return
+	}
+
 	// UpdateWorkflow updates the workflow details.
 	_, err := s.workflowsClient.UpdateWorkflow(r.Context(), &workflowspb.UpdateWorkflowRequest{
 		Id:                               workflowID,
@@ -109,6 +122,7 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		Payload:                          req.Payload,
 		Interval:                         req.Interval,
 		MaxConsecutiveJobFailuresAllowed: req.MaxConsecutiveJobFailuresAllowed,
+		IdempotencyKey:                   idempotencyKey,
 	})
 	if err != nil {
 		handleError(w, err, "failed to update workflow")

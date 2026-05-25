@@ -95,7 +95,12 @@ func run() int {
 	// Initialize the analyticsprocessor job components
 	repo := analyticsprocessorrepo.New(&analyticsprocessorrepo.Config{}, pdb, kfk)
 	svc := analyticsprocessorsvc.New(repo)
-	app := analyticsprocessor.New(ctx, svc)
+	app := analyticsprocessor.New(ctx, &analyticsprocessor.Config{
+		CleanupEnabled:           cfg.AnalyticsProcessorConfig.CleanupEnabled,
+		CleanupInterval:          cfg.AnalyticsProcessorConfig.CleanupInterval,
+		CleanupBatchSize:         cfg.AnalyticsProcessorConfig.CleanupBatchSize,
+		ProcessedEventsRetention: cfg.AnalyticsProcessorConfig.ProcessedEventsRetention,
+	}, svc)
 
 	// Log the job information
 	loggerpkg.FromContext(ctx).Info(

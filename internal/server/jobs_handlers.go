@@ -102,12 +102,19 @@ func (s *Server) handleManualScheduleJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	idempotencyKey, ok := idempotencyKeyFromHeader(r)
+	if !ok {
+		http.Error(w, "idempotency key is required", http.StatusBadRequest)
+		return
+	}
+
 	// ScheduleJob schedules the job manually.
-	_, err := s.jobsClient.ScheduleJob(r.Context(), &jobspb.ScheduleJobRequest{
-		WorkflowId:  workflowID,
-		UserId:      userID,
-		ScheduledAt: time.Now().Format(time.RFC3339Nano),
-		Trigger:     jobsmodel.JobTriggerManual.ToString(),
+	res, err := s.jobsClient.ScheduleJob(r.Context(), &jobspb.ScheduleJobRequest{
+		WorkflowId:     workflowID,
+		UserId:         userID,
+		ScheduledAt:    time.Now().Format(time.RFC3339Nano),
+		Trigger:        jobsmodel.JobTriggerManual.ToString(),
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		handleError(w, err, "failed to schedule job")
@@ -115,7 +122,10 @@ func (s *Server) handleManualScheduleJob(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Write the response
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(res)
 }
 
 // handleGetJob handles the get job by job ID request.

@@ -11,7 +11,6 @@ type SchedulingWorker struct {
 	Environment
 
 	Postgres
-	Kafka
 	SchedulingWorkerConfig
 }
 

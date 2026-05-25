@@ -4,6 +4,7 @@ import "time"
 
 // JobLogEvent represents a log event for a job.
 type JobLogEvent struct {
+	EventKey    string
 	JobID       string
 	WorkflowID  string
 	UserID      string

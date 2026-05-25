@@ -23,6 +23,7 @@ import (
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -191,6 +192,8 @@ func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry workfl
 	switch workflowEntry.Action {
 	case workflowsmodel.ActionBuild:
 		return r.buildWorkflow(ctx, workflowEntry.ID)
+	case workflowsmodel.ActionReschedule:
+		return r.rescheduleWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
 	case workflowsmodel.ActionTerminate:
 		return r.terminateWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
 	case workflowsmodel.ActionDelete:
@@ -267,9 +270,10 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 		// Create a new notification
 		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
+			UserId:         userID,
+			Kind:           kind,
+			Payload:        payload,
+			IdempotencyKey: idempotency.NotificationEventKey(notificationType, jobID, title),
 		}); err != nil {
 			return err
 		}
@@ -281,9 +285,10 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 		// Create a new notification
 		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
+			UserId:         userID,
+			Kind:           kind,
+			Payload:        payload,
+			IdempotencyKey: idempotency.NotificationEventKey(notificationType, workflowID, title),
 		}); err != nil {
 			return err
 		}

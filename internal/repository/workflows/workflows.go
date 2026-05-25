@@ -1,17 +1,13 @@
 package workflows
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -20,13 +16,9 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
-)
-
-const (
-	delimiter = '$'
 )
 
 // Config represents the repository constants configuration.
@@ -39,16 +31,14 @@ type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
 	pg  *postgres.Postgres
-	kfk *kgo.Client
 }
 
 // New creates a new workflows repository.
-func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
+func New(cfg *Config, pg *postgres.Postgres) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		pg:  pg,
-		kfk: kfk,
 	}
 }
 
@@ -64,6 +54,7 @@ func (r *Repository) CreateWorkflow(
 	interval,
 	maxConsecutiveJobFailuresAllowed int32,
 	logRetention bool,
+	idempotencyKey string,
 ) (res *workflowsmodel.GetWorkflowResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CreateWorkflow")
 	defer func() {
@@ -91,15 +82,48 @@ func (r *Repository) CreateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	var query string
-	var args []any
+	requestHash, err := workflowRequestHash(map[string]any{
+		"user_id":                              userID,
+		"name":                                 name,
+		"payload":                              payload,
+		"kind":                                 kind,
+		"interval":                             interval,
+		"max_consecutive_job_failures_allowed": maxConsecutiveJobFailuresAllowed,
+		"log_retention":                        logRetention,
+	})
+	if err != nil {
+		return nil, err
+	}
 
-	query = fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed, log_retention)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, name, payload, kind, build_status, interval,consecutive_job_failures_count, max_consecutive_job_failures_allowed,created_at, updated_at, terminated_at, log_retention;
+	var workflowID string
+	workflowID, replay, err := reserveWorkflowIdempotencyKey(ctx, tx, userID, operationCreateWorkflow, idempotencyKey, requestHash)
+	if err != nil {
+		return nil, err
+	}
+	if replay {
+		if err = tx.Commit(ctx); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to commit idempotency replay: %v", err)
+		}
+		return r.GetWorkflow(ctx, workflowID, userID)
+	}
+
+	buildHash, err := idempotency.WorkflowBuildHash(kind, payload)
+	if err != nil {
+		return nil, err
+	}
+	var buildHashArg any
+	if buildHash != "" {
+		buildHashArg = buildHash
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed, log_retention, build_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, name, payload, kind, build_status, interval,
+			consecutive_job_failures_count, max_consecutive_job_failures_allowed,
+			created_at, updated_at, terminated_at, log_retention, generation, build_hash;
 	`, postgres.TableWorkflows)
-	args = []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed, logRetention}
+	args := []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed, logRetention, buildHashArg}
 
 	rows, err := tx.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -116,35 +140,23 @@ func (r *Repository) CreateWorkflow(
 		return nil, err
 	}
 
-	//nolint:errcheck // We don't expect an error here
-	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
-		ID:     res.ID,
-		UserID: userID,
-		Action: workflowsmodel.ActionBuild,
-	})
-
-	record := &kgo.Record{
-		Topic: kafka.TopicWorkflows,
-		Key:   []byte(res.ID),
-		Value: workflowEventBytes,
+	event := workflowEventPayload(res.ID, userID, workflowsmodel.ActionBuild, res.Generation)
+	insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
+	if insertErr != nil {
+		return nil, insertErr
 	}
-	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return nil, err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return nil, err
-		}
 
-		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
-			err = status.Error(codes.Unavailable, err.Error())
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
-		return nil, err
+	completeErr := completeWorkflowIdempotencyKey(
+		ctx,
+		tx,
+		userID,
+		operationCreateWorkflow,
+		idempotencyKey,
+		res.ID,
+		map[string]string{"id": res.ID},
+	)
+	if completeErr != nil {
+		return nil, completeErr
 	}
 
 	// Commit transaction
@@ -175,6 +187,7 @@ func (r *Repository) UpdateWorkflow(
 	payload string,
 	interval,
 	maxConsecutiveJobFailuresAllowed int32,
+	idempotencyKey string,
 ) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateWorkflow")
 	defer func() {
@@ -202,23 +215,95 @@ func (r *Repository) UpdateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	// During update, we set the consecutive_job_failures_count to 0 and terminated_at to NULL
-	// This is done to ensure that the workflow can be retried from the beginning.
+	requestHash, err := workflowRequestHash(map[string]any{
+		"workflow_id":                          workflowID,
+		"user_id":                              userID,
+		"name":                                 name,
+		"payload":                              payload,
+		"interval":                             interval,
+		"max_consecutive_job_failures_allowed": maxConsecutiveJobFailuresAllowed,
+	})
+	if err != nil {
+		return err
+	}
 
-	// Set all workflows to QUEUED so the worker can determine what to do
-	var query string
-	var args []any
+	replayWorkflowID, replay, err := reserveWorkflowIdempotencyKey(ctx, tx, userID, operationUpdateWorkflow(workflowID), idempotencyKey, requestHash)
+	if err != nil {
+		return err
+	}
+	if replay {
+		if replayWorkflowID != workflowID {
+			return status.Error(codes.AlreadyExists, "idempotency key resolved to a different workflow")
+		}
+		return tx.Commit(ctx)
+	}
+
+	var (
+		kind              string
+		currentBuildHash  sql.NullString
+		currentGeneration int64
+		currentInterval   int32
+	)
+	query := fmt.Sprintf(`
+		SELECT kind, build_hash, generation, interval
+		FROM %s
+		WHERE id = $1 AND user_id = $2
+		FOR UPDATE
+		LIMIT 1;
+	`, postgres.TableWorkflows)
+	if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&kind, &currentBuildHash, &currentGeneration, &currentInterval); err != nil {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return err
+		case errors.Is(err, context.Canceled):
+			err = status.Error(codes.Canceled, err.Error())
+			return err
+		case r.pg.IsNoRows(err):
+			err = status.Error(codes.NotFound, "workflow not found")
+			return err
+		case r.pg.IsInvalidTextRepresentation(err):
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to fetch workflow: %v", err)
+		return err
+	}
+
+	newBuildHash, err := idempotency.WorkflowBuildHash(kind, payload)
+	if err != nil {
+		return err
+	}
+
+	newBuildHashValid := newBuildHash != ""
+	buildHashChanged := currentBuildHash.Valid != newBuildHashValid || currentBuildHash.String != newBuildHash
+	rescheduleRequired := currentInterval != interval
+	nextGeneration := currentGeneration
+	buildStatus := "build_status"
+	var buildHashArg any
+	if newBuildHashValid {
+		buildHashArg = newBuildHash
+	}
+	if buildHashChanged {
+		nextGeneration++
+		buildStatus = fmt.Sprintf("'%s'", workflowsmodel.WorkflowBuildStatusQueued.ToString())
+	}
 
 	query = fmt.Sprintf(`
 		UPDATE %s
-		SET name = $1, payload = $2, interval = $3,max_consecutive_job_failures_allowed = $4, build_status = $5,consecutive_job_failures_count = 0, terminated_at = NULL
-		WHERE id = $6 AND user_id = $7;
-	`, postgres.TableWorkflows)
-	args = []any{name, payload, interval, maxConsecutiveJobFailuresAllowed, workflowsmodel.WorkflowBuildStatusQueued.ToString(), workflowID, userID}
-
-	// Execute the query
-	ct, err := tx.Exec(ctx, query, args...)
-	//nolint:gocritic // Ifelse is used to handle different error types
+		SET name = $1,
+			payload = $2,
+			interval = $3,
+			max_consecutive_job_failures_allowed = $4,
+			build_hash = $5,
+			generation = $6,
+			build_status = %s,
+			consecutive_job_failures_count = 0,
+			terminated_at = NULL
+		WHERE id = $7 AND user_id = $8;
+	`, postgres.TableWorkflows, buildStatus)
+	ct, err := tx.Exec(ctx, query, name, payload, interval, maxConsecutiveJobFailuresAllowed, buildHashArg, nextGeneration, workflowID, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -226,49 +311,41 @@ func (r *Repository) UpdateWorkflow(
 		} else if errors.Is(err, context.Canceled) {
 			err = status.Error(codes.Canceled, err.Error())
 			return err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
-			return err
 		}
 
 		err = status.Errorf(codes.Internal, "failed to update workflow: %v", err)
 		return err
 	}
-
 	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "workflow not found")
-		return err
+		return status.Error(codes.NotFound, "workflow not found")
 	}
 
-	//nolint:errcheck // We don't expect an error here
-	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
-		ID:     workflowID,
-		UserID: userID,
-		Action: workflowsmodel.ActionBuild,
-	})
-
-	record := &kgo.Record{
-		Topic: kafka.TopicWorkflows,
-		Key:   []byte(workflowID),
-		Value: workflowEventBytes,
+	switch {
+	case buildHashChanged:
+		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionBuild, nextGeneration)
+		insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
+		if insertErr != nil {
+			return insertErr
+		}
+	case rescheduleRequired:
+		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionReschedule, nextGeneration)
+		insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
+		if insertErr != nil {
+			return insertErr
+		}
 	}
-	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
 
-		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
-			err = status.Error(codes.Unavailable, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
-		return err
+	completeErr := completeWorkflowIdempotencyKey(
+		ctx,
+		tx,
+		userID,
+		operationUpdateWorkflow(workflowID),
+		idempotencyKey,
+		workflowID,
+		map[string]string{"id": workflowID},
+	)
+	if completeErr != nil {
+		return completeErr
 	}
 
 	// Commit transaction
@@ -344,7 +421,9 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at, log_retention
+		SELECT id, name, payload, kind, build_status, interval,
+			consecutive_job_failures_count, max_consecutive_job_failures_allowed,
+			created_at, updated_at, terminated_at, log_retention, generation, build_hash
 		FROM %s
 		WHERE id = $1 AND user_id = $2
 		LIMIT 1;
@@ -388,7 +467,9 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at, log_retention
+		SELECT id, user_id, name, payload, kind, build_status, interval,
+			consecutive_job_failures_count, max_consecutive_job_failures_allowed,
+			created_at, updated_at, terminated_at, log_retention, generation, build_hash
 		FROM %s
 		WHERE id = $1
 		LIMIT 1;
@@ -422,7 +503,7 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive failures counter.
 // Returns whether threshold was reached or not.
-func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (thresholdReached bool, err error) {
+func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (thresholdReached bool, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.IncrementWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -432,7 +513,45 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		span.End()
 	}()
 
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return false, status.Errorf(codes.Internal, "failed to start transaction: %v", err)
+	}
+	//nolint:errcheck // The error is handled by commit paths.
+	defer tx.Rollback(ctx)
+
 	query := fmt.Sprintf(`
+		INSERT INTO %s (job_id, workflow_id, user_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING;
+	`, postgres.TableWorkflowFailureEvents)
+	ct, err := tx.Exec(ctx, query, jobID, workflowID, userID)
+	if err != nil {
+		if r.pg.IsInvalidTextRepresentation(err) {
+			return false, status.Errorf(codes.InvalidArgument, "invalid job or workflow ID: %v", err)
+		}
+		return false, status.Errorf(codes.Internal, "failed to record workflow failure event: %v", err)
+	}
+
+	if ct.RowsAffected() == 0 {
+		query = fmt.Sprintf(`
+			SELECT consecutive_job_failures_count, max_consecutive_job_failures_allowed
+			FROM %s
+			WHERE id = $1 AND user_id = $2
+			LIMIT 1;
+		`, postgres.TableWorkflows)
+
+		var count, maxAllowed int32
+		if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&count, &maxAllowed); err != nil {
+			return false, status.Errorf(codes.Internal, "failed to fetch workflow failure count: %v", err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return false, status.Errorf(codes.Internal, "failed to commit failure dedupe: %v", err)
+		}
+		return count >= maxAllowed, nil
+	}
+
+	query = fmt.Sprintf(`
 		UPDATE %s
 		SET consecutive_job_failures_count = consecutive_job_failures_count + 1
 		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL
@@ -440,7 +559,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	`, postgres.TableWorkflows)
 
 	var consecutiveJobFailuresCount, maxConsecutiveJobFailuresAllowed int32
-	err = r.pg.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
+	err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -464,6 +583,9 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 
 	// Check if the threshold was reached
 	thresholdReached = consecutiveJobFailuresCount >= maxConsecutiveJobFailuresAllowed
+	if err = tx.Commit(ctx); err != nil {
+		return false, status.Errorf(codes.Internal, "failed to commit workflow failure count: %v", err)
+	}
 	return thresholdReached, nil
 }
 
@@ -512,8 +634,6 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 }
 
 // TerminateWorkflow terminates a workflow.
-//
-//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.TerminateWorkflow")
 	defer func() {
@@ -572,35 +692,10 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 		return err
 	}
 
-	//nolint:errcheck // We don't expect an error here
-	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
-		ID:     workflowID,
-		UserID: userID,
-		Action: workflowsmodel.ActionTerminate,
-	})
-
-	record := &kgo.Record{
-		Topic: kafka.TopicWorkflows,
-		Key:   []byte(workflowID),
-		Value: workflowEventBytes,
-	}
-	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
-			err = status.Error(codes.Unavailable, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
-		return err
+	event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionTerminate, 0)
+	insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
+	if insertErr != nil {
+		return insertErr
 	}
 
 	// Commit transaction
@@ -758,35 +853,10 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		return err
 	}
 
-	//nolint:errcheck // We don't expect an error here
-	workflowEventBytes, _ := json.Marshal(&workflowsmodel.WorkflowEvent{
-		ID:     workflowID,
-		UserID: userID,
-		Action: workflowsmodel.ActionDelete,
-	})
-
-	record := &kgo.Record{
-		Topic: kafka.TopicWorkflows,
-		Key:   []byte(workflowID),
-		Value: workflowEventBytes,
-	}
-	// Publish the workflowID to the Kafka topic for the build step
-	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		if errors.Is(err, kerr.CoordinatorLoadInProgress) || errors.Is(err, kerr.CoordinatorNotAvailable) {
-			err = status.Error(codes.Unavailable, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to publish workflow entry to kafka: %v", err)
-		return err
+	event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionDelete, 0)
+	insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
+	if insertErr != nil {
+		return insertErr
 	}
 
 	// Commit transaction
@@ -821,7 +891,9 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 
 	// Base query for user's workflows
 	query := fmt.Sprintf(`
-        SELECT id, name, payload, kind, build_status, interval, consecutive_job_failures_count, max_consecutive_job_failures_allowed, created_at, updated_at, terminated_at, log_retention
+        SELECT id, name, payload, kind, build_status, interval,
+            consecutive_job_failures_count, max_consecutive_job_failures_allowed,
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash
         FROM %s
         WHERE user_id = $1
     `, postgres.TableWorkflows)
@@ -922,26 +994,4 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 		Workflows: data,
 		Cursor:    encodeCursor(cursor),
 	}, nil
-}
-
-func encodeCursor(cursor string) string {
-	if cursor == "" {
-		return ""
-	}
-
-	return base64.StdEncoding.EncodeToString([]byte(cursor))
-}
-
-func extractDataFromCursor(cursor string) (string, time.Time, error) {
-	parts := bytes.Split([]byte(cursor), []byte{delimiter})
-	if len(parts) != 2 {
-		return "", time.Time{}, status.Error(codes.InvalidArgument, "invalid cursor: expected two parts")
-	}
-
-	createdAt, err := time.Parse(time.RFC3339Nano, string(parts[1]))
-	if err != nil {
-		return "", time.Time{}, status.Errorf(codes.InvalidArgument, "invalid timestamp: %v", err)
-	}
-
-	return string(parts[0]), createdAt, nil
 }

@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"syscall"
 
 	_ "github.com/KimMachineGun/automemlimit"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/app/scheduler"
 	"github.com/hitesh22rana/chronoverse/internal/config"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -79,23 +77,11 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the kafka client
-	kfk, err := kafka.New(ctx,
-		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithTransactionalID(strconv.FormatInt(int64(os.Getpid()), 10)),
-		kafka.WithTLS(&cfg.Kafka),
-	)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer kfk.Close()
-
 	// Initialize the scheduling job components
 	repo := schedulerrepo.New(&schedulerrepo.Config{
 		FetchLimit: cfg.SchedulingWorkerConfig.FetchLimit,
 		BatchSize:  cfg.SchedulingWorkerConfig.BatchSize,
-	}, pdb, kfk)
+	}, pdb)
 	svc := schedulersvc.New(repo)
 	app := scheduler.New(ctx, &scheduler.Config{
 		PollInterval:   cfg.SchedulingWorkerConfig.PollInterval,

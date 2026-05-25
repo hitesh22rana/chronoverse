@@ -24,7 +24,7 @@ import (
 
 // Repository provides notification related operations.
 type Repository interface {
-	CreateNotification(ctx context.Context, userID, kind, payload string) (string, error)
+	CreateNotification(ctx context.Context, userID, kind, payload, idempotencyKey string) (string, error)
 	MarkNotificationsRead(ctx context.Context, notificationIDs []string, userID string) error
 	ListNotifications(ctx context.Context, userID, cursor string) (*notificationsmodel.ListNotificationsResponse, error)
 }
@@ -48,9 +48,10 @@ func New(validator *validator.Validate, repo Repository) *Service {
 
 // CreateNotificationRequest holds the request parameters for creating a notification.
 type CreateNotificationRequest struct {
-	UserID  string `validate:"required"`
-	Kind    string `validate:"required"`
-	Payload string `validate:"required"`
+	UserID         string `validate:"required"`
+	Kind           string `validate:"required"`
+	Payload        string `validate:"required"`
+	IdempotencyKey string `validate:"required"`
 }
 
 // CreateNotification creates a new notification.
@@ -66,9 +67,10 @@ func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.C
 
 	// Validate the request
 	err = s.validator.Struct(&CreateNotificationRequest{
-		UserID:  req.GetUserId(),
-		Kind:    req.GetKind(),
-		Payload: req.GetPayload(),
+		UserID:         req.GetUserId(),
+		Kind:           req.GetKind(),
+		Payload:        req.GetPayload(),
+		IdempotencyKey: req.GetIdempotencyKey(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -88,6 +90,7 @@ func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.C
 		req.GetUserId(),
 		req.GetKind(),
 		req.GetPayload(),
+		req.GetIdempotencyKey(),
 	)
 	if err != nil {
 		return "", err

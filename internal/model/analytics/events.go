@@ -36,6 +36,7 @@ type EventTypeLogsData struct {
 // AnalyticEvent represents a generic analytic event, which is used to track various types of events in the system.
 // The EventType field indicates the type of event, and Data holds the event-specific data.
 type AnalyticEvent struct {
+	EventKey   string
 	UserID     string
 	WorkflowID string
 	EventType  EventType
@@ -44,12 +45,18 @@ type AnalyticEvent struct {
 
 // NewAnalyticEventBytes creates a new AnalyticEvent and marshals it to bytes.
 func NewAnalyticEventBytes(userID, workflowID string, eventType EventType, data any) ([]byte, error) {
+	return NewAnalyticEventBytesWithKey("", userID, workflowID, eventType, data)
+}
+
+// NewAnalyticEventBytesWithKey creates a new AnalyticEvent with an event key and marshals it to bytes.
+func NewAnalyticEventBytesWithKey(eventKey, userID, workflowID string, eventType EventType, data any) ([]byte, error) {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
 	}
 
 	return json.Marshal(&AnalyticEvent{
+		EventKey:   eventKey,
 		UserID:     userID,
 		WorkflowID: workflowID,
 		EventType:  eventType,

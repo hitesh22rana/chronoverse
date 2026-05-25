@@ -11,6 +11,7 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -80,6 +81,7 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 
 				// Serialize the log entry
 				jobLogEventBytes, err := json.Marshal(&jobsmodel.JobLogEvent{
+					EventKey:    idempotency.LogEventKey(jobID, log.Stream, log.SequenceNum),
 					JobID:       jobID,
 					WorkflowID:  workflowID,
 					UserID:      userID,

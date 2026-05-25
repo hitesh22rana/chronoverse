@@ -59,7 +59,7 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, svc *Services) *Re
 }
 
 // CreateNotification creates a new notification.
-func (r *Repository) CreateNotification(ctx context.Context, userID, kind, payload string) (notificationID string, err error) {
+func (r *Repository) CreateNotification(ctx context.Context, userID, kind, payload, idempotencyKey string) (notificationID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CreateNotification")
 	defer func() {
 		if err != nil {
@@ -70,12 +70,15 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 	}()
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, kind, payload)
-		VALUES ($1, $2, $3)
+		INSERT INTO %s (user_id, kind, payload, idempotency_key)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, idempotency_key)
+		WHERE idempotency_key IS NOT NULL
+		DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
 		RETURNING id;
 	`, postgres.TableNotifications)
 
-	err = r.pg.QueryRow(ctx, query, userID, kind, payload).Scan(&notificationID)
+	err = r.pg.QueryRow(ctx, query, userID, kind, payload, idempotencyKey).Scan(&notificationID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())

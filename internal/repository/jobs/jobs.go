@@ -28,6 +28,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
@@ -78,7 +79,7 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 }
 
 // ScheduleJob schedules a job.
-func (r *Repository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (jobID string, err error) {
+func (r *Repository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string) (jobID string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ScheduleJob")
 	defer func() {
 		if err != nil {
@@ -94,14 +95,31 @@ func (r *Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedu
 		return "", err
 	}
 
-	// Insert job into database
+	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && idempotencyKey == "" {
+		idempotencyKey = idempotency.JobDispatchEventKey(fmt.Sprintf("%s:%s", workflowID, scheduledAtTime.Format(time.RFC3339Nano)))
+	}
+
 	query := fmt.Sprintf(`
-		INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (workflow_id, scheduled_at, trigger)
+		WHERE trigger = 'AUTOMATIC'
+		DO UPDATE SET workflow_id = EXCLUDED.workflow_id
 		RETURNING id;
 	`, postgres.TableJobs)
 
-	row := r.pg.QueryRow(ctx, query, workflowID, userID, scheduledAtTime, trigger)
+	if trigger == jobsmodel.JobTriggerManual.ToString() {
+		query = fmt.Sprintf(`
+			INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (user_id, workflow_id, idempotency_key)
+			WHERE trigger = 'MANUAL' AND idempotency_key IS NOT NULL
+			DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
+			RETURNING id;
+		`, postgres.TableJobs)
+	}
+
+	row := r.pg.QueryRow(ctx, query, workflowID, userID, scheduledAtTime, trigger, idempotencyKey)
 	if err = row.Scan(&jobID); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -313,8 +331,14 @@ func (r *Repository) GetJobLogs(
 	logQueryArgs := []any{jobID, workflowID, userID}
 	logsQuery := fmt.Sprintf(`
 	SELECT timestamp, message, sequence_num, stream
-	FROM %s
-	WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
+	FROM (
+		SELECT
+			max(timestamp) AS timestamp,
+			argMax(message, timestamp) AS message,
+			sequence_num,
+			stream
+		FROM %s
+		WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
 	`, clickhouse.TableJobLogs)
 
 	switch getJobLogsFilters.Stream {
@@ -335,7 +359,12 @@ func (r *Repository) GetJobLogs(
 		logQueryArgs = append(logQueryArgs, sequenceNum)
 	}
 
-	logsQuery += fmt.Sprintf(` ORDER BY sequence_num ASC LIMIT %d;`, r.cfg.LogsFetchLimit+1)
+	logsQuery += fmt.Sprintf(`
+		GROUP BY event_id, sequence_num, stream
+	)
+	ORDER BY sequence_num ASC, stream ASC
+	LIMIT %d;
+	`, r.cfg.LogsFetchLimit+1)
 
 	statusQueryArgs := []any{jobID, workflowID, userID}
 	statusQuery := fmt.Sprintf(`

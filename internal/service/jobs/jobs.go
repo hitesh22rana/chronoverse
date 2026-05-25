@@ -36,7 +36,7 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
-	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (string, error)
+	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string) (string, error)
 	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
@@ -73,10 +73,11 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 
 // ScheduleJobRequest holds the request parameters for scheduling a job.
 type ScheduleJobRequest struct {
-	WorkflowID  string `validate:"required"`
-	UserID      string `validate:"required"`
-	ScheduledAt string `validate:"required"`
-	Trigger     string `validate:"required"`
+	WorkflowID     string `validate:"required"`
+	UserID         string `validate:"required"`
+	ScheduledAt    string `validate:"required"`
+	Trigger        string `validate:"required"`
+	IdempotencyKey string `validate:"omitempty"`
 }
 
 // ScheduleJob schedules a job.
@@ -92,10 +93,11 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 
 	// Validate the request
 	err = s.validator.Struct(&ScheduleJobRequest{
-		WorkflowID:  req.GetWorkflowId(),
-		UserID:      req.GetUserId(),
-		ScheduledAt: req.GetScheduledAt(),
-		Trigger:     req.GetTrigger(),
+		WorkflowID:     req.GetWorkflowId(),
+		UserID:         req.GetUserId(),
+		ScheduledAt:    req.GetScheduledAt(),
+		Trigger:        req.GetTrigger(),
+		IdempotencyKey: req.GetIdempotencyKey(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -114,6 +116,10 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		return "", err
 	}
 
+	if req.GetTrigger() == jobsmodel.JobTriggerManual.ToString() && req.GetIdempotencyKey() == "" {
+		return "", status.Error(codes.InvalidArgument, "idempotency key is required for manual jobs")
+	}
+
 	// Schedule the job
 	res, err := s.repo.ScheduleJob(
 		ctx,
@@ -121,6 +127,7 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		req.GetUserId(),
 		req.GetScheduledAt(),
 		req.GetTrigger(),
+		req.GetIdempotencyKey(),
 	)
 	if err != nil {
 		return "", err

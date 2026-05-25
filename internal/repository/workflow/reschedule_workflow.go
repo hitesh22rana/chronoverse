@@ -1,0 +1,59 @@
+package workflow
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
+
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+)
+
+const rescheduleWorkflowExpirationTimeout = 5 * time.Minute
+
+func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowID, userID string) error {
+	ctx, err := r.withAuthorization(parentCtx)
+	if err != nil {
+		return err
+	}
+
+	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{Id: workflowID})
+	if err != nil {
+		return err
+	}
+
+	if workflow.GetTerminatedAt() != "" {
+		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
+	}
+
+	lockKey := fmt.Sprintf("%s:%s:%s", lockKeyPrefix, workflowsmodel.ActionReschedule.ToString(), workflowID)
+	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, rescheduleWorkflowExpirationTimeout)
+	if err != nil || !isLockAcquired {
+		return status.Error(codes.Aborted, "failed to acquire distributed lock")
+	}
+	defer func() {
+		//nolint:errcheck // Lock may have expired.
+		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
+	}()
+
+	if cancelErr := r.cancelJobsWithStatus(ctx, workflow, userID, jobsmodel.JobStatusPending.ToString()); cancelErr != nil {
+		return cancelErr
+	}
+	if cancelErr := r.cancelJobsWithStatus(ctx, workflow, userID, jobsmodel.JobStatusQueued.ToString()); cancelErr != nil {
+		return cancelErr
+	}
+
+	_, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+		WorkflowId:  workflowID,
+		UserId:      userID,
+		ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
+	})
+	return err
+}

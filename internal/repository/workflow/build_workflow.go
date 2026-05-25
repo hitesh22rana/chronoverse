@@ -17,6 +17,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 )
@@ -89,7 +90,8 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		return err
 	}
 
-	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytes(
+	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytesWithKey(
+		idempotency.WorkflowAnalyticsEventKey(workflowID),
 		workflow.GetUserId(),
 		workflowID,
 		analyticsmodel.EventTypeWorkflows,

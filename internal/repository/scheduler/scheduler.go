@@ -3,19 +3,18 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/outbox"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -31,22 +30,18 @@ type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
 	pg  *postgres.Postgres
-	kfk *kgo.Client
 }
 
 // New creates a new scheduler repository.
-func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
+func New(cfg *Config, pg *postgres.Postgres) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		pg:  pg,
-		kfk: kfk,
 	}
 }
 
 // Run starts the scheduler.
-//
-//nolint:gocyclo // The cyclomatic complexity is acceptable
 func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Run")
 	defer func() {
@@ -86,9 +81,6 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	}
 	defer rows.Close()
 
-	// Iterate over the rows and collect the data
-	//nolint:prealloc // We don't know the number of rows
-	var records []*kgo.Record
 	for rows.Next() {
 		var id string
 		var workflowID string
@@ -98,21 +90,30 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			return 0, err
 		}
 
-		scheduledJobEntryBytes, _err := json.Marshal(&jobsmodel.ScheduledJobEntry{
+		eventKey := idempotency.JobDispatchEventKey(id)
+		scheduledJobEntry := &jobsmodel.ScheduledJobEntry{
+			EventKey:    eventKey,
 			JobID:       id,
 			WorkflowID:  workflowID,
 			ScheduledAt: scheduledAt.Format(time.RFC3339Nano),
-		})
+		}
+		scheduledJobEntryBytes, _err := json.Marshal(scheduledJobEntry)
 		if _err != nil {
 			continue
 		}
 
-		record := &kgo.Record{
-			Topic: kafka.TopicJobs,
-			Key:   []byte(id),
-			Value: scheduledJobEntryBytes,
+		insertErr := outbox.InsertTx(ctx, tx, &outbox.Event{
+			Topic:         kafka.TopicJobs,
+			KafkaKey:      id,
+			EventKey:      eventKey,
+			AggregateType: "job",
+			AggregateID:   id,
+			Payload:       json.RawMessage(scheduledJobEntryBytes),
+		})
+		if insertErr != nil {
+			return 0, insertErr
 		}
-		records = append(records, record)
+		total++
 	}
 
 	// Handle any errors that may have occurred during iteration
@@ -121,52 +122,8 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		return 0, err
 	}
 
-	// Divide the records into batches
-	recordsBatch := batch(records, r.cfg.BatchSize)
-	if len(recordsBatch) == 0 {
+	if total == 0 {
 		return 0, nil
-	}
-
-	// Publish the data to Kafka
-	for {
-		// Begin the kafka transaction
-		if err = r.kfk.BeginTransaction(); err != nil {
-			err = status.Errorf(codes.Internal, "failed to begin kafka transaction: %v", err)
-			return 0, err
-		}
-
-		// Publish the data to Kafka
-		for _, batch := range recordsBatch {
-			if err = r.kfk.ProduceSync(ctx, batch...).FirstErr(); err != nil {
-				err = rollback(ctx, r.kfk)
-				if err != nil {
-					return 0, err
-				}
-			}
-		}
-
-		// Flush all the buffered messages
-		// Flush only returns an error if the context was canceled, and we don't want to handle that error
-		if _err := r.kfk.Flush(ctx); _err != nil {
-			break // nothing to do here, since error means context was canceled
-		}
-
-		// Attempt to commit the transaction and explicitly abort if the commit was not attempted.
-		//nolint:nestif // The nested if statements are necessary
-		if err = r.kfk.EndTransaction(ctx, kgo.TryCommit); err != nil {
-			if errors.Is(err, kerr.OperationNotAttempted) {
-				err = rollback(ctx, r.kfk)
-				if err != nil {
-					return 0, err
-				}
-			} else {
-				err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
-				return 0, err
-			}
-		} else {
-			// Since the transaction was committed, we can break out of the loop
-			break
-		}
 	}
 
 	// Commit transaction
@@ -175,30 +132,5 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		return 0, err
 	}
 
-	total = len(records)
 	return total, nil
-}
-
-func batch(data []*kgo.Record, size int) (batch [][]*kgo.Record) {
-	if len(data) == 0 {
-		return nil
-	}
-
-	for size < len(data) {
-		data, batch = data[size:], append(batch, data[0:size:size])
-	}
-	return append(batch, data)
-}
-
-func rollback(ctx context.Context, kfk *kgo.Client) error {
-	if err := kfk.AbortBufferedRecords(ctx); err != nil {
-		return status.Errorf(codes.Canceled, "failed to abort buffered records: %v", err)
-	}
-
-	// Explicitly abort the transaction
-	if err := kfk.EndTransaction(ctx, kgo.TryAbort); err != nil {
-		return status.Errorf(codes.Internal, "failed to rollback transaction: %v", err)
-	}
-
-	return nil
 }

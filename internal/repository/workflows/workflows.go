@@ -286,25 +286,23 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	newBuildHashValid := newBuildHash != ""
-	buildHashChanged := currentBuildHash.Valid != newBuildHashValid || currentBuildHash.String != newBuildHash
-	intervalChanged := currentInterval != interval
-	rescheduleRequired := intervalChanged && currentBuildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString()
-	reactivatingTerminatedWorkflow := currentTerminatedAt.Valid
-	workflowNeedsBuild := currentBuildStatus != workflowsmodel.WorkflowBuildStatusCompleted.ToString() &&
-		currentBuildStatus != workflowsmodel.WorkflowBuildStatusStarted.ToString()
-	buildRequired := buildHashChanged || workflowNeedsBuild
-	rescheduleRequired = rescheduleRequired || (reactivatingTerminatedWorkflow && !buildRequired)
-	nextGeneration := currentGeneration
+	decision := decideWorkflowUpdateAction(
+		currentBuildHash,
+		currentGeneration,
+		currentInterval,
+		currentBuildStatus,
+		currentTerminatedAt.Valid,
+		newBuildHash,
+		newBuildHashValid,
+		interval,
+	)
 	buildStatus := "build_status"
 	var buildHashArg any
 	if newBuildHashValid {
 		buildHashArg = newBuildHash
 	}
-	if buildRequired || rescheduleRequired {
-		nextGeneration++
-	}
-	if buildRequired {
-		buildStatus = fmt.Sprintf("'%s'", workflowsmodel.WorkflowBuildStatusQueued.ToString())
+	if decision.buildRequired {
+		buildStatus = fmt.Sprintf("'%s'", decision.buildStatus)
 	}
 
 	query = fmt.Sprintf(`
@@ -320,7 +318,7 @@ func (r *Repository) UpdateWorkflow(
 			terminated_at = NULL
 		WHERE id = $7 AND user_id = $8;
 	`, postgres.TableWorkflows, buildStatus)
-	ct, err := tx.Exec(ctx, query, name, payload, interval, maxConsecutiveJobFailuresAllowed, buildHashArg, nextGeneration, workflowID, userID)
+	ct, err := tx.Exec(ctx, query, name, payload, interval, maxConsecutiveJobFailuresAllowed, buildHashArg, decision.nextGeneration, workflowID, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -338,14 +336,14 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	switch {
-	case buildRequired:
-		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionBuild, nextGeneration)
+	case decision.buildRequired:
+		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionBuild, decision.nextGeneration)
 		insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
 		if insertErr != nil {
 			return insertErr
 		}
-	case rescheduleRequired:
-		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionReschedule, nextGeneration)
+	case decision.rescheduleRequired:
+		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionReschedule, decision.nextGeneration)
 		insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
 		if insertErr != nil {
 			return insertErr

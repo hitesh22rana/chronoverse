@@ -30,6 +30,47 @@ func operationUpdateWorkflow(workflowID string) string {
 	return fmt.Sprintf("update_workflow:%s", workflowID)
 }
 
+type updateWorkflowActionDecision struct {
+	buildRequired      bool
+	rescheduleRequired bool
+	nextGeneration     int64
+	buildStatus        string
+}
+
+func decideWorkflowUpdateAction(
+	currentBuildHash sql.NullString,
+	currentGeneration int64,
+	currentInterval int32,
+	currentBuildStatus string,
+	reactivatingTerminatedWorkflow bool,
+	newBuildHash string,
+	newBuildHashValid bool,
+	newInterval int32,
+) updateWorkflowActionDecision {
+	buildHashChanged := currentBuildHash.Valid != newBuildHashValid || currentBuildHash.String != newBuildHash
+	intervalChanged := currentInterval != newInterval
+	workflowNeedsBuild := currentBuildStatus != workflowsmodel.WorkflowBuildStatusCompleted.ToString() &&
+		currentBuildStatus != workflowsmodel.WorkflowBuildStatusStarted.ToString()
+	buildRequired := buildHashChanged || workflowNeedsBuild || reactivatingTerminatedWorkflow
+	rescheduleRequired := !buildRequired &&
+		intervalChanged &&
+		currentBuildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString()
+
+	decision := updateWorkflowActionDecision{
+		buildRequired:      buildRequired,
+		rescheduleRequired: rescheduleRequired,
+		nextGeneration:     currentGeneration,
+	}
+	if buildRequired || rescheduleRequired {
+		decision.nextGeneration++
+	}
+	if buildRequired {
+		decision.buildStatus = workflowsmodel.WorkflowBuildStatusQueued.ToString()
+	}
+
+	return decision
+}
+
 func workflowRequestHash(fields map[string]any) (string, error) {
 	hash, err := idempotency.HashCanonical(fields)
 	if err != nil {

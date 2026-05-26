@@ -397,6 +397,7 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 			fmt.Sprintf("Job execution failed for workflow '%s'. Please check the logs for more details.", workflow.GetName()),
 			notificationsmodel.KindWebError.ToString(),
 			notificationsmodel.EntityJob.ToString(),
+			"",
 		)
 
 		// If the threshold has been reached, terminate the workflow
@@ -420,6 +421,7 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 				fmt.Sprintf("Workflow '%s' has been terminated after reaching %d consecutive job failures...", workflow.GetName(), workflow.GetMaxConsecutiveJobFailuresAllowed()),
 				notificationsmodel.KindWebAlert.ToString(),
 				notificationsmodel.EntityWorkflow.ToString(),
+				jobID,
 			)
 		}
 
@@ -446,6 +448,7 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 		fmt.Sprintf("Job execution completed successfully for workflow '%s'.", workflow.GetName()),
 		notificationsmodel.KindWebSuccess.ToString(),
 		notificationsmodel.EntityJob.ToString(),
+		"",
 	)
 
 	// Reset the workflow consecutive job failures count
@@ -460,7 +463,7 @@ func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) 
 }
 
 // sendNotification sends a notification for the job execution related events.
-func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType string) error {
+func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType, occurrenceKey string) error {
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
 		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
@@ -473,7 +476,7 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 			UserId:         userID,
 			Kind:           kind,
 			Payload:        payload,
-			IdempotencyKey: idempotency.NotificationEventKey(notificationType, jobID, title),
+			IdempotencyKey: idempotency.JobNotificationEventKey(jobID, title),
 		}); err != nil {
 			return err
 		}
@@ -488,7 +491,7 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 			UserId:         userID,
 			Kind:           kind,
 			Payload:        payload,
-			IdempotencyKey: idempotency.NotificationEventKey(notificationType, workflowID, title),
+			IdempotencyKey: idempotency.WorkflowNotificationEventKey(workflowID, title, occurrenceKey),
 		}); err != nil {
 			return err
 		}

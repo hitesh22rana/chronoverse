@@ -281,7 +281,7 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 			UserId:         userID,
 			Kind:           kind,
 			Payload:        payload,
-			IdempotencyKey: idempotency.NotificationEventKey(notificationType, jobID, title),
+			IdempotencyKey: idempotency.JobNotificationEventKey(jobID, title),
 		}); err != nil {
 			return err
 		}
@@ -296,7 +296,7 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 			UserId:         userID,
 			Kind:           kind,
 			Payload:        payload,
-			IdempotencyKey: idempotency.NotificationOccurrenceEventKey(notificationType, workflowID, title, occurrenceKey),
+			IdempotencyKey: idempotency.WorkflowNotificationEventKey(workflowID, title, occurrenceKey),
 		}); err != nil {
 			return err
 		}

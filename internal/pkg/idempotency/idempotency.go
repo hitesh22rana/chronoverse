@@ -97,3 +97,13 @@ func NotificationOccurrenceEventKey(entity, entityID, eventType, occurrenceKey s
 
 	return fmt.Sprintf("notification:%s:%s:%s:%s", entity, entityID, eventType, occurrenceKey)
 }
+
+// JobNotificationEventKey returns the deterministic idempotency key for a job notification.
+func JobNotificationEventKey(jobID, eventType string) string {
+	return NotificationEventKey("JOB", jobID, eventType)
+}
+
+// WorkflowNotificationEventKey returns the deterministic idempotency key for a workflow notification.
+func WorkflowNotificationEventKey(workflowID, eventType, occurrenceKey string) string {
+	return NotificationOccurrenceEventKey("WORKFLOW", workflowID, eventType, occurrenceKey)
+}

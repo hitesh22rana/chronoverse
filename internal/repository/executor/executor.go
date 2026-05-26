@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -58,197 +57,88 @@ type Services struct {
 	Hsvc          HeartBeatSvc
 }
 
-// Config represents the repository constants configuration.
-type Config struct {
-	ParallelismLimit int
-}
-
-// kafkaJob defines a job for the worker pool.
-type kafkaJob struct {
-	record *kgo.Record
-}
-
 // Repository provides executor repository.
 type Repository struct {
-	tp      trace.Tracer
-	cfg     *Config
-	kfk     *kgo.Client
-	auth    auth.IAuth
-	rdb     *redis.Store
-	svc     *Services
-	jobChan chan kafkaJob
-	wg      sync.WaitGroup
+	tp     trace.Tracer
+	kfk    *kgo.Client
+	auth   auth.IAuth
+	rdb    *redis.Store
+	runner *kafka.PartitionRunner
+	svc    *Services
 }
 
 // New creates a new executor repository.
-func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, kfk *kgo.Client, svc *Services) *Repository {
+func New(
+	auth auth.IAuth,
+	rdb *redis.Store,
+	kfk *kgo.Client,
+	lifecycle *kafka.PartitionLifecycle,
+	svc *Services,
+) *Repository {
 	r := &Repository{
-		tp:      otel.Tracer(svcpkg.Info().GetName()),
-		cfg:     cfg,
-		auth:    auth,
-		rdb:     rdb,
-		kfk:     kfk,
-		svc:     svc,
-		jobChan: make(chan kafkaJob, cfg.ParallelismLimit),
+		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		auth: auth,
+		rdb:  rdb,
+		kfk:  kfk,
+		svc:  svc,
 	}
+	r.runner = kafka.NewPartitionRunner(kfk, r.processRecord, &kafka.PartitionRunnerConfig{
+		Name:         "executor.worker",
+		RetryBackoff: retryBackoff,
+		Tracer:       r.tp,
+	}, lifecycle)
 
 	return r
-}
-
-// StartWorkers starts the worker goroutines.
-func (r *Repository) StartWorkers(ctx context.Context) {
-	// Start worker goroutines
-	for i := range r.cfg.ParallelismLimit {
-		r.wg.Go(func() {
-			r.worker(ctx, fmt.Sprintf("worker-%d", i))
-		})
-	}
-}
-
-// worker processes Kafka messages from the job channel.
-func (r *Repository) worker(ctx context.Context, workerID string) {
-	for {
-		select {
-		case job, ok := <-r.jobChan:
-			if !ok {
-				// Channel closed, exit worker
-				return
-			}
-
-			ctxWithTrace, span := r.tp.Start(
-				ctx,
-				"executor.worker.processRecord",
-				trace.WithAttributes(
-					attribute.String("worker_id", workerID),
-					attribute.String("topic", job.record.Topic),
-					attribute.Int64("offset", job.record.Offset),
-					attribute.Int64("partition", int64(job.record.Partition)),
-					attribute.String("key", string(job.record.Key)),
-					attribute.String("value", string(job.record.Value)),
-				),
-			)
-
-			logger := loggerpkg.FromContext(ctxWithTrace).With(zap.String("worker_id", workerID))
-
-			shouldCommit := true
-			var workflowErr error
-			// Execute the run workflow
-			if workflowErr = r.runWorkflow(ctxWithTrace, job.record.Value); workflowErr != nil {
-				shouldCommit = kafka.ShouldCommitOnError(workflowErr)
-				if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
-					logger.Error(
-						"internal error while executing workflow",
-						zap.String("topic", job.record.Topic),
-						zap.Int64("offset", job.record.Offset),
-						zap.Int32("partition", job.record.Partition),
-						zap.String("message", string(job.record.Value)),
-						zap.Error(workflowErr),
-					)
-				} else {
-					logger.Warn(
-						"error while executing workflow",
-						zap.String("topic", job.record.Topic),
-						zap.Int64("offset", job.record.Offset),
-						zap.Int32("partition", job.record.Partition),
-						zap.String("message", string(job.record.Value)),
-						zap.Error(workflowErr),
-					)
-				}
-			}
-
-			if !shouldCommit {
-				logger.Warn("workflow execution failed with retryable error, leaving record uncommitted",
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("message", string(job.record.Value)),
-					zap.Error(workflowErr),
-				)
-				span.End()
-				continue
-			}
-
-			// Commit the record
-			if err := r.kfk.CommitRecords(ctxWithTrace, job.record); err != nil {
-				logger.Error(
-					"failed to commit record",
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("message", string(job.record.Value)),
-					zap.Error(err),
-				)
-			} else {
-				logger.Info("record processed and committed successfully",
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("message", string(job.record.Value)),
-				)
-			}
-			span.End()
-
-		case <-ctx.Done():
-			// Context canceled, exit worker
-			return
-		}
-	}
 }
 
 // Run starts the executor.
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
+	r.runner.SetLogger(logger)
+	return r.runner.Run(ctx)
+}
 
-	// Start workers with the context
-	r.StartWorkers(ctx)
+func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) error {
+	ctxWithTrace, span := r.tp.Start(
+		ctx,
+		"executor.worker.processRecord",
+		trace.WithAttributes(
+			attribute.String("topic", record.Topic),
+			attribute.Int64("offset", record.Offset),
+			attribute.Int64("partition", int64(record.Partition)),
+			attribute.String("key", string(record.Key)),
+			attribute.String("value", string(record.Value)),
+		),
+	)
+	defer span.End()
 
-	// Ensures that the job channel is closed and all workers are done before returning
-	defer func() {
-		close(r.jobChan)
-		r.wg.Wait()
-	}()
+	logger := loggerpkg.FromContext(ctxWithTrace)
 
-	for {
-		// Check context cancellation before processing
-		select {
-		case <-ctx.Done():
-			logger.Warn("shutting down execution worker, context canceled", zap.Error(ctx.Err()))
-			return ctx.Err()
-		default:
-			// Continue processing
-		}
-
-		fetches := r.kfk.PollFetches(ctx)
-		if fetches.IsClientClosed() {
-			logger.Warn("kafka client closed, shutting down execution worker")
-			return nil // Return nil as this is an expected shutdown path
-		}
-
-		if fetches.Empty() {
-			continue
-		}
-
-		iter := fetches.RecordIter()
-		for _, fetchErr := range fetches.Errors() {
-			logger.Error("error while fetching records",
-				zap.String("topic", fetchErr.Topic),
-				zap.Int32("partition", fetchErr.Partition),
-				zap.Error(fetchErr.Err),
-			)
-		}
-
-		for !iter.Done() {
-			record := iter.Next()
-
-			select {
-			case r.jobChan <- kafkaJob{record: record}:
-				// Job dispatched successfully
-			case <-ctx.Done(): // Check for cancellation of the main Run context
-				logger.Warn("shutting down dispatcher, context canceled", zap.Error(ctx.Err()))
-				return ctx.Err() // Exit if main context is canceled
-			}
-		}
+	workflowErr := r.runWorkflow(ctxWithTrace, record.Value)
+	if workflowErr == nil {
+		logger.Info("record processed successfully",
+			zap.String("topic", record.Topic),
+			zap.Int64("offset", record.Offset),
+			zap.Int32("partition", record.Partition),
+			zap.String("message", string(record.Value)),
+		)
+		return nil
 	}
+
+	fields := []zap.Field{
+		zap.String("topic", record.Topic),
+		zap.Int64("offset", record.Offset),
+		zap.Int32("partition", record.Partition),
+		zap.String("message", string(record.Value)),
+		zap.Error(workflowErr),
+	}
+	if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
+		logger.Error("internal error while executing workflow", fields...)
+	} else {
+		logger.Warn("error while executing workflow", fields...)
+	}
+
+	return workflowErr
 }
 
 // runWorkflow runs the executor workflow.

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,13 +31,10 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 		return nil
 	}
 
-	// Extract logs and records
+	// Extract logs
 	logs := make([]*jobsmodel.JobLogEvent, 0, len(batch))
-	records := make([]*kgo.Record, 0, len(batch))
 
 	for _, item := range batch {
-		records = append(records, item.record)
-
 		log := item.logEntry
 		if log.EventKey == "" {
 			log.EventKey = idempotency.LogEventKey(log.JobID, log.Stream, log.SequenceNum)
@@ -86,15 +82,9 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) e
 		return err
 	}
 
-	// Commit Kafka offsets after successful insertion
-	if err := r.kfk.CommitRecords(ctx, records...); err != nil {
-		logger.Error("failed to commit records batch", zap.Error(err))
-		return err
-	}
-
 	logger.Info(
-		"successfully processed batch of logs and committed offsets",
-		zap.Int("records", len(records)),
+		"successfully processed batch of logs",
+		zap.Int("records", len(batch)),
 	)
 
 	return nil

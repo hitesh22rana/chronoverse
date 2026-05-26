@@ -118,11 +118,13 @@ func run() int {
 	defer cdb.Close()
 
 	// Initialize the kafka client
+	kafkaLifecycle := kafka.NewPartitionLifecycle()
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
 		kafka.WithConsumeTopics(kafka.TopicWorkflows),
 		kafka.WithDisableAutoCommit(),
+		kafka.WithPartitionLifecycle(kafkaLifecycle),
 		kafka.WithTLS(&cfg.Kafka),
 	)
 	if err != nil {
@@ -202,9 +204,7 @@ func run() int {
 	defer notificationsConn.Close()
 
 	// Initialize the workflow job components
-	repo := workflowrepo.New(&workflowrepo.Config{
-		ParallelismLimit: runtime.GOMAXPROCS(0),
-	}, auth, rdb, cdb, kfk, &workflowrepo.Services{
+	repo := workflowrepo.New(auth, rdb, cdb, kfk, kafkaLifecycle, &workflowrepo.Services{
 		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
 		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),

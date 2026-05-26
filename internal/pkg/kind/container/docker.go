@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -295,6 +296,15 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	}
 
 	resultCh := w.pullGroup.DoChan(imageName, func() (any, error) {
+		if _, err := w.Client.ImageInspect(ctx, imageName); err == nil {
+			// Image already exists locally, no need to pull
+			return struct{}{}, nil
+		} else if !cerrdefs.IsNotFound(err) {
+			// An error other than "not found" occurred
+			return nil, status.Errorf(codes.Aborted, "failed to inspect image: %v", err)
+		}
+
+		// Pull the image since it doesn't exist locally
 		out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
 		if err != nil {
 			return nil, status.Errorf(codes.NotFound, "failed to pull image: %v", err)
@@ -306,7 +316,6 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 			return nil, status.Errorf(codes.Aborted, "failed to read image pull output: %v", err)
 		}
 
-		// Return a non-nil dummy value to satisfy the linter; callers ignore Val anyway.
 		return struct{}{}, nil
 	})
 

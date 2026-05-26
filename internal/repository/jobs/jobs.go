@@ -95,7 +95,8 @@ func (r *Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedu
 		return "", err
 	}
 
-	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && idempotencyKey == "" {
+	automaticIdempotencyKeyProvided := trigger == jobsmodel.JobTriggerAutomatic.ToString() && idempotencyKey != ""
+	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !automaticIdempotencyKeyProvided {
 		idempotencyKey = idempotency.JobDispatchEventKey(fmt.Sprintf("%s:%s", workflowID, scheduledAtTime.Format(time.RFC3339Nano)))
 	}
 
@@ -107,6 +108,17 @@ func (r *Repository) ScheduleJob(ctx context.Context, workflowID, userID, schedu
 		DO UPDATE SET workflow_id = EXCLUDED.workflow_id
 		RETURNING id;
 	`, postgres.TableJobs)
+
+	if automaticIdempotencyKeyProvided {
+		query = fmt.Sprintf(`
+			INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (workflow_id, idempotency_key)
+			WHERE trigger = 'AUTOMATIC' AND idempotency_key IS NOT NULL
+			DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
+			RETURNING id;
+		`, postgres.TableJobs)
+	}
 
 	if trigger == jobsmodel.JobTriggerManual.ToString() {
 		query = fmt.Sprintf(`

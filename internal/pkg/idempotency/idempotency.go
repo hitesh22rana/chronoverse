@@ -60,6 +60,15 @@ func JobDispatchEventKey(jobID string) string {
 	return fmt.Sprintf("job:%s:dispatch", jobID)
 }
 
+// AutomaticScheduleEventKey returns the deterministic idempotency key for scheduling a workflow event's automatic job.
+func AutomaticScheduleEventKey(workflowEventKey string) string {
+	if workflowEventKey == "" {
+		return "workflow:unknown-event:automatic-job"
+	}
+
+	return fmt.Sprintf("%s:automatic-job", workflowEventKey)
+}
+
 // JobCompletedAnalyticsEventKey returns the deterministic analytics event key for a completed job.
 func JobCompletedAnalyticsEventKey(jobID string) string {
 	return fmt.Sprintf("analytics:job:%s:completed", jobID)
@@ -78,4 +87,13 @@ func LogEventKey(jobID, stream string, sequenceNum uint32) string {
 // NotificationEventKey returns the deterministic idempotency key for a notification.
 func NotificationEventKey(entity, entityID, eventType string) string {
 	return fmt.Sprintf("notification:%s:%s:%s", entity, entityID, eventType)
+}
+
+// NotificationOccurrenceEventKey returns the deterministic idempotency key for a notification occurrence.
+func NotificationOccurrenceEventKey(entity, entityID, eventType, occurrenceKey string) string {
+	if occurrenceKey == "" {
+		return NotificationEventKey(entity, entityID, eventType)
+	}
+
+	return fmt.Sprintf("notification:%s:%s:%s:%s", entity, entityID, eventType, occurrenceKey)
 }

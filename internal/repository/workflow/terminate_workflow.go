@@ -22,10 +22,14 @@ const (
 
 // cancelJobs cancels the jobs of the workflow.
 // This function is invoked via the cancelJobsWithStatus function.
-func (r *Repository) cancelJobs(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID string, jobs *jobspb.ListJobsResponse) {
+func (r *Repository) cancelJobs(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID string, jobs *jobspb.ListJobsResponse, excludedJobIDs map[string]struct{}) {
 	bgCtx := context.Background()
 	// Iterate over the jobs and cancel them
 	for _, job := range jobs.GetJobs() {
+		if _, ok := excludedJobIDs[job.GetId()]; ok {
+			continue
+		}
+
 		switch workflow.GetKind() {
 		// If the job is a container job, we need to stop the running container
 		case workflowsmodel.KindContainer.ToString():
@@ -62,12 +66,24 @@ func (r *Repository) cancelJobs(parentCtx context.Context, workflow *workflowspb
 			"Job has been canceled",
 			notificationsmodel.KindWebInfo.ToString(),
 			notificationsmodel.EntityJob.ToString(),
+			"",
 		)
 	}
 }
 
 // cancelJobs cancels the jobs of the workflow with the specified status.
 func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID, status string) error {
+	return r.cancelJobsWithStatusExcept(parentCtx, workflow, userID, status)
+}
+
+func (r *Repository) cancelJobsWithStatusExcept(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID, status string, excludedJobIDs ...string) error {
+	excluded := make(map[string]struct{}, len(excludedJobIDs))
+	for _, id := range excludedJobIDs {
+		if id != "" {
+			excluded[id] = struct{}{}
+		}
+	}
+
 	// Get all the jobs of the workflow which are in the specified status
 	cursor := ""
 	for {
@@ -92,7 +108,7 @@ func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflow *w
 			break
 		}
 
-		r.cancelJobs(ctx, workflow, userID, jobs)
+		r.cancelJobs(ctx, workflow, userID, jobs, excluded)
 
 		if jobs.GetCursor() == "" {
 			break
@@ -153,7 +169,7 @@ func (r *Repository) cancelRunningJobs(parentCtx context.Context, workflow *work
 		r.cancelJobs(ctx, workflow, userID, &jobspb.ListJobsResponse{
 			Jobs:   jobsToCancel,
 			Cursor: jobs.GetCursor(),
-		})
+		}, nil)
 
 		if jobs.GetCursor() == "" {
 			break
@@ -166,7 +182,10 @@ func (r *Repository) cancelRunningJobs(parentCtx context.Context, workflow *work
 }
 
 // terminate workflow terminates the workflow.
-func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowID, userID string) error {
+func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent workflowsmodel.WorkflowEvent) error {
+	workflowID := workflowEvent.ID
+	userID := workflowEvent.UserID
+
 	// Issue necessary headers and tokens for authorization
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
@@ -227,6 +246,7 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowID, us
 		fmt.Sprintf("Workflow '%s' has been terminated.", workflow.GetName()),
 		notificationsmodel.KindWebInfo.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
+		workflowOccurrenceKey(workflowEvent),
 	)
 
 	return nil

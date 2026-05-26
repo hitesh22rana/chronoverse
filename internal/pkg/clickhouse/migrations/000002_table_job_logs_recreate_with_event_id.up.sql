@@ -23,7 +23,7 @@ SETTINGS index_granularity = 8192;
 
 INSERT INTO job_logs_v2 (event_id, user_id, workflow_id, job_id, timestamp, message, sequence_num, stream)
 SELECT
-    concat(toString(job_id), ':', stream, ':', toString(sequence_num)) AS event_id,
+    concat('log:', toString(job_id), ':', stream, ':', toString(sequence_num)) AS event_id,
     user_id,
     workflow_id,
     job_id,

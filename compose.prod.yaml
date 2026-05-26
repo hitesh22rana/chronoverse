@@ -1223,7 +1223,6 @@ services:
   outbox-relay:
     <<: *low-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/outbox-relay:latest
-    container_name: outbox-relay
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary

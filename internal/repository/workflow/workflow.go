@@ -191,16 +191,24 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry workflowsmodel.WorkflowEvent) error {
 	switch workflowEntry.Action {
 	case workflowsmodel.ActionBuild:
-		return r.buildWorkflow(ctx, workflowEntry.ID)
+		return r.buildWorkflow(ctx, workflowEntry)
 	case workflowsmodel.ActionReschedule:
-		return r.rescheduleWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
+		return r.rescheduleWorkflow(ctx, workflowEntry)
 	case workflowsmodel.ActionTerminate:
-		return r.terminateWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
+		return r.terminateWorkflow(ctx, workflowEntry)
 	case workflowsmodel.ActionDelete:
 		return r.deleteWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
 	default:
 		return status.Errorf(codes.InvalidArgument, "unknown workflow action: %s", workflowEntry.Action)
 	}
+}
+
+func workflowOccurrenceKey(workflowEvent workflowsmodel.WorkflowEvent) string {
+	if workflowEvent.EventKey != "" {
+		return workflowEvent.EventKey
+	}
+
+	return idempotency.WorkflowEventKey(workflowEvent.ID, workflowEvent.Action.ToString(), workflowEvent.Generation)
 }
 
 // Run start the workflow execution.
@@ -260,7 +268,7 @@ func (r *Repository) Run(ctx context.Context) error {
 }
 
 // sendNotification sends a notification for the job execution related events.
-func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType string) error {
+func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType, occurrenceKey string) error {
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
 		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
@@ -288,7 +296,7 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 			UserId:         userID,
 			Kind:           kind,
 			Payload:        payload,
-			IdempotencyKey: idempotency.NotificationEventKey(notificationType, workflowID, title),
+			IdempotencyKey: idempotency.NotificationOccurrenceEventKey(notificationType, workflowID, title, occurrenceKey),
 		}); err != nil {
 			return err
 		}

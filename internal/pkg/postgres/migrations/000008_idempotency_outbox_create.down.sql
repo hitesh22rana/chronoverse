@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS outbox_events;
 DROP TABLE IF EXISTS workflow_idempotency_keys;
 
 DROP INDEX IF EXISTS idx_notifications_idempotency_key;
+DROP INDEX IF EXISTS idx_jobs_automatic_idempotency_key;
 DROP INDEX IF EXISTS idx_jobs_automatic_schedule_slot;
 DROP INDEX IF EXISTS idx_jobs_manual_idempotency_key;
 

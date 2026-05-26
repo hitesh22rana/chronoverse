@@ -29,7 +29,11 @@ const (
 // buildWorkflow executes the build workflow.
 //
 //nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
-func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string) error {
+func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent workflowsmodel.WorkflowEvent) error {
+	workflowID := workflowEvent.ID
+	occurrenceKey := workflowOccurrenceKey(workflowEvent)
+	scheduleIdempotencyKey := idempotency.AutomaticScheduleEventKey(occurrenceKey)
+
 	// Issue necessary headers and tokens for authorization
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
@@ -49,15 +53,28 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		return err
 	}
 
+	// Ensure the workflow is not already terminated
+	if workflow.GetTerminatedAt() != "" {
+		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
+	}
+
+	// If the build already completed, retry the automatic scheduling side effect
+	// idempotently in case the previous delivery crashed after updating status.
+	if workflow.GetBuildStatus() == workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
+		_, scheduleErr := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+			WorkflowId:     workflowID,
+			UserId:         workflow.GetUserId(),
+			ScheduledAt:    time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+			Trigger:        jobsmodel.JobTriggerAutomatic.ToString(),
+			IdempotencyKey: scheduleIdempotencyKey,
+		})
+		return scheduleErr
+	}
+
 	// Early return idempotency checks
 	// Ensure the build process is not already started
 	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusQueued.ToString() {
 		return nil
-	}
-
-	// Ensure the workflow is not already terminated
-	if workflow.GetTerminatedAt() != "" {
-		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
 
 	// Acquire a distributed lock to ensure only one worker processes the job at a time
@@ -127,10 +144,11 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 
 		// Schedule the workflow for the run
 		if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-			WorkflowId:  workflowID,
-			UserId:      workflow.GetUserId(),
-			ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-			Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
+			WorkflowId:     workflowID,
+			UserId:         workflow.GetUserId(),
+			ScheduledAt:    time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+			Trigger:        jobsmodel.JobTriggerAutomatic.ToString(),
+			IdempotencyKey: scheduleIdempotencyKey,
 		}); _err != nil {
 			return _err
 		}
@@ -147,6 +165,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 			fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", workflow.GetName()),
 			notificationsmodel.KindWebInfo.ToString(),
 			notificationsmodel.EntityWorkflow.ToString(),
+			occurrenceKey,
 		)
 
 		return nil
@@ -173,6 +192,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		fmt.Sprintf("Build process for workflow '%s' has started.", workflow.GetName()),
 		notificationsmodel.KindWebInfo.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
 	)
 
 	// Execute the build process with retry enabled
@@ -219,6 +239,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 			fmt.Sprintf("Build process for workflow '%s' has failed.", workflow.GetName()),
 			notificationsmodel.KindWebAlert.ToString(),
 			notificationsmodel.EntityWorkflow.ToString(),
+			occurrenceKey,
 		)
 
 		return workflowErr
@@ -235,10 +256,11 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 
 	// Schedule the workflow for the run
 	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		WorkflowId:  workflowID,
-		UserId:      workflow.GetUserId(),
-		ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-		Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
+		WorkflowId:     workflowID,
+		UserId:         workflow.GetUserId(),
+		ScheduledAt:    time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		Trigger:        jobsmodel.JobTriggerAutomatic.ToString(),
+		IdempotencyKey: scheduleIdempotencyKey,
 	}); _err != nil {
 		return _err
 	}
@@ -255,6 +277,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		fmt.Sprintf("Build process for workflow '%s' has completed and is scheduled to run.", workflow.GetName()),
 		notificationsmodel.KindWebSuccess.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
 	)
 
 	return nil

@@ -56,6 +56,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_automatic_schedule_slot
 ON jobs (workflow_id, scheduled_at, trigger)
 WHERE trigger = 'AUTOMATIC';
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_automatic_idempotency_key
+ON jobs (workflow_id, idempotency_key)
+WHERE trigger = 'AUTOMATIC' AND idempotency_key IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_idempotency_key
 ON notifications (user_id, idempotency_key)
 WHERE idempotency_key IS NOT NULL;

@@ -200,6 +200,10 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		return err
 	}
 
+	if isStaleWorkflowEvent(workflow, workflowEvent) {
+		return nil
+	}
+
 	// Acquire a distributed lock to ensure only one worker processes the job at a time
 	lockKey := fmt.Sprintf(
 		"%s:%s:%s",

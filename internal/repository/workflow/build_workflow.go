@@ -53,6 +53,10 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent work
 		return err
 	}
 
+	if isStaleWorkflowEvent(workflow, workflowEvent) {
+		return nil
+	}
+
 	// Ensure the workflow is not already terminated
 	if workflow.GetTerminatedAt() != "" {
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")

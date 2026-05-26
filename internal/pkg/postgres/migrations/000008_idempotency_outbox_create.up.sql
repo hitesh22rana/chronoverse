@@ -52,6 +52,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_manual_idempotency_key
 ON jobs (user_id, workflow_id, idempotency_key)
 WHERE trigger = 'MANUAL' AND idempotency_key IS NOT NULL;
 
+WITH duplicate_automatic_jobs AS (
+    SELECT
+        id,
+        row_number() OVER (
+            PARTITION BY workflow_id, scheduled_at, trigger
+            ORDER BY created_at ASC, id ASC
+        ) AS rn
+    FROM jobs
+    WHERE trigger = 'AUTOMATIC'
+)
+DELETE FROM jobs
+WHERE id IN (
+    SELECT id
+    FROM duplicate_automatic_jobs
+    WHERE rn > 1
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_automatic_schedule_slot
 ON jobs (workflow_id, scheduled_at, trigger)
 WHERE trigger = 'AUTOMATIC';

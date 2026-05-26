@@ -76,6 +76,7 @@ func (r *GetWorkflowResponse) ToProto() *workflowspb.GetWorkflowResponse {
 		UpdatedAt:                        r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt:                     terminatedAt,
 		LogRetention:                     r.LogRetention,
+		Generation:                       r.Generation,
 	}
 }
 
@@ -119,6 +120,7 @@ func (r *GetWorkflowByIDResponse) ToProto() *workflowspb.GetWorkflowByIDResponse
 		UpdatedAt:                        r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt:                     terminatedAt,
 		LogRetention:                     r.LogRetention,
+		Generation:                       r.Generation,
 	}
 }
 

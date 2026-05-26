@@ -65,6 +65,7 @@ message GetWorkflowResponse {
   string updated_at                           = 10; // Time the workflow was last updated
   string terminated_at                        = 11; // Time the workflow was terminated
   bool   log_retention                        = 12; // Indicates log retention status
+  int64  generation                           = 13; // Workflow generation
 }
 
 // GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
@@ -87,6 +88,7 @@ message GetWorkflowByIDResponse {
   string updated_at                           = 11; // Time the workflow was last updated
   string terminated_at                        = 12; // Time the workflow was terminated
   bool   log_retention                        = 13; // Indicates log retention status
+  int64  generation                           = 14; // Workflow generation
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.

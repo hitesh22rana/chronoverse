@@ -211,6 +211,10 @@ func workflowOccurrenceKey(workflowEvent workflowsmodel.WorkflowEvent) string {
 	return idempotency.WorkflowEventKey(workflowEvent.ID, workflowEvent.Action.ToString(), workflowEvent.Generation)
 }
 
+func isStaleWorkflowEvent(workflow *workflowspb.GetWorkflowByIDResponse, workflowEvent workflowsmodel.WorkflowEvent) bool {
+	return workflowEvent.Generation != 0 && workflow.GetGeneration() != workflowEvent.Generation
+}
+
 // Run start the workflow execution.
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)

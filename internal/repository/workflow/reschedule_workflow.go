@@ -32,6 +32,10 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 		return err
 	}
 
+	if isStaleWorkflowEvent(workflow, workflowEvent) {
+		return nil
+	}
+
 	if workflow.GetTerminatedAt() != "" {
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}

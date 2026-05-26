@@ -463,6 +463,7 @@ type GetWorkflowResponse struct {
 	UpdatedAt                        string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
 	TerminatedAt                     string                 `protobuf:"bytes,11,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
 	LogRetention                     bool                   `protobuf:"varint,12,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
+	Generation                       int64                  `protobuf:"varint,13,opt,name=generation,proto3" json:"generation,omitempty"`                                                                                          // Workflow generation
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -581,6 +582,13 @@ func (x *GetWorkflowResponse) GetLogRetention() bool {
 	return false
 }
 
+func (x *GetWorkflowResponse) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
 // GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
 type GetWorkflowByIDRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -642,6 +650,7 @@ type GetWorkflowByIDResponse struct {
 	UpdatedAt                        string                 `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
 	TerminatedAt                     string                 `protobuf:"bytes,12,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
 	LogRetention                     bool                   `protobuf:"varint,13,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
+	Generation                       int64                  `protobuf:"varint,14,opt,name=generation,proto3" json:"generation,omitempty"`                                                                                          // Workflow generation
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -765,6 +774,13 @@ func (x *GetWorkflowByIDResponse) GetLogRetention() bool {
 		return x.LogRetention
 	}
 	return false
+}
+
+func (x *GetWorkflowByIDResponse) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
@@ -1507,7 +1523,7 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"!UpdateWorkflowBuildStatusResponse\"=\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\"\xc3\x03\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\xe3\x03\n" +
 	"\x13GetWorkflowResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -1523,9 +1539,12 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"updated_at\x18\n" +
 	" \x01(\tR\tupdatedAt\x12#\n" +
 	"\rterminated_at\x18\v \x01(\tR\fterminatedAt\x12#\n" +
-	"\rlog_retention\x18\f \x01(\bR\flogRetention\"(\n" +
+	"\rlog_retention\x18\f \x01(\bR\flogRetention\x12\x1e\n" +
+	"\n" +
+	"generation\x18\r \x01(\x03R\n" +
+	"generation\"(\n" +
 	"\x16GetWorkflowByIDRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xe0\x03\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x80\x04\n" +
 	"\x17GetWorkflowByIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
@@ -1542,7 +1561,10 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\v \x01(\tR\tupdatedAt\x12#\n" +
 	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\x12#\n" +
-	"\rlog_retention\x18\r \x01(\bR\flogRetention\"u\n" +
+	"\rlog_retention\x18\r \x01(\bR\flogRetention\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x0e \x01(\x03R\n" +
+	"generation\"u\n" +
 	"3IncrementWorkflowConsecutiveJobFailuresCountRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x15\n" +

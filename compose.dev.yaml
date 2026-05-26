@@ -1314,6 +1314,7 @@ services:
         echo "Waiting for certificates..."
         sleep 1
       done
+      export OUTBOX_RELAY_WORKER_ID="$${OUTBOX_RELAY_WORKER_ID:-$$(hostname)}"
       exec /bin/service
       '
     depends_on:

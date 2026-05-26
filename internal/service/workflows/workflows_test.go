@@ -645,6 +645,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 				Id:          "workflow_id",
 				UserId:      "user_id",
 				BuildStatus: "COMPLETED",
+				Generation:  2,
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
@@ -652,6 +653,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 					req.GetBuildStatus(),
+					req.GetGeneration(),
 				).Return(nil)
 
 				// Simulate a cache delete
@@ -711,6 +713,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 					req.GetBuildStatus(),
+					req.GetGeneration(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
 			isErr: true,
@@ -728,6 +731,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 					req.GetBuildStatus(),
+					req.GetGeneration(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,

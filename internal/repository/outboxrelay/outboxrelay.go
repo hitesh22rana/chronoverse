@@ -2,6 +2,8 @@ package outboxrelay
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -15,10 +17,11 @@ import (
 
 // Config represents the outbox relay repository configuration.
 type Config struct {
-	BatchSize    int
-	MaxAttempts  int
-	RetryBackoff time.Duration
-	WorkerID     string
+	BatchSize       int
+	MaxAttempts     int
+	RetryBackoff    time.Duration
+	ProcessingLease time.Duration
+	WorkerID        string
 }
 
 // Event is a claimed outbox event ready to publish.
@@ -29,6 +32,7 @@ type Event struct {
 	EventKey string
 	Payload  []byte
 	Attempts int
+	Claim    string
 }
 
 // Repository publishes outbox events to Kafka.
@@ -70,7 +74,7 @@ func (r *Repository) PublishTopic(ctx context.Context, topic string, logger *zap
 			continue
 		}
 
-		if err := r.markPublished(ctx, event.ID); err != nil {
+		if err := r.markPublished(ctx, event); err != nil {
 			return len(events), err
 		}
 	}
@@ -79,6 +83,11 @@ func (r *Repository) PublishTopic(ctx context.Context, topic string, logger *zap
 }
 
 func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) {
+	claimToken, err := newClaimToken(r.cfg.WorkerID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create outbox claim token: %v", err)
+	}
+
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to start outbox transaction: %v", err)
@@ -110,7 +119,7 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 		RETURNING e.id, e.topic, e.kafka_key, e.event_key, e.payload::text, e.attempts;
 	`, postgres.TableOutboxEvents, postgres.TableOutboxEvents)
 
-	rows, err := tx.Query(ctx, query, topic, r.cfg.BatchSize, r.cfg.WorkerID, fmt.Sprintf("%d seconds", int(r.cfg.RetryBackoff.Seconds())))
+	rows, err := tx.Query(ctx, query, topic, r.cfg.BatchSize, claimToken, postgresInterval(r.processingLease()))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to claim outbox events: %v", err)
 	}
@@ -124,6 +133,7 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 			return nil, status.Errorf(codes.Internal, "failed to scan outbox event: %v", err)
 		}
 		event.Payload = []byte(payload)
+		event.Claim = claimToken
 		events = append(events, &event)
 	}
 	if err = rows.Err(); err != nil {
@@ -137,16 +147,18 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 	return events, nil
 }
 
-func (r *Repository) markPublished(ctx context.Context, eventID string) error {
+func (r *Repository) markPublished(ctx context.Context, event *Event) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET status = 'PUBLISHED',
 			published_at = now() AT TIME ZONE 'utc',
 			locked_at = NULL,
 			locked_by = NULL
-		WHERE id = $1;
+		WHERE id = $1
+			AND status = 'PROCESSING'
+			AND locked_by = $2;
 	`, postgres.TableOutboxEvents)
-	if _, err := r.pg.Exec(ctx, query, eventID); err != nil {
+	if _, err := r.pg.Exec(ctx, query, event.ID, event.Claim); err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event published: %v", err)
 	}
 	return nil
@@ -164,10 +176,45 @@ func (r *Repository) markFailed(ctx context.Context, event *Event) error {
 			next_attempt_at = (now() AT TIME ZONE 'utc') + $3::interval,
 			locked_at = NULL,
 			locked_by = NULL
-		WHERE id = $1;
+		WHERE id = $1
+			AND status = 'PROCESSING'
+			AND locked_by = $4;
 	`, postgres.TableOutboxEvents)
-	if _, err := r.pg.Exec(ctx, query, event.ID, statusValue, fmt.Sprintf("%d seconds", int(r.cfg.RetryBackoff.Seconds()))); err != nil {
+	if _, err := r.pg.Exec(ctx, query, event.ID, statusValue, postgresInterval(r.retryBackoff()), event.Claim); err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event failed: %v", err)
 	}
 	return nil
+}
+
+func (r *Repository) retryBackoff() time.Duration {
+	if r.cfg.RetryBackoff <= 0 {
+		return 5 * time.Second
+	}
+
+	return r.cfg.RetryBackoff
+}
+
+func (r *Repository) processingLease() time.Duration {
+	if r.cfg.ProcessingLease <= 0 {
+		return 30 * time.Second
+	}
+
+	return r.cfg.ProcessingLease
+}
+
+func postgresInterval(duration time.Duration) string {
+	if duration <= 0 {
+		duration = time.Millisecond
+	}
+
+	return fmt.Sprintf("%d milliseconds", duration.Milliseconds())
+}
+
+func newClaimToken(workerID string) (string, error) {
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s:%d:%s", workerID, time.Now().UnixNano(), hex.EncodeToString(token[:])), nil
 }

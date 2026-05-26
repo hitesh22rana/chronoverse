@@ -43,7 +43,7 @@ type Repository interface {
 		idempotencyKey string,
 	) (*workflowsmodel.GetWorkflowResponse, error)
 	UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32, idempotencyKey string) error
-	UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) error
+	UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) error
 	GetWorkflow(ctx context.Context, workflowID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
 	GetWorkflowByID(ctx context.Context, workflowID string) (*workflowsmodel.GetWorkflowByIDResponse, error)
 	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (bool, error)
@@ -327,6 +327,7 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		req.GetId(),
 		req.GetUserId(),
 		req.GetBuildStatus(),
+		req.GetGeneration(),
 	)
 	if err != nil {
 		return err

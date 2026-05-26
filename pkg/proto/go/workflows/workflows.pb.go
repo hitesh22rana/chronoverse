@@ -303,6 +303,7 @@ type UpdateWorkflowBuildStatusRequest struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                      // ID of the workflow
 	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                // ID of the user
 	BuildStatus   string                 `protobuf:"bytes,3,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"` // Build Status of the workflow
+	Generation    int64                  `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`                     // Optional generation guard. Zero disables the guard.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -356,6 +357,13 @@ func (x *UpdateWorkflowBuildStatusRequest) GetBuildStatus() string {
 		return x.BuildStatus
 	}
 	return ""
+}
+
+func (x *UpdateWorkflowBuildStatusRequest) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
 }
 
 // UpdateWorkflowBuildStatusResponse contains the result of a workflow build status update attempt.
@@ -1515,11 +1523,14 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\binterval\x18\x05 \x01(\x05R\binterval\x12N\n" +
 	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\x12'\n" +
 	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\"\x18\n" +
-	"\x16UpdateWorkflowResponse\"n\n" +
+	"\x16UpdateWorkflowResponse\"\x8e\x01\n" +
 	" UpdateWorkflowBuildStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12!\n" +
-	"\fbuild_status\x18\x03 \x01(\tR\vbuildStatus\"#\n" +
+	"\fbuild_status\x18\x03 \x01(\tR\vbuildStatus\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x04 \x01(\x03R\n" +
+	"generation\"#\n" +
 	"!UpdateWorkflowBuildStatusResponse\"=\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +

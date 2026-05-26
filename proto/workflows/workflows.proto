@@ -40,6 +40,7 @@ message UpdateWorkflowBuildStatusRequest {
   string id           = 1; // ID of the workflow
   string user_id      = 2; // ID of the user
   string build_status = 3; // Build Status of the workflow
+  int64  generation   = 4; // Optional generation guard. Zero disables the guard.
 }
 
 // UpdateWorkflowBuildStatusResponse contains the result of a workflow build status update attempt.

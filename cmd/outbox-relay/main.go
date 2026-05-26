@@ -82,10 +82,11 @@ func run() int {
 	defer kfk.Close()
 
 	repo := outboxrelayrepo.New(&outboxrelayrepo.Config{
-		BatchSize:    cfg.OutboxRelayConfig.BatchSize,
-		MaxAttempts:  cfg.OutboxRelayConfig.MaxAttempts,
-		RetryBackoff: cfg.OutboxRelayConfig.RetryBackoff,
-		WorkerID:     cfg.OutboxRelayConfig.WorkerID,
+		BatchSize:       cfg.OutboxRelayConfig.BatchSize,
+		MaxAttempts:     cfg.OutboxRelayConfig.MaxAttempts,
+		RetryBackoff:    cfg.OutboxRelayConfig.RetryBackoff,
+		ProcessingLease: cfg.OutboxRelayConfig.ProcessingLease,
+		WorkerID:        cfg.OutboxRelayConfig.WorkerID,
 	}, pdb, kfk)
 	app := outboxrelay.New(ctx, &outboxrelay.Config{
 		WorkflowEnabled:    cfg.OutboxRelayConfig.WorkflowEnabled,

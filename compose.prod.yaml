@@ -1238,6 +1238,7 @@ services:
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
+      OUTBOX_RELAY_PROCESSING_LEASE: 30s
       OUTBOX_RELAY_CLEANUP_ENABLED: true
       OUTBOX_RELAY_CLEANUP_INTERVAL: 15m
       OUTBOX_RELAY_CLEANUP_BATCH_SIZE: 1000

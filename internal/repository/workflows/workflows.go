@@ -287,7 +287,8 @@ func (r *Repository) UpdateWorkflow(
 
 	newBuildHashValid := newBuildHash != ""
 	buildHashChanged := currentBuildHash.Valid != newBuildHashValid || currentBuildHash.String != newBuildHash
-	rescheduleRequired := currentInterval != interval
+	intervalChanged := currentInterval != interval
+	rescheduleRequired := intervalChanged && currentBuildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString()
 	reactivatingTerminatedWorkflow := currentTerminatedAt.Valid
 	workflowNeedsBuild := currentBuildStatus != workflowsmodel.WorkflowBuildStatusCompleted.ToString() &&
 		currentBuildStatus != workflowsmodel.WorkflowBuildStatusStarted.ToString()
@@ -382,7 +383,7 @@ func (r *Repository) UpdateWorkflow(
 }
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
-func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) (err error) {
+func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateWorkflowBuildStatus")
 	defer func() {
 		if err != nil {
@@ -395,11 +396,12 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET build_status = $1
-		WHERE id = $2 AND user_id = $3;
+		WHERE id = $2 AND user_id = $3
+			AND ($4::BIGINT = 0 OR generation = $4);
 	`, postgres.TableWorkflows)
 
 	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID)
+	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID, generation)
 	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -418,6 +420,11 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 	}
 
 	if ct.RowsAffected() == 0 {
+		if generation != 0 {
+			err = status.Errorf(codes.FailedPrecondition, "workflow generation mismatch")
+			return err
+		}
+
 		err = status.Errorf(codes.NotFound, "workflow not found")
 		return err
 	}

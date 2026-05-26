@@ -25,6 +25,7 @@ type OutboxRelayConfig struct {
 	ContextTimeout     time.Duration `envconfig:"OUTBOX_RELAY_CONTEXT_TIMEOUT" default:"10s"`
 	MaxAttempts        int           `envconfig:"OUTBOX_RELAY_MAX_ATTEMPTS" default:"10"`
 	RetryBackoff       time.Duration `envconfig:"OUTBOX_RELAY_RETRY_BACKOFF" default:"5s"`
+	ProcessingLease    time.Duration `envconfig:"OUTBOX_RELAY_PROCESSING_LEASE" default:"30s"`
 	WorkerID           string        `envconfig:"OUTBOX_RELAY_WORKER_ID" default:"outbox-relay"`
 	CleanupEnabled     bool          `envconfig:"OUTBOX_RELAY_CLEANUP_ENABLED" default:"true"`
 	CleanupInterval    time.Duration `envconfig:"OUTBOX_RELAY_CLEANUP_INTERVAL" default:"15m"`

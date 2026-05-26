@@ -39,6 +39,9 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 	if workflow.GetTerminatedAt() != "" {
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
+	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
+		return nil
+	}
 
 	lockKey := fmt.Sprintf("%s:%s:%s", lockKeyPrefix, workflowsmodel.ActionReschedule.ToString(), workflowID)
 	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, rescheduleWorkflowExpirationTimeout)

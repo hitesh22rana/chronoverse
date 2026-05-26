@@ -8,6 +8,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
+	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -20,7 +21,7 @@ func (r *Repository) executeHeartbeatWorkflow(ctx context.Context, jobID string,
 	}
 
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution
-	withRetry(func() error {
+	retrypkg.Once(func() error {
 		// Issue necessary headers and tokens for authorization
 		// This context uses the parent context
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution
@@ -33,7 +34,7 @@ func (r *Repository) executeHeartbeatWorkflow(ctx context.Context, jobID string,
 			return status.Errorf(codes.Internal, "failed to update job status: %v", err)
 		}
 		return nil
-	})
+	}, retryBackoff)
 
 	return r.svc.Hsvc.Execute(ctx, details.TimeOut, details.Endpoint, details.ExpectedStatusCode, details.Headers)
 }

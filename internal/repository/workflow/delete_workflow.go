@@ -11,6 +11,7 @@ import (
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 )
 
 const (
@@ -49,7 +50,7 @@ func (r *Repository) deleteWorkflowLogs(parentCtx context.Context, workflowID, u
         WHERE workflow_id = $1 AND user_id = $2
     `, clickhouse.TableJobLogs)
 
-	return withRetry(func() error {
+	return retrypkg.Once(func() error {
 		ctx, cancel := context.WithTimeout(parentCtx, defaultTimeout)
 		defer cancel()
 
@@ -67,5 +68,5 @@ func (r *Repository) deleteWorkflowLogs(parentCtx context.Context, workflowID, u
 		}
 
 		return nil
-	})
+	}, retryBackoff)
 }

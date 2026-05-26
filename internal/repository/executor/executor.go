@@ -130,16 +130,19 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 
 			logger := loggerpkg.FromContext(ctxWithTrace).With(zap.String("worker_id", workerID))
 
+			shouldCommit := true
+			var workflowErr error
 			// Execute the run workflow
-			if err := r.runWorkflow(ctxWithTrace, job.record.Value); err != nil {
-				if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
+			if workflowErr = r.runWorkflow(ctxWithTrace, job.record.Value); workflowErr != nil {
+				shouldCommit = kafka.ShouldCommitOnError(workflowErr)
+				if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
 					logger.Error(
 						"internal error while executing workflow",
 						zap.String("topic", job.record.Topic),
 						zap.Int64("offset", job.record.Offset),
 						zap.Int32("partition", job.record.Partition),
 						zap.String("message", string(job.record.Value)),
-						zap.Error(err),
+						zap.Error(workflowErr),
 					)
 				} else {
 					logger.Warn(
@@ -148,9 +151,21 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 						zap.Int64("offset", job.record.Offset),
 						zap.Int32("partition", job.record.Partition),
 						zap.String("message", string(job.record.Value)),
-						zap.Error(err),
+						zap.Error(workflowErr),
 					)
 				}
+			}
+
+			if !shouldCommit {
+				logger.Warn("workflow execution failed with retryable error, leaving record uncommitted",
+					zap.String("topic", job.record.Topic),
+					zap.Int64("offset", job.record.Offset),
+					zap.Int32("partition", job.record.Partition),
+					zap.String("message", string(job.record.Value)),
+					zap.Error(workflowErr),
+				)
+				span.End()
+				continue
 			}
 
 			// Commit the record
@@ -537,26 +552,6 @@ func (r *Repository) withAuthorization(parentCtx context.Context) (context.Conte
 	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
 
 	return ctx, nil
-}
-
-// withRetry executes the given function and retries once if it fails with an error
-// other than codes.FailedPrecondition.
-func withRetry(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
-	}
-
-	// If the error is FailedPrecondition or InvalidArgument, do not retry
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
-		return err
-	}
-
-	// Wait for the retry backoff duration
-	time.Sleep(retryBackoff)
-
-	// Execute the function again
-	return fn()
 }
 
 // executeWorkflow executes the workflow.

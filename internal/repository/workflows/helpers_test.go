@@ -1,3 +1,4 @@
+//nolint:testpackage // Tests the unexported stale-event helper without widening production API.
 package workflows
 
 import (

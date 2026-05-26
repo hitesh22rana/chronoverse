@@ -20,6 +20,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 )
 
 const (
@@ -201,14 +202,14 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent work
 	)
 
 	// Execute the build process with retry enabled
-	workflowErr := withRetry(func() error {
+	workflowErr := retrypkg.Once(func() error {
 		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 		if err != nil {
 			return err
 		}
 
 		return r.svc.Csvc.Build(ctx, details.Image)
-	})
+	}, retryBackoff)
 
 	// Since, build process can take time to execute and can led to authorization issues
 	// So, we need to re-issue the authorization token

@@ -8,11 +8,15 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Config represents the outbox relay repository configuration.
@@ -37,6 +41,7 @@ type Event struct {
 
 // Repository publishes outbox events to Kafka.
 type Repository struct {
+	tp  trace.Tracer
 	cfg *Config
 	pg  *postgres.Postgres
 	kfk *kgo.Client
@@ -44,7 +49,12 @@ type Repository struct {
 
 // New creates a new outbox relay repository.
 func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
-	return &Repository{cfg: cfg, pg: pg, kfk: kfk}
+	return &Repository{
+		tp:  otel.Tracer(svcpkg.Info().GetName()),
+		cfg: cfg,
+		pg:  pg,
+		kfk: kfk,
+	}
 }
 
 // PublishTopic claims pending events for a topic and publishes them to Kafka.
@@ -55,31 +65,46 @@ func (r *Repository) PublishTopic(ctx context.Context, topic string, logger *zap
 	}
 
 	for _, event := range events {
-		record := &kgo.Record{
-			Topic: event.Topic,
-			Key:   []byte(event.KafkaKey),
-			Value: event.Payload,
-		}
-
-		if err := r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
-			logger.Error("failed to publish outbox event",
-				zap.String("event_id", event.ID),
-				zap.String("topic", event.Topic),
-				zap.String("event_key", event.EventKey),
-				zap.Error(err),
-			)
-			if markErr := r.markFailed(ctx, event); markErr != nil {
-				return len(events), markErr
-			}
-			continue
-		}
-
-		if err := r.markPublished(ctx, event); err != nil {
+		if err := r.publishEvent(ctx, event, logger); err != nil {
 			return len(events), err
 		}
 	}
 
 	return len(events), nil
+}
+
+func (r *Repository) publishEvent(ctx context.Context, event *Event, logger *zap.Logger) error {
+	ctxWithTrace, span := r.tp.Start(
+		ctx,
+		"outboxrelay.PublishTopic.publishEvent",
+		trace.WithAttributes(
+			attribute.String("event_id", event.ID),
+			attribute.String("topic", event.Topic),
+			attribute.String("event_key", event.EventKey),
+			attribute.String("kafka_key", event.KafkaKey),
+			attribute.String("worker_id", r.cfg.WorkerID),
+			attribute.Int("attempts", event.Attempts),
+		),
+	)
+	defer span.End()
+
+	record := &kgo.Record{
+		Topic: event.Topic,
+		Key:   []byte(event.KafkaKey),
+		Value: event.Payload,
+	}
+
+	if err := r.kfk.ProduceSync(ctxWithTrace, record).FirstErr(); err != nil {
+		logger.Error("failed to publish outbox event",
+			zap.String("event_id", event.ID),
+			zap.String("topic", event.Topic),
+			zap.String("event_key", event.EventKey),
+			zap.Error(err),
+		)
+		return r.markFailed(ctxWithTrace, event)
+	}
+
+	return r.markPublished(ctxWithTrace, event)
 }
 
 func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) {

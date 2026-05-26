@@ -9,6 +9,7 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -19,6 +20,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
+	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -113,9 +115,9 @@ func (r *Repository) Run(ctx context.Context) error {
 				queueMu.Unlock()
 
 				//nolint:errcheck // Ignore error as we are exiting
-				withRetry(func() error {
+				retrypkg.Once(func() error {
 					return r.processLogsBatch(ctx, data)
-				})
+				}, retryBackoff)
 
 				exitCh <- nil
 				return
@@ -132,11 +134,13 @@ func (r *Repository) Run(ctx context.Context) error {
 				queue = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
 				queueMu.Unlock()
 
-				if err := withRetry(func() error {
+				if err := retrypkg.Once(func() error {
 					return r.processLogsBatch(ctx, data)
-				}); err != nil {
-					// Continue processing despite errors
+				}, retryBackoff); err != nil {
 					logger.Error("error processing batch", zap.Error(err))
+					queueMu.Lock()
+					queue = prependQueueData(queue, data)
+					queueMu.Unlock()
 				}
 
 			case <-analyticsTicker.C:
@@ -183,11 +187,25 @@ func (r *Repository) Run(ctx context.Context) error {
 
 		for !iter.Done() {
 			func(record *kgo.Record) {
+				ctxWithTrace, span := r.tp.Start(
+					ctx,
+					"joblogs.Run.processRecord",
+					trace.WithAttributes(
+						attribute.String("topic", record.Topic),
+						attribute.Int64("offset", record.Offset),
+						attribute.Int64("partition", int64(record.Partition)),
+						attribute.String("key", string(record.Key)),
+					),
+				)
+				defer span.End()
+
+				logger := loggerpkg.FromContext(ctxWithTrace)
+
 				// Parse log entry from Kafka record
 				var logEntry jobsmodel.JobLogEvent
 				if err := json.Unmarshal(record.Value, &logEntry); err != nil {
 					logger.Error("failed to unmarshal record",
-						zap.Any("ctx", ctx),
+						zap.Any("ctx", ctxWithTrace),
 						zap.String("topic", record.Topic),
 						zap.Int64("offset", record.Offset),
 						zap.Int32("partition", record.Partition),
@@ -196,9 +214,9 @@ func (r *Repository) Run(ctx context.Context) error {
 					)
 
 					// Skip this record and commit it to avoid reprocessing
-					if err := r.kfk.CommitRecords(ctx, record); err != nil {
+					if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
 						logger.Error("failed to commit record",
-							zap.Any("ctx", ctx),
+							zap.Any("ctx", ctxWithTrace),
 							zap.String("topic", record.Topic),
 							zap.Int64("offset", record.Offset),
 							zap.Int32("partition", record.Partition),
@@ -210,6 +228,15 @@ func (r *Repository) Run(ctx context.Context) error {
 					// Skip processing this record
 					return
 				}
+				span.SetAttributes(
+					attribute.String("event_key", logEntry.EventKey),
+					attribute.String("job_id", logEntry.JobID),
+					attribute.String("workflow_id", logEntry.WorkflowID),
+					attribute.String("user_id", logEntry.UserID),
+					attribute.String("stream", logEntry.Stream),
+					attribute.Int64("sequence_num", int64(logEntry.SequenceNum)),
+					attribute.Bool("retention", logEntry.Retention),
+				)
 
 				// Add log entry to the queue
 				queueMu.Lock()
@@ -224,11 +251,13 @@ func (r *Repository) Run(ctx context.Context) error {
 					queue = make([]*queueData, 0, r.cfg.BatchJobLogsSizeLimit)
 					queueMu.Unlock()
 
-					if err := withRetry(func() error {
+					if err := retrypkg.Once(func() error {
 						return r.processLogsBatch(context.WithoutCancel(ctx), data)
-					}); err != nil {
-						// Continue processing despite errors
+					}, retryBackoff); err != nil {
 						logger.Error("error processing batch", zap.Error(err))
+						queueMu.Lock()
+						queue = prependQueueData(queue, data)
+						queueMu.Unlock()
 					}
 
 					queueMu.Lock()
@@ -262,22 +291,14 @@ func (r *Repository) Run(ctx context.Context) error {
 	}
 }
 
-// withRetry executes the given function and retries once if it fails with an error
-// other than codes.FailedPrecondition.
-func withRetry(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
+func prependQueueData(queue, data []*queueData) []*queueData {
+	if len(data) == 0 {
+		return queue
 	}
 
-	// If the error is FailedPrecondition or InvalidArgument, do not retry
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
-		return err
-	}
+	merged := make([]*queueData, 0, len(queue)+len(data))
+	merged = append(merged, data...)
+	merged = append(merged, queue...)
 
-	// Wait for the retry backoff duration
-	time.Sleep(retryBackoff)
-
-	// Execute the function again
-	return fn()
+	return merged
 }

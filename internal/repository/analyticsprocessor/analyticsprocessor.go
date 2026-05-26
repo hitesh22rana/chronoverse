@@ -7,14 +7,17 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
+	kafkapkg "github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -86,11 +89,25 @@ func (r *Repository) Run(ctx context.Context) error {
 
 		for !iter.Done() {
 			func(record *kgo.Record) {
+				ctxWithTrace, span := r.tp.Start(
+					ctx,
+					"analyticsprocessor.Run.processRecord",
+					trace.WithAttributes(
+						attribute.String("topic", record.Topic),
+						attribute.Int64("offset", record.Offset),
+						attribute.Int64("partition", int64(record.Partition)),
+						attribute.String("key", string(record.Key)),
+					),
+				)
+				defer span.End()
+
+				logger := loggerpkg.FromContext(ctxWithTrace)
+
 				// Parse analytics event from Kafka record
 				var event analyticsmodel.AnalyticEvent
 				if err := json.Unmarshal(record.Value, &event); err != nil {
 					logger.Error("failed to unmarshal record",
-						zap.Any("ctx", ctx),
+						zap.Any("ctx", ctxWithTrace),
 						zap.String("topic", record.Topic),
 						zap.Int64("offset", record.Offset),
 						zap.Int32("partition", record.Partition),
@@ -99,9 +116,9 @@ func (r *Repository) Run(ctx context.Context) error {
 					)
 
 					// Skip this record and commit it to avoid reprocessing
-					if err := r.kfk.CommitRecords(ctx, record); err != nil {
+					if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
 						logger.Error("failed to commit record",
-							zap.Any("ctx", ctx),
+							zap.Any("ctx", ctxWithTrace),
 							zap.String("topic", record.Topic),
 							zap.Int64("offset", record.Offset),
 							zap.Int32("partition", record.Partition),
@@ -113,52 +130,75 @@ func (r *Repository) Run(ctx context.Context) error {
 					// Skip processing this record
 					return
 				}
+				span.SetAttributes(
+					attribute.String("event_type", event.EventType.ToString()),
+					attribute.String("event_key", event.EventKey),
+					attribute.String("user_id", event.UserID),
+					attribute.String("workflow_id", event.WorkflowID),
+				)
 
+				shouldCommit := true
+				var processErr error
 				switch event.EventType {
 				case analyticsmodel.EventTypeLogs:
 					// Process logs analytics event
-					if err := withRetry(func() error {
-						return r.processLogsEvent(ctx, &event)
-					}); err != nil {
+					if processErr = retrypkg.Once(func() error {
+						return r.processLogsEvent(ctxWithTrace, &event)
+					}, retryBackoff); processErr != nil {
 						logger.Error("error processing logs event",
-							zap.Any("ctx", ctx),
+							zap.Any("ctx", ctxWithTrace),
 							zap.Any("event", event),
-							zap.Error(err),
+							zap.Error(processErr),
 						)
 					}
 				case analyticsmodel.EventTypeJobs:
 					// Process jobs analytics event
-					if err := withRetry(func() error {
-						return r.processJobsEvent(ctx, &event)
-					}); err != nil {
+					if processErr = retrypkg.Once(func() error {
+						return r.processJobsEvent(ctxWithTrace, &event)
+					}, retryBackoff); processErr != nil {
 						logger.Error("error processing jobs event",
-							zap.Any("ctx", ctx),
+							zap.Any("ctx", ctxWithTrace),
 							zap.Any("event", event),
-							zap.Error(err),
+							zap.Error(processErr),
 						)
 					}
 				case analyticsmodel.EventTypeWorkflows:
 					// Process workflows analytics event
-					if err := withRetry(func() error {
-						return r.processWorkflowsEvent(ctx, &event)
-					}); err != nil {
+					if processErr = retrypkg.Once(func() error {
+						return r.processWorkflowsEvent(ctxWithTrace, &event)
+					}, retryBackoff); processErr != nil {
 						logger.Error("error processing workflows event",
-							zap.Any("ctx", ctx),
+							zap.Any("ctx", ctxWithTrace),
 							zap.Any("event", event),
-							zap.Error(err),
+							zap.Error(processErr),
 						)
 					}
 				default:
 					logger.Warn("unknown event type",
-						zap.Any("ctx", ctx),
+						zap.Any("ctx", ctxWithTrace),
 						zap.Any("event", event),
 					)
 				}
 
+				if processErr != nil {
+					shouldCommit = kafkapkg.ShouldCommitOnError(processErr)
+				}
+				if !shouldCommit {
+					logger.Warn("analytics processing failed with retryable error, leaving record uncommitted",
+						zap.Any("ctx", ctxWithTrace),
+						zap.String("topic", record.Topic),
+						zap.Int64("offset", record.Offset),
+						zap.Int32("partition", record.Partition),
+						zap.String("value", string(record.Value)),
+						zap.Error(processErr),
+					)
+					return
+				}
+
 				// Commit the record after processing
-				if err := r.kfk.CommitRecords(ctx, record); err != nil {
+				if err := r.kfk.CommitRecords(ctxWithTrace, record); err != nil {
 					logger.Error("failed to commit record",
-						zap.Any("ctx", ctx),
+						zap.Any("ctx", ctxWithTrace),
 						zap.String("topic", record.Topic),
 						zap.Int64("offset", record.Offset),
 						zap.Int32("partition", record.Partition),
@@ -169,24 +209,4 @@ func (r *Repository) Run(ctx context.Context) error {
 			}(iter.Next())
 		}
 	}
-}
-
-// withRetry executes the given function and retries once if it fails with an error
-// other than codes.FailedPrecondition.
-func withRetry(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
-	}
-
-	// If the error is FailedPrecondition or InvalidArgument, do not retry
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
-		return err
-	}
-
-	// Wait for the retry backoff duration
-	time.Sleep(retryBackoff)
-
-	// Execute the function again
-	return fn()
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
@@ -41,7 +42,7 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 	}
 
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution
-	withRetry(func() error {
+	retrypkg.Once(func() error {
 		// Issue necessary headers and tokens for authorization
 		// This context uses the parent context
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution
@@ -55,7 +56,7 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 			return status.Errorf(codes.Internal, "failed to update job status: %v", err)
 		}
 		return nil
-	})
+	}, retryBackoff)
 
 	// If there was an error during execution, return it
 	if workflowErr != nil {

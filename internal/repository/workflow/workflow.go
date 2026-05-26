@@ -24,6 +24,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	kakfapkg "github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -123,6 +124,8 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 
 			logger := loggerpkg.FromContext(ctxWithTrace).With(zap.String("worker_id", workerID))
 
+			shouldCommit := true
+			var workflowErr error
 			var workflowEntry workflowsmodel.WorkflowEvent
 			if err := json.Unmarshal(job.record.Value, &workflowEntry); err != nil {
 				logger.Error(
@@ -134,7 +137,8 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 					zap.String("value", string(job.record.Value)),
 					zap.Error(err),
 				)
-			} else if workflowErr := r.runTargetWorkflow(ctxWithTrace, workflowEntry); workflowErr != nil {
+			} else if workflowErr = r.runTargetWorkflow(ctxWithTrace, workflowEntry); workflowErr != nil {
+				shouldCommit = kakfapkg.ShouldCommitOnError(workflowErr)
 				if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
 					logger.Error(
 						"internal error while executing workflow",
@@ -156,6 +160,20 @@ func (r *Repository) worker(ctx context.Context, workerID string) {
 						zap.Error(workflowErr),
 					)
 				}
+			}
+
+			if !shouldCommit {
+				logger.Warn(
+					"workflow execution failed with retryable error, leaving record uncommitted for retry",
+					zap.Any("ctx", ctxWithTrace),
+					zap.String("topic", job.record.Topic),
+					zap.Int64("offset", job.record.Offset),
+					zap.Int32("partition", job.record.Partition),
+					zap.String("value", string(job.record.Value)),
+					zap.Error(workflowErr),
+				)
+				span.End()
+				continue
 			}
 
 			// Commit the record even if the workflow workflow fails to avoid reprocessing
@@ -329,24 +347,4 @@ func (r *Repository) withAuthorization(parentCtx context.Context) (context.Conte
 	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
 
 	return ctx, nil
-}
-
-// withRetry executes the given function and retries once if it fails with an error
-// other than codes.FailedPrecondition.
-func withRetry(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
-	}
-
-	// If the error is FailedPrecondition or InvalidArgument, do not retry
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
-		return err
-	}
-
-	// Wait for the retry backoff duration
-	time.Sleep(retryBackoff)
-
-	// Execute the function again
-	return fn()
 }

@@ -79,7 +79,7 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) (
 	documents := make([]*map[string]any, 0, len(logs))
 	for _, log := range logs {
 		documents = append(documents, &map[string]any{
-			"id":           log.EventKey,
+			"id":           meiliLogDocumentID(log.EventKey),
 			"job_id":       log.JobID,
 			"workflow_id":  log.WorkflowID,
 			"user_id":      log.UserID,
@@ -417,7 +417,7 @@ func (r *Repository) deleteLogsFromMeiliSearchByID(parentCtx context.Context, ev
 	if indexJobLogs == nil {
 		return status.Error(codes.Internal, "failed to delete skipped Meilisearch logs: job logs index is not configured")
 	}
-	taskInfo, err := r.ms.Index(indexJobLogs.Name).DeleteDocumentsWithContext(ctx, eventIDs)
+	taskInfo, err := r.ms.Index(indexJobLogs.Name).DeleteDocumentsWithContext(ctx, meiliLogDocumentIDs(eventIDs))
 	if err != nil {
 		return jobLogsStatusError("failed to delete skipped Meilisearch logs", err)
 	}
@@ -467,6 +467,19 @@ func (r *Repository) insertLogsBatchToClickhouse(ctx context.Context, logs []*jo
 	}
 
 	return nil
+}
+
+func meiliLogDocumentID(eventID string) string {
+	return strings.ReplaceAll(eventID, ":", "_")
+}
+
+func meiliLogDocumentIDs(eventIDs []string) []string {
+	documentIDs := make([]string, 0, len(eventIDs))
+	for _, eventID := range eventIDs {
+		documentIDs = append(documentIDs, meiliLogDocumentID(eventID))
+	}
+
+	return documentIDs
 }
 
 // insertLogsDocumentsToMeiliSearch inserts logs documents into the meilisearch database.

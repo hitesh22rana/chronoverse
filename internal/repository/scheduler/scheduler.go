@@ -19,10 +19,11 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+const defaultBatchSize = 1000
+
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit int
-	BatchSize  int
+	BatchSize int
 }
 
 // Repository provides scheduler repository.
@@ -46,6 +47,14 @@ func New(cfg *Config, pg *postgres.Postgres) *Repository {
 		cfg: cfg,
 		pg:  pg,
 	}
+}
+
+func (r *Repository) batchSize() int {
+	if r.cfg == nil || r.cfg.BatchSize <= 0 {
+		return defaultBatchSize
+	}
+
+	return r.cfg.BatchSize
 }
 
 // Run starts the scheduler.
@@ -168,7 +177,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		postgres.TableJobs,
 		postgres.TableJobs,
 		postgres.TableJobs,
-		r.cfg.FetchLimit,
+		r.batchSize(),
 		postgres.TableJobs,
 		postgres.TableJobs,
 		postgres.TableJobs,
@@ -182,7 +191,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	}
 	defer rows.Close()
 
-	events := make([]jobDispatchOutboxEvent, 0, r.cfg.FetchLimit)
+	events := make([]jobDispatchOutboxEvent, 0, r.batchSize())
 	for rows.Next() {
 		var id string
 		var workflowID string

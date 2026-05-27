@@ -943,6 +943,7 @@ services:
       POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
+      SCHEDULING_WORKER_BATCH_SIZE: ${SCHEDULING_WORKER_BATCH_SIZE:-1000}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       ENV: development

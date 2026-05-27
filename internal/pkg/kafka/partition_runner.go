@@ -347,8 +347,9 @@ func (r *PartitionRunner) laneFor(ctx context.Context, key partitionKey) *partit
 	}
 	r.lanes[key] = lane
 
-	r.wg.Add(1)
-	go r.runLane(laneCtx, lane)
+	r.wg.Go(func() {
+		r.runLane(laneCtx, lane)
+	})
 
 	return lane
 }
@@ -459,8 +460,6 @@ func (l *partitionLane) queueLen() int {
 }
 
 func (r *PartitionRunner) runLane(ctx context.Context, lane *partitionLane) {
-	defer r.wg.Done()
-
 	for {
 		if r.processBatch != nil {
 			records, err := lane.popBatch(ctx, r.batchSize, r.batchInterval)

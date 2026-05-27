@@ -18,7 +18,7 @@ import (
 
 const rescheduleWorkflowExpirationTimeout = 5 * time.Minute
 
-func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent workflowsmodel.WorkflowEvent) error {
+func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent *workflowsmodel.WorkflowEvent) error {
 	workflowID := workflowEvent.ID
 	userID := workflowEvent.UserID
 
@@ -54,19 +54,37 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 	}()
 
 	replacementJobID, err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		WorkflowId:     workflowID,
-		UserId:         userID,
-		ScheduledAt:    time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-		Trigger:        jobsmodel.JobTriggerAutomatic.ToString(),
-		IdempotencyKey: idempotency.AutomaticScheduleEventKey(workflowOccurrenceKey(workflowEvent)),
+		WorkflowId:         workflowID,
+		UserId:             userID,
+		ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+		IdempotencyKey:     idempotency.AutomaticScheduleEventKey(workflowOccurrenceKey(workflowEvent)),
+		WorkflowGeneration: workflowEvent.Generation,
 	})
+	if status.Code(err) == codes.FailedPrecondition {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 
-	if cancelErr := r.cancelJobsWithStatusExcept(ctx, workflow, userID, jobsmodel.JobStatusPending.ToString(), replacementJobID.GetId()); cancelErr != nil {
+	if cancelErr := r.cancelJobsWithStatusAndTriggerExcept(
+		ctx,
+		workflow,
+		userID,
+		jobsmodel.JobStatusPending.ToString(),
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		replacementJobID.GetId(),
+	); cancelErr != nil {
 		return cancelErr
 	}
 
-	return r.cancelJobsWithStatusExcept(ctx, workflow, userID, jobsmodel.JobStatusQueued.ToString(), replacementJobID.GetId())
+	return r.cancelJobsWithStatusAndTriggerExcept(
+		ctx,
+		workflow,
+		userID,
+		jobsmodel.JobStatusQueued.ToString(),
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		replacementJobID.GetId(),
+	)
 }

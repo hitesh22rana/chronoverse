@@ -18,6 +18,7 @@ import (
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -38,6 +39,8 @@ const (
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
+	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
+	Remove(ctx context.Context, containerID string) error
 	Terminate(ctx context.Context, containerID string) error
 }
 
@@ -90,7 +93,7 @@ func New(
 }
 
 // runTargetWorkflow runs the target workflow based on the action.
-func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry workflowsmodel.WorkflowEvent) error {
+func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry *workflowsmodel.WorkflowEvent) error {
 	switch workflowEntry.Action {
 	case workflowsmodel.ActionBuild:
 		return r.buildWorkflow(ctx, workflowEntry)
@@ -100,12 +103,16 @@ func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry workfl
 		return r.terminateWorkflow(ctx, workflowEntry)
 	case workflowsmodel.ActionDelete:
 		return r.deleteWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
+	case workflowsmodel.ActionJobCompleted:
+		return r.handleJobCompleted(ctx, workflowEntry)
+	case workflowsmodel.ActionJobFailed:
+		return r.handleJobFailed(ctx, workflowEntry)
 	default:
 		return status.Errorf(codes.InvalidArgument, "unknown workflow action: %s", workflowEntry.Action)
 	}
 }
 
-func workflowOccurrenceKey(workflowEvent workflowsmodel.WorkflowEvent) string {
+func workflowOccurrenceKey(workflowEvent *workflowsmodel.WorkflowEvent) string {
 	if workflowEvent.EventKey != "" {
 		return workflowEvent.EventKey
 	}
@@ -113,7 +120,7 @@ func workflowOccurrenceKey(workflowEvent workflowsmodel.WorkflowEvent) string {
 	return idempotency.WorkflowEventKey(workflowEvent.ID, workflowEvent.Action.ToString(), workflowEvent.Generation)
 }
 
-func isStaleWorkflowEvent(workflow *workflowspb.GetWorkflowByIDResponse, workflowEvent workflowsmodel.WorkflowEvent) bool {
+func isStaleWorkflowEvent(workflow *workflowspb.GetWorkflowByIDResponse, workflowEvent *workflowsmodel.WorkflowEvent) bool {
 	return workflowEvent.Generation != 0 && workflow.GetGeneration() != workflowEvent.Generation
 }
 
@@ -154,7 +161,7 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 		return nil
 	}
 
-	workflowErr := r.runTargetWorkflow(ctxWithTrace, workflowEntry)
+	workflowErr := r.runTargetWorkflow(ctxWithTrace, &workflowEntry)
 	if workflowErr == nil {
 		logger.Info("record processed successfully",
 			zap.Any("ctx", ctxWithTrace),
@@ -225,20 +232,5 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 // withAuthorization issues the necessary headers and tokens for authorization.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
-	// Attach the audience and role to the context
-	ctx := auth.WithAudience(parentCtx, svcpkg.Info().GetName())
-	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
-
-	// Issue a new token
-	authToken, err := r.auth.IssueToken(ctx, authSubject)
-	if err != nil {
-		return nil, err
-	}
-
-	// Attach all the necessary headers and tokens to the context
-	ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
-	ctx = auth.WithRoleInMetadata(ctx, auth.RoleAdmin)
-	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
-
-	return ctx, nil
+	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
 }

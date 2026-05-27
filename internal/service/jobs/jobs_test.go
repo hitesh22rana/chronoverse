@@ -47,10 +47,11 @@ func TestScheduleJob(t *testing.T) {
 		{
 			name: "success",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "workflow_id",
-				UserId:      "user1",
-				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
-				Trigger:     "AUTOMATIC",
+				WorkflowId:         "workflow_id",
+				UserId:             "user1",
+				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:            "AUTOMATIC",
+				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -60,6 +61,7 @@ func TestScheduleJob(t *testing.T) {
 					req.GetScheduledAt(),
 					req.GetTrigger(),
 					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("job_id", nil)
 			},
 			want: want{
@@ -107,6 +109,7 @@ func TestScheduleJob(t *testing.T) {
 					req.GetScheduledAt(),
 					req.GetTrigger(),
 					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("", status.Error(codes.NotFound, "workflow not found"))
 			},
 			want:  want{},
@@ -128,6 +131,7 @@ func TestScheduleJob(t *testing.T) {
 					req.GetScheduledAt(),
 					req.GetTrigger(),
 					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("", status.Error(codes.NotFound, "workflow not found or not owned by user"))
 			},
 			want:  want{},
@@ -161,6 +165,7 @@ func TestScheduleJob(t *testing.T) {
 					req.GetScheduledAt(),
 					req.GetTrigger(),
 					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -969,11 +974,10 @@ func TestGetJobLogs(t *testing.T) {
 				errs := make([]error, 2)
 
 				for i := range 2 {
-					wg.Add(1)
-					go func(idx int) {
-						defer wg.Done()
+					idx := i
+					wg.Go(func() {
 						results[idx], errs[idx] = s.GetJobLogs(t.Context(), req)
-					}(i)
+					})
 				}
 
 				for range 50 {
@@ -1908,6 +1912,101 @@ func TestListJobs(t *testing.T) {
 			assert.Equal(t, len(jobs.Jobs), len(tt.want.ListJobsResponse.Jobs))
 			assert.Equal(t, jobs.Jobs, tt.want.ListJobsResponse.Jobs)
 			assert.Equal(t, jobs.Cursor, tt.want.ListJobsResponse.Cursor)
+		})
+	}
+}
+
+func TestEnqueueJobLog(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
+	s := jobs.New(validator.New(), repo, cache)
+
+	timestamp := time.Now().UTC().Format(time.RFC3339Nano)
+	req := &jobspb.EnqueueJobLogRequest{
+		EventKey:    "log:job-1:stdout:1",
+		JobId:       "job-1",
+		WorkflowId:  "workflow-1",
+		UserId:      "user-1",
+		Message:     "hello",
+		Timestamp:   timestamp,
+		SequenceNum: 1,
+		Stream:      "stdout",
+		Retention:   true,
+	}
+
+	repo.EXPECT().
+		EnqueueJobLog(gomock.Any(), gomock.AssignableToTypeOf(&jobsmodel.JobLogEvent{})).
+		DoAndReturn(func(_ context.Context, event *jobsmodel.JobLogEvent) error {
+			assert.Equal(t, req.GetEventKey(), event.EventKey)
+			assert.Equal(t, req.GetJobId(), event.JobID)
+			assert.Equal(t, req.GetWorkflowId(), event.WorkflowID)
+			assert.Equal(t, req.GetUserId(), event.UserID)
+			assert.Equal(t, req.GetMessage(), event.Message)
+			assert.Equal(t, req.GetSequenceNum(), event.SequenceNum)
+			assert.Equal(t, req.GetStream(), event.Stream)
+			assert.Equal(t, req.GetRetention(), event.Retention)
+			assert.False(t, event.TimeStamp.IsZero())
+			return nil
+		})
+
+	err := s.EnqueueJobLog(t.Context(), req)
+	assert.NoError(t, err)
+}
+
+func TestEnqueueJobLogValidation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
+	s := jobs.New(validator.New(), repo, cache)
+
+	tests := []struct {
+		name string
+		req  *jobspb.EnqueueJobLogRequest
+	}{
+		{
+			name: "missing job ID",
+			req: &jobspb.EnqueueJobLogRequest{
+				EventKey:   "log:job-1:stdout:1",
+				WorkflowId: "workflow-1",
+				UserId:     "user-1",
+				Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+				Stream:     "stdout",
+			},
+		},
+		{
+			name: "invalid timestamp",
+			req: &jobspb.EnqueueJobLogRequest{
+				EventKey:   "log:job-1:stdout:1",
+				JobId:      "job-1",
+				WorkflowId: "workflow-1",
+				UserId:     "user-1",
+				Timestamp:  "not-a-time",
+				Stream:     "stdout",
+			},
+		},
+		{
+			name: "invalid stream",
+			req: &jobspb.EnqueueJobLogRequest{
+				EventKey:   "log:job-1:stdout:1",
+				JobId:      "job-1",
+				WorkflowId: "workflow-1",
+				UserId:     "user-1",
+				Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+				Stream:     "combined",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.EnqueueJobLog(t.Context(), tt.req)
+			assert.Error(t, err)
+			assert.Equal(t, codes.InvalidArgument, status.Code(err))
 		})
 	}
 }

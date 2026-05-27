@@ -30,7 +30,7 @@ const (
 // buildWorkflow executes the build workflow.
 //
 //nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
-func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent workflowsmodel.WorkflowEvent) error {
+func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *workflowsmodel.WorkflowEvent) error {
 	workflowID := workflowEvent.ID
 	occurrenceKey := workflowOccurrenceKey(workflowEvent)
 	scheduleIdempotencyKey := idempotency.AutomaticScheduleEventKey(occurrenceKey)
@@ -67,12 +67,16 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent work
 	// idempotently in case the previous delivery crashed after updating status.
 	if workflow.GetBuildStatus() == workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
 		_, scheduleErr := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-			WorkflowId:     workflowID,
-			UserId:         workflow.GetUserId(),
-			ScheduledAt:    time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-			Trigger:        jobsmodel.JobTriggerAutomatic.ToString(),
-			IdempotencyKey: scheduleIdempotencyKey,
+			WorkflowId:         workflowID,
+			UserId:             workflow.GetUserId(),
+			ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+			Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+			IdempotencyKey:     scheduleIdempotencyKey,
+			WorkflowGeneration: workflowEvent.Generation,
 		})
+		if status.Code(scheduleErr) == codes.FailedPrecondition {
+			return nil
+		}
 		return scheduleErr
 	}
 
@@ -130,11 +134,9 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent work
 		Key:   []byte(workflowID),
 		Value: analyticEventBytes,
 	}
-
-	// Asynchronously produce the record to Kafka
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	// This is used to track the number of jobs executed for the workflow
-	r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
+	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		return status.Errorf(codes.Unavailable, "failed to publish workflow analytics event: %v", err)
+	}
 
 	// If the build step is not required, skip the build process
 	if !isBuildStepRequired(workflow.GetKind()) {
@@ -323,7 +325,7 @@ func (r *Repository) completeWorkflowBuildAndSchedule(
 	workflowID, userID string,
 	generation int64,
 	scheduleIdempotencyKey string,
-	workflowEvent workflowsmodel.WorkflowEvent,
+	workflowEvent *workflowsmodel.WorkflowEvent,
 ) (*workflowspb.GetWorkflowByIDResponse, bool, error) {
 	updated, err := r.updateWorkflowBuildStatus(
 		ctx,
@@ -348,7 +350,7 @@ func (r *Repository) completeWorkflowBuildAndSchedule(
 	return workflow, true, nil
 }
 
-func (r *Repository) getSchedulableWorkflow(ctx context.Context, workflowID string, workflowEvent workflowsmodel.WorkflowEvent) (*workflowspb.GetWorkflowByIDResponse, bool, error) {
+func (r *Repository) getSchedulableWorkflow(ctx context.Context, workflowID string, workflowEvent *workflowsmodel.WorkflowEvent) (*workflowspb.GetWorkflowByIDResponse, bool, error) {
 	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
 		Id: workflowID,
 	})
@@ -365,12 +367,16 @@ func (r *Repository) getSchedulableWorkflow(ctx context.Context, workflowID stri
 
 func (r *Repository) scheduleAutomaticJob(ctx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, idempotencyKey string) error {
 	_, err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		WorkflowId:     workflow.GetId(),
-		UserId:         workflow.GetUserId(),
-		ScheduledAt:    time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-		Trigger:        jobsmodel.JobTriggerAutomatic.ToString(),
-		IdempotencyKey: idempotencyKey,
+		WorkflowId:         workflow.GetId(),
+		UserId:             workflow.GetUserId(),
+		ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+		IdempotencyKey:     idempotencyKey,
+		WorkflowGeneration: workflow.GetGeneration(),
 	})
+	if status.Code(err) == codes.FailedPrecondition {
+		return nil
+	}
 
 	return err
 }

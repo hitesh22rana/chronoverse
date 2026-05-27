@@ -115,6 +115,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 
 			// In the test body
 			containerID, logs, errs, err := workflow.Execute(t.Context(), tt.timeout, tt.image, tt.cmd, tt.env)
+			cleanupDockerContainer(t, workflow, containerID)
 			if tt.executionError != nil {
 				require.Error(t, err)
 				assert.Equal(t, status.Code(tt.executionError), status.Code(err))
@@ -146,6 +147,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			if tt.timeoutError != nil {
 				require.Error(t, errsCollectedErr)
 				assert.Equal(t, status.Code(tt.timeoutError), status.Code(errsCollectedErr))
+				wg.Wait()
 				return
 			}
 
@@ -157,6 +159,7 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 					assert.Equal(t, status.Code(errsCollected[i]), status.Code(err))
 					assert.Contains(t, errsCollected[i].Error(), err.Error())
 				}
+				wg.Wait()
 				return
 			}
 
@@ -165,6 +168,20 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 			assert.Empty(t, errsCollected)
 		})
 	}
+}
+
+func cleanupDockerContainer(t *testing.T, workflow *container.DockerWorkflow, containerID string) {
+	t.Helper()
+	if containerID == "" {
+		return
+	}
+
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		require.NoError(t, workflow.Remove(ctx, containerID))
+	})
 }
 
 func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
@@ -274,6 +291,7 @@ func TestDockerWorkflow_Terminate(t *testing.T) {
 
 			// Create a container to terminate
 			containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, tt.image, tt.cmd, nil)
+			cleanupDockerContainer(t, workflow, containerID)
 			if tt.err != nil {
 				require.Error(t, err)
 				assert.Equal(t, status.Code(tt.err), status.Code(err))

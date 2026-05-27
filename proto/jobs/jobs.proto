@@ -6,11 +6,12 @@ option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs;jobs"
 
 // ScheduleJobRequest contains the details needed to create a new job.
 message ScheduleJobRequest {
-  string workflow_id     = 1; // ID of the workflow
-  string user_id         = 2; // ID of the user
-  string scheduled_at    = 3; // Time the job is scheduled to run
-  string trigger         = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
-  string idempotency_key = 5; // Idempotency key for manual scheduling
+  string workflow_id         = 1; // ID of the workflow
+  string user_id             = 2; // ID of the user
+  string scheduled_at        = 3; // Time the job is scheduled to run
+  string trigger             = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string idempotency_key     = 5; // Optional idempotency key for scheduling
+  int64  workflow_generation = 6; // Optional workflow generation guard for automatic scheduling
 }
 
 // ScheduleJobResponse contains the result of a job creation attempt.
@@ -27,6 +28,133 @@ message UpdateJobStatusRequest {
 
 // UpdateJobStatusResponse contains the result of a job status update attempt.
 message UpdateJobStatusResponse {}
+
+// ClaimJobRequest contains the details needed to claim a queued job for execution.
+message ClaimJobRequest {
+  string id                     = 1; // ID of the job
+  string workflow_id            = 2; // ID of the workflow
+  string worker_id              = 3; // ID of the execution worker
+  int32  lease_duration_seconds = 4; // Lease duration in seconds
+  int32  dispatch_attempt       = 5; // Dispatch attempt from the Kafka event
+}
+
+// ClaimJobResponse contains the result of a job claim attempt.
+message ClaimJobResponse {
+  bool   claimed           = 1; // Whether the job was claimed
+  string reason            = 2; // Reason when the job was not claimed
+  string id                = 3; // ID of the job
+  string workflow_id       = 4; // ID of the workflow
+  string user_id           = 5; // ID of the user
+  string trigger           = 6; // Trigger type of the job
+  string scheduled_at      = 7; // Time the job was scheduled to run
+  int32  dispatch_attempts = 8; // Number of dispatch attempts
+  int32  attempts          = 9; // Number of execution attempts
+  string lease_token       = 10; // Lease token required for updates
+}
+
+// RenewJobLeaseRequest contains the details needed to renew a running job lease.
+message RenewJobLeaseRequest {
+  string id                     = 1; // ID of the job
+  string lease_token            = 2; // Current lease token
+  int32  lease_duration_seconds = 3; // Lease duration in seconds
+}
+
+// RenewJobLeaseResponse contains the result of a lease renewal.
+message RenewJobLeaseResponse {}
+
+// AttachJobContainerRequest contains the details needed to attach a container ID to a running job.
+message AttachJobContainerRequest {
+  string id           = 1; // ID of the job
+  string lease_token  = 2; // Current lease token
+  string container_id = 3; // Container ID
+}
+
+// AttachJobContainerResponse contains the result of attaching a container ID.
+message AttachJobContainerResponse {}
+
+// CompleteJobRequest contains the details needed to complete a claimed job.
+message CompleteJobRequest {
+  string id          = 1; // ID of the job
+  string lease_token = 2; // Current lease token
+}
+
+// CompleteJobResponse contains the result of completing a job.
+message CompleteJobResponse {}
+
+// FailJobRequest contains the details needed to fail a claimed job.
+message FailJobRequest {
+  string id            = 1; // ID of the job
+  string lease_token   = 2; // Current lease token
+  string failure_kind  = 3; // USER or SYSTEM
+  string error_code    = 4; // Error code
+  string error_message = 5; // Error message
+}
+
+// FailJobResponse contains the result of failing a job.
+message FailJobResponse {}
+
+// CancelClaimedJobRequest contains the details needed to cancel a claimed job.
+message CancelClaimedJobRequest {
+  string id          = 1; // ID of the job
+  string lease_token = 2; // Current lease token
+}
+
+// CancelClaimedJobResponse contains the result of canceling a claimed job.
+message CancelClaimedJobResponse {}
+
+// ReleaseJobForRetryRequest contains the details needed to release a claimed job for retry.
+message ReleaseJobForRetryRequest {
+  string id              = 1; // ID of the job
+  string lease_token     = 2; // Current lease token
+  string next_attempt_at = 3; // Time the job should be retried
+  string error_code      = 4; // Error code
+  string error_message   = 5; // Error message
+}
+
+// ReleaseJobForRetryResponse contains the result of releasing a job for retry.
+message ReleaseJobForRetryResponse {}
+
+// ExpiredJobLease contains a running job whose lease has expired.
+message ExpiredJobLease {
+  string id            = 1; // ID of the job
+  string workflow_id   = 2; // ID of the workflow
+  string user_id       = 3; // ID of the user
+  string container_id  = 4; // Container ID, if available
+  string lease_token   = 5; // Expired lease token
+  string leased_by     = 6; // Worker that held the lease
+  string trigger       = 7; // Trigger type of the job
+  string scheduled_at  = 8; // Time the job was scheduled to run
+  int32  attempts      = 9; // Number of execution attempts
+  bool   log_retention = 10; // Whether logs should be durably retained
+}
+
+// RecoverExpiredJobLeasesRequest contains the details needed to fetch expired leases.
+message RecoverExpiredJobLeasesRequest {
+  int32  batch_size             = 1; // Maximum number of expired leases to claim
+  string worker_id              = 2; // Worker claiming the expired leases for recovery
+  int32  lease_duration_seconds = 3; // Lease duration in seconds for recovered claims
+}
+
+// RecoverExpiredJobLeasesResponse contains expired leases to recover.
+message RecoverExpiredJobLeasesResponse {
+  repeated ExpiredJobLease jobs = 1; // Expired leased jobs
+}
+
+// EnqueueJobLogRequest contains a durable job log publish request.
+message EnqueueJobLogRequest {
+  string event_key    = 1; // Idempotency key for the log event
+  string job_id       = 2; // ID of the job
+  string workflow_id  = 3; // ID of the workflow
+  string user_id      = 4; // ID of the user
+  string message      = 5; // Log message
+  string timestamp    = 6; // Time the log was emitted
+  uint32 sequence_num = 7; // Sequence number of the log
+  string stream       = 8; // Stream type (stdout or stderr)
+  bool   retention    = 9; // Whether the log should be durably retained
+}
+
+// EnqueueJobLogResponse contains the result of enqueueing a job log.
+message EnqueueJobLogResponse {}
 
 // GetJobRequest contains the details needed to get a job.
 message GetJobRequest {
@@ -154,6 +282,7 @@ message JobsResponse {
   string completed_at = 8; // Time the job was completed
   string created_at   = 9; // Time the job was created
   string updated_at   = 10; // Time the job was last updated
+  int32  attempts     = 11; // Number of execution attempts
 }
 
 message ListJobsResponse {
@@ -169,6 +298,42 @@ service JobsService {
     // UpdateJobStatus updates the status of a job.
     // This is an internal API and should not be exposed to the public.
   rpc UpdateJobStatus(UpdateJobStatusRequest) returns (UpdateJobStatusResponse) {}
+
+    // ClaimJob atomically claims a queued job for execution.
+    // This is an internal API and should not be exposed to the public.
+  rpc ClaimJob(ClaimJobRequest) returns (ClaimJobResponse) {}
+
+    // RenewJobLease renews a running job lease.
+    // This is an internal API and should not be exposed to the public.
+  rpc RenewJobLease(RenewJobLeaseRequest) returns (RenewJobLeaseResponse) {}
+
+    // AttachJobContainer attaches a container ID to a running claimed job.
+    // This is an internal API and should not be exposed to the public.
+  rpc AttachJobContainer(AttachJobContainerRequest) returns (AttachJobContainerResponse) {}
+
+    // CompleteJob completes a running claimed job.
+    // This is an internal API and should not be exposed to the public.
+  rpc CompleteJob(CompleteJobRequest) returns (CompleteJobResponse) {}
+
+    // FailJob marks a running claimed job as failed.
+    // This is an internal API and should not be exposed to the public.
+  rpc FailJob(FailJobRequest) returns (FailJobResponse) {}
+
+    // CancelClaimedJob marks a running claimed job as canceled.
+    // This is an internal API and should not be exposed to the public.
+  rpc CancelClaimedJob(CancelClaimedJobRequest) returns (CancelClaimedJobResponse) {}
+
+    // ReleaseJobForRetry releases a running claimed job back to pending.
+    // This is an internal API and should not be exposed to the public.
+  rpc ReleaseJobForRetry(ReleaseJobForRetryRequest) returns (ReleaseJobForRetryResponse) {}
+
+    // RecoverExpiredJobLeases returns expired running job leases for recovery.
+    // This is an internal API and should not be exposed to the public.
+  rpc RecoverExpiredJobLeases(RecoverExpiredJobLeasesRequest) returns (RecoverExpiredJobLeasesResponse) {}
+
+    // EnqueueJobLog stores a job log publish intent in the durable outbox.
+    // This is an internal API and should not be exposed to the public.
+  rpc EnqueueJobLog(EnqueueJobLogRequest) returns (EnqueueJobLogResponse) {}
 
     // GetJob gets a job by ID and user_id.
   rpc GetJob(GetJobRequest) returns (GetJobResponse) {}

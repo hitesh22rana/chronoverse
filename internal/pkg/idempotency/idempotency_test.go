@@ -56,3 +56,33 @@ func TestWorkflowNotificationOccurrenceKeysDiffer(t *testing.T) {
 		t.Fatalf("keys should match for same occurrence: first=%q replay=%q", first, replay)
 	}
 }
+
+func TestJobDispatchEventKeyIncludesDispatchAttempt(t *testing.T) {
+	t.Parallel()
+
+	if got := idempotency.JobDispatchEventKey("job-1", 3); got != "job:job-1:dispatch:3" {
+		t.Fatalf("JobDispatchEventKey() = %q", got)
+	}
+	if got := idempotency.JobDispatchEventKey("job-1"); got != "job:job-1:dispatch" {
+		t.Fatalf("JobDispatchEventKey() = %q", got)
+	}
+}
+
+func TestJobWorkflowEventKeyIncludesAction(t *testing.T) {
+	t.Parallel()
+
+	if got := idempotency.JobWorkflowEventKey("job-1", "JOB_FAILED"); got != "workflow:job:job-1:JOB_FAILED" {
+		t.Fatalf("JobWorkflowEventKey() = %q", got)
+	}
+}
+
+func TestLogEventKeyIncludesRetryAttempt(t *testing.T) {
+	t.Parallel()
+
+	if got := idempotency.LogEventKey("job-1", "stdout", 2, 1); got != "log:job-1:stdout:2" {
+		t.Fatalf("LogEventKey() attempt 1 = %q", got)
+	}
+	if got := idempotency.LogEventKey("job-1", "stdout", 2, 3); got != "log:job-1:attempt:3:stdout:2" {
+		t.Fatalf("LogEventKey() attempt 3 = %q", got)
+	}
+}

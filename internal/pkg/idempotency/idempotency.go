@@ -56,7 +56,11 @@ func WorkflowEventKey(workflowID, action string, generation int64) string {
 }
 
 // JobDispatchEventKey returns the deterministic idempotency key for dispatching a job.
-func JobDispatchEventKey(jobID string) string {
+func JobDispatchEventKey(jobID string, dispatchAttempt ...int32) string {
+	if len(dispatchAttempt) > 0 && dispatchAttempt[0] > 0 {
+		return fmt.Sprintf("job:%s:dispatch:%d", jobID, dispatchAttempt[0])
+	}
+
 	return fmt.Sprintf("job:%s:dispatch", jobID)
 }
 
@@ -67,6 +71,11 @@ func AutomaticScheduleEventKey(workflowEventKey string) string {
 	}
 
 	return fmt.Sprintf("%s:automatic-job", workflowEventKey)
+}
+
+// JobWorkflowEventKey returns the deterministic event key for workflow-side job terminal effects.
+func JobWorkflowEventKey(jobID, action string) string {
+	return fmt.Sprintf("workflow:job:%s:%s", jobID, action)
 }
 
 // JobCompletedAnalyticsEventKey returns the deterministic analytics event key for a completed job.
@@ -80,7 +89,11 @@ func WorkflowAnalyticsEventKey(workflowID string) string {
 }
 
 // LogEventKey returns the deterministic event key for a single job log line.
-func LogEventKey(jobID, stream string, sequenceNum uint32) string {
+func LogEventKey(jobID, stream string, sequenceNum uint32, attempts ...int32) string {
+	if len(attempts) > 0 && attempts[0] > 1 {
+		return fmt.Sprintf("log:%s:attempt:%d:%s:%d", jobID, attempts[0], stream, sequenceNum)
+	}
+
 	return fmt.Sprintf("log:%s:%s:%d", jobID, stream, sequenceNum)
 }
 

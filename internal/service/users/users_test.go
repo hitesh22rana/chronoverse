@@ -417,11 +417,10 @@ func TestGetUser(t *testing.T) {
 				errs := make([]error, 2)
 
 				for i := range 2 {
-					wg.Add(1)
-					go func(idx int) {
-						defer wg.Done()
+					idx := i
+					wg.Go(func() {
 						results[idx], errs[idx] = s.GetUser(t.Context(), req)
-					}(i)
+					})
 				}
 
 				for range 50 {

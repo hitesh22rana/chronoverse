@@ -121,28 +121,36 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 	defer tx.Rollback(ctx)
 
 	query := fmt.Sprintf(`
-		WITH picked AS (
-			SELECT id
-			FROM %s
-			WHERE topic = $1
-				AND (
-					(status = 'PENDING' AND next_attempt_at <= (now() AT TIME ZONE 'utc'))
-					OR (status = 'FAILED' AND next_attempt_at <= (now() AT TIME ZONE 'utc'))
-					OR (status = 'PROCESSING' AND locked_at <= (now() AT TIME ZONE 'utc') - $4::interval)
-				)
-			ORDER BY created_at
-			FOR UPDATE SKIP LOCKED
-			LIMIT $2
-		)
-		UPDATE %s e
-		SET status = 'PROCESSING',
-			locked_at = now() AT TIME ZONE 'utc',
-			locked_by = $3,
-			attempts = attempts + 1
-		FROM picked
-		WHERE e.id = picked.id
-		RETURNING e.id, e.topic, e.kafka_key, e.event_key, e.payload::text, e.attempts;
-	`, postgres.TableOutboxEvents, postgres.TableOutboxEvents)
+        WITH picked AS (
+            SELECT e.id
+            FROM %s AS e
+            WHERE e.topic = $1
+                AND (
+                    (e.status = 'PENDING' AND e.next_attempt_at <= (now() AT TIME ZONE 'utc'))
+                    OR (e.status = 'FAILED' AND e.next_attempt_at <= (now() AT TIME ZONE 'utc'))
+                    OR (e.status = 'PROCESSING' AND e.locked_at <= (now() AT TIME ZONE 'utc') - $4::interval)
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM %s AS earlier
+                    WHERE earlier.topic = e.topic
+                        AND earlier.kafka_key = e.kafka_key
+                        AND earlier.status <> 'PUBLISHED'
+                        AND (earlier.created_at, earlier.id) < (e.created_at, e.id)
+                )
+            ORDER BY e.created_at, e.id
+            FOR UPDATE SKIP LOCKED
+            LIMIT $2
+        )
+        UPDATE %s e
+        SET status = 'PROCESSING',
+            locked_at = now() AT TIME ZONE 'utc',
+            locked_by = $3,
+            attempts = attempts + 1
+        FROM picked
+        WHERE e.id = picked.id
+        RETURNING e.id, e.topic, e.kafka_key, e.event_key, e.payload::text, e.attempts;
+    `, postgres.TableOutboxEvents, postgres.TableOutboxEvents, postgres.TableOutboxEvents)
 
 	rows, err := tx.Query(ctx, query, topic, r.cfg.BatchSize, claimToken, postgresInterval(r.processingLease()))
 	if err != nil {
@@ -174,17 +182,21 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 
 func (r *Repository) markPublished(ctx context.Context, event *Event) error {
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET status = 'PUBLISHED',
-			published_at = now() AT TIME ZONE 'utc',
-			locked_at = NULL,
-			locked_by = NULL
-		WHERE id = $1
-			AND status = 'PROCESSING'
-			AND locked_by = $2;
-	`, postgres.TableOutboxEvents)
-	if _, err := r.pg.Exec(ctx, query, event.ID, event.Claim); err != nil {
+        UPDATE %s
+        SET status = 'PUBLISHED',
+            published_at = now() AT TIME ZONE 'utc',
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = $1
+            AND status = 'PROCESSING'
+            AND locked_by = $2;
+    `, postgres.TableOutboxEvents)
+	ct, err := r.pg.Exec(ctx, query, event.ID, event.Claim)
+	if err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event published: %v", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return status.Errorf(codes.Aborted, "outbox event %s is no longer held by claim", event.ID)
 	}
 	return nil
 }
@@ -196,17 +208,21 @@ func (r *Repository) markFailed(ctx context.Context, event *Event) error {
 	}
 
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET status = $2,
-			next_attempt_at = (now() AT TIME ZONE 'utc') + $3::interval,
-			locked_at = NULL,
-			locked_by = NULL
-		WHERE id = $1
-			AND status = 'PROCESSING'
-			AND locked_by = $4;
-	`, postgres.TableOutboxEvents)
-	if _, err := r.pg.Exec(ctx, query, event.ID, statusValue, postgresInterval(r.retryBackoff()), event.Claim); err != nil {
+        UPDATE %s
+        SET status = $2,
+            next_attempt_at = (now() AT TIME ZONE 'utc') + $3::interval,
+            locked_at = NULL,
+            locked_by = NULL
+        WHERE id = $1
+            AND status = 'PROCESSING'
+            AND locked_by = $4;
+    `, postgres.TableOutboxEvents)
+	ct, err := r.pg.Exec(ctx, query, event.ID, statusValue, postgresInterval(r.retryBackoff()), event.Claim)
+	if err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event failed: %v", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return status.Errorf(codes.Aborted, "outbox event %s is no longer held by claim", event.ID)
 	}
 	return nil
 }

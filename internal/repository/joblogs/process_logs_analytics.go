@@ -4,32 +4,35 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
 const logAnalyticsConsumer = "joblogs-processor:analytics"
-
-type logAnalyticsPartition struct {
-	topic     string
-	partition int32
-}
 
 type workflowLogCount struct {
 	userID string
 	count  uint64
 }
 
-type logAnalyticsCounts struct {
-	workflowCounts map[string]workflowLogCount
-	maxOffset      int64
+type logAnalyticsEvent struct {
+	eventKey   string
+	workflowID string
+	userID     string
 }
 
-// processLogsAnalytics updates durable log counters using Kafka source offsets as replay-safe identity.
+type logAnalyticsCounts struct {
+	workflowCounts map[string]workflowLogCount
+}
+
+// processLogsAnalytics updates durable log counters using log event keys as replay-safe identity.
 func (r *Repository) processLogsAnalytics(ctx context.Context, batch []*queueData) error {
 	ctx, span := r.tp.Start(ctx, "joblogs.Run.processLogsAnalytics")
 	defer span.End()
@@ -56,139 +59,57 @@ func (r *Repository) processLogsAnalyticsTx(ctx context.Context, tx pgx.Tx, batc
 	ctx, span := r.tp.Start(ctx, "joblogs.Run.processLogsAnalyticsTx")
 	defer span.End()
 
-	recordsByPartition := groupLogAnalyticsRecords(batch)
-	if len(recordsByPartition) == 0 {
+	events := collectLogAnalyticsEvents(batch)
+	if len(events) == 0 {
 		return nil
 	}
 
-	for _, partition := range sortedLogAnalyticsPartitions(recordsByPartition) {
-		if partitionErr := r.processLogsAnalyticsPartition(ctx, tx, partition, recordsByPartition[partition]); partitionErr != nil {
-			return partitionErr
-		}
-	}
-
-	return nil
-}
-
-func groupLogAnalyticsRecords(batch []*queueData) map[logAnalyticsPartition][]*queueData {
-	recordsByPartition := make(map[logAnalyticsPartition][]*queueData)
-	for _, item := range batch {
-		if item == nil || item.record == nil || item.logEntry == nil {
-			continue
-		}
-
-		key := logAnalyticsPartition{
-			topic:     item.record.Topic,
-			partition: item.record.Partition,
-		}
-		recordsByPartition[key] = append(recordsByPartition[key], item)
-	}
-
-	return recordsByPartition
-}
-
-func sortedLogAnalyticsPartitions(recordsByPartition map[logAnalyticsPartition][]*queueData) []logAnalyticsPartition {
-	partitions := make([]logAnalyticsPartition, 0, len(recordsByPartition))
-	for partition := range recordsByPartition {
-		partitions = append(partitions, partition)
-	}
-	sort.Slice(partitions, func(i, j int) bool {
-		if partitions[i].topic == partitions[j].topic {
-			return partitions[i].partition < partitions[j].partition
-		}
-		return partitions[i].topic < partitions[j].topic
-	})
-
-	return partitions
-}
-
-func (r *Repository) processLogsAnalyticsPartition(
-	ctx context.Context,
-	tx pgx.Tx,
-	partition logAnalyticsPartition,
-	records []*queueData,
-) error {
-	if _, err := tx.Exec(ctx, fmt.Sprintf(`
-        INSERT INTO %s (consumer, topic, partition, last_offset)
-        VALUES ($1, $2, $3, -1)
-        ON CONFLICT DO NOTHING;
-    `, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition); err != nil {
-		return status.Errorf(codes.Internal, "failed to initialize log analytics offset: %v", err)
-	}
-
-	lastOffset, err := lockLogAnalyticsOffset(ctx, tx, partition)
+	insertedEvents, err := insertProcessedLogAnalyticsEvents(ctx, tx, events)
 	if err != nil {
 		return err
 	}
 
-	counts := countPartitionLogs(records, lastOffset)
-	if updateErr := updatePartitionLogCounts(ctx, tx, counts.workflowCounts); updateErr != nil {
-		return updateErr
-	}
-
-	if counts.maxOffset <= lastOffset {
-		return nil
-	}
-
-	if _, err = tx.Exec(ctx, fmt.Sprintf(`
-        UPDATE %s
-        SET last_offset = $4
-        WHERE consumer = $1 AND topic = $2 AND partition = $3;
-    `, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition, counts.maxOffset); err != nil {
-		return status.Errorf(codes.Internal, "failed to advance log analytics offset: %v", err)
-	}
-
-	return nil
+	counts := countLogAnalyticsEvents(events, insertedEvents)
+	return updatePartitionLogCounts(ctx, tx, counts.workflowCounts)
 }
 
-func lockLogAnalyticsOffset(ctx context.Context, tx pgx.Tx, partition logAnalyticsPartition) (int64, error) {
-	var lastOffset int64
-	if err := tx.QueryRow(ctx, fmt.Sprintf(`
-        SELECT last_offset
-        FROM %s
-        WHERE consumer = $1 AND topic = $2 AND partition = $3
-        FOR UPDATE;
-    `, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition).Scan(&lastOffset); err != nil {
-		return 0, status.Errorf(codes.Internal, "failed to lock log analytics offset: %v", err)
+func insertProcessedLogAnalyticsEvents(
+	ctx context.Context,
+	tx pgx.Tx,
+	events []logAnalyticsEvent,
+) (map[string]struct{}, error) {
+	placeholders := make([]string, 0, len(events))
+	args := make([]any, 0, len(events)+1)
+	args = append(args, logAnalyticsConsumer)
+	for i, event := range events {
+		placeholders = append(placeholders, fmt.Sprintf("($1, $%d)", i+2))
+		args = append(args, event.eventKey)
 	}
 
-	return lastOffset, nil
-}
+	rows, err := tx.Query(ctx, fmt.Sprintf(`
+            INSERT INTO %s (consumer, event_key)
+            VALUES %s
+            ON CONFLICT DO NOTHING
+            RETURNING event_key;
+        `, postgres.TableProcessedEvents, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to insert processed log analytics events: %v", err)
+	}
+	defer rows.Close()
 
-func countPartitionLogs(records []*queueData, lastOffset int64) *logAnalyticsCounts {
-	workflowCounts := make(map[string]workflowLogCount)
-	maxOffset := lastOffset
-
-	for _, item := range records {
-		if item == nil || item.record == nil || item.logEntry == nil {
-			continue
+	inserted := make(map[string]struct{}, len(events))
+	for rows.Next() {
+		var eventKey string
+		if err := rows.Scan(&eventKey); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to scan processed log analytics event: %v", err)
 		}
-
-		if item.record.Offset <= lastOffset {
-			continue
-		}
-
-		if item.record.Offset > maxOffset {
-			maxOffset = item.record.Offset
-		}
-
-		if item.logEntry.WorkflowID == "" || item.logEntry.UserID == "" {
-			continue
-		}
-
-		workflowID := item.logEntry.WorkflowID
-		entry := workflowCounts[workflowID]
-		if entry.userID == "" {
-			entry.userID = item.logEntry.UserID
-		}
-		entry.count++
-		workflowCounts[workflowID] = entry
+		inserted[eventKey] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read processed log analytics events: %v", err)
 	}
 
-	return &logAnalyticsCounts{
-		workflowCounts: workflowCounts,
-		maxOffset:      maxOffset,
-	}
+	return inserted, nil
 }
 
 func updatePartitionLogCounts(
@@ -214,4 +135,73 @@ func updatePartitionLogCounts(
 	}
 
 	return nil
+}
+
+func collectLogAnalyticsEvents(batch []*queueData) []logAnalyticsEvent {
+	seen := make(map[string]struct{}, len(batch))
+	events := make([]logAnalyticsEvent, 0, len(batch))
+
+	for _, item := range batch {
+		if item == nil || item.logEntry == nil {
+			continue
+		}
+
+		log := item.logEntry
+		eventKey := logAnalyticsEventKey(log)
+		if eventKey == "" {
+			continue
+		}
+		if _, ok := seen[eventKey]; ok {
+			continue
+		}
+		if log.WorkflowID == "" || log.UserID == "" {
+			continue
+		}
+
+		seen[eventKey] = struct{}{}
+		events = append(events, logAnalyticsEvent{
+			eventKey:   eventKey,
+			workflowID: log.WorkflowID,
+			userID:     log.UserID,
+		})
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].eventKey < events[j].eventKey
+	})
+
+	return events
+}
+
+func logAnalyticsEventKey(log *jobsmodel.JobLogEvent) string {
+	if log == nil {
+		return ""
+	}
+	if log.EventKey != "" {
+		return log.EventKey
+	}
+	if log.JobID == "" || log.Stream == "" {
+		return ""
+	}
+
+	log.EventKey = idempotency.LogEventKey(log.JobID, log.Stream, log.SequenceNum)
+	return log.EventKey
+}
+
+func countLogAnalyticsEvents(events []logAnalyticsEvent, insertedEvents map[string]struct{}) *logAnalyticsCounts {
+	workflowCounts := make(map[string]workflowLogCount)
+	for _, event := range events {
+		if _, ok := insertedEvents[event.eventKey]; !ok {
+			continue
+		}
+
+		entry := workflowCounts[event.workflowID]
+		if entry.userID == "" {
+			entry.userID = event.userID
+		}
+		entry.count++
+		workflowCounts[event.workflowID] = entry
+	}
+
+	return &logAnalyticsCounts{workflowCounts: workflowCounts}
 }

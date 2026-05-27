@@ -91,6 +91,7 @@ func run() int {
 	app := outboxrelay.New(ctx, &outboxrelay.Config{
 		WorkflowEnabled:    cfg.OutboxRelayConfig.WorkflowEnabled,
 		JobsEnabled:        cfg.OutboxRelayConfig.JobsEnabled,
+		JobLogsEnabled:     cfg.OutboxRelayConfig.JobLogsEnabled,
 		AnalyticsEnabled:   cfg.OutboxRelayConfig.AnalyticsEnabled,
 		PollInterval:       cfg.OutboxRelayConfig.PollInterval,
 		ContextTimeout:     cfg.OutboxRelayConfig.ContextTimeout,

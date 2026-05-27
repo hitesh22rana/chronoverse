@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/executor"
@@ -24,7 +23,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	executorrepo "github.com/hitesh22rana/chronoverse/internal/repository/executor"
 	executorsvc "github.com/hitesh22rana/chronoverse/internal/service/executor"
@@ -67,32 +65,6 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-
-	// Initialize the redis store
-	rdb, err := redis.New(ctx, &redis.Config{
-		Host:                     cfg.Redis.Host,
-		Port:                     cfg.Redis.Port,
-		Password:                 cfg.Redis.Password,
-		DB:                       cfg.Redis.DB,
-		PoolSize:                 cfg.Redis.PoolSize,
-		MinIdleConns:             cfg.Redis.MinIdleConns,
-		ReadTimeout:              cfg.Redis.ReadTimeout,
-		WriteTimeout:             cfg.Redis.WriteTimeout,
-		MaxMemory:                cfg.Redis.MaxMemory,
-		EvictionPolicy:           cfg.Redis.EvictionPolicy,
-		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
-		TLSConfig: &redis.TLSConfig{
-			Enabled:  cfg.Redis.TLS.Enabled,
-			CAFile:   cfg.Redis.TLS.CAFile,
-			CertFile: cfg.Redis.TLS.CertFile,
-			KeyFile:  cfg.Redis.TLS.KeyFile,
-		},
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer rdb.Close()
 
 	// Initialize the kafka client
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
@@ -159,34 +131,21 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
-	// Connect to the notifications service
-	notificationsConn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{
-			Host: cfg.NotificationsService.Host,
-			Port: cfg.NotificationsService.Port,
-			TLS: &grpcclient.TLSConfig{
-				Enabled:        cfg.NotificationsService.TLS.Enabled,
-				CAFile:         cfg.NotificationsService.TLS.CAFile,
-				ClientCertFile: cfg.ClientTLS.CertFile,
-				ClientKeyFile:  cfg.ClientTLS.KeyFile,
-			},
-		},
-		grpcclient.DefaultCircuitBreakerConfig(),
-		grpcclient.DefaultRetryConfig(),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return ExitError
-	}
-	defer notificationsConn.Close()
-
 	// Initialize the execution job components
-	repo := executorrepo.New(auth, rdb, kfk, kafkaLifecycle, &executorrepo.Services{
-		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
-		Jobs:          jobspb.NewJobsServiceClient(jobsConn),
-		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
-		Csvc:          csvc,
-		Hsvc:          heartbeat.New(),
+	repo := executorrepo.New(&executorrepo.Config{
+		WorkerID:           cfg.ExecutionWorkerConfig.WorkerID,
+		Concurrency:        cfg.ExecutionWorkerConfig.Concurrency,
+		LeaseDuration:      cfg.ExecutionWorkerConfig.LeaseDuration,
+		LeaseRenewInterval: cfg.ExecutionWorkerConfig.LeaseRenewInterval,
+		SystemRetryLimit:   cfg.ExecutionWorkerConfig.SystemRetryLimit,
+		SystemRetryBackoff: cfg.ExecutionWorkerConfig.SystemRetryBackoff,
+		RecoveryInterval:   cfg.ExecutionWorkerConfig.RecoveryInterval,
+		RecoveryBatchSize:  cfg.ExecutionWorkerConfig.RecoveryBatchSize,
+	}, auth, kfk, kafkaLifecycle, &executorrepo.Services{
+		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
+		Csvc:      csvc,
+		Hsvc:      heartbeat.New(),
 	})
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)

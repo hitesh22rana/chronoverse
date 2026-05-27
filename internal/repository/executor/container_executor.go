@@ -2,9 +2,10 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
+	"time"
 
-	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -12,20 +13,22 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
-	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 // executeContainerWorkflow executes the CONTAINER workflow.
-func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
-	workflowID := workflow.GetId()
-	userID := workflow.GetUserId()
-
+func (r *Repository) executeContainerWorkflow(
+	ctx context.Context,
+	jobID,
+	leaseToken string,
+	attempts int32,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+) (string, error) {
 	details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	containerID, logs, errs, workflowErr := r.svc.Csvc.Execute(
@@ -36,88 +39,194 @@ func (r *Repository) executeContainerWorkflow(ctx context.Context, jobID string,
 		details.Env,
 	)
 
-	// If there was an error starting the container, return immediately
 	if status.Code(workflowErr) == codes.FailedPrecondition {
-		return workflowErr
+		return "", workflowErr
 	}
 
-	//nolint:errcheck // Ignore the error as we don't want to block the job execution
-	retrypkg.Once(func() error {
-		// Issue necessary headers and tokens for authorization
-		// This context uses the parent context
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution
-		jobCtx, _ := r.withAuthorization(ctx)
-		// Update the job status with the container ID
-		if _, err := r.svc.Jobs.UpdateJobStatus(jobCtx, &jobspb.UpdateJobStatusRequest{
-			Id:          jobID,
-			ContainerId: containerID,
-			Status:      jobsmodel.JobStatusRunning.ToString(),
-		}); err != nil {
-			return status.Errorf(codes.Internal, "failed to update job status: %v", err)
+	if containerID != "" {
+		if err := r.attachJobContainer(ctx, jobID, leaseToken, containerID); err != nil {
+			return containerID, err
 		}
-		return nil
-	}, retryBackoff)
-
-	// If there was an error during execution, return it
-	if workflowErr != nil {
-		return workflowErr
 	}
 
-	// Create a done channel to signal when to stop processing
+	if workflowErr != nil {
+		return containerID, workflowErr
+	}
+
+	return containerID, r.processContainerExecution(ctx, jobID, attempts, workflow, logs, errs)
+}
+
+func (r *Repository) attachJobContainer(ctx context.Context, jobID, leaseToken, containerID string) error {
+	jobCtx, err := r.withAuthorization(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.svc.Jobs.AttachJobContainer(jobCtx, &jobspb.AttachJobContainerRequest{
+		Id:          jobID,
+		LeaseToken:  leaseToken,
+		ContainerId: containerID,
+	})
+	return err
+}
+
+func (r *Repository) processContainerExecution(
+	ctx context.Context,
+	jobID string,
+	attempts int32,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+) error {
 	done := make(chan struct{})
 	defer close(done)
 
-	// Process logs
-	logsProcessing := make(chan struct{})
+	logErrors := r.publishContainerLogs(ctx, jobID, attempts, workflow, logs, done)
+	execErrors := errs
+	var execErr error
+	for execErrors != nil || logErrors != nil {
+		select {
+		case err, ok := <-execErrors:
+			if !ok {
+				execErrors = nil
+				continue
+			}
+			if execErr == nil {
+				execErr = err
+			}
+		case err, ok := <-logErrors:
+			if !ok {
+				logErrors = nil
+				continue
+			}
+			return err
+		}
+	}
+
+	return execErr
+}
+
+func (r *Repository) publishContainerLogs(
+	ctx context.Context,
+	jobID string,
+	attempts int32,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	logs <-chan *jobsmodel.JobLog,
+	done <-chan struct{},
+) <-chan error {
+	logErrors := make(chan error, 1)
 	go func() {
-		defer close(logsProcessing)
+		defer close(logErrors)
 
 		for {
 			select {
 			case log, ok := <-logs:
 				if !ok {
-					// Logs channel closed, we're done
 					return
 				}
-
-				// Serialize the log entry
-				jobLogEventBytes, err := json.Marshal(&jobsmodel.JobLogEvent{
-					EventKey:    idempotency.LogEventKey(jobID, log.Stream, log.SequenceNum),
-					JobID:       jobID,
-					WorkflowID:  workflowID,
-					UserID:      userID,
-					Message:     log.Message,
-					TimeStamp:   log.Timestamp,
-					SequenceNum: log.SequenceNum,
-					Stream:      log.Stream,
-					Retention:   workflow.GetLogRetention(),
-				})
-				if err != nil {
-					continue
+				if err := r.publishContainerLog(ctx, jobID, attempts, workflow, log); err != nil {
+					logErrors <- err
+					return
 				}
-
-				record := &kgo.Record{
-					Topic: kafka.TopicJobLogs,
-					Key:   []byte(jobID),
-					Value: jobLogEventBytes,
-				}
-
-				// Asynchronously produce the record to Kafka
-				r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
-
 			case <-done:
-				// We were signaled to stop processing logs
 				return
 			}
 		}
 	}()
 
-	// Handle errors from the logs channel
-	// This way we can immediately return when an error occurs
-	for err := range errs {
-		return err
+	return logErrors
+}
+
+func (r *Repository) publishContainerLog(
+	ctx context.Context,
+	jobID string,
+	attempts int32,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	log *jobsmodel.JobLog,
+) error {
+	return r.enqueueJobLogEvent(ctx, &jobsmodel.JobLogEvent{
+		EventKey:    idempotency.LogEventKey(jobID, log.Stream, log.SequenceNum, attempts),
+		JobID:       jobID,
+		WorkflowID:  workflow.GetId(),
+		UserID:      workflow.GetUserId(),
+		Message:     log.Message,
+		TimeStamp:   log.Timestamp,
+		SequenceNum: log.SequenceNum,
+		Stream:      log.Stream,
+		Retention:   workflow.GetLogRetention(),
+	})
+}
+
+func (r *Repository) enqueueJobLogEvent(ctx context.Context, event *jobsmodel.JobLogEvent) error {
+	if event == nil {
+		return status.Error(codes.InvalidArgument, "job log event is required")
+	}
+	if event.EventKey == "" {
+		event.EventKey = idempotency.LogEventKey(event.JobID, event.Stream, event.SequenceNum)
 	}
 
-	<-logsProcessing
-	return nil
+	req := &jobspb.EnqueueJobLogRequest{
+		EventKey:    event.EventKey,
+		JobId:       event.JobID,
+		WorkflowId:  event.WorkflowID,
+		UserId:      event.UserID,
+		Message:     event.Message,
+		Timestamp:   event.TimeStamp.Format(time.RFC3339Nano),
+		SequenceNum: event.SequenceNum,
+		Stream:      event.Stream,
+		Retention:   event.Retention,
+	}
+
+	for {
+		if ctx.Err() != nil {
+			return contextError(ctx.Err())
+		}
+
+		authCtx, err := r.withAuthorization(ctx)
+		if err == nil {
+			_, err = r.svc.Jobs.EnqueueJobLog(authCtx, req)
+		}
+		if err == nil {
+			return nil
+		}
+		if !isRetryableJobLogEnqueueError(err) {
+			return err
+		}
+
+		loggerpkg.FromContext(ctx).Warn("failed to enqueue job log; retrying",
+			zap.String("job_id", event.JobID),
+			zap.String("workflow_id", event.WorkflowID),
+			zap.String("event_key", event.EventKey),
+			zap.String("stream", event.Stream),
+			zap.Uint32("sequence_num", event.SequenceNum),
+			zap.String("code", status.Code(err).String()),
+			zap.Error(err),
+		)
+
+		select {
+		case <-time.After(retryBackoff):
+		case <-ctx.Done():
+			return contextError(ctx.Err())
+		}
+	}
+}
+
+func isRetryableJobLogEnqueueError(err error) bool {
+	switch status.Code(err) { //nolint:exhaustive // Only non-retryable validation/auth codes need special handling here.
+	case codes.InvalidArgument, codes.FailedPrecondition, codes.PermissionDenied, codes.Unauthenticated:
+		return false
+	default:
+		return true
+	}
+}
+
+func contextError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	}
+
+	return status.Error(codes.Canceled, err.Error())
 }

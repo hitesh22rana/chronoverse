@@ -26,7 +26,18 @@ ALTER TABLE workflows
     ADD COLUMN IF NOT EXISTS build_hash TEXT DEFAULT NULL;
 
 ALTER TABLE jobs
-    ADD COLUMN IF NOT EXISTS idempotency_key TEXT DEFAULT NULL;
+    ADD COLUMN IF NOT EXISTS idempotency_key TEXT DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS queued_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS lease_token TEXT DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS leased_by TEXT DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS dispatch_attempts INTEGER NOT NULL DEFAULT 0 CHECK (dispatch_attempts >= 0),
+    ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS failure_kind TEXT DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS last_error_code TEXT DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS last_error_message TEXT DEFAULT NULL;
 
 ALTER TABLE notifications
     ADD COLUMN IF NOT EXISTS idempotency_key TEXT DEFAULT NULL;
@@ -77,6 +88,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_automatic_idempotency_key
 ON jobs (workflow_id, idempotency_key)
 WHERE trigger = 'AUTOMATIC' AND idempotency_key IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS idx_jobs_runnable_pending
+ON jobs (scheduled_at, created_at, id)
+WHERE status = 'PENDING';
+
+CREATE INDEX IF NOT EXISTS idx_jobs_active_workflow
+ON jobs (workflow_id, status, scheduled_at, created_at, id)
+WHERE status IN ('PENDING', 'QUEUED', 'RUNNING');
+
+CREATE INDEX IF NOT EXISTS idx_jobs_expired_leases
+ON jobs (lease_expires_at, id)
+WHERE status = 'RUNNING' AND lease_expires_at IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_idempotency_key
 ON notifications (user_id, idempotency_key)
 WHERE idempotency_key IS NOT NULL;
@@ -115,6 +138,10 @@ WHERE status = 'PROCESSING';
 CREATE INDEX IF NOT EXISTS idx_outbox_events_published_cleanup
 ON outbox_events (published_at)
 WHERE status = 'PUBLISHED';
+ 
+CREATE INDEX IF NOT EXISTS idx_outbox_events_unpublished_key_order
+ON outbox_events (topic, kafka_key, created_at, id)
+WHERE status <> 'PUBLISHED';
 
 CREATE TABLE IF NOT EXISTS processed_events (
     consumer TEXT NOT NULL,
@@ -123,21 +150,14 @@ CREATE TABLE IF NOT EXISTS processed_events (
     PRIMARY KEY (consumer, event_key)
 );
 
+CREATE INDEX IF NOT EXISTS idx_processed_events_created_at
+ON processed_events (created_at);
+
 CREATE TABLE IF NOT EXISTS workflow_failure_events (
     job_id UUID PRIMARY KEY,
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS log_analytics_offsets (
-    consumer TEXT NOT NULL,
-    topic TEXT NOT NULL,
-    partition INTEGER NOT NULL,
-    last_offset BIGINT NOT NULL,
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
-    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
-    PRIMARY KEY (consumer, topic, partition)
 );
 
 CREATE OR REPLACE FUNCTION update_workflow_idempotency_keys_updated_at()
@@ -165,16 +185,3 @@ CREATE TRIGGER trigger_update_outbox_events
 BEFORE UPDATE ON outbox_events
 FOR EACH ROW
 EXECUTE FUNCTION update_outbox_events_updated_at();
-
-CREATE OR REPLACE FUNCTION update_log_analytics_offsets_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now() AT TIME ZONE 'utc';
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_update_log_analytics_offsets
-BEFORE UPDATE ON log_analytics_offsets
-FOR EACH ROW
-EXECUTE FUNCTION update_log_analytics_offsets_updated_at();

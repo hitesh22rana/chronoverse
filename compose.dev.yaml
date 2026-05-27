@@ -185,6 +185,7 @@ services:
 
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: ${KAFKA_NUM_PARTITIONS:-1}
       CLUSTER_ID: EDofQNqcSCa63isOyHHO9g
     volumes:
       - kafka:/var/lib/kafka/data
@@ -1069,13 +1070,7 @@ services:
 
   execution-worker:
     image: execution-worker
-    container_name: execution-worker
     environment:
-      REDIS_HOST: redis
-      REDIS_TLS_ENABLED: true
-      REDIS_TLS_CA_FILE: certs/ca/ca.crt
-      REDIS_TLS_CERT_FILE: certs/clients/client.crt
-      REDIS_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
@@ -1096,6 +1091,13 @@ services:
       NOTIFICATIONS_SERVICE_PORT: 50054
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+      EXECUTION_WORKER_CONCURRENCY: ${EXECUTION_WORKER_CONCURRENCY:-0}
+      EXECUTION_WORKER_LEASE_DURATION: 30s
+      EXECUTION_WORKER_LEASE_RENEW_INTERVAL: 10s
+      EXECUTION_WORKER_SYSTEM_RETRY_LIMIT: 3
+      EXECUTION_WORKER_SYSTEM_RETRY_BACKOFF: 30s
+      EXECUTION_WORKER_RECOVERY_INTERVAL: 15s
+      EXECUTION_WORKER_RECOVERY_BATCH_SIZE: 100
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2375
@@ -1122,8 +1124,6 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
-      redis:
-        condition: service_healthy
       kafka:
         condition: service_started
       lgtm:
@@ -1297,6 +1297,7 @@ services:
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
+      OUTBOX_RELAY_JOB_LOGS_ENABLED: true
       OUTBOX_RELAY_PROCESSING_LEASE: 30s
       OUTBOX_RELAY_CLEANUP_ENABLED: true
       OUTBOX_RELAY_CLEANUP_INTERVAL: 15m

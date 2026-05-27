@@ -19,6 +19,4 @@ const (
 	TableProcessedEvents = "processed_events"
 	// TableWorkflowFailureEvents is the name of the workflow failure events table.
 	TableWorkflowFailureEvents = "workflow_failure_events"
-	// TableLogAnalyticsOffsets is the name of the log analytics offsets table.
-	TableLogAnalyticsOffsets = "log_analytics_offsets"
 )

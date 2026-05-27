@@ -52,11 +52,9 @@ func (e *AnalyticsProcessor) Run(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 	if e.cfg.CleanupEnabled && e.cfg.CleanupInterval > 0 && e.cfg.CleanupBatchSize > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			e.runCleanup(ctx)
-		}()
+		})
 	}
 
 	err := e.svc.Run(ctx)

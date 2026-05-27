@@ -335,6 +335,39 @@ func (r *Repository) UpdateWorkflow(
 		return status.Error(codes.NotFound, "workflow not found")
 	}
 
+	if decision.buildRequired || decision.rescheduleRequired {
+		cancelJobsArgs := []any{
+			jobsmodel.JobStatusCanceled.ToString(),
+			workflowID,
+			userID,
+			jobsmodel.JobStatusPending.ToString(),
+			jobsmodel.JobStatusQueued.ToString(),
+		}
+		triggerFilter := ""
+		if decision.rescheduleRequired && !decision.buildRequired {
+			triggerFilter = "AND trigger = $6"
+			cancelJobsArgs = append(cancelJobsArgs, jobsmodel.JobTriggerAutomatic.ToString())
+		}
+
+		cancelJobsQuery := fmt.Sprintf(`
+            UPDATE %s
+            SET status = $1,
+                completed_at = now() AT TIME ZONE 'utc',
+                lease_token = NULL,
+                leased_by = NULL,
+                lease_expires_at = NULL,
+                last_heartbeat_at = NULL
+            WHERE workflow_id = $2
+                AND user_id = $3
+                AND status IN ($4, $5)
+                %s;
+        `, postgres.TableJobs, triggerFilter)
+		if _, err = tx.Exec(ctx, cancelJobsQuery, cancelJobsArgs...); err != nil {
+			err = status.Errorf(codes.Internal, "failed to cancel stale workflow jobs: %v", err)
+			return err
+		}
+	}
+
 	switch {
 	case decision.buildRequired:
 		event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionBuild, decision.nextGeneration)

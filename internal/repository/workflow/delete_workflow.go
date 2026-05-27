@@ -57,11 +57,7 @@ func (r *Repository) deleteWorkflowLogs(parentCtx context.Context, workflowID, u
 
 func (r *Repository) deleteWorkflowLogsFromClickHouse(parentCtx context.Context, workflowID, userID string) error {
 	// mutations_sync waits for ClickHouse to finish the delete mutation before the Kafka record is committed.
-	query := fmt.Sprintf(`
-        ALTER TABLE %s DELETE
-        WHERE workflow_id = $1 AND user_id = $2
-        SETTINGS mutations_sync = 2
-    `, clickhouse.TableJobLogs)
+	query := deleteWorkflowLogsClickHouseQuery()
 
 	return retrypkg.Once(func() error {
 		ctx, cancel := context.WithTimeout(parentCtx, deleteWorkflowOperationTimeout)
@@ -77,6 +73,14 @@ func (r *Repository) deleteWorkflowLogsFromClickHouse(parentCtx context.Context,
 
 		return nil
 	}, retryBackoff)
+}
+
+func deleteWorkflowLogsClickHouseQuery() string {
+	return fmt.Sprintf(`
+        ALTER TABLE %s DELETE
+        WHERE workflow_id = ? AND user_id = ?
+        SETTINGS mutations_sync = 2
+    `, clickhouse.TableJobLogs)
 }
 
 func (r *Repository) deleteWorkflowLogsFromMeiliSearch(parentCtx context.Context, workflowID, userID string) error {

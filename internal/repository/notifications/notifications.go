@@ -70,13 +70,13 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 	}()
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, kind, payload, idempotency_key)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (user_id, idempotency_key)
-		WHERE idempotency_key IS NOT NULL
-		DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
-		RETURNING id;
-	`, postgres.TableNotifications)
+        INSERT INTO %s (user_id, kind, payload, idempotency_key)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+        DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
+        RETURNING id;
+    `, postgres.TableNotifications)
 
 	err = r.pg.QueryRow(ctx, query, userID, kind, payload, idempotencyKey).Scan(&notificationID)
 	if err != nil {
@@ -107,10 +107,10 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 	}()
 
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET read_at = COALESCE(read_at, NOW())
-		WHERE id = ANY($1) AND user_id = $2
-	`, postgres.TableNotifications)
+        UPDATE %s
+        SET read_at = COALESCE(read_at, NOW())
+        WHERE id = ANY($1) AND user_id = $2
+    `, postgres.TableNotifications)
 
 	ct, err := r.pg.Exec(ctx, query, ids, userID)
 	if err != nil {
@@ -194,10 +194,10 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, kind, payload, read_at, created_at, updated_at
-		FROM %s
-		WHERE user_id = $1 AND read_at IS NULL AND kind = ANY($2)
-	`, postgres.TableNotifications)
+        SELECT id, kind, payload, read_at, created_at, updated_at
+        FROM %s
+        WHERE user_id = $1 AND read_at IS NULL AND kind = ANY($2)
+    `, postgres.TableNotifications)
 	args := []any{userID, notificationsPreferences}
 
 	// Add cursor pagination
@@ -254,22 +254,7 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 
 // withAuthorization issues the necessary headers and tokens for authorization.
 func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
-	// Attach the audience and role to the context
-	ctx = auth.WithAudience(ctx, svcpkg.Info().GetName())
-	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
-
-	// Issue a new token
-	authToken, err := r.auth.IssueToken(ctx, authSubject)
-	if err != nil {
-		return nil, err
-	}
-
-	// Attach all the necessary headers and tokens to the context
-	ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
-	ctx = auth.WithRoleInMetadata(ctx, auth.RoleAdmin)
-	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
-
-	return ctx, nil
+	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject)
 }
 
 func encodeCursor(cursor string) string {

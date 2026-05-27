@@ -21,6 +21,7 @@ type Service interface {
 type Config struct {
 	WorkflowEnabled    bool
 	JobsEnabled        bool
+	JobLogsEnabled     bool
 	AnalyticsEnabled   bool
 	PollInterval       time.Duration
 	ContextTimeout     time.Duration
@@ -48,12 +49,15 @@ func New(ctx context.Context, cfg *Config, svc Service) *OutboxRelay {
 
 // Run starts the enabled topic handlers until the context is canceled.
 func (o *OutboxRelay) Run(ctx context.Context) error {
-	topics := make([]string, 0, 3)
+	topics := make([]string, 0, 4)
 	if o.cfg.WorkflowEnabled {
 		topics = append(topics, kafka.TopicWorkflows)
 	}
 	if o.cfg.JobsEnabled {
 		topics = append(topics, kafka.TopicJobs)
+	}
+	if o.cfg.JobLogsEnabled {
+		topics = append(topics, kafka.TopicJobLogs)
 	}
 	if o.cfg.AnalyticsEnabled {
 		topics = append(topics, kafka.TopicAnalytics)
@@ -61,18 +65,14 @@ func (o *OutboxRelay) Run(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 	for _, topic := range topics {
-		wg.Add(1)
-		go func(topic string) {
-			defer wg.Done()
+		wg.Go(func() {
 			o.runTopic(ctx, topic)
-		}(topic)
+		})
 	}
 	if o.cfg.CleanupEnabled && o.cfg.CleanupInterval > 0 && o.cfg.CleanupBatchSize > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			o.runCleanup(ctx)
-		}()
+		})
 	}
 
 	<-ctx.Done()

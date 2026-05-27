@@ -53,7 +53,7 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
 	}()
 
-	replacementJobID, err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+	_, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
 		WorkflowId:         workflowID,
 		UserId:             userID,
 		ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
@@ -68,23 +68,5 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 		return err
 	}
 
-	if cancelErr := r.cancelJobsWithStatusAndTriggerExcept(
-		ctx,
-		workflow,
-		userID,
-		jobsmodel.JobStatusPending.ToString(),
-		jobsmodel.JobTriggerAutomatic.ToString(),
-		replacementJobID.GetId(),
-	); cancelErr != nil {
-		return cancelErr
-	}
-
-	return r.cancelJobsWithStatusAndTriggerExcept(
-		ctx,
-		workflow,
-		userID,
-		jobsmodel.JobStatusQueued.ToString(),
-		jobsmodel.JobTriggerAutomatic.ToString(),
-		replacementJobID.GetId(),
-	)
+	return nil
 }

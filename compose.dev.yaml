@@ -992,6 +992,12 @@ services:
       CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
+      MEILISEARCH_URI: https://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_TLS_ENABLED: true
+      MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+      MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+      MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
@@ -1041,6 +1047,8 @@ services:
       redis:
         condition: service_healthy
       clickhouse:
+        condition: service_healthy
+      meilisearch:
         condition: service_healthy
       kafka:
         condition: service_started

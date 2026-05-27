@@ -117,12 +117,12 @@ func (r *Repository) CreateWorkflow(
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed, log_retention, build_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, name, payload, kind, build_status, interval,
-			consecutive_job_failures_count, max_consecutive_job_failures_allowed,
-			created_at, updated_at, terminated_at, log_retention, generation, build_hash;
-	`, postgres.TableWorkflows)
+        INSERT INTO %s (user_id, name, payload, kind, interval, max_consecutive_job_failures_allowed, log_retention, build_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, name, payload, kind, build_status, interval,
+            consecutive_job_failures_count, max_consecutive_job_failures_allowed,
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash;
+    `, postgres.TableWorkflows)
 	args := []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed, logRetention, buildHashArg}
 
 	rows, err := tx.Query(ctx, query, args...)
@@ -247,12 +247,12 @@ func (r *Repository) UpdateWorkflow(
 		currentTerminatedAt sql.NullTime
 	)
 	query := fmt.Sprintf(`
-		SELECT kind, build_hash, generation, interval, build_status, terminated_at
-		FROM %s
-		WHERE id = $1 AND user_id = $2
-		FOR UPDATE
-		LIMIT 1;
-	`, postgres.TableWorkflows)
+        SELECT kind, build_hash, generation, interval, build_status, terminated_at
+        FROM %s
+        WHERE id = $1 AND user_id = $2
+        FOR UPDATE
+        LIMIT 1;
+    `, postgres.TableWorkflows)
 	if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(
 		&kind,
 		&currentBuildHash,
@@ -306,18 +306,18 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	query = fmt.Sprintf(`
-		UPDATE %s
-		SET name = $1,
-			payload = $2,
-			interval = $3,
-			max_consecutive_job_failures_allowed = $4,
-			build_hash = $5,
-			generation = $6,
-			build_status = %s,
-			consecutive_job_failures_count = 0,
-			terminated_at = NULL
-		WHERE id = $7 AND user_id = $8;
-	`, postgres.TableWorkflows, buildStatus)
+        UPDATE %s
+        SET name = $1,
+            payload = $2,
+            interval = $3,
+            max_consecutive_job_failures_allowed = $4,
+            build_hash = $5,
+            generation = $6,
+            build_status = %s,
+            consecutive_job_failures_count = 0,
+            terminated_at = NULL
+        WHERE id = $7 AND user_id = $8;
+    `, postgres.TableWorkflows, buildStatus)
 	ct, err := tx.Exec(ctx, query, name, payload, interval, maxConsecutiveJobFailuresAllowed, buildHashArg, decision.nextGeneration, workflowID, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -392,11 +392,11 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 	}()
 
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET build_status = $1
-		WHERE id = $2 AND user_id = $3
-			AND ($4::BIGINT = 0 OR generation = $4);
-	`, postgres.TableWorkflows)
+        UPDATE %s
+        SET build_status = $1
+        WHERE id = $2 AND user_id = $3
+            AND ($4::BIGINT = 0 OR generation = $4);
+    `, postgres.TableWorkflows)
 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID, generation)
@@ -442,13 +442,13 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, name, payload, kind, build_status, interval,
-			consecutive_job_failures_count, max_consecutive_job_failures_allowed,
-			created_at, updated_at, terminated_at, log_retention, generation, build_hash
-		FROM %s
-		WHERE id = $1 AND user_id = $2
-		LIMIT 1;
-	`, postgres.TableWorkflows)
+        SELECT id, name, payload, kind, build_status, interval,
+            consecutive_job_failures_count, max_consecutive_job_failures_allowed,
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash
+        FROM %s
+        WHERE id = $1 AND user_id = $2
+        LIMIT 1;
+    `, postgres.TableWorkflows)
 
 	rows, err := r.pg.Query(ctx, query, workflowID, userID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -488,13 +488,13 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, payload, kind, build_status, interval,
-			consecutive_job_failures_count, max_consecutive_job_failures_allowed,
-			created_at, updated_at, terminated_at, log_retention, generation, build_hash
-		FROM %s
-		WHERE id = $1
-		LIMIT 1;
-	`, postgres.TableWorkflows)
+        SELECT id, user_id, name, payload, kind, build_status, interval,
+            consecutive_job_failures_count, max_consecutive_job_failures_allowed,
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash
+        FROM %s
+        WHERE id = $1
+        LIMIT 1;
+    `, postgres.TableWorkflows)
 
 	rows, err := r.pg.Query(ctx, query, workflowID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -542,10 +542,10 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	defer tx.Rollback(ctx)
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (job_id, workflow_id, user_id)
-		VALUES ($1, $2, $3)
-		ON CONFLICT DO NOTHING;
-	`, postgres.TableWorkflowFailureEvents)
+        INSERT INTO %s (job_id, workflow_id, user_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING;
+    `, postgres.TableWorkflowFailureEvents)
 	ct, err := tx.Exec(ctx, query, jobID, workflowID, userID)
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
@@ -556,11 +556,11 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 
 	if ct.RowsAffected() == 0 {
 		query = fmt.Sprintf(`
-			SELECT consecutive_job_failures_count, max_consecutive_job_failures_allowed
-			FROM %s
-			WHERE id = $1 AND user_id = $2
-			LIMIT 1;
-		`, postgres.TableWorkflows)
+            SELECT consecutive_job_failures_count, max_consecutive_job_failures_allowed
+            FROM %s
+            WHERE id = $1 AND user_id = $2
+            LIMIT 1;
+        `, postgres.TableWorkflows)
 
 		var count, maxAllowed int32
 		if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&count, &maxAllowed); err != nil {
@@ -573,11 +573,11 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	}
 
 	query = fmt.Sprintf(`
-		UPDATE %s
-		SET consecutive_job_failures_count = consecutive_job_failures_count + 1
-		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL
-		RETURNING consecutive_job_failures_count, max_consecutive_job_failures_allowed;
-	`, postgres.TableWorkflows)
+        UPDATE %s
+        SET consecutive_job_failures_count = consecutive_job_failures_count + 1
+        WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL
+        RETURNING consecutive_job_failures_count, max_consecutive_job_failures_allowed;
+    `, postgres.TableWorkflows)
 
 	var consecutiveJobFailuresCount, maxConsecutiveJobFailuresAllowed int32
 	err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
@@ -622,10 +622,10 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 	}()
 
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET consecutive_job_failures_count = 0
-		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
-	`, postgres.TableWorkflows)
+        UPDATE %s
+        SET consecutive_job_failures_count = 0
+        WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
+    `, postgres.TableWorkflows)
 
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, workflowID, userID)
@@ -686,12 +686,12 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 
 	var generation int64
 	query := fmt.Sprintf(`
-		SELECT generation
-		FROM %s
-		WHERE id = $1 AND user_id = $2
-		FOR UPDATE
-		LIMIT 1;
-	`, postgres.TableWorkflows)
+        SELECT generation
+        FROM %s
+        WHERE id = $1 AND user_id = $2
+        FOR UPDATE
+        LIMIT 1;
+    `, postgres.TableWorkflows)
 
 	// Lock the workflow first so a retry against an already-terminated workflow can
 	// still enqueue the terminate cleanup event for pending/running jobs.
@@ -719,10 +719,10 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	}
 
 	query = fmt.Sprintf(`
-		UPDATE %s
-		SET terminated_at = COALESCE(terminated_at, NOW())
-		WHERE id = $1 AND user_id = $2;
-	`, postgres.TableWorkflows)
+        UPDATE %s
+        SET terminated_at = COALESCE(terminated_at, NOW())
+        WHERE id = $1 AND user_id = $2;
+    `, postgres.TableWorkflows)
 	if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -797,14 +797,15 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	// Precondition: Only delete workflows that are terminated.
 	// If the workflow is not terminated, we should not allow deletion.
 	activeWorkflowQuery := fmt.Sprintf(`
-		SELECT id, terminated_at
-		FROM %s
-		WHERE id = $1 AND user_id = $2
-		LIMIT 1;
-	`, postgres.TableWorkflows)
+        SELECT id::text, user_id::text, terminated_at
+        FROM %s
+        WHERE id = $1 AND user_id = $2
+        LIMIT 1;
+    `, postgres.TableWorkflows)
 	var activeWorkflowID string
+	var activeWorkflowUserID string
 	var terminatedAt *time.Time
-	err = tx.QueryRow(ctx, activeWorkflowQuery, workflowID, userID).Scan(&activeWorkflowID, &terminatedAt)
+	err = tx.QueryRow(ctx, activeWorkflowQuery, workflowID, userID).Scan(&activeWorkflowID, &activeWorkflowUserID, &terminatedAt)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -818,7 +819,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 			err = status.Errorf(codes.NotFound, "workflow not found or not owned by user")
 			return err
 		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow or user ID: %v", err)
 			return err
 		}
 
@@ -835,13 +836,13 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	// If there are active/running jobs, we should not allow deletion.
 	// This is to prevent accidental deletion of workflows that are still running.
 	activeJobsQuery := fmt.Sprintf(`
-		SELECT id
-		FROM %s
-		WHERE workflow_id = $1 AND user_id = $2 AND status = $3
-		LIMIT 1;
-	`, postgres.TableJobs)
+        SELECT id
+        FROM %s
+        WHERE workflow_id = $1 AND user_id = $2 AND status = $3
+        LIMIT 1;
+    `, postgres.TableJobs)
 	var activeJobID string
-	err = tx.QueryRow(ctx, activeJobsQuery, workflowID, userID, jobsmodel.JobStatusRunning.ToString()).Scan(&activeJobID)
+	err = tx.QueryRow(ctx, activeJobsQuery, activeWorkflowID, activeWorkflowUserID, jobsmodel.JobStatusRunning.ToString()).Scan(&activeJobID)
 	//nolint:nestif // The ifelse chain is used to handle specific errors
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -857,7 +858,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 			// No active jobs found, we can proceed with deletion
 			activeJobID = ""
 		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow or user ID: %v", err)
 			return err
 		} else {
 			err = status.Errorf(codes.Internal, "failed to check for active jobs: %v", err)
@@ -873,12 +874,12 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	// Only delete workflows that are terminated
 	// This is to prevent accidental deletion of active workflows.
 	query := fmt.Sprintf(`
-		DELETE FROM %s
-		WHERE id = $1 AND user_id = $2 AND terminated_at IS NOT NULL;
-	`, postgres.TableWorkflows)
+        DELETE FROM %s
+        WHERE id = $1 AND user_id = $2 AND terminated_at IS NOT NULL;
+    `, postgres.TableWorkflows)
 
 	// Execute the query
-	ct, err := tx.Exec(ctx, query, workflowID, userID)
+	ct, err := tx.Exec(ctx, query, activeWorkflowID, activeWorkflowUserID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -889,7 +890,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		}
 
 		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow or user ID: %v", err)
 			return err
 		}
 
@@ -902,7 +903,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		return err
 	}
 
-	event := workflowEventPayload(workflowID, userID, workflowsmodel.ActionDelete, 0)
+	event := workflowEventPayload(activeWorkflowID, activeWorkflowUserID, workflowsmodel.ActionDelete, 0)
 	insertErr := insertWorkflowOutboxEvent(ctx, tx, event)
 	if insertErr != nil {
 		return insertErr

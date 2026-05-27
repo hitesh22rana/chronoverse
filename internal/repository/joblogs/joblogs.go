@@ -3,7 +3,6 @@ package joblogs
 import (
 	"context"
 	"encoding/json"
-	"sync"
 	"time"
 
 	"github.com/meilisearch/meilisearch-go"
@@ -44,8 +43,6 @@ type Repository struct {
 	ms     meilisearch.ServiceManager
 	kfk    *kgo.Client
 	runner *kafkapkg.PartitionRunner
-
-	batchMu sync.Mutex
 }
 
 // New creates a new joblogs repository.
@@ -105,15 +102,18 @@ func (r *Repository) processRecordsBatch(ctx context.Context, records []*kgo.Rec
 	}
 
 	logger := loggerpkg.FromContext(ctx)
+	var processedData []*queueData
 	err := retrypkg.Once(func() error {
-		return r.processLogsBatch(ctx, data)
+		var processErr error
+		processedData, processErr = r.processLogsBatch(ctx, data)
+		return processErr
 	}, retryBackoff)
 	if err != nil {
 		logger.Error("error processing batch", zap.Error(err))
 		return err
 	}
 
-	for _, item := range data {
+	for _, item := range processedData {
 		r.publishLog(ctx, item.logEntry)
 	}
 

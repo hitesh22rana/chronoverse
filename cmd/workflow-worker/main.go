@@ -24,6 +24,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	workflowrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflow"
@@ -117,6 +118,19 @@ func run() int {
 	}
 	defer cdb.Close()
 
+	// Initialize the MeiliSearch client
+	msdb, err := meilisearch.New(
+		ctx,
+		meilisearch.WithURI(cfg.MeiliSearch.URI),
+		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
+		meilisearch.WithTLS(&cfg.MeiliSearch),
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	msdb.Close()
+
 	// Initialize the kafka client
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
 	kfk, err := kafka.New(ctx,
@@ -204,7 +218,7 @@ func run() int {
 	defer notificationsConn.Close()
 
 	// Initialize the workflow job components
-	repo := workflowrepo.New(auth, rdb, cdb, kfk, kafkaLifecycle, &workflowrepo.Services{
+	repo := workflowrepo.New(auth, rdb, cdb, msdb, kfk, kafkaLifecycle, &workflowrepo.Services{
 		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
 		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),

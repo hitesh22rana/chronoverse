@@ -34,11 +34,6 @@ func (r *Repository) processLogsAnalytics(ctx context.Context, batch []*queueDat
 	ctx, span := r.tp.Start(ctx, "joblogs.Run.processLogsAnalytics")
 	defer span.End()
 
-	recordsByPartition := groupLogAnalyticsRecords(batch)
-	if len(recordsByPartition) == 0 {
-		return nil
-	}
-
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to start log analytics transaction: %v", err)
@@ -46,14 +41,30 @@ func (r *Repository) processLogsAnalytics(ctx context.Context, batch []*queueDat
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
+	if processErr := r.processLogsAnalyticsTx(ctx, tx, batch); processErr != nil {
+		return processErr
+	}
+
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		return status.Errorf(codes.Internal, "failed to commit log analytics transaction: %v", commitErr)
+	}
+
+	return nil
+}
+
+func (r *Repository) processLogsAnalyticsTx(ctx context.Context, tx pgx.Tx, batch []*queueData) error {
+	ctx, span := r.tp.Start(ctx, "joblogs.Run.processLogsAnalyticsTx")
+	defer span.End()
+
+	recordsByPartition := groupLogAnalyticsRecords(batch)
+	if len(recordsByPartition) == 0 {
+		return nil
+	}
+
 	for _, partition := range sortedLogAnalyticsPartitions(recordsByPartition) {
 		if partitionErr := r.processLogsAnalyticsPartition(ctx, tx, partition, recordsByPartition[partition]); partitionErr != nil {
 			return partitionErr
 		}
-	}
-
-	if err = tx.Commit(ctx); err != nil {
-		return status.Errorf(codes.Internal, "failed to commit log analytics transaction: %v", err)
 	}
 
 	return nil
@@ -98,10 +109,10 @@ func (r *Repository) processLogsAnalyticsPartition(
 	records []*queueData,
 ) error {
 	if _, err := tx.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO %s (consumer, topic, partition, last_offset)
-		VALUES ($1, $2, $3, -1)
-		ON CONFLICT DO NOTHING;
-	`, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition); err != nil {
+        INSERT INTO %s (consumer, topic, partition, last_offset)
+        VALUES ($1, $2, $3, -1)
+        ON CONFLICT DO NOTHING;
+    `, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition); err != nil {
 		return status.Errorf(codes.Internal, "failed to initialize log analytics offset: %v", err)
 	}
 
@@ -120,10 +131,10 @@ func (r *Repository) processLogsAnalyticsPartition(
 	}
 
 	if _, err = tx.Exec(ctx, fmt.Sprintf(`
-		UPDATE %s
-		SET last_offset = $4
-		WHERE consumer = $1 AND topic = $2 AND partition = $3;
-	`, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition, counts.maxOffset); err != nil {
+        UPDATE %s
+        SET last_offset = $4
+        WHERE consumer = $1 AND topic = $2 AND partition = $3;
+    `, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition, counts.maxOffset); err != nil {
 		return status.Errorf(codes.Internal, "failed to advance log analytics offset: %v", err)
 	}
 
@@ -133,11 +144,11 @@ func (r *Repository) processLogsAnalyticsPartition(
 func lockLogAnalyticsOffset(ctx context.Context, tx pgx.Tx, partition logAnalyticsPartition) (int64, error) {
 	var lastOffset int64
 	if err := tx.QueryRow(ctx, fmt.Sprintf(`
-		SELECT last_offset
-		FROM %s
-		WHERE consumer = $1 AND topic = $2 AND partition = $3
-		FOR UPDATE;
-	`, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition).Scan(&lastOffset); err != nil {
+        SELECT last_offset
+        FROM %s
+        WHERE consumer = $1 AND topic = $2 AND partition = $3
+        FOR UPDATE;
+    `, postgres.TableLogAnalyticsOffsets), logAnalyticsConsumer, partition.topic, partition.partition).Scan(&lastOffset); err != nil {
 		return 0, status.Errorf(codes.Internal, "failed to lock log analytics offset: %v", err)
 	}
 
@@ -191,13 +202,13 @@ func updatePartitionLogCounts(
 		}
 
 		if _, err := tx.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO %s
-				(user_id, workflow_id, logs_count)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (user_id, workflow_id)
-			DO UPDATE SET
-				logs_count = %s.logs_count + EXCLUDED.logs_count;
-		`, postgres.TableAnalytics, postgres.TableAnalytics), entry.userID, workflowID, entry.count); err != nil {
+            INSERT INTO %s
+                (user_id, workflow_id, logs_count)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, workflow_id)
+            DO UPDATE SET
+                logs_count = %s.logs_count + EXCLUDED.logs_count;
+        `, postgres.TableAnalytics, postgres.TableAnalytics), entry.userID, workflowID, entry.count); err != nil {
 			return status.Errorf(codes.Internal, "failed to update logs analytics: %v", err)
 		}
 	}

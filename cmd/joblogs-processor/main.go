@@ -141,6 +141,7 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
+	defer msdb.Close()
 
 	// Initialize the kafka client
 	kafkaLifecycle := kafka.NewPartitionLifecycle()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -54,6 +55,7 @@ type Repository struct {
 	auth   auth.IAuth
 	rdb    *redis.Store
 	ch     *clickhouse.Client
+	ms     meilisearch.ServiceManager
 	kfk    *kgo.Client
 	runner *kafkapkg.PartitionRunner
 	svc    *Services
@@ -64,6 +66,7 @@ func New(
 	auth auth.IAuth,
 	rdb *redis.Store,
 	ch *clickhouse.Client,
+	ms meilisearch.ServiceManager,
 	kfk *kgo.Client,
 	lifecycle *kafkapkg.PartitionLifecycle,
 	svc *Services,
@@ -73,6 +76,7 @@ func New(
 		auth: auth,
 		rdb:  rdb,
 		ch:   ch,
+		ms:   ms,
 		kfk:  kfk,
 		svc:  svc,
 	}

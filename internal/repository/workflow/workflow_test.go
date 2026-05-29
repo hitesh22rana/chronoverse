@@ -201,6 +201,43 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 	}
 }
 
+func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testing.T) {
+	t.Parallel()
+
+	events := &orderedEvents{}
+	repo := &Repository{
+		svc: &Services{
+			Csvc: &testContainerSvc{
+				events: events,
+				logs: []*jobsmodel.JobLog{{
+					Message:     "canceled log",
+					Stream:      "stdout",
+					SequenceNum: 1,
+				}},
+			},
+		},
+	}
+
+	err := repo.cleanupCanceledJobContainer(
+		t.Context(),
+		&workflowspb.GetWorkflowByIDResponse{
+			Id:   "workflow-1",
+			Kind: workflowsmodel.KindContainer.ToString(),
+		},
+		&jobspb.JobsResponse{
+			Id:          "job-1",
+			ContainerId: "container-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("cleanupCanceledJobContainer() error = %v", err)
+	}
+
+	if got := events.items(); len(got) != 2 || got[0] != "terminate" || got[1] != "remove" {
+		t.Fatalf("cleanup events = %v, want terminate then remove", got)
+	}
+}
+
 func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 	issueTokenCalls := 0
 	repo := &Repository{
@@ -338,26 +375,36 @@ func (c testNotificationsClient) CreateNotification(ctx context.Context, req *no
 
 type testContainerSvc struct {
 	events *orderedEvents
+	logs   []*jobsmodel.JobLog
 }
 
 func (*testContainerSvc) Build(context.Context, string) error {
 	return nil
 }
 
-func (*testContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *testContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
 	logsCh := make(chan *jobsmodel.JobLog)
 	errsCh := make(chan error)
-	close(logsCh)
-	close(errsCh)
+	go func() {
+		defer close(logsCh)
+		defer close(errsCh)
+		for _, log := range s.logs {
+			logsCh <- log
+		}
+	}()
 	return logsCh, errsCh, nil
 }
 
 func (s *testContainerSvc) Remove(context.Context, string) error {
-	s.events.add("remove")
+	if s.events != nil {
+		s.events.add("remove")
+	}
 	return nil
 }
 
 func (s *testContainerSvc) Terminate(context.Context, string) error {
-	s.events.add("terminate")
+	if s.events != nil {
+		s.events.add("terminate")
+	}
 	return nil
 }

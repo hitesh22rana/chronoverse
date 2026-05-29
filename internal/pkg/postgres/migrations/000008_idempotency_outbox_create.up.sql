@@ -109,8 +109,6 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     topic TEXT NOT NULL,
     kafka_key TEXT NOT NULL,
     event_key TEXT NOT NULL,
-    aggregate_type TEXT NOT NULL,
-    aggregate_id TEXT NOT NULL,
     payload JSONB NOT NULL,
     status OUTBOX_STATUS NOT NULL DEFAULT 'PENDING',
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
@@ -138,7 +136,7 @@ WHERE status = 'PROCESSING';
 CREATE INDEX IF NOT EXISTS idx_outbox_events_published_cleanup
 ON outbox_events (published_at)
 WHERE status = 'PUBLISHED';
- 
+
 CREATE INDEX IF NOT EXISTS idx_outbox_events_unpublished_key_order
 ON outbox_events (topic, kafka_key, created_at, id)
 WHERE status <> 'PUBLISHED';

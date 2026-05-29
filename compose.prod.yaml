@@ -228,7 +228,7 @@ services:
 
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: ${KAFKA_NUM_PARTITIONS:-12}
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       CLUSTER_ID: EDofQNqcSCa63isOyHHO9g
     volumes:
       - kafka:/var/lib/kafka/data
@@ -236,6 +236,111 @@ services:
     depends_on:
       init-certs:
         condition: service_completed_successfully
+    networks:
+      - chronoverse
+
+  init-kafka-topics:
+    image: confluentinc/cp-kafka:7.6.7
+    container_name: init-kafka-topics
+    environment:
+      KAFKA_BOOTSTRAP_SERVER: kafka:9094
+      KAFKA_TOPIC_REPLICATION_FACTOR: ${KAFKA_TOPIC_REPLICATION_FACTOR:-1}
+      KAFKA_WORKFLOWS_TOPIC_PARTITIONS: ${KAFKA_WORKFLOWS_TOPIC_PARTITIONS:-2}
+      KAFKA_JOBS_TOPIC_PARTITIONS: ${KAFKA_JOBS_TOPIC_PARTITIONS:-4}
+      KAFKA_JOB_LOGS_TOPIC_PARTITIONS: ${KAFKA_JOB_LOGS_TOPIC_PARTITIONS:-4}
+      KAFKA_ANALYTICS_TOPIC_PARTITIONS: ${KAFKA_ANALYTICS_TOPIC_PARTITIONS:-2}
+    volumes:
+      - ./certs/kafka:/etc/kafka/secrets:ro
+    entrypoint:
+      - bash
+      - -ec
+      - |
+        bootstrap_server="$${KAFKA_BOOTSTRAP_SERVER:-kafka:9094}"
+        replication_factor="$${KAFKA_TOPIC_REPLICATION_FACTOR:-1}"
+        client_config="/tmp/kafka-client.properties"
+
+        cat > "$$client_config" <<'PROPERTIES'
+        security.protocol=SSL
+        ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.jks
+        ssl.truststore.password=chronoverse
+        ssl.keystore.location=/etc/kafka/secrets/kafka.keystore.jks
+        ssl.keystore.password=chronoverse
+        ssl.key.password=chronoverse
+        PROPERTIES
+
+        kafka_topics() {
+          kafka-topics --bootstrap-server "$$bootstrap_server" --command-config "$$client_config" "$$@"
+        }
+
+        require_positive_int() {
+          name="$$1"
+          value="$$2"
+
+          if ! [[ "$$value" =~ ^[0-9]+$$ ]] || (( value < 1 )); then
+            echo "$$name must be a positive integer, got: $$value" >&2
+            exit 1
+          fi
+        }
+
+        topic_partitions() {
+          topic="$$1"
+          description="$$(kafka_topics --describe --topic "$$topic" 2>/dev/null || true)"
+          if [[ -z "$$description" ]]; then
+            return 1
+          fi
+
+          while IFS= read -r line; do
+            if [[ "$$line" == *"PartitionCount:"* ]]; then
+              remainder="$${line#*PartitionCount: }"
+              printf '%s\n' "$${remainder%%[[:space:]]*}"
+              return 0
+            fi
+          done <<< "$$description"
+
+          return 1
+        }
+
+        create_or_update_topic() {
+          topic="$$1"
+          desired_partitions="$$2"
+
+          require_positive_int "partition count for $$topic" "$$desired_partitions"
+
+          if current_partitions="$$(topic_partitions "$$topic")"; then
+            if (( current_partitions < desired_partitions )); then
+              echo "Increasing topic $$topic partitions from $$current_partitions to $$desired_partitions"
+              kafka_topics --alter --topic "$$topic" --partitions "$$desired_partitions"
+            elif (( current_partitions > desired_partitions )); then
+              echo "Topic $$topic already has $$current_partitions partitions; Kafka cannot reduce it to $$desired_partitions"
+            else
+              echo "Topic $$topic already exists with $$current_partitions partitions"
+            fi
+            return
+          fi
+
+          echo "Creating topic $$topic with $$desired_partitions partitions"
+          kafka_topics --create --if-not-exists \
+            --topic "$$topic" \
+            --partitions "$$desired_partitions" \
+            --replication-factor "$$replication_factor"
+        }
+
+        require_positive_int "KAFKA_TOPIC_REPLICATION_FACTOR" "$$replication_factor"
+
+        echo "Waiting for Kafka at $$bootstrap_server"
+        until kafka_topics --list >/dev/null 2>&1; do
+          sleep 2
+        done
+
+        create_or_update_topic "workflows" "$${KAFKA_WORKFLOWS_TOPIC_PARTITIONS:-2}"
+        create_or_update_topic "jobs" "$${KAFKA_JOBS_TOPIC_PARTITIONS:-4}"
+        create_or_update_topic "job_logs" "$${KAFKA_JOB_LOGS_TOPIC_PARTITIONS:-4}"
+        create_or_update_topic "analytics" "$${KAFKA_ANALYTICS_TOPIC_PARTITIONS:-2}"
+
+        echo "Kafka topics are ready"
+    depends_on:
+      kafka:
+        condition: service_started
     networks:
       - chronoverse
 
@@ -1023,8 +1128,8 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      init-kafka-topics:
+        condition: service_completed_successfully
       meilisearch:
         condition: service_healthy
       lgtm:
@@ -1046,6 +1151,11 @@ services:
     <<: *high-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     environment:
+      REDIS_HOST: redis
+      REDIS_TLS_ENABLED: true
+      REDIS_TLS_CA_FILE: certs/ca/ca.crt
+      REDIS_TLS_CERT_FILE: certs/clients/client.crt
+      REDIS_TLS_KEY_FILE: certs/clients/client.key
       KAFKA_BROKERS: kafka:9094
       KAFKA_TLS_ENABLED: true
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
@@ -1073,6 +1183,13 @@ services:
       EXECUTION_WORKER_SYSTEM_RETRY_BACKOFF: 30s
       EXECUTION_WORKER_RECOVERY_INTERVAL: 15s
       EXECUTION_WORKER_RECOVERY_BATCH_SIZE: 100
+      EXECUTION_WORKER_JOB_LOG_BATCH_SIZE: 100
+      EXECUTION_WORKER_JOB_LOG_BATCH_INTERVAL: 250ms
+      EXECUTION_WORKER_JOB_LOG_PUBLISH_TIMEOUT: 5s
+      EXECUTION_WORKER_JOB_LOG_PUBLISH_RETRIES: 3
+      EXECUTION_WORKER_JOB_LOG_PUBLISH_BACKOFF: 250ms
+      EXECUTION_WORKER_JOB_LOG_LIVE_TIMEOUT: 100ms
+      EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE: 4096
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2375
@@ -1091,8 +1208,10 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
-      kafka:
-        condition: service_started
+      redis:
+        condition: service_healthy
+      init-kafka-topics:
+        condition: service_completed_successfully
       lgtm:
         condition: service_started
       init-certs:
@@ -1168,8 +1287,8 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      init-kafka-topics:
+        condition: service_completed_successfully
       lgtm:
         condition: service_started
       init-certs:
@@ -1219,8 +1338,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      init-kafka-topics:
+        condition: service_completed_successfully
       lgtm:
         condition: service_started
       init-certs:
@@ -1248,7 +1367,6 @@ services:
       KAFKA_TLS_CA_FILE: certs/ca/ca.crt
       KAFKA_TLS_CERT_FILE: certs/clients/client.crt
       KAFKA_TLS_KEY_FILE: certs/clients/client.key
-      OUTBOX_RELAY_JOB_LOGS_ENABLED: true
       OUTBOX_RELAY_PROCESSING_LEASE: 30s
       OUTBOX_RELAY_CLEANUP_ENABLED: true
       OUTBOX_RELAY_CLEANUP_INTERVAL: 15m
@@ -1272,8 +1390,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      init-kafka-topics:
+        condition: service_completed_successfully
       lgtm:
         condition: service_started
       init-certs:

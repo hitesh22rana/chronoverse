@@ -21,7 +21,6 @@ type Service interface {
 type Config struct {
 	WorkflowEnabled    bool
 	JobsEnabled        bool
-	JobLogsEnabled     bool
 	AnalyticsEnabled   bool
 	PollInterval       time.Duration
 	ContextTimeout     time.Duration
@@ -55,9 +54,6 @@ func (o *OutboxRelay) Run(ctx context.Context) error {
 	}
 	if o.cfg.JobsEnabled {
 		topics = append(topics, kafka.TopicJobs)
-	}
-	if o.cfg.JobLogsEnabled {
-		topics = append(topics, kafka.TopicJobLogs)
 	}
 	if o.cfg.AnalyticsEnabled {
 		topics = append(topics, kafka.TopicAnalytics)

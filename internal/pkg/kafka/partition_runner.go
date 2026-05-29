@@ -39,13 +39,17 @@ type partitionClient interface {
 
 // PartitionLifecycle forwards Kafka group partition lifecycle callbacks to the active partition runner for a client.
 type PartitionLifecycle struct {
-	mu     sync.RWMutex
-	runner *PartitionRunner
+	mu       sync.RWMutex
+	runner   *PartitionRunner
+	assigned map[string][]int32
+	known    bool
 }
 
 // NewPartitionLifecycle creates a new PartitionLifecycle.
 func NewPartitionLifecycle() *PartitionLifecycle {
-	return &PartitionLifecycle{}
+	return &PartitionLifecycle{
+		assigned: make(map[string][]int32),
+	}
 }
 
 // Register attaches a runner to the lifecycle callbacks.
@@ -54,40 +58,115 @@ func (p *PartitionLifecycle) Register(runner *PartitionRunner) {
 		return
 	}
 
+	var assigned map[string][]int32
+	var known bool
+
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.runner = runner
+	if p.known {
+		assigned = clonePartitions(p.assigned)
+		known = true
+	}
+	p.mu.Unlock()
+
+	if known && runner != nil {
+		runner.assign(assigned)
+	}
 }
 
 // OnAssigned records partitions assigned to this consumer group member.
 func (p *PartitionLifecycle) OnAssigned(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
-	if runner := p.activeRunner(); runner != nil {
-		runner.assign(partitions)
+	if p == nil {
+		return
+	}
+
+	assigned := clonePartitions(partitions)
+	p.mu.Lock()
+	addPartitions(p.assigned, assigned)
+	p.known = true
+	runner := p.runner
+	p.mu.Unlock()
+
+	if runner != nil {
+		runner.assign(assigned)
 	}
 }
 
 // OnRevoked stops lanes for partitions revoked from this consumer group member.
 func (p *PartitionLifecycle) OnRevoked(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
-	if runner := p.activeRunner(); runner != nil {
-		runner.revoke(partitions)
-	}
+	p.revoke(partitions)
 }
 
 // OnLost stops lanes for partitions lost by this consumer group member.
 func (p *PartitionLifecycle) OnLost(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
-	if runner := p.activeRunner(); runner != nil {
-		runner.revoke(partitions)
+	p.revoke(partitions)
+}
+
+func (p *PartitionLifecycle) revoke(partitions map[string][]int32) {
+	if p == nil {
+		return
+	}
+
+	revoked := clonePartitions(partitions)
+	p.mu.Lock()
+	removePartitions(p.assigned, revoked)
+	p.known = true
+	runner := p.runner
+	p.mu.Unlock()
+
+	if runner != nil {
+		runner.revoke(revoked)
 	}
 }
 
-func (p *PartitionLifecycle) activeRunner() *PartitionRunner {
-	if p == nil {
-		return nil
+func addPartitions(dst, src map[string][]int32) {
+	for topic, partitions := range src {
+		existing := make(map[int32]struct{}, len(dst[topic])+len(partitions))
+		for _, partition := range dst[topic] {
+			existing[partition] = struct{}{}
+		}
+		for _, partition := range partitions {
+			if _, ok := existing[partition]; ok {
+				continue
+			}
+			dst[topic] = append(dst[topic], partition)
+			existing[partition] = struct{}{}
+		}
 	}
+}
 
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.runner
+func removePartitions(dst, src map[string][]int32) {
+	for topic, partitions := range src {
+		if len(partitions) == 0 {
+			continue
+		}
+
+		removed := make(map[int32]struct{}, len(partitions))
+		for _, partition := range partitions {
+			removed[partition] = struct{}{}
+		}
+
+		kept := dst[topic][:0]
+		for _, partition := range dst[topic] {
+			if _, ok := removed[partition]; ok {
+				continue
+			}
+			kept = append(kept, partition)
+		}
+		if len(kept) == 0 {
+			delete(dst, topic)
+			continue
+		}
+		dst[topic] = kept
+	}
+}
+
+func clonePartitions(partitions map[string][]int32) map[string][]int32 {
+	cloned := make(map[string][]int32, len(partitions))
+	for topic, topicPartitions := range partitions {
+		cloned[topic] = append([]int32(nil), topicPartitions...)
+	}
+	return cloned
 }
 
 // PartitionRunnerConfig configures a partition-aware Kafka processor.

@@ -1,5 +1,5 @@
 GO_BIN?=$(shell pwd)/.bin
-SHELL:=env PATH=$(GO_BIN):$(PATH) $(SHELL)
+export PATH := $(GO_BIN):$(PATH)
 PKG_PATH=github.com/hitesh22rana/chronoverse/internal/pkg/svc
 APP_VERSION?=v0.0.1 # Default version
 

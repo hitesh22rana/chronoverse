@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -13,6 +14,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -118,17 +120,39 @@ func (r *Repository) publishContainerLogs(
 	go func() {
 		defer close(logErrors)
 
+		batchSize := r.cfg.JobLogBatchSize
+		records := make([]*kgo.Record, 0, batchSize)
+		ticker := time.NewTicker(r.cfg.JobLogBatchInterval)
+		defer ticker.Stop()
+
+		flush := func() {
+			if len(records) == 0 {
+				return
+			}
+
+			r.publishJobLogBatch(ctx, records)
+			records = make([]*kgo.Record, 0, batchSize)
+		}
+
 		for {
 			select {
 			case log, ok := <-logs:
 				if !ok {
+					flush()
 					return
 				}
-				if err := r.publishContainerLog(ctx, jobID, attempts, workflow, log); err != nil {
-					logErrors <- err
-					return
+				record := r.jobLogRecord(ctx, jobID, attempts, workflow, log)
+				if record == nil {
+					continue
 				}
+				records = append(records, record)
+				if len(records) >= batchSize {
+					flush()
+				}
+			case <-ticker.C:
+				flush()
 			case <-done:
+				flush()
 				return
 			}
 		}
@@ -137,14 +161,14 @@ func (r *Repository) publishContainerLogs(
 	return logErrors
 }
 
-func (r *Repository) publishContainerLog(
+func (r *Repository) jobLogRecord(
 	ctx context.Context,
 	jobID string,
 	attempts int32,
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	log *jobsmodel.JobLog,
-) error {
-	return r.enqueueJobLogEvent(ctx, &jobsmodel.JobLogEvent{
+) *kgo.Record {
+	event := &jobsmodel.JobLogEvent{
 		EventKey:    idempotency.LogEventKey(jobID, log.Stream, log.SequenceNum, attempts),
 		JobID:       jobID,
 		WorkflowID:  workflow.GetId(),
@@ -154,70 +178,24 @@ func (r *Repository) publishContainerLog(
 		SequenceNum: log.SequenceNum,
 		Stream:      log.Stream,
 		Retention:   workflow.GetLogRetention(),
-	})
-}
-
-func (r *Repository) enqueueJobLogEvent(ctx context.Context, event *jobsmodel.JobLogEvent) error {
-	if event == nil {
-		return status.Error(codes.InvalidArgument, "job log event is required")
-	}
-	if event.EventKey == "" {
-		event.EventKey = idempotency.LogEventKey(event.JobID, event.Stream, event.SequenceNum)
 	}
 
-	req := &jobspb.EnqueueJobLogRequest{
-		EventKey:    event.EventKey,
-		JobId:       event.JobID,
-		WorkflowId:  event.WorkflowID,
-		UserId:      event.UserID,
-		Message:     event.Message,
-		Timestamp:   event.TimeStamp.Format(time.RFC3339Nano),
-		SequenceNum: event.SequenceNum,
-		Stream:      event.Stream,
-		Retention:   event.Retention,
-	}
+	r.publishLiveJobLog(ctx, event)
 
-	for {
-		if ctx.Err() != nil {
-			return contextError(ctx.Err())
-		}
-
-		authCtx, err := r.withAuthorization(ctx)
-		if err == nil {
-			_, err = r.svc.Jobs.EnqueueJobLog(authCtx, req)
-		}
-		if err == nil {
-			return nil
-		}
-		if !isRetryableJobLogEnqueueError(err) {
-			return err
-		}
-
-		loggerpkg.FromContext(ctx).Warn("failed to enqueue job log; retrying",
+	record, err := joblogevents.KafkaRecord(event)
+	if err != nil {
+		loggerpkg.FromContext(ctx).Error("failed to create job log kafka record",
 			zap.String("job_id", event.JobID),
 			zap.String("workflow_id", event.WorkflowID),
 			zap.String("event_key", event.EventKey),
 			zap.String("stream", event.Stream),
 			zap.Uint32("sequence_num", event.SequenceNum),
-			zap.String("code", status.Code(err).String()),
 			zap.Error(err),
 		)
-
-		select {
-		case <-time.After(retryBackoff):
-		case <-ctx.Done():
-			return contextError(ctx.Err())
-		}
+		return nil
 	}
-}
 
-func isRetryableJobLogEnqueueError(err error) bool {
-	switch status.Code(err) { //nolint:exhaustive // Only non-retryable validation/auth codes need special handling here.
-	case codes.InvalidArgument, codes.FailedPrecondition, codes.PermissionDenied, codes.Unauthenticated:
-		return false
-	default:
-		return true
-	}
+	return record
 }
 
 func contextError(err error) error {

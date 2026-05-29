@@ -130,21 +130,12 @@ func TestClassifyExecutionFailure(t *testing.T) {
 	}
 }
 
-func TestProcessContainerExecutionDrainsLogsBeforeReturningExecutionError(t *testing.T) {
+func TestProcessContainerExecutionReturnsExecutionErrorAfterLogDrain(t *testing.T) {
 	t.Parallel()
 
 	logs := make(chan *jobsmodel.JobLog)
 	errs := make(chan error, 1)
-	jobsClient := &blockingJobLogClient{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-	}
-	repo := &Repository{
-		auth: fakeAuth{},
-		svc: &Services{
-			Jobs: jobsClient,
-		},
-	}
+	repo := &Repository{cfg: defaultConfig()}
 	workflow := &workflowspb.GetWorkflowByIDResponse{
 		Id:           "workflow-1",
 		UserId:       "user-1",
@@ -166,22 +157,8 @@ func TestProcessContainerExecutionDrainsLogsBeforeReturningExecutionError(t *tes
 		close(logs)
 	}()
 
-	select {
-	case <-jobsClient.started:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for log enqueue to start")
-	}
-
 	errs <- status.Error(codes.Aborted, "container exited with non-zero code: 1")
 	close(errs)
-
-	select {
-	case err := <-done:
-		t.Fatalf("processContainerExecution returned before log enqueue drained: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	close(jobsClient.release)
 
 	err := <-done
 	if status.Code(err) != codes.Aborted {
@@ -194,7 +171,7 @@ func TestProcessContainerExecutionDrainsExecutionErrorsUntilClosed(t *testing.T)
 
 	logs := make(chan *jobsmodel.JobLog)
 	errs := make(chan error)
-	repo := &Repository{}
+	repo := &Repository{cfg: defaultConfig()}
 
 	done := make(chan error, 1)
 	go func() {
@@ -375,24 +352,6 @@ func (fakeAuth) IssueToken(context.Context, string) (string, error) {
 
 func (fakeAuth) ValidateToken(context.Context) (*jwt.Token, error) {
 	return &jwt.Token{}, nil
-}
-
-type blockingJobLogClient struct {
-	jobspb.JobsServiceClient
-
-	once    sync.Once
-	started chan struct{}
-	release chan struct{}
-}
-
-func (c *blockingJobLogClient) EnqueueJobLog(ctx context.Context, _ *jobspb.EnqueueJobLogRequest, _ ...grpc.CallOption) (*jobspb.EnqueueJobLogResponse, error) {
-	c.once.Do(func() { close(c.started) })
-	select {
-	case <-c.release:
-		return &jobspb.EnqueueJobLogResponse{}, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
 }
 
 type renewingRecoveryJobsClient struct {

@@ -41,9 +41,7 @@ func (r *Repository) replayContainerLogs(
 				logs = nil
 				continue
 			}
-			if err := r.enqueueRecoveredContainerLog(ctx, claim, workflow, log); err != nil {
-				return err
-			}
+			r.publishRecoveredContainerLog(ctx, claim, workflow, log)
 		case err, ok := <-errs:
 			if !ok {
 				errs = nil
@@ -61,14 +59,14 @@ func (r *Repository) replayContainerLogs(
 	return nil
 }
 
-func (r *Repository) enqueueRecoveredContainerLog(
+func (r *Repository) publishRecoveredContainerLog(
 	ctx context.Context,
 	claim *jobspb.ClaimJobResponse,
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	log *jobsmodel.JobLog,
-) error {
+) {
 	if log == nil {
-		return nil
+		return
 	}
 
 	workflowID := claim.GetWorkflowId()
@@ -80,7 +78,7 @@ func (r *Repository) enqueueRecoveredContainerLog(
 		retention = workflow.GetLogRetention()
 	}
 
-	return r.enqueueJobLogEvent(ctx, &jobsmodel.JobLogEvent{
+	event := &jobsmodel.JobLogEvent{
 		EventKey:    idempotency.LogEventKey(claim.GetId(), log.Stream, log.SequenceNum, claim.GetAttempts()),
 		JobID:       claim.GetId(),
 		WorkflowID:  workflowID,
@@ -90,7 +88,9 @@ func (r *Repository) enqueueRecoveredContainerLog(
 		SequenceNum: log.SequenceNum,
 		Stream:      log.Stream,
 		Retention:   retention,
-	})
+	}
+
+	r.publishJobLogEvent(ctx, event)
 }
 
 func recoveredLogTimestamp(log *jobsmodel.JobLog) time.Time {

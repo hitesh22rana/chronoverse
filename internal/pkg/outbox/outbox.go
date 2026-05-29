@@ -14,12 +14,10 @@ import (
 
 // Event is a Kafka publish intent stored in the Postgres outbox.
 type Event struct {
-	Topic         string
-	KafkaKey      string
-	EventKey      string
-	AggregateType string
-	AggregateID   string
-	Payload       any
+	Topic    string
+	KafkaKey string
+	EventKey string
+	Payload  any
 }
 
 // InsertTx inserts an outbox event in the caller's transaction.
@@ -30,8 +28,8 @@ func InsertTx(ctx context.Context, tx pgx.Tx, event *Event) error {
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (topic, kafka_key, event_key, aggregate_type, aggregate_id, payload)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+		INSERT INTO %s (topic, kafka_key, event_key, payload)
+		VALUES ($1, $2, $3, $4::jsonb)
 		ON CONFLICT (topic, event_key) DO NOTHING;
 	`, postgres.TableOutboxEvents)
 
@@ -41,8 +39,6 @@ func InsertTx(ctx context.Context, tx pgx.Tx, event *Event) error {
 		event.Topic,
 		event.KafkaKey,
 		event.EventKey,
-		event.AggregateType,
-		event.AggregateID,
 		string(payload),
 	); err != nil {
 		return status.Errorf(codes.Internal, "failed to insert outbox event: %v", err)

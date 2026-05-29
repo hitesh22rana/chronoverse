@@ -165,12 +165,10 @@ func workflowEventPayload(workflowID, userID string, action workflowsmodel.Actio
 
 func insertWorkflowOutboxEvent(ctx context.Context, tx pgx.Tx, event *workflowsmodel.WorkflowEvent) error {
 	return outbox.InsertTx(ctx, tx, &outbox.Event{
-		Topic:         kafka.TopicWorkflows,
-		KafkaKey:      event.ID,
-		EventKey:      event.EventKey,
-		AggregateType: "workflow",
-		AggregateID:   event.ID,
-		Payload:       event,
+		Topic:    kafka.TopicWorkflows,
+		KafkaKey: event.ID,
+		EventKey: event.EventKey,
+		Payload:  event,
 	})
 }
 

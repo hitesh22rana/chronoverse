@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -15,6 +16,8 @@ import (
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 )
 
 const (
@@ -163,7 +166,12 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 		return err
 	}
 	if err := r.replayCanceledJobContainerLogs(parentCtx, workflow, job); err != nil {
-		return err
+		loggerpkg.FromContext(parentCtx).Warn("failed to replay canceled job logs",
+			zap.String("workflow_id", workflow.GetId()),
+			zap.String("job_id", job.GetId()),
+			zap.String("container_id", job.GetContainerId()),
+			zap.Error(err),
+		)
 	}
 
 	return r.svc.Csvc.Remove(cleanupCtx, job.GetContainerId())
@@ -192,7 +200,7 @@ func (r *Repository) replayCanceledJobContainerLogs(
 				logs = nil
 				continue
 			}
-			if err := r.enqueueCanceledJobLog(ctx, workflow, job, log); err != nil {
+			if err := r.publishCanceledJobLog(ctx, workflow, job, log); err != nil {
 				return err
 			}
 		case err, ok := <-errs:
@@ -215,7 +223,7 @@ func (r *Repository) replayCanceledJobContainerLogs(
 	return nil
 }
 
-func (r *Repository) enqueueCanceledJobLog(
+func (r *Repository) publishCanceledJobLog(
 	ctx context.Context,
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	job *jobspb.JobsResponse,
@@ -225,27 +233,33 @@ func (r *Repository) enqueueCanceledJobLog(
 		return nil
 	}
 
-	authCtx, err := r.withAuthorization(ctx)
-	if err != nil {
-		return err
-	}
-
 	timestamp := log.Timestamp
 	if timestamp.IsZero() {
 		timestamp = time.Now().UTC()
 	}
-	_, err = r.svc.Jobs.EnqueueJobLog(authCtx, &jobspb.EnqueueJobLogRequest{
+	event := &jobsmodel.JobLogEvent{
 		EventKey:    idempotency.LogEventKey(job.GetId(), log.Stream, log.SequenceNum, job.GetAttempts()),
-		JobId:       job.GetId(),
-		WorkflowId:  workflow.GetId(),
-		UserId:      workflow.GetUserId(),
+		JobID:       job.GetId(),
+		WorkflowID:  workflow.GetId(),
+		UserID:      workflow.GetUserId(),
 		Message:     log.Message,
-		Timestamp:   timestamp.Format(time.RFC3339Nano),
+		TimeStamp:   timestamp,
 		SequenceNum: log.SequenceNum,
 		Stream:      log.Stream,
 		Retention:   workflow.GetLogRetention(),
-	})
-	return err
+	}
+	record, err := joblogevents.KafkaRecord(event)
+	if err != nil {
+		return err
+	}
+	if r.kfk == nil {
+		return status.Error(codes.FailedPrecondition, "kafka client is not configured")
+	}
+	if err := r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		return status.Errorf(codes.Unavailable, "failed to publish canceled job log: %v", err)
+	}
+
+	return nil
 }
 
 func (r *Repository) cleanupJobsWithStatus(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID, status string) error {

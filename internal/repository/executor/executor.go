@@ -22,9 +22,11 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -58,23 +60,31 @@ type Services struct {
 
 // Config represents the execution worker configuration.
 type Config struct {
-	WorkerID           string
-	Concurrency        int
-	LeaseDuration      time.Duration
-	LeaseRenewInterval time.Duration
-	SystemRetryLimit   int
-	SystemRetryBackoff time.Duration
-	RecoveryInterval   time.Duration
-	RecoveryBatchSize  int32
+	WorkerID             string
+	Concurrency          int
+	LeaseDuration        time.Duration
+	LeaseRenewInterval   time.Duration
+	SystemRetryLimit     int
+	SystemRetryBackoff   time.Duration
+	RecoveryInterval     time.Duration
+	RecoveryBatchSize    int32
+	JobLogBatchSize      int
+	JobLogBatchInterval  time.Duration
+	JobLogPublishTimeout time.Duration
+	JobLogPublishRetries int
+	JobLogPublishBackoff time.Duration
+	JobLogLiveTimeout    time.Duration
+	JobLogLiveBufferSize int
 }
 
 // Repository provides executor repository.
 type Repository struct {
-	tp    trace.Tracer
-	cfg   Config
-	kfk   *kgo.Client
-	auth  auth.IAuth
-	slots chan struct{}
+	tp            trace.Tracer
+	cfg           Config
+	kfk           *kgo.Client
+	auth          auth.IAuth
+	slots         chan struct{}
+	livePublisher *joblogevents.LivePublisher
 
 	execWG sync.WaitGroup
 
@@ -87,6 +97,7 @@ func New(
 	cfg *Config,
 	auth auth.IAuth,
 	kfk *kgo.Client,
+	rdb *redis.Store,
 	lifecycle *kafka.PartitionLifecycle,
 	svc *Services,
 ) *Repository {
@@ -98,6 +109,10 @@ func New(
 		kfk:   kfk,
 		svc:   svc,
 		slots: make(chan struct{}, normalizedCfg.Concurrency),
+		livePublisher: joblogevents.NewLivePublisher(rdb, joblogevents.LivePublisherConfig{
+			BufferSize:     normalizedCfg.JobLogLiveBufferSize,
+			PublishTimeout: normalizedCfg.JobLogLiveTimeout,
+		}),
 	}
 	r.runner = kafka.NewPartitionRunner(kfk, r.processRecord, &kafka.PartitionRunnerConfig{
 		Name:         "executor.worker",
@@ -113,6 +128,9 @@ func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
 	r.runner.SetLogger(logger)
 
+	liveCtx, cancelLive := context.WithCancel(ctx)
+	liveDone := r.runLiveJobLogPublisher(liveCtx, logger)
+
 	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
 	defer cancelRecovery()
 
@@ -125,6 +143,10 @@ func (r *Repository) Run(ctx context.Context) error {
 	err := r.runner.Run(ctx)
 	cancelRecovery()
 	r.execWG.Wait()
+	cancelLive()
+	if liveDone != nil {
+		<-liveDone
+	}
 	<-recoveryDone
 	return err
 }

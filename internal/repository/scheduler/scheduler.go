@@ -235,12 +235,10 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 
 	for _, event := range events {
 		insertErr := outbox.InsertTx(ctx, tx, &outbox.Event{
-			Topic:         kafka.TopicJobs,
-			KafkaKey:      event.workflowID,
-			EventKey:      event.eventKey,
-			AggregateType: "job",
-			AggregateID:   event.jobID,
-			Payload:       event.payload,
+			Topic:    kafka.TopicJobs,
+			KafkaKey: event.workflowID,
+			EventKey: event.eventKey,
+			Payload:  event.payload,
 		})
 		if insertErr != nil {
 			return 0, insertErr

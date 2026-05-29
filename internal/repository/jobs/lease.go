@@ -505,12 +505,10 @@ func (r *Repository) insertTerminalJobOutboxEvents(
 		Data:       data,
 	}
 	if err := outbox.InsertTx(ctx, tx, &outbox.Event{
-		Topic:         kafka.TopicAnalytics,
-		KafkaKey:      job.WorkflowID,
-		EventKey:      analyticsEvent.EventKey,
-		AggregateType: "job",
-		AggregateID:   job.ID,
-		Payload:       analyticsEvent,
+		Topic:    kafka.TopicAnalytics,
+		KafkaKey: job.WorkflowID,
+		EventKey: analyticsEvent.EventKey,
+		Payload:  analyticsEvent,
 	}); err != nil {
 		return err
 	}
@@ -526,12 +524,10 @@ func (r *Repository) insertTerminalJobOutboxEvents(
 		ErrorMessage: errorMessage,
 	}
 	return outbox.InsertTx(ctx, tx, &outbox.Event{
-		Topic:         kafka.TopicWorkflows,
-		KafkaKey:      job.WorkflowID,
-		EventKey:      event.EventKey,
-		AggregateType: "job",
-		AggregateID:   job.ID,
-		Payload:       event,
+		Topic:    kafka.TopicWorkflows,
+		KafkaKey: job.WorkflowID,
+		EventKey: event.EventKey,
+		Payload:  event,
 	})
 }
 

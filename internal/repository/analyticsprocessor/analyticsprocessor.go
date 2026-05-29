@@ -92,17 +92,17 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 	var processErr error
 	switch event.EventType {
 	case analyticsmodel.EventTypeLogs:
-		processErr = retrypkg.Once(func() error {
+		processErr = retrypkg.Do(ctxWithTrace, 2, retryBackoff, func() error {
 			return r.processLogsEvent(ctxWithTrace, &event)
-		}, retryBackoff)
+		})
 	case analyticsmodel.EventTypeJobs:
-		processErr = retrypkg.Once(func() error {
+		processErr = retrypkg.Do(ctxWithTrace, 2, retryBackoff, func() error {
 			return r.processJobsEvent(ctxWithTrace, &event)
-		}, retryBackoff)
+		})
 	case analyticsmodel.EventTypeWorkflows:
-		processErr = retrypkg.Once(func() error {
+		processErr = retrypkg.Do(ctxWithTrace, 2, retryBackoff, func() error {
 			return r.processWorkflowsEvent(ctxWithTrace, &event)
-		}, retryBackoff)
+		})
 	default:
 		logger.Warn("unknown event type",
 			zap.Any("ctx", ctxWithTrace),

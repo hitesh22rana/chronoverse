@@ -14,6 +14,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	kafkapkg "github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -35,14 +36,14 @@ type Config struct {
 
 // Repository provides joblogs repository.
 type Repository struct {
-	tp     trace.Tracer
-	cfg    *Config
-	rdb    *redis.Store
-	pg     *postgres.Postgres
-	ch     *clickhouse.Client
-	ms     meilisearch.ServiceManager
-	kfk    *kgo.Client
-	runner *kafkapkg.PartitionRunner
+	tp            trace.Tracer
+	cfg           *Config
+	pg            *postgres.Postgres
+	ch            *clickhouse.Client
+	ms            meilisearch.ServiceManager
+	kfk           *kgo.Client
+	livePublisher *joblogevents.LivePublisher
+	runner        *kafkapkg.PartitionRunner
 }
 
 // New creates a new joblogs repository.
@@ -56,13 +57,13 @@ func New(
 	lifecycle *kafkapkg.PartitionLifecycle,
 ) *Repository {
 	r := &Repository{
-		tp:  otel.Tracer(svcpkg.Info().GetName()),
-		cfg: cfg,
-		rdb: rdb,
-		pg:  pg,
-		ch:  ch,
-		ms:  ms,
-		kfk: kfk,
+		tp:            otel.Tracer(svcpkg.Info().GetName()),
+		cfg:           cfg,
+		pg:            pg,
+		ch:            ch,
+		ms:            ms,
+		kfk:           kfk,
+		livePublisher: joblogevents.NewLivePublisher(rdb, joblogevents.LivePublisherConfig{}),
 	}
 	r.runner = kafkapkg.NewPartitionBatchRunner(kfk, r.processRecordsBatch, &kafkapkg.PartitionRunnerConfig{
 		Name:          "joblogs",
@@ -85,7 +86,30 @@ type queueData struct {
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
 	r.runner.SetLogger(logger)
-	return r.runner.Run(ctx)
+
+	liveCtx, cancelLive := context.WithCancel(ctx)
+	liveDone := r.runLiveJobLogPublisher(liveCtx, logger)
+
+	err := r.runner.Run(ctx)
+	cancelLive()
+	if liveDone != nil {
+		<-liveDone
+	}
+	return err
+}
+
+func (r *Repository) runLiveJobLogPublisher(ctx context.Context, logger *zap.Logger) <-chan struct{} {
+	if r.livePublisher == nil {
+		return nil
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.livePublisher.Run(ctx, logger)
+	}()
+
+	return done
 }
 
 func (r *Repository) processRecordsBatch(ctx context.Context, records []*kgo.Record) error {
@@ -103,11 +127,11 @@ func (r *Repository) processRecordsBatch(ctx context.Context, records []*kgo.Rec
 
 	logger := loggerpkg.FromContext(ctx)
 	var processedData []*queueData
-	err := retrypkg.Once(func() error {
+	err := retrypkg.Do(ctx, 2, retryBackoff, func() error {
 		var processErr error
 		processedData, processErr = r.processLogsBatch(ctx, data)
 		return processErr
-	}, retryBackoff)
+	})
 	if err != nil {
 		logger.Error("error processing batch", zap.Error(err))
 		return err
@@ -155,6 +179,7 @@ func (r *Repository) parseRecord(ctx context.Context, record *kgo.Record) *queue
 		attribute.String("stream", logEntry.Stream),
 		attribute.Int64("sequence_num", int64(logEntry.SequenceNum)),
 		attribute.Bool("retention", logEntry.Retention),
+		attribute.Bool("live_published", logEntry.LivePublished),
 	)
 
 	return &queueData{
@@ -164,19 +189,21 @@ func (r *Repository) parseRecord(ctx context.Context, record *kgo.Record) *queue
 }
 
 func (r *Repository) publishLog(ctx context.Context, logEntry *jobsmodel.JobLogEvent) {
-	go func() {
-		if !logEntry.Retention {
-			return
-		}
+	if r.livePublisher == nil || logEntry == nil || !logEntry.Retention || logEntry.LivePublished {
+		return
+	}
 
-		data, err := json.Marshal(logEntry)
-		if err != nil {
-			return
-		}
+	if r.livePublisher.TryPublish(logEntry) {
+		return
+	}
 
-		//nolint:errcheck // Redis pub/sub is best-effort and should not block durable processing.
-		r.rdb.Publish(context.WithoutCancel(ctx), redis.GetJobLogsChannel(logEntry.JobID), data)
-	}()
+	loggerpkg.FromContext(ctx).Debug("dropped live job log",
+		zap.String("job_id", logEntry.JobID),
+		zap.String("workflow_id", logEntry.WorkflowID),
+		zap.String("event_key", logEntry.EventKey),
+		zap.String("stream", logEntry.Stream),
+		zap.Uint32("sequence_num", logEntry.SequenceNum),
+	)
 }
 
 func (r *Repository) batchSize() int {

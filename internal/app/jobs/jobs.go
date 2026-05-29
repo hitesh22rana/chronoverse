@@ -46,7 +46,6 @@ var internalAPIs = map[string]bool{
 	"CancelClaimedJob":        true,
 	"ReleaseJobForRetry":      true,
 	"RecoverExpiredJobLeases": true,
-	"EnqueueJobLog":           true,
 	"GetJobByID":              true,
 }
 
@@ -62,7 +61,6 @@ type Service interface {
 	CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaimedJobRequest) error
 	ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobForRetryRequest) error
 	RecoverExpiredJobLeases(ctx context.Context, req *jobspb.RecoverExpiredJobLeasesRequest) ([]*jobsmodel.ExpiredJobLease, error)
-	EnqueueJobLog(ctx context.Context, req *jobspb.EnqueueJobLogRequest) error
 	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (*jobsmodel.GetJobLogsResponse, error)
@@ -524,37 +522,6 @@ func (j *Jobs) RecoverExpiredJobLeases(ctx context.Context, req *jobspb.RecoverE
 	}
 
 	return res, nil
-}
-
-// EnqueueJobLog stores a durable job log publish intent.
-func (j *Jobs) EnqueueJobLog(ctx context.Context, req *jobspb.EnqueueJobLogRequest) (res *jobspb.EnqueueJobLogResponse, err error) {
-	ctx, span := j.tp.Start(
-		ctx,
-		"App.EnqueueJobLog",
-		trace.WithAttributes(
-			attribute.String("event_key", req.GetEventKey()),
-			attribute.String("job_id", req.GetJobId()),
-			attribute.String("workflow_id", req.GetWorkflowId()),
-			attribute.String("stream", req.GetStream()),
-			attribute.Int64("sequence_num", int64(req.GetSequenceNum())),
-		),
-	)
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
-	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
-	defer cancel()
-
-	if err := j.svc.EnqueueJobLog(ctx, req); err != nil {
-		return nil, err
-	}
-
-	return &jobspb.EnqueueJobLogResponse{}, nil
 }
 
 // GetJob returns the job details by ID, job ID, and user ID.

@@ -23,6 +23,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	executorrepo "github.com/hitesh22rana/chronoverse/internal/repository/executor"
 	executorsvc "github.com/hitesh22rana/chronoverse/internal/service/executor"
@@ -82,6 +83,31 @@ func run() int {
 	}
 	defer kfk.Close()
 
+	rdb, err := redis.New(ctx, &redis.Config{
+		Host:                     cfg.Redis.Host,
+		Port:                     cfg.Redis.Port,
+		Password:                 cfg.Redis.Password,
+		DB:                       cfg.Redis.DB,
+		PoolSize:                 cfg.Redis.PoolSize,
+		MinIdleConns:             cfg.Redis.MinIdleConns,
+		ReadTimeout:              cfg.Redis.ReadTimeout,
+		WriteTimeout:             cfg.Redis.WriteTimeout,
+		MaxMemory:                cfg.Redis.MaxMemory,
+		EvictionPolicy:           cfg.Redis.EvictionPolicy,
+		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
+		TLSConfig: &redis.TLSConfig{
+			Enabled:  cfg.Redis.TLS.Enabled,
+			CAFile:   cfg.Redis.TLS.CAFile,
+			CertFile: cfg.Redis.TLS.CertFile,
+			KeyFile:  cfg.Redis.TLS.KeyFile,
+		},
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer rdb.Close()
+
 	// Initialize the container service
 	csvc, err := container.NewDockerWorkflow()
 	if err != nil {
@@ -133,15 +159,22 @@ func run() int {
 
 	// Initialize the execution job components
 	repo := executorrepo.New(&executorrepo.Config{
-		WorkerID:           cfg.ExecutionWorkerConfig.WorkerID,
-		Concurrency:        cfg.ExecutionWorkerConfig.Concurrency,
-		LeaseDuration:      cfg.ExecutionWorkerConfig.LeaseDuration,
-		LeaseRenewInterval: cfg.ExecutionWorkerConfig.LeaseRenewInterval,
-		SystemRetryLimit:   cfg.ExecutionWorkerConfig.SystemRetryLimit,
-		SystemRetryBackoff: cfg.ExecutionWorkerConfig.SystemRetryBackoff,
-		RecoveryInterval:   cfg.ExecutionWorkerConfig.RecoveryInterval,
-		RecoveryBatchSize:  cfg.ExecutionWorkerConfig.RecoveryBatchSize,
-	}, auth, kfk, kafkaLifecycle, &executorrepo.Services{
+		WorkerID:             cfg.ExecutionWorkerConfig.WorkerID,
+		Concurrency:          cfg.ExecutionWorkerConfig.Concurrency,
+		LeaseDuration:        cfg.ExecutionWorkerConfig.LeaseDuration,
+		LeaseRenewInterval:   cfg.ExecutionWorkerConfig.LeaseRenewInterval,
+		SystemRetryLimit:     cfg.ExecutionWorkerConfig.SystemRetryLimit,
+		SystemRetryBackoff:   cfg.ExecutionWorkerConfig.SystemRetryBackoff,
+		RecoveryInterval:     cfg.ExecutionWorkerConfig.RecoveryInterval,
+		RecoveryBatchSize:    cfg.ExecutionWorkerConfig.RecoveryBatchSize,
+		JobLogBatchSize:      cfg.ExecutionWorkerConfig.JobLogBatchSize,
+		JobLogBatchInterval:  cfg.ExecutionWorkerConfig.JobLogBatchInterval,
+		JobLogPublishTimeout: cfg.ExecutionWorkerConfig.JobLogPublishTimeout,
+		JobLogPublishRetries: cfg.ExecutionWorkerConfig.JobLogPublishRetries,
+		JobLogPublishBackoff: cfg.ExecutionWorkerConfig.JobLogPublishBackoff,
+		JobLogLiveTimeout:    cfg.ExecutionWorkerConfig.JobLogLiveTimeout,
+		JobLogLiveBufferSize: cfg.ExecutionWorkerConfig.JobLogLiveBufferSize,
+	}, auth, kfk, rdb, kafkaLifecycle, &executorrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
 		Csvc:      csvc,

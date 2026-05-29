@@ -29,7 +29,6 @@ const (
 	JobsService_CancelClaimedJob_FullMethodName        = "/jobs.JobsService/CancelClaimedJob"
 	JobsService_ReleaseJobForRetry_FullMethodName      = "/jobs.JobsService/ReleaseJobForRetry"
 	JobsService_RecoverExpiredJobLeases_FullMethodName = "/jobs.JobsService/RecoverExpiredJobLeases"
-	JobsService_EnqueueJobLog_FullMethodName           = "/jobs.JobsService/EnqueueJobLog"
 	JobsService_GetJob_FullMethodName                  = "/jobs.JobsService/GetJob"
 	JobsService_GetJobByID_FullMethodName              = "/jobs.JobsService/GetJobByID"
 	JobsService_GetJobLogs_FullMethodName              = "/jobs.JobsService/GetJobLogs"
@@ -73,9 +72,6 @@ type JobsServiceClient interface {
 	// RecoverExpiredJobLeases returns expired running job leases for recovery.
 	// This is an internal API and should not be exposed to the public.
 	RecoverExpiredJobLeases(ctx context.Context, in *RecoverExpiredJobLeasesRequest, opts ...grpc.CallOption) (*RecoverExpiredJobLeasesResponse, error)
-	// EnqueueJobLog stores a job log publish intent in the durable outbox.
-	// This is an internal API and should not be exposed to the public.
-	EnqueueJobLog(ctx context.Context, in *EnqueueJobLogRequest, opts ...grpc.CallOption) (*EnqueueJobLogResponse, error)
 	// GetJob gets a job by ID and user_id.
 	GetJob(ctx context.Context, in *GetJobRequest, opts ...grpc.CallOption) (*GetJobResponse, error)
 	// GetJobByID gets a job by ID.
@@ -199,16 +195,6 @@ func (c *jobsServiceClient) RecoverExpiredJobLeases(ctx context.Context, in *Rec
 	return out, nil
 }
 
-func (c *jobsServiceClient) EnqueueJobLog(ctx context.Context, in *EnqueueJobLogRequest, opts ...grpc.CallOption) (*EnqueueJobLogResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EnqueueJobLogResponse)
-	err := c.cc.Invoke(ctx, JobsService_EnqueueJobLog_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *jobsServiceClient) GetJob(ctx context.Context, in *GetJobRequest, opts ...grpc.CallOption) (*GetJobResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetJobResponse)
@@ -313,9 +299,6 @@ type JobsServiceServer interface {
 	// RecoverExpiredJobLeases returns expired running job leases for recovery.
 	// This is an internal API and should not be exposed to the public.
 	RecoverExpiredJobLeases(context.Context, *RecoverExpiredJobLeasesRequest) (*RecoverExpiredJobLeasesResponse, error)
-	// EnqueueJobLog stores a job log publish intent in the durable outbox.
-	// This is an internal API and should not be exposed to the public.
-	EnqueueJobLog(context.Context, *EnqueueJobLogRequest) (*EnqueueJobLogResponse, error)
 	// GetJob gets a job by ID and user_id.
 	GetJob(context.Context, *GetJobRequest) (*GetJobResponse, error)
 	// GetJobByID gets a job by ID.
@@ -367,9 +350,6 @@ func (UnimplementedJobsServiceServer) ReleaseJobForRetry(context.Context, *Relea
 }
 func (UnimplementedJobsServiceServer) RecoverExpiredJobLeases(context.Context, *RecoverExpiredJobLeasesRequest) (*RecoverExpiredJobLeasesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RecoverExpiredJobLeases not implemented")
-}
-func (UnimplementedJobsServiceServer) EnqueueJobLog(context.Context, *EnqueueJobLogRequest) (*EnqueueJobLogResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method EnqueueJobLog not implemented")
 }
 func (UnimplementedJobsServiceServer) GetJob(context.Context, *GetJobRequest) (*GetJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJob not implemented")
@@ -589,24 +569,6 @@ func _JobsService_RecoverExpiredJobLeases_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _JobsService_EnqueueJobLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EnqueueJobLogRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(JobsServiceServer).EnqueueJobLog(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: JobsService_EnqueueJobLog_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(JobsServiceServer).EnqueueJobLog(ctx, req.(*EnqueueJobLogRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _JobsService_GetJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetJobRequest)
 	if err := dec(in); err != nil {
@@ -754,10 +716,6 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RecoverExpiredJobLeases",
 			Handler:    _JobsService_RecoverExpiredJobLeases_Handler,
-		},
-		{
-			MethodName: "EnqueueJobLog",
-			Handler:    _JobsService_EnqueueJobLog_Handler,
 		},
 		{
 			MethodName: "GetJob",

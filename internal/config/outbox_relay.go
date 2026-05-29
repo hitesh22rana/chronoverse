@@ -19,7 +19,6 @@ type OutboxRelay struct {
 type OutboxRelayConfig struct {
 	WorkflowEnabled    bool          `envconfig:"OUTBOX_RELAY_WORKFLOW_ENABLED" default:"true"`
 	JobsEnabled        bool          `envconfig:"OUTBOX_RELAY_JOBS_ENABLED" default:"true"`
-	JobLogsEnabled     bool          `envconfig:"OUTBOX_RELAY_JOB_LOGS_ENABLED" default:"true"`
 	AnalyticsEnabled   bool          `envconfig:"OUTBOX_RELAY_ANALYTICS_ENABLED" default:"true"`
 	BatchSize          int           `envconfig:"OUTBOX_RELAY_BATCH_SIZE" default:"100"`
 	PollInterval       time.Duration `envconfig:"OUTBOX_RELAY_POLL_INTERVAL" default:"1s"`

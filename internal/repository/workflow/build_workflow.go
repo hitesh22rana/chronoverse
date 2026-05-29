@@ -204,14 +204,14 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	)
 
 	// Execute the build process with retry enabled
-	workflowErr := retrypkg.Once(func() error {
+	workflowErr := retrypkg.Do(ctx, 2, retryBackoff, func() error {
 		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 		if err != nil {
 			return err
 		}
 
 		return r.svc.Csvc.Build(ctx, details.Image)
-	}, retryBackoff)
+	})
 
 	// Since, build process can take time to execute and can led to authorization issues
 	// So, we need to re-issue the authorization token

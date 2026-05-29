@@ -400,6 +400,9 @@ func (w *DockerWorkflow) Remove(ctx context.Context, containerID string) error {
 		if cerrdefs.IsNotFound(err) {
 			return nil
 		}
+		if isContainerRemovalInProgress(err) {
+			return nil
+		}
 		if client.IsErrConnectionFailed(err) {
 			return status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
 		}
@@ -407,6 +410,12 @@ func (w *DockerWorkflow) Remove(ctx context.Context, containerID string) error {
 	}
 
 	return nil
+}
+
+func isContainerRemovalInProgress(err error) bool {
+	return err != nil &&
+		strings.Contains(err.Error(), "removal of container") &&
+		strings.Contains(err.Error(), "is already in progress")
 }
 
 // Terminate stops a running container by its unique containerID.

@@ -99,20 +99,6 @@ func (mr *MockServiceMockRecorder) CompleteJob(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteJob", reflect.TypeOf((*MockService)(nil).CompleteJob), ctx, req)
 }
 
-// EnqueueJobLog mocks base method.
-func (m *MockService) EnqueueJobLog(ctx context.Context, req *jobs0.EnqueueJobLogRequest) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnqueueJobLog", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// EnqueueJobLog indicates an expected call of EnqueueJobLog.
-func (mr *MockServiceMockRecorder) EnqueueJobLog(ctx, req any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueJobLog", reflect.TypeOf((*MockService)(nil).EnqueueJobLog), ctx, req)
-}
-
 // FailJob mocks base method.
 func (m *MockService) FailJob(ctx context.Context, req *jobs0.FailJobRequest) error {
 	m.ctrl.T.Helper()

@@ -59,7 +59,7 @@ func (r *Repository) deleteWorkflowLogsFromClickHouse(parentCtx context.Context,
 	// mutations_sync waits for ClickHouse to finish the delete mutation before the Kafka record is committed.
 	query := deleteWorkflowLogsClickHouseQuery()
 
-	return retrypkg.Once(func() error {
+	return retrypkg.Do(parentCtx, 2, retryBackoff, func() error {
 		ctx, cancel := context.WithTimeout(parentCtx, deleteWorkflowOperationTimeout)
 		defer cancel()
 
@@ -72,7 +72,7 @@ func (r *Repository) deleteWorkflowLogsFromClickHouse(parentCtx context.Context,
 		}
 
 		return nil
-	}, retryBackoff)
+	})
 }
 
 func deleteWorkflowLogsClickHouseQuery() string {
@@ -96,7 +96,7 @@ func (r *Repository) deleteWorkflowLogsFromMeiliSearch(parentCtx context.Context
 	filter := fmt.Sprintf("workflow_id = %q AND user_id = %q", workflowID, userID)
 	var taskUID int64
 
-	if err := retrypkg.Once(func() error {
+	if err := retrypkg.Do(parentCtx, 2, retryBackoff, func() error {
 		ctx, cancel := context.WithTimeout(parentCtx, deleteWorkflowOperationTimeout)
 		defer cancel()
 
@@ -113,7 +113,7 @@ func (r *Repository) deleteWorkflowLogsFromMeiliSearch(parentCtx context.Context
 
 		taskUID = taskInfo.TaskUID
 		return nil
-	}, retryBackoff); err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -121,7 +121,7 @@ func (r *Repository) deleteWorkflowLogsFromMeiliSearch(parentCtx context.Context
 }
 
 func (r *Repository) waitForMeiliSearchDeleteTask(parentCtx context.Context, workflowID string, taskUID int64) error {
-	return retrypkg.Once(func() error {
+	return retrypkg.Do(parentCtx, 2, retryBackoff, func() error {
 		ctx, cancel := context.WithTimeout(parentCtx, deleteWorkflowMeiliSearchTimeout)
 		defer cancel()
 
@@ -145,7 +145,7 @@ func (r *Repository) waitForMeiliSearchDeleteTask(parentCtx context.Context, wor
 		}
 
 		return nil
-	}, retryBackoff)
+	})
 }
 
 func deleteWorkflowStatusError(message string, err error) error {

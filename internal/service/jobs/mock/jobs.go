@@ -102,20 +102,6 @@ func (mr *MockRepositoryMockRecorder) CompleteJob(ctx, jobID, leaseToken any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteJob", reflect.TypeOf((*MockRepository)(nil).CompleteJob), ctx, jobID, leaseToken)
 }
 
-// EnqueueJobLog mocks base method.
-func (m *MockRepository) EnqueueJobLog(ctx context.Context, event *jobs.JobLogEvent) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnqueueJobLog", ctx, event)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// EnqueueJobLog indicates an expected call of EnqueueJobLog.
-func (mr *MockRepositoryMockRecorder) EnqueueJobLog(ctx, event any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueJobLog", reflect.TypeOf((*MockRepository)(nil).EnqueueJobLog), ctx, event)
-}
-
 // FailJob mocks base method.
 func (m *MockRepository) FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage string) error {
 	m.ctrl.T.Helper()

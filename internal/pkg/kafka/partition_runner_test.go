@@ -315,6 +315,72 @@ func TestPartitionRunnerResumesPausedPartitionOnRevoke(t *testing.T) {
 	<-done
 }
 
+func TestPartitionLifecycleReplaysAssignmentOnRegister(t *testing.T) {
+	t.Parallel()
+
+	client := newFakePartitionClient()
+	lifecycle := kafka.NewPartitionLifecycle()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	partition := testPartitionKey{topic: "topic", partition: 0}
+
+	lifecycle.OnAssigned(ctx, nil, map[string][]int32{"topic": {0}})
+	runner := kafka.NewPartitionRunner(client, func(context.Context, *kgo.Record) error {
+		return nil
+	}, &kafka.PartitionRunnerConfig{
+		Name:         "test",
+		RetryBackoff: time.Millisecond,
+		MaxBackoff:   time.Millisecond,
+	}, lifecycle)
+	assertPartitionSignal(t, client.resumed, partition)
+
+	done := runPartitionRunner(ctx, t, runner)
+	client.fetches <- fetches(0)
+	assertCommit(t, client.commits, 0)
+
+	cancel()
+	<-done
+}
+
+func TestPartitionLifecycleRetainsAssignmentsAcrossPartialRevoke(t *testing.T) {
+	t.Parallel()
+
+	client := newFakePartitionClient()
+	lifecycle := kafka.NewPartitionLifecycle()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	lifecycle.OnAssigned(ctx, nil, map[string][]int32{"topic": {0, 1}})
+	runner := kafka.NewPartitionRunner(client, func(context.Context, *kgo.Record) error {
+		return nil
+	}, &kafka.PartitionRunnerConfig{
+		Name:         "test",
+		RetryBackoff: time.Millisecond,
+		MaxBackoff:   time.Millisecond,
+	}, lifecycle)
+	assertPartitionSignal(t, client.resumed, testPartitionKey{topic: "topic", partition: 0})
+	assertPartitionSignal(t, client.resumed, testPartitionKey{topic: "topic", partition: 1})
+
+	lifecycle.OnRevoked(ctx, nil, map[string][]int32{"topic": {1}})
+	assertPartitionSignal(t, client.resumed, testPartitionKey{topic: "topic", partition: 1})
+
+	done := runPartitionRunner(ctx, t, runner)
+	client.fetches <- kgo.Fetches{{
+		Topics: []kgo.FetchTopic{{
+			Topic: "topic",
+			Partitions: []kgo.FetchPartition{
+				{Partition: 0, Records: []*kgo.Record{record(0, 0)}},
+				{Partition: 1, Records: []*kgo.Record{record(1, 0)}},
+			},
+		}},
+	}}
+	assertCommitRecord(t, client.commits, 0, 0)
+	assertNoCommit(t, client.commits, 50*time.Millisecond)
+
+	cancel()
+	<-done
+}
+
 func TestPartitionRunnerDoesNotCommitFromStaleLaneAfterReassignment(t *testing.T) {
 	t.Parallel()
 

@@ -46,7 +46,6 @@ type Repository interface {
 	CancelClaimedJob(ctx context.Context, jobID, leaseToken string) error
 	ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage string) error
 	RecoverExpiredJobLeases(ctx context.Context, batchSize int32, workerID string, leaseDuration time.Duration) ([]*jobsmodel.ExpiredJobLease, error)
-	EnqueueJobLog(ctx context.Context, event *jobsmodel.JobLogEvent) error
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
@@ -455,69 +454,6 @@ func (s *Service) RecoverExpiredJobLeases(ctx context.Context, req *jobspb.Recov
 		req.GetWorkerId(),
 		time.Duration(req.GetLeaseDurationSeconds())*time.Second,
 	)
-}
-
-// EnqueueJobLogRequest holds the request parameters for enqueueing a job log.
-type EnqueueJobLogRequest struct {
-	EventKey    string `validate:"required"`
-	JobID       string `validate:"required"`
-	WorkflowID  string `validate:"required"`
-	UserID      string `validate:"required"`
-	Message     string `validate:"omitempty"`
-	Timestamp   string `validate:"required"`
-	SequenceNum uint32 `validate:"omitempty"`
-	Stream      string `validate:"required"`
-}
-
-// EnqueueJobLog stores a durable job log publish intent.
-func (s *Service) EnqueueJobLog(ctx context.Context, req *jobspb.EnqueueJobLogRequest) (err error) {
-	ctx, span := s.tp.Start(ctx, "Service.EnqueueJobLog")
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
-	err = s.validator.Struct(&EnqueueJobLogRequest{
-		EventKey:    req.GetEventKey(),
-		JobID:       req.GetJobId(),
-		WorkflowID:  req.GetWorkflowId(),
-		UserID:      req.GetUserId(),
-		Message:     req.GetMessage(),
-		Timestamp:   req.GetTimestamp(),
-		SequenceNum: req.GetSequenceNum(),
-		Stream:      req.GetStream(),
-	})
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-	}
-	err = validateTime(req.GetTimestamp())
-	if err != nil {
-		return err
-	}
-	err = validateLogStream(req.GetStream())
-	if err != nil {
-		return err
-	}
-
-	timestamp, err := time.Parse(time.RFC3339Nano, req.GetTimestamp())
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid timestamp: %v", err)
-	}
-
-	return s.repo.EnqueueJobLog(ctx, &jobsmodel.JobLogEvent{
-		EventKey:    req.GetEventKey(),
-		JobID:       req.GetJobId(),
-		WorkflowID:  req.GetWorkflowId(),
-		UserID:      req.GetUserId(),
-		Message:     req.GetMessage(),
-		TimeStamp:   timestamp,
-		SequenceNum: req.GetSequenceNum(),
-		Stream:      req.GetStream(),
-		Retention:   req.GetRetention(),
-	})
 }
 
 // GetJobRequest holds the request parameters for getting a scheduled job.
@@ -1019,15 +955,6 @@ func validateFailureKind(kind string) error {
 		return nil
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid failure kind: %s", kind)
-	}
-}
-
-func validateLogStream(stream string) error {
-	switch stream {
-	case "stdout", "stderr":
-		return nil
-	default:
-		return status.Errorf(codes.InvalidArgument, "invalid log stream: %s", stream)
 	}
 }
 

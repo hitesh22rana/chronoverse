@@ -140,22 +140,6 @@ message RecoverExpiredJobLeasesResponse {
   repeated ExpiredJobLease jobs = 1; // Expired leased jobs
 }
 
-// EnqueueJobLogRequest contains a durable job log publish request.
-message EnqueueJobLogRequest {
-  string event_key    = 1; // Idempotency key for the log event
-  string job_id       = 2; // ID of the job
-  string workflow_id  = 3; // ID of the workflow
-  string user_id      = 4; // ID of the user
-  string message      = 5; // Log message
-  string timestamp    = 6; // Time the log was emitted
-  uint32 sequence_num = 7; // Sequence number of the log
-  string stream       = 8; // Stream type (stdout or stderr)
-  bool   retention    = 9; // Whether the log should be durably retained
-}
-
-// EnqueueJobLogResponse contains the result of enqueueing a job log.
-message EnqueueJobLogResponse {}
-
 // GetJobRequest contains the details needed to get a job.
 message GetJobRequest {
   string id          = 1; // ID of the job
@@ -330,10 +314,6 @@ service JobsService {
     // RecoverExpiredJobLeases returns expired running job leases for recovery.
     // This is an internal API and should not be exposed to the public.
   rpc RecoverExpiredJobLeases(RecoverExpiredJobLeasesRequest) returns (RecoverExpiredJobLeasesResponse) {}
-
-    // EnqueueJobLog stores a job log publish intent in the durable outbox.
-    // This is an internal API and should not be exposed to the public.
-  rpc EnqueueJobLog(EnqueueJobLogRequest) returns (EnqueueJobLogResponse) {}
 
     // GetJob gets a job by ID and user_id.
   rpc GetJob(GetJobRequest) returns (GetJobResponse) {}

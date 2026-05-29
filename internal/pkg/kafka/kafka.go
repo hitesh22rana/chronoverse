@@ -58,7 +58,6 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(c.Brokers...),
-		kgo.AllowAutoTopicCreation(),
 	}
 
 	if c.TLS != nil {

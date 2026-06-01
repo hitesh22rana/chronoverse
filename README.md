@@ -1,134 +1,176 @@
-# Chronoverse ⏳🌌
+# Chronoverse
 
 ![chronoverse](./.github/assets/chronoverse.png)
 
-**Distributed job scheduler & Orchestrator on your infrastructure**
+**Distributed job scheduler and orchestrator for your own infrastructure.**
 
-Chronoverse is a distributed job scheduling and orchestration system designed for reliability and scalability. It allows you to define, schedule, and execute various types of jobs across your infrastructure with powerful monitoring and management capabilities.
+Chronoverse runs scheduled and manual workflows across a Docker-backed execution
+fleet. It combines an HTTP dashboard/API, gRPC microservices, Kafka workers,
+transactional persistence, retained/searchable job logs, notifications, and
+analytics into one self-hosted stack.
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/hitesh22rana/chronoverse)](https://goreportcard.com/report/github.com/hitesh22rana/chronoverse) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hitesh22rana/chronoverse)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hitesh22rana/chronoverse)](https://goreportcard.com/report/github.com/hitesh22rana/chronoverse)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hitesh22rana/chronoverse)
 
 ## Features
 
-- **Workflow Management**: Create, update, and monitor scheduled workflows.
-- **Flexible Scheduling**: Configure workflows with precise time intervals in minutes.
-- **Multiple Workflow Types Support**:
-  - `HEARTBEAT`: Simple health check job (does not generate execution logs).
-  - `CONTAINER`: Execute custom containerized applications and scripts.
-- **Job Logs**: Comprehensive execution history with logs stored in ClickHouse when log retention is enabled.
-- **Live Log Streaming**: Real-time job log streaming using Server-Sent Events (SSE) for running jobs with automatic fallback to static logs for completed jobs.
-- **Log Retention Controls**: Configure per-workflow log retention; log read APIs return precondition failure when retention is disabled.
-- **Real-time Notifications**: Dashboard-based alerts for workflow and job state changes.
-- **Observability**: Built-in OpenTelemetry integration for traces, metrics and logs.
-- **Security**: JWT-based authentication and authorization.
+- **Workflow management**: create, update, terminate, delete, search, and monitor workflows.
+- **Scheduled and manual runs**: run workflows automatically by minute interval or trigger a job on demand.
+- **Workflow kinds**:
+  - `HEARTBEAT`: lightweight health-check workflow without execution logs.
+  - `CONTAINER`: runs containerized workloads and can retain stdout/stderr logs.
+- **Replay-safe execution**: idempotency keys, workflow generations, deterministic event keys, transactional outbox delivery, durable job leases, worker retries, and stale-event guards.
+- **Job execution lifecycle**: queued, running, completed, failed, and canceled jobs with automatic retry handling for system failures.
+- **Retained job logs**: ClickHouse-backed logs, Meilisearch-backed search, raw log download, stream filtering, and Server-Sent Events for live output.
+- **Retention controls**: per-workflow log retention with explicit behavior for non-log-producing or retention-disabled workflows.
+- **Notifications and analytics**: user notifications, workflow/job analytics, retained log counts, and execution duration summaries.
+- **Security by default in compose**: generated certificates, TLS/mTLS across infrastructure and gRPC services, CSRF-protected session cookies, and Ed25519 JWTs for service authorization.
+- **Observability**: OpenTelemetry traces, metrics, and logs exported to the bundled Grafana OTEL LGTM stack.
 
 ## Architecture
 
-Chronoverse implements a message-driven microservices architecture where components communicate through two primary channels:
+Chronoverse uses a message-driven microservice architecture:
 
-1. **Kafka**: For reliable, asynchronous processing and event-driven workflows.
-2. **gRPC**: For efficient, low-latency synchronous service-to-service communication.
+- **HTTP server** exposes the public REST API and mediates browser sessions, CSRF checks, and gRPC calls.
+- **gRPC services** own user, workflow, job, notification, and analytics domains.
+- **Kafka topics** carry workflow, job, log, and analytics events between workers.
+- **PostgreSQL** stores transactional state, analytics, leases, idempotency records, and outbox events.
+- **ClickHouse** stores retained job logs.
+- **Redis** stores sessions, cached reads, and live log pub/sub state.
+- **Meilisearch** indexes retained job logs for search.
+- **Docker socket proxy** lets execution workers run containers without mounting the Docker socket directly.
+- **LGTM** provides local OpenTelemetry collection and dashboards.
 
-This dual communication approach ensures both reliability for critical background processes and responsiveness for user-facing operations. Data persistence is handled by PostgreSQL for transactional data and ClickHouse for analytics and retained job logs.
+For the full event flow and replay-safety model, see [Architecture](./docs/architecture.md).
 
-### Core Services
+## Components
 
-- **Server**: HTTP API gateway exposing RESTful endpoints with middleware for authentication and authorization.
-- **Users Service**: Manages user accounts, authentication tokens, and notification preferences.
-- **Workflows Service**: Handles workflow definitions, configuration storage, and build status management.
-- **Jobs Service**: Manages job lifecycle from scheduling through execution and completion.
-- **Notifications Service**: Provides real-time alerts and status updates.
-- **Analytics Service**: Provides insights into job and workflow performance and trends.
+### Services
 
-### Worker Components
+- `server`: HTTP API gateway for the dashboard and external clients.
+- `users-service`: user accounts, login, token issuance, and preferences.
+- `workflows-service`: workflow definitions, build status, generation checks, and cleanup.
+- `jobs-service`: scheduling, job state, log reads/search, live log streams, leases, and retry state.
+- `notifications-service`: notification creation and read-state management.
+- `analytics-service`: user and workflow analytics reads.
 
-- **Scheduling Worker**: Identifies jobs due for execution based on their schedules and processes them through Kafka.
-- **Workflow Worker**: Builds Docker image configurations from workflow definitions and prepares execution templates.
-- **Execution Worker**: Executes scheduled jobs in isolated containers with proper resource management, manages execution lifecycle and captures outputs/logs.
-- **JobLogs Processor**: Performs efficient batch insertion of execution logs from Kafka to ClickHouse for persistent storage and optimized querying when retention is enabled.
-- **Analytics Processor**: Consumes job and workflow events from Kafka, processes them to generate analytics data, and stores the results for querying.
-- **Database Migration**: Manages database schema evolution and applies necessary migrations for PostgreSQL and ClickHouse during deployments or updates.
+### Workers and Jobs
 
-All workers communicate through Kafka topics, enabling horizontal scaling and fault tolerance. This message-driven architecture ensures that job processing can continue even if individual components experience temporary outages.
+- `scheduling-worker`: scans due workflows and creates replay-safe job dispatch events.
+- `workflow-worker`: processes workflow build events and prepares executable workflow configuration.
+- `execution-worker`: claims leased jobs, runs containers, renews leases, publishes logs, and recovers expired leases.
+- `joblogs-processor`: batches log events into ClickHouse and Meilisearch when retention is enabled.
+- `analytics-processor`: consumes workflow, job, and log events into analytics tables with dedupe.
+- `outbox-relay`: publishes transactional outbox events to Kafka with processing leases, retries, dead handling, and cleanup.
+- `database-migration`: applies PostgreSQL, ClickHouse, and Meilisearch schema/index migrations.
 
 ## Getting Started
 
 ### Prerequisites
 
-- **Docker**: [Install Docker](https://docs.docker.com/get-docker/)
-- **Docker Compose**: [Install Docker Compose](https://docs.docker.com/compose/install/)
+- Docker
+- Docker Compose
 
-No other dependencies are required as all services run in containers with automated setup.
+The compose stacks build or pull all runtime services. Local Go, Node.js, Buf,
+and lint tooling are only needed when developing the codebase directly.
 
-### Installation
+### Development Stack
 
-1. Clone the repository:
+```sh
+git clone https://github.com/hitesh22rana/chronoverse.git
+cd chronoverse
+docker compose -f compose.dev.yaml up -d
+```
 
-   ```
-   git clone https://github.com/hitesh22rana/chronoverse.git
-   cd chronoverse
-   ```
+Development defaults expose internal ports for debugging:
 
-2. Choose the appropriate deployment environment:
+- Dashboard: `http://localhost:3001`
+- HTTP API: `http://localhost:8080`
+- gRPC services: `50051` through `50055`
+- PostgreSQL: `5432`
+- ClickHouse TLS: `9440`
+- Redis TLS: `6379`
+- Meilisearch HTTPS: `7700`
+- Kafka SSL/controller: `9094` / `9093`
+- LGTM dashboard: `http://localhost:3000`
 
-   **For Development:**
+### Production Stack
 
-   ```
-   docker compose -f compose.dev.yaml up -d
-   ```
+```sh
+docker compose -f compose.prod.yaml up -d
+```
 
-   **For Production:**
+Production uses published images, internal service networking, resource limits,
+replicated workers, and a single Nginx entry point:
 
-   ```
-   docker compose -f compose.prod.yaml up -d
-   ```
+- Dashboard and proxied API: `http://localhost`
+- API routes through Nginx: `/api/...`
+- LGTM dashboard: `http://localhost:3000`
 
-### Deployment Environments
+Before running a real deployment, replace development secrets, default
+passwords, and generated local certificate assumptions with environment-specific
+values. See [Configuration](./docs/configuration.md) and [Operations](./docs/operations.md).
 
-#### 1. Development Environment (compose.dev.yaml)
+## API and Usage
 
-- All service ports are exposed for easy debugging and direct access.
-- Database ports (5432, 9000, 6379) accessible from the host.
-- gRPC service ports (50051-50055) available for direct testing.
-- Monitoring ports fully exposed.
-- Dashboard is accessible via port 3001.
-- Suitable for local development and testing.
+The dashboard talks to the HTTP API using cookie sessions and CSRF protection.
+External clients can use the same public routes documented in [API](./docs/api.md).
 
-#### 2. Production Environment (compose.prod.yaml)
+Important API notes:
 
-- Enhanced security with minimal port exposure.
-- Dashboard is accessible via port 80/443 through Nginx/reverse proxy.
-- Monitoring dashboard can be accessed via port 3000.
-- All internal services communicate via Docker's internal network.
-- No direct external access to databases or internal microservices.
-- Jobs service is wired to workflows service over internal TLS for retention-aware log access checks.
-- gRPC reflection disabled for additional security.
+- Retry-prone mutations require an `Idempotency-Key` header.
+- `CONTAINER` workflows can retain and search logs.
+- `HEARTBEAT` workflows do not generate execution logs.
+- Retained log read/search APIs return HTTP `412 Precondition Failed` when retention is disabled for a workflow; live SSE streams report stream-open failures as `event: error`.
+- Production Nginx exposes the API below `/api/`; development exposes the server directly.
 
-### Configuration
+## Development Commands
 
-Configuration is managed through environment variables with sensible defaults in the [docker-compose.yaml](./docker-compose.yaml) file.
+```sh
+make tools
+make generate
+make test/short
+make test
+make lint
+make build/all
+```
 
-## License
+Dashboard commands live in `dashboard/`:
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+```sh
+npm install
+npm run dev:port
+npm run build
+npm run lint
+```
+
+More operational commands and troubleshooting notes are in [Operations](./docs/operations.md).
+
+## Documentation
+
+- [Architecture](./docs/architecture.md)
+- [Configuration](./docs/configuration.md)
+- [API](./docs/api.md)
+- [Operations](./docs/operations.md)
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome.
 
 1. Fork the repository.
-2. Create your feature branch (`git checkout -b feature/amazing-feature`).
-3. Commit your changes (`git commit -m 'Add some amazing feature'`).
-4. Push to the branch (`git push origin feature/amazing-feature`).
-5. Open a Pull Request.
+2. Create a feature branch.
+3. Make the change with tests and documentation where relevant.
+4. Run the applicable checks.
+5. Open a pull request.
+
+## License
+
+Chronoverse is licensed under the MIT License. See [LICENSE](./LICENSE).
 
 ## Acknowledgments
 
-- [Franz-go](https://github.com/twmb/franz-go) - Kafka client
+- [Franz-go](https://github.com/twmb/franz-go)
 - [Docker SDK for Go](https://github.com/moby/moby)
 - [OpenTelemetry Go](https://github.com/open-telemetry/opentelemetry-go)
-- [Docker OTEL lgtm](https://github.com/grafana/docker-otel-lgtm)
-
----
-
-Built with ❤️ by [Hitesh Rana](https://github.com/hitesh22rana)
+- [Docker OTEL LGTM](https://github.com/grafana/docker-otel-lgtm)

@@ -52,11 +52,11 @@ debugging.
 
 ## Data Stores and Infrastructure
 
-- **PostgreSQL** stores users, workflows, jobs, idempotency keys, outbox events,
-  leases, retry state, and transactional metadata.
+- **PostgreSQL** stores users, workflows, jobs, analytics, idempotency keys,
+  outbox events, leases, retry state, and transactional metadata.
 - **Kafka** carries asynchronous events on the `workflows`, `jobs`, `job_logs`,
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
-- **ClickHouse** stores retained job logs and analytics data.
+- **ClickHouse** stores retained job logs.
 - **Redis** stores HTTP sessions, cached service reads, and live log
   publish/subscribe state.
 - **Meilisearch** indexes retained job logs for search.

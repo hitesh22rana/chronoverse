@@ -35,8 +35,8 @@ Chronoverse uses a message-driven microservice architecture:
 - **HTTP server** exposes the public REST API and mediates browser sessions, CSRF checks, and gRPC calls.
 - **gRPC services** own user, workflow, job, notification, and analytics domains.
 - **Kafka topics** carry workflow, job, log, and analytics events between workers.
-- **PostgreSQL** stores transactional state, leases, idempotency records, and outbox events.
-- **ClickHouse** stores analytics and retained job logs.
+- **PostgreSQL** stores transactional state, analytics, leases, idempotency records, and outbox events.
+- **ClickHouse** stores retained job logs.
 - **Redis** stores sessions, cached reads, and live log pub/sub state.
 - **Meilisearch** indexes retained job logs for search.
 - **Docker socket proxy** lets execution workers run containers without mounting the Docker socket directly.

@@ -121,8 +121,8 @@ Common settings:
 - `CLICKHOUSE_TLS_ENABLED`, `CLICKHOUSE_TLS_CA_FILE`,
   `CLICKHOUSE_TLS_CERT_FILE`, `CLICKHOUSE_TLS_KEY_FILE`
 
-ClickHouse stores retained job logs and analytics tables. It is only useful for
-job logs when workflow log retention is enabled.
+ClickHouse stores retained job logs. Analytics are stored in PostgreSQL, while
+ClickHouse is only used for job logs when workflow log retention is enabled.
 
 ### Redis
 

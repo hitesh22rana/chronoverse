@@ -325,8 +325,10 @@ no-buffering proxy location for this route:
 
 `/api/workflows/{workflow_id}/jobs/{job_id}/events`
 
-The endpoint returns `412 Precondition Failed` if the job is not running or log
-retention is disabled.
+After the SSE headers are sent, stream-open and stream-receive failures are sent
+as `event: error` frames on the `text/event-stream` response. For example, a
+non-running job or disabled log retention is reported as an SSE error event
+rather than an HTTP `412 Precondition Failed` response.
 
 ## Notifications
 

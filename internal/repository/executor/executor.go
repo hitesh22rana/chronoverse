@@ -3,7 +3,8 @@ package executor
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,31 +17,32 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
-	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	authSubject   = "internal/executor"
-	retryBackoff  = time.Second
-	lockKeyPrefix = "executor:execute"
+	authSubject               = "internal/executor"
+	retryBackoff              = time.Second
+	containerLogReplayTimeout = 2 * time.Minute
 )
 
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (string, <-chan *jobsmodel.JobLog, <-chan error, error)
+	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
+	Inspect(ctx context.Context, containerID string) (*container.State, error)
+	Remove(ctx context.Context, containerID string) error
+	Terminate(ctx context.Context, containerID string) error
 }
 
 // HeartBeatSvc represents the heartbeat service.
@@ -50,533 +52,544 @@ type HeartBeatSvc interface {
 
 // Services represents the services used by the executor.
 type Services struct {
-	Workflows     workflowspb.WorkflowsServiceClient
-	Jobs          jobspb.JobsServiceClient
-	Notifications notificationspb.NotificationsServiceClient
-	Csvc          ContainerSvc
-	Hsvc          HeartBeatSvc
+	Workflows workflowspb.WorkflowsServiceClient
+	Jobs      jobspb.JobsServiceClient
+	Csvc      ContainerSvc
+	Hsvc      HeartBeatSvc
 }
 
-// Config represents the repository constants configuration.
+// Config represents the execution worker configuration.
 type Config struct {
-	ParallelismLimit int
-}
-
-// kafkaJob defines a job for the worker pool.
-type kafkaJob struct {
-	record *kgo.Record
+	WorkerID             string
+	Concurrency          int
+	LeaseDuration        time.Duration
+	LeaseRenewInterval   time.Duration
+	SystemRetryLimit     int
+	SystemRetryBackoff   time.Duration
+	RecoveryInterval     time.Duration
+	RecoveryBatchSize    int32
+	JobLogBatchSize      int
+	JobLogBatchInterval  time.Duration
+	JobLogPublishTimeout time.Duration
+	JobLogPublishRetries int
+	JobLogPublishBackoff time.Duration
+	JobLogLiveTimeout    time.Duration
+	JobLogLiveBufferSize int
 }
 
 // Repository provides executor repository.
 type Repository struct {
-	tp      trace.Tracer
-	cfg     *Config
-	kfk     *kgo.Client
-	auth    auth.IAuth
-	rdb     *redis.Store
-	svc     *Services
-	jobChan chan kafkaJob
-	wg      sync.WaitGroup
+	tp            trace.Tracer
+	cfg           Config
+	kfk           *kgo.Client
+	auth          auth.IAuth
+	slots         chan struct{}
+	livePublisher *joblogevents.LivePublisher
+
+	execWG sync.WaitGroup
+
+	runner *kafka.PartitionRunner
+	svc    *Services
 }
 
 // New creates a new executor repository.
-func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, kfk *kgo.Client, svc *Services) *Repository {
+func New(
+	cfg *Config,
+	auth auth.IAuth,
+	kfk *kgo.Client,
+	rdb *redis.Store,
+	lifecycle *kafka.PartitionLifecycle,
+	svc *Services,
+) *Repository {
+	normalizedCfg := normalizeConfig(cfg)
 	r := &Repository{
-		tp:      otel.Tracer(svcpkg.Info().GetName()),
-		cfg:     cfg,
-		auth:    auth,
-		rdb:     rdb,
-		kfk:     kfk,
-		svc:     svc,
-		jobChan: make(chan kafkaJob, cfg.ParallelismLimit),
+		tp:    otel.Tracer(svcpkg.Info().GetName()),
+		cfg:   normalizedCfg,
+		auth:  auth,
+		kfk:   kfk,
+		svc:   svc,
+		slots: make(chan struct{}, normalizedCfg.Concurrency),
+		livePublisher: joblogevents.NewLivePublisher(rdb, joblogevents.LivePublisherConfig{
+			BufferSize:     normalizedCfg.JobLogLiveBufferSize,
+			PublishTimeout: normalizedCfg.JobLogLiveTimeout,
+		}),
 	}
+	r.runner = kafka.NewPartitionRunner(kfk, r.processRecord, &kafka.PartitionRunnerConfig{
+		Name:         "executor.worker",
+		RetryBackoff: retryBackoff,
+		Tracer:       r.tp,
+	}, lifecycle)
 
 	return r
-}
-
-// StartWorkers starts the worker goroutines.
-func (r *Repository) StartWorkers(ctx context.Context) {
-	// Start worker goroutines
-	for i := range r.cfg.ParallelismLimit {
-		r.wg.Go(func() {
-			r.worker(ctx, fmt.Sprintf("worker-%d", i))
-		})
-	}
-}
-
-// worker processes Kafka messages from the job channel.
-func (r *Repository) worker(ctx context.Context, workerID string) {
-	for {
-		select {
-		case job, ok := <-r.jobChan:
-			if !ok {
-				// Channel closed, exit worker
-				return
-			}
-
-			ctxWithTrace, span := r.tp.Start(
-				ctx,
-				"executor.worker.processRecord",
-				trace.WithAttributes(
-					attribute.String("worker_id", workerID),
-					attribute.String("topic", job.record.Topic),
-					attribute.Int64("offset", job.record.Offset),
-					attribute.Int64("partition", int64(job.record.Partition)),
-					attribute.String("key", string(job.record.Key)),
-					attribute.String("value", string(job.record.Value)),
-				),
-			)
-
-			logger := loggerpkg.FromContext(ctxWithTrace).With(zap.String("worker_id", workerID))
-
-			// Execute the run workflow
-			if err := r.runWorkflow(ctxWithTrace, job.record.Value); err != nil {
-				if status.Code(err) == codes.Internal || status.Code(err) == codes.Unavailable {
-					logger.Error(
-						"internal error while executing workflow",
-						zap.String("topic", job.record.Topic),
-						zap.Int64("offset", job.record.Offset),
-						zap.Int32("partition", job.record.Partition),
-						zap.String("message", string(job.record.Value)),
-						zap.Error(err),
-					)
-				} else {
-					logger.Warn(
-						"error while executing workflow",
-						zap.String("topic", job.record.Topic),
-						zap.Int64("offset", job.record.Offset),
-						zap.Int32("partition", job.record.Partition),
-						zap.String("message", string(job.record.Value)),
-						zap.Error(err),
-					)
-				}
-			}
-
-			// Commit the record
-			if err := r.kfk.CommitRecords(ctxWithTrace, job.record); err != nil {
-				logger.Error(
-					"failed to commit record",
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("message", string(job.record.Value)),
-					zap.Error(err),
-				)
-			} else {
-				logger.Info("record processed and committed successfully",
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("message", string(job.record.Value)),
-				)
-			}
-			span.End()
-
-		case <-ctx.Done():
-			// Context canceled, exit worker
-			return
-		}
-	}
 }
 
 // Run starts the executor.
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
+	r.runner.SetLogger(logger)
 
-	// Start workers with the context
-	r.StartWorkers(ctx)
+	liveCtx, cancelLive := context.WithCancel(ctx)
+	liveDone := r.runLiveJobLogPublisher(liveCtx, logger)
 
-	// Ensures that the job channel is closed and all workers are done before returning
-	defer func() {
-		close(r.jobChan)
-		r.wg.Wait()
+	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
+	defer cancelRecovery()
+
+	recoveryDone := make(chan struct{})
+	go func() {
+		defer close(recoveryDone)
+		r.recoverExpiredLeases(recoveryCtx)
 	}()
 
-	for {
-		// Check context cancellation before processing
-		select {
-		case <-ctx.Done():
-			logger.Warn("shutting down execution worker, context canceled", zap.Error(ctx.Err()))
-			return ctx.Err()
-		default:
-			// Continue processing
-		}
+	err := r.runner.Run(ctx)
+	cancelRecovery()
+	r.execWG.Wait()
+	cancelLive()
+	if liveDone != nil {
+		<-liveDone
+	}
+	<-recoveryDone
+	return err
+}
 
-		fetches := r.kfk.PollFetches(ctx)
-		if fetches.IsClientClosed() {
-			logger.Warn("kafka client closed, shutting down execution worker")
-			return nil // Return nil as this is an expected shutdown path
-		}
+func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) error {
+	ctxWithTrace, span := r.tp.Start(
+		ctx,
+		"executor.worker.processRecord",
+		trace.WithAttributes(
+			attribute.String("topic", record.Topic),
+			attribute.Int64("offset", record.Offset),
+			attribute.Int64("partition", int64(record.Partition)),
+			attribute.String("key", string(record.Key)),
+			attribute.String("value", string(record.Value)),
+		),
+	)
+	defer span.End()
 
-		if fetches.Empty() {
-			continue
-		}
+	logger := loggerpkg.FromContext(ctxWithTrace)
 
-		iter := fetches.RecordIter()
-		for _, fetchErr := range fetches.Errors() {
-			logger.Error("error while fetching records",
-				zap.String("topic", fetchErr.Topic),
-				zap.Int32("partition", fetchErr.Partition),
-				zap.Error(fetchErr.Err),
+	scheduledJob, err := extractFieldFromRecordValue(record.Value)
+	if err != nil {
+		return err
+	}
+
+	if slotErr := r.acquireExecutionSlot(ctxWithTrace); slotErr != nil {
+		return slotErr
+	}
+
+	authCtx, err := r.withAuthorization(ctxWithTrace)
+	if err != nil {
+		r.releaseExecutionSlot()
+		return err
+	}
+
+	claim, err := r.svc.Jobs.ClaimJob(authCtx, &jobspb.ClaimJobRequest{
+		Id:                   scheduledJob.jobID,
+		WorkflowId:           scheduledJob.workflowID,
+		WorkerId:             r.cfg.WorkerID,
+		LeaseDurationSeconds: int32(r.cfg.LeaseDuration.Seconds()),
+		DispatchAttempt:      scheduledJob.dispatchAttempt,
+	})
+	if err != nil {
+		r.releaseExecutionSlot()
+		return err
+	}
+	if !claim.GetClaimed() {
+		r.releaseExecutionSlot()
+		logger.Info("job dispatch skipped",
+			zap.String("topic", record.Topic),
+			zap.Int64("offset", record.Offset),
+			zap.Int32("partition", record.Partition),
+			zap.String("job_id", scheduledJob.jobID),
+			zap.String("workflow_id", scheduledJob.workflowID),
+			zap.String("reason", claim.GetReason()),
+		)
+		return nil
+	}
+
+	r.execWG.Go(func() {
+		defer r.releaseExecutionSlot()
+
+		execCtx := r.newExecutionContext(ctxWithTrace)
+		if runErr := r.runClaimedWorkflow(execCtx, claim, scheduledJob.lastScheduledAt, scheduledJob.workflowGeneration); runErr != nil {
+			logger.Warn("claimed job execution finished with error",
+				zap.String("job_id", claim.GetId()),
+				zap.String("workflow_id", claim.GetWorkflowId()),
+				zap.String("lease_token", claim.GetLeaseToken()),
+				zap.Error(runErr),
 			)
 		}
+	})
 
-		for !iter.Done() {
-			record := iter.Next()
+	logger.Info("job claimed and handed off",
+		zap.String("topic", record.Topic),
+		zap.Int64("offset", record.Offset),
+		zap.Int32("partition", record.Partition),
+		zap.String("job_id", scheduledJob.jobID),
+		zap.String("workflow_id", scheduledJob.workflowID),
+	)
 
-			select {
-			case r.jobChan <- kafkaJob{record: record}:
-				// Job dispatched successfully
-			case <-ctx.Done(): // Check for cancellation of the main Run context
-				logger.Warn("shutting down dispatcher, context canceled", zap.Error(ctx.Err()))
-				return ctx.Err() // Exit if main context is canceled
+	return nil
+}
+
+type scheduledJobRecord struct {
+	jobID              string
+	workflowID         string
+	lastScheduledAt    time.Time
+	dispatchAttempt    int32
+	workflowGeneration int64
+}
+
+// runClaimedWorkflow runs a job that has already been durably claimed.
+//
+
+func (r *Repository) runClaimedWorkflow(
+	parentCtx context.Context,
+	claim *jobspb.ClaimJobResponse,
+	lastScheduledAt time.Time,
+	workflowGeneration int64,
+) (err error) {
+	ctx, span := r.tp.Start(
+		parentCtx,
+		"executor.worker.runClaimedWorkflow",
+		trace.WithAttributes(
+			attribute.String("job_id", claim.GetId()),
+			attribute.String("workflow_id", claim.GetWorkflowId()),
+			attribute.String("worker_id", r.cfg.WorkerID),
+			attribute.Int("attempts", int(claim.GetAttempts())),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	renewDone := make(chan error, 1)
+	go r.renewLeaseLoop(ctx, claim.GetId(), claim.GetLeaseToken(), renewDone)
+	go func() {
+		if renewErr := <-renewDone; renewErr != nil {
+			cancel()
+		}
+	}()
+
+	authCtx, err := r.withAuthorization(ctx)
+	if err != nil {
+		return r.releaseClaimForSystemRetry(ctx, claim, err)
+	}
+
+	workflow, err := r.svc.Workflows.GetWorkflowByID(authCtx, &workflowspb.GetWorkflowByIDRequest{
+		Id: claim.GetWorkflowId(),
+	})
+	if err != nil {
+		return r.releaseClaimForSystemRetry(ctx, claim, err)
+	}
+
+	if workflow.GetTerminatedAt() != "" {
+		return r.cancelClaimedJob(ctx, claim)
+	}
+	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
+		return r.releaseClaimForSystemRetry(ctx, claim, status.Error(codes.FailedPrecondition, "workflow build status is not COMPLETED"))
+	}
+
+	switch claim.GetTrigger() {
+	case jobsmodel.JobTriggerAutomatic.ToString():
+		if err = r.scheduleNextAutomaticJob(authCtx, claim, workflow, lastScheduledAt, workflowGeneration); err != nil {
+			return r.releaseClaimForSystemRetry(ctx, claim, err)
+		}
+	case jobsmodel.JobTriggerManual.ToString():
+	default:
+		return r.failClaimedJob(ctx, claim, status.Errorf(codes.FailedPrecondition, "unknown job trigger: %s", claim.GetTrigger()), "")
+	}
+
+	containerID, executeErr := r.executeWorkflow(ctx, claim.GetId(), claim.GetLeaseToken(), claim.GetAttempts(), workflow)
+	if executeErr != nil {
+		return r.failClaimedJob(ctx, claim, executeErr, containerID)
+	}
+
+	return r.completeClaimedJob(ctx, claim, containerID)
+}
+
+func (r *Repository) scheduleNextAutomaticJob(
+	ctx context.Context,
+	claim *jobspb.ClaimJobResponse,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	lastScheduledAt time.Time,
+	workflowGeneration int64,
+) error {
+	_, err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+		WorkflowId:         claim.GetWorkflowId(),
+		UserId:             workflow.GetUserId(),
+		ScheduledAt:        lastScheduledAt.Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+		WorkflowGeneration: workflowGeneration,
+	})
+	if status.Code(err) == codes.FailedPrecondition && workflowGeneration > 0 {
+		loggerpkg.FromContext(ctx).Info("skipped stale automatic follow-up schedule",
+			zap.String("job_id", claim.GetId()),
+			zap.String("workflow_id", claim.GetWorkflowId()),
+			zap.Int64("workflow_generation", workflowGeneration),
+			zap.Error(err),
+		)
+		return nil
+	}
+
+	return err
+}
+
+func (r *Repository) acquireExecutionSlot(ctx context.Context) error {
+	select {
+	case r.slots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *Repository) releaseExecutionSlot() {
+	select {
+	case <-r.slots:
+	default:
+	}
+}
+
+func (r *Repository) newExecutionContext(parent context.Context) context.Context {
+	return context.WithoutCancel(parent)
+}
+
+func (r *Repository) renewLeaseLoop(ctx context.Context, jobID, leaseToken string, done chan<- error) {
+	ticker := time.NewTicker(r.cfg.LeaseRenewInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			done <- nil
+			return
+		case <-ticker.C:
+			authCtx, err := r.withAuthorization(ctx)
+			if err != nil {
+				done <- err
+				return
+			}
+			if _, err = r.svc.Jobs.RenewJobLease(authCtx, &jobspb.RenewJobLeaseRequest{
+				Id:                   jobID,
+				LeaseToken:           leaseToken,
+				LeaseDurationSeconds: int32(r.cfg.LeaseDuration.Seconds()),
+			}); err != nil {
+				done <- err
+				return
 			}
 		}
 	}
 }
 
-// runWorkflow runs the executor workflow.
-//
-//nolint:gocyclo // This function is complex and has multiple responsibilities.
-func (r *Repository) runWorkflow(parentCtx context.Context, recordValue []byte) error {
-	// Extract the fields from the record value
-	jobID, workflowID, lastScheduledAt, err := extractFieldFromRecordValue(recordValue)
+func (r *Repository) cancelClaimedJob(ctx context.Context, claim *jobspb.ClaimJobResponse) error {
+	authCtx, err := r.withAuthorization(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Issue necessary headers and tokens for authorization
-	ctx, err := r.withAuthorization(parentCtx)
-	if err != nil {
-		return err
-	}
-
-	// Get the workflow details
-	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
-		Id: workflowID,
+	_, err = r.svc.Jobs.CancelClaimedJob(authCtx, &jobspb.CancelClaimedJobRequest{
+		Id:         claim.GetId(),
+		LeaseToken: claim.GetLeaseToken(),
 	})
+	return err
+}
+
+func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobspb.ClaimJobResponse, cause error) error {
+	if int(claim.GetAttempts()) >= r.cfg.SystemRetryLimit {
+		return r.failClaimedJob(ctx, claim, cause, "")
+	}
+
+	authCtx, err := r.withAuthorization(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Early return idempotency checks
-	// Ensure the workflow is not already terminated
-	if workflow.GetTerminatedAt() != "" {
-		// If the workflow is already terminated, do not execute the workflow and update the job status to CANCELED
-		if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
-			Id:     jobID,
-			Status: jobsmodel.JobStatusCanceled.ToString(),
-		}); err != nil {
-			return err
-		}
-
-		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
-	}
-
-	// Ensure the workflow build status is COMPLETED
-	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
-		return status.Error(codes.FailedPrecondition, "workflow build status is not COMPLETED")
-	}
-
-	// Ensure the job status is QUEUED, if not return early since the job might be already in progress
-	job, err := r.svc.Jobs.GetJobByID(ctx, &jobspb.GetJobByIDRequest{
-		Id: jobID,
+	nextAttemptAt := time.Now().Add(r.systemRetryBackoff(claim.GetAttempts())).Format(time.RFC3339Nano)
+	_, err = r.svc.Jobs.ReleaseJobForRetry(authCtx, &jobspb.ReleaseJobForRetryRequest{
+		Id:            claim.GetId(),
+		LeaseToken:    claim.GetLeaseToken(),
+		NextAttemptAt: nextAttemptAt,
+		ErrorCode:     status.Code(cause).String(),
+		ErrorMessage:  cause.Error(),
 	})
-	if err != nil {
-		return err
-	}
+	return err
+}
 
-	// We check if the job status is QUEUED or PENDING
-	// If the job status is not QUEUED or PENDING, we don't want to execute the workflow
-	// This is to avoid executing the workflow multiple times
-	// NOTE: We are checking for the PENDING status because the job status might not be updated yet but have received from kafka via the scheduler
-	if job.GetStatus() != jobsmodel.JobStatusQueued.ToString() &&
-		job.GetStatus() != jobsmodel.JobStatusPending.ToString() {
-		return status.Error(codes.FailedPrecondition, "job is not in QUEUED or PENDING state")
-	}
-
-	// Acquire a distributed lock to ensure only one worker processes the job at a time
-	lockKey := fmt.Sprintf("%s:%s", lockKeyPrefix, jobID)
-	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, getJobExpirationTime(workflow))
-	if err != nil || !isLockAcquired {
-		return status.Error(codes.Aborted, "failed to acquire distributed lock")
-	}
-
-	// Release the distributed lock
-	defer func() {
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
-		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
-	}()
-
-	switch job.GetTrigger() {
-	case jobsmodel.JobTriggerAutomatic.ToString():
-		// Schedule a new job based on the last scheduledAt time and interval accordingly
-		if _, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-			WorkflowId:  workflowID,
-			UserId:      workflow.GetUserId(),
-			ScheduledAt: lastScheduledAt.Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-			Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-		}); err != nil {
-			return err
-		}
-	case jobsmodel.JobTriggerManual.ToString():
-		// For manual trigger, we do not schedule a new job
-	default:
-		return status.Errorf(codes.FailedPrecondition, "unknown job trigger: %s", job.GetTrigger())
-	}
-
-	start := time.Now()
-	executeErr := r.executeWorkflow(ctx, jobID, workflow)
-
-	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytes(
-		workflow.GetUserId(),
-		workflowID,
-		analyticsmodel.EventTypeJobs,
-		&analyticsmodel.EventTypeJobsData{
-			JobExecutionDuration: uint64(time.Since(start).Seconds()),
-		},
-	)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to marshal analytic event: %v", err)
-	}
-
-	record := &kgo.Record{
-		Topic: kafka.TopicAnalytics,
-		Key:   []byte(workflowID),
-		Value: analyticEventBytes,
-	}
-
-	// Asynchronously produce the record to Kafka
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	// This is used to track the number of jobs executed for the workflow
-	r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
-
-	// Since, the workflow execution can take time to execute and can led to authorization issues
-	// So, we need to re-issue the authorization token
-	// This context is used for all the gRPC calls
-	// This context uses the parent context
-	//nolint:errcheck // Ignore the error as we don't want to block the job execution
-	ctx, _ = r.withAuthorization(ctx)
-
-	// This context is used for sending notifications, as we don't want to propagate the cancellation
-	// This context does not use the parent context
-	//nolint:errcheck // Ignore the error as we don't want to block the job execution
-	notificationCtx, _ := r.withAuthorization(context.Background())
-
-	//nolint:nestif // This is a nested if statement, but it's necessary to handle the error cases
-	if executeErr != nil {
-		// Update the job status from RUNNING to FAILED
-		if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
-			Id:     jobID,
-			Status: jobsmodel.JobStatusFailed.ToString(),
-		}); err != nil {
-			return err
-		}
-
-		// Increment the workflow failure count and check if the threshold is reached
-		res, _err := r.svc.Workflows.IncrementWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
-			Id:     workflowID,
-			UserId: workflow.GetUserId(),
-		})
-		if _err != nil {
-			return _err
-		}
-
-		// Send an error notification for the job execution failure
-		// This is a fire-and-forget operation, so we don't need to wait for it to complete
-		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the job execution
-		go r.sendNotification(
-			notificationCtx,
-			workflow.GetUserId(),
-			workflowID,
-			jobID,
-			"Job Execution Failed",
-			fmt.Sprintf("Job execution failed for workflow '%s'. Please check the logs for more details.", workflow.GetName()),
-			notificationsmodel.KindWebError.ToString(),
-			notificationsmodel.EntityJob.ToString(),
-		)
-
-		// If the threshold has been reached, terminate the workflow
-		if res.GetThresholdReached() {
-			if _, err = r.svc.Workflows.TerminateWorkflow(ctx, &workflowspb.TerminateWorkflowRequest{
-				Id:     workflowID,
-				UserId: workflow.GetUserId(),
-			}); err != nil {
-				return err
-			}
-
-			// The threshold has been reached, send an alert notification for the workflow termination
-			// This is a fire-and-forget operation, so we don't need to wait for it to complete
-			//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the job execution
-			go r.sendNotification(
-				notificationCtx,
-				workflow.GetUserId(),
-				workflowID,
-				jobID,
-				"Workflow Terminated",
-				fmt.Sprintf("Workflow '%s' has been terminated after reaching %d consecutive job failures...", workflow.GetName(), workflow.GetMaxConsecutiveJobFailuresAllowed()),
-				notificationsmodel.KindWebAlert.ToString(),
-				notificationsmodel.EntityWorkflow.ToString(),
+func (r *Repository) failClaimedJob(
+	ctx context.Context,
+	claim *jobspb.ClaimJobResponse,
+	executeErr error,
+	containerID string,
+) error {
+	decision := classifyExecutionFailure(executeErr)
+	if decision.Retryable && int(claim.GetAttempts()) < r.cfg.SystemRetryLimit {
+		retryCtx := context.WithoutCancel(ctx)
+		if cleanupErr := r.cleanupContainer(retryCtx, containerID); cleanupErr != nil {
+			loggerpkg.FromContext(ctx).Warn("failed to cleanup container before retry",
+				zap.String("job_id", claim.GetId()),
+				zap.String("container_id", containerID),
+				zap.Error(cleanupErr),
 			)
 		}
+		return r.releaseClaimForSystemRetry(retryCtx, claim, executeErr)
+	}
 
+	authCtx, err := r.withAuthorization(ctx)
+	if err != nil {
 		return err
 	}
 
-	// Update the job status from RUNNING to COMPLETED
-	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
-		Id:     jobID,
-		Status: jobsmodel.JobStatusCompleted.ToString(),
+	_, err = r.svc.Jobs.FailJob(authCtx, &jobspb.FailJobRequest{
+		Id:           claim.GetId(),
+		LeaseToken:   claim.GetLeaseToken(),
+		FailureKind:  decision.Kind,
+		ErrorCode:    status.Code(executeErr).String(),
+		ErrorMessage: executeErr.Error(),
+	})
+	if err != nil {
+		return err
+	}
+
+	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), containerID); cleanupErr != nil {
+		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job failure",
+			zap.String("job_id", claim.GetId()),
+			zap.String("container_id", containerID),
+			zap.Error(cleanupErr),
+		)
+	}
+
+	return executeErr
+}
+
+func (r *Repository) completeClaimedJob(
+	ctx context.Context,
+	claim *jobspb.ClaimJobResponse,
+	containerID string,
+) error {
+	authCtx, err := r.withAuthorization(ctx)
+	if err != nil {
+		return err
+	}
+
+	if _, err = r.svc.Jobs.CompleteJob(authCtx, &jobspb.CompleteJobRequest{
+		Id:         claim.GetId(),
+		LeaseToken: claim.GetLeaseToken(),
 	}); err != nil {
 		return err
 	}
 
-	// Send a success notification for the job execution
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the job execution
-	go r.sendNotification(
-		notificationCtx,
-		workflow.GetUserId(),
-		workflowID,
-		jobID,
-		"Job Execution Completed",
-		fmt.Sprintf("Job execution completed successfully for workflow '%s'.", workflow.GetName()),
-		notificationsmodel.KindWebSuccess.ToString(),
-		notificationsmodel.EntityJob.ToString(),
-	)
-
-	// Reset the workflow consecutive job failures count
-	if _, _err := r.svc.Workflows.ResetWorkflowConsecutiveJobFailuresCount(ctx, &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
-		Id:     workflowID,
-		UserId: workflow.GetUserId(),
-	}); _err != nil {
-		return _err
+	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), containerID); cleanupErr != nil {
+		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job completion",
+			zap.String("job_id", claim.GetId()),
+			zap.String("container_id", containerID),
+			zap.Error(cleanupErr),
+		)
 	}
 
 	return nil
 }
 
-// sendNotification sends a notification for the job execution related events.
-func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType string) error {
-	switch notificationType {
-	case notificationsmodel.EntityJob.ToString():
-		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
-		if err != nil {
-			return err
-		}
-
-		// Create a new notification
-		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
-		}); err != nil {
-			return err
-		}
-	case notificationsmodel.EntityWorkflow.ToString():
-		payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
-		if err != nil {
-			return err
-		}
-
-		// Create a new notification
-		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
-		}); err != nil {
-			return err
-		}
-	default:
-		return status.Error(codes.InvalidArgument, "invalid notification kind")
+func (r *Repository) cleanupContainer(ctx context.Context, containerID string) error {
+	if containerID == "" {
+		return nil
 	}
 
-	return nil
+	return r.svc.Csvc.Remove(ctx, containerID)
+}
+
+type executionFailureDecision struct {
+	Retryable bool
+	Kind      string
+}
+
+func classifyExecutionFailure(err error) executionFailureDecision {
+	if err == nil {
+		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString()}
+	}
+
+	switch status.Code(err) { //nolint:exhaustive // Only retryable infrastructure codes need special handling here.
+	case codes.Canceled, codes.Internal, codes.Unavailable:
+		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString()}
+	case codes.DeadlineExceeded:
+		message := strings.ToLower(err.Error())
+		if strings.Contains(message, "context canceled") {
+			return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString()}
+		}
+		if strings.Contains(message, "container execution timed out") {
+			return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString()}
+		}
+		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString()}
+	default:
+		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString()}
+	}
+}
+
+func (r *Repository) systemRetryBackoff(attempt int32) time.Duration {
+	if attempt <= 1 {
+		return r.cfg.SystemRetryBackoff
+	}
+
+	multiplier := math.Pow(2, float64(attempt-1))
+	backoff := time.Duration(float64(r.cfg.SystemRetryBackoff) * multiplier)
+	maxBackoff := r.cfg.SystemRetryBackoff * 8
+	if backoff > maxBackoff {
+		return maxBackoff
+	}
+
+	return backoff
 }
 
 // extractFieldFromRecordValue extracts the data from the record value.
-func extractFieldFromRecordValue(recordValue []byte) (jobID, workflowID string, lastScheduledAt time.Time, err error) {
+func extractFieldFromRecordValue(recordValue []byte) (scheduledJobRecord, error) {
 	var scheduledJobEntry jobsmodel.ScheduledJobEntry
-	if err = json.Unmarshal(recordValue, &scheduledJobEntry); err != nil {
-		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid record value format")
+	if err := json.Unmarshal(recordValue, &scheduledJobEntry); err != nil {
+		return scheduledJobRecord{}, status.Error(codes.InvalidArgument, "invalid record value format")
 	}
 
-	jobID = scheduledJobEntry.JobID
-	workflowID = scheduledJobEntry.WorkflowID
-	lastScheduledAt, err = time.Parse(time.RFC3339Nano, scheduledJobEntry.ScheduledAt)
+	if scheduledJobEntry.DispatchAttempt <= 0 {
+		return scheduledJobRecord{}, status.Error(codes.InvalidArgument, "invalid dispatch attempt")
+	}
+	lastScheduledAt, err := time.Parse(time.RFC3339Nano, scheduledJobEntry.ScheduledAt)
 	if err != nil {
-		return "", "", time.Time{}, status.Error(codes.InvalidArgument, "invalid scheduledAt format")
+		return scheduledJobRecord{}, status.Error(codes.InvalidArgument, "invalid scheduledAt format")
 	}
 
-	return jobID, workflowID, lastScheduledAt, nil
+	return scheduledJobRecord{
+		jobID:              scheduledJobEntry.JobID,
+		workflowID:         scheduledJobEntry.WorkflowID,
+		lastScheduledAt:    lastScheduledAt,
+		dispatchAttempt:    scheduledJobEntry.DispatchAttempt,
+		workflowGeneration: scheduledJobEntry.WorkflowGeneration,
+	}, nil
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
-	// Attach the audience and role to the context
-	ctx := auth.WithAudience(parentCtx, svcpkg.Info().GetName())
-	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
-
-	// Issue a new token
-	authToken, err := r.auth.IssueToken(ctx, authSubject)
-	if err != nil {
-		return nil, err
-	}
-
-	// Attach all the necessary headers and tokens to the context
-	ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
-	ctx = auth.WithRoleInMetadata(ctx, auth.RoleAdmin)
-	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
-
-	return ctx, nil
-}
-
-// withRetry executes the given function and retries once if it fails with an error
-// other than codes.FailedPrecondition.
-func withRetry(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
-	}
-
-	// If the error is FailedPrecondition or InvalidArgument, do not retry
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
-		return err
-	}
-
-	// Wait for the retry backoff duration
-	time.Sleep(retryBackoff)
-
-	// Execute the function again
-	return fn()
+	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
 }
 
 // executeWorkflow executes the workflow.
-func (r *Repository) executeWorkflow(ctx context.Context, jobID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
+func (r *Repository) executeWorkflow(
+	ctx context.Context,
+	jobID,
+	leaseToken string,
+	attempts int32,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+) (string, error) {
 	switch workflow.GetKind() {
 	// Execute the HEARTBEAT workflow
 	case workflowsmodel.KindHeartbeat.ToString():
-		return r.executeHeartbeatWorkflow(ctx, jobID, workflow)
+		return "", r.executeHeartbeatWorkflow(ctx, workflow)
 	// Execute the CONTAINER workflow
 	case workflowsmodel.KindContainer.ToString():
-		return r.executeContainerWorkflow(ctx, jobID, workflow)
+		return r.executeContainerWorkflow(ctx, jobID, leaseToken, attempts, workflow)
 	default:
-		return status.Error(codes.InvalidArgument, "invalid workflow kind")
-	}
-}
-
-// getJobExpirationTime returns the job expiration time based on the workflow payload and worklow kind.
-func getJobExpirationTime(workflow *workflowspb.GetWorkflowByIDResponse) time.Duration {
-	switch workflow.GetKind() {
-	case workflowsmodel.KindHeartbeat.ToString():
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution.
-		details, _ := heartbeat.ExtractAndValidateHeartbeatDetails(workflow.GetPayload())
-		return details.TimeOut
-	case workflowsmodel.KindContainer.ToString():
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution.
-		details, _ := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
-		return details.TimeOut
-	default:
-		return time.Minute // Default expiration time for unknown workflow kinds
+		return "", status.Error(codes.InvalidArgument, "invalid workflow kind")
 	}
 }

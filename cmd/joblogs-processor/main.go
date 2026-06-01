@@ -18,6 +18,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	joblogsrepo "github.com/hitesh22rana/chronoverse/internal/repository/joblogs"
@@ -81,6 +82,31 @@ func run() int {
 	}
 	defer rdb.Close()
 
+	// Initialize the PostgreSQL database
+	pg, err := postgres.New(ctx, &postgres.Config{
+		Host:        cfg.Postgres.Host,
+		Port:        cfg.Postgres.Port,
+		User:        cfg.Postgres.User,
+		Password:    cfg.Postgres.Password,
+		Database:    cfg.Postgres.Database,
+		MaxConns:    cfg.Postgres.MaxConns,
+		MinConns:    cfg.Postgres.MinConns,
+		MaxConnLife: cfg.Postgres.MaxConnLife,
+		MaxConnIdle: cfg.Postgres.MaxConnIdle,
+		DialTimeout: cfg.Postgres.DialTimeout,
+		TLSConfig: &postgres.TLSConfig{
+			Enabled:  cfg.Postgres.TLS.Enabled,
+			CAFile:   cfg.Postgres.TLS.CAFile,
+			CertFile: cfg.Postgres.TLS.CertFile,
+			KeyFile:  cfg.Postgres.TLS.KeyFile,
+		},
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer pg.Close()
+
 	// Initialize the ClickHouse database
 	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
 		Hosts:           cfg.ClickHouse.Hosts,
@@ -115,13 +141,16 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
+	defer msdb.Close()
 
 	// Initialize the kafka client
+	kafkaLifecycle := kafka.NewPartitionLifecycle()
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
 		kafka.WithConsumeTopics(kafka.TopicJobLogs),
 		kafka.WithDisableAutoCommit(),
+		kafka.WithPartitionLifecycle(kafkaLifecycle),
 		kafka.WithTLS(&cfg.Kafka),
 	)
 	if err != nil {
@@ -132,10 +161,9 @@ func run() int {
 
 	// Initialize the joblogs job components
 	repo := joblogsrepo.New(&joblogsrepo.Config{
-		BatchJobLogsSizeLimit:      cfg.JobLogsProcessorConfig.BatchJobLogsSizeLimit,
-		BatchJobLogsTimeInterval:   cfg.JobLogsProcessorConfig.BatchJobLogsTimeInterval,
-		BatchAnalyticsTimeInterval: cfg.JobLogsProcessorConfig.BatchAnalyticsTimeInterval,
-	}, rdb, cdb, msdb, kfk)
+		BatchJobLogsSizeLimit:    cfg.JobLogsProcessorConfig.BatchJobLogsSizeLimit,
+		BatchJobLogsTimeInterval: cfg.JobLogsProcessorConfig.BatchJobLogsTimeInterval,
+	}, rdb, pg, cdb, msdb, kfk, kafkaLifecycle)
 	svc := joblogssvc.New(repo)
 	app := joblogs.New(ctx, svc)
 

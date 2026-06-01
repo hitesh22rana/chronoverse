@@ -159,6 +159,23 @@ func WithAuthorizationTokenInMetadata(ctx context.Context, token string) context
 	return metadata.AppendToOutgoingContext(ctx, authorizationMetadataKey, "Bearer "+token)
 }
 
+// WithInternalServiceAuthorization issues an admin token and attaches internal-service metadata.
+func WithInternalServiceAuthorization(ctx context.Context, issuer IAuth, subject string) (context.Context, error) {
+	ctx = WithAudience(ctx, svcpkg.Info().GetName())
+	ctx = WithRole(ctx, RoleAdmin.String())
+
+	token, err := issuer.IssueToken(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
+	ctx = WithRoleInMetadata(ctx, RoleAdmin)
+	ctx = WithAuthorizationTokenInMetadata(ctx, token)
+
+	return ctx, nil
+}
+
 // WithSetAuthorizationTokenInHeaders sets the authorization token in the headers for clients.
 func WithSetAuthorizationTokenInHeaders(token string) metadata.MD {
 	return metadata.Pairs(authorizationMetadataKey, "Bearer "+token)

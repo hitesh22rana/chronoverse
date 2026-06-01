@@ -47,10 +47,11 @@ func TestScheduleJob(t *testing.T) {
 		{
 			name: "success",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "workflow_id",
-				UserId:      "user1",
-				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
-				Trigger:     "AUTOMATIC",
+				WorkflowId:         "workflow_id",
+				UserId:             "user1",
+				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:            "AUTOMATIC",
+				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -59,6 +60,8 @@ func TestScheduleJob(t *testing.T) {
 					req.GetUserId(),
 					req.GetScheduledAt(),
 					req.GetTrigger(),
+					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("job_id", nil)
 			},
 			want: want{
@@ -105,6 +108,8 @@ func TestScheduleJob(t *testing.T) {
 					req.GetUserId(),
 					req.GetScheduledAt(),
 					req.GetTrigger(),
+					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("", status.Error(codes.NotFound, "workflow not found"))
 			},
 			want:  want{},
@@ -125,8 +130,22 @@ func TestScheduleJob(t *testing.T) {
 					req.GetUserId(),
 					req.GetScheduledAt(),
 					req.GetTrigger(),
+					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("", status.Error(codes.NotFound, "workflow not found or not owned by user"))
 			},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: manual trigger missing idempotency key",
+			req: &jobspb.ScheduleJobRequest{
+				WorkflowId:  "workflow_id",
+				UserId:      "user1",
+				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:     "MANUAL",
+			},
+			mock:  func(_ *jobspb.ScheduleJobRequest) {},
 			want:  want{},
 			isErr: true,
 		},
@@ -145,6 +164,8 @@ func TestScheduleJob(t *testing.T) {
 					req.GetUserId(),
 					req.GetScheduledAt(),
 					req.GetTrigger(),
+					req.GetIdempotencyKey(),
+					req.GetWorkflowGeneration(),
 				).Return("", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -953,11 +974,10 @@ func TestGetJobLogs(t *testing.T) {
 				errs := make([]error, 2)
 
 				for i := range 2 {
-					wg.Add(1)
-					go func(idx int) {
-						defer wg.Done()
+					idx := i
+					wg.Go(func() {
 						results[idx], errs[idx] = s.GetJobLogs(t.Context(), req)
-					}(i)
+					})
 				}
 
 				for range 50 {

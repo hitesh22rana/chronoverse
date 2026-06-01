@@ -553,9 +553,12 @@ func (r *Repository) applyMigration(ctx context.Context, client *clickhousepkg.C
 		return fmt.Errorf("failed to mark migration as dirty: %w", err)
 	}
 
-	// Execute migration SQL
-	if err := client.Exec(ctx, migration.Content); err != nil {
-		return fmt.Errorf("failed to execute migration SQL: %w", err)
+	// Execute migration SQL statements one by one. The native ClickHouse driver
+	// rejects multi-statement query strings.
+	for _, statement := range splitClickHouseMigrationStatements(migration.Content) {
+		if err := client.Exec(ctx, statement); err != nil {
+			return fmt.Errorf("failed to execute migration SQL: %w", err)
+		}
 	}
 
 	// Mark migration as clean (completed)
@@ -564,6 +567,19 @@ func (r *Repository) applyMigration(ctx context.Context, client *clickhousepkg.C
 	}
 
 	return nil
+}
+
+func splitClickHouseMigrationStatements(content string) []string {
+	parts := strings.Split(content, ";")
+	statements := make([]string, 0, len(parts))
+	for _, part := range parts {
+		statement := strings.TrimSpace(part)
+		if statement == "" {
+			continue
+		}
+		statements = append(statements, statement)
+	}
+	return statements
 }
 
 // isDatabaseErrorRetryable determines if a database error is retryable.

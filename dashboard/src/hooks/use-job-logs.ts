@@ -41,7 +41,7 @@ export type JobLogsResponseData = {
 }
 
 const kindsWithLogs = ['CONTAINER']
-const terminalJobStatus = ['COMPLETED', 'FAILED']
+const terminalJobStatus = ['COMPLETED', 'FAILED', 'CANCELED']
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)

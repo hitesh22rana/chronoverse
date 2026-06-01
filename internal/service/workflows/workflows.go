@@ -35,16 +35,23 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
-	CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32, logRetention bool) (*workflowsmodel.GetWorkflowResponse, error)
-	UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32) error
-	UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string) error
+	CreateWorkflow(
+		ctx context.Context,
+		userID, name, payload, kind string,
+		interval, maxConsecutiveJobFailuresAllowed int32,
+		logRetention bool,
+		idempotencyKey string,
+	) (*workflowsmodel.GetWorkflowResponse, error)
+	UpdateWorkflow(ctx context.Context, workflowID, userID, name, payload string, interval, maxConsecutiveJobFailuresAllowed int32, idempotencyKey string) error
+	UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) error
 	GetWorkflow(ctx context.Context, workflowID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
 	GetWorkflowByID(ctx context.Context, workflowID string) (*workflowsmodel.GetWorkflowByIDResponse, error)
-	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (bool, error)
+	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (bool, error)
 	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) error
 	TerminateWorkflow(ctx context.Context, workflowID, userID string) error
 	DeleteWorkflow(ctx context.Context, workflowID, userID string) error
 	ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (*workflowsmodel.ListWorkflowsResponse, error)
+	CleanupWorkflowIdempotencyKeys(ctx context.Context, batchSize int) (int64, error)
 }
 
 // Cache provides cache related operations.
@@ -74,6 +81,11 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 	}
 }
 
+// CleanupWorkflowIdempotencyKeys deletes expired workflow idempotency keys.
+func (s *Service) CleanupWorkflowIdempotencyKeys(ctx context.Context, batchSize int) (int64, error) {
+	return s.repo.CleanupWorkflowIdempotencyKeys(ctx, batchSize)
+}
+
 // CreateWorkflowRequest holds the request parameters for creating a new job.
 type CreateWorkflowRequest struct {
 	UserID                           string `validate:"required"`
@@ -83,6 +95,7 @@ type CreateWorkflowRequest struct {
 	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
 	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed
 	LogRetention                     bool   `validate:"omitempty"`                // Whether to retain logs for the workflow. Optional, defaults to false.
+	IdempotencyKey                   string `validate:"required"`
 }
 
 // CreateWorkflow a new job.
@@ -113,6 +126,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		Interval:                         req.GetInterval(),
 		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
 		LogRetention:                     logRetentionEnabled,
+		IdempotencyKey:                   req.GetIdempotencyKey(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -151,6 +165,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		req.GetInterval(),
 		req.GetMaxConsecutiveJobFailuresAllowed(),
 		logRetentionEnabled,
+		req.GetIdempotencyKey(),
 	)
 	if err != nil {
 		return "", err
@@ -194,6 +209,7 @@ type UpdateWorkflowRequest struct {
 	Payload                          string `validate:"required"`
 	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
 	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed
+	IdempotencyKey                   string `validate:"required"`
 }
 
 // UpdateWorkflow updates the job details.
@@ -218,6 +234,7 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		Payload:                          req.GetPayload(),
 		Interval:                         req.GetInterval(),
 		MaxConsecutiveJobFailuresAllowed: req.GetMaxConsecutiveJobFailuresAllowed(),
+		IdempotencyKey:                   req.GetIdempotencyKey(),
 	}); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		return err
@@ -241,6 +258,7 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		req.GetPayload(),
 		req.GetInterval(),
 		req.GetMaxConsecutiveJobFailuresAllowed(),
+		req.GetIdempotencyKey(),
 	)
 	if err != nil {
 		return err
@@ -309,6 +327,7 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		req.GetId(),
 		req.GetUserId(),
 		req.GetBuildStatus(),
+		req.GetGeneration(),
 	)
 	if err != nil {
 		return err
@@ -455,6 +474,7 @@ func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkf
 type IncrementWorkflowConsecutiveJobFailuresCountRequest struct {
 	ID     string `validate:"required"`
 	UserID string `validate:"required"`
+	JobID  string `validate:"required"`
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the job consecutive failures count.
@@ -478,6 +498,7 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 	err = s.validator.Struct(&IncrementWorkflowConsecutiveJobFailuresCountRequest{
 		ID:     req.GetId(),
 		UserID: req.GetUserId(),
+		JobID:  req.GetJobId(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -485,7 +506,7 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 	}
 
 	// Increment the job consecutive failures count
-	thresholdReached, err = s.repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId())
+	thresholdReached, err = s.repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId(), req.GetJobId())
 	if err != nil {
 		return false, err
 	}

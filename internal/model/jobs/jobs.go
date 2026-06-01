@@ -25,6 +25,20 @@ func (s JobStatus) ToString() string {
 	return string(s)
 }
 
+// FailureKind represents whether a job failure belongs to user code/configuration or system infrastructure.
+type FailureKind string
+
+// FailureKinds for terminal job failures.
+const (
+	FailureKindUser   FailureKind = "USER"
+	FailureKindSystem FailureKind = "SYSTEM"
+)
+
+// ToString converts the FailureKind to its string representation.
+func (f FailureKind) ToString() string {
+	return string(f)
+}
+
 // JobTrigger represents the trigger type of the job.
 type JobTrigger string
 
@@ -83,6 +97,7 @@ type GetJobByIDResponse struct {
 	UserID      string         `db:"user_id"`
 	JobStatus   string         `db:"status"`
 	JobTrigger  string         `db:"trigger"`
+	Attempts    int32          `db:"attempts"`
 	ScheduledAt time.Time      `db:"scheduled_at"`
 	StartedAt   sql.NullTime   `db:"started_at,omitempty"`
 	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
@@ -104,6 +119,7 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 		Id:          r.ID,
 		WorkflowId:  r.WorkflowID,
 		UserId:      r.UserID,
+		ContainerId: r.ContainerID.String,
 		Status:      r.JobStatus,
 		Trigger:     r.JobTrigger,
 		ScheduledAt: r.ScheduledAt.Format(time.RFC3339Nano),
@@ -116,9 +132,77 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 
 // ScheduledJobEntry represents the scheduled job entry.
 type ScheduledJobEntry struct {
-	JobID       string
-	WorkflowID  string
-	ScheduledAt string
+	EventKey           string
+	JobID              string
+	WorkflowID         string
+	ScheduledAt        string
+	DispatchAttempt    int32
+	WorkflowGeneration int64
+}
+
+// ClaimedJob represents a job claimed by an execution worker.
+type ClaimedJob struct {
+	ID               string    `db:"id"`
+	WorkflowID       string    `db:"workflow_id"`
+	UserID           string    `db:"user_id"`
+	Trigger          string    `db:"trigger"`
+	ScheduledAt      time.Time `db:"scheduled_at"`
+	DispatchAttempts int32     `db:"dispatch_attempts"`
+	Attempts         int32     `db:"attempts"`
+	LeaseToken       string    `db:"lease_token"`
+}
+
+// ToClaimJobProto converts a ClaimedJob to a ClaimJobResponse.
+func (j *ClaimedJob) ToClaimJobProto(claimed bool, reason string) *jobspb.ClaimJobResponse {
+	if j == nil {
+		return &jobspb.ClaimJobResponse{
+			Claimed: claimed,
+			Reason:  reason,
+		}
+	}
+
+	return &jobspb.ClaimJobResponse{
+		Claimed:          claimed,
+		Reason:           reason,
+		Id:               j.ID,
+		WorkflowId:       j.WorkflowID,
+		UserId:           j.UserID,
+		Trigger:          j.Trigger,
+		ScheduledAt:      j.ScheduledAt.Format(time.RFC3339Nano),
+		DispatchAttempts: j.DispatchAttempts,
+		Attempts:         j.Attempts,
+		LeaseToken:       j.LeaseToken,
+	}
+}
+
+// ExpiredJobLease represents a running job with an expired lease.
+type ExpiredJobLease struct {
+	ID           string         `db:"id"`
+	WorkflowID   string         `db:"workflow_id"`
+	UserID       string         `db:"user_id"`
+	ContainerID  sql.NullString `db:"container_id,omitempty"`
+	LeaseToken   string         `db:"lease_token"`
+	LeasedBy     sql.NullString `db:"leased_by,omitempty"`
+	Trigger      string         `db:"trigger"`
+	ScheduledAt  time.Time      `db:"scheduled_at"`
+	Attempts     int32          `db:"attempts"`
+	LogRetention bool           `db:"log_retention"`
+}
+
+// ToProto converts an ExpiredJobLease to its protobuf representation.
+func (j *ExpiredJobLease) ToProto() *jobspb.ExpiredJobLease {
+	return &jobspb.ExpiredJobLease{
+		Id:           j.ID,
+		WorkflowId:   j.WorkflowID,
+		UserId:       j.UserID,
+		ContainerId:  j.ContainerID.String,
+		LeaseToken:   j.LeaseToken,
+		LeasedBy:     j.LeasedBy.String,
+		Trigger:      j.Trigger,
+		ScheduledAt:  j.ScheduledAt.Format(time.RFC3339Nano),
+		Attempts:     j.Attempts,
+		LogRetention: j.LogRetention,
+	}
 }
 
 // JobLog represents the log of the job.
@@ -181,6 +265,7 @@ type JobByWorkflowIDResponse struct {
 	ContainerID sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
 	JobStatus   string         `db:"status"`
 	JobTrigger  string         `db:"trigger"`
+	Attempts    int32          `db:"attempts"`
 	ScheduledAt time.Time      `db:"scheduled_at"`
 	StartedAt   sql.NullTime   `db:"started_at,omitempty"`
 	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
@@ -225,6 +310,7 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 			CompletedAt: completedAt,
 			CreatedAt:   j.CreatedAt.Format(time.RFC3339Nano),
 			UpdatedAt:   j.UpdatedAt.Format(time.RFC3339Nano),
+			Attempts:    j.Attempts,
 		}
 
 		if internalService {

@@ -40,18 +40,20 @@ func (j WorkflowBuildStatus) ToString() string {
 
 // GetWorkflowResponse represents the response of GetWorkflow.
 type GetWorkflowResponse struct {
-	ID                               string       `db:"id"`
-	Name                             string       `db:"name"`
-	Payload                          string       `db:"payload"`
-	Kind                             string       `db:"kind"`
-	WorkflowBuildStatus              string       `db:"build_status"`
-	Interval                         int32        `db:"interval"`
-	ConsecutiveJobFailuresCount      int32        `db:"consecutive_job_failures_count"`
-	MaxConsecutiveJobFailuresAllowed int32        `db:"max_consecutive_job_failures_allowed"`
-	CreatedAt                        time.Time    `db:"created_at"`
-	UpdatedAt                        time.Time    `db:"updated_at"`
-	TerminatedAt                     sql.NullTime `db:"terminated_at,omitempty"`
-	LogRetention                     bool         `db:"log_retention"`
+	ID                               string         `db:"id"`
+	Name                             string         `db:"name"`
+	Payload                          string         `db:"payload"`
+	Kind                             string         `db:"kind"`
+	WorkflowBuildStatus              string         `db:"build_status"`
+	Interval                         int32          `db:"interval"`
+	ConsecutiveJobFailuresCount      int32          `db:"consecutive_job_failures_count"`
+	MaxConsecutiveJobFailuresAllowed int32          `db:"max_consecutive_job_failures_allowed"`
+	CreatedAt                        time.Time      `db:"created_at"`
+	UpdatedAt                        time.Time      `db:"updated_at"`
+	TerminatedAt                     sql.NullTime   `db:"terminated_at,omitempty"`
+	LogRetention                     bool           `db:"log_retention"`
+	Generation                       int64          `db:"generation"`
+	BuildHash                        sql.NullString `db:"build_hash,omitempty"`
 }
 
 // ToProto converts the GetWorkflowResponse to its protobuf representation.
@@ -74,24 +76,27 @@ func (r *GetWorkflowResponse) ToProto() *workflowspb.GetWorkflowResponse {
 		UpdatedAt:                        r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt:                     terminatedAt,
 		LogRetention:                     r.LogRetention,
+		Generation:                       r.Generation,
 	}
 }
 
 // GetWorkflowByIDResponse represents the response of GetWorkflowByID.
 type GetWorkflowByIDResponse struct {
-	ID                               string       `db:"id"`
-	UserID                           string       `db:"user_id"`
-	Name                             string       `db:"name"`
-	Payload                          string       `db:"payload"`
-	Kind                             string       `db:"kind"`
-	WorkflowBuildStatus              string       `db:"build_status"`
-	Interval                         int32        `db:"interval"`
-	ConsecutiveJobFailuresCount      int32        `db:"consecutive_job_failures_count"`
-	MaxConsecutiveJobFailuresAllowed int32        `db:"max_consecutive_job_failures_allowed"`
-	CreatedAt                        time.Time    `db:"created_at"`
-	UpdatedAt                        time.Time    `db:"updated_at"`
-	TerminatedAt                     sql.NullTime `db:"terminated_at,omitempty"`
-	LogRetention                     bool         `db:"log_retention"`
+	ID                               string         `db:"id"`
+	UserID                           string         `db:"user_id"`
+	Name                             string         `db:"name"`
+	Payload                          string         `db:"payload"`
+	Kind                             string         `db:"kind"`
+	WorkflowBuildStatus              string         `db:"build_status"`
+	Interval                         int32          `db:"interval"`
+	ConsecutiveJobFailuresCount      int32          `db:"consecutive_job_failures_count"`
+	MaxConsecutiveJobFailuresAllowed int32          `db:"max_consecutive_job_failures_allowed"`
+	CreatedAt                        time.Time      `db:"created_at"`
+	UpdatedAt                        time.Time      `db:"updated_at"`
+	TerminatedAt                     sql.NullTime   `db:"terminated_at,omitempty"`
+	LogRetention                     bool           `db:"log_retention"`
+	Generation                       int64          `db:"generation"`
+	BuildHash                        sql.NullString `db:"build_hash,omitempty"`
 }
 
 // ToProto converts the GetWorkflowByIDResponse to its protobuf representation.
@@ -115,23 +120,26 @@ func (r *GetWorkflowByIDResponse) ToProto() *workflowspb.GetWorkflowByIDResponse
 		UpdatedAt:                        r.UpdatedAt.Format(time.RFC3339Nano),
 		TerminatedAt:                     terminatedAt,
 		LogRetention:                     r.LogRetention,
+		Generation:                       r.Generation,
 	}
 }
 
 // WorkflowByUserIDResponse represents the response of ListWorkflowsByUserID.
 type WorkflowByUserIDResponse struct {
-	ID                               string       `db:"id"`
-	Name                             string       `db:"name"`
-	Payload                          string       `db:"payload"`
-	Kind                             string       `db:"kind"`
-	WorkflowBuildStatus              string       `db:"build_status"`
-	Interval                         int32        `db:"interval"`
-	ConsecutiveJobFailuresCount      int32        `db:"consecutive_job_failures_count"`
-	MaxConsecutiveJobFailuresAllowed int32        `db:"max_consecutive_job_failures_allowed"`
-	CreatedAt                        time.Time    `db:"created_at"`
-	UpdatedAt                        time.Time    `db:"updated_at"`
-	TerminatedAt                     sql.NullTime `db:"terminated_at,omitempty"`
-	LogRetention                     bool         `db:"log_retention"`
+	ID                               string         `db:"id"`
+	Name                             string         `db:"name"`
+	Payload                          string         `db:"payload"`
+	Kind                             string         `db:"kind"`
+	WorkflowBuildStatus              string         `db:"build_status"`
+	Interval                         int32          `db:"interval"`
+	ConsecutiveJobFailuresCount      int32          `db:"consecutive_job_failures_count"`
+	MaxConsecutiveJobFailuresAllowed int32          `db:"max_consecutive_job_failures_allowed"`
+	CreatedAt                        time.Time      `db:"created_at"`
+	UpdatedAt                        time.Time      `db:"updated_at"`
+	TerminatedAt                     sql.NullTime   `db:"terminated_at,omitempty"`
+	LogRetention                     bool           `db:"log_retention"`
+	Generation                       int64          `db:"generation"`
+	BuildHash                        sql.NullString `db:"build_hash,omitempty"`
 }
 
 // ListWorkflowsResponse represents the response of ListWorkflowsByUserID.

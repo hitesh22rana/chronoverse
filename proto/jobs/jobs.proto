@@ -6,186 +6,331 @@ option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs;jobs"
 
 // ScheduleJobRequest contains the details needed to create a new job.
 message ScheduleJobRequest {
-    string workflow_id  = 1; // ID of the workflow
-    string user_id      = 2; // ID of the user
-    string scheduled_at = 3; // Time the job is scheduled to run
-    string trigger      = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string workflow_id         = 1; // ID of the workflow
+  string user_id             = 2; // ID of the user
+  string scheduled_at        = 3; // Time the job is scheduled to run
+  string trigger             = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string idempotency_key     = 5; // Optional idempotency key for scheduling
+  int64  workflow_generation = 6; // Optional workflow generation guard for automatic scheduling
 }
 
 // ScheduleJobResponse contains the result of a job creation attempt.
 message ScheduleJobResponse {
-    string id = 1; // ID of the job
+  string id = 1; // ID of the job
 }
 
 // UpdateJobStatusRequest contains the details needed to update the status of a job.
 message UpdateJobStatusRequest {
-    string id           = 1; // ID of the job
-    string container_id = 2; // ID of the container (if applicable)
-    string status       = 3; // Status of the job
+  string id           = 1; // ID of the job
+  string container_id = 2; // ID of the container (if applicable)
+  string status       = 3; // Status of the job
 }
 
 // UpdateJobStatusResponse contains the result of a job status update attempt.
 message UpdateJobStatusResponse {}
 
+// ClaimJobRequest contains the details needed to claim a queued job for execution.
+message ClaimJobRequest {
+  string id                     = 1; // ID of the job
+  string workflow_id            = 2; // ID of the workflow
+  string worker_id              = 3; // ID of the execution worker
+  int32  lease_duration_seconds = 4; // Lease duration in seconds
+  int32  dispatch_attempt       = 5; // Dispatch attempt from the Kafka event
+}
+
+// ClaimJobResponse contains the result of a job claim attempt.
+message ClaimJobResponse {
+  bool   claimed           = 1; // Whether the job was claimed
+  string reason            = 2; // Reason when the job was not claimed
+  string id                = 3; // ID of the job
+  string workflow_id       = 4; // ID of the workflow
+  string user_id           = 5; // ID of the user
+  string trigger           = 6; // Trigger type of the job
+  string scheduled_at      = 7; // Time the job was scheduled to run
+  int32  dispatch_attempts = 8; // Number of dispatch attempts
+  int32  attempts          = 9; // Number of execution attempts
+  string lease_token       = 10; // Lease token required for updates
+}
+
+// RenewJobLeaseRequest contains the details needed to renew a running job lease.
+message RenewJobLeaseRequest {
+  string id                     = 1; // ID of the job
+  string lease_token            = 2; // Current lease token
+  int32  lease_duration_seconds = 3; // Lease duration in seconds
+}
+
+// RenewJobLeaseResponse contains the result of a lease renewal.
+message RenewJobLeaseResponse {}
+
+// AttachJobContainerRequest contains the details needed to attach a container ID to a running job.
+message AttachJobContainerRequest {
+  string id           = 1; // ID of the job
+  string lease_token  = 2; // Current lease token
+  string container_id = 3; // Container ID
+}
+
+// AttachJobContainerResponse contains the result of attaching a container ID.
+message AttachJobContainerResponse {}
+
+// CompleteJobRequest contains the details needed to complete a claimed job.
+message CompleteJobRequest {
+  string id          = 1; // ID of the job
+  string lease_token = 2; // Current lease token
+}
+
+// CompleteJobResponse contains the result of completing a job.
+message CompleteJobResponse {}
+
+// FailJobRequest contains the details needed to fail a claimed job.
+message FailJobRequest {
+  string id            = 1; // ID of the job
+  string lease_token   = 2; // Current lease token
+  string failure_kind  = 3; // USER or SYSTEM
+  string error_code    = 4; // Error code
+  string error_message = 5; // Error message
+}
+
+// FailJobResponse contains the result of failing a job.
+message FailJobResponse {}
+
+// CancelClaimedJobRequest contains the details needed to cancel a claimed job.
+message CancelClaimedJobRequest {
+  string id          = 1; // ID of the job
+  string lease_token = 2; // Current lease token
+}
+
+// CancelClaimedJobResponse contains the result of canceling a claimed job.
+message CancelClaimedJobResponse {}
+
+// ReleaseJobForRetryRequest contains the details needed to release a claimed job for retry.
+message ReleaseJobForRetryRequest {
+  string id              = 1; // ID of the job
+  string lease_token     = 2; // Current lease token
+  string next_attempt_at = 3; // Time the job should be retried
+  string error_code      = 4; // Error code
+  string error_message   = 5; // Error message
+}
+
+// ReleaseJobForRetryResponse contains the result of releasing a job for retry.
+message ReleaseJobForRetryResponse {}
+
+// ExpiredJobLease contains a running job whose lease has expired.
+message ExpiredJobLease {
+  string id            = 1; // ID of the job
+  string workflow_id   = 2; // ID of the workflow
+  string user_id       = 3; // ID of the user
+  string container_id  = 4; // Container ID, if available
+  string lease_token   = 5; // Expired lease token
+  string leased_by     = 6; // Worker that held the lease
+  string trigger       = 7; // Trigger type of the job
+  string scheduled_at  = 8; // Time the job was scheduled to run
+  int32  attempts      = 9; // Number of execution attempts
+  bool   log_retention = 10; // Whether logs should be durably retained
+}
+
+// RecoverExpiredJobLeasesRequest contains the details needed to fetch expired leases.
+message RecoverExpiredJobLeasesRequest {
+  int32  batch_size             = 1; // Maximum number of expired leases to claim
+  string worker_id              = 2; // Worker claiming the expired leases for recovery
+  int32  lease_duration_seconds = 3; // Lease duration in seconds for recovered claims
+}
+
+// RecoverExpiredJobLeasesResponse contains expired leases to recover.
+message RecoverExpiredJobLeasesResponse {
+  repeated ExpiredJobLease jobs = 1; // Expired leased jobs
+}
 
 // GetJobRequest contains the details needed to get a job.
 message GetJobRequest {
-    string id           = 1; // ID of the job
-    string workflow_id  = 2; // ID of the workflow
-    string user_id      = 3; // ID of the user
+  string id          = 1; // ID of the job
+  string workflow_id = 2; // ID of the workflow
+  string user_id     = 3; // ID of the user
 }
 
 // GetJobResponse contains the result of a job retrieval attempt.
 message GetJobResponse {
-    string id           = 1; // ID of the job
-    string workflow_id  = 2; // ID of the workflow
-    string status       = 3; // Status of the job
-    string trigger      = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
-    string scheduled_at = 5; // Time the job is scheduled to run
-    string started_at   = 6; // Time the job was started
-    string completed_at = 7; // Time the job was completed
-    string created_at   = 8; // Time the job was created
-    string updated_at   = 9; // Time the job was last updated
+  string id           = 1; // ID of the job
+  string workflow_id  = 2; // ID of the workflow
+  string status       = 3; // Status of the job
+  string trigger      = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string scheduled_at = 5; // Time the job is scheduled to run
+  string started_at   = 6; // Time the job was started
+  string completed_at = 7; // Time the job was completed
+  string created_at   = 8; // Time the job was created
+  string updated_at   = 9; // Time the job was last updated
 }
 
 // GetJobByIDRequest contains the details needed to get a job by ID.
 message GetJobByIDRequest {
-    string id = 1; // ID of the job
+  string id = 1; // ID of the job
 }
 
 // GetJobByIDResponse contains the result of a job retrieval attempt.
 message GetJobByIDResponse {
-    string id           = 1; // ID of the job
-    string workflow_id  = 2; // ID of the workflow
-    string user_id      = 3; // ID of the user
-    string container_id = 4; // ID of the container (if applicable)
-    string status       = 5; // Status of the job
-    string trigger      = 6; // Trigger type of the job (AUTOMATIC or MANUAL)
-    string scheduled_at = 7; // Time the job is scheduled to run
-    string started_at   = 8; // Time the job was started
-    string completed_at = 9; // Time the job was completed
-    string created_at   = 10; // Time the job was created
-    string updated_at   = 11; // Time the job was last updated
+  string id           = 1; // ID of the job
+  string workflow_id  = 2; // ID of the workflow
+  string user_id      = 3; // ID of the user
+  string container_id = 4; // ID of the container (if applicable)
+  string status       = 5; // Status of the job
+  string trigger      = 6; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string scheduled_at = 7; // Time the job is scheduled to run
+  string started_at   = 8; // Time the job was started
+  string completed_at = 9; // Time the job was completed
+  string created_at   = 10; // Time the job was created
+  string updated_at   = 11; // Time the job was last updated
 }
 
 // LogStream represents the type of log stream.
 enum LogStream {
-    LOG_STREAM_UNSPECIFIED = 0;
-    LOG_STREAM_STDOUT      = 1;
-    LOG_STREAM_STDERR      = 2;
-    LOG_STREAM_ALL         = 3;
+  LOG_STREAM_UNSPECIFIED = 0;
+  LOG_STREAM_STDOUT      = 1;
+  LOG_STREAM_STDERR      = 2;
+  LOG_STREAM_ALL         = 3;
 }
 
 // SearchJobLogsFilters are the filters that are to be applied on the get job logs request.
 message GetJobLogsFilters {
-    LogStream stream = 1;
+  LogStream stream = 1;
 }
 
 // GetJobLogsRequest contains the details needed to get the logs of a job.
 message GetJobLogsRequest {
-    string id                 = 1; // ID of the job
-    string workflow_id        = 2; // ID of the workflow
-    string user_id            = 3; // ID of the user
-    string cursor             = 4; // Cursor for pagination
-    GetJobLogsFilters filters = 5; // Filters applied to the search
+  string            id          = 1; // ID of the job
+  string            workflow_id = 2; // ID of the workflow
+  string            user_id     = 3; // ID of the user
+  string            cursor      = 4; // Cursor for pagination
+  GetJobLogsFilters filters     = 5; // Filters applied to the search
 }
 
 // Log contains the details of a log.
 message Log {
-    string timestamp    = 1; // Time the log was created
-    string message      = 2; // Log message
-    uint32 sequence_num = 3; // Sequence number of the log
-    string stream       = 4; // Stream type (stdout or stderr)
+  string timestamp    = 1; // Time the log was created
+  string message      = 2; // Log message
+  uint32 sequence_num = 3; // Sequence number of the log
+  string stream       = 4; // Stream type (stdout or stderr)
 }
 
 // GetJobLogsResponse contains the result of a job log retrieval attempt.
 message GetJobLogsResponse {
-    string id          = 1; // ID of the job
-    string workflow_id = 2; // ID of the workflow
-    repeated Log logs  = 3; // List of log messages
-    string cursor      = 4; // Cursor for pagination
+  string       id          = 1; // ID of the job
+  string       workflow_id = 2; // ID of the workflow
+  repeated Log logs        = 3; // List of log messages
+  string       cursor      = 4; // Cursor for pagination
 }
 
 // StreamJobLogsRequest contains the details needed to stream the logs of a job.
 message StreamJobLogsRequest {
-    string id          = 1; // ID of the job
-    string workflow_id = 2; // ID of the workflow
-    string user_id     = 3; // ID of the user
+  string id          = 1; // ID of the job
+  string workflow_id = 2; // ID of the workflow
+  string user_id     = 3; // ID of the user
 }
 
 // SearchJobLogsFilters are the filters that are to be applied on the search job logs request.
 message SearchJobLogsFilters {
-    LogStream stream = 1;
-    string message   = 2;
+  LogStream stream  = 1;
+  string    message = 2;
 }
 
 // SearchJobLogsRequest contains the details needed to search the logs of a job.
 message SearchJobLogsRequest {
-    string id                    = 1; // ID of the job
-    string workflow_id           = 2; // ID of the workflow
-    string user_id               = 3; // ID of the user
-    string cursor                = 4; // Cursor for pagination
-    SearchJobLogsFilters filters = 5; // Filters applied to the search
+  string               id          = 1; // ID of the job
+  string               workflow_id = 2; // ID of the workflow
+  string               user_id     = 3; // ID of the user
+  string               cursor      = 4; // Cursor for pagination
+  SearchJobLogsFilters filters     = 5; // Filters applied to the search
 }
 
 // ListJobsFilters contains the filters for listing jobs.
 message ListJobsFilters {
-    string status  = 1; // Status of the job (optional)
-    string trigger = 2; // Trigger type of the job (optional)
+  string status  = 1; // Status of the job (optional)
+  string trigger = 2; // Trigger type of the job (optional)
 }
 
 // ListJobsRequest contains the details needed to list all jobs for a workflow_id.
 message ListJobsRequest {
-    string workflow_id               = 1; // ID of the workflow
-    string user_id                   = 2; // ID of the user
-    string cursor                    = 3; // Cursor for pagination
-    optional ListJobsFilters filters = 4; // Filters applied to the list
+  string                   workflow_id = 1; // ID of the workflow
+  string                   user_id     = 2; // ID of the user
+  string                   cursor      = 3; // Cursor for pagination
+  optional ListJobsFilters filters     = 4; // Filters applied to the list
 }
 
 // JobsResponse contains the result of a job listing attempt.
 message JobsResponse {
-    string id           = 1; // ID of the job
-    string workflow_id  = 2; // ID of the workflow
-    string container_id = 3; // ID of the container (if applicable)
-    string status       = 4; // Status of the job
-    string trigger      = 5; // Trigger type of the job (AUTOMATIC or MANUAL)
-    string scheduled_at = 6; // Time the job is scheduled to run
-    string started_at   = 7; // Time the job was started
-    string completed_at = 8; // Time the job was completed
-    string created_at   = 9; // Time the job was created
-    string updated_at   = 10; // Time the job was last updated
+  string id           = 1; // ID of the job
+  string workflow_id  = 2; // ID of the workflow
+  string container_id = 3; // ID of the container (if applicable)
+  string status       = 4; // Status of the job
+  string trigger      = 5; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string scheduled_at = 6; // Time the job is scheduled to run
+  string started_at   = 7; // Time the job was started
+  string completed_at = 8; // Time the job was completed
+  string created_at   = 9; // Time the job was created
+  string updated_at   = 10; // Time the job was last updated
+  int32  attempts     = 11; // Number of execution attempts
 }
 
 message ListJobsResponse {
-    repeated JobsResponse jobs = 1; // List of jobs
-    string cursor              = 2; // Cursor for pagination
+  repeated JobsResponse jobs   = 1; // List of jobs
+  string                cursor = 2; // Cursor for pagination
 }
 
 // JobsService handles job related operations.
 service JobsService {
     // ScheduleJob schedules a job to run at a specific time.
-    rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
+  rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
 
     // UpdateJobStatus updates the status of a job.
     // This is an internal API and should not be exposed to the public.
-    rpc UpdateJobStatus(UpdateJobStatusRequest) returns (UpdateJobStatusResponse) {}
+  rpc UpdateJobStatus(UpdateJobStatusRequest) returns (UpdateJobStatusResponse) {}
+
+    // ClaimJob atomically claims a queued job for execution.
+    // This is an internal API and should not be exposed to the public.
+  rpc ClaimJob(ClaimJobRequest) returns (ClaimJobResponse) {}
+
+    // RenewJobLease renews a running job lease.
+    // This is an internal API and should not be exposed to the public.
+  rpc RenewJobLease(RenewJobLeaseRequest) returns (RenewJobLeaseResponse) {}
+
+    // AttachJobContainer attaches a container ID to a running claimed job.
+    // This is an internal API and should not be exposed to the public.
+  rpc AttachJobContainer(AttachJobContainerRequest) returns (AttachJobContainerResponse) {}
+
+    // CompleteJob completes a running claimed job.
+    // This is an internal API and should not be exposed to the public.
+  rpc CompleteJob(CompleteJobRequest) returns (CompleteJobResponse) {}
+
+    // FailJob marks a running claimed job as failed.
+    // This is an internal API and should not be exposed to the public.
+  rpc FailJob(FailJobRequest) returns (FailJobResponse) {}
+
+    // CancelClaimedJob marks a running claimed job as canceled.
+    // This is an internal API and should not be exposed to the public.
+  rpc CancelClaimedJob(CancelClaimedJobRequest) returns (CancelClaimedJobResponse) {}
+
+    // ReleaseJobForRetry releases a running claimed job back to pending.
+    // This is an internal API and should not be exposed to the public.
+  rpc ReleaseJobForRetry(ReleaseJobForRetryRequest) returns (ReleaseJobForRetryResponse) {}
+
+    // RecoverExpiredJobLeases returns expired running job leases for recovery.
+    // This is an internal API and should not be exposed to the public.
+  rpc RecoverExpiredJobLeases(RecoverExpiredJobLeasesRequest) returns (RecoverExpiredJobLeasesResponse) {}
 
     // GetJob gets a job by ID and user_id.
-    rpc GetJob(GetJobRequest) returns (GetJobResponse) {}
+  rpc GetJob(GetJobRequest) returns (GetJobResponse) {}
 
     // GetJobByID gets a job by ID.
     // This is an internal API and should not be exposed to the public.
-    rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
+  rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
 
     // GetJobLogs gets the logs of a job.
-    rpc GetJobLogs(GetJobLogsRequest) returns (GetJobLogsResponse) {}
+  rpc GetJobLogs(GetJobLogsRequest) returns (GetJobLogsResponse) {}
 
     // StreamJobLogs streams the logs of a job.
-    rpc StreamJobLogs(StreamJobLogsRequest) returns (stream Log) {}
+  rpc StreamJobLogs(StreamJobLogsRequest) returns (stream Log) {}
 
     // SearchJobLogs returns the filtered logs of a job.
-    rpc SearchJobLogs(SearchJobLogsRequest) returns (GetJobLogsResponse) {}
+  rpc SearchJobLogs(SearchJobLogsRequest) returns (GetJobLogsResponse) {}
 
     // ListJobs returns a list of all jobs for a workflow_id owned by a user.
-    rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {}
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {}
 }

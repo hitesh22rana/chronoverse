@@ -11,7 +11,6 @@ type SchedulingWorker struct {
 	Environment
 
 	Postgres
-	Kafka
 	SchedulingWorkerConfig
 }
 
@@ -19,8 +18,7 @@ type SchedulingWorker struct {
 type SchedulingWorkerConfig struct {
 	PollInterval   time.Duration `envconfig:"SCHEDULING_WORKER_POLL_INTERVAL" default:"10s"`
 	ContextTimeout time.Duration `envconfig:"SCHEDULING_WORKER_CONTEXT_TIMEOUT" default:"5s"`
-	FetchLimit     int           `envconfig:"SCHEDULING_WORKER_FETCH_LIMIT" default:"1000"`
-	BatchSize      int           `envconfig:"SCHEDULING_WORKER_BATCH_SIZE" default:"100"`
+	BatchSize      int           `envconfig:"SCHEDULING_WORKER_BATCH_SIZE" default:"1000"`
 }
 
 // InitSchedulingJobConfig initializes the scheduling worker configuration.

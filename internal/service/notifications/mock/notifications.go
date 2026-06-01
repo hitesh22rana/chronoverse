@@ -42,18 +42,18 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 }
 
 // CreateNotification mocks base method.
-func (m *MockRepository) CreateNotification(ctx context.Context, userID, kind, payload string) (string, error) {
+func (m *MockRepository) CreateNotification(ctx context.Context, userID, kind, payload, idempotencyKey string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateNotification", ctx, userID, kind, payload)
+	ret := m.ctrl.Call(m, "CreateNotification", ctx, userID, kind, payload, idempotencyKey)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateNotification indicates an expected call of CreateNotification.
-func (mr *MockRepositoryMockRecorder) CreateNotification(ctx, userID, kind, payload any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) CreateNotification(ctx, userID, kind, payload, idempotencyKey any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNotification", reflect.TypeOf((*MockRepository)(nil).CreateNotification), ctx, userID, kind, payload)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNotification", reflect.TypeOf((*MockRepository)(nil).CreateNotification), ctx, userID, kind, payload, idempotencyKey)
 }
 
 // ListNotifications mocks base method.

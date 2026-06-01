@@ -8,6 +8,7 @@ type WorkflowWorker struct {
 
 	Redis
 	ClickHouse
+	MeiliSearch
 	ClientTLS
 	Kafka
 	WorkflowsService

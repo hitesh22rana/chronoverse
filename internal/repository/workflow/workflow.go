@@ -3,10 +3,9 @@ package workflow
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"sync"
 	"time"
 
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -19,10 +18,13 @@ import (
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	kafkapkg "github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -37,6 +39,8 @@ const (
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
+	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
+	Remove(ctx context.Context, containerID string) error
 	Terminate(ctx context.Context, containerID string) error
 }
 
@@ -48,216 +52,146 @@ type Services struct {
 	Csvc          ContainerSvc
 }
 
-// Config represents the repository constants configuration.
-type Config struct {
-	ParallelismLimit int
-}
-
-// kafkaJob defines a job for the worker pool.
-type kafkaJob struct {
-	record *kgo.Record
-}
-
 // Repository provides workflow repository.
 type Repository struct {
-	tp      trace.Tracer
-	cfg     *Config
-	auth    auth.IAuth
-	rdb     *redis.Store
-	ch      *clickhouse.Client
-	kfk     *kgo.Client
-	svc     *Services
-	jobChan chan kafkaJob
-	wg      sync.WaitGroup
+	tp     trace.Tracer
+	auth   auth.IAuth
+	rdb    *redis.Store
+	ch     *clickhouse.Client
+	ms     meilisearch.ServiceManager
+	kfk    *kgo.Client
+	runner *kafkapkg.PartitionRunner
+	svc    *Services
 }
 
 // New creates a new workflow repository.
-func New(cfg *Config, auth auth.IAuth, rdb *redis.Store, ch *clickhouse.Client, kfk *kgo.Client, svc *Services) *Repository {
+func New(
+	auth auth.IAuth,
+	rdb *redis.Store,
+	ch *clickhouse.Client,
+	ms meilisearch.ServiceManager,
+	kfk *kgo.Client,
+	lifecycle *kafkapkg.PartitionLifecycle,
+	svc *Services,
+) *Repository {
 	r := &Repository{
-		tp:      otel.Tracer(svcpkg.Info().GetName()),
-		cfg:     cfg,
-		auth:    auth,
-		rdb:     rdb,
-		ch:      ch,
-		kfk:     kfk,
-		svc:     svc,
-		jobChan: make(chan kafkaJob, cfg.ParallelismLimit),
+		tp:   otel.Tracer(svcpkg.Info().GetName()),
+		auth: auth,
+		rdb:  rdb,
+		ch:   ch,
+		ms:   ms,
+		kfk:  kfk,
+		svc:  svc,
 	}
+	r.runner = kafkapkg.NewPartitionRunner(kfk, r.processRecord, &kafkapkg.PartitionRunnerConfig{
+		Name:         "workflow.worker",
+		RetryBackoff: retryBackoff,
+		Tracer:       r.tp,
+	}, lifecycle)
 
 	return r
 }
 
-// StartWorkers starts the worker goroutines.
-func (r *Repository) StartWorkers(ctx context.Context) {
-	// Start worker goroutines
-	for i := range r.cfg.ParallelismLimit {
-		r.wg.Go(func() {
-			r.worker(ctx, fmt.Sprintf("worker-%d", i))
-		})
-	}
-}
-
-// worker processes Kafka messages from the job channel.
-func (r *Repository) worker(ctx context.Context, workerID string) {
-	for {
-		select {
-		case job, ok := <-r.jobChan:
-			if !ok {
-				// Channel closed, exit worker
-				return
-			}
-
-			ctxWithTrace, span := r.tp.Start(
-				ctx,
-				"workflow.worker.processRecord",
-				trace.WithAttributes(
-					attribute.String("worker_id", workerID),
-					attribute.String("topic", job.record.Topic),
-					attribute.Int64("offset", job.record.Offset),
-					attribute.Int64("partition", int64(job.record.Partition)),
-					attribute.String("key", string(job.record.Key)),
-					attribute.String("value", string(job.record.Value)),
-				),
-			)
-
-			logger := loggerpkg.FromContext(ctxWithTrace).With(zap.String("worker_id", workerID))
-
-			var workflowEntry workflowsmodel.WorkflowEvent
-			if err := json.Unmarshal(job.record.Value, &workflowEntry); err != nil {
-				logger.Error(
-					"failed to unmarshal record",
-					zap.Any("ctx", ctxWithTrace),
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("value", string(job.record.Value)),
-					zap.Error(err),
-				)
-			} else if workflowErr := r.runTargetWorkflow(ctxWithTrace, workflowEntry); workflowErr != nil {
-				if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
-					logger.Error(
-						"internal error while executing workflow",
-						zap.Any("ctx", ctxWithTrace),
-						zap.String("topic", job.record.Topic),
-						zap.Int64("offset", job.record.Offset),
-						zap.Int32("partition", job.record.Partition),
-						zap.String("value", string(job.record.Value)),
-						zap.Error(workflowErr),
-					)
-				} else {
-					logger.Warn(
-						"workflow execution failed",
-						zap.Any("ctx", ctxWithTrace),
-						zap.String("topic", job.record.Topic),
-						zap.Int64("offset", job.record.Offset),
-						zap.Int32("partition", job.record.Partition),
-						zap.String("value", string(job.record.Value)),
-						zap.Error(workflowErr),
-					)
-				}
-			}
-
-			// Commit the record even if the workflow workflow fails to avoid reprocessing
-			if err := r.kfk.CommitRecords(ctxWithTrace, job.record); err != nil {
-				logger.Error(
-					"failed to commit record",
-					zap.Any("ctx", ctxWithTrace),
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("value", string(job.record.Value)),
-					zap.Error(err),
-				)
-			} else {
-				logger.Info("record processed and committed successfully",
-					zap.Any("ctx", ctxWithTrace),
-					zap.String("topic", job.record.Topic),
-					zap.Int64("offset", job.record.Offset),
-					zap.Int32("partition", job.record.Partition),
-					zap.String("value", string(job.record.Value)),
-				)
-			}
-			span.End()
-
-		case <-ctx.Done():
-			// Context canceled, exit worker
-			return
-		}
-	}
-}
-
 // runTargetWorkflow runs the target workflow based on the action.
-func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry workflowsmodel.WorkflowEvent) error {
+func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry *workflowsmodel.WorkflowEvent) error {
 	switch workflowEntry.Action {
 	case workflowsmodel.ActionBuild:
-		return r.buildWorkflow(ctx, workflowEntry.ID)
+		return r.buildWorkflow(ctx, workflowEntry)
+	case workflowsmodel.ActionReschedule:
+		return r.rescheduleWorkflow(ctx, workflowEntry)
 	case workflowsmodel.ActionTerminate:
-		return r.terminateWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
+		return r.terminateWorkflow(ctx, workflowEntry)
 	case workflowsmodel.ActionDelete:
 		return r.deleteWorkflow(ctx, workflowEntry.ID, workflowEntry.UserID)
+	case workflowsmodel.ActionJobCompleted:
+		return r.handleJobCompleted(ctx, workflowEntry)
+	case workflowsmodel.ActionJobFailed:
+		return r.handleJobFailed(ctx, workflowEntry)
 	default:
 		return status.Errorf(codes.InvalidArgument, "unknown workflow action: %s", workflowEntry.Action)
 	}
 }
 
+func workflowOccurrenceKey(workflowEvent *workflowsmodel.WorkflowEvent) string {
+	if workflowEvent.EventKey != "" {
+		return workflowEvent.EventKey
+	}
+
+	return idempotency.WorkflowEventKey(workflowEvent.ID, workflowEvent.Action.ToString(), workflowEvent.Generation)
+}
+
+func isStaleWorkflowEvent(workflow *workflowspb.GetWorkflowByIDResponse, workflowEvent *workflowsmodel.WorkflowEvent) bool {
+	return workflowEvent.Generation != 0 && workflow.GetGeneration() != workflowEvent.Generation
+}
+
 // Run start the workflow execution.
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
+	r.runner.SetLogger(logger)
+	return r.runner.Run(ctx)
+}
 
-	// Start workers with the context
-	r.StartWorkers(ctx)
+func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) error {
+	ctxWithTrace, span := r.tp.Start(
+		ctx,
+		"workflow.worker.processRecord",
+		trace.WithAttributes(
+			attribute.String("topic", record.Topic),
+			attribute.Int64("offset", record.Offset),
+			attribute.Int64("partition", int64(record.Partition)),
+			attribute.String("key", string(record.Key)),
+			attribute.String("value", string(record.Value)),
+		),
+	)
+	defer span.End()
 
-	// Ensures that the job channel is closed and all workers are done before returning
-	defer func() {
-		close(r.jobChan)
-		r.wg.Wait()
-	}()
+	logger := loggerpkg.FromContext(ctxWithTrace)
 
-	for {
-		// Check context cancellation before processing
-		select {
-		case <-ctx.Done():
-			logger.Warn("shutting down workflow worker, context canceled", zap.Error(ctx.Err()))
-			return ctx.Err()
-		default:
-			// Continue processing
-		}
-
-		fetches := r.kfk.PollFetches(ctx)
-		if fetches.IsClientClosed() {
-			logger.Warn("kafka client closed, shutting down workflow worker")
-			return nil // Return nil as this is an expected shutdown path
-		}
-
-		if fetches.Empty() {
-			continue
-		}
-
-		iter := fetches.RecordIter()
-		for _, fetchErr := range fetches.Errors() {
-			logger.Error("error while fetching records",
-				zap.String("topic", fetchErr.Topic),
-				zap.Int32("partition", fetchErr.Partition),
-				zap.Error(fetchErr.Err),
-			)
-		}
-
-		for !iter.Done() {
-			record := iter.Next()
-
-			select {
-			case r.jobChan <- kafkaJob{record: record}:
-				// Job dispatched successfully
-			case <-ctx.Done(): // Check for cancellation of the main Run context
-				logger.Warn("shutting down dispatcher, context canceled", zap.Error(ctx.Err()))
-				return ctx.Err() // Exit if main context is canceled
-			}
-		}
+	var workflowEntry workflowsmodel.WorkflowEvent
+	if err := json.Unmarshal(record.Value, &workflowEntry); err != nil {
+		logger.Error(
+			"failed to unmarshal record",
+			zap.Any("ctx", ctxWithTrace),
+			zap.String("topic", record.Topic),
+			zap.Int64("offset", record.Offset),
+			zap.Int32("partition", record.Partition),
+			zap.String("value", string(record.Value)),
+			zap.Error(err),
+		)
+		return nil
 	}
+
+	workflowErr := r.runTargetWorkflow(ctxWithTrace, &workflowEntry)
+	if workflowErr == nil {
+		logger.Info("record processed successfully",
+			zap.Any("ctx", ctxWithTrace),
+			zap.String("topic", record.Topic),
+			zap.Int64("offset", record.Offset),
+			zap.Int32("partition", record.Partition),
+			zap.String("value", string(record.Value)),
+		)
+		return nil
+	}
+
+	fields := []zap.Field{
+		zap.Any("ctx", ctxWithTrace),
+		zap.String("topic", record.Topic),
+		zap.Int64("offset", record.Offset),
+		zap.Int32("partition", record.Partition),
+		zap.String("value", string(record.Value)),
+		zap.Error(workflowErr),
+	}
+	if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
+		logger.Error("internal error while executing workflow", fields...)
+	} else {
+		logger.Warn("workflow execution failed", fields...)
+	}
+
+	return workflowErr
 }
 
 // sendNotification sends a notification for the job execution related events.
-func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType string) error {
+func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType, occurrenceKey string) error {
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
 		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
@@ -267,9 +201,10 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 		// Create a new notification
 		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
+			UserId:         userID,
+			Kind:           kind,
+			Payload:        payload,
+			IdempotencyKey: idempotency.JobNotificationEventKey(jobID, title),
 		}); err != nil {
 			return err
 		}
@@ -281,9 +216,10 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 		// Create a new notification
 		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:  userID,
-			Kind:    kind,
-			Payload: payload,
+			UserId:         userID,
+			Kind:           kind,
+			Payload:        payload,
+			IdempotencyKey: idempotency.WorkflowNotificationEventKey(workflowID, title, occurrenceKey),
 		}); err != nil {
 			return err
 		}
@@ -296,40 +232,5 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 
 // withAuthorization issues the necessary headers and tokens for authorization.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
-	// Attach the audience and role to the context
-	ctx := auth.WithAudience(parentCtx, svcpkg.Info().GetName())
-	ctx = auth.WithRole(ctx, auth.RoleAdmin.String())
-
-	// Issue a new token
-	authToken, err := r.auth.IssueToken(ctx, authSubject)
-	if err != nil {
-		return nil, err
-	}
-
-	// Attach all the necessary headers and tokens to the context
-	ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
-	ctx = auth.WithRoleInMetadata(ctx, auth.RoleAdmin)
-	ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
-
-	return ctx, nil
-}
-
-// withRetry executes the given function and retries once if it fails with an error
-// other than codes.FailedPrecondition.
-func withRetry(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
-	}
-
-	// If the error is FailedPrecondition or InvalidArgument, do not retry
-	if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.InvalidArgument {
-		return err
-	}
-
-	// Wait for the retry backoff duration
-	time.Sleep(retryBackoff)
-
-	// Execute the function again
-	return fn()
+	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
 }

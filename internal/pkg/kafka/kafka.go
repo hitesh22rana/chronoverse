@@ -34,6 +34,7 @@ type Config struct {
 	TransactionalID     string
 	FetchIsolationLevel IsolationLevel
 	DisableAutoCommit   bool
+	PartitionLifecycle  *PartitionLifecycle
 	TLS                 *tls.Config
 }
 
@@ -57,7 +58,6 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(c.Brokers...),
-		kgo.AllowAutoTopicCreation(),
 	}
 
 	if c.TLS != nil {
@@ -90,6 +90,13 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 
 	if c.DisableAutoCommit {
 		opts = append(opts, kgo.DisableAutoCommit())
+	}
+	if c.PartitionLifecycle != nil {
+		opts = append(opts,
+			kgo.OnPartitionsAssigned(c.PartitionLifecycle.OnAssigned),
+			kgo.OnPartitionsRevoked(c.PartitionLifecycle.OnRevoked),
+			kgo.OnPartitionsLost(c.PartitionLifecycle.OnLost),
+		)
 	}
 
 	return kgo.NewClient(opts...)
@@ -134,6 +141,13 @@ func WithFetchIsolationLevel(isolationLevel IsolationLevel) Option {
 func WithDisableAutoCommit() Option {
 	return func(c *Config) {
 		c.DisableAutoCommit = true
+	}
+}
+
+// WithPartitionLifecycle sets the kafka partition lifecycle callbacks.
+func WithPartitionLifecycle(lifecycle *PartitionLifecycle) Option {
+	return func(c *Config) {
+		c.PartitionLifecycle = lifecycle
 	}
 }
 

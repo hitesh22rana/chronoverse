@@ -55,6 +55,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 				LogRetention:                     boolPtr(false),
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -66,6 +67,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 					req.GetLogRetention(),
+					req.GetIdempotencyKey(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
@@ -112,6 +114,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Kind:                             "CONTAINER",
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -123,6 +126,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 					true, // logRetentionEnabled
+					req.GetIdempotencyKey(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
@@ -170,6 +174,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 				LogRetention:                     boolPtr(false),
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -181,6 +186,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 					false, // logRetentionEnabled
+					req.GetIdempotencyKey(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
@@ -228,6 +234,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 				LogRetention:                     boolPtr(true),
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -239,6 +246,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 					true, // logRetentionEnabled
+					req.GetIdempotencyKey(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
@@ -286,6 +294,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 				LogRetention:                     nil,
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -297,6 +306,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 					false, // logRetentionEnabled
+					req.GetIdempotencyKey(),
 				).Return(&workflowsmodel.GetWorkflowResponse{
 					ID:                               "workflow_id",
 					Name:                             "workflow1",
@@ -344,6 +354,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 				LogRetention:                     boolPtr(true),
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -373,6 +384,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         0,
 				MaxConsecutiveJobFailuresAllowed: 5,
 				LogRetention:                     boolPtr(true),
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -388,6 +400,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 0,
 				LogRetention:                     boolPtr(true),
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
 			want:  want{},
@@ -403,6 +416,7 @@ func TestCreateWorkflow(t *testing.T) {
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
 				LogRetention:                     boolPtr(false),
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.CreateWorkflowRequest) {
 				repo.EXPECT().CreateWorkflow(
@@ -414,6 +428,7 @@ func TestCreateWorkflow(t *testing.T) {
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 					req.GetLogRetention(),
+					req.GetIdempotencyKey(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -470,6 +485,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowRequest) {
 				repo.EXPECT().UpdateWorkflow(
@@ -480,6 +496,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetPayload(),
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
+					req.GetIdempotencyKey(),
 				).Return(nil)
 
 				// Simulate a cache delete
@@ -541,6 +558,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowRequest) {
 				repo.EXPECT().UpdateWorkflow(
@@ -551,6 +569,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetPayload(),
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
+					req.GetIdempotencyKey(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
 			isErr: true,
@@ -564,6 +583,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
 				Interval:                         1,
 				MaxConsecutiveJobFailuresAllowed: 5,
+				IdempotencyKey:                   "workflow-key",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowRequest) {
 				repo.EXPECT().UpdateWorkflow(
@@ -574,6 +594,7 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetPayload(),
 					req.GetInterval(),
 					req.GetMaxConsecutiveJobFailuresAllowed(),
+					req.GetIdempotencyKey(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,
@@ -624,6 +645,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 				Id:          "workflow_id",
 				UserId:      "user_id",
 				BuildStatus: "COMPLETED",
+				Generation:  2,
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
@@ -631,6 +653,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 					req.GetBuildStatus(),
+					req.GetGeneration(),
 				).Return(nil)
 
 				// Simulate a cache delete
@@ -690,6 +713,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 					req.GetBuildStatus(),
+					req.GetGeneration(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
 			isErr: true,
@@ -707,6 +731,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 					req.GetBuildStatus(),
+					req.GetGeneration(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,
@@ -936,11 +961,10 @@ func TestGetWorkflow(t *testing.T) {
 				errs := make([]error, 2)
 
 				for i := range 2 {
-					wg.Add(1)
-					go func(idx int) {
-						defer wg.Done()
+					idx := i
+					wg.Go(func() {
 						results[idx], errs[idx] = s.GetWorkflow(t.Context(), req)
-					}(i)
+					})
 				}
 
 				for range 50 {
@@ -1249,12 +1273,14 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "workflow_id",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
+					req.GetJobId(),
 				).Return(false, nil)
 
 				// Simulate a cache delete
@@ -1279,12 +1305,14 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "workflow_id",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
+					req.GetJobId(),
 				).Return(true, nil)
 			},
 			want: want{
@@ -1297,6 +1325,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
 			want:  want{},
@@ -1307,12 +1336,14 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "invalid_workflow_id",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
+					req.GetJobId(),
 				).Return(false, status.Error(codes.NotFound, "workflow not found"))
 			},
 			want: want{
@@ -1325,12 +1356,14 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "workflow_id",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock: func(req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
+					req.GetJobId(),
 				).Return(false, status.Error(codes.Internal, "internal server error"))
 			},
 			want: want{

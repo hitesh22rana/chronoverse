@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/executor"
@@ -68,7 +67,22 @@ func run() int {
 		return ExitError
 	}
 
-	// Initialize the redis store
+	// Initialize the kafka client
+	kafkaLifecycle := kafka.NewPartitionLifecycle()
+	kfk, err := kafka.New(ctx,
+		kafka.WithBrokers(cfg.Kafka.Brokers...),
+		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
+		kafka.WithConsumeTopics(kafka.TopicJobs),
+		kafka.WithDisableAutoCommit(),
+		kafka.WithPartitionLifecycle(kafkaLifecycle),
+		kafka.WithTLS(&cfg.Kafka),
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+	defer kfk.Close()
+
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
 		Port:                     cfg.Redis.Port,
@@ -93,20 +107,6 @@ func run() int {
 		return ExitError
 	}
 	defer rdb.Close()
-
-	// Initialize the kafka client
-	kfk, err := kafka.New(ctx,
-		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
-		kafka.WithConsumeTopics(kafka.TopicJobs),
-		kafka.WithDisableAutoCommit(),
-		kafka.WithTLS(&cfg.Kafka),
-	)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer kfk.Close()
 
 	// Initialize the container service
 	csvc, err := container.NewDockerWorkflow()
@@ -157,36 +157,28 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
-	// Connect to the notifications service
-	notificationsConn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{
-			Host: cfg.NotificationsService.Host,
-			Port: cfg.NotificationsService.Port,
-			TLS: &grpcclient.TLSConfig{
-				Enabled:        cfg.NotificationsService.TLS.Enabled,
-				CAFile:         cfg.NotificationsService.TLS.CAFile,
-				ClientCertFile: cfg.ClientTLS.CertFile,
-				ClientKeyFile:  cfg.ClientTLS.KeyFile,
-			},
-		},
-		grpcclient.DefaultCircuitBreakerConfig(),
-		grpcclient.DefaultRetryConfig(),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return ExitError
-	}
-	defer notificationsConn.Close()
-
 	// Initialize the execution job components
 	repo := executorrepo.New(&executorrepo.Config{
-		ParallelismLimit: runtime.GOMAXPROCS(0),
-	}, auth, rdb, kfk, &executorrepo.Services{
-		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
-		Jobs:          jobspb.NewJobsServiceClient(jobsConn),
-		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
-		Csvc:          csvc,
-		Hsvc:          heartbeat.New(),
+		WorkerID:             cfg.ExecutionWorkerConfig.WorkerID,
+		Concurrency:          cfg.ExecutionWorkerConfig.Concurrency,
+		LeaseDuration:        cfg.ExecutionWorkerConfig.LeaseDuration,
+		LeaseRenewInterval:   cfg.ExecutionWorkerConfig.LeaseRenewInterval,
+		SystemRetryLimit:     cfg.ExecutionWorkerConfig.SystemRetryLimit,
+		SystemRetryBackoff:   cfg.ExecutionWorkerConfig.SystemRetryBackoff,
+		RecoveryInterval:     cfg.ExecutionWorkerConfig.RecoveryInterval,
+		RecoveryBatchSize:    cfg.ExecutionWorkerConfig.RecoveryBatchSize,
+		JobLogBatchSize:      cfg.ExecutionWorkerConfig.JobLogBatchSize,
+		JobLogBatchInterval:  cfg.ExecutionWorkerConfig.JobLogBatchInterval,
+		JobLogPublishTimeout: cfg.ExecutionWorkerConfig.JobLogPublishTimeout,
+		JobLogPublishRetries: cfg.ExecutionWorkerConfig.JobLogPublishRetries,
+		JobLogPublishBackoff: cfg.ExecutionWorkerConfig.JobLogPublishBackoff,
+		JobLogLiveTimeout:    cfg.ExecutionWorkerConfig.JobLogLiveTimeout,
+		JobLogLiveBufferSize: cfg.ExecutionWorkerConfig.JobLogLiveBufferSize,
+	}, auth, kfk, rdb, kafkaLifecycle, &executorrepo.Services{
+		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
+		Csvc:      csvc,
+		Hsvc:      heartbeat.New(),
 	})
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)

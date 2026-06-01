@@ -18,6 +18,7 @@ const (
 	serverShutdownTimeout = 10 * time.Second
 	csrfCookieName        = "csrf"
 	sessionCookieName     = "session"
+	idempotencyKeyHeader  = "Idempotency-Key"
 )
 
 var (
@@ -56,6 +57,11 @@ type sessionKey struct{}
 
 // userIDKey is the key used to store the user ID in the context.
 type userIDKey struct{}
+
+func idempotencyKeyFromHeader(r *http.Request) (string, bool) {
+	key := r.Header.Get(idempotencyKeyHeader)
+	return key, key != ""
+}
 
 // sessionFromContext returns the session from the context.
 func sessionFromContext(ctx context.Context) (string, error) {
@@ -125,7 +131,7 @@ func handleError(w http.ResponseWriter, err error, message ...string) {
 	case codes.DataLoss:
 		http.Error(w, msg, http.StatusInternalServerError)
 	case codes.Aborted:
-		http.Error(w, msg, http.StatusInternalServerError)
+		http.Error(w, msg, http.StatusConflict)
 	case codes.OutOfRange:
 		http.Error(w, msg, http.StatusInternalServerError)
 	case codes.Unknown:

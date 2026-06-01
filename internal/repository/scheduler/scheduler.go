@@ -3,27 +3,27 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/outbox"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+const defaultBatchSize = 1000
+
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit int
-	BatchSize  int
+	BatchSize int
 }
 
 // Repository provides scheduler repository.
@@ -31,22 +31,33 @@ type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
 	pg  *postgres.Postgres
-	kfk *kgo.Client
+}
+
+type jobDispatchOutboxEvent struct {
+	jobID      string
+	workflowID string
+	eventKey   string
+	payload    json.RawMessage
 }
 
 // New creates a new scheduler repository.
-func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
+func New(cfg *Config, pg *postgres.Postgres) *Repository {
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
 		cfg: cfg,
 		pg:  pg,
-		kfk: kfk,
 	}
 }
 
+func (r *Repository) batchSize() int {
+	if r.cfg == nil || r.cfg.BatchSize <= 0 {
+		return defaultBatchSize
+	}
+
+	return r.cfg.BatchSize
+}
+
 // Run starts the scheduler.
-//
-//nolint:gocyclo // The cyclomatic complexity is acceptable
 func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Run")
 	defer func() {
@@ -66,17 +77,111 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	defer tx.Rollback(ctx)
 
 	query := fmt.Sprintf(`
-		UPDATE %s
-		SET status = 'QUEUED'
-		WHERE id IN (
-			SELECT id
-			FROM %s
-			WHERE status = 'PENDING' AND scheduled_at <= NOW()
-			FOR UPDATE SKIP LOCKED
-			LIMIT %d
-		)
-		RETURNING id, workflow_id, scheduled_at;
-	`, postgres.TableJobs, postgres.TableJobs, r.cfg.FetchLimit)
+            WITH candidate_workflows AS (
+                SELECT w.id, w.generation
+            FROM %s AS w
+            WHERE w.build_status = 'COMPLETED'
+                AND w.terminated_at IS NULL
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM %s AS active
+                    WHERE active.workflow_id = w.id
+                        AND active.status IN ('QUEUED', 'RUNNING')
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM %s AS due
+                    WHERE due.workflow_id = w.id
+                        AND due.status = 'PENDING'
+                        AND due.scheduled_at <= (now() AT TIME ZONE 'utc')
+                        AND (due.next_attempt_at IS NULL OR due.next_attempt_at <= (now() AT TIME ZONE 'utc'))
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM %s AS blocker
+                            WHERE blocker.workflow_id = due.workflow_id
+                                AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
+                                AND (
+                                    blocker.scheduled_at < due.scheduled_at
+                                    OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at < due.created_at)
+                                    OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at = due.created_at AND blocker.id < due.id)
+                                )
+                        )
+                )
+            ORDER BY (
+                SELECT due.scheduled_at
+                FROM %s AS due
+                WHERE due.workflow_id = w.id
+                    AND due.status = 'PENDING'
+                    AND due.scheduled_at <= (now() AT TIME ZONE 'utc')
+                    AND (due.next_attempt_at IS NULL OR due.next_attempt_at <= (now() AT TIME ZONE 'utc'))
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM %s AS blocker
+                        WHERE blocker.workflow_id = due.workflow_id
+                            AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
+                            AND (
+                                blocker.scheduled_at < due.scheduled_at
+                                OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at < due.created_at)
+                                OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at = due.created_at AND blocker.id < due.id)
+                            )
+                    )
+                ORDER BY
+                    due.scheduled_at ASC,
+                    due.created_at ASC,
+                    due.id ASC
+                LIMIT 1
+            ) ASC
+            FOR UPDATE OF w SKIP LOCKED
+            LIMIT %d
+        ),
+            selected AS (
+                SELECT due.id, w.generation
+            FROM candidate_workflows AS w
+            CROSS JOIN LATERAL (
+                SELECT j.id
+                FROM %s AS j
+                WHERE j.workflow_id = w.id
+                    AND j.status = 'PENDING'
+                    AND j.scheduled_at <= (now() AT TIME ZONE 'utc')
+                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= (now() AT TIME ZONE 'utc'))
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM %s AS blocker
+                        WHERE blocker.workflow_id = j.workflow_id
+                            AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
+                            AND (
+                                blocker.scheduled_at < j.scheduled_at
+                                OR (blocker.scheduled_at = j.scheduled_at AND blocker.created_at < j.created_at)
+                                OR (blocker.scheduled_at = j.scheduled_at AND blocker.created_at = j.created_at AND blocker.id < j.id)
+                            )
+                    )
+                ORDER BY
+                    j.scheduled_at ASC,
+                    j.created_at ASC,
+                    j.id ASC
+                FOR UPDATE OF j SKIP LOCKED
+                LIMIT 1
+            ) AS due
+        )
+            UPDATE %s AS j
+            SET status = 'QUEUED',
+                queued_at = now() AT TIME ZONE 'utc',
+                dispatch_attempts = dispatch_attempts + 1
+            FROM selected
+            WHERE j.id = selected.id
+            RETURNING j.id, j.workflow_id, j.scheduled_at, j.dispatch_attempts, selected.generation;
+    `,
+		postgres.TableWorkflows,
+		postgres.TableJobs,
+		postgres.TableJobs,
+		postgres.TableJobs,
+		postgres.TableJobs,
+		postgres.TableJobs,
+		r.batchSize(),
+		postgres.TableJobs,
+		postgres.TableJobs,
+		postgres.TableJobs,
+	)
 
 	// Execute query
 	rows, err := tx.Query(ctx, query)
@@ -86,33 +191,39 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	}
 	defer rows.Close()
 
-	// Iterate over the rows and collect the data
-	//nolint:prealloc // We don't know the number of rows
-	var records []*kgo.Record
+	events := make([]jobDispatchOutboxEvent, 0, r.batchSize())
 	for rows.Next() {
 		var id string
 		var workflowID string
 		var scheduledAt time.Time
-		if err = rows.Scan(&id, &workflowID, &scheduledAt); err != nil {
+		var dispatchAttempt int32
+		var workflowGeneration int64
+		if err = rows.Scan(&id, &workflowID, &scheduledAt, &dispatchAttempt, &workflowGeneration); err != nil {
 			err = status.Errorf(codes.Internal, "failed to scan job: %v", err)
 			return 0, err
 		}
 
-		scheduledJobEntryBytes, _err := json.Marshal(&jobsmodel.ScheduledJobEntry{
-			JobID:       id,
-			WorkflowID:  workflowID,
-			ScheduledAt: scheduledAt.Format(time.RFC3339Nano),
-		})
+		eventKey := idempotency.JobDispatchEventKey(id, dispatchAttempt)
+		scheduledJobEntry := &jobsmodel.ScheduledJobEntry{
+			EventKey:           eventKey,
+			JobID:              id,
+			WorkflowID:         workflowID,
+			ScheduledAt:        scheduledAt.Format(time.RFC3339Nano),
+			DispatchAttempt:    dispatchAttempt,
+			WorkflowGeneration: workflowGeneration,
+		}
+		scheduledJobEntryBytes, _err := json.Marshal(scheduledJobEntry)
 		if _err != nil {
 			continue
 		}
 
-		record := &kgo.Record{
-			Topic: kafka.TopicJobs,
-			Key:   []byte(id),
-			Value: scheduledJobEntryBytes,
-		}
-		records = append(records, record)
+		events = append(events, jobDispatchOutboxEvent{
+			jobID:      id,
+			workflowID: workflowID,
+			eventKey:   eventKey,
+			payload:    json.RawMessage(scheduledJobEntryBytes),
+		})
+		total++
 	}
 
 	// Handle any errors that may have occurred during iteration
@@ -120,53 +231,22 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		err = status.Errorf(codes.Internal, "failed to iterate over jobs: %v", err)
 		return 0, err
 	}
+	rows.Close()
 
-	// Divide the records into batches
-	recordsBatch := batch(records, r.cfg.BatchSize)
-	if len(recordsBatch) == 0 {
-		return 0, nil
+	for _, event := range events {
+		insertErr := outbox.InsertTx(ctx, tx, &outbox.Event{
+			Topic:    kafka.TopicJobs,
+			KafkaKey: event.workflowID,
+			EventKey: event.eventKey,
+			Payload:  event.payload,
+		})
+		if insertErr != nil {
+			return 0, insertErr
+		}
 	}
 
-	// Publish the data to Kafka
-	for {
-		// Begin the kafka transaction
-		if err = r.kfk.BeginTransaction(); err != nil {
-			err = status.Errorf(codes.Internal, "failed to begin kafka transaction: %v", err)
-			return 0, err
-		}
-
-		// Publish the data to Kafka
-		for _, batch := range recordsBatch {
-			if err = r.kfk.ProduceSync(ctx, batch...).FirstErr(); err != nil {
-				err = rollback(ctx, r.kfk)
-				if err != nil {
-					return 0, err
-				}
-			}
-		}
-
-		// Flush all the buffered messages
-		// Flush only returns an error if the context was canceled, and we don't want to handle that error
-		if _err := r.kfk.Flush(ctx); _err != nil {
-			break // nothing to do here, since error means context was canceled
-		}
-
-		// Attempt to commit the transaction and explicitly abort if the commit was not attempted.
-		//nolint:nestif // The nested if statements are necessary
-		if err = r.kfk.EndTransaction(ctx, kgo.TryCommit); err != nil {
-			if errors.Is(err, kerr.OperationNotAttempted) {
-				err = rollback(ctx, r.kfk)
-				if err != nil {
-					return 0, err
-				}
-			} else {
-				err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
-				return 0, err
-			}
-		} else {
-			// Since the transaction was committed, we can break out of the loop
-			break
-		}
+	if total == 0 {
+		return 0, nil
 	}
 
 	// Commit transaction
@@ -175,30 +255,5 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		return 0, err
 	}
 
-	total = len(records)
 	return total, nil
-}
-
-func batch(data []*kgo.Record, size int) (batch [][]*kgo.Record) {
-	if len(data) == 0 {
-		return nil
-	}
-
-	for size < len(data) {
-		data, batch = data[size:], append(batch, data[0:size:size])
-	}
-	return append(batch, data)
-}
-
-func rollback(ctx context.Context, kfk *kgo.Client) error {
-	if err := kfk.AbortBufferedRecords(ctx); err != nil {
-		return status.Errorf(codes.Canceled, "failed to abort buffered records: %v", err)
-	}
-
-	// Explicitly abort the transaction
-	if err := kfk.EndTransaction(ctx, kgo.TryAbort); err != nil {
-		return status.Errorf(codes.Internal, "failed to rollback transaction: %v", err)
-	}
-
-	return nil
 }

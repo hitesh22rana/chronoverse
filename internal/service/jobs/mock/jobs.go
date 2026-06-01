@@ -43,6 +43,79 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
 }
 
+// AttachJobContainer mocks base method.
+func (m *MockRepository) AttachJobContainer(ctx context.Context, jobID, leaseToken, containerID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AttachJobContainer", ctx, jobID, leaseToken, containerID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AttachJobContainer indicates an expected call of AttachJobContainer.
+func (mr *MockRepositoryMockRecorder) AttachJobContainer(ctx, jobID, leaseToken, containerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachJobContainer", reflect.TypeOf((*MockRepository)(nil).AttachJobContainer), ctx, jobID, leaseToken, containerID)
+}
+
+// CancelClaimedJob mocks base method.
+func (m *MockRepository) CancelClaimedJob(ctx context.Context, jobID, leaseToken string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CancelClaimedJob", ctx, jobID, leaseToken)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CancelClaimedJob indicates an expected call of CancelClaimedJob.
+func (mr *MockRepositoryMockRecorder) CancelClaimedJob(ctx, jobID, leaseToken any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelClaimedJob", reflect.TypeOf((*MockRepository)(nil).CancelClaimedJob), ctx, jobID, leaseToken)
+}
+
+// ClaimJob mocks base method.
+func (m *MockRepository) ClaimJob(ctx context.Context, jobID, workflowID, workerID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobs.ClaimedJob, bool, string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimJob", ctx, jobID, workflowID, workerID, leaseDuration, dispatchAttempt)
+	ret0, _ := ret[0].(*jobs.ClaimedJob)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(string)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
+}
+
+// ClaimJob indicates an expected call of ClaimJob.
+func (mr *MockRepositoryMockRecorder) ClaimJob(ctx, jobID, workflowID, workerID, leaseDuration, dispatchAttempt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimJob", reflect.TypeOf((*MockRepository)(nil).ClaimJob), ctx, jobID, workflowID, workerID, leaseDuration, dispatchAttempt)
+}
+
+// CompleteJob mocks base method.
+func (m *MockRepository) CompleteJob(ctx context.Context, jobID, leaseToken string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteJob", ctx, jobID, leaseToken)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteJob indicates an expected call of CompleteJob.
+func (mr *MockRepositoryMockRecorder) CompleteJob(ctx, jobID, leaseToken any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteJob", reflect.TypeOf((*MockRepository)(nil).CompleteJob), ctx, jobID, leaseToken)
+}
+
+// FailJob mocks base method.
+func (m *MockRepository) FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FailJob", ctx, jobID, leaseToken, failureKind, errorCode, errorMessage)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// FailJob indicates an expected call of FailJob.
+func (mr *MockRepositoryMockRecorder) FailJob(ctx, jobID, leaseToken, failureKind, errorCode, errorMessage any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailJob", reflect.TypeOf((*MockRepository)(nil).FailJob), ctx, jobID, leaseToken, failureKind, errorCode, errorMessage)
+}
+
 // GetJob mocks base method.
 func (m *MockRepository) GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobs.GetJobResponse, error) {
 	m.ctrl.T.Helper()
@@ -104,19 +177,62 @@ func (mr *MockRepositoryMockRecorder) ListJobs(ctx, workflowID, userID, cursor, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListJobs", reflect.TypeOf((*MockRepository)(nil).ListJobs), ctx, workflowID, userID, cursor, filters)
 }
 
-// ScheduleJob mocks base method.
-func (m *MockRepository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (string, error) {
+// RecoverExpiredJobLeases mocks base method.
+func (m *MockRepository) RecoverExpiredJobLeases(ctx context.Context, batchSize int32, workerID string, leaseDuration time.Duration) ([]*jobs.ExpiredJobLease, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ScheduleJob", ctx, workflowID, userID, scheduledAt, trigger)
+	ret := m.ctrl.Call(m, "RecoverExpiredJobLeases", ctx, batchSize, workerID, leaseDuration)
+	ret0, _ := ret[0].([]*jobs.ExpiredJobLease)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RecoverExpiredJobLeases indicates an expected call of RecoverExpiredJobLeases.
+func (mr *MockRepositoryMockRecorder) RecoverExpiredJobLeases(ctx, batchSize, workerID, leaseDuration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecoverExpiredJobLeases", reflect.TypeOf((*MockRepository)(nil).RecoverExpiredJobLeases), ctx, batchSize, workerID, leaseDuration)
+}
+
+// ReleaseJobForRetry mocks base method.
+func (m *MockRepository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReleaseJobForRetry", ctx, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReleaseJobForRetry indicates an expected call of ReleaseJobForRetry.
+func (mr *MockRepositoryMockRecorder) ReleaseJobForRetry(ctx, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseJobForRetry", reflect.TypeOf((*MockRepository)(nil).ReleaseJobForRetry), ctx, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage)
+}
+
+// RenewJobLease mocks base method.
+func (m *MockRepository) RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RenewJobLease", ctx, jobID, leaseToken, leaseDuration)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RenewJobLease indicates an expected call of RenewJobLease.
+func (mr *MockRepositoryMockRecorder) RenewJobLease(ctx, jobID, leaseToken, leaseDuration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenewJobLease", reflect.TypeOf((*MockRepository)(nil).RenewJobLease), ctx, jobID, leaseToken, leaseDuration)
+}
+
+// ScheduleJob mocks base method.
+func (m *MockRepository) ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ScheduleJob", ctx, workflowID, userID, scheduledAt, trigger, idempotencyKey, workflowGeneration)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ScheduleJob indicates an expected call of ScheduleJob.
-func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, workflowID, userID, scheduledAt, trigger any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, workflowID, userID, scheduledAt, trigger, idempotencyKey, workflowGeneration any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockRepository)(nil).ScheduleJob), ctx, workflowID, userID, scheduledAt, trigger)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleJob", reflect.TypeOf((*MockRepository)(nil).ScheduleJob), ctx, workflowID, userID, scheduledAt, trigger, idempotencyKey, workflowGeneration)
 }
 
 // SearchJobLogs mocks base method.

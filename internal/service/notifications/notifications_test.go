@@ -43,9 +43,10 @@ func TestService_CreateNotification(t *testing.T) {
 		{
 			name: "success",
 			req: &notificationspb.CreateNotificationRequest{
-				UserId:  "user1",
-				Kind:    "kind1",
-				Payload: `{"key": "value"}`,
+				UserId:         "user1",
+				Kind:           "kind1",
+				Payload:        `{"key": "value"}`,
+				IdempotencyKey: "notification-key",
 			},
 			mock: func(req *notificationspb.CreateNotificationRequest) {
 				repo.EXPECT().CreateNotification(
@@ -53,6 +54,7 @@ func TestService_CreateNotification(t *testing.T) {
 					req.GetUserId(),
 					req.GetKind(),
 					req.GetPayload(),
+					req.GetIdempotencyKey(),
 				).Return("notification_id", nil)
 			},
 			want: want{
@@ -74,9 +76,10 @@ func TestService_CreateNotification(t *testing.T) {
 		{
 			name: "error: invalid user",
 			req: &notificationspb.CreateNotificationRequest{
-				UserId:  "invalid_user_id",
-				Kind:    "kind1",
-				Payload: `{"key": "value"}`,
+				UserId:         "invalid_user_id",
+				Kind:           "kind1",
+				Payload:        `{"key": "value"}`,
+				IdempotencyKey: "notification-key",
 			},
 			mock: func(req *notificationspb.CreateNotificationRequest) {
 				repo.EXPECT().CreateNotification(
@@ -84,6 +87,7 @@ func TestService_CreateNotification(t *testing.T) {
 					req.GetUserId(),
 					req.GetKind(),
 					req.GetPayload(),
+					req.GetIdempotencyKey(),
 				).Return("", status.Error(codes.InvalidArgument, "invalid user"))
 			},
 			want:  want{},
@@ -92,9 +96,10 @@ func TestService_CreateNotification(t *testing.T) {
 		{
 			name: "error: invalid payload",
 			req: &notificationspb.CreateNotificationRequest{
-				UserId:  "user1",
-				Kind:    "kind1",
-				Payload: "invalid_payload",
+				UserId:         "user1",
+				Kind:           "kind1",
+				Payload:        "invalid_payload",
+				IdempotencyKey: "notification-key",
 			},
 			mock:  func(_ *notificationspb.CreateNotificationRequest) {},
 			want:  want{},
@@ -103,9 +108,10 @@ func TestService_CreateNotification(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &notificationspb.CreateNotificationRequest{
-				UserId:  "user1",
-				Kind:    "kind1",
-				Payload: `{"key": "value"}`,
+				UserId:         "user1",
+				Kind:           "kind1",
+				Payload:        `{"key": "value"}`,
+				IdempotencyKey: "notification-key",
 			},
 			mock: func(req *notificationspb.CreateNotificationRequest) {
 				repo.EXPECT().CreateNotification(
@@ -113,6 +119,7 @@ func TestService_CreateNotification(t *testing.T) {
 					req.GetUserId(),
 					req.GetKind(),
 					req.GetPayload(),
+					req.GetIdempotencyKey(),
 				).Return("", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
@@ -375,11 +382,10 @@ func TestService_ListNotifications(t *testing.T) {
 				errs := make([]error, 2)
 
 				for i := range 2 {
-					wg.Add(1)
-					go func(idx int) {
-						defer wg.Done()
+					idx := i
+					wg.Go(func() {
 						results[idx], errs[idx] = s.ListNotifications(t.Context(), req)
-					}(i)
+					})
 				}
 
 				for range 50 {

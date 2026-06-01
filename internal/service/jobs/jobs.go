@@ -36,8 +36,16 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
-	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger string) (string, error)
+	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error)
 	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
+	ClaimJob(ctx context.Context, jobID, workflowID, workerID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobsmodel.ClaimedJob, bool, string, error)
+	RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) error
+	AttachJobContainer(ctx context.Context, jobID, leaseToken, containerID string) error
+	CompleteJob(ctx context.Context, jobID, leaseToken string) error
+	FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage string) error
+	CancelClaimedJob(ctx context.Context, jobID, leaseToken string) error
+	ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage string) error
+	RecoverExpiredJobLeases(ctx context.Context, batchSize int32, workerID string, leaseDuration time.Duration) ([]*jobsmodel.ExpiredJobLease, error)
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
@@ -73,10 +81,12 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 
 // ScheduleJobRequest holds the request parameters for scheduling a job.
 type ScheduleJobRequest struct {
-	WorkflowID  string `validate:"required"`
-	UserID      string `validate:"required"`
-	ScheduledAt string `validate:"required"`
-	Trigger     string `validate:"required"`
+	WorkflowID         string `validate:"required"`
+	UserID             string `validate:"required"`
+	ScheduledAt        string `validate:"required"`
+	Trigger            string `validate:"required"`
+	IdempotencyKey     string `validate:"omitempty"`
+	WorkflowGeneration int64  `validate:"omitempty,min=0"`
 }
 
 // ScheduleJob schedules a job.
@@ -92,10 +102,12 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 
 	// Validate the request
 	err = s.validator.Struct(&ScheduleJobRequest{
-		WorkflowID:  req.GetWorkflowId(),
-		UserID:      req.GetUserId(),
-		ScheduledAt: req.GetScheduledAt(),
-		Trigger:     req.GetTrigger(),
+		WorkflowID:         req.GetWorkflowId(),
+		UserID:             req.GetUserId(),
+		ScheduledAt:        req.GetScheduledAt(),
+		Trigger:            req.GetTrigger(),
+		IdempotencyKey:     req.GetIdempotencyKey(),
+		WorkflowGeneration: req.GetWorkflowGeneration(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -114,6 +126,10 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		return "", err
 	}
 
+	if req.GetTrigger() == jobsmodel.JobTriggerManual.ToString() && req.GetIdempotencyKey() == "" {
+		return "", status.Error(codes.InvalidArgument, "idempotency key is required for manual jobs")
+	}
+
 	// Schedule the job
 	res, err := s.repo.ScheduleJob(
 		ctx,
@@ -121,6 +137,8 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		req.GetUserId(),
 		req.GetScheduledAt(),
 		req.GetTrigger(),
+		req.GetIdempotencyKey(),
+		req.GetWorkflowGeneration(),
 	)
 	if err != nil {
 		return "", err
@@ -173,6 +191,269 @@ func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStat
 	)
 
 	return err
+}
+
+// ClaimJobRequest holds the request parameters for claiming a job.
+type ClaimJobRequest struct {
+	ID                   string `validate:"required"`
+	WorkflowID           string `validate:"required"`
+	WorkerID             string `validate:"required"`
+	LeaseDurationSeconds int32  `validate:"required,min=1"`
+	DispatchAttempt      int32  `validate:"required,min=1"`
+}
+
+// ClaimJob atomically claims a queued job for execution.
+func (s *Service) ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (res *jobspb.ClaimJobResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.ClaimJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&ClaimJobRequest{
+		ID:                   req.GetId(),
+		WorkflowID:           req.GetWorkflowId(),
+		WorkerID:             req.GetWorkerId(),
+		LeaseDurationSeconds: req.GetLeaseDurationSeconds(),
+		DispatchAttempt:      req.GetDispatchAttempt(),
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	claimed, ok, reason, err := s.repo.ClaimJob(
+		ctx,
+		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetWorkerId(),
+		time.Duration(req.GetLeaseDurationSeconds())*time.Second,
+		req.GetDispatchAttempt(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return claimed.ToClaimJobProto(ok, reason), nil
+}
+
+// RenewJobLeaseRequest holds the request parameters for renewing a job lease.
+type RenewJobLeaseRequest struct {
+	ID                   string `validate:"required"`
+	LeaseToken           string `validate:"required"`
+	LeaseDurationSeconds int32  `validate:"required,min=1"`
+}
+
+// RenewJobLease renews a running job lease.
+func (s *Service) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.RenewJobLease")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&RenewJobLeaseRequest{
+		ID:                   req.GetId(),
+		LeaseToken:           req.GetLeaseToken(),
+		LeaseDurationSeconds: req.GetLeaseDurationSeconds(),
+	})
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	return s.repo.RenewJobLease(ctx, req.GetId(), req.GetLeaseToken(), time.Duration(req.GetLeaseDurationSeconds())*time.Second)
+}
+
+// AttachJobContainerRequest holds the request parameters for attaching a container.
+type AttachJobContainerRequest struct {
+	ID          string `validate:"required"`
+	LeaseToken  string `validate:"required"`
+	ContainerID string `validate:"required"`
+}
+
+// AttachJobContainer attaches a container ID to a running job.
+func (s *Service) AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.AttachJobContainer")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&AttachJobContainerRequest{
+		ID:          req.GetId(),
+		LeaseToken:  req.GetLeaseToken(),
+		ContainerID: req.GetContainerId(),
+	})
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	return s.repo.AttachJobContainer(ctx, req.GetId(), req.GetLeaseToken(), req.GetContainerId())
+}
+
+// CompleteJobRequest holds the request parameters for completing a claimed job.
+type CompleteJobRequest struct {
+	ID         string `validate:"required"`
+	LeaseToken string `validate:"required"`
+}
+
+// CompleteJob completes a running claimed job.
+func (s *Service) CompleteJob(ctx context.Context, req *jobspb.CompleteJobRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.CompleteJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&CompleteJobRequest{ID: req.GetId(), LeaseToken: req.GetLeaseToken()})
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	return s.repo.CompleteJob(ctx, req.GetId(), req.GetLeaseToken())
+}
+
+// FailJobRequest holds the request parameters for failing a claimed job.
+type FailJobRequest struct {
+	ID           string `validate:"required"`
+	LeaseToken   string `validate:"required"`
+	FailureKind  string `validate:"required"`
+	ErrorCode    string `validate:"omitempty"`
+	ErrorMessage string `validate:"omitempty"`
+}
+
+// FailJob marks a running claimed job as failed.
+//
+//nolint:dupl // Lease terminal methods intentionally share validation and tracing shape.
+func (s *Service) FailJob(ctx context.Context, req *jobspb.FailJobRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.FailJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&FailJobRequest{
+		ID:           req.GetId(),
+		LeaseToken:   req.GetLeaseToken(),
+		FailureKind:  req.GetFailureKind(),
+		ErrorCode:    req.GetErrorCode(),
+		ErrorMessage: req.GetErrorMessage(),
+	})
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+	if err := validateFailureKind(req.GetFailureKind()); err != nil {
+		return err
+	}
+
+	return s.repo.FailJob(ctx, req.GetId(), req.GetLeaseToken(), req.GetFailureKind(), req.GetErrorCode(), req.GetErrorMessage())
+}
+
+// CancelClaimedJob cancels a running claimed job.
+func (s *Service) CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaimedJobRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.CancelClaimedJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&CompleteJobRequest{ID: req.GetId(), LeaseToken: req.GetLeaseToken()})
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	return s.repo.CancelClaimedJob(ctx, req.GetId(), req.GetLeaseToken())
+}
+
+// ReleaseJobForRetryRequest holds the request parameters for retrying a claimed job.
+type ReleaseJobForRetryRequest struct {
+	ID            string `validate:"required"`
+	LeaseToken    string `validate:"required"`
+	NextAttemptAt string `validate:"required"`
+	ErrorCode     string `validate:"omitempty"`
+	ErrorMessage  string `validate:"omitempty"`
+}
+
+// ReleaseJobForRetry releases a running claimed job back to pending.
+//
+//nolint:dupl // Lease terminal methods intentionally share validation and tracing shape.
+func (s *Service) ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobForRetryRequest) (err error) {
+	ctx, span := s.tp.Start(ctx, "Service.ReleaseJobForRetry")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&ReleaseJobForRetryRequest{
+		ID:            req.GetId(),
+		LeaseToken:    req.GetLeaseToken(),
+		NextAttemptAt: req.GetNextAttemptAt(),
+		ErrorCode:     req.GetErrorCode(),
+		ErrorMessage:  req.GetErrorMessage(),
+	})
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+	if err := validateTime(req.GetNextAttemptAt()); err != nil {
+		return err
+	}
+
+	return s.repo.ReleaseJobForRetry(ctx, req.GetId(), req.GetLeaseToken(), req.GetNextAttemptAt(), req.GetErrorCode(), req.GetErrorMessage())
+}
+
+// RecoverExpiredJobLeasesRequest holds the request parameters for lease recovery.
+type RecoverExpiredJobLeasesRequest struct {
+	BatchSize            int32  `validate:"required,min=1"`
+	WorkerID             string `validate:"required"`
+	LeaseDurationSeconds int32  `validate:"required,min=1"`
+}
+
+// RecoverExpiredJobLeases returns expired running job leases for recovery.
+func (s *Service) RecoverExpiredJobLeases(ctx context.Context, req *jobspb.RecoverExpiredJobLeasesRequest) (res []*jobsmodel.ExpiredJobLease, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.RecoverExpiredJobLeases")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	err = s.validator.Struct(&RecoverExpiredJobLeasesRequest{
+		BatchSize:            req.GetBatchSize(),
+		WorkerID:             req.GetWorkerId(),
+		LeaseDurationSeconds: req.GetLeaseDurationSeconds(),
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
+
+	return s.repo.RecoverExpiredJobLeases(
+		ctx,
+		req.GetBatchSize(),
+		req.GetWorkerId(),
+		time.Duration(req.GetLeaseDurationSeconds())*time.Second,
+	)
 }
 
 // GetJobRequest holds the request parameters for getting a scheduled job.
@@ -664,6 +945,16 @@ func validateJobTrigger(t string) error {
 		return nil
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid trigger: %s", t)
+	}
+}
+
+func validateFailureKind(kind string) error {
+	switch kind {
+	case jobsmodel.FailureKindUser.ToString(),
+		jobsmodel.FailureKindSystem.ToString():
+		return nil
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid failure kind: %s", kind)
 	}
 }
 

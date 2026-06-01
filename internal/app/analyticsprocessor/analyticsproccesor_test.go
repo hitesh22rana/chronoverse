@@ -13,7 +13,7 @@ func TestMain(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := analyticsprocessormock.NewMockService(ctrl)
-	app := analyticsprocessor.New(t.Context(), svc)
+	app := analyticsprocessor.New(t.Context(), &analyticsprocessor.Config{}, svc)
 
 	_ = app
 }

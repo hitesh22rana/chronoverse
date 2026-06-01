@@ -143,6 +143,7 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
+	defer msdb.Close()
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(

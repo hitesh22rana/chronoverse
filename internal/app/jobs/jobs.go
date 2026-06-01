@@ -37,14 +37,30 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
-	"UpdateJobStatus": true,
-	"GetJobByID":      true,
+	"UpdateJobStatus":         true,
+	"ClaimJob":                true,
+	"RenewJobLease":           true,
+	"AttachJobContainer":      true,
+	"CompleteJob":             true,
+	"FailJob":                 true,
+	"CancelClaimedJob":        true,
+	"ReleaseJobForRetry":      true,
+	"RecoverExpiredJobLeases": true,
+	"GetJobByID":              true,
 }
 
 // Service provides job related operations.
 type Service interface {
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
 	UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest) error
+	ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (*jobspb.ClaimJobResponse, error)
+	RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) error
+	AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest) error
+	CompleteJob(ctx context.Context, req *jobspb.CompleteJobRequest) error
+	FailJob(ctx context.Context, req *jobspb.FailJobRequest) error
+	CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaimedJobRequest) error
+	ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobForRetryRequest) error
+	RecoverExpiredJobLeases(ctx context.Context, req *jobspb.RecoverExpiredJobLeasesRequest) ([]*jobsmodel.ExpiredJobLease, error)
 	GetJob(ctx context.Context, req *jobspb.GetJobRequest) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (*jobsmodel.GetJobLogsResponse, error)
@@ -247,6 +263,7 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("scheduled_at", req.GetScheduledAt()),
 			attribute.String("trigger", req.GetTrigger()),
+			attribute.Int64("workflow_generation", req.GetWorkflowGeneration()),
 		),
 	)
 
@@ -302,6 +319,209 @@ func (j *Jobs) UpdateJobStatus(
 	}
 
 	return &jobspb.UpdateJobStatusResponse{}, nil
+}
+
+// ClaimJob atomically claims a queued job for execution.
+func (j *Jobs) ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (res *jobspb.ClaimJobResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.ClaimJob",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("workflow_id", req.GetWorkflowId()),
+			attribute.String("worker_id", req.GetWorkerId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	return j.svc.ClaimJob(ctx, req)
+}
+
+// RenewJobLease renews a running job lease.
+func (j *Jobs) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) (res *jobspb.RenewJobLeaseResponse, err error) {
+	ctx, span := j.tp.Start(ctx, "App.RenewJobLease", trace.WithAttributes(attribute.String("id", req.GetId())))
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	if err := j.svc.RenewJobLease(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return &jobspb.RenewJobLeaseResponse{}, nil
+}
+
+// AttachJobContainer attaches a container ID to a running claimed job.
+func (j *Jobs) AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest) (res *jobspb.AttachJobContainerResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.AttachJobContainer",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("container_id", req.GetContainerId()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	if err := j.svc.AttachJobContainer(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return &jobspb.AttachJobContainerResponse{}, nil
+}
+
+// CompleteJob completes a running claimed job.
+func (j *Jobs) CompleteJob(ctx context.Context, req *jobspb.CompleteJobRequest) (res *jobspb.CompleteJobResponse, err error) {
+	ctx, span := j.tp.Start(ctx, "App.CompleteJob", trace.WithAttributes(attribute.String("id", req.GetId())))
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	if err := j.svc.CompleteJob(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return &jobspb.CompleteJobResponse{}, nil
+}
+
+// FailJob marks a running claimed job as failed.
+func (j *Jobs) FailJob(ctx context.Context, req *jobspb.FailJobRequest) (res *jobspb.FailJobResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.FailJob",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("failure_kind", req.GetFailureKind()),
+			attribute.String("error_code", req.GetErrorCode()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	if err := j.svc.FailJob(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return &jobspb.FailJobResponse{}, nil
+}
+
+// CancelClaimedJob marks a running claimed job as canceled.
+func (j *Jobs) CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaimedJobRequest) (res *jobspb.CancelClaimedJobResponse, err error) {
+	ctx, span := j.tp.Start(ctx, "App.CancelClaimedJob", trace.WithAttributes(attribute.String("id", req.GetId())))
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	if err := j.svc.CancelClaimedJob(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return &jobspb.CancelClaimedJobResponse{}, nil
+}
+
+// ReleaseJobForRetry releases a running claimed job back to pending.
+func (j *Jobs) ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobForRetryRequest) (res *jobspb.ReleaseJobForRetryResponse, err error) {
+	ctx, span := j.tp.Start(
+		ctx,
+		"App.ReleaseJobForRetry",
+		trace.WithAttributes(
+			attribute.String("id", req.GetId()),
+			attribute.String("next_attempt_at", req.GetNextAttemptAt()),
+			attribute.String("error_code", req.GetErrorCode()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	if err := j.svc.ReleaseJobForRetry(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return &jobspb.ReleaseJobForRetryResponse{}, nil
+}
+
+// RecoverExpiredJobLeases returns expired running job leases for recovery.
+func (j *Jobs) RecoverExpiredJobLeases(ctx context.Context, req *jobspb.RecoverExpiredJobLeasesRequest) (res *jobspb.RecoverExpiredJobLeasesResponse, err error) {
+	ctx, span := j.tp.Start(ctx, "App.RecoverExpiredJobLeases")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	jobs, err := j.svc.RecoverExpiredJobLeases(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	res = &jobspb.RecoverExpiredJobLeasesResponse{
+		Jobs: make([]*jobspb.ExpiredJobLease, len(jobs)),
+	}
+	for i := range jobs {
+		res.Jobs[i] = jobs[i].ToProto()
+	}
+
+	return res, nil
 }
 
 // GetJob returns the job details by ID, job ID, and user ID.

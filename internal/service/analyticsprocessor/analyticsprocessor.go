@@ -4,11 +4,13 @@ package analyticsprocessor
 
 import (
 	"context"
+	"time"
 )
 
 // Repository provides analyticsprocessor related operations.
 type Repository interface {
 	Run(ctx context.Context) error
+	CleanupProcessedEvents(ctx context.Context, retention time.Duration, batchSize int) (int64, error)
 }
 
 // Service provides analyticsprocessor related operations.
@@ -31,4 +33,9 @@ func (s *Service) Run(ctx context.Context) (err error) {
 	}
 
 	return nil
+}
+
+// CleanupProcessedEvents deletes old processed-event dedupe rows.
+func (s *Service) CleanupProcessedEvents(ctx context.Context, retention time.Duration, batchSize int) (int64, error) {
+	return s.repo.CleanupProcessedEvents(ctx, retention, batchSize)
 }

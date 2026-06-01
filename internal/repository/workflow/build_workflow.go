@@ -17,8 +17,10 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 )
 
 const (
@@ -28,7 +30,11 @@ const (
 // buildWorkflow executes the build workflow.
 //
 //nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
-func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string) error {
+func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *workflowsmodel.WorkflowEvent) error {
+	workflowID := workflowEvent.ID
+	occurrenceKey := workflowOccurrenceKey(workflowEvent)
+	scheduleIdempotencyKey := idempotency.AutomaticScheduleEventKey(occurrenceKey)
+
 	// Issue necessary headers and tokens for authorization
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
@@ -48,15 +54,36 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		return err
 	}
 
-	// Early return idempotency checks
-	// Ensure the build process is not already started
-	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusQueued.ToString() {
+	if isStaleWorkflowEvent(workflow, workflowEvent) {
 		return nil
 	}
 
 	// Ensure the workflow is not already terminated
 	if workflow.GetTerminatedAt() != "" {
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
+	}
+
+	// If the build already completed, retry the automatic scheduling side effect
+	// idempotently in case the previous delivery crashed after updating status.
+	if workflow.GetBuildStatus() == workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
+		_, scheduleErr := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+			WorkflowId:         workflowID,
+			UserId:             workflow.GetUserId(),
+			ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+			Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+			IdempotencyKey:     scheduleIdempotencyKey,
+			WorkflowGeneration: workflowEvent.Generation,
+		})
+		if status.Code(scheduleErr) == codes.FailedPrecondition {
+			return nil
+		}
+		return scheduleErr
+	}
+
+	// Early return idempotency checks
+	// Ensure the build process is not already started
+	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusQueued.ToString() {
+		return nil
 	}
 
 	// Acquire a distributed lock to ensure only one worker processes the job at a time
@@ -89,7 +116,8 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		return err
 	}
 
-	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytes(
+	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytesWithKey(
+		idempotency.WorkflowAnalyticsEventKey(workflowID),
 		workflow.GetUserId(),
 		workflowID,
 		analyticsmodel.EventTypeWorkflows,
@@ -106,31 +134,25 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		Key:   []byte(workflowID),
 		Value: analyticEventBytes,
 	}
-
-	// Asynchronously produce the record to Kafka
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
-	// This is used to track the number of jobs executed for the workflow
-	r.kfk.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, _ error) {})
+	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		return status.Errorf(codes.Unavailable, "failed to publish workflow analytics event: %v", err)
+	}
 
 	// If the build step is not required, skip the build process
 	if !isBuildStepRequired(workflow.GetKind()) {
-		// Update the workflow status from QUEUED to COMPLETED
-		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-			Id:          workflowID,
-			UserId:      workflow.GetUserId(),
-			BuildStatus: workflowsmodel.WorkflowBuildStatusCompleted.ToString(),
-		}); _err != nil {
+		scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
+			ctx,
+			workflowID,
+			workflow.GetUserId(),
+			workflowEvent.Generation,
+			scheduleIdempotencyKey,
+			workflowEvent,
+		)
+		if _err != nil {
 			return _err
 		}
-
-		// Schedule the workflow for the run
-		if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-			WorkflowId:  workflowID,
-			UserId:      workflow.GetUserId(),
-			ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-			Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-		}); _err != nil {
-			return _err
+		if !scheduled {
+			return nil
 		}
 
 		// Send notification for the workflow build skipped event
@@ -138,25 +160,32 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
 			notificationCtx,
-			workflow.GetUserId(),
+			scheduledWorkflow.GetUserId(),
 			workflowID,
 			"",
 			"Workflow Build Skipped",
-			fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", workflow.GetName()),
+			fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", scheduledWorkflow.GetName()),
 			notificationsmodel.KindWebInfo.ToString(),
 			notificationsmodel.EntityWorkflow.ToString(),
+			occurrenceKey,
 		)
 
 		return nil
 	}
 
 	// Update the workflow status from QUEUED to STARTED
-	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-		Id:          workflowID,
-		UserId:      workflow.GetUserId(),
-		BuildStatus: workflowsmodel.WorkflowBuildStatusStarted.ToString(),
-	}); _err != nil {
+	updated, _err := r.updateWorkflowBuildStatus(
+		ctx,
+		workflowID,
+		workflow.GetUserId(),
+		workflowsmodel.WorkflowBuildStatusStarted.ToString(),
+		workflowEvent.Generation,
+	)
+	if _err != nil {
 		return _err
+	}
+	if !updated {
+		return nil
 	}
 
 	// Send notification for the workflow build start event
@@ -171,10 +200,11 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 		fmt.Sprintf("Build process for workflow '%s' has started.", workflow.GetName()),
 		notificationsmodel.KindWebInfo.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
 	)
 
 	// Execute the build process with retry enabled
-	workflowErr := withRetry(func() error {
+	workflowErr := retrypkg.Do(ctx, 2, retryBackoff, func() error {
 		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 		if err != nil {
 			return err
@@ -197,12 +227,18 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 
 	if workflowErr != nil {
 		// Update the workflow status from QUEUED to FAILED
-		if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-			Id:          workflowID,
-			UserId:      workflow.GetUserId(),
-			BuildStatus: workflowsmodel.WorkflowBuildStatusFailed.ToString(),
-		}); _err != nil {
+		updated, _err = r.updateWorkflowBuildStatus(
+			ctx,
+			workflowID,
+			workflow.GetUserId(),
+			workflowsmodel.WorkflowBuildStatusFailed.ToString(),
+			workflowEvent.Generation,
+		)
+		if _err != nil {
 			return _err
+		}
+		if !updated {
+			return nil
 		}
 
 		// Send notification for the workflow build failed event
@@ -217,28 +253,25 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 			fmt.Sprintf("Build process for workflow '%s' has failed.", workflow.GetName()),
 			notificationsmodel.KindWebAlert.ToString(),
 			notificationsmodel.EntityWorkflow.ToString(),
+			occurrenceKey,
 		)
 
 		return workflowErr
 	}
 
-	// Update the workflow status from QUEUED to COMPLETED
-	if _, _err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-		Id:          workflowID,
-		UserId:      workflow.GetUserId(),
-		BuildStatus: workflowsmodel.WorkflowBuildStatusCompleted.ToString(),
-	}); _err != nil {
+	scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
+		ctx,
+		workflowID,
+		workflow.GetUserId(),
+		workflowEvent.Generation,
+		scheduleIdempotencyKey,
+		workflowEvent,
+	)
+	if _err != nil {
 		return _err
 	}
-
-	// Schedule the workflow for the run
-	if _, _err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		WorkflowId:  workflowID,
-		UserId:      workflow.GetUserId(),
-		ScheduledAt: time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-		Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-	}); _err != nil {
-		return _err
+	if !scheduled {
+		return nil
 	}
 
 	// Send notification for the workflow build completed event
@@ -246,13 +279,14 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowID string)
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
 	go r.sendNotification(
 		notificationCtx,
-		workflow.GetUserId(),
+		scheduledWorkflow.GetUserId(),
 		workflowID,
 		"",
 		"Workflow Build Completed",
-		fmt.Sprintf("Build process for workflow '%s' has completed and is scheduled to run.", workflow.GetName()),
+		fmt.Sprintf("Build process for workflow '%s' has completed and is scheduled to run.", scheduledWorkflow.GetName()),
 		notificationsmodel.KindWebSuccess.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
 	)
 
 	return nil
@@ -266,4 +300,83 @@ func isBuildStepRequired(kind string) bool {
 	default:
 		return true
 	}
+}
+
+func (r *Repository) updateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) (bool, error) {
+	_, err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
+		Id:          workflowID,
+		UserId:      userID,
+		BuildStatus: buildStatus,
+		Generation:  generation,
+	})
+	if err != nil {
+		if status.Code(err) == codes.FailedPrecondition {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (r *Repository) completeWorkflowBuildAndSchedule(
+	ctx context.Context,
+	workflowID, userID string,
+	generation int64,
+	scheduleIdempotencyKey string,
+	workflowEvent *workflowsmodel.WorkflowEvent,
+) (*workflowspb.GetWorkflowByIDResponse, bool, error) {
+	updated, err := r.updateWorkflowBuildStatus(
+		ctx,
+		workflowID,
+		userID,
+		workflowsmodel.WorkflowBuildStatusCompleted.ToString(),
+		generation,
+	)
+	if err != nil || !updated {
+		return nil, false, err
+	}
+
+	workflow, schedulable, err := r.getSchedulableWorkflow(ctx, workflowID, workflowEvent)
+	if err != nil || !schedulable {
+		return nil, false, err
+	}
+
+	if err := r.scheduleAutomaticJob(ctx, workflow, scheduleIdempotencyKey); err != nil {
+		return nil, false, err
+	}
+
+	return workflow, true, nil
+}
+
+func (r *Repository) getSchedulableWorkflow(ctx context.Context, workflowID string, workflowEvent *workflowsmodel.WorkflowEvent) (*workflowspb.GetWorkflowByIDResponse, bool, error) {
+	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
+		Id: workflowID,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	if isStaleWorkflowEvent(workflow, workflowEvent) || workflow.GetTerminatedAt() != "" {
+		return nil, false, nil
+	}
+
+	return workflow, true, nil
+}
+
+func (r *Repository) scheduleAutomaticJob(ctx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, idempotencyKey string) error {
+	_, err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+		WorkflowId:         workflow.GetId(),
+		UserId:             workflow.GetUserId(),
+		ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+		Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+		IdempotencyKey:     idempotencyKey,
+		WorkflowGeneration: workflow.GetGeneration(),
+	})
+	if status.Code(err) == codes.FailedPrecondition {
+		return nil
+	}
+
+	return err
 }

@@ -12,6 +12,7 @@ package analyticsprocessor
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	gomock "go.uber.org/mock/gomock"
 )
@@ -38,6 +39,21 @@ func NewMockRepository(ctrl *gomock.Controller) *MockRepository {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
+}
+
+// CleanupProcessedEvents mocks base method.
+func (m *MockRepository) CleanupProcessedEvents(ctx context.Context, retention time.Duration, batchSize int) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupProcessedEvents", ctx, retention, batchSize)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupProcessedEvents indicates an expected call of CleanupProcessedEvents.
+func (mr *MockRepositoryMockRecorder) CleanupProcessedEvents(ctx, retention, batchSize any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupProcessedEvents", reflect.TypeOf((*MockRepository)(nil).CleanupProcessedEvents), ctx, retention, batchSize)
 }
 
 // Run mocks base method.

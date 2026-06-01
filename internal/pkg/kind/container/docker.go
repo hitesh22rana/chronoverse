@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -31,6 +32,13 @@ const (
 type DockerWorkflow struct {
 	*client.Client
 	pullGroup singleflight.Group
+}
+
+// State represents the observed state of a Docker container.
+type State struct {
+	Running  bool
+	ExitCode int
+	Status   string
 }
 
 // NewDockerWorkflow creates a new DockerWorkflow.
@@ -89,7 +97,7 @@ func (w *DockerWorkflow) Execute(
 			Env:         env,
 		},
 		&container.HostConfig{
-			AutoRemove: true,
+			AutoRemove: false,
 		},
 		nil, nil, "",
 	)
@@ -119,13 +127,13 @@ func (w *DockerWorkflow) Execute(
 		defer cancel()
 
 		// Set up container wait early to detect completion
-		statusCh, waitErrCh := w.Client.ContainerWait(timeoutCtx, containerID, container.WaitConditionRemoved)
+		statusCh, waitErrCh := w.Client.ContainerWait(timeoutCtx, containerID, container.WaitConditionNotRunning)
 
 		// Start log streaming
 		logsDone := make(chan struct{})
 		go func() {
 			defer close(logsDone)
-			w.streamContainerLogs(timeoutCtx, containerID, logs, errs)
+			w.streamContainerLogs(timeoutCtx, containerID, logs, errs, true)
 		}()
 
 		// Monitor for timeouts and container completion
@@ -179,20 +187,42 @@ func (w *DockerWorkflow) Execute(
 	return containerID, logs, errs, nil
 }
 
+// Logs replays the retained logs for a container.
+func (w *DockerWorkflow) Logs(ctx context.Context, containerID string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	if healthErr := w.healthCheck(ctx); healthErr != nil {
+		return nil, nil, healthErr
+	}
+
+	logsCh := make(chan *jobsmodel.JobLog)
+	errsCh := make(chan error, 1)
+
+	go func() {
+		defer close(logsCh)
+		defer close(errsCh)
+
+		w.streamContainerLogs(ctx, containerID, logsCh, errsCh, false)
+	}()
+
+	return logsCh, errsCh, nil
+}
+
 // streamContainerLogs streams container logs and properly demuxes stdout/stderr.
 //
 //nolint:gocyclo // This function is not complex enough to warrant a refactor
-func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID string, logCh chan<- *jobsmodel.JobLog, errs chan<- error) {
+func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID string, logCh chan<- *jobsmodel.JobLog, errs chan<- error, follow bool) {
 	reader, err := w.Client.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     true,
+		Follow:     follow,
 	})
 	if err != nil {
 		// To distinguish between Docker daemon unavailability and other errors
-		if client.IsErrConnectionFailed(err) {
+		switch {
+		case cerrdefs.IsNotFound(err):
+			errs <- status.Errorf(codes.NotFound, "container not found: %v", err)
+		case client.IsErrConnectionFailed(err):
 			errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
-		} else {
+		default:
 			errs <- status.Errorf(codes.Aborted, "failed to get container logs: %v", err)
 		}
 		return
@@ -213,10 +243,14 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		defer stdoutWriter.Close()
 		defer stderrWriter.Close()
 		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, reader)
-		if err != nil && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe)) {
-			// Container might have been removed or an error occurred
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
+			if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
 			if client.IsErrConnectionFailed(err) {
 				errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
+			} else {
+				errs <- status.Errorf(codes.Aborted, "failed to read container logs: %v", err)
 			}
 		}
 	}()
@@ -295,6 +329,15 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	}
 
 	resultCh := w.pullGroup.DoChan(imageName, func() (any, error) {
+		if _, err := w.Client.ImageInspect(ctx, imageName); err == nil {
+			// Image already exists locally, no need to pull
+			return struct{}{}, nil
+		} else if !cerrdefs.IsNotFound(err) {
+			// An error other than "not found" occurred
+			return nil, status.Errorf(codes.Aborted, "failed to inspect image: %v", err)
+		}
+
+		// Pull the image since it doesn't exist locally
 		out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
 		if err != nil {
 			return nil, status.Errorf(codes.NotFound, "failed to pull image: %v", err)
@@ -306,7 +349,6 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 			return nil, status.Errorf(codes.Aborted, "failed to read image pull output: %v", err)
 		}
 
-		// Return a non-nil dummy value to satisfy the linter; callers ignore Val anyway.
 		return struct{}{}, nil
 	})
 
@@ -322,6 +364,60 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	}
 }
 
+// Inspect returns the current Docker state for a container.
+func (w *DockerWorkflow) Inspect(ctx context.Context, containerID string) (*State, error) {
+	if err := w.healthCheck(ctx); err != nil {
+		return nil, err
+	}
+
+	data, err := w.Client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return nil, status.Errorf(codes.NotFound, "container not found: %v", err)
+		}
+		if client.IsErrConnectionFailed(err) {
+			return nil, status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
+		}
+		return nil, status.Errorf(codes.Aborted, "failed to inspect container %s: %v", containerID, err)
+	}
+	if data.State == nil {
+		return nil, status.Errorf(codes.Aborted, "container %s has no state", containerID)
+	}
+
+	return &State{
+		Running:  data.State.Running,
+		ExitCode: data.State.ExitCode,
+		Status:   data.State.Status,
+	}, nil
+}
+
+// Remove deletes a stopped container and ignores containers that are already gone.
+func (w *DockerWorkflow) Remove(ctx context.Context, containerID string) error {
+	if err := w.Client.ContainerRemove(ctx, containerID, container.RemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	}); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return nil
+		}
+		if isContainerRemovalInProgress(err) {
+			return nil
+		}
+		if client.IsErrConnectionFailed(err) {
+			return status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
+		}
+		return status.Errorf(codes.Aborted, "failed to remove container %s: %v", containerID, err)
+	}
+
+	return nil
+}
+
+func isContainerRemovalInProgress(err error) bool {
+	return err != nil &&
+		strings.Contains(err.Error(), "removal of container") &&
+		strings.Contains(err.Error(), "is already in progress")
+}
+
 // Terminate stops a running container by its unique containerID.
 func (w *DockerWorkflow) Terminate(ctx context.Context, containerID string) error {
 	if err := w.healthCheck(ctx); err != nil {
@@ -332,6 +428,12 @@ func (w *DockerWorkflow) Terminate(ctx context.Context, containerID string) erro
 	if err := w.Client.ContainerStop(ctx, containerID, container.StopOptions{
 		Timeout: &stopTimeout,
 	}); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return nil
+		}
+		if client.IsErrConnectionFailed(err) {
+			return status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
+		}
 		return status.Errorf(codes.Aborted, "failed to stop container %s: %v", containerID, err)
 	}
 

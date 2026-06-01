@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, type Resolver } from "react-hook-form"
 import { z } from "zod"
 import { Duration, parseDuration } from '@alwatr/parse-duration'
 import {
@@ -135,7 +135,30 @@ const workflowSchema = z.discriminatedUnion("kind", [
     containerWorkflowSchema
 ])
 
-type WorkflowFormValues = z.infer<typeof workflowSchema>
+type HeaderFormValue = {
+    key: string
+    value: string
+}
+
+type WorkflowFormValues = {
+    name: string
+    kind: "HEARTBEAT" | "CONTAINER"
+    interval: number | string
+    maxConsecutiveJobFailuresAllowed: number
+    retainLogs: boolean
+    heartbeatPayload?: {
+        endpoint: string
+        expectedStatusCode: number
+        headers: HeaderFormValue[]
+        timeout: string
+    }
+    containerPayload?: {
+        image: string
+        cmd: string[]
+        env: string[]
+        timeout: string
+    }
+}
 
 interface CreateWorkflowDialogProps {
     open: boolean
@@ -153,8 +176,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     const { createWorkflow, isCreating } = useWorkflows()
     const [selectedKind, setSelectedKind] = useState<KindType>("HEARTBEAT")
 
-    const form = useForm({
-        resolver: zodResolver(workflowSchema),
+    const form = useForm<WorkflowFormValues>({
+        resolver: zodResolver(workflowSchema) as Resolver<WorkflowFormValues>,
         defaultValues: {
             name: "",
             kind: "HEARTBEAT",
@@ -225,7 +248,12 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         let payload: string = "{}"
 
         if (data.kind === "HEARTBEAT") {
-            const { endpoint, expectedStatusCode, headers = [], timeout } = (data as z.infer<typeof heartbeatWorkflowSchema>).heartbeatPayload
+            const { endpoint, expectedStatusCode, headers = [], timeout } = data.heartbeatPayload ?? {
+                endpoint: "",
+                expectedStatusCode: 200,
+                headers: [],
+                timeout: "",
+            }
             const headersObject = headers.reduce((acc, header) => {
                 if (header.key) {
                     acc[header.key] = header.value
@@ -240,7 +268,12 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 ...(timeout ? { timeout } : {})
             })
         } else if (data.kind === "CONTAINER") {
-            const { image, cmd, env, timeout } = (data as z.infer<typeof containerWorkflowSchema>).containerPayload
+            const { image, cmd = [], env = [], timeout } = data.containerPayload ?? {
+                image: "",
+                cmd: [],
+                env: [],
+                timeout: "",
+            }
             // parse env in key=value format and map to object
             const envObject = env.reduce((acc, item) => {
                 const [key, value] = item.split("=")
@@ -254,7 +287,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 image,
                 ...(cmd && cmd.length > 0 ? { cmd } : {}),
                 ...(env && env.length > 0 ? { env: envObject } : {}),
-                ...timeout ? { timeout } : {}
+                ...(timeout ? { timeout } : {})
             })
         }
 

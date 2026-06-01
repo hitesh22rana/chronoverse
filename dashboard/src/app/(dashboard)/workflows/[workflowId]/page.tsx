@@ -152,6 +152,9 @@ export default function WorkflowDetailsAndJobsPage() {
         const params = new URLSearchParams(searchParams.toString())
         if (value === "details") {
             params.delete("tab")
+            params.delete("cursor")
+            params.delete("status")
+            params.delete("trigger")
         } else {
             params.set("tab", value)
         }

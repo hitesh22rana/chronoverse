@@ -77,9 +77,9 @@ func DefaultRetryConfig() *RetryConfig {
 // NewClient creates a new gRPC client connection with retry and tracing support.
 func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *RetryConfig) (*grpc.ClientConn, error) {
 	var (
-		opts               []grpc.DialOption
-		unaryInterceptors  []grpc.UnaryClientInterceptor
-		streamInterceptors []grpc.StreamClientInterceptor
+		opts               = make([]grpc.DialOption, 0, 5)
+		unaryInterceptors  = make([]grpc.UnaryClientInterceptor, 0, 2)
+		streamInterceptors = make([]grpc.StreamClientInterceptor, 0, 2)
 	)
 
 	// Load balancing policy

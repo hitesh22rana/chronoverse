@@ -1,8 +1,8 @@
 "use client"
 
-import { Fragment, useEffect, useMemo } from "react"
+import { Fragment, useEffect } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, type Resolver } from "react-hook-form"
 import { z } from "zod"
 import { Duration, parseDuration } from "@alwatr/parse-duration"
 import {
@@ -106,6 +106,44 @@ const containerPayloadSchema = z.object({
         }, "Timeout must be a valid duration (e.g., '30s', '5m') max up to 1 hour")
 })
 
+const updateWorkflowSchema = baseUpdateWorkflowSchema.extend({
+    heartbeatPayload: heartbeatPayloadSchema.optional(),
+    containerPayload: containerPayloadSchema.optional(),
+})
+
+type HeaderFormValue = {
+    key: string
+    value: string
+}
+
+type UpdateWorkflowFormValues = {
+    name: string
+    interval: number | string
+    maxConsecutiveJobFailuresAllowed: number
+    heartbeatPayload?: {
+        endpoint: string
+        expectedStatusCode: number
+        headers: HeaderFormValue[]
+        timeout: string
+    }
+    containerPayload?: {
+        image: string
+        cmd: string[]
+        env: string[]
+        timeout: string
+    }
+}
+
+type WorkflowPayload = {
+    endpoint?: string
+    expected_status_code?: number
+    headers?: Record<string, string>
+    image?: string
+    cmd?: string[]
+    env?: Record<string, string>
+    timeout?: string
+}
+
 interface UpdateWorkflowDialogProps {
     workflowId: string;
     open: boolean;
@@ -124,26 +162,8 @@ export function UpdateWorkflowDialog({
         isUpdating
     } = useWorkflowDetails(workflowId);
 
-    // Create dynamic schema based on workflow kind
-    const updateWorkflowSchema = useMemo(() => {
-        if (!workflow) return baseUpdateWorkflowSchema;
-
-        switch (workflow.kind) {
-            case "HEARTBEAT":
-                return baseUpdateWorkflowSchema.extend({
-                    heartbeatPayload: heartbeatPayloadSchema,
-                });
-            case "CONTAINER":
-                return baseUpdateWorkflowSchema.extend({
-                    containerPayload: containerPayloadSchema,
-                });
-            default:
-                return baseUpdateWorkflowSchema;
-        }
-    }, [workflow]);
-
-    const form = useForm({
-        resolver: zodResolver(updateWorkflowSchema),
+    const form = useForm<UpdateWorkflowFormValues>({
+        resolver: zodResolver(updateWorkflowSchema) as Resolver<UpdateWorkflowFormValues>,
         defaultValues: {
             name: "",
             interval: 5,
@@ -156,7 +176,7 @@ export function UpdateWorkflowDialog({
     useEffect(() => {
         if (!workflow) return;
 
-        const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) : {};
+        const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) as WorkflowPayload : {};
 
         if (workflow.kind === "HEARTBEAT") {
             // Prepare headers array from object
@@ -181,7 +201,7 @@ export function UpdateWorkflowDialog({
 
             form.setValue("containerPayload", {
                 image: parsedPayload.image || "",
-                cmd: parsedPayload.cmd,
+                cmd: parsedPayload.cmd || [],
                 env: envArray,
                 timeout: parsedPayload.timeout || ""
             });
@@ -200,7 +220,7 @@ export function UpdateWorkflowDialog({
         });
     }, [workflow, form]);
 
-    const handleSubmit = (data) => {
+    const handleSubmit = (data: UpdateWorkflowFormValues) => {
         // Don't proceed if no workflow data
         if (!workflow) return;
 
@@ -208,13 +228,18 @@ export function UpdateWorkflowDialog({
         let payload = "{}";
 
         if (workflow.kind === "HEARTBEAT") {
-            const { endpoint, expectedStatusCode, headers = [], timeout } = data.heartbeatPayload;
+            const { endpoint, expectedStatusCode, headers = [], timeout } = data.heartbeatPayload ?? {
+                endpoint: "",
+                expectedStatusCode: 200,
+                headers: [],
+                timeout: "",
+            };
             const headersObject = headers.reduce((acc, header) => {
                 if (header.key) {
                     acc[header.key] = header.value;
                 }
                 return acc;
-            }, {});
+            }, {} as Record<string, string>);
 
             payload = JSON.stringify({
                 endpoint,
@@ -223,7 +248,12 @@ export function UpdateWorkflowDialog({
                 ...(timeout ? { timeout } : {})
             });
         } else if (workflow.kind === "CONTAINER") {
-            const { image, cmd, env, timeout } = data.containerPayload;
+            const { image, cmd = [], env = [], timeout } = data.containerPayload ?? {
+                image: "",
+                cmd: [],
+                env: [],
+                timeout: "",
+            };
             // parse env in key=value format and map to object
             const envObject = env.reduce((acc, item) => {
                 const [key, value] = item.split("=")
@@ -245,7 +275,7 @@ export function UpdateWorkflowDialog({
         updateWorkflow({
             name: data.name,
             payload: payload,
-            interval: data.interval,
+            interval: Number(data.interval),
             max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed
         })
         form.reset();

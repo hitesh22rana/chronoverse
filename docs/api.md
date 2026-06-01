@@ -32,7 +32,8 @@ The server maps gRPC errors to HTTP status codes. Important cases:
 - `404 Not Found`: resource not found.
 - `409 Conflict`: already exists or aborted operation.
 - `412 Precondition Failed`: state precondition failed, including disabled log
-  retention on log reads/search/streams.
+  retention on retained log read/search routes. SSE stream-open failures are
+  sent as `event: error` frames after stream headers are written.
 - `429 Too Many Requests`: resource exhausted.
 - `503 Service Unavailable`: downstream service unavailable.
 
@@ -284,7 +285,8 @@ Log streams:
 
 Log APIs are available only when the workflow supports logs and log retention is
 enabled. `HEARTBEAT` workflows do not produce execution logs. If retention is
-disabled, log read/search/stream endpoints return `412 Precondition Failed`.
+disabled, retained log read/search routes return `412 Precondition Failed`; live
+SSE streams report the failure as an `event: error` frame.
 
 ### Get Logs
 

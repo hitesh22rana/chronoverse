@@ -122,7 +122,7 @@ Important API notes:
 - Retry-prone mutations require an `Idempotency-Key` header.
 - `CONTAINER` workflows can retain and search logs.
 - `HEARTBEAT` workflows do not generate execution logs.
-- Log APIs return HTTP `412 Precondition Failed` when retention is disabled for a workflow.
+- Retained log read/search APIs return HTTP `412 Precondition Failed` when retention is disabled for a workflow; live SSE streams report stream-open failures as `event: error`.
 - Production Nginx exposes the API below `/api/`; development exposes the server directly.
 
 ## Development Commands

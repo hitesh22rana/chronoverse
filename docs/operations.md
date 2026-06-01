@@ -219,7 +219,9 @@ Expected no-log cases:
 - `HEARTBEAT` workflows do not produce logs.
 - Workflows with `log_retention=false` do not persist searchable/downloadable
   logs.
-- Log endpoints return `412 Precondition Failed` when retention is disabled.
+- Retained log read/search endpoints return `412 Precondition Failed` when
+  retention is disabled; live SSE streams report the same condition as
+  `event: error`.
 
 Unexpected no-log cases:
 

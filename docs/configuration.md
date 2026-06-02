@@ -198,6 +198,16 @@ can enforce workflow retention policy.
 
 The batch size controls how many due workflows are scanned per polling pass.
 
+### Workflow Worker
+
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL`
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+
+These settings coordinate Docker image pulls for replicated workflow workers
+that share a Docker daemon. The lock is scoped by Docker host and exact image
+string. Compose defaults are `10m`, `10m`, and `500ms`.
+
 ### Execution Worker
 
 - `EXECUTION_WORKER_ID`

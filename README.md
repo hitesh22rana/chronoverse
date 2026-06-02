@@ -20,7 +20,7 @@ analytics into one self-hosted stack.
 - **Workflow kinds**:
   - `HEARTBEAT`: lightweight health-check workflow without execution logs.
   - `CONTAINER`: runs containerized workloads and can retain stdout/stderr logs.
-- **Replay-safe execution**: idempotency keys, workflow generations, deterministic event keys, transactional outbox delivery, durable job leases, worker retries, and stale-event guards.
+- **Replay-safe execution**: idempotency keys, workflow generations, deterministic event keys, transactional outbox delivery, durable job leases, Redis-coordinated Docker image pulls, worker retries, and stale-event guards.
 - **Job execution lifecycle**: queued, running, completed, failed, and canceled jobs with automatic retry handling for system failures.
 - **Retained job logs**: ClickHouse-backed logs, Meilisearch-backed search, raw log download, stream filtering, and Server-Sent Events for live output.
 - **Retention controls**: per-workflow log retention with explicit behavior for non-log-producing or retention-disabled workflows.
@@ -37,7 +37,7 @@ Chronoverse uses a message-driven microservice architecture:
 - **Kafka topics** carry workflow, job, log, and analytics events between workers.
 - **PostgreSQL** stores transactional state, analytics, leases, idempotency records, and outbox events.
 - **ClickHouse** stores retained job logs.
-- **Redis** stores sessions, cached reads, and live log pub/sub state.
+- **Redis** stores sessions, cached reads, live log pub/sub state, and workflow-worker image pull locks.
 - **Meilisearch** indexes retained job logs for search.
 - **Docker socket proxy** lets execution workers run containers without mounting the Docker socket directly.
 - **LGTM** provides local OpenTelemetry collection and dashboards.

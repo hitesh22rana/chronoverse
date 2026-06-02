@@ -57,8 +57,8 @@ debugging.
 - **Kafka** carries asynchronous events on the `workflows`, `jobs`, `job_logs`,
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
 - **ClickHouse** stores retained job logs.
-- **Redis** stores HTTP sessions, cached service reads, and live log
-  publish/subscribe state.
+- **Redis** stores HTTP sessions, cached service reads, live log
+  publish/subscribe state, and workflow-worker image pull locks.
 - **Meilisearch** indexes retained job logs for search.
 - **Docker socket proxy** exposes a narrow Docker API surface to execution
   workers for container lifecycle and log access.
@@ -77,8 +77,9 @@ debugging.
    creates outbox events in the same transaction.
 4. `outbox-relay` claims pending outbox rows and publishes workflow events to
    Kafka.
-5. `workflow-worker` consumes the workflow event, builds workflow execution
-   metadata, and updates the workflow build status through `workflows-service`.
+5. `workflow-worker` consumes the workflow event, coordinates Docker image pulls
+   by Docker host and image through Redis, builds workflow execution metadata,
+   and updates the workflow build status through `workflows-service`.
 6. Notification and analytics events are published through the same durable
    event path.
 
@@ -136,6 +137,8 @@ expected operating conditions.
   termination, and deletion events.
 - **Build hashes** avoid unnecessary rebuild work when workflow execution inputs
   have not changed.
+- **Image pull locks** prevent replicated workflow workers that share a Docker
+  daemon from cold-pulling the same image concurrently.
 - **Deterministic event keys** deduplicate workflow, job, notification,
   analytics, and log side effects.
 - **Durable job leases** ensure only one execution worker owns a running job at a

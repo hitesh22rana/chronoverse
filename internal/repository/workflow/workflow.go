@@ -54,14 +54,23 @@ type Services struct {
 	Csvc          ContainerSvc
 }
 
+type kafkaProducer interface {
+	ProduceSync(ctx context.Context, rs ...*kgo.Record) kgo.ProduceResults
+}
+
+type workflowLockStore interface {
+	AcquireDistributedLock(ctx context.Context, key string, expiration time.Duration) (bool, error)
+	ReleaseDistributedLock(ctx context.Context, key string) error
+}
+
 // Repository provides workflow repository.
 type Repository struct {
 	tp     trace.Tracer
 	auth   auth.IAuth
-	rdb    *redis.Store
+	rdb    workflowLockStore
 	ch     *clickhouse.Client
 	ms     meilisearch.ServiceManager
-	kfk    *kgo.Client
+	kfk    kafkaProducer
 	runner *kafkapkg.PartitionRunner
 	svc    *Services
 }

@@ -3,11 +3,14 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -85,6 +88,116 @@ func TestDeleteWorkflowLogsClickHouseQueryUsesClickHousePlaceholders(t *testing.
 	}
 	if !strings.Contains(query, "mutations_sync = 2") {
 		t.Fatalf("deleteWorkflowLogsClickHouseQuery() must wait for mutation completion: %s", query)
+	}
+}
+
+func TestBuildWorkflowTransientBuildErrorDoesNotFailWorkflow(t *testing.T) {
+	t.Parallel()
+
+	statusUpdates := &orderedEvents{}
+	notifications := &orderedEvents{}
+	buildErr := status.Error(codes.ResourceExhausted, "timed out waiting for image pull lock")
+	repo := newBuildWorkflowTestRepository(t, &buildWorkflowTestOptions{
+		workflow: &workflowspb.GetWorkflowByIDResponse{
+			Id:          "workflow-1",
+			UserId:      "user-1",
+			Name:        "workflow",
+			Kind:        workflowsmodel.KindContainer.ToString(),
+			BuildStatus: workflowsmodel.WorkflowBuildStatusQueued.ToString(),
+			Payload:     `{"image":"alpine:3.22","cmd":["echo","hello"]}`,
+			Generation:  1,
+		},
+		buildErr:      buildErr,
+		statusUpdates: statusUpdates,
+		notifications: notifications,
+	})
+
+	err := repo.buildWorkflow(t.Context(), &workflowsmodel.WorkflowEvent{
+		ID:         "workflow-1",
+		UserID:     "user-1",
+		Action:     workflowsmodel.ActionBuild,
+		Generation: 1,
+	})
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("buildWorkflow() code = %s, want %s: %v", status.Code(err), codes.ResourceExhausted, err)
+	}
+
+	assertEvents(t, statusUpdates.items(), []string{workflowsmodel.WorkflowBuildStatusStarted.ToString()})
+	if got := notifications.items(); containsEvent(got, "Workflow Build Failed") {
+		t.Fatalf("failure notification sent for transient build error: %v", got)
+	}
+}
+
+func TestBuildWorkflowStartedStatusRetriesBuild(t *testing.T) {
+	t.Parallel()
+
+	builds := &orderedEvents{}
+	statusUpdates := &orderedEvents{}
+	repo := newBuildWorkflowTestRepository(t, &buildWorkflowTestOptions{
+		workflow: &workflowspb.GetWorkflowByIDResponse{
+			Id:          "workflow-1",
+			UserId:      "user-1",
+			Name:        "workflow",
+			Kind:        workflowsmodel.KindContainer.ToString(),
+			BuildStatus: workflowsmodel.WorkflowBuildStatusStarted.ToString(),
+			Payload:     `{"image":"alpine:3.22","cmd":["echo","hello"]}`,
+			Generation:  1,
+		},
+		builds:        builds,
+		statusUpdates: statusUpdates,
+	})
+
+	err := repo.buildWorkflow(t.Context(), &workflowsmodel.WorkflowEvent{
+		ID:         "workflow-1",
+		UserID:     "user-1",
+		Action:     workflowsmodel.ActionBuild,
+		Generation: 1,
+	})
+	if err != nil {
+		t.Fatalf("buildWorkflow() error = %v", err)
+	}
+
+	assertEvents(t, builds.items(), []string{"alpine:3.22"})
+	assertEvents(t, statusUpdates.items(), []string{workflowsmodel.WorkflowBuildStatusCompleted.ToString()})
+}
+
+func TestBuildWorkflowNonTransientBuildErrorFailsWorkflow(t *testing.T) {
+	t.Parallel()
+
+	statusUpdates := &orderedEvents{}
+	notifications := &orderedEvents{}
+	buildErr := status.Error(codes.NotFound, "failed to pull image")
+	repo := newBuildWorkflowTestRepository(t, &buildWorkflowTestOptions{
+		workflow: &workflowspb.GetWorkflowByIDResponse{
+			Id:          "workflow-1",
+			UserId:      "user-1",
+			Name:        "workflow",
+			Kind:        workflowsmodel.KindContainer.ToString(),
+			BuildStatus: workflowsmodel.WorkflowBuildStatusQueued.ToString(),
+			Payload:     `{"image":"missing:latest","cmd":["echo","hello"]}`,
+			Generation:  1,
+		},
+		buildErr:      buildErr,
+		statusUpdates: statusUpdates,
+		notifications: notifications,
+	})
+
+	err := repo.buildWorkflow(t.Context(), &workflowsmodel.WorkflowEvent{
+		ID:         "workflow-1",
+		UserID:     "user-1",
+		Action:     workflowsmodel.ActionBuild,
+		Generation: 1,
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("buildWorkflow() code = %s, want %s: %v", status.Code(err), codes.NotFound, err)
+	}
+
+	assertEvents(t, statusUpdates.items(), []string{
+		workflowsmodel.WorkflowBuildStatusStarted.ToString(),
+		workflowsmodel.WorkflowBuildStatusFailed.ToString(),
+	})
+	if !eventuallyContainsEvent(notifications, "Workflow Build Failed") {
+		t.Fatalf("failure notification was not sent for non-transient build error: %v", notifications.items())
 	}
 }
 
@@ -337,6 +450,80 @@ func (e *orderedEvents) items() []string {
 	return append([]string(nil), e.events...)
 }
 
+func assertEvents(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("events = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("events = %v, want %v", got, want)
+		}
+	}
+}
+
+func containsEvent(events []string, event string) bool {
+	for _, item := range events {
+		if item == event {
+			return true
+		}
+	}
+	return false
+}
+
+func eventuallyContainsEvent(events *orderedEvents, event string) bool {
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if containsEvent(events.items(), event) {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return containsEvent(events.items(), event)
+}
+
+type buildWorkflowTestOptions struct {
+	workflow      *workflowspb.GetWorkflowByIDResponse
+	buildErr      error
+	builds        *orderedEvents
+	statusUpdates *orderedEvents
+	notifications *orderedEvents
+}
+
+func newBuildWorkflowTestRepository(t *testing.T, opts *buildWorkflowTestOptions) *Repository {
+	t.Helper()
+	if opts == nil {
+		opts = &buildWorkflowTestOptions{}
+	}
+	if opts.builds == nil {
+		opts.builds = &orderedEvents{}
+	}
+	if opts.statusUpdates == nil {
+		opts.statusUpdates = &orderedEvents{}
+	}
+	if opts.notifications == nil {
+		opts.notifications = &orderedEvents{}
+	}
+
+	return &Repository{
+		auth: testAuth{},
+		rdb:  &testWorkflowLockStore{},
+		kfk:  testKafkaProducer{},
+		svc: &Services{
+			Workflows: &testWorkflowsClient{
+				workflow:      opts.workflow,
+				statusUpdates: opts.statusUpdates,
+			},
+			Jobs:          &testJobsClient{},
+			Notifications: testNotificationsClient{events: opts.notifications},
+			Csvc: &testContainerSvc{
+				buildErr: opts.buildErr,
+				builds:   opts.builds,
+			},
+		},
+	}
+}
+
 type testAuth struct {
 	issueToken func(context.Context, string) (string, error)
 }
@@ -355,22 +542,84 @@ func (testAuth) ValidateToken(context.Context) (*jwt.Token, error) {
 type testJobsClient struct {
 	jobspb.JobsServiceClient
 	updateJobStatus func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error)
+	scheduleJob     func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
+	listJobs        func(context.Context, *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error)
 }
 
 func (c *testJobsClient) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest, _ ...grpc.CallOption) (*jobspb.UpdateJobStatusResponse, error) {
+	if c.updateJobStatus == nil {
+		return &jobspb.UpdateJobStatusResponse{}, nil
+	}
 	return c.updateJobStatus(ctx, req)
+}
+
+func (c *testJobsClient) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest, _ ...grpc.CallOption) (*jobspb.ScheduleJobResponse, error) {
+	if c.scheduleJob != nil {
+		return c.scheduleJob(ctx, req)
+	}
+	return &jobspb.ScheduleJobResponse{Id: "job-1"}, nil
+}
+
+func (c *testJobsClient) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest, _ ...grpc.CallOption) (*jobspb.ListJobsResponse, error) {
+	if c.listJobs != nil {
+		return c.listJobs(ctx, req)
+	}
+	return &jobspb.ListJobsResponse{}, nil
+}
+
+type testWorkflowsClient struct {
+	workflowspb.WorkflowsServiceClient
+	workflow      *workflowspb.GetWorkflowByIDResponse
+	statusUpdates *orderedEvents
+}
+
+func (c *testWorkflowsClient) GetWorkflowByID(context.Context, *workflowspb.GetWorkflowByIDRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
+	if c.workflow == nil {
+		return nil, status.Error(codes.NotFound, "workflow not found")
+	}
+	return c.workflow, nil
+}
+
+func (c *testWorkflowsClient) UpdateWorkflowBuildStatus(
+	_ context.Context,
+	req *workflowspb.UpdateWorkflowBuildStatusRequest,
+	_ ...grpc.CallOption,
+) (*workflowspb.UpdateWorkflowBuildStatusResponse, error) {
+	if c.statusUpdates != nil {
+		c.statusUpdates.add(req.GetBuildStatus())
+	}
+	if c.workflow != nil {
+		c.workflow.BuildStatus = req.GetBuildStatus()
+	}
+	return &workflowspb.UpdateWorkflowBuildStatusResponse{}, nil
 }
 
 type testNotificationsClient struct {
 	notificationspb.NotificationsServiceClient
 	createNotification func(context.Context, *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error)
+	events             *orderedEvents
 }
 
 func (c testNotificationsClient) CreateNotification(ctx context.Context, req *notificationspb.CreateNotificationRequest, _ ...grpc.CallOption) (*notificationspb.CreateNotificationResponse, error) {
 	if c.createNotification != nil {
 		return c.createNotification(ctx, req)
 	}
+	if c.events != nil {
+		c.events.add(notificationTitle(req.GetPayload()))
+	}
 	return &notificationspb.CreateNotificationResponse{Id: "notification-1"}, nil
+}
+
+func notificationTitle(payload string) string {
+	var data map[string]any
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		return payload
+	}
+	title, ok := data["title"].(string)
+	if !ok {
+		return payload
+	}
+	return title
 }
 
 type testContainerSvc struct {
@@ -378,10 +627,15 @@ type testContainerSvc struct {
 	logs        []*jobsmodel.JobLog
 	imageExists bool
 	dockerHost  string
+	buildErr    error
+	builds      *orderedEvents
 }
 
-func (*testContainerSvc) Build(context.Context, string) error {
-	return nil
+func (s *testContainerSvc) Build(_ context.Context, image string) error {
+	if s.builds != nil {
+		s.builds.add(image)
+	}
+	return s.buildErr
 }
 
 func (s *testContainerSvc) ImageExists(context.Context, string) (bool, error) {
@@ -419,5 +673,21 @@ func (s *testContainerSvc) Terminate(context.Context, string) error {
 	if s.events != nil {
 		s.events.add("terminate")
 	}
+	return nil
+}
+
+type testWorkflowLockStore struct{}
+
+func (*testWorkflowLockStore) AcquireDistributedLock(context.Context, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (*testWorkflowLockStore) ReleaseDistributedLock(context.Context, string) error {
+	return nil
+}
+
+type testKafkaProducer struct{}
+
+func (testKafkaProducer) ProduceSync(context.Context, ...*kgo.Record) kgo.ProduceResults {
 	return nil
 }

@@ -71,6 +71,11 @@ func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
 	return nil
 }
 
+// DockerHost returns the Docker daemon host configured for this client.
+func (w *DockerWorkflow) DockerHost() string {
+	return w.Client.DaemonHost()
+}
+
 // Execute runs a command in a new container and streams the logs.
 //
 //nolint:gocyclo,gocritic // This function is not complex enough to warrant a refactor
@@ -362,6 +367,21 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	case result := <-resultCh:
 		return result.Err
 	}
+}
+
+// ImageExists reports whether an image is already available in the local Docker daemon.
+func (w *DockerWorkflow) ImageExists(ctx context.Context, imageName string) (bool, error) {
+	if err := w.healthCheck(ctx); err != nil {
+		return false, err
+	}
+
+	if _, err := w.Client.ImageInspect(ctx, imageName); err == nil {
+		return true, nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return false, status.Errorf(codes.Aborted, "failed to inspect image: %v", err)
+	}
+
+	return false, nil
 }
 
 // Inspect returns the current Docker state for a container.

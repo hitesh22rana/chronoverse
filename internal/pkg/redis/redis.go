@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc/codes"
@@ -22,7 +23,24 @@ const (
 
 	// distributedLockValue is the value used for distributed locks.
 	distributedLockValue = "locked"
+
+	distributedLockExtendWithTokenScript = `
+		if redis.call("GET", KEYS[1]) == ARGV[1] then
+			return redis.call("PEXPIRE", KEYS[1], ARGV[2])
+		else
+			return 0
+		end
+	`
+	distributedLockReleaseWithTokenScript = `
+		if redis.call("GET", KEYS[1]) == ARGV[1] then
+			return redis.call("DEL", KEYS[1])
+		else
+			return 0
+		end
+	`
 )
+
+var newDistributedLockToken = uuid.NewString
 
 // TLSConfig holds the Redis tls config.
 type TLSConfig struct {
@@ -316,6 +334,34 @@ func (s *Store) AcquireDistributedLock(ctx context.Context, key string, expirati
 	return success, nil
 }
 
+// AcquireDistributedLockWithToken attempts to acquire a distributed lock with a unique owner token.
+func (s *Store) AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (string, bool, error) {
+	token := newDistributedLockToken()
+	success, err := s.client.SetNX(ctx, key, token, expiration).Result()
+	if err != nil {
+		return "", false, status.Errorf(codes.Internal, "failed to acquire lock: %v", err)
+	}
+	if !success {
+		return "", false, nil
+	}
+	return token, true, nil
+}
+
+// ExtendDistributedLockWithToken extends a distributed lock only when token still owns it.
+func (s *Store) ExtendDistributedLockWithToken(ctx context.Context, key, token string, expiration time.Duration) (bool, error) {
+	result, err := s.client.Eval(ctx, distributedLockExtendWithTokenScript, []string{key}, token, expiration.Milliseconds()).Result()
+	if err != nil || result == nil {
+		return false, status.Errorf(codes.Internal, "failed to extend lock: %v", err)
+	}
+
+	value, ok := result.(int64)
+	if !ok {
+		return false, status.Errorf(codes.Internal, "unexpected lock extend result type %T", result)
+	}
+
+	return value == 1, nil
+}
+
 // ReleaseDistributedLock releases a previously acquired distributed lock.
 func (s *Store) ReleaseDistributedLock(ctx context.Context, key string) error {
 	luaScript := `
@@ -331,6 +377,23 @@ func (s *Store) ReleaseDistributedLock(ctx context.Context, key string) error {
 	}
 	//nolint:errcheck,forcetypeassert // Ignore error as we are checking result
 	if result.(int64) == 0 {
+		return status.Errorf(codes.FailedPrecondition, "lock not held or already released")
+	}
+	return nil
+}
+
+// ReleaseDistributedLockWithToken releases a distributed lock only when token still owns it.
+func (s *Store) ReleaseDistributedLockWithToken(ctx context.Context, key, token string) error {
+	result, err := s.client.Eval(ctx, distributedLockReleaseWithTokenScript, []string{key}, token).Result()
+	if err != nil || result == nil {
+		return status.Errorf(codes.Internal, "failed to release lock: %v", err)
+	}
+
+	value, ok := result.(int64)
+	if !ok {
+		return status.Errorf(codes.Internal, "unexpected lock release result type %T", result)
+	}
+	if value == 0 {
 		return status.Errorf(codes.FailedPrecondition, "lock not held or already released")
 	}
 	return nil

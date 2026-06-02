@@ -24,8 +24,7 @@ import (
 
 const (
 	// containerStopTimeout is the default timeout for stopping a container.
-	containerStopTimeout   = 2 * time.Second
-	containerBufferTimeout = 1 * time.Second
+	containerStopTimeout = 2 * time.Second
 )
 
 // DockerWorkflow represents a Docker workflow.

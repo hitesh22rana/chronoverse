@@ -39,6 +39,8 @@ const (
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
+	ImageExists(ctx context.Context, imageName string) (bool, error)
+	DockerHost() string
 	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
 	Remove(ctx context.Context, containerID string) error
 	Terminate(ctx context.Context, containerID string) error

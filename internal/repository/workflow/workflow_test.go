@@ -374,12 +374,25 @@ func (c testNotificationsClient) CreateNotification(ctx context.Context, req *no
 }
 
 type testContainerSvc struct {
-	events *orderedEvents
-	logs   []*jobsmodel.JobLog
+	events      *orderedEvents
+	logs        []*jobsmodel.JobLog
+	imageExists bool
+	dockerHost  string
 }
 
 func (*testContainerSvc) Build(context.Context, string) error {
 	return nil
+}
+
+func (s *testContainerSvc) ImageExists(context.Context, string) (bool, error) {
+	return s.imageExists, nil
+}
+
+func (s *testContainerSvc) DockerHost() string {
+	if s.dockerHost != "" {
+		return s.dockerHost
+	}
+	return "tcp://docker-proxy:2375"
 }
 
 func (s *testContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {

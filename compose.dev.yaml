@@ -1128,6 +1128,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2375
+      WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL: 10m
+      WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT: 10m
+      WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL: 500ms
       ENV: development
     build:
       context: .

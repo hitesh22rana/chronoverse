@@ -251,6 +251,8 @@ services:
       KAFKA_ANALYTICS_TOPIC_PARTITIONS: ${KAFKA_ANALYTICS_TOPIC_PARTITIONS:-2}
     volumes:
       - ./certs/kafka:/etc/kafka/secrets:ro
+    tmpfs:
+      - /var/lib/kafka/data
     entrypoint:
       - bash
       - -ec
@@ -1109,6 +1111,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2375
+      WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL: 10m
+      WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT: 10m
+      WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL: 500ms
       ENV: production
     restart: on-failure
     volumes:

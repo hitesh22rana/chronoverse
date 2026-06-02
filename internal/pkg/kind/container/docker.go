@@ -24,8 +24,7 @@ import (
 
 const (
 	// containerStopTimeout is the default timeout for stopping a container.
-	containerStopTimeout   = 2 * time.Second
-	containerBufferTimeout = 1 * time.Second
+	containerStopTimeout = 2 * time.Second
 )
 
 // DockerWorkflow represents a Docker workflow.
@@ -69,6 +68,11 @@ func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// DockerHost returns the Docker daemon host configured for this client.
+func (w *DockerWorkflow) DockerHost() string {
+	return w.Client.DaemonHost()
 }
 
 // Execute runs a command in a new container and streams the logs.
@@ -334,7 +338,7 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 			return struct{}{}, nil
 		} else if !cerrdefs.IsNotFound(err) {
 			// An error other than "not found" occurred
-			return nil, status.Errorf(codes.Aborted, "failed to inspect image: %v", err)
+			return nil, dockerImageInspectError(err)
 		}
 
 		// Pull the image since it doesn't exist locally
@@ -362,6 +366,39 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	case result := <-resultCh:
 		return result.Err
 	}
+}
+
+// ImageExists reports whether an image is already available in the local Docker daemon.
+func (w *DockerWorkflow) ImageExists(ctx context.Context, imageName string) (bool, error) {
+	if err := w.healthCheck(ctx); err != nil {
+		return false, err
+	}
+
+	if _, err := w.Client.ImageInspect(ctx, imageName); err == nil {
+		return true, nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return false, dockerImageInspectError(err)
+	}
+
+	return false, nil
+}
+
+func dockerImageInspectError(err error) error {
+	code := codes.Aborted
+	switch {
+	case cerrdefs.IsInvalidArgument(err):
+		code = codes.InvalidArgument
+	case cerrdefs.IsUnavailable(err):
+		code = codes.Unavailable
+	case cerrdefs.IsDeadlineExceeded(err):
+		code = codes.DeadlineExceeded
+	case cerrdefs.IsCanceled(err):
+		code = codes.Canceled
+	case cerrdefs.IsInternal(err):
+		code = codes.Internal
+	}
+
+	return status.Errorf(code, "failed to inspect image: %v", err)
 }
 
 // Inspect returns the current Docker state for a container.

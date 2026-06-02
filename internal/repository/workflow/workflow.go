@@ -39,6 +39,8 @@ const (
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
+	ImageExists(ctx context.Context, imageName string) (bool, error)
+	DockerHost() string
 	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
 	Remove(ctx context.Context, containerID string) error
 	Terminate(ctx context.Context, containerID string) error
@@ -52,14 +54,23 @@ type Services struct {
 	Csvc          ContainerSvc
 }
 
+type kafkaProducer interface {
+	ProduceSync(ctx context.Context, rs ...*kgo.Record) kgo.ProduceResults
+}
+
+type workflowLockStore interface {
+	AcquireDistributedLock(ctx context.Context, key string, expiration time.Duration) (bool, error)
+	ReleaseDistributedLock(ctx context.Context, key string) error
+}
+
 // Repository provides workflow repository.
 type Repository struct {
 	tp     trace.Tracer
 	auth   auth.IAuth
-	rdb    *redis.Store
+	rdb    workflowLockStore
 	ch     *clickhouse.Client
 	ms     meilisearch.ServiceManager
-	kfk    *kgo.Client
+	kfk    kafkaProducer
 	runner *kafkapkg.PartitionRunner
 	svc    *Services
 }

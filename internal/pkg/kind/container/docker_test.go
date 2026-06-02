@@ -249,6 +249,34 @@ func TestDockerWorkflow_Build(t *testing.T) {
 	}
 }
 
+func TestDockerWorkflow_ImageExists(t *testing.T) {
+	t.Parallel()
+
+	// Skip if not running in CI environment
+	if testing.Short() {
+		t.Skip("Skipping long-running tests in short mode")
+	}
+
+	workflow, err := container.NewDockerWorkflow()
+	require.NoError(t, err)
+	require.NotNil(t, workflow)
+
+	t.Cleanup(func() {
+		workflow.Close()
+	})
+
+	err = workflow.Build(t.Context(), "alpine:3.22.2")
+	require.NoError(t, err)
+
+	exists, err := workflow.ImageExists(t.Context(), "alpine:3.22.2")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = workflow.ImageExists(t.Context(), "nonexistent:latest")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
 func TestDockerWorkflow_Terminate(t *testing.T) {
 	t.Parallel()
 

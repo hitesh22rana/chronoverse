@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -26,6 +27,14 @@ import (
 const (
 	buildWorkflowDefaultExpirationTimeout = 5 * time.Minute
 )
+
+var transientBuildRetryErrorCodes = []codes.Code{
+	codes.Canceled,
+	codes.DeadlineExceeded,
+	codes.Internal,
+	codes.ResourceExhausted,
+	codes.Unavailable,
+}
 
 // buildWorkflow executes the build workflow.
 //
@@ -80,9 +89,8 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return scheduleErr
 	}
 
-	// Early return idempotency checks
-	// Ensure the build process is not already started
-	if workflow.GetBuildStatus() != workflowsmodel.WorkflowBuildStatusQueued.ToString() {
+	buildStatus := workflow.GetBuildStatus()
+	if !isResumableWorkflowBuildStatus(buildStatus) {
 		return nil
 	}
 
@@ -173,19 +181,25 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return nil
 	}
 
-	// Update the workflow status from QUEUED to STARTED
-	updated, _err := r.updateWorkflowBuildStatus(
-		ctx,
-		workflowID,
-		workflow.GetUserId(),
-		workflowsmodel.WorkflowBuildStatusStarted.ToString(),
-		workflowEvent.Generation,
+	var (
+		updated bool
+		_err    error
 	)
-	if _err != nil {
-		return _err
-	}
-	if !updated {
-		return nil
+	if buildStatus == workflowsmodel.WorkflowBuildStatusQueued.ToString() {
+		// Update the workflow status from QUEUED to STARTED
+		updated, _err = r.updateWorkflowBuildStatus(
+			ctx,
+			workflowID,
+			workflow.GetUserId(),
+			workflowsmodel.WorkflowBuildStatusStarted.ToString(),
+			workflowEvent.Generation,
+		)
+		if _err != nil {
+			return _err
+		}
+		if !updated {
+			return nil
+		}
 	}
 
 	// Send notification for the workflow build start event
@@ -226,6 +240,10 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	notificationCtx, _ = r.withAuthorization(context.Background())
 
 	if workflowErr != nil {
+		if isTransientBuildRetryError(workflowErr) {
+			return workflowErr
+		}
+
 		// Update the workflow status from QUEUED to FAILED
 		updated, _err = r.updateWorkflowBuildStatus(
 			ctx,
@@ -300,6 +318,15 @@ func isBuildStepRequired(kind string) bool {
 	default:
 		return true
 	}
+}
+
+func isResumableWorkflowBuildStatus(buildStatus string) bool {
+	return buildStatus == workflowsmodel.WorkflowBuildStatusQueued.ToString() ||
+		buildStatus == workflowsmodel.WorkflowBuildStatusStarted.ToString()
+}
+
+func isTransientBuildRetryError(err error) bool {
+	return slices.Contains(transientBuildRetryErrorCodes, status.Code(err))
 }
 
 func (r *Repository) updateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) (bool, error) {

@@ -153,6 +153,11 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
+	lockedCsvc := workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, workflowrepo.ImagePullLockConfig{
+		TTL:           cfg.ImagePullLockTTL,
+		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
+		RetryInterval: cfg.ImagePullLockRetryInterval,
+	})
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
@@ -222,7 +227,7 @@ func run() int {
 		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
 		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
-		Csvc:          csvc,
+		Csvc:          lockedCsvc,
 	})
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)

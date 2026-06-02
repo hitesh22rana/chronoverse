@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -26,6 +27,15 @@ import (
 const (
 	buildWorkflowDefaultExpirationTimeout = 5 * time.Minute
 )
+
+var transientBuildRetryErrorCodes = []codes.Code{
+	codes.Aborted,
+	codes.Canceled,
+	codes.DeadlineExceeded,
+	codes.Internal,
+	codes.ResourceExhausted,
+	codes.Unavailable,
+}
 
 // buildWorkflow executes the build workflow.
 //
@@ -317,7 +327,7 @@ func isResumableWorkflowBuildStatus(buildStatus string) bool {
 }
 
 func isTransientBuildRetryError(err error) bool {
-	return status.Code(err) == codes.ResourceExhausted
+	return slices.Contains(transientBuildRetryErrorCodes, status.Code(err))
 }
 
 func (r *Repository) updateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) (bool, error) {

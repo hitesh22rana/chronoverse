@@ -91,40 +91,68 @@ func TestDeleteWorkflowLogsClickHouseQueryUsesClickHousePlaceholders(t *testing.
 	}
 }
 
-func TestBuildWorkflowTransientBuildErrorDoesNotFailWorkflow(t *testing.T) {
+func TestBuildWorkflowTransientBuildErrorsDoNotFailWorkflow(t *testing.T) {
 	t.Parallel()
 
-	statusUpdates := &orderedEvents{}
-	notifications := &orderedEvents{}
-	buildErr := status.Error(codes.ResourceExhausted, "timed out waiting for image pull lock")
-	repo := newBuildWorkflowTestRepository(t, &buildWorkflowTestOptions{
-		workflow: &workflowspb.GetWorkflowByIDResponse{
-			Id:          "workflow-1",
-			UserId:      "user-1",
-			Name:        "workflow",
-			Kind:        workflowsmodel.KindContainer.ToString(),
-			BuildStatus: workflowsmodel.WorkflowBuildStatusQueued.ToString(),
-			Payload:     `{"image":"alpine:3.22","cmd":["echo","hello"]}`,
-			Generation:  1,
+	tests := []struct {
+		name string
+		code codes.Code
+	}{
+		{
+			name: "image lock wait timeout",
+			code: codes.ResourceExhausted,
 		},
-		buildErr:      buildErr,
-		statusUpdates: statusUpdates,
-		notifications: notifications,
-	})
-
-	err := repo.buildWorkflow(t.Context(), &workflowsmodel.WorkflowEvent{
-		ID:         "workflow-1",
-		UserID:     "user-1",
-		Action:     workflowsmodel.ActionBuild,
-		Generation: 1,
-	})
-	if status.Code(err) != codes.ResourceExhausted {
-		t.Fatalf("buildWorkflow() code = %s, want %s: %v", status.Code(err), codes.ResourceExhausted, err)
+		{
+			name: "redis acquire error",
+			code: codes.Internal,
+		},
+		{
+			name: "lock service unavailable",
+			code: codes.Unavailable,
+		},
+		{
+			name: "workflow context deadline",
+			code: codes.DeadlineExceeded,
+		},
 	}
 
-	assertEvents(t, statusUpdates.items(), []string{workflowsmodel.WorkflowBuildStatusStarted.ToString()})
-	if got := notifications.items(); containsEvent(got, "Workflow Build Failed") {
-		t.Fatalf("failure notification sent for transient build error: %v", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			statusUpdates := &orderedEvents{}
+			notifications := &orderedEvents{}
+			buildErr := status.Error(tt.code, "transient build error")
+			repo := newBuildWorkflowTestRepository(t, &buildWorkflowTestOptions{
+				workflow: &workflowspb.GetWorkflowByIDResponse{
+					Id:          "workflow-1",
+					UserId:      "user-1",
+					Name:        "workflow",
+					Kind:        workflowsmodel.KindContainer.ToString(),
+					BuildStatus: workflowsmodel.WorkflowBuildStatusQueued.ToString(),
+					Payload:     `{"image":"alpine:3.22","cmd":["echo","hello"]}`,
+					Generation:  1,
+				},
+				buildErr:      buildErr,
+				statusUpdates: statusUpdates,
+				notifications: notifications,
+			})
+
+			err := repo.buildWorkflow(t.Context(), &workflowsmodel.WorkflowEvent{
+				ID:         "workflow-1",
+				UserID:     "user-1",
+				Action:     workflowsmodel.ActionBuild,
+				Generation: 1,
+			})
+			if status.Code(err) != tt.code {
+				t.Fatalf("buildWorkflow() code = %s, want %s: %v", status.Code(err), tt.code, err)
+			}
+
+			assertEvents(t, statusUpdates.items(), []string{workflowsmodel.WorkflowBuildStatusStarted.ToString()})
+			if got := notifications.items(); containsEvent(got, "Workflow Build Failed") {
+				t.Fatalf("failure notification sent for transient build error: %v", got)
+			}
+		})
 	}
 }
 

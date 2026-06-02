@@ -208,6 +208,8 @@ services:
       KAFKA_ANALYTICS_TOPIC_PARTITIONS: ${KAFKA_ANALYTICS_TOPIC_PARTITIONS:-2}
     volumes:
       - ./certs/kafka:/etc/kafka/secrets:ro
+    tmpfs:
+      - /var/lib/kafka/data
     entrypoint:
       - bash
       - -ec

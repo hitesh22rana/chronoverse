@@ -338,7 +338,7 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 			return struct{}{}, nil
 		} else if !cerrdefs.IsNotFound(err) {
 			// An error other than "not found" occurred
-			return nil, status.Errorf(codes.Aborted, "failed to inspect image: %v", err)
+			return nil, dockerImageInspectError(err)
 		}
 
 		// Pull the image since it doesn't exist locally
@@ -377,10 +377,28 @@ func (w *DockerWorkflow) ImageExists(ctx context.Context, imageName string) (boo
 	if _, err := w.Client.ImageInspect(ctx, imageName); err == nil {
 		return true, nil
 	} else if !cerrdefs.IsNotFound(err) {
-		return false, status.Errorf(codes.Aborted, "failed to inspect image: %v", err)
+		return false, dockerImageInspectError(err)
 	}
 
 	return false, nil
+}
+
+func dockerImageInspectError(err error) error {
+	code := codes.Aborted
+	switch {
+	case cerrdefs.IsInvalidArgument(err):
+		code = codes.InvalidArgument
+	case cerrdefs.IsUnavailable(err):
+		code = codes.Unavailable
+	case cerrdefs.IsDeadlineExceeded(err):
+		code = codes.DeadlineExceeded
+	case cerrdefs.IsCanceled(err):
+		code = codes.Canceled
+	case cerrdefs.IsInternal(err):
+		code = codes.Internal
+	}
+
+	return status.Errorf(code, "failed to inspect image: %v", err)
 }
 
 // Inspect returns the current Docker state for a container.

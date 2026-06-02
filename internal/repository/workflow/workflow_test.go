@@ -189,43 +189,67 @@ func TestBuildWorkflowStartedStatusRetriesBuild(t *testing.T) {
 	assertEvents(t, statusUpdates.items(), []string{workflowsmodel.WorkflowBuildStatusCompleted.ToString()})
 }
 
-func TestBuildWorkflowNonTransientBuildErrorFailsWorkflow(t *testing.T) {
+func TestBuildWorkflowNonTransientBuildErrorsFailWorkflow(t *testing.T) {
 	t.Parallel()
 
-	statusUpdates := &orderedEvents{}
-	notifications := &orderedEvents{}
-	buildErr := status.Error(codes.NotFound, "failed to pull image")
-	repo := newBuildWorkflowTestRepository(t, &buildWorkflowTestOptions{
-		workflow: &workflowspb.GetWorkflowByIDResponse{
-			Id:          "workflow-1",
-			UserId:      "user-1",
-			Name:        "workflow",
-			Kind:        workflowsmodel.KindContainer.ToString(),
-			BuildStatus: workflowsmodel.WorkflowBuildStatusQueued.ToString(),
-			Payload:     `{"image":"missing:latest","cmd":["echo","hello"]}`,
-			Generation:  1,
+	tests := []struct {
+		name string
+		code codes.Code
+	}{
+		{
+			name: "missing image",
+			code: codes.NotFound,
 		},
-		buildErr:      buildErr,
-		statusUpdates: statusUpdates,
-		notifications: notifications,
-	})
-
-	err := repo.buildWorkflow(t.Context(), &workflowsmodel.WorkflowEvent{
-		ID:         "workflow-1",
-		UserID:     "user-1",
-		Action:     workflowsmodel.ActionBuild,
-		Generation: 1,
-	})
-	if status.Code(err) != codes.NotFound {
-		t.Fatalf("buildWorkflow() code = %s, want %s: %v", status.Code(err), codes.NotFound, err)
+		{
+			name: "docker inspect aborted",
+			code: codes.Aborted,
+		},
+		{
+			name: "invalid image name",
+			code: codes.InvalidArgument,
+		},
 	}
 
-	assertEvents(t, statusUpdates.items(), []string{
-		workflowsmodel.WorkflowBuildStatusStarted.ToString(),
-		workflowsmodel.WorkflowBuildStatusFailed.ToString(),
-	})
-	if !eventuallyContainsEvent(notifications, "Workflow Build Failed") {
-		t.Fatalf("failure notification was not sent for non-transient build error: %v", notifications.items())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			statusUpdates := &orderedEvents{}
+			notifications := &orderedEvents{}
+			buildErr := status.Error(tt.code, "non-transient build error")
+			repo := newBuildWorkflowTestRepository(t, &buildWorkflowTestOptions{
+				workflow: &workflowspb.GetWorkflowByIDResponse{
+					Id:          "workflow-1",
+					UserId:      "user-1",
+					Name:        "workflow",
+					Kind:        workflowsmodel.KindContainer.ToString(),
+					BuildStatus: workflowsmodel.WorkflowBuildStatusQueued.ToString(),
+					Payload:     `{"image":"missing:latest","cmd":["echo","hello"]}`,
+					Generation:  1,
+				},
+				buildErr:      buildErr,
+				statusUpdates: statusUpdates,
+				notifications: notifications,
+			})
+
+			err := repo.buildWorkflow(t.Context(), &workflowsmodel.WorkflowEvent{
+				ID:         "workflow-1",
+				UserID:     "user-1",
+				Action:     workflowsmodel.ActionBuild,
+				Generation: 1,
+			})
+			if status.Code(err) != tt.code {
+				t.Fatalf("buildWorkflow() code = %s, want %s: %v", status.Code(err), tt.code, err)
+			}
+
+			assertEvents(t, statusUpdates.items(), []string{
+				workflowsmodel.WorkflowBuildStatusStarted.ToString(),
+				workflowsmodel.WorkflowBuildStatusFailed.ToString(),
+			})
+			if !eventuallyContainsEvent(notifications, "Workflow Build Failed") {
+				t.Fatalf("failure notification was not sent for non-transient build error: %v", notifications.items())
+			}
+		})
 	}
 }
 

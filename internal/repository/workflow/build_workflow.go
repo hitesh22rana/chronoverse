@@ -29,7 +29,6 @@ const (
 )
 
 var transientBuildRetryErrorCodes = []codes.Code{
-	codes.Aborted,
 	codes.Canceled,
 	codes.DeadlineExceeded,
 	codes.Internal,

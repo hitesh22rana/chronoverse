@@ -92,10 +92,10 @@ func (s *imagePullLockedContainerSvc) buildWithLock(ctx context.Context, imageNa
 	defer cancel()
 
 	stopRenewal, renewalErrCh := s.startLockRenewal(buildCtx, lockKey, token)
-	defer func() {
+	defer func(ctx context.Context) {
 		//nolint:errcheck // A lost or expired lock should not mask the build result.
-		_ = s.locks.ReleaseDistributedLockWithToken(context.Background(), lockKey, token)
-	}()
+		_ = s.locks.ReleaseDistributedLockWithToken(ctx, lockKey, token)
+	}(context.WithoutCancel(ctx))
 	defer stopRenewal()
 
 	buildErrCh := make(chan error, 1)
@@ -113,7 +113,7 @@ func (s *imagePullLockedContainerSvc) buildWithLock(ctx context.Context, imageNa
 	}
 }
 
-func (s *imagePullLockedContainerSvc) startLockRenewal(ctx context.Context, lockKey, token string) (func(), <-chan error) {
+func (s *imagePullLockedContainerSvc) startLockRenewal(ctx context.Context, lockKey, token string) (stop func(), errs <-chan error) {
 	renewCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
 	interval := s.cfg.TTL / 3
@@ -191,7 +191,7 @@ func (s *imagePullLockedContainerSvc) DockerHost() string {
 	return s.inner.DockerHost()
 }
 
-func (s *imagePullLockedContainerSvc) Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
+func (s *imagePullLockedContainerSvc) Logs(ctx context.Context, containerID string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
 	return s.inner.Logs(ctx, containerID)
 }
 

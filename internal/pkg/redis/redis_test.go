@@ -1,3 +1,4 @@
+//nolint:testpackage // Tests unexported token generation and Lua script constants.
 package redis
 
 import (

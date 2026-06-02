@@ -1,3 +1,4 @@
+//nolint:testpackage // Tests unexported image pull lock key and helper behavior.
 package workflow
 
 import (
@@ -123,7 +124,7 @@ type fakeImagePullLockStore struct {
 	keys           []string
 }
 
-func (s *fakeImagePullLockStore) AcquireDistributedLockWithToken(_ context.Context, key string, _ time.Duration) (string, bool, error) {
+func (s *fakeImagePullLockStore) AcquireDistributedLockWithToken(_ context.Context, key string, _ time.Duration) (token string, acquired bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -133,7 +134,7 @@ func (s *fakeImagePullLockStore) AcquireDistributedLockWithToken(_ context.Conte
 		return "token", false, nil
 	}
 
-	acquired := s.acquireResults[0]
+	acquired = s.acquireResults[0]
 	s.acquireResults = s.acquireResults[1:]
 	return "token", acquired, nil
 }
@@ -168,7 +169,7 @@ func (s *fakeContainerSvc) DockerHost() string {
 	return s.dockerHost
 }
 
-func (*fakeContainerSvc) Logs(context.Context, string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
+func (*fakeContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
 	return nil, nil, nil
 }
 

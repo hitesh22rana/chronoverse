@@ -24,6 +24,7 @@ const (
 	// distributedLockValue is the value used for distributed locks.
 	distributedLockValue = "locked"
 
+	// #nosec G101 -- Redis Lua script, not a credential.
 	distributedLockExtendWithTokenScript = `
 		if redis.call("GET", KEYS[1]) == ARGV[1] then
 			return redis.call("PEXPIRE", KEYS[1], ARGV[2])
@@ -31,6 +32,7 @@ const (
 			return 0
 		end
 	`
+	// #nosec G101 -- Redis Lua script, not a credential.
 	distributedLockReleaseWithTokenScript = `
 		if redis.call("GET", KEYS[1]) == ARGV[1] then
 			return redis.call("DEL", KEYS[1])
@@ -335,8 +337,8 @@ func (s *Store) AcquireDistributedLock(ctx context.Context, key string, expirati
 }
 
 // AcquireDistributedLockWithToken attempts to acquire a distributed lock with a unique owner token.
-func (s *Store) AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (string, bool, error) {
-	token := newDistributedLockToken()
+func (s *Store) AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (token string, acquired bool, err error) {
+	token = newDistributedLockToken()
 	success, err := s.client.SetNX(ctx, key, token, expiration).Result()
 	if err != nil {
 		return "", false, status.Errorf(codes.Internal, "failed to acquire lock: %v", err)

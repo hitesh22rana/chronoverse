@@ -27,12 +27,13 @@ var Indexes map[string]*Index = map[string]*Index{
 		PrimaryKey: "id",
 		Searchable: []string{"message"},
 		Filterable: []any{
+			"id",
 			"job_id",
 			"workflow_id",
 			"user_id",
 			"sequence_num",
 			"stream",
 		},
-		Sortable: []string{"sequence_num"},
+		Sortable: []string{"sequence_num", "id"},
 	},
 }

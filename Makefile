@@ -1,4 +1,5 @@
 GO_BIN?=$(shell pwd)/.bin
+PROTOC_GEN_GO_GRPC_VERSION?=v1.6.2
 export PATH := $(GO_BIN):$(PATH)
 PKG_PATH=github.com/hitesh22rana/chronoverse/internal/pkg/svc
 APP_VERSION?=v0.0.1 # Default version
@@ -32,7 +33,11 @@ test: dependencies
 tools:
 	@mkdir -p ${GO_BIN}
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GO_BIN} v2.4.0
-	@cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % sh -c 'GOBIN=${GO_BIN} go install %@latest'
+	@grep _ tools.go | awk -F'"' '{print $$2}' | while read tool; do \
+		version=latest; \
+		if [ "$$tool" = "google.golang.org/grpc/cmd/protoc-gen-go-grpc" ]; then version=${PROTOC_GEN_GO_GRPC_VERSION}; fi; \
+		GOBIN=${GO_BIN} go install "$$tool@$$version"; \
+	done
 
 .PHONY: mockgen
 mockgen: tools

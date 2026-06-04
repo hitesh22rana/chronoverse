@@ -80,6 +80,7 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) (
 	for _, log := range logs {
 		documents = append(documents, &map[string]any{
 			"id":           meiliLogDocumentID(log.EventKey),
+			"event_id":     log.EventKey,
 			"job_id":       log.JobID,
 			"workflow_id":  log.WorkflowID,
 			"user_id":      log.UserID,

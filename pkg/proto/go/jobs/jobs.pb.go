@@ -74,6 +74,56 @@ func (LogStream) EnumDescriptor() ([]byte, []int) {
 	return file_jobs_jobs_proto_rawDescGZIP(), []int{0}
 }
 
+// LogSortOrder represents the order used for retained log pagination.
+type LogSortOrder int32
+
+const (
+	LogSortOrder_LOG_SORT_ORDER_UNSPECIFIED LogSortOrder = 0
+	LogSortOrder_LOG_SORT_ORDER_DESC        LogSortOrder = 1
+	LogSortOrder_LOG_SORT_ORDER_ASC         LogSortOrder = 2
+)
+
+// Enum value maps for LogSortOrder.
+var (
+	LogSortOrder_name = map[int32]string{
+		0: "LOG_SORT_ORDER_UNSPECIFIED",
+		1: "LOG_SORT_ORDER_DESC",
+		2: "LOG_SORT_ORDER_ASC",
+	}
+	LogSortOrder_value = map[string]int32{
+		"LOG_SORT_ORDER_UNSPECIFIED": 0,
+		"LOG_SORT_ORDER_DESC":        1,
+		"LOG_SORT_ORDER_ASC":         2,
+	}
+)
+
+func (x LogSortOrder) Enum() *LogSortOrder {
+	p := new(LogSortOrder)
+	*p = x
+	return p
+}
+
+func (x LogSortOrder) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LogSortOrder) Descriptor() protoreflect.EnumDescriptor {
+	return file_jobs_jobs_proto_enumTypes[1].Descriptor()
+}
+
+func (LogSortOrder) Type() protoreflect.EnumType {
+	return &file_jobs_jobs_proto_enumTypes[1]
+}
+
+func (x LogSortOrder) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LogSortOrder.Descriptor instead.
+func (LogSortOrder) EnumDescriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{1}
+}
+
 // ScheduleJobRequest contains the details needed to create a new job.
 type ScheduleJobRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -1711,11 +1761,12 @@ func (x *GetJobLogsFilters) GetStream() LogStream {
 // GetJobLogsRequest contains the details needed to get the logs of a job.
 type GetJobLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                   // ID of the job
-	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"` // ID of the workflow
-	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`             // ID of the user
-	Cursor        string                 `protobuf:"bytes,4,opt,name=cursor,proto3" json:"cursor,omitempty"`                           // Cursor for pagination
-	Filters       *GetJobLogsFilters     `protobuf:"bytes,5,opt,name=filters,proto3" json:"filters,omitempty"`                         // Filters applied to the search
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                        // ID of the job
+	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                      // ID of the workflow
+	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                  // ID of the user
+	Cursor        string                 `protobuf:"bytes,4,opt,name=cursor,proto3" json:"cursor,omitempty"`                                                // Cursor for pagination
+	Filters       *GetJobLogsFilters     `protobuf:"bytes,5,opt,name=filters,proto3" json:"filters,omitempty"`                                              // Filters applied to the search
+	SortOrder     LogSortOrder           `protobuf:"varint,6,opt,name=sort_order,json=sortOrder,proto3,enum=jobs.LogSortOrder" json:"sort_order,omitempty"` // Sort order for retained log pagination
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1785,6 +1836,13 @@ func (x *GetJobLogsRequest) GetFilters() *GetJobLogsFilters {
 	return nil
 }
 
+func (x *GetJobLogsRequest) GetSortOrder() LogSortOrder {
+	if x != nil {
+		return x.SortOrder
+	}
+	return LogSortOrder_LOG_SORT_ORDER_UNSPECIFIED
+}
+
 // Log contains the details of a log.
 type Log struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1792,6 +1850,7 @@ type Log struct {
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`                             // Log message
 	SequenceNum   uint32                 `protobuf:"varint,3,opt,name=sequence_num,json=sequenceNum,proto3" json:"sequence_num,omitempty"` // Sequence number of the log
 	Stream        string                 `protobuf:"bytes,4,opt,name=stream,proto3" json:"stream,omitempty"`                               // Stream type (stdout or stderr)
+	EventId       string                 `protobuf:"bytes,5,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`              // Unique retained/live log event ID
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1850,6 +1909,13 @@ func (x *Log) GetSequenceNum() uint32 {
 func (x *Log) GetStream() string {
 	if x != nil {
 		return x.Stream
+	}
+	return ""
+}
+
+func (x *Log) GetEventId() string {
+	if x != nil {
+		return x.EventId
 	}
 	return ""
 }
@@ -2554,19 +2620,22 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\v \x01(\tR\tupdatedAt\"<\n" +
 	"\x11GetJobLogsFilters\x12'\n" +
-	"\x06stream\x18\x01 \x01(\x0e2\x0f.jobs.LogStreamR\x06stream\"\xa8\x01\n" +
+	"\x06stream\x18\x01 \x01(\x0e2\x0f.jobs.LogStreamR\x06stream\"\xdb\x01\n" +
 	"\x11GetJobLogsRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12\x17\n" +
 	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x16\n" +
 	"\x06cursor\x18\x04 \x01(\tR\x06cursor\x121\n" +
-	"\afilters\x18\x05 \x01(\v2\x17.jobs.GetJobLogsFiltersR\afilters\"x\n" +
+	"\afilters\x18\x05 \x01(\v2\x17.jobs.GetJobLogsFiltersR\afilters\x121\n" +
+	"\n" +
+	"sort_order\x18\x06 \x01(\x0e2\x12.jobs.LogSortOrderR\tsortOrder\"\x93\x01\n" +
 	"\x03Log\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\tR\ttimestamp\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +
 	"\fsequence_num\x18\x03 \x01(\rR\vsequenceNum\x12\x16\n" +
-	"\x06stream\x18\x04 \x01(\tR\x06stream\"|\n" +
+	"\x06stream\x18\x04 \x01(\tR\x06stream\x12\x19\n" +
+	"\bevent_id\x18\x05 \x01(\tR\aeventId\"|\n" +
 	"\x12GetJobLogsResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -2623,7 +2692,11 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x16LOG_STREAM_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
 	"\x11LOG_STREAM_STDERR\x10\x02\x12\x12\n" +
-	"\x0eLOG_STREAM_ALL\x10\x032\xa2\t\n" +
+	"\x0eLOG_STREAM_ALL\x10\x03*_\n" +
+	"\fLogSortOrder\x12\x1e\n" +
+	"\x1aLOG_SORT_ORDER_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13LOG_SORT_ORDER_DESC\x10\x01\x12\x16\n" +
+	"\x12LOG_SORT_ORDER_ASC\x10\x022\xa2\t\n" +
 	"\vJobsService\x12D\n" +
 	"\vScheduleJob\x12\x18.jobs.ScheduleJobRequest\x1a\x19.jobs.ScheduleJobResponse\"\x00\x12P\n" +
 	"\x0fUpdateJobStatus\x12\x1c.jobs.UpdateJobStatusRequest\x1a\x1d.jobs.UpdateJobStatusResponse\"\x00\x12;\n" +
@@ -2656,93 +2729,95 @@ func file_jobs_jobs_proto_rawDescGZIP() []byte {
 	return file_jobs_jobs_proto_rawDescData
 }
 
-var file_jobs_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_jobs_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_jobs_jobs_proto_goTypes = []any{
 	(LogStream)(0),                          // 0: jobs.LogStream
-	(*ScheduleJobRequest)(nil),              // 1: jobs.ScheduleJobRequest
-	(*ScheduleJobResponse)(nil),             // 2: jobs.ScheduleJobResponse
-	(*UpdateJobStatusRequest)(nil),          // 3: jobs.UpdateJobStatusRequest
-	(*UpdateJobStatusResponse)(nil),         // 4: jobs.UpdateJobStatusResponse
-	(*ClaimJobRequest)(nil),                 // 5: jobs.ClaimJobRequest
-	(*ClaimJobResponse)(nil),                // 6: jobs.ClaimJobResponse
-	(*RenewJobLeaseRequest)(nil),            // 7: jobs.RenewJobLeaseRequest
-	(*RenewJobLeaseResponse)(nil),           // 8: jobs.RenewJobLeaseResponse
-	(*AttachJobContainerRequest)(nil),       // 9: jobs.AttachJobContainerRequest
-	(*AttachJobContainerResponse)(nil),      // 10: jobs.AttachJobContainerResponse
-	(*CompleteJobRequest)(nil),              // 11: jobs.CompleteJobRequest
-	(*CompleteJobResponse)(nil),             // 12: jobs.CompleteJobResponse
-	(*FailJobRequest)(nil),                  // 13: jobs.FailJobRequest
-	(*FailJobResponse)(nil),                 // 14: jobs.FailJobResponse
-	(*CancelClaimedJobRequest)(nil),         // 15: jobs.CancelClaimedJobRequest
-	(*CancelClaimedJobResponse)(nil),        // 16: jobs.CancelClaimedJobResponse
-	(*ReleaseJobForRetryRequest)(nil),       // 17: jobs.ReleaseJobForRetryRequest
-	(*ReleaseJobForRetryResponse)(nil),      // 18: jobs.ReleaseJobForRetryResponse
-	(*ExpiredJobLease)(nil),                 // 19: jobs.ExpiredJobLease
-	(*RecoverExpiredJobLeasesRequest)(nil),  // 20: jobs.RecoverExpiredJobLeasesRequest
-	(*RecoverExpiredJobLeasesResponse)(nil), // 21: jobs.RecoverExpiredJobLeasesResponse
-	(*GetJobRequest)(nil),                   // 22: jobs.GetJobRequest
-	(*GetJobResponse)(nil),                  // 23: jobs.GetJobResponse
-	(*GetJobByIDRequest)(nil),               // 24: jobs.GetJobByIDRequest
-	(*GetJobByIDResponse)(nil),              // 25: jobs.GetJobByIDResponse
-	(*GetJobLogsFilters)(nil),               // 26: jobs.GetJobLogsFilters
-	(*GetJobLogsRequest)(nil),               // 27: jobs.GetJobLogsRequest
-	(*Log)(nil),                             // 28: jobs.Log
-	(*GetJobLogsResponse)(nil),              // 29: jobs.GetJobLogsResponse
-	(*StreamJobLogsRequest)(nil),            // 30: jobs.StreamJobLogsRequest
-	(*SearchJobLogsFilters)(nil),            // 31: jobs.SearchJobLogsFilters
-	(*SearchJobLogsRequest)(nil),            // 32: jobs.SearchJobLogsRequest
-	(*ListJobsFilters)(nil),                 // 33: jobs.ListJobsFilters
-	(*ListJobsRequest)(nil),                 // 34: jobs.ListJobsRequest
-	(*JobsResponse)(nil),                    // 35: jobs.JobsResponse
-	(*ListJobsResponse)(nil),                // 36: jobs.ListJobsResponse
+	(LogSortOrder)(0),                       // 1: jobs.LogSortOrder
+	(*ScheduleJobRequest)(nil),              // 2: jobs.ScheduleJobRequest
+	(*ScheduleJobResponse)(nil),             // 3: jobs.ScheduleJobResponse
+	(*UpdateJobStatusRequest)(nil),          // 4: jobs.UpdateJobStatusRequest
+	(*UpdateJobStatusResponse)(nil),         // 5: jobs.UpdateJobStatusResponse
+	(*ClaimJobRequest)(nil),                 // 6: jobs.ClaimJobRequest
+	(*ClaimJobResponse)(nil),                // 7: jobs.ClaimJobResponse
+	(*RenewJobLeaseRequest)(nil),            // 8: jobs.RenewJobLeaseRequest
+	(*RenewJobLeaseResponse)(nil),           // 9: jobs.RenewJobLeaseResponse
+	(*AttachJobContainerRequest)(nil),       // 10: jobs.AttachJobContainerRequest
+	(*AttachJobContainerResponse)(nil),      // 11: jobs.AttachJobContainerResponse
+	(*CompleteJobRequest)(nil),              // 12: jobs.CompleteJobRequest
+	(*CompleteJobResponse)(nil),             // 13: jobs.CompleteJobResponse
+	(*FailJobRequest)(nil),                  // 14: jobs.FailJobRequest
+	(*FailJobResponse)(nil),                 // 15: jobs.FailJobResponse
+	(*CancelClaimedJobRequest)(nil),         // 16: jobs.CancelClaimedJobRequest
+	(*CancelClaimedJobResponse)(nil),        // 17: jobs.CancelClaimedJobResponse
+	(*ReleaseJobForRetryRequest)(nil),       // 18: jobs.ReleaseJobForRetryRequest
+	(*ReleaseJobForRetryResponse)(nil),      // 19: jobs.ReleaseJobForRetryResponse
+	(*ExpiredJobLease)(nil),                 // 20: jobs.ExpiredJobLease
+	(*RecoverExpiredJobLeasesRequest)(nil),  // 21: jobs.RecoverExpiredJobLeasesRequest
+	(*RecoverExpiredJobLeasesResponse)(nil), // 22: jobs.RecoverExpiredJobLeasesResponse
+	(*GetJobRequest)(nil),                   // 23: jobs.GetJobRequest
+	(*GetJobResponse)(nil),                  // 24: jobs.GetJobResponse
+	(*GetJobByIDRequest)(nil),               // 25: jobs.GetJobByIDRequest
+	(*GetJobByIDResponse)(nil),              // 26: jobs.GetJobByIDResponse
+	(*GetJobLogsFilters)(nil),               // 27: jobs.GetJobLogsFilters
+	(*GetJobLogsRequest)(nil),               // 28: jobs.GetJobLogsRequest
+	(*Log)(nil),                             // 29: jobs.Log
+	(*GetJobLogsResponse)(nil),              // 30: jobs.GetJobLogsResponse
+	(*StreamJobLogsRequest)(nil),            // 31: jobs.StreamJobLogsRequest
+	(*SearchJobLogsFilters)(nil),            // 32: jobs.SearchJobLogsFilters
+	(*SearchJobLogsRequest)(nil),            // 33: jobs.SearchJobLogsRequest
+	(*ListJobsFilters)(nil),                 // 34: jobs.ListJobsFilters
+	(*ListJobsRequest)(nil),                 // 35: jobs.ListJobsRequest
+	(*JobsResponse)(nil),                    // 36: jobs.JobsResponse
+	(*ListJobsResponse)(nil),                // 37: jobs.ListJobsResponse
 }
 var file_jobs_jobs_proto_depIdxs = []int32{
-	19, // 0: jobs.RecoverExpiredJobLeasesResponse.jobs:type_name -> jobs.ExpiredJobLease
+	20, // 0: jobs.RecoverExpiredJobLeasesResponse.jobs:type_name -> jobs.ExpiredJobLease
 	0,  // 1: jobs.GetJobLogsFilters.stream:type_name -> jobs.LogStream
-	26, // 2: jobs.GetJobLogsRequest.filters:type_name -> jobs.GetJobLogsFilters
-	28, // 3: jobs.GetJobLogsResponse.logs:type_name -> jobs.Log
-	0,  // 4: jobs.SearchJobLogsFilters.stream:type_name -> jobs.LogStream
-	31, // 5: jobs.SearchJobLogsRequest.filters:type_name -> jobs.SearchJobLogsFilters
-	33, // 6: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
-	35, // 7: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
-	1,  // 8: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
-	3,  // 9: jobs.JobsService.UpdateJobStatus:input_type -> jobs.UpdateJobStatusRequest
-	5,  // 10: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
-	7,  // 11: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
-	9,  // 12: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
-	11, // 13: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
-	13, // 14: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
-	15, // 15: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
-	17, // 16: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
-	20, // 17: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
-	22, // 18: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
-	24, // 19: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
-	27, // 20: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
-	30, // 21: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
-	32, // 22: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
-	34, // 23: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
-	2,  // 24: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
-	4,  // 25: jobs.JobsService.UpdateJobStatus:output_type -> jobs.UpdateJobStatusResponse
-	6,  // 26: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
-	8,  // 27: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
-	10, // 28: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
-	12, // 29: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
-	14, // 30: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
-	16, // 31: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
-	18, // 32: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
-	21, // 33: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
-	23, // 34: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
-	25, // 35: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
-	29, // 36: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
-	28, // 37: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
-	29, // 38: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
-	36, // 39: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
-	24, // [24:40] is the sub-list for method output_type
-	8,  // [8:24] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	27, // 2: jobs.GetJobLogsRequest.filters:type_name -> jobs.GetJobLogsFilters
+	1,  // 3: jobs.GetJobLogsRequest.sort_order:type_name -> jobs.LogSortOrder
+	29, // 4: jobs.GetJobLogsResponse.logs:type_name -> jobs.Log
+	0,  // 5: jobs.SearchJobLogsFilters.stream:type_name -> jobs.LogStream
+	32, // 6: jobs.SearchJobLogsRequest.filters:type_name -> jobs.SearchJobLogsFilters
+	34, // 7: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
+	36, // 8: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
+	2,  // 9: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
+	4,  // 10: jobs.JobsService.UpdateJobStatus:input_type -> jobs.UpdateJobStatusRequest
+	6,  // 11: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
+	8,  // 12: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
+	10, // 13: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
+	12, // 14: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
+	14, // 15: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
+	16, // 16: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
+	18, // 17: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
+	21, // 18: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
+	23, // 19: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
+	25, // 20: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
+	28, // 21: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
+	31, // 22: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
+	33, // 23: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
+	35, // 24: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
+	3,  // 25: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
+	5,  // 26: jobs.JobsService.UpdateJobStatus:output_type -> jobs.UpdateJobStatusResponse
+	7,  // 27: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
+	9,  // 28: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
+	11, // 29: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
+	13, // 30: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
+	15, // 31: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
+	17, // 32: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
+	19, // 33: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
+	22, // 34: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
+	24, // 35: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
+	26, // 36: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
+	30, // 37: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
+	29, // 38: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
+	30, // 39: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
+	37, // 40: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
+	25, // [25:41] is the sub-list for method output_type
+	9,  // [9:25] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_jobs_jobs_proto_init() }
@@ -2756,7 +2831,7 @@ func file_jobs_jobs_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jobs_jobs_proto_rawDesc), len(file_jobs_jobs_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,

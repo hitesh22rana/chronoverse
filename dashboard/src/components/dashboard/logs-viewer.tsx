@@ -8,6 +8,11 @@ import {
     useTransition,
 } from "react"
 import {
+    usePathname,
+    useRouter,
+    useSearchParams,
+} from "next/navigation"
+import {
     Download,
     Filter,
     Loader2,
@@ -54,6 +59,81 @@ const getLogStreamStyles = (stream: string) => {
     }
 }
 
+const getLogStreamStripStyles = (stream: string) => {
+    switch (stream) {
+        case "stderr":
+            return "bg-red-500 dark:bg-red-400"
+        case "stdout":
+        default:
+            return "bg-emerald-500 dark:bg-emerald-400"
+    }
+}
+
+const highlightClass = "rounded bg-orange-400/80 px-0.5 text-inherit dark:bg-orange-500/70"
+
+const escapeHtml = (value: string) => {
+    return value.replace(/[&<>"']/g, (char) => {
+        switch (char) {
+            case "&":
+                return "&amp;"
+            case "<":
+                return "&lt;"
+            case ">":
+                return "&gt;"
+            case "\"":
+                return "&quot;"
+            case "'":
+                return "&#39;"
+            default:
+                return char
+        }
+    })
+}
+
+const escapeRegExp = (value: string) => {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+const stripHighlightTags = (message: string) => {
+    return message.replace(/<\/?em>/g, "")
+}
+
+const extractHighlightedTerms = (message: string) => {
+    const terms: string[] = []
+    const highlightPattern = /<em>([\s\S]*?)<\/em>/g
+
+    for (const match of message.matchAll(highlightPattern)) {
+        const term = match[1]
+        if (term?.trim()) {
+            terms.push(term)
+        }
+    }
+
+    return Array.from(new Set(terms)).sort((a, b) => b.length - a.length)
+}
+
+const renderHighlightedText = (message: string, terms: string[]) => {
+    if (!terms.length) {
+        return escapeHtml(message)
+    }
+
+    const highlightPattern = new RegExp(terms.map(escapeRegExp).join("|"), "gi")
+    let lastIndex = 0
+    let rendered = ""
+
+    for (const match of message.matchAll(highlightPattern)) {
+        const matchText = match[0]
+        const matchIndex = match.index ?? 0
+
+        rendered += escapeHtml(message.slice(lastIndex, matchIndex))
+        rendered += `<mark class="${highlightClass}">${escapeHtml(matchText)}</mark>`
+        lastIndex = matchIndex + matchText.length
+    }
+
+    rendered += escapeHtml(message.slice(lastIndex))
+    return rendered
+}
+
 export function LogsViewer({
     workflowId,
     jobId,
@@ -61,10 +141,12 @@ export function LogsViewer({
     completedAt,
 }: LogViewerProps) {
     const [isSearchPending, startSearchTransition] = useTransition()
+    const router = useRouter()
+    const pathname = usePathname()
+    const searchParams = useSearchParams()
 
     const [popoverOpen, setPopoverOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
-    const [parseJson, setParseJson] = useState<boolean>(true)
     const searchInputRef = useRef<HTMLInputElement>(null)
 
     const {
@@ -89,6 +171,20 @@ export function LogsViewer({
     const [searchInput, setSearchInput] = useState(searchQuery)
     const [stream, setStream] = useState(streamFilter || "all")
     const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
+    const parseJson = searchParams.get("json") === "true"
+
+    const updateJsonRendering = useCallback((enabled: boolean) => {
+        const params = new URLSearchParams(searchParams.toString())
+
+        if (enabled) {
+            params.set("json", "true")
+        } else {
+            params.delete("json")
+        }
+
+        const query = params.toString()
+        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+    }, [pathname, router, searchParams])
 
     // Debounced search update
     useEffect(() => {
@@ -122,16 +218,22 @@ export function LogsViewer({
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [isSearchFocused])
 
-    // Parse log message (with JSON pretty print)
+    // Parse log message and render Meili <em> highlights safely.
     const parseLog = useCallback(
         (message: string) => {
-            if (!parseJson) return message
+            const shouldRenderSearchHighlights = Boolean(searchQuery)
+            const highlightedTerms = shouldRenderSearchHighlights ? extractHighlightedTerms(message) : []
+            const rawMessage = shouldRenderSearchHighlights ? stripHighlightTags(message) : message
+
+            if (!parseJson) {
+                return renderHighlightedText(rawMessage, highlightedTerms)
+            }
 
             try {
-                const parsed = JSON.parse(message)
-                return JSON.stringify(parsed, null, 2)
+                const parsed = JSON.parse(rawMessage)
+                return renderHighlightedText(JSON.stringify(parsed, null, 2), highlightedTerms)
             } catch {
-                return message.replace(jsonRegex, (match) => {
+                const formattedMessage = rawMessage.replace(jsonRegex, (match) => {
                     try {
                         const parsed = JSON.parse(match)
                         return JSON.stringify(parsed, null, 2)
@@ -139,9 +241,11 @@ export function LogsViewer({
                         return match
                     }
                 })
+
+                return renderHighlightedText(formattedMessage, highlightedTerms)
             }
         },
-        [parseJson]
+        [parseJson, searchQuery]
     )
 
     // Row renderer for Virtuoso
@@ -152,15 +256,17 @@ export function LogsViewer({
         return (
             <div
                 className={cn(
-                    "flex hover:bg-muted/50 px-2 py-1 group",
+                    "flex min-h-6 hover:bg-muted/50 group",
                     getLogStreamStyles(log.stream)
                 )}
             >
-                <span className="text-muted-foreground mr-4 select-none min-w-[5ch] text-right hover:text-primary">
-                    {index + 1}
-                </span>
                 <span
-                    className="flex-1 whitespace-pre-wrap break-all"
+                    className={cn("my-1 w-1 flex-none rounded-sm", getLogStreamStripStyles(log.stream))}
+                    title={log.stream}
+                    aria-hidden="true"
+                />
+                <span
+                    className="flex-1 whitespace-pre-wrap break-all px-3 py-1"
                     dangerouslySetInnerHTML={{
                         __html: formattedMessage,
                     }}
@@ -256,7 +362,7 @@ export function LogsViewer({
                             </span>
                             <Switch
                                 checked={parseJson}
-                                onCheckedChange={setParseJson}
+                                onCheckedChange={updateJsonRendering}
                                 disabled={(jobStatus === "CANCELED" && logs.length === 0) || (logs.length === 0 && !!completedAt)}
                             />
                         </div>
@@ -299,7 +405,6 @@ export function LogsViewer({
                         endReached={handleEndReached}
                         overscan={200}
                         className="flex flex-1 w-full h-full"
-                        followOutput={jobStatus === "RUNNING" && "smooth"}
                     />
                 ) : isLogsUnsupportedForKind ? (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
@@ -337,7 +442,7 @@ export function LogsViewer({
                 {isFetchingNextPage && (
                     <div className="flex items-center justify-center py-4">
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        <span className="text-sm text-muted-foreground">Loading more logs...</span>
+                        <span className="text-sm text-muted-foreground">Loading older logs...</span>
                     </div>
                 )}
             </CardContent>

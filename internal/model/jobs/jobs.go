@@ -207,6 +207,7 @@ func (j *ExpiredJobLease) ToProto() *jobspb.ExpiredJobLease {
 
 // JobLog represents the log of the job.
 type JobLog struct {
+	EventID     string    `db:"event_id"`
 	Timestamp   time.Time `db:"timestamp"`
 	Message     string    `db:"message"`
 	SequenceNum uint32    `db:"sequence_num"`
@@ -220,8 +221,19 @@ func (l *JobLog) ToProto() *jobspb.Log {
 		Message:     l.Message,
 		SequenceNum: l.SequenceNum,
 		Stream:      l.Stream,
+		EventId:     l.EventID,
 	}
 }
+
+// JobLogsSortOrder represents retained job log ordering.
+type JobLogsSortOrder int
+
+// Job log sort orders.
+const (
+	JobLogsSortOrderUnspecified JobLogsSortOrder = 0
+	JobLogsSortOrderDesc        JobLogsSortOrder = 1
+	JobLogsSortOrderAsc         JobLogsSortOrder = 2
+)
 
 // GetJobLogsFilters represents the filters for filtering job logs.
 type GetJobLogsFilters struct {

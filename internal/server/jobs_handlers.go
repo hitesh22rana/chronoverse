@@ -228,9 +228,7 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 
 	// Write the response
 	w.Header().Set("Content-Type", "application/json")
-	if res.GetCursor() != "" {
-		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
-	}
+	setJobLogsCacheControl(w, cursor, res.GetCursor())
 
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
@@ -313,13 +311,20 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 
 	// Write the response
 	w.Header().Set("Content-Type", "application/json")
-	if res.GetCursor() != "" {
-		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
-	}
+	setJobLogsCacheControl(w, cursor, res.GetCursor())
 
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
+}
+
+func setJobLogsCacheControl(w http.ResponseWriter, requestCursor, responseCursor string) {
+	if requestCursor != "" && responseCursor != "" {
+		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
 }
 
 // handleDownloadJobLogs streams job logs to the client for download.
@@ -379,6 +384,10 @@ func (s *Server) handleDownloadJobLogs(w http.ResponseWriter, r *http.Request) {
 			WorkflowId: workflowID,
 			UserId:     userID,
 			Cursor:     cursor,
+			SortOrder:  jobspb.LogSortOrder_LOG_SORT_ORDER_ASC,
+			Filters: &jobspb.GetJobLogsFilters{
+				Stream: jobspb.LogStream_LOG_STREAM_ALL,
+			},
 		})
 		if err != nil {
 			// Handle fetch error

@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +39,12 @@ const (
 	delimiter             = '$'
 	jobStatusUpdateBuffer = time.Minute // 1 minute
 )
+
+type jobLogsCursor struct {
+	SequenceNum uint32 `json:"sequence_num"`
+	Stream      string `json:"stream,omitempty"`
+	EventID     string `json:"event_id,omitempty"`
+}
 
 // Services represents the services used by the executor.
 type Services struct {
@@ -402,6 +407,7 @@ func (r *Repository) GetJobLogs(
 	workflowID,
 	userID,
 	cursor string,
+	sortOrder jobsmodel.JobLogsSortOrder,
 	getJobLogsFilters *jobsmodel.GetJobLogsFilters,
 ) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJobLogs")
@@ -434,17 +440,12 @@ func (r *Repository) GetJobLogs(
 		return nil, "", err
 	}
 
+	ascending := sortOrder == jobsmodel.JobLogsSortOrderAsc
 	logQueryArgs := []any{jobID, workflowID, userID}
 	logsQuery := fmt.Sprintf(`
-    SELECT latest_timestamp AS timestamp, message, sequence_num, stream
-    FROM (
-        SELECT
-            max(timestamp) AS latest_timestamp,
-            argMax(message, timestamp) AS message,
-            sequence_num,
-            stream
-        FROM %s
-        WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
+    SELECT timestamp, message, sequence_num, stream, event_id
+    FROM %s
+    WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
     `, clickhouse.TableJobLogs)
 
 	switch getJobLogsFilters.Stream {
@@ -455,22 +456,34 @@ func (r *Repository) GetJobLogs(
 	}
 
 	if cursor != "" {
-		sequenceNum, _err := extractDataFromGetJobLogsCursor(cursor)
+		logsCursor, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
 			err = _err
 			return nil, "", err
 		}
 
-		logsQuery += ` AND sequence_num >= $4`
-		logQueryArgs = append(logQueryArgs, sequenceNum)
+		sequenceOperator := "<"
+		if ascending {
+			sequenceOperator = ">"
+		}
+		logsQuery += ` AND (
+                sequence_num ` + sequenceOperator + ` $4
+                OR (sequence_num = $4 AND stream > $5)
+                OR (sequence_num = $4 AND stream = $5 AND event_id >= $6)
+            )`
+		logQueryArgs = append(logQueryArgs, logsCursor.SequenceNum, logsCursor.Stream, logsCursor.EventID)
 	}
 
+	sequenceDirection := "DESC"
+	if ascending {
+		sequenceDirection = "ASC"
+	}
+	// Keep the newest unmerged ReplacingMergeTree duplicate before LIMIT BY collapses event IDs.
 	logsQuery += fmt.Sprintf(`
-        GROUP BY event_id, sequence_num, stream
-    )
-    ORDER BY sequence_num ASC, stream ASC
+    ORDER BY sequence_num %s, stream ASC, event_id ASC, timestamp DESC
+    LIMIT 1 BY event_id
     LIMIT %d;
-    `, r.cfg.LogsFetchLimit+1)
+    `, sequenceDirection, r.cfg.LogsFetchLimit+1)
 
 	statusQueryArgs := []any{jobID, workflowID, userID}
 	statusQuery := fmt.Sprintf(`
@@ -482,7 +495,7 @@ func (r *Repository) GetJobLogs(
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
 		logs          []*jobsmodel.JobLog
-		nextCursorSeq uint32
+		nextCursor    jobLogsCursor
 		fetchedStatus string
 		completedAt   sql.NullTime
 	)
@@ -500,21 +513,29 @@ func (r *Repository) GetJobLogs(
 		defer rows.Close()
 
 		tmp := make([]*jobsmodel.JobLog, 0, r.cfg.LogsFetchLimit+1)
+		tmpCursors := make([]jobLogsCursor, 0, r.cfg.LogsFetchLimit+1)
 		for rows.Next() {
 			var (
-				ts   time.Time
-				msg  string
-				seq  uint32
-				strm string
+				ts      time.Time
+				msg     string
+				seq     uint32
+				strm    string
+				eventID string
 			)
-			if scanErr := rows.Scan(&ts, &msg, &seq, &strm); scanErr != nil {
+			if scanErr := rows.Scan(&ts, &msg, &seq, &strm, &eventID); scanErr != nil {
 				return status.Errorf(codes.Internal, "failed to scan logs: %v", scanErr)
 			}
 			tmp = append(tmp, &jobsmodel.JobLog{
+				EventID:     eventID,
 				Timestamp:   ts,
 				Message:     msg,
 				SequenceNum: seq,
 				Stream:      strm,
+			})
+			tmpCursors = append(tmpCursors, jobLogsCursor{
+				SequenceNum: seq,
+				Stream:      strm,
+				EventID:     eventID,
 			})
 		}
 		if rowsErr := rows.Err(); rowsErr != nil {
@@ -523,7 +544,7 @@ func (r *Repository) GetJobLogs(
 
 		// Check if there are more logs
 		if len(tmp) > r.cfg.LogsFetchLimit {
-			nextCursorSeq = tmp[r.cfg.LogsFetchLimit].SequenceNum
+			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
 			tmp = tmp[:r.cfg.LogsFetchLimit]
 		}
 		logs = tmp
@@ -567,7 +588,7 @@ func (r *Repository) GetJobLogs(
 		ID:         jobID,
 		WorkflowID: workflowID,
 		JobLogs:    logs,
-		Cursor:     encodeJobLogsCursor(nextCursorSeq),
+		Cursor:     encodeJobLogsCursor(nextCursor),
 	}, fetchedStatus, nil
 }
 
@@ -698,13 +719,18 @@ func (r *Repository) SearchJobLogs(
 	}
 
 	if cursor != "" {
-		sequenceNum, _err := extractDataFromGetJobLogsCursor(cursor)
+		logsCursor, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
 			err = _err
 			return nil, "", err
 		}
 
-		filter += fmt.Sprintf(` AND sequence_num >= %d`, sequenceNum)
+		filter += fmt.Sprintf(
+			` AND (sequence_num < %d OR (sequence_num = %d AND id >= %q))`,
+			logsCursor.SequenceNum,
+			logsCursor.SequenceNum,
+			logsCursor.EventID,
+		)
 	}
 
 	statusQueryArgs := []any{jobID, workflowID, userID}
@@ -717,7 +743,7 @@ func (r *Repository) SearchJobLogs(
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
 		logs          []*jobsmodel.JobLog
-		nextCursorSeq uint32
+		nextCursor    jobLogsCursor
 		fetchedStatus string
 		completedAt   sql.NullTime
 	)
@@ -728,10 +754,10 @@ func (r *Repository) SearchJobLogs(
 			searchJobLogsFilters.Message,
 			&meilisearch.SearchRequest{
 				Filter:                filter,
-				AttributesToRetrieve:  []string{"message", "sequence_num", "stream", "timestamp"},
+				AttributesToRetrieve:  []string{"id", "event_id", "message", "sequence_num", "stream", "timestamp"},
 				AttributesToHighlight: []string{"message"},
 				AttributesToSearchOn:  []string{"message"},
-				Sort:                  []string{"sequence_num:asc"},
+				Sort:                  []string{"sequence_num:desc", "id:asc"},
 				Limit:                 int64(r.cfg.LogsFetchLimit + 1),
 			},
 		)
@@ -740,23 +766,11 @@ func (r *Repository) SearchJobLogs(
 		}
 
 		tmp := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
+		tmpCursors := make([]jobLogsCursor, 0, len(searchRes.Hits))
 		for _, hit := range searchRes.Hits {
-			var source map[string]any
-
-			// Prefer _formatted if present
-			if formattedRaw, ok := hit["_formatted"]; ok {
-				if scanErr := json.Unmarshal(formattedRaw, &source); scanErr != nil {
-					return status.Errorf(codes.Internal, "failed to unmarshal data: %v", scanErr)
-				}
-			} else {
-				source = make(map[string]any)
-				for k, v := range hit {
-					var val any
-					if scanErr := json.Unmarshal(v, &val); scanErr != nil {
-						return status.Errorf(codes.Internal, "failed to unmarshal data: %v", scanErr)
-					}
-					source[k] = val
-				}
+			source, scanErr := searchHitSource(hit)
+			if scanErr != nil {
+				return scanErr
 			}
 
 			log := &jobsmodel.JobLog{}
@@ -766,6 +780,11 @@ func (r *Repository) SearchJobLogs(
 					return status.Errorf(codes.Internal, "invalid timestamp format: %v", scanErr)
 				}
 				log.Timestamp = parsed
+			}
+
+			log.EventID = searchHitString(source, "event_id")
+			if log.EventID == "" {
+				log.EventID = searchHitString(source, "id")
 			}
 
 			if msg, ok := source["message"].(string); ok {
@@ -788,11 +807,16 @@ func (r *Repository) SearchJobLogs(
 			}
 
 			tmp = append(tmp, log)
+			tmpCursors = append(tmpCursors, jobLogsCursor{
+				SequenceNum: log.SequenceNum,
+				Stream:      log.Stream,
+				EventID:     searchHitString(source, "id"),
+			})
 		}
 
 		// Check if there are more logs
 		if len(tmp) > r.cfg.LogsFetchLimit {
-			nextCursorSeq = tmp[r.cfg.LogsFetchLimit].SequenceNum
+			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
 			tmp = tmp[:r.cfg.LogsFetchLimit]
 		}
 		logs = tmp
@@ -836,7 +860,7 @@ func (r *Repository) SearchJobLogs(
 		ID:         jobID,
 		WorkflowID: workflowID,
 		JobLogs:    logs,
-		Cursor:     encodeJobLogsCursor(nextCursorSeq),
+		Cursor:     encodeJobLogsCursor(nextCursor),
 	}, fetchedStatus, nil
 }
 
@@ -937,15 +961,18 @@ func parseTime(t string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, t)
 }
 
-// encodeJobLogsCursor encodes the cursor.
-func encodeJobLogsCursor(sequenceNum uint32) string {
-	if sequenceNum == 0 {
+// encodeJobLogsCursor encodes the cursor for descending log pagination.
+func encodeJobLogsCursor(cursor jobLogsCursor) string {
+	if cursor.SequenceNum == 0 && cursor.Stream == "" && cursor.EventID == "" {
 		return ""
 	}
 
-	buf := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf, sequenceNum)
-	return base64.StdEncoding.EncodeToString(buf)
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return ""
+	}
+
+	return base64.StdEncoding.EncodeToString(payload)
 }
 
 // encodeListJobsCursor encodes the cursor.
@@ -958,18 +985,64 @@ func encodeListJobsCursor(cursor string) string {
 }
 
 // extractDataFromGetJobLogsCursor extracts the data from the cursor.
-func extractDataFromGetJobLogsCursor(cursor string) (uint32, error) {
+func extractDataFromGetJobLogsCursor(cursor string) (jobLogsCursor, error) {
 	decodedBytes, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
-		return 0, status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
+		return jobLogsCursor{}, status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
 	}
 
-	// Must be exactly 4 bytes for a uint32
-	if len(decodedBytes) != 4 {
-		return 0, status.Errorf(codes.InvalidArgument, "invalid cursor format")
+	var logsCursor jobLogsCursor
+	if err = json.Unmarshal(decodedBytes, &logsCursor); err != nil {
+		return jobLogsCursor{}, status.Errorf(codes.InvalidArgument, "invalid cursor format: %v", err)
 	}
 
-	return binary.BigEndian.Uint32(decodedBytes), nil
+	if logsCursor.Stream == "" || logsCursor.EventID == "" {
+		return jobLogsCursor{}, status.Errorf(codes.InvalidArgument, "invalid cursor format")
+	}
+
+	return logsCursor, nil
+}
+
+func searchHitString(source map[string]any, field string) string {
+	if source == nil {
+		return ""
+	}
+	value, ok := source[field].(string)
+	if !ok {
+		return ""
+	}
+
+	return value
+}
+
+func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
+	source := make(map[string]any)
+	for k, v := range hit {
+		if k == "_formatted" {
+			continue
+		}
+
+		var val any
+		if err := json.Unmarshal(v, &val); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
+		}
+		source[k] = val
+	}
+
+	formattedRaw, ok := hit["_formatted"]
+	if !ok {
+		return source, nil
+	}
+
+	var formatted map[string]any
+	if err := json.Unmarshal(formattedRaw, &formatted); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
+	}
+	if msg, ok := formatted["message"].(string); ok {
+		source["message"] = msg
+	}
+
+	return source, nil
 }
 
 // extractDataFromListJobsCursor extracts the data from the cursor.

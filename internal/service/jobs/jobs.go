@@ -48,7 +48,7 @@ type Repository interface {
 	RecoverExpiredJobLeases(ctx context.Context, batchSize int32, workerID string, leaseDuration time.Duration) ([]*jobsmodel.ExpiredJobLease, error)
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
-	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
+	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, sortOrder jobsmodel.JobLogsSortOrder, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
 	StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*goredis.PubSub, error)
 	SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.SearchJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
@@ -537,6 +537,7 @@ type GetJobLogsRequest struct {
 	WorkflowID string                       `validate:"required"`
 	UserID     string                       `validate:"required"`
 	Cursor     string                       `validate:"omitempty"`
+	SortOrder  int                          `validate:"omitempty,min=0,max=2"`
 	Filters    *jobsmodel.GetJobLogsFilters `validate:"required"`
 }
 
@@ -569,6 +570,7 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		WorkflowID: req.GetWorkflowId(),
 		UserID:     req.GetUserId(),
 		Cursor:     req.GetCursor(),
+		SortOrder:  int(req.GetSortOrder()),
 		Filters:    filters,
 	})
 	if err != nil {
@@ -576,27 +578,32 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
+
 	// Check if the job logs are cached
 	cacheKey := fmt.Sprintf(
-		"job_logs:%s:%s:%s:%s",
+		"job_logs:%s:%s:%s:%s:%d",
 		req.GetUserId(),
 		req.GetId(),
 		req.GetCursor(),
 		req.GetFilters().GetStream(),
+		sortOrder,
 	)
-	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
-	if cacheErr != nil {
-		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
-			return nil, err
+	isCursorPage := req.GetCursor() != ""
+	if isCursorPage {
+		cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
+		if cacheErr != nil {
+			if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
+				err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+				return nil, err
+			}
+		} else {
+			// Cache hit, return cached response
+			//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
+			return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 		}
-	} else {
-		// Cache hit, return cached response
-		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
-		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 	}
 
-	//nolint:dupl // The logic for fetching job logs and searching job logs is similar, we can ignore the duplication here
 	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
 		_res, jobStatus, _err := s.repo.GetJobLogs(
 			ctx,
@@ -604,14 +611,16 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 			req.GetWorkflowId(),
 			req.GetUserId(),
 			req.GetCursor(),
+			sortOrder,
 			filters,
 		)
 		if _err != nil {
 			return nil, _err
 		}
 
-		// Cache stable pages once for the shared result.
-		if isTerminalJobStatus(jobStatus) || _res.Cursor != "" {
+		// Cache only stable cursor pages. A cursor page with no response cursor is the current tail,
+		// which can still receive late retained logs while the repo reports the job as running.
+		if isCursorPage && (_res.Cursor != "" || isTerminalJobStatus(jobStatus)) {
 			go func() {
 				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 				defer cancel()
@@ -709,6 +718,7 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 
 				select {
 				case ch <- &jobsmodel.JobLog{
+					EventID:     log.EventKey,
 					Timestamp:   log.TimeStamp,
 					Message:     log.Message,
 					SequenceNum: log.SequenceNum,
@@ -779,19 +789,21 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		req.GetFilters().GetMessage(),
 		req.GetFilters().GetStream(),
 	)
-	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
-	if cacheErr != nil {
-		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
-			return nil, err
+	isCursorPage := req.GetCursor() != ""
+	if isCursorPage {
+		cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
+		if cacheErr != nil {
+			if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
+				err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+				return nil, err
+			}
+		} else {
+			// Cache hit, return cached response
+			//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
+			return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 		}
-	} else {
-		// Cache hit, return cached response
-		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
-		return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 	}
 
-	//nolint:dupl // The logic for fetching job logs and searching job logs is similar, we can ignore the duplication here
 	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
 		_res, jobStatus, _err := s.repo.SearchJobLogs(
 			ctx,
@@ -805,7 +817,7 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 			return nil, _err
 		}
 
-		if isTerminalJobStatus(jobStatus) || _res.Cursor != "" {
+		if isCursorPage && (_res.Cursor != "" || isTerminalJobStatus(jobStatus)) {
 			go func() {
 				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 				defer cancel()
@@ -956,6 +968,14 @@ func validateFailureKind(kind string) error {
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid failure kind: %s", kind)
 	}
+}
+
+func normalizeJobLogsSortOrder(sortOrder jobsmodel.JobLogsSortOrder) jobsmodel.JobLogsSortOrder {
+	if sortOrder == jobsmodel.JobLogsSortOrderAsc {
+		return jobsmodel.JobLogsSortOrderAsc
+	}
+
+	return jobsmodel.JobLogsSortOrderDesc
 }
 
 func isTerminalJobStatus(jobStatus string) bool {

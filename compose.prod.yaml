@@ -146,14 +146,16 @@ services:
       - chronoverse
 
   meilisearch:
-    image: getmeili/meilisearch:v1.15.0
+    image: getmeili/meilisearch:v1.45.2
     container_name: meilisearch
     restart: on-failure
     environment:
       MEILI_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
       MEILI_SSL_AUTH_PATH: /certs/ca/ca.crt
+      MEILI_SSL_REQUIRE_AUTH: true
       MEILI_SSL_CERT_PATH: /certs/meilisearch/meilisearch.crt
       MEILI_SSL_KEY_PATH: /certs/meilisearch/meilisearch.key
+      MEILI_EXPERIMENTAL_DUMPLESS_UPGRADE: true
       ENV: production
     volumes:
       - meilisearch:/meili_data
@@ -165,7 +167,7 @@ services:
       test: |
         sh -c '
           if [ -n "$$MEILI_SSL_AUTH_PATH" ] && [ -n "$$MEILI_SSL_CERT_PATH" ] && [ -n "$$MEILI_SSL_KEY_PATH" ]; then
-            curl --cert "$$MEILI_SSL_CERT_PATH" --key "$$MEILI_SSL_KEY_PATH" --cacert "$$MEILI_SSL_AUTH_PATH" -f https://meilisearch:7700/health
+            curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert "$$MEILI_SSL_AUTH_PATH" -f https://meilisearch:7700/health
           else
             curl -f http://meilisearch:7700/health
           fi

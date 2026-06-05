@@ -127,7 +127,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     const toggleSelect = (id: string) => {
         setSelected((prev) => {
             const next = new Set(prev)
-             
+
             next.has(id) ? next.delete(id) : next.add(id)
             return next
         })
@@ -150,6 +150,21 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     }
 
     useEffect(() => {
+        if (!open) {
+            clearSelection()
+        }
+    }, [open])
+
+    useEffect(() => {
+        const notificationIds = new Set(notifications.map((n) => n.id))
+
+        setSelected((prev) => {
+            const next = new Set([...prev].filter((id) => notificationIds.has(id)))
+            return next.size === prev.size ? prev : next
+        })
+    }, [notifications])
+
+    useEffect(() => {
         if (notifications.length === 0) {
             setSelectAll(false)
             return
@@ -163,6 +178,21 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         if (selected.size === 0) return
         markAsRead(Array.from(selected))
         clearSelection()
+    }
+
+    const handleNotificationClick = (notification: Notification) => {
+        if (!notification.read_at) {
+            markAsRead([notification.id])
+        }
+
+        setSelected((prev) => {
+            if (!prev.has(notification.id)) return prev
+
+            const next = new Set(prev)
+            next.delete(notification.id)
+            return next
+        })
+        onClose()
     }
 
     // Item renderer
@@ -190,9 +220,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                     meta.color,
                     !n.read_at && "ring-1 ring-white/5"
                 )}
-                onClick={() => {
-                    if (!n.read_at) markAsRead([n.id])
-                }}
             >
                 <div
                     onClick={(e) => {
@@ -203,7 +230,12 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                     <Checkbox checked={selected.has(n.id)} />
                 </div>
 
-                <Link href={payload.action_url} prefetch={false} className="flex-1 min-w-0 flex flex-col gap-2">
+                <Link
+                    href={payload.action_url}
+                    prefetch={false}
+                    className="flex-1 min-w-0 flex flex-col gap-2"
+                    onClick={() => handleNotificationClick(n)}
+                >
                     <div className="flex items-center justify-between gap-2">
                         <p className="font-medium text-sm truncate">{payload.title}</p>
                         <span className="text-xs text-muted-foreground shrink-0">
@@ -239,7 +271,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         <Sheet open={open} onOpenChange={onClose}>
             <SheetContent className="w-full sm:max-w-md p-0 gap-0 h-full flex flex-col">
                 {/* header */}
-                <SheetHeader className="px-6 py-4 border-b flex-shrink-0">
+                <SheetHeader className="px-6 py-4 border-b shrink-0">
                     <div className="flex items-center gap-2">
                         <Bell className="h-5 w-5" />
                         <SheetTitle>Notifications</SheetTitle>

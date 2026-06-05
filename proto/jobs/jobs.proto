@@ -188,6 +188,13 @@ enum LogStream {
   LOG_STREAM_ALL         = 3;
 }
 
+// LogSortOrder represents the order used for retained log pagination.
+enum LogSortOrder {
+  LOG_SORT_ORDER_UNSPECIFIED = 0;
+  LOG_SORT_ORDER_DESC        = 1;
+  LOG_SORT_ORDER_ASC         = 2;
+}
+
 // SearchJobLogsFilters are the filters that are to be applied on the get job logs request.
 message GetJobLogsFilters {
   LogStream stream = 1;
@@ -200,6 +207,7 @@ message GetJobLogsRequest {
   string            user_id     = 3; // ID of the user
   string            cursor      = 4; // Cursor for pagination
   GetJobLogsFilters filters     = 5; // Filters applied to the search
+  LogSortOrder      sort_order  = 6; // Sort order for retained log pagination
 }
 
 // Log contains the details of a log.
@@ -208,6 +216,7 @@ message Log {
   string message      = 2; // Log message
   uint32 sequence_num = 3; // Sequence number of the log
   string stream       = 4; // Stream type (stdout or stderr)
+  string event_id     = 5; // Unique retained/live log event ID
 }
 
 // GetJobLogsResponse contains the result of a job log retrieval attempt.

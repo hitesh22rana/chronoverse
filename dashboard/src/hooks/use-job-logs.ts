@@ -14,8 +14,6 @@ import {
 import {
     useInfiniteQuery,
     useMutation,
-    useQuery,
-    useQueryClient
 } from "@tanstack/react-query"
 import { EventSourcePolyfill } from "event-source-polyfill"
 import { toast } from "sonner"
@@ -27,10 +25,21 @@ import { fetchWithAuth } from "@/lib/api-client"
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
 export type JobLog = {
+    event_id?: string
     timestamp: string
     message: string
     sequence_num: number
     stream: "stdout" | "stderr"
+}
+
+type JobLogWire = {
+    event_id?: string
+    eventId?: string
+    timestamp?: string
+    message?: string
+    sequence_num?: number | string
+    sequenceNum?: number | string
+    stream?: string
 }
 
 export type JobLogsResponseData = {
@@ -43,10 +52,82 @@ export type JobLogsResponseData = {
 const kindsWithLogs = ['CONTAINER']
 const terminalJobStatus = ['COMPLETED', 'FAILED', 'CANCELED']
 
+const logKey = (log: JobLog): string => {
+    if (log.event_id) {
+        return log.event_id
+    }
+
+    return `${log.sequence_num}:${log.stream}:${log.timestamp}:${log.message}`
+}
+
+const sequenceNumFromEventID = (eventID?: string): number | undefined => {
+    if (!eventID) {
+        return undefined
+    }
+
+    const sequenceNum = Number(eventID.split(":").at(-1))
+    return Number.isFinite(sequenceNum) ? sequenceNum : undefined
+}
+
+const normalizeJobLog = (log: JobLogWire): JobLog => {
+    const eventID = log.event_id || log.eventId
+    const sequenceNum = Number(log.sequence_num ?? log.sequenceNum ?? sequenceNumFromEventID(eventID) ?? 0)
+
+    return {
+        event_id: eventID,
+        timestamp: log.timestamp || "",
+        message: log.message || "",
+        sequence_num: Number.isFinite(sequenceNum) ? sequenceNum : 0,
+        stream: log.stream === "stderr" ? "stderr" : "stdout",
+    }
+}
+
+const mergeLiveLogs = (existingLogs: JobLog[], newLogs: JobLog[]): JobLog[] => {
+    return sortLogsDesc(uniqueLogsByKey([...existingLogs, ...newLogs]))
+}
+
+const compareLogsDesc = (a: JobLog, b: JobLog): number => {
+    const sequenceOrder = b.sequence_num - a.sequence_num
+    if (sequenceOrder !== 0) return sequenceOrder
+
+    const streamOrder = a.stream.localeCompare(b.stream)
+    if (streamOrder !== 0) return streamOrder
+
+    const eventOrder = (a.event_id || logKey(a)).localeCompare(b.event_id || logKey(b))
+    if (eventOrder !== 0) return eventOrder
+
+    return b.timestamp.localeCompare(a.timestamp)
+}
+
+const sortLogsDesc = (logs: JobLog[]): JobLog[] => {
+    return [...logs].sort(compareLogsDesc)
+}
+
+const uniqueLogsByKey = (logs: JobLog[]): JobLog[] => {
+    const uniqueLogsMap = new Map<string, JobLog>()
+
+    logs.forEach((log) => {
+        const key = logKey(log)
+        const existingLog = uniqueLogsMap.get(key)
+        if (!existingLog || compareLogsDesc(log, existingLog) < 0) {
+            uniqueLogsMap.set(key, log)
+        }
+    })
+
+    return Array.from(uniqueLogsMap.values())
+}
+
+const logsFromPages = (pages?: JobLogsResponseData[]): JobLog[] => {
+    if (!pages?.length) {
+        return []
+    }
+
+    return sortLogsDesc(uniqueLogsByKey(pages.flatMap((page) => page?.logs || [])))
+}
+
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
     const router = useRouter()
-    const queryClient = useQueryClient()
     const searchParams = useSearchParams()
 
     const searchQuery = searchParams.get("q") || ""
@@ -54,6 +135,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     const [isConnected, setIsConnected] = useState(false)
     const [isSSEEnabled, setIsSSEEnabled] = useState(false)
+    const [liveLogs, setLiveLogs] = useState<JobLog[]>([])
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
     const logsURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs`
@@ -143,31 +225,20 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
     })
 
-    // Helper function to merge logs and remove duplicates
-    const mergeLogs = (existingLogs: JobLog[], newLogs: JobLog[]): JobLog[] => {
-        const combined = [...existingLogs, ...newLogs]
-
-        // Create a map to track unique logs by sequence_num
-        const uniqueLogsMap = new Map<number, JobLog>()
-
-        // Add all logs to the map, later entries will overwrite earlier ones with same sequence_num
-        combined.forEach(log => {
-            uniqueLogsMap.set(log.sequence_num, log)
-        })
-
-        // Convert back to array and sort by sequence_num
-        return Array.from(uniqueLogsMap.values()).sort((a, b) => a.sequence_num - b.sequence_num)
-    }
-
-    // For completed jobs, use infinite query with pagination
+    // Retained logs are newest-first; fetching the next page loads older logs.
+    const jobLogsInfiniteQueryKey = useMemo(
+        () => ["job-logs", workflowId, jobId, jobStatus],
+        [workflowId, jobId, jobStatus]
+    )
     const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
-        queryKey: ["job-logs", workflowId, jobId, jobStatus],
+        queryKey: jobLogsInfiniteQueryKey,
         queryFn: async ({ pageParam }) => {
+            const isFirstPage = !pageParam
             const url = pageParam
                 ? `${logsURL}?cursor=${pageParam}`
                 : logsURL
 
-            const response = await fetchWithAuth(url)
+            const response = await fetchWithAuth(url, isFirstPage ? { cache: "no-store" } : undefined)
 
             if (!response.ok) {
                 throw new Error("failed to fetch job logs")
@@ -178,12 +249,13 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             return {
                 id: res.id,
                 workflow_id: res.workflow_id,
-                logs: res.logs || [],
+                logs: (res.logs || []).map(normalizeJobLog),
                 cursor: res.cursor || undefined,
             }
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
+        refetchOnMount: "always",
         enabled: shouldFetch && !getSearchQueryParams && Boolean(workflowId) && Boolean(jobId),
     })
 
@@ -191,11 +263,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
         queryKey: ["job-logs/search", workflowId, jobId, searchQuery, streamFilter],
         queryFn: async ({ pageParam }) => {
+            const isFirstPage = !pageParam
             const url = pageParam
                 ? `${searchURL}?${getSearchQueryParams}&cursor=${pageParam}`
                 : `${searchURL}?${getSearchQueryParams}`
 
-            const response = await fetchWithAuth(url);
+            const response = await fetchWithAuth(url, isFirstPage ? { cache: "no-store" } : undefined);
 
             if (!response.ok) {
                 throw new Error("failed to fetch job logs");
@@ -206,71 +279,28 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             return {
                 id: jobId,
                 workflow_id: workflowId,
-                logs: res.logs || [],
+                logs: (res.logs || []).map(normalizeJobLog),
                 cursor: res.cursor || undefined,
             }
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
+        refetchOnMount: "always",
         enabled: shouldFetch && Boolean(getSearchQueryParams) && Boolean(workflowId) && Boolean(jobId),
     });
 
-    // For running jobs, use regular query + SSE
-    const jobLogsSSEQueryKey = useMemo(() => [`job-logs/events`, workflowId, jobId], [workflowId, jobId])
-    const jobLogsSSEQuery = useQuery({
-        queryKey: jobLogsSSEQueryKey,
-        queryFn: async (): Promise<JobLog[]> => {
-            const allLogs: JobLog[] = []
-            let cursor: string | undefined = undefined
-
-            // Fetch all pages of logs
-            while (true) {
-                const url = cursor
-                    ? `${logsURL}?cursor=${cursor}`
-                    : logsURL
-
-                const response = await fetchWithAuth(url)
-
-                if (!response.ok) {
-                    throw new Error("Failed to fetch job logs")
-                }
-
-                const res = await response.json() as JobLogsResponseData
-
-                if (res.logs && res.logs.length > 0) {
-                    allLogs.push(...res.logs)
-                }
-
-                // If there's no cursor, we've fetched all pages
-                if (!res.cursor) {
-                    break
-                }
-
-                cursor = res.cursor
-            }
-
-            return allLogs
-        },
-        enabled: shouldFetch && !getSearchQueryParams && isRunning && Boolean(workflowId) && Boolean(jobId),
-        staleTime: Infinity,
-        gcTime: Infinity,
-    })
+    useEffect(() => {
+        setLiveLogs([])
+    }, [workflowId, jobId])
 
     // Handle SSE connection for running jobs
     useEffect(() => {
-        // Only connect to SSE if:
-        // 1. Job is running
-        // 2. Initial logs have been fetched successfully
-        // 3. We have workflowId and jobId
-        if (!shouldFetch || !isRunning || !jobLogsSSEQuery.isSuccess || !workflowId || !jobId) {
+        if (!shouldFetch || !isRunning || Boolean(getSearchQueryParams) || !workflowId || !jobId) {
             setIsConnected(false)
             setIsSSEEnabled(false)
             return
         }
 
-        let firstPass: boolean = true;
-
-        // Enable SSE after initial fetch is complete
         setIsSSEEnabled(true)
 
         const eventSource = new EventSourcePolyfill(sseURL, {
@@ -287,16 +317,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         eventSource.addEventListener('log', (event) => {
             try {
                 const messageEvent = event as MessageEvent
-                const logData: JobLog = JSON.parse(messageEvent.data)
+                const logData = normalizeJobLog(JSON.parse(messageEvent.data) as JobLogWire)
 
-                queryClient.setQueryData(jobLogsSSEQueryKey, (oldData: JobLog[] | undefined) => {
-                    const existingLogs = oldData || []
-                    if (!firstPass) {
-                        return [...existingLogs, logData]
-                    }
-                    firstPass = false;
-                    return mergeLogs(existingLogs, [logData])
-                })
+                setLiveLogs((existingLogs) => mergeLiveLogs(existingLogs, [logData]))
             } catch { /* ignore parsing errors */ }
         })
 
@@ -321,8 +344,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             eventSource.close()
             eventSourceRef.current = null
             setIsConnected(false)
+            setIsSSEEnabled(false)
         }
-    }, [queryClient, jobLogsSSEQueryKey, sseURL, isRunning, shouldFetch, jobLogsSSEQuery.isSuccess, workflowId, jobId])
+    }, [sseURL, isRunning, shouldFetch, getSearchQueryParams, workflowId, jobId])
 
     useEffect(() => {
         if (jobLogsSearchInfiniteQuery.error instanceof Error) {
@@ -331,17 +355,24 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         if (jobLogsInfiniteQuery.error instanceof Error) {
             toast.error(jobLogsInfiniteQuery.error.message)
         }
-        if (jobLogsSSEQuery.error instanceof Error) {
-            toast.error(jobLogsSSEQuery.error.message)
-        }
-    }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error, jobLogsSSEQuery.error])
+    }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error])
+
+    const retainedLogs = useMemo(
+        () => logsFromPages(jobLogsInfiniteQuery.data?.pages),
+        [jobLogsInfiniteQuery.data?.pages]
+    )
+    const runningLogs = useMemo(
+        () => mergeLiveLogs(retainedLogs, liveLogs),
+        [retainedLogs, liveLogs]
+    )
+    const searchLogs = useMemo(
+        () => logsFromPages(jobLogsSearchInfiniteQuery.data?.pages),
+        [jobLogsSearchInfiniteQuery.data?.pages]
+    )
 
     if (shouldFetch && Boolean(getSearchQueryParams)) {
-        const allPages = jobLogsSearchInfiniteQuery.data?.pages || [];
-        const logs = allPages.length > 0 ? allPages.flatMap((page) => page?.logs || []) : [];
-
         return {
-            logs,
+            logs: searchLogs,
             isLoading: jobLogsSearchInfiniteQuery.isLoading,
             error: jobLogsSearchInfiniteQuery.error,
             fetchNextPage: jobLogsSearchInfiniteQuery.fetchNextPage,
@@ -363,11 +394,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }
 
     if (isCompleted) {
-        const allPages = jobLogsInfiniteQuery.data?.pages || []
-        const logs = allPages.length > 0 ? allPages.flatMap((page) => page?.logs || []) : []
-
         return {
-            logs,
+            logs: retainedLogs,
             isLoading: jobLogsInfiniteQuery.isLoading,
             error: jobLogsInfiniteQuery.error,
             fetchNextPage: jobLogsInfiniteQuery.fetchNextPage,
@@ -394,13 +422,13 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     if (isRunning) {
         return {
-            logs: jobLogsSSEQuery.data || [],
-            isLoading: jobLogsSSEQuery.isLoading,
-            error: jobLogsSSEQuery.error,
-            fetchNextPage: () => Promise.resolve(),
-            isFetchingNextPage: false,
-            hasNextPage: false,
-            refetch: jobLogsSSEQuery.refetch,
+            logs: runningLogs,
+            isLoading: jobLogsInfiniteQuery.isLoading,
+            error: jobLogsInfiniteQuery.error,
+            fetchNextPage: jobLogsInfiniteQuery.fetchNextPage,
+            isFetchingNextPage: jobLogsInfiniteQuery.isFetchingNextPage,
+            hasNextPage: jobLogsInfiniteQuery.hasNextPage,
+            refetch: jobLogsInfiniteQuery.refetch,
             searchQuery: searchQuery,
             updateSearchQuery: updateSearchQuery,
             streamFilter: streamFilter,

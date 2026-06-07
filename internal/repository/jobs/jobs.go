@@ -1,5 +1,5 @@
 package jobs
- 
+
 import (
 	"bytes"
 	"context"
@@ -12,20 +12,20 @@ import (
 	"fmt"
 	"strconv"
 	"time"
- 
+
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
- 
+
 	"github.com/jackc/pgx/v5"
 	"github.com/meilisearch/meilisearch-go"
 	goredis "github.com/redis/go-redis/v9"
- 
+
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
- 
+
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
@@ -35,35 +35,35 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
- 
+
 const (
 	authSubject           = "internal/jobs"
 	delimiter             = '$'
 	jobStatusUpdateBuffer = time.Minute // 1 minute
- 
+
 	jobLogsHighlightTokenBytes = 16
 	jobLogsHighlightStart      = "__CV_HL_START_"
 	jobLogsHighlightEnd        = "__CV_HL_END_"
 	jobLogsHighlightSuffix     = "__"
 )
- 
+
 type jobLogsCursor struct {
 	SequenceNum uint32 `json:"sequence_num"`
 	Stream      string `json:"stream,omitempty"`
 	EventID     string `json:"event_id,omitempty"`
 }
- 
+
 // Services represents the services used by the executor.
 type Services struct {
 	Workflows workflowspb.WorkflowsServiceClient
 }
- 
+
 // Config represents the repository constants configuration.
 type Config struct {
 	FetchLimit     int
 	LogsFetchLimit int
 }
- 
+
 // Repository provides jobs repository.
 type Repository struct {
 	tp   trace.Tracer
@@ -75,7 +75,7 @@ type Repository struct {
 	ms   meilisearch.ServiceManager
 	svc  *Services
 }
- 
+
 // New creates a new jobs repository.
 func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager, svc *Services) *Repository {
 	return &Repository{
@@ -89,7 +89,7 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 		svc:  svc,
 	}
 }
- 
+
 // ScheduleJob schedules a job.
 func (r *Repository) ScheduleJob(
 	ctx context.Context,
@@ -108,13 +108,13 @@ func (r *Repository) ScheduleJob(
 		}
 		span.End()
 	}()
- 
+
 	scheduledAtTime, err := parseTime(scheduledAt)
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid scheduled_at time format: %v", err)
 		return "", err
 	}
- 
+
 	idempotencyKey, automaticIdempotencyKeyProvided := normalizeScheduleJobIdempotencyKey(
 		workflowID,
 		scheduledAtTime,
@@ -133,7 +133,7 @@ func (r *Repository) ScheduleJob(
 	if err != nil {
 		return "", err
 	}
- 
+
 	row := r.pg.QueryRow(ctx, query, args...)
 	if err = row.Scan(&jobID); err != nil {
 		switch {
@@ -147,14 +147,14 @@ func (r *Repository) ScheduleJob(
 			err = status.Errorf(codes.FailedPrecondition, "workflow generation mismatch or workflow is not schedulable")
 			return "", err
 		}
- 
+
 		err = status.Errorf(codes.Internal, "failed to insert job: %v", err)
 		return "", err
 	}
- 
+
 	return jobID, nil
 }
- 
+
 func normalizeScheduleJobIdempotencyKey(
 	workflowID string,
 	scheduledAt time.Time,
@@ -165,10 +165,10 @@ func normalizeScheduleJobIdempotencyKey(
 	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !automaticIdempotencyKeyProvided {
 		idempotencyKey = idempotency.JobDispatchEventKey(fmt.Sprintf("%s:%s", workflowID, scheduledAt.Format(time.RFC3339Nano)))
 	}
- 
+
 	return idempotencyKey, automaticIdempotencyKeyProvided
 }
- 
+
 func scheduleJobInsertStatement(
 	workflowID,
 	userID string,
@@ -182,7 +182,7 @@ func scheduleJobInsertStatement(
 	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && workflowGeneration > 0 {
 		args = append(args, workflowGeneration)
 	}
- 
+
 	switch {
 	case trigger == jobsmodel.JobTriggerManual.ToString():
 		return fmt.Sprintf(`
@@ -219,12 +219,12 @@ func scheduleJobInsertStatement(
 		return "", nil, status.Errorf(codes.InvalidArgument, "invalid job trigger: %s", trigger)
 	}
 }
- 
+
 func automaticScheduleGuardSQL(workflowGeneration int64) string {
 	if workflowGeneration <= 0 {
 		return ""
 	}
- 
+
 	return fmt.Sprintf(`
             FROM %s AS w
             WHERE w.id = $1
@@ -235,7 +235,7 @@ func automaticScheduleGuardSQL(workflowGeneration int64) string {
             FOR SHARE
     `, postgres.TableWorkflows)
 }
- 
+
 // UpdateJobStatus updates the job details.
 func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateJobStatus")
@@ -246,12 +246,12 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
 		}
 		span.End()
 	}()
- 
+
 	query := fmt.Sprintf(`
     UPDATE %s
     SET status = $1`, postgres.TableJobs)
 	args := []any{jobStatus}
- 
+
 	switch jobStatus {
 	case jobsmodel.JobStatusRunning.ToString():
 		if containerID == "" {
@@ -284,7 +284,7 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
 		query += ` WHERE id = $2;`
 		args = append(args, jobID)
 	}
- 
+
 	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, args...)
 	//nolint:gocritic // Ifelse is used to handle different error types
@@ -299,24 +299,24 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
 			return err
 		}
- 
+
 		err = status.Errorf(codes.Internal, "failed to update job: %v", err)
 		return err
 	}
- 
+
 	if ct.RowsAffected() == 0 {
 		if jobStatus == jobsmodel.JobStatusCanceled.ToString() {
 			err = status.Errorf(codes.FailedPrecondition, "job not found or not cancellable")
 			return err
 		}
- 
+
 		err = status.Errorf(codes.NotFound, "job not found")
 		return err
 	}
- 
+
 	return nil
 }
- 
+
 // GetJob returns the job details by ID and Job ID and user ID.
 func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID string) (res *jobsmodel.GetJobResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJob")
@@ -327,14 +327,14 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 		}
 		span.End()
 	}()
- 
+
 	query := fmt.Sprintf(`
         SELECT id, workflow_id, status, trigger, scheduled_at, started_at, completed_at, created_at, updated_at
         FROM %s
         WHERE id = $1 AND workflow_id = $2 AND user_id = $3
         LIMIT 1;
     `, postgres.TableJobs)
- 
+
 	rows, err := r.pg.Query(ctx, query, jobID, workflowID, userID)
 	if errors.Is(err, context.DeadlineExceeded) {
 		err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -343,7 +343,7 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 		err = status.Error(codes.Canceled, err.Error())
 		return nil, err
 	}
- 
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -353,14 +353,14 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
 			return nil, err
 		}
- 
+
 		err = status.Errorf(codes.Internal, "failed to get job: %v", err)
 		return nil, err
 	}
- 
+
 	return res, nil
 }
- 
+
 // GetJobByID returns the job details by ID.
 func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmodel.GetJobByIDResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJobByID")
@@ -371,14 +371,14 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 		}
 		span.End()
 	}()
- 
+
 	query := fmt.Sprintf(`
         SELECT id, workflow_id, container_id, user_id, status, trigger, scheduled_at, started_at, completed_at, attempts, created_at, updated_at
         FROM %s
         WHERE id = $1
         LIMIT 1;
     `, postgres.TableJobs)
- 
+
 	rows, err := r.pg.Query(ctx, query, jobID)
 	if errors.Is(err, context.DeadlineExceeded) {
 		err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -387,7 +387,7 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 		err = status.Error(codes.Canceled, err.Error())
 		return nil, err
 	}
- 
+
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobByIDResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
@@ -397,14 +397,14 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
 			return nil, err
 		}
- 
+
 		err = status.Errorf(codes.Internal, "failed to get job: %v", err)
 		return nil, err
 	}
- 
+
 	return res, nil
 }
- 
+
 // GetJobLogs returns the job logs by ID.
 //
 //nolint:gocyclo  // This function is complex due to the nature of having two separate queries.
@@ -425,14 +425,14 @@ func (r *Repository) GetJobLogs(
 		}
 		span.End()
 	}()
- 
+
 	// Issue necessary headers and tokens for authorization
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
 		return nil, "", err
 	}
- 
+
 	// Validate workflow retention policy
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
 		Id:     workflowID,
@@ -446,7 +446,7 @@ func (r *Repository) GetJobLogs(
 		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
 		return nil, "", err
 	}
- 
+
 	ascending := sortOrder == jobsmodel.JobLogsSortOrderAsc
 	logQueryArgs := []any{jobID, workflowID, userID}
 	logsQuery := fmt.Sprintf(`
@@ -454,21 +454,21 @@ func (r *Repository) GetJobLogs(
     FROM %s
     WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
     `, clickhouse.TableJobLogs)
- 
+
 	switch getJobLogsFilters.Stream {
 	case 1:
 		logsQuery += ` AND stream = 'stdout'`
 	case 2:
 		logsQuery += ` AND stream = 'stderr'`
 	}
- 
+
 	if cursor != "" {
 		logsCursor, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
 			err = _err
 			return nil, "", err
 		}
- 
+
 		sequenceOperator := "<"
 		if ascending {
 			sequenceOperator = ">"
@@ -480,7 +480,7 @@ func (r *Repository) GetJobLogs(
             )`
 		logQueryArgs = append(logQueryArgs, logsCursor.SequenceNum, logsCursor.Stream, logsCursor.EventID)
 	}
- 
+
 	sequenceDirection := "DESC"
 	if ascending {
 		sequenceDirection = "ASC"
@@ -491,14 +491,14 @@ func (r *Repository) GetJobLogs(
     LIMIT 1 BY event_id
     LIMIT %d;
     `, sequenceDirection, r.cfg.LogsFetchLimit+1)
- 
+
 	statusQueryArgs := []any{jobID, workflowID, userID}
 	statusQuery := fmt.Sprintf(`
         SELECT status, completed_at
         FROM %s
         WHERE id = $1 AND workflow_id = $2 AND user_id = $3
     `, postgres.TableJobs)
- 
+
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
 		logs          []*jobsmodel.JobLog
@@ -506,7 +506,7 @@ func (r *Repository) GetJobLogs(
 		fetchedStatus string
 		completedAt   sql.NullTime
 	)
- 
+
 	eg.Go(func() error {
 		rows, qErr := r.ch.Query(egCtx, logsQuery, logQueryArgs...)
 		if qErr != nil {
@@ -518,7 +518,7 @@ func (r *Repository) GetJobLogs(
 			return status.Errorf(codes.NotFound, "no logs found for job: %v", qErr)
 		}
 		defer rows.Close()
- 
+
 		tmp := make([]*jobsmodel.JobLog, 0, r.cfg.LogsFetchLimit+1)
 		tmpCursors := make([]jobLogsCursor, 0, r.cfg.LogsFetchLimit+1)
 		for rows.Next() {
@@ -548,7 +548,7 @@ func (r *Repository) GetJobLogs(
 		if rowsErr := rows.Err(); rowsErr != nil {
 			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
 		}
- 
+
 		// Check if there are more logs
 		if len(tmp) > r.cfg.LogsFetchLimit {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
@@ -557,10 +557,10 @@ func (r *Repository) GetJobLogs(
 		logs = tmp
 		return nil
 	})
- 
+
 	eg.Go(func() error {
 		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
- 
+
 		//nolint:gocritic // Ifelse is used to handle different error types
 		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
 			if errors.Is(scanErr, context.DeadlineExceeded) {
@@ -572,25 +572,25 @@ func (r *Repository) GetJobLogs(
 			} else if r.pg.IsInvalidTextRepresentation(scanErr) {
 				return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", scanErr)
 			}
- 
+
 			return status.Errorf(codes.Internal, "failed to get job: %v", scanErr)
 		}
- 
+
 		return nil
 	})
- 
+
 	err = eg.Wait()
 	if err != nil {
 		return nil, "", err
 	}
- 
+
 	// Buffer-based status override:
 	// If the job just completed within the buffer window, we may not have all logs yet.
 	// Treat it as "RUNNING" temporarily.
 	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
 		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
 	}
- 
+
 	return &jobsmodel.GetJobLogsResponse{
 		ID:         jobID,
 		WorkflowID: workflowID,
@@ -598,7 +598,7 @@ func (r *Repository) GetJobLogs(
 		Cursor:     encodeJobLogsCursor(nextCursor),
 	}, fetchedStatus, nil
 }
- 
+
 // StreamJobLogs returns a subscription to stream job logs.
 func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (sub *goredis.PubSub, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.StreamJobLogs")
@@ -609,14 +609,14 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		}
 		span.End()
 	}()
- 
+
 	// Issue necessary headers and tokens for authorization
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
 		return nil, err
 	}
- 
+
 	// Validate workflow retention policy
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
 		Id:     workflowID,
@@ -630,7 +630,7 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
 		return nil, err
 	}
- 
+
 	// Validate whether the user has access to the job
 	query := fmt.Sprintf(`
         SELECT id, status
@@ -656,20 +656,20 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
 			return nil, err
 		}
- 
+
 		err = status.Errorf(codes.Internal, "failed to validate job: %v", err)
 		return nil, err
 	}
- 
+
 	if jobStatus != jobsmodel.JobStatusRunning.ToString() {
 		err = status.Errorf(codes.FailedPrecondition, "job is not running: %s", jobStatus)
 		return nil, err
 	}
- 
+
 	// Subscribe to job-specific channel
 	return r.rdb.Subscribe(ctx, redis.GetJobLogsChannel(jobID)), nil
 }
- 
+
 // SearchJobLogs returns the filtered logs of a job.
 //
 //nolint:gocyclo // This function is complex and has multiple responsibilities.
@@ -690,14 +690,14 @@ func (r *Repository) SearchJobLogs(
 		}
 		span.End()
 	}()
- 
+
 	// Issue necessary headers and tokens for authorization
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
 		return nil, "", err
 	}
- 
+
 	// Validate workflow retention policy
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
 		Id:     workflowID,
@@ -711,30 +711,30 @@ func (r *Repository) SearchJobLogs(
 		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
 		return nil, "", err
 	}
- 
+
 	filter := fmt.Sprintf(
 		`user_id = %q AND workflow_id = %q AND job_id = %q`,
 		userID,
 		workflowID,
 		jobID,
 	)
- 
+
 	switch searchJobLogsFilters.Stream {
 	case 1:
 		filter += fmt.Sprintf(` AND stream = %q`, "stdout")
 	case 2:
 		filter += fmt.Sprintf(` AND stream = %q`, "stderr")
 	}
- 
+
 	ascending := options.SortOrder == jobsmodel.JobLogsSortOrderAsc
- 
+
 	if cursor != "" {
 		logsCursor, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
 			err = _err
 			return nil, "", err
 		}
- 
+
 		sequenceOperator := "<"
 		idOperator := ">="
 		if ascending {
@@ -749,14 +749,14 @@ func (r *Repository) SearchJobLogs(
 			logsCursor.EventID,
 		)
 	}
- 
+
 	statusQueryArgs := []any{jobID, workflowID, userID}
 	statusQuery := fmt.Sprintf(`
         SELECT status, completed_at
         FROM %s
         WHERE id = $1 AND workflow_id = $2 AND user_id = $3
     `, postgres.TableJobs)
- 
+
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
 		logs          []*jobsmodel.JobLog
@@ -773,7 +773,7 @@ func (r *Repository) SearchJobLogs(
 			return nil, "", err
 		}
 	}
- 
+
 	eg.Go(func() error {
 		searchRes, searchErr := r.ms.Index(meilisearchpkg.IndexJobLogs).SearchWithContext(
 			egCtx,
@@ -783,7 +783,7 @@ func (r *Repository) SearchJobLogs(
 		if searchErr != nil {
 			return status.Errorf(codes.Internal, "failed to search job logs: %v", searchErr)
 		}
- 
+
 		tmp := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
 		tmpCursors := make([]jobLogsCursor, 0, len(searchRes.Hits))
 		for _, hit := range searchRes.Hits {
@@ -791,7 +791,7 @@ func (r *Repository) SearchJobLogs(
 			if scanErr != nil {
 				return scanErr
 			}
- 
+
 			log := &jobsmodel.JobLog{}
 			if ts, ok := source["timestamp"].(string); ok {
 				parsed, scanErr := time.Parse(time.RFC3339Nano, ts)
@@ -800,16 +800,16 @@ func (r *Repository) SearchJobLogs(
 				}
 				log.Timestamp = parsed
 			}
- 
+
 			log.EventID = searchHitString(source, "event_id")
 			if log.EventID == "" {
 				log.EventID = searchHitString(source, "id")
 			}
- 
+
 			if msg, ok := source["message"].(string); ok {
 				log.Message = msg
 			}
- 
+
 			switch sn := source["sequence_num"].(type) {
 			case string:
 				snVal, scanErr := strconv.ParseUint(sn, 10, 32)
@@ -820,11 +820,11 @@ func (r *Repository) SearchJobLogs(
 			case float64:
 				log.SequenceNum = uint32(sn)
 			}
- 
+
 			if stream, ok := source["stream"].(string); ok {
 				log.Stream = stream
 			}
- 
+
 			tmp = append(tmp, log)
 			tmpCursors = append(tmpCursors, jobLogsCursor{
 				SequenceNum: log.SequenceNum,
@@ -832,7 +832,7 @@ func (r *Repository) SearchJobLogs(
 				EventID:     searchHitString(source, "id"),
 			})
 		}
- 
+
 		// Check if there are more logs
 		if len(tmp) > r.cfg.LogsFetchLimit {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
@@ -841,10 +841,10 @@ func (r *Repository) SearchJobLogs(
 		logs = tmp
 		return nil
 	})
- 
+
 	eg.Go(func() error {
 		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
- 
+
 		//nolint:gocritic // Ifelse is used to handle different error types
 		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
 			if errors.Is(scanErr, context.DeadlineExceeded) {
@@ -856,25 +856,25 @@ func (r *Repository) SearchJobLogs(
 			} else if r.pg.IsInvalidTextRepresentation(scanErr) {
 				return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", scanErr)
 			}
- 
+
 			return status.Errorf(codes.Internal, "failed to get job: %v", scanErr)
 		}
- 
+
 		return nil
 	})
- 
+
 	err = eg.Wait()
 	if err != nil {
 		return nil, "", err
 	}
- 
+
 	// Buffer-based status override:
 	// If the job just completed within the buffer window, we may not have all logs yet.
 	// Treat it as "RUNNING" temporarily.
 	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
 		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
 	}
- 
+
 	return &jobsmodel.GetJobLogsResponse{
 		ID:             jobID,
 		WorkflowID:     workflowID,
@@ -883,7 +883,7 @@ func (r *Repository) SearchJobLogs(
 		HighlightToken: highlightToken,
 	}, fetchedStatus, nil
 }
- 
+
 // ListJobs returns jobs.
 func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (res *jobsmodel.ListJobsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobs")
@@ -894,7 +894,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		}
 		span.End()
 	}()
- 
+
 	// Add the cursor to the query
 	query := fmt.Sprintf(`
         SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at
@@ -904,7 +904,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	args := []any{workflowID, userID}
 	// This is used to track the parameter index for the query dynamically
 	paramIndex := 3
- 
+
 	// Apply filters if provided
 	if filters != nil {
 		if filters.Status != "" {
@@ -912,27 +912,27 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 			args = append(args, filters.Status)
 			paramIndex++
 		}
- 
+
 		if filters.Trigger != "" {
 			query += fmt.Sprintf(` AND trigger = $%d`, paramIndex)
 			args = append(args, filters.Trigger)
 			paramIndex++
 		}
 	}
- 
+
 	if cursor != "" {
 		id, createdAt, _err := extractDataFromListJobsCursor(cursor)
 		if _err != nil {
 			err = _err
 			return nil, err
 		}
- 
+
 		query += fmt.Sprintf(` AND (created_at, id) <= ($%d, $%d)`, paramIndex, paramIndex+1)
 		args = append(args, createdAt, id)
 	}
- 
+
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
- 
+
 	rows, err := r.pg.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) {
 		err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -941,18 +941,18 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		err = status.Error(codes.Canceled, err.Error())
 		return nil, err
 	}
- 
+
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.JobByWorkflowIDResponse])
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
 			return nil, err
 		}
- 
+
 		err = status.Errorf(codes.Internal, "failed to list all jobs: %v", err)
 		return nil, err
 	}
- 
+
 	// Check if there are more jobs
 	cursor = ""
 	if len(data) > r.cfg.FetchLimit {
@@ -964,66 +964,66 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		)
 		data = data[:r.cfg.FetchLimit]
 	}
- 
+
 	return &jobsmodel.ListJobsResponse{
 		Jobs:   data,
 		Cursor: encodeListJobsCursor(cursor),
 	}, nil
 }
- 
+
 // withAuthorization issues the necessary headers and tokens for authorization.
 func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
 	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject)
 }
- 
+
 // parseTime parses the time.
 func parseTime(t string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, t)
 }
- 
+
 // encodeJobLogsCursor encodes the cursor for descending log pagination.
 func encodeJobLogsCursor(cursor jobLogsCursor) string {
 	if cursor.SequenceNum == 0 && cursor.Stream == "" && cursor.EventID == "" {
 		return ""
 	}
- 
+
 	payload, err := json.Marshal(cursor)
 	if err != nil {
 		return ""
 	}
- 
+
 	return base64.StdEncoding.EncodeToString(payload)
 }
- 
+
 // encodeListJobsCursor encodes the cursor.
 func encodeListJobsCursor(cursor string) string {
 	if cursor == "" {
 		return ""
 	}
- 
+
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
- 
+
 func newJobLogsHighlightToken() (string, error) {
 	token := make([]byte, jobLogsHighlightTokenBytes)
 	if _, err := rand.Read(token); err != nil {
 		return "", status.Errorf(codes.Internal, "failed to generate log highlight token: %v", err)
 	}
- 
+
 	return hex.EncodeToString(token), nil
 }
- 
+
 func jobLogsHighlightTags(token string) (startTag, endTag string) {
 	return jobLogsHighlightStart + token + jobLogsHighlightSuffix,
 		jobLogsHighlightEnd + token + jobLogsHighlightSuffix
 }
- 
+
 func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options jobsmodel.SearchJobLogsOptions) *meilisearch.SearchRequest {
 	sequenceDirection := "desc"
 	if options.SortOrder == jobsmodel.JobLogsSortOrderAsc {
 		sequenceDirection = "asc"
 	}
- 
+
 	req := &meilisearch.SearchRequest{
 		Filter:               filter,
 		AttributesToRetrieve: []string{"id", "event_id", "message", "sequence_num", "stream", "timestamp"},
@@ -1031,36 +1031,36 @@ func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options
 		Sort:                 []string{"sequence_num:" + sequenceDirection, "id:asc"},
 		Limit:                limit,
 	}
- 
+
 	if !options.DisableHighlight {
 		highlightPreTag, highlightPostTag := jobLogsHighlightTags(highlightToken)
 		req.AttributesToHighlight = []string{"message"}
 		req.HighlightPreTag = highlightPreTag
 		req.HighlightPostTag = highlightPostTag
 	}
- 
+
 	return req
 }
- 
+
 // extractDataFromGetJobLogsCursor extracts the data from the cursor.
 func extractDataFromGetJobLogsCursor(cursor string) (jobLogsCursor, error) {
 	decodedBytes, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
 		return jobLogsCursor{}, status.Errorf(codes.InvalidArgument, "invalid cursor: %v", err)
 	}
- 
+
 	var logsCursor jobLogsCursor
 	if err = json.Unmarshal(decodedBytes, &logsCursor); err != nil {
 		return jobLogsCursor{}, status.Errorf(codes.InvalidArgument, "invalid cursor format: %v", err)
 	}
- 
+
 	if logsCursor.Stream == "" || logsCursor.EventID == "" {
 		return jobLogsCursor{}, status.Errorf(codes.InvalidArgument, "invalid cursor format")
 	}
- 
+
 	return logsCursor, nil
 }
- 
+
 func searchHitString(source map[string]any, field string) string {
 	if source == nil {
 		return ""
@@ -1069,29 +1069,29 @@ func searchHitString(source map[string]any, field string) string {
 	if !ok {
 		return ""
 	}
- 
+
 	return value
 }
- 
+
 func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
 	source := make(map[string]any)
 	for k, v := range hit {
 		if k == "_formatted" {
 			continue
 		}
- 
+
 		var val any
 		if err := json.Unmarshal(v, &val); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
 		}
 		source[k] = val
 	}
- 
+
 	formattedRaw, ok := hit["_formatted"]
 	if !ok {
 		return source, nil
 	}
- 
+
 	var formatted map[string]any
 	if err := json.Unmarshal(formattedRaw, &formatted); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
@@ -1099,21 +1099,21 @@ func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
 	if msg, ok := formatted["message"].(string); ok {
 		source["message"] = msg
 	}
- 
+
 	return source, nil
 }
- 
+
 // extractDataFromListJobsCursor extracts the data from the cursor.
 func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
 	parts := bytes.Split([]byte(cursor), []byte{delimiter})
 	if len(parts) != 2 {
 		return "", time.Time{}, status.Error(codes.InvalidArgument, "invalid cursor: expected two parts")
 	}
- 
+
 	createdAt, err := time.Parse(time.RFC3339Nano, string(parts[1]))
 	if err != nil {
 		return "", time.Time{}, status.Errorf(codes.InvalidArgument, "invalid timestamp: %v", err)
 	}
- 
+
 	return string(parts[0]), createdAt, nil
 }

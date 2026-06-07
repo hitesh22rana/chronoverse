@@ -26,6 +26,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL
 
 export type JobLog = {
     event_id?: string
+    highlightToken?: string
     timestamp: string
     message: string
     sequence_num: number
@@ -47,6 +48,14 @@ export type JobLogsResponseData = {
     workflow_id: string
     logs: JobLog[]
     cursor?: string
+    highlight_token?: string
+}
+
+export type DownloadLogsFormat = "txt" | "json" | "jsonl"
+
+type DownloadLogsOptions = {
+    filename: string
+    format: DownloadLogsFormat
 }
 
 const kindsWithLogs = ['CONTAINER']
@@ -69,12 +78,13 @@ const sequenceNumFromEventID = (eventID?: string): number | undefined => {
     return Number.isFinite(sequenceNum) ? sequenceNum : undefined
 }
 
-const normalizeJobLog = (log: JobLogWire): JobLog => {
+const normalizeJobLog = (log: JobLogWire, highlightToken?: string): JobLog => {
     const eventID = log.event_id || log.eventId
     const sequenceNum = Number(log.sequence_num ?? log.sequenceNum ?? sequenceNumFromEventID(eventID) ?? 0)
 
     return {
         event_id: eventID,
+        highlightToken,
         timestamp: log.timestamp || "",
         message: log.message || "",
         sequence_num: Number.isFinite(sequenceNum) ? sequenceNum : 0,
@@ -123,6 +133,11 @@ const logsFromPages = (pages?: JobLogsResponseData[]): JobLog[] => {
     }
 
     return sortLogsDesc(uniqueLogsByKey(pages.flatMap((page) => page?.logs || [])))
+}
+
+const downloadFilename = (filename: string, format: DownloadLogsFormat) => {
+    const base = (filename.trim() || "logs").replace(/\.(txt|json|jsonl)$/i, "")
+    return `${base}.${format}`
 }
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
@@ -200,8 +215,11 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     // Download raw logs from backend and trigger browser file download
     const downloadLogsMutation = useMutation({
-        mutationFn: async () => {
-            const response = await fetchWithAuth(logsDownloadURL)
+        mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
+            const params = new URLSearchParams(getSearchQueryParams)
+            params.set("format", format)
+
+            const response = await fetchWithAuth(`${logsDownloadURL}?${params.toString()}`)
             if (!response.ok) {
                 throw new Error("failed to download logs")
             }
@@ -210,7 +228,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             const objectUrl = URL.createObjectURL(blob)
             const a = document.createElement("a")
             a.href = objectUrl
-            a.download = `${jobId}-logs.txt`
+            a.download = downloadFilename(filename, format)
             document.body.appendChild(a)
             a.click()
             a.remove()
@@ -249,7 +267,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             return {
                 id: res.id,
                 workflow_id: res.workflow_id,
-                logs: (res.logs || []).map(normalizeJobLog),
+                logs: (res.logs || []).map((log) => normalizeJobLog(log)),
                 cursor: res.cursor || undefined,
             }
         },
@@ -279,8 +297,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             return {
                 id: jobId,
                 workflow_id: workflowId,
-                logs: (res.logs || []).map(normalizeJobLog),
+                logs: (res.logs || []).map((log) => normalizeJobLog(log, res.highlight_token)),
                 cursor: res.cursor || undefined,
+                highlight_token: res.highlight_token,
             }
         },
         initialPageParam: null,

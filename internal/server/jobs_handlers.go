@@ -13,6 +13,23 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
 
+const (
+	jobLogsDownloadFormatText  = "txt"
+	jobLogsDownloadFormatJSON  = "json"
+	jobLogsDownloadFormatJSONL = "jsonl"
+	jobLogsDownloadStreamAll   = "all"
+)
+
+type jobLogsDownloadRequest struct {
+	WorkflowID  string
+	JobID       string
+	UserID      string
+	Format      string
+	Stream      jobspb.LogStream
+	StreamName  string
+	SearchQuery string
+}
+
 // handleListJobs handles the list jobs by job ID request.
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	// Get the job ID from the path	parameters
@@ -329,80 +346,154 @@ func setJobLogsCacheControl(w http.ResponseWriter, requestCursor, responseCursor
 
 // handleDownloadJobLogs streams job logs to the client for download.
 func (s *Server) handleDownloadJobLogs(w http.ResponseWriter, r *http.Request) {
-	workflowID := r.PathValue("workflow_id")
-	if workflowID == "" {
-		http.Error(w, "workflow ID not found", http.StatusBadRequest)
-		return
-	}
-	jobID := r.PathValue("job_id")
-	if jobID == "" {
-		http.Error(w, "job ID not found", http.StatusBadRequest)
-		return
-	}
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	downloadReq, ok := parseJobLogsDownloadRequest(w, r)
+	if !ok {
 		return
 	}
 
-	// Check job status
-	res, err := s.jobsClient.GetJob(r.Context(), &jobspb.GetJobRequest{
-		Id:         jobID,
-		WorkflowId: workflowID,
-		UserId:     userID,
-	})
-	if err != nil {
-		handleError(w, err, "failed to get job")
-		return
-	}
-	// Precondition check
-	if res.GetStatus() != "COMPLETED" && res.GetStatus() != "FAILED" {
-		http.Error(w, "job is not yet completed", http.StatusBadRequest)
+	if !s.ensureJobLogsDownloadReady(w, r, &downloadReq) {
 		return
 	}
 
-	// Set headers for file download
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+jobID+`-logs.txt"`)
+	setJobLogsDownloadHeaders(w, &downloadReq)
 
-	// Response controller for streaming
 	rc, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
+	if downloadReq.Format == jobLogsDownloadFormatJSON {
+		headerErr := writeJobLogsDownloadJSONHeader(w, &downloadReq)
+		if headerErr != nil {
+			http.Error(w, "failed to write logs", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	downloadFailed := s.streamJobLogsDownload(w, r, rc, &downloadReq)
+	if downloadReq.Format == jobLogsDownloadFormatJSON && !downloadFailed {
+		fmt.Fprint(w, "]}")
+		rc.Flush()
+	}
+}
+
+func parseJobLogsDownloadRequest(w http.ResponseWriter, r *http.Request) (jobLogsDownloadRequest, bool) {
+	workflowID := r.PathValue("workflow_id")
+	if workflowID == "" {
+		http.Error(w, "workflow ID not found", http.StatusBadRequest)
+		return jobLogsDownloadRequest{}, false
+	}
+	jobID := r.PathValue("job_id")
+	if jobID == "" {
+		http.Error(w, "job ID not found", http.StatusBadRequest)
+		return jobLogsDownloadRequest{}, false
+	}
+	value := r.Context().Value(userIDKey{})
+	if value == nil {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return jobLogsDownloadRequest{}, false
+	}
+	userID, ok := value.(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return jobLogsDownloadRequest{}, false
+	}
+
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = jobLogsDownloadFormatText
+	}
+	if !isValidJobLogsDownloadFormat(format) {
+		http.Error(w, "invalid download format", http.StatusBadRequest)
+		return jobLogsDownloadRequest{}, false
+	}
+
+	streamParam := r.URL.Query().Get("stream")
+	stream, err := getJobLogsStreamType(streamParam)
+	if err != nil {
+		http.Error(w, "invalid log stream type", http.StatusBadRequest)
+		return jobLogsDownloadRequest{}, false
+	}
+	streamName := streamParam
+	if streamName == "" {
+		streamName = jobLogsDownloadStreamAll
+	}
+
+	return jobLogsDownloadRequest{
+		WorkflowID:  workflowID,
+		JobID:       jobID,
+		UserID:      userID,
+		Format:      format,
+		Stream:      stream,
+		StreamName:  streamName,
+		SearchQuery: r.URL.Query().Get("q"),
+	}, true
+}
+
+func isValidJobLogsDownloadFormat(format string) bool {
+	return format == jobLogsDownloadFormatText ||
+		format == jobLogsDownloadFormatJSON ||
+		format == jobLogsDownloadFormatJSONL
+}
+
+func (s *Server) ensureJobLogsDownloadReady(
+	w http.ResponseWriter,
+	r *http.Request,
+	downloadReq *jobLogsDownloadRequest,
+) bool {
+	res, err := s.jobsClient.GetJob(r.Context(), &jobspb.GetJobRequest{
+		Id:         downloadReq.JobID,
+		WorkflowId: downloadReq.WorkflowID,
+		UserId:     downloadReq.UserID,
+	})
+	if err != nil {
+		handleError(w, err, "failed to get job")
+		return false
+	}
+
+	if !isTerminalJobStatus(res.GetStatus()) {
+		http.Error(w, "job is not yet completed", http.StatusBadRequest)
+		return false
+	}
+
+	return true
+}
+
+func setJobLogsDownloadHeaders(w http.ResponseWriter, downloadReq *jobLogsDownloadRequest) {
+	switch downloadReq.Format {
+	case jobLogsDownloadFormatJSON:
+		w.Header().Set("Content-Type", "application/json")
+	case jobLogsDownloadFormatJSONL:
+		w.Header().Set("Content-Type", "application/x-ndjson")
+	default:
+		w.Header().Set("Content-Type", "text/plain")
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+downloadReq.JobID+`-logs.`+downloadReq.Format+`"`)
+}
+
+func (s *Server) streamJobLogsDownload(
+	w http.ResponseWriter,
+	r *http.Request,
+	rc http.Flusher,
+	downloadReq *jobLogsDownloadRequest,
+) (downloadFailed bool) {
 	cursor := ""
+	isFirstJSONLog := true
 	for {
-		res, err := s.jobsClient.GetJobLogs(r.Context(), &jobspb.GetJobLogsRequest{
-			Id:         jobID,
-			WorkflowId: workflowID,
-			UserId:     userID,
-			Cursor:     cursor,
-			SortOrder:  jobspb.LogSortOrder_LOG_SORT_ORDER_ASC,
-			Filters: &jobspb.GetJobLogsFilters{
-				Stream: jobspb.LogStream_LOG_STREAM_ALL,
-			},
-		})
+		res, err := s.fetchJobLogsDownloadPage(r, downloadReq, cursor)
 		if err != nil {
-			// Handle fetch error
-			fmt.Fprintf(w, "\n--- ERROR: failed to fetch logs ---\n%s\n", err.Error())
+			writeJobLogsDownloadError(w, downloadReq.Format, "failed to fetch logs", err)
 			rc.Flush()
-			break
+			return true
 		}
 
-		// Write logs to response
 		for _, log := range res.GetLogs() {
-			if _, err := w.Write([]byte(log.Message + "\n")); err != nil {
-				// Handle write error
-				fmt.Fprintf(w, "\n--- ERROR: failed to write log ---\n%s\n", err.Error())
+			writeErr := writeJobLogsDownloadLog(w, downloadReq.Format, log, &isFirstJSONLog)
+			if writeErr != nil {
+				writeJobLogsDownloadError(w, downloadReq.Format, "failed to write log", writeErr)
 				rc.Flush()
-				break
+				return true
 			}
 		}
 		rc.Flush()
@@ -411,6 +502,144 @@ func (s *Server) handleDownloadJobLogs(w http.ResponseWriter, r *http.Request) {
 		if cursor == "" {
 			break
 		}
+	}
+
+	return false
+}
+
+func (s *Server) fetchJobLogsDownloadPage(
+	r *http.Request,
+	downloadReq *jobLogsDownloadRequest,
+	cursor string,
+) (*jobspb.GetJobLogsResponse, error) {
+	if downloadReq.SearchQuery == "" {
+		return s.jobsClient.GetJobLogs(r.Context(), &jobspb.GetJobLogsRequest{
+			Id:         downloadReq.JobID,
+			WorkflowId: downloadReq.WorkflowID,
+			UserId:     downloadReq.UserID,
+			Cursor:     cursor,
+			SortOrder:  jobspb.LogSortOrder_LOG_SORT_ORDER_ASC,
+			Filters: &jobspb.GetJobLogsFilters{
+				Stream: downloadReq.Stream,
+			},
+		})
+	}
+
+	return s.jobsClient.SearchJobLogs(r.Context(), &jobspb.SearchJobLogsRequest{
+		Id:               downloadReq.JobID,
+		WorkflowId:       downloadReq.WorkflowID,
+		UserId:           downloadReq.UserID,
+		Cursor:           cursor,
+		SortOrder:        jobspb.LogSortOrder_LOG_SORT_ORDER_ASC,
+		DisableHighlight: true,
+		Filters: &jobspb.SearchJobLogsFilters{
+			Stream:  downloadReq.Stream,
+			Message: downloadReq.SearchQuery,
+		},
+	})
+}
+
+type jobLogsDownloadJSONHeader struct {
+	ID         string                    `json:"id"`
+	WorkflowID string                    `json:"workflow_id"`
+	Filters    jobLogsDownloadJSONFilter `json:"filters"`
+}
+
+type jobLogsDownloadJSONFilter struct {
+	Query  string `json:"q"`
+	Stream string `json:"stream"`
+}
+
+type jobLogsDownloadLog struct {
+	Timestamp   string           `json:"timestamp"`
+	SequenceNum uint32           `json:"sequence_num"`
+	Stream      string           `json:"stream"`
+	EventID     string           `json:"event_id"`
+	MessageRaw  string           `json:"message_raw"`
+	MessageJSON *json.RawMessage `json:"message_json,omitempty"`
+}
+
+func writeJobLogsDownloadJSONHeader(w io.Writer, downloadReq *jobLogsDownloadRequest) error {
+	header, err := json.Marshal(jobLogsDownloadJSONHeader{
+		ID:         downloadReq.JobID,
+		WorkflowID: downloadReq.WorkflowID,
+		Filters: jobLogsDownloadJSONFilter{
+			Query:  downloadReq.SearchQuery,
+			Stream: downloadReq.StreamName,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	if _, writeErr := w.Write(header[:len(header)-1]); writeErr != nil {
+		return writeErr
+	}
+	_, writeErr := w.Write([]byte(`,"logs":[`))
+	return writeErr
+}
+
+func newJobLogsDownloadLog(log *jobspb.Log) jobLogsDownloadLog {
+	entry := jobLogsDownloadLog{
+		Timestamp:   log.GetTimestamp(),
+		SequenceNum: log.GetSequenceNum(),
+		Stream:      log.GetStream(),
+		EventID:     log.GetEventId(),
+		MessageRaw:  log.GetMessage(),
+	}
+
+	if json.Valid([]byte(log.GetMessage())) {
+		raw := json.RawMessage(log.GetMessage())
+		entry.MessageJSON = &raw
+	}
+
+	return entry
+}
+
+func writeJobLogsDownloadLog(w io.Writer, format string, log *jobspb.Log, isFirstJSONLog *bool) error {
+	switch format {
+	case jobLogsDownloadFormatJSON:
+		if !*isFirstJSONLog {
+			if _, err := w.Write([]byte(",")); err != nil {
+				return err
+			}
+		}
+		*isFirstJSONLog = false
+		encoded, err := json.Marshal(newJobLogsDownloadLog(log))
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(encoded)
+		return err
+	case jobLogsDownloadFormatJSONL:
+		return json.NewEncoder(w).Encode(newJobLogsDownloadLog(log))
+	default:
+		_, err := w.Write([]byte(log.GetMessage() + "\n"))
+		return err
+	}
+}
+
+func writeJobLogsDownloadError(w io.Writer, format, message string, err error) {
+	switch format {
+	case jobLogsDownloadFormatJSON:
+		encoded, jsonErr := json.Marshal(map[string]string{
+			"message": message,
+			"error":   err.Error(),
+		})
+		if jsonErr != nil {
+			return
+		}
+		fmt.Fprintf(w, `],"error":%s}`, encoded)
+	case jobLogsDownloadFormatJSONL:
+		encodeErr := json.NewEncoder(w).Encode(map[string]string{
+			"message": message,
+			"error":   err.Error(),
+		})
+		if encodeErr != nil {
+			return
+		}
+	default:
+		fmt.Fprintf(w, "\n--- ERROR: %s ---\n%s\n", message, err.Error())
 	}
 }
 

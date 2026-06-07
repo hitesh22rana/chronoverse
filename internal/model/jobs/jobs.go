@@ -1,15 +1,15 @@
 package jobs
- 
+
 import (
 	"database/sql"
 	"time"
- 
+
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
- 
+
 // JobStatus represents the status of the scheduled job.
 type JobStatus string
- 
+
 // JobStatuses for the scheduled job.
 const (
 	JobStatusPending   JobStatus = "PENDING"
@@ -19,40 +19,40 @@ const (
 	JobStatusFailed    JobStatus = "FAILED"
 	JobStatusCanceled  JobStatus = "CANCELED"
 )
- 
+
 // ToString converts the JobStatus to its string representation.
 func (s JobStatus) ToString() string {
 	return string(s)
 }
- 
+
 // FailureKind represents whether a job failure belongs to user code/configuration or system infrastructure.
 type FailureKind string
- 
+
 // FailureKinds for terminal job failures.
 const (
 	FailureKindUser   FailureKind = "USER"
 	FailureKindSystem FailureKind = "SYSTEM"
 )
- 
+
 // ToString converts the FailureKind to its string representation.
 func (f FailureKind) ToString() string {
 	return string(f)
 }
- 
+
 // JobTrigger represents the trigger type of the job.
 type JobTrigger string
- 
+
 // JobTriggers for the scheduled job.
 const (
 	JobTriggerAutomatic JobTrigger = "AUTOMATIC"
 	JobTriggerManual    JobTrigger = "MANUAL"
 )
- 
+
 // ToString converts the JobTrigger to its string representation.
 func (t JobTrigger) ToString() string {
 	return string(t)
 }
- 
+
 // GetJobResponse represents the response of GetJob.
 type GetJobResponse struct {
 	ID          string       `db:"id"`
@@ -65,7 +65,7 @@ type GetJobResponse struct {
 	CreatedAt   time.Time    `db:"created_at"`
 	UpdatedAt   time.Time    `db:"updated_at"`
 }
- 
+
 // ToProto converts the GetJobResponse to its protobuf representation.
 func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 	var startedAt, completedAt string
@@ -75,7 +75,7 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 	if r.CompletedAt.Valid {
 		completedAt = r.CompletedAt.Time.Format(time.RFC3339Nano)
 	}
- 
+
 	return &jobspb.GetJobResponse{
 		Id:          r.ID,
 		WorkflowId:  r.WorkflowID,
@@ -88,7 +88,7 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 		UpdatedAt:   r.UpdatedAt.Format(time.RFC3339Nano),
 	}
 }
- 
+
 // GetJobByIDResponse represents the response of GetJobByID.
 type GetJobByIDResponse struct {
 	ID          string         `db:"id"`
@@ -104,7 +104,7 @@ type GetJobByIDResponse struct {
 	CreatedAt   time.Time      `db:"created_at"`
 	UpdatedAt   time.Time      `db:"updated_at"`
 }
- 
+
 // ToProto converts the GetJobByIDResponse to its protobuf representation.
 func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	var startedAt, completedAt string
@@ -114,7 +114,7 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 	if r.CompletedAt.Valid {
 		completedAt = r.CompletedAt.Time.Format(time.RFC3339Nano)
 	}
- 
+
 	return &jobspb.GetJobByIDResponse{
 		Id:          r.ID,
 		WorkflowId:  r.WorkflowID,
@@ -129,7 +129,7 @@ func (r *GetJobByIDResponse) ToProto() *jobspb.GetJobByIDResponse {
 		UpdatedAt:   r.UpdatedAt.Format(time.RFC3339Nano),
 	}
 }
- 
+
 // ScheduledJobEntry represents the scheduled job entry.
 type ScheduledJobEntry struct {
 	EventKey           string
@@ -139,7 +139,7 @@ type ScheduledJobEntry struct {
 	DispatchAttempt    int32
 	WorkflowGeneration int64
 }
- 
+
 // ClaimedJob represents a job claimed by an execution worker.
 type ClaimedJob struct {
 	ID               string    `db:"id"`
@@ -151,7 +151,7 @@ type ClaimedJob struct {
 	Attempts         int32     `db:"attempts"`
 	LeaseToken       string    `db:"lease_token"`
 }
- 
+
 // ToClaimJobProto converts a ClaimedJob to a ClaimJobResponse.
 func (j *ClaimedJob) ToClaimJobProto(claimed bool, reason string) *jobspb.ClaimJobResponse {
 	if j == nil {
@@ -160,7 +160,7 @@ func (j *ClaimedJob) ToClaimJobProto(claimed bool, reason string) *jobspb.ClaimJ
 			Reason:  reason,
 		}
 	}
- 
+
 	return &jobspb.ClaimJobResponse{
 		Claimed:          claimed,
 		Reason:           reason,
@@ -174,7 +174,7 @@ func (j *ClaimedJob) ToClaimJobProto(claimed bool, reason string) *jobspb.ClaimJ
 		LeaseToken:       j.LeaseToken,
 	}
 }
- 
+
 // ExpiredJobLease represents a running job with an expired lease.
 type ExpiredJobLease struct {
 	ID           string         `db:"id"`
@@ -188,7 +188,7 @@ type ExpiredJobLease struct {
 	Attempts     int32          `db:"attempts"`
 	LogRetention bool           `db:"log_retention"`
 }
- 
+
 // ToProto converts an ExpiredJobLease to its protobuf representation.
 func (j *ExpiredJobLease) ToProto() *jobspb.ExpiredJobLease {
 	return &jobspb.ExpiredJobLease{
@@ -204,7 +204,7 @@ func (j *ExpiredJobLease) ToProto() *jobspb.ExpiredJobLease {
 		LogRetention: j.LogRetention,
 	}
 }
- 
+
 // JobLog represents the log of the job.
 type JobLog struct {
 	EventID     string    `db:"event_id"`
@@ -213,7 +213,7 @@ type JobLog struct {
 	SequenceNum uint32    `db:"sequence_num"`
 	Stream      string    `db:"stream"` // "stdout" or "stderr"
 }
- 
+
 // ToProto converts the JobLog to its protobuf representation.
 func (l *JobLog) ToProto() *jobspb.Log {
 	return &jobspb.Log{
@@ -224,22 +224,22 @@ func (l *JobLog) ToProto() *jobspb.Log {
 		EventId:     l.EventID,
 	}
 }
- 
+
 // JobLogsSortOrder represents retained job log ordering.
 type JobLogsSortOrder int
- 
+
 // Job log sort orders.
 const (
 	JobLogsSortOrderUnspecified JobLogsSortOrder = 0
 	JobLogsSortOrderDesc        JobLogsSortOrder = 1
 	JobLogsSortOrderAsc         JobLogsSortOrder = 2
 )
- 
+
 // GetJobLogsFilters represents the filters for filtering job logs.
 type GetJobLogsFilters struct {
 	Stream int `validate:"required,min=1,max=3"`
 }
- 
+
 // GetJobLogsResponse represents the response of GetJobLogs.
 type GetJobLogsResponse struct {
 	ID             string
@@ -248,7 +248,7 @@ type GetJobLogsResponse struct {
 	Cursor         string
 	HighlightToken string
 }
- 
+
 // ToProto converts the GetJobLogsResponse to its protobuf representation.
 func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 	jobLogs := make([]*jobspb.Log, len(r.JobLogs))
@@ -256,7 +256,7 @@ func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 		l := r.JobLogs[i]
 		jobLogs[i] = l.ToProto()
 	}
- 
+
 	return &jobspb.GetJobLogsResponse{
 		Id:             r.ID,
 		WorkflowId:     r.WorkflowID,
@@ -265,19 +265,19 @@ func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 		HighlightToken: r.HighlightToken,
 	}
 }
- 
+
 // SearchJobLogsFilters represents the filters for searching job logs.
 type SearchJobLogsFilters struct {
 	Stream  int    `validate:"required,min=1,max=3"`
 	Message string `validate:"required"`
 }
- 
+
 // SearchJobLogsOptions represents non-filter options for searching job logs.
 type SearchJobLogsOptions struct {
 	SortOrder        JobLogsSortOrder
 	DisableHighlight bool
 }
- 
+
 // JobByWorkflowIDResponse represents the response of ListJobsByID.
 type JobByWorkflowIDResponse struct {
 	ID          string         `db:"id"`
@@ -292,26 +292,26 @@ type JobByWorkflowIDResponse struct {
 	CreatedAt   time.Time      `db:"created_at"`
 	UpdatedAt   time.Time      `db:"updated_at"`
 }
- 
+
 // ListJobsFilters represents the filters for listing jobs.
 type ListJobsFilters struct {
 	Status  string `validate:"omitempty"`
 	Trigger string `validate:"omitempty"`
 }
- 
+
 // ListJobsResponse represents the response of ListJobsByID.
 type ListJobsResponse struct {
 	Jobs   []*JobByWorkflowIDResponse
 	Cursor string
 }
- 
+
 // ToProto converts the ListJobsResponse to its protobuf representation.
 // It takes an internalService boolean to determine if the some fields.
 func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsResponse {
 	jobs := make([]*jobspb.JobsResponse, len(r.Jobs))
 	for i := range r.Jobs {
 		j := r.Jobs[i]
- 
+
 		var startedAt, completedAt string
 		if j.StartedAt.Valid {
 			startedAt = j.StartedAt.Time.Format(time.RFC3339Nano)
@@ -319,7 +319,7 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 		if j.CompletedAt.Valid {
 			completedAt = j.CompletedAt.Time.Format(time.RFC3339Nano)
 		}
- 
+
 		jobs[i] = &jobspb.JobsResponse{
 			Id:          j.ID,
 			WorkflowId:  j.WorkflowID,
@@ -332,12 +332,12 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 			UpdatedAt:   j.UpdatedAt.Format(time.RFC3339Nano),
 			Attempts:    j.Attempts,
 		}
- 
+
 		if internalService {
 			jobs[i].ContainerId = j.ContainerID.String
 		}
 	}
- 
+
 	return &jobspb.ListJobsResponse{
 		Jobs:   jobs,
 		Cursor: r.Cursor,

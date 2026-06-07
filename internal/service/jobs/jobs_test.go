@@ -1412,6 +1412,33 @@ func TestStreamJobLogs(t *testing.T) {
 	}
 }
 
+func searchJobLogsCacheKeyForTest(req *jobspb.SearchJobLogsRequest) string {
+	options := searchJobLogsOptionsForTest(req)
+
+	return fmt.Sprintf(
+		"job_logs:search:%s:%s:%s:%s:%s:%d:%t",
+		req.GetUserId(),
+		req.GetId(),
+		req.GetCursor(),
+		req.GetFilters().GetMessage(),
+		req.GetFilters().GetStream(),
+		options.SortOrder,
+		options.DisableHighlight,
+	)
+}
+
+func searchJobLogsOptionsForTest(req *jobspb.SearchJobLogsRequest) jobsmodel.SearchJobLogsOptions {
+	sortOrder := jobsmodel.JobLogsSortOrderDesc
+	if req.GetSortOrder() == jobspb.LogSortOrder_LOG_SORT_ORDER_ASC {
+		sortOrder = jobsmodel.JobLogsSortOrderAsc
+	}
+
+	return jobsmodel.SearchJobLogsOptions{
+		SortOrder:        sortOrder,
+		DisableHighlight: req.GetDisableHighlight(),
+	}
+}
+
 func TestSearchJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -1467,14 +1494,7 @@ func TestSearchJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1496,6 +1516,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(data, "COMPLETED", nil)
 				cache.EXPECT().Set(
 					gomock.Any(),
@@ -1527,6 +1548,66 @@ func TestSearchJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "success: ascending sort with highlights disabled",
+			req: &jobspb.SearchJobLogsRequest{
+				Id:               "job_id",
+				WorkflowId:       "workflow_id",
+				UserId:           "user_id",
+				Cursor:           "",
+				SortOrder:        jobspb.LogSortOrder_LOG_SORT_ORDER_ASC,
+				DisableHighlight: true,
+				Filters: &jobspb.SearchJobLogsFilters{
+					Stream:  jobspb.LogStream_LOG_STREAM_STDOUT,
+					Message: "message",
+				},
+			},
+			mock: func(req *jobspb.SearchJobLogsRequest) {
+				data := &jobsmodel.GetJobLogsResponse{
+					ID:         req.GetId(),
+					WorkflowID: req.GetWorkflowId(),
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "message 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+					},
+				}
+				filters := &jobsmodel.SearchJobLogsFilters{
+					Stream:  int(req.GetFilters().GetStream()),
+					Message: req.GetFilters().GetMessage(),
+				}
+				repo.EXPECT().SearchJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+					req.GetCursor(),
+					filters,
+					jobsmodel.SearchJobLogsOptions{
+						SortOrder:        jobsmodel.JobLogsSortOrderAsc,
+						DisableHighlight: true,
+					},
+				).Return(data, "COMPLETED", nil)
+			},
+			want: want{
+				&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "message 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+					},
+				},
+			},
+			isErr: false,
+		},
+		{
 			name: "success: with cache hit",
 			req: &jobspb.SearchJobLogsRequest{
 				Id:         "job_id",
@@ -1539,14 +1620,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				cache.EXPECT().Get(gomock.Any(), cacheKey, gomock.Any()).Return(&jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
 					WorkflowID: "workflow_id",
@@ -1622,14 +1696,7 @@ func TestSearchJobLogs(t *testing.T) {
 					},
 					Cursor: "cursor",
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1651,6 +1718,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(data, "COMPLETED", nil)
 				cache.EXPECT().Set(
 					gomock.Any(),
@@ -1707,14 +1775,7 @@ func TestSearchJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				filters := &jobsmodel.SearchJobLogsFilters{
 					Stream:  int(req.GetFilters().GetStream()),
 					Message: req.GetFilters().GetMessage(),
@@ -1729,6 +1790,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(data, jobsmodel.JobStatusRunning.ToString(), nil)
 			},
 			want: want{
@@ -1772,14 +1834,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1801,6 +1856,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(nil, "", status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
@@ -1819,14 +1875,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1848,6 +1897,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(nil, "", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},

@@ -39,6 +39,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 
 import { useJobLogs } from "@/hooks/use-job-logs"
+import type { DownloadLogsFormat } from "@/hooks/use-job-logs"
 
 import { cn, jsonRegex } from "@/lib/utils"
 
@@ -70,6 +71,10 @@ const getLogStreamStripStyles = (stream: string) => {
 }
 
 const highlightClass = "rounded bg-orange-400/80 px-0.5 text-inherit dark:bg-orange-500/70"
+const highlightTokenPattern = /^[a-f0-9]{32}$/
+const highlightStartPrefix = "__CV_HL_START_"
+const highlightEndPrefix = "__CV_HL_END_"
+const highlightSuffix = "__"
 
 const escapeHtml = (value: string) => {
     return value.replace(/[&<>"']/g, (char) => {
@@ -90,47 +95,104 @@ const escapeHtml = (value: string) => {
     })
 }
 
-const escapeRegExp = (value: string) => {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
-const stripHighlightTags = (message: string) => {
-    return message.replace(/<\/?em>/g, "")
-}
-
-const extractHighlightedTerms = (message: string) => {
-    const terms: string[] = []
-    const highlightPattern = /<em>([\s\S]*?)<\/em>/g
-
-    for (const match of message.matchAll(highlightPattern)) {
-        const term = match[1]
-        if (term?.trim()) {
-            terms.push(term)
-        }
-    }
-
-    return Array.from(new Set(terms)).sort((a, b) => b.length - a.length)
-}
-
-const renderHighlightedText = (message: string, terms: string[]) => {
-    if (!terms.length) {
+const renderHighlightedText = (message: string, highlightToken?: string) => {
+    if (!highlightToken || !highlightTokenPattern.test(highlightToken)) {
         return escapeHtml(message)
     }
 
-    const highlightPattern = new RegExp(terms.map(escapeRegExp).join("|"), "gi")
-    let lastIndex = 0
+    const startTag = `${highlightStartPrefix}${highlightToken}${highlightSuffix}`
+    const endTag = `${highlightEndPrefix}${highlightToken}${highlightSuffix}`
+    let currentIndex = 0
     let rendered = ""
 
-    for (const match of message.matchAll(highlightPattern)) {
-        const matchText = match[0]
-        const matchIndex = match.index ?? 0
+    while (currentIndex < message.length) {
+        const startIndex = message.indexOf(startTag, currentIndex)
+        if (startIndex === -1) {
+            break
+        }
 
-        rendered += escapeHtml(message.slice(lastIndex, matchIndex))
-        rendered += `<mark class="${highlightClass}">${escapeHtml(matchText)}</mark>`
-        lastIndex = matchIndex + matchText.length
+        const matchStartIndex = startIndex + startTag.length
+        const endIndex = message.indexOf(endTag, matchStartIndex)
+        if (endIndex === -1) {
+            break
+        }
+
+        rendered += escapeHtml(message.slice(currentIndex, startIndex))
+        rendered += `<mark class="${highlightClass}">${escapeHtml(message.slice(matchStartIndex, endIndex))}</mark>`
+        currentIndex = endIndex + endTag.length
     }
 
-    rendered += escapeHtml(message.slice(lastIndex))
+    rendered += escapeHtml(message.slice(currentIndex))
+    return rendered
+}
+
+const getHighlightTags = (highlightToken?: string) => {
+    if (!highlightToken || !highlightTokenPattern.test(highlightToken)) {
+        return null
+    }
+
+    return {
+        startTag: `${highlightStartPrefix}${highlightToken}${highlightSuffix}`,
+        endTag: `${highlightEndPrefix}${highlightToken}${highlightSuffix}`,
+    }
+}
+
+const parseHighlightedMessage = (message: string, highlightToken?: string) => {
+    const tags = getHighlightTags(highlightToken)
+    if (!tags) {
+        return { rawMessage: message, highlightedSegments: [] }
+    }
+
+    const highlightedSegments: string[] = []
+    let currentIndex = 0
+    let rawMessage = ""
+
+    while (currentIndex < message.length) {
+        const startIndex = message.indexOf(tags.startTag, currentIndex)
+        if (startIndex === -1) {
+            break
+        }
+
+        const matchStartIndex = startIndex + tags.startTag.length
+        const endIndex = message.indexOf(tags.endTag, matchStartIndex)
+        if (endIndex === -1) {
+            break
+        }
+
+        rawMessage += message.slice(currentIndex, startIndex)
+        rawMessage += message.slice(matchStartIndex, endIndex)
+        highlightedSegments.push(message.slice(matchStartIndex, endIndex))
+        currentIndex = endIndex + tags.endTag.length
+    }
+
+    rawMessage += message.slice(currentIndex)
+    return { rawMessage, highlightedSegments }
+}
+
+const renderHighlightedSegments = (message: string, segments: string[]) => {
+    if (!segments.length) {
+        return escapeHtml(message)
+    }
+
+    let currentIndex = 0
+    let rendered = ""
+
+    for (const segment of segments) {
+        if (!segment) {
+            continue
+        }
+
+        const segmentIndex = message.indexOf(segment, currentIndex)
+        if (segmentIndex === -1) {
+            continue
+        }
+
+        rendered += escapeHtml(message.slice(currentIndex, segmentIndex))
+        rendered += `<mark class="${highlightClass}">${escapeHtml(segment)}</mark>`
+        currentIndex = segmentIndex + segment.length
+    }
+
+    rendered += escapeHtml(message.slice(currentIndex))
     return rendered
 }
 
@@ -146,6 +208,7 @@ export function LogsViewer({
     const searchParams = useSearchParams()
 
     const [popoverOpen, setPopoverOpen] = useState(false)
+    const [downloadPopoverOpen, setDownloadPopoverOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
     const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -170,6 +233,8 @@ export function LogsViewer({
 
     const [searchInput, setSearchInput] = useState(searchQuery)
     const [stream, setStream] = useState(streamFilter || "all")
+    const [downloadFilename, setDownloadFilename] = useState(`${jobId}-logs`)
+    const [downloadFormat, setDownloadFormat] = useState<DownloadLogsFormat>("txt")
     const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
     const parseJson = searchParams.get("json") === "true"
 
@@ -185,6 +250,10 @@ export function LogsViewer({
         const query = params.toString()
         router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
     }, [pathname, router, searchParams])
+
+    useEffect(() => {
+        setDownloadFilename(`${jobId}-logs`)
+    }, [jobId])
 
     // Debounced search update
     useEffect(() => {
@@ -218,20 +287,18 @@ export function LogsViewer({
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [isSearchFocused])
 
-    // Parse log message and render Meili <em> highlights safely.
+    // Parse log message and render token-scoped Meili highlights safely.
     const parseLog = useCallback(
-        (message: string) => {
-            const shouldRenderSearchHighlights = Boolean(searchQuery)
-            const highlightedTerms = shouldRenderSearchHighlights ? extractHighlightedTerms(message) : []
-            const rawMessage = shouldRenderSearchHighlights ? stripHighlightTags(message) : message
-
+        (message: string, highlightToken?: string) => {
             if (!parseJson) {
-                return renderHighlightedText(rawMessage, highlightedTerms)
+                return renderHighlightedText(message, highlightToken)
             }
+
+            const { rawMessage, highlightedSegments } = parseHighlightedMessage(message, highlightToken)
 
             try {
                 const parsed = JSON.parse(rawMessage)
-                return renderHighlightedText(JSON.stringify(parsed, null, 2), highlightedTerms)
+                return renderHighlightedSegments(JSON.stringify(parsed, null, 2), highlightedSegments)
             } catch {
                 const formattedMessage = rawMessage.replace(jsonRegex, (match) => {
                     try {
@@ -242,17 +309,17 @@ export function LogsViewer({
                     }
                 })
 
-                return renderHighlightedText(formattedMessage, highlightedTerms)
+                return renderHighlightedSegments(formattedMessage, highlightedSegments)
             }
         },
-        [parseJson, searchQuery]
+        [parseJson]
     )
 
     // Row renderer for Virtuoso
     const LogRow = (index: number) => {
         const log = logs[index]
         if (!log) return null
-        const formattedMessage = parseLog(log.message)
+        const formattedMessage = parseLog(log.message, log.highlightToken)
         return (
             <div
                 className={cn(
@@ -366,19 +433,79 @@ export function LogsViewer({
                                 disabled={(jobStatus === "CANCELED" && logs.length === 0) || (logs.length === 0 && !!completedAt)}
                             />
                         </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => downloadLogsMutation.mutate()}
-                            disabled={disableLogInteractions || isDownloadLogsMutationLoading || logs.length === 0 || jobStatus === "RUNNING"}
-                        >
-                            {isDownloadLogsMutationLoading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Download className="h-4 w-4 mr-2" />
-                            )}
-                            Download
-                        </Button>
+                        <Popover open={downloadPopoverOpen} onOpenChange={setDownloadPopoverOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={disableLogInteractions || isDownloadLogsMutationLoading || logs.length === 0 || jobStatus === "RUNNING"}
+                                >
+                                    {isDownloadLogsMutationLoading ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Download className="h-4 w-4 mr-2" />
+                                    )}
+                                    Download
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64 m-2 flex flex-col gap-4" align="end">
+                                <div className="flex flex-col gap-2">
+                                    <Label htmlFor="download-filename" className="text-md">File name</Label>
+                                    <Input
+                                        id="download-filename"
+                                        value={downloadFilename}
+                                        onChange={(e) => setDownloadFilename(e.target.value)}
+                                        disabled={isDownloadLogsMutationLoading}
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <Label className="text-md">File type</Label>
+                                    <Separator />
+                                    <RadioGroup
+                                        value={downloadFormat}
+                                        onValueChange={(value) => setDownloadFormat(value as DownloadLogsFormat)}
+                                        className="flex flex-col gap-2"
+                                        disabled={isDownloadLogsMutationLoading}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <RadioGroupItem value="txt" id="download-format-txt" />
+                                            <Label htmlFor="download-format-txt" className="text-sm font-medium">
+                                                txt
+                                            </Label>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <RadioGroupItem value="json" id="download-format-json" />
+                                            <Label htmlFor="download-format-json" className="text-sm font-medium">
+                                                json
+                                            </Label>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <RadioGroupItem value="jsonl" id="download-format-jsonl" />
+                                            <Label htmlFor="download-format-jsonl" className="text-sm font-medium">
+                                                jsonl
+                                            </Label>
+                                        </div>
+                                    </RadioGroup>
+                                </div>
+                                <Button
+                                    onClick={() => {
+                                        downloadLogsMutation.mutate(
+                                            { filename: downloadFilename, format: downloadFormat },
+                                            { onSuccess: () => setDownloadPopoverOpen(false) }
+                                        )
+                                    }}
+                                    disabled={isDownloadLogsMutationLoading}
+                                    className="w-full"
+                                >
+                                    {isDownloadLogsMutationLoading ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Download className="h-4 w-4 mr-2" />
+                                    )}
+                                    Download
+                                </Button>
+                            </PopoverContent>
+                        </Popover>
                     </div>
                 </div>
             </CardHeader>

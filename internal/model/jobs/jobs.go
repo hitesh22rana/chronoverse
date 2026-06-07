@@ -242,10 +242,11 @@ type GetJobLogsFilters struct {
 
 // GetJobLogsResponse represents the response of GetJobLogs.
 type GetJobLogsResponse struct {
-	ID         string
-	WorkflowID string
-	JobLogs    []*JobLog
-	Cursor     string
+	ID             string
+	WorkflowID     string
+	JobLogs        []*JobLog
+	Cursor         string
+	HighlightToken string
 }
 
 // ToProto converts the GetJobLogsResponse to its protobuf representation.
@@ -257,10 +258,11 @@ func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 	}
 
 	return &jobspb.GetJobLogsResponse{
-		Id:         r.ID,
-		WorkflowId: r.WorkflowID,
-		Logs:       jobLogs,
-		Cursor:     r.Cursor,
+		Id:             r.ID,
+		WorkflowId:     r.WorkflowID,
+		Logs:           jobLogs,
+		Cursor:         r.Cursor,
+		HighlightToken: r.HighlightToken,
 	}
 }
 
@@ -268,6 +270,12 @@ func (r *GetJobLogsResponse) ToProto() *jobspb.GetJobLogsResponse {
 type SearchJobLogsFilters struct {
 	Stream  int    `validate:"required,min=1,max=3"`
 	Message string `validate:"required"`
+}
+
+// SearchJobLogsOptions represents non-filter options for searching job logs.
+type SearchJobLogsOptions struct {
+	SortOrder        JobLogsSortOrder
+	DisableHighlight bool
 }
 
 // JobByWorkflowIDResponse represents the response of ListJobsByID.

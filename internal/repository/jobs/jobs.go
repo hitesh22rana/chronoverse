@@ -3,8 +3,10 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +40,11 @@ const (
 	authSubject           = "internal/jobs"
 	delimiter             = '$'
 	jobStatusUpdateBuffer = time.Minute // 1 minute
+
+	jobLogsHighlightTokenBytes = 16
+	jobLogsHighlightStart      = "__CV_HL_START_"
+	jobLogsHighlightEnd        = "__CV_HL_END_"
+	jobLogsHighlightSuffix     = "__"
 )
 
 type jobLogsCursor struct {
@@ -673,6 +680,7 @@ func (r *Repository) SearchJobLogs(
 	userID,
 	cursor string,
 	searchJobLogsFilters *jobsmodel.SearchJobLogsFilters,
+	options jobsmodel.SearchJobLogsOptions,
 ) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.SearchJobLogs")
 	defer func() {
@@ -718,6 +726,8 @@ func (r *Repository) SearchJobLogs(
 		filter += fmt.Sprintf(` AND stream = %q`, "stderr")
 	}
 
+	ascending := options.SortOrder == jobsmodel.JobLogsSortOrderAsc
+
 	if cursor != "" {
 		logsCursor, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
@@ -725,10 +735,17 @@ func (r *Repository) SearchJobLogs(
 			return nil, "", err
 		}
 
+		sequenceOperator := "<"
+		idOperator := ">="
+		if ascending {
+			sequenceOperator = ">"
+		}
 		filter += fmt.Sprintf(
-			` AND (sequence_num < %d OR (sequence_num = %d AND id >= %q))`,
+			` AND (sequence_num %s %d OR (sequence_num = %d AND id %s %q))`,
+			sequenceOperator,
 			logsCursor.SequenceNum,
 			logsCursor.SequenceNum,
+			idOperator,
 			logsCursor.EventID,
 		)
 	}
@@ -747,19 +764,21 @@ func (r *Repository) SearchJobLogs(
 		fetchedStatus string
 		completedAt   sql.NullTime
 	)
+	highlightToken := ""
+	if !options.DisableHighlight {
+		var tokenErr error
+		highlightToken, tokenErr = newJobLogsHighlightToken()
+		if tokenErr != nil {
+			err = tokenErr
+			return nil, "", err
+		}
+	}
 
 	eg.Go(func() error {
 		searchRes, searchErr := r.ms.Index(meilisearchpkg.IndexJobLogs).SearchWithContext(
 			egCtx,
 			searchJobLogsFilters.Message,
-			&meilisearch.SearchRequest{
-				Filter:                filter,
-				AttributesToRetrieve:  []string{"id", "event_id", "message", "sequence_num", "stream", "timestamp"},
-				AttributesToHighlight: []string{"message"},
-				AttributesToSearchOn:  []string{"message"},
-				Sort:                  []string{"sequence_num:desc", "id:asc"},
-				Limit:                 int64(r.cfg.LogsFetchLimit + 1),
-			},
+			newJobLogsSearchRequest(filter, highlightToken, int64(r.cfg.LogsFetchLimit+1), options),
 		)
 		if searchErr != nil {
 			return status.Errorf(codes.Internal, "failed to search job logs: %v", searchErr)
@@ -857,10 +876,11 @@ func (r *Repository) SearchJobLogs(
 	}
 
 	return &jobsmodel.GetJobLogsResponse{
-		ID:         jobID,
-		WorkflowID: workflowID,
-		JobLogs:    logs,
-		Cursor:     encodeJobLogsCursor(nextCursor),
+		ID:             jobID,
+		WorkflowID:     workflowID,
+		JobLogs:        logs,
+		Cursor:         encodeJobLogsCursor(nextCursor),
+		HighlightToken: highlightToken,
 	}, fetchedStatus, nil
 }
 
@@ -982,6 +1002,44 @@ func encodeListJobsCursor(cursor string) string {
 	}
 
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
+}
+
+func newJobLogsHighlightToken() (string, error) {
+	token := make([]byte, jobLogsHighlightTokenBytes)
+	if _, err := rand.Read(token); err != nil {
+		return "", status.Errorf(codes.Internal, "failed to generate log highlight token: %v", err)
+	}
+
+	return hex.EncodeToString(token), nil
+}
+
+func jobLogsHighlightTags(token string) (startTag, endTag string) {
+	return jobLogsHighlightStart + token + jobLogsHighlightSuffix,
+		jobLogsHighlightEnd + token + jobLogsHighlightSuffix
+}
+
+func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options jobsmodel.SearchJobLogsOptions) *meilisearch.SearchRequest {
+	sequenceDirection := "desc"
+	if options.SortOrder == jobsmodel.JobLogsSortOrderAsc {
+		sequenceDirection = "asc"
+	}
+
+	req := &meilisearch.SearchRequest{
+		Filter:               filter,
+		AttributesToRetrieve: []string{"id", "event_id", "message", "sequence_num", "stream", "timestamp"},
+		AttributesToSearchOn: []string{"message"},
+		Sort:                 []string{"sequence_num:" + sequenceDirection, "id:asc"},
+		Limit:                limit,
+	}
+
+	if !options.DisableHighlight {
+		highlightPreTag, highlightPostTag := jobLogsHighlightTags(highlightToken)
+		req.AttributesToHighlight = []string{"message"}
+		req.HighlightPreTag = highlightPreTag
+		req.HighlightPostTag = highlightPostTag
+	}
+
+	return req
 }
 
 // extractDataFromGetJobLogsCursor extracts the data from the cursor.

@@ -50,7 +50,12 @@ type Repository interface {
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
 	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, sortOrder jobsmodel.JobLogsSortOrder, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
 	StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*goredis.PubSub, error)
-	SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobsmodel.SearchJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
+	SearchJobLogs(
+		ctx context.Context,
+		jobID, workflowID, userID, cursor string,
+		filters *jobsmodel.SearchJobLogsFilters,
+		options jobsmodel.SearchJobLogsOptions,
+	) (*jobsmodel.GetJobLogsResponse, string, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -740,6 +745,7 @@ type SearchJobLogsRequest struct {
 	WorkflowID string                          `validate:"required"`
 	UserID     string                          `validate:"required"`
 	Cursor     string                          `validate:"omitempty"`
+	SortOrder  int                             `validate:"omitempty,min=0,max=2"`
 	Filters    *jobsmodel.SearchJobLogsFilters `validate:"required"`
 }
 
@@ -773,6 +779,7 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		WorkflowID: req.GetWorkflowId(),
 		UserID:     req.GetUserId(),
 		Cursor:     req.GetCursor(),
+		SortOrder:  int(req.GetSortOrder()),
 		Filters:    filters,
 	})
 	if err != nil {
@@ -780,14 +787,19 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
+	disableHighlight := req.GetDisableHighlight()
+
 	// Check if the job logs are cached
 	cacheKey := fmt.Sprintf(
-		"job_logs:%s:%s:%s:%s:%s",
+		"job_logs:search:%s:%s:%s:%s:%s:%d:%t",
 		req.GetUserId(),
 		req.GetId(),
 		req.GetCursor(),
 		req.GetFilters().GetMessage(),
 		req.GetFilters().GetStream(),
+		sortOrder,
+		disableHighlight,
 	)
 	isCursorPage := req.GetCursor() != ""
 	if isCursorPage {
@@ -812,6 +824,10 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 			req.GetUserId(),
 			req.GetCursor(),
 			filters,
+			jobsmodel.SearchJobLogsOptions{
+				SortOrder:        sortOrder,
+				DisableHighlight: disableHighlight,
+			},
 		)
 		if _err != nil {
 			return nil, _err

@@ -236,9 +236,9 @@ func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, workflowID, userID, sched
 }
 
 // SearchJobLogs mocks base method.
-func (m *MockRepository) SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobs.SearchJobLogsFilters) (*jobs.GetJobLogsResponse, string, error) {
+func (m *MockRepository) SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobs.SearchJobLogsFilters, options jobs.SearchJobLogsOptions) (*jobs.GetJobLogsResponse, string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SearchJobLogs", ctx, jobID, workflowID, userID, cursor, filters)
+	ret := m.ctrl.Call(m, "SearchJobLogs", ctx, jobID, workflowID, userID, cursor, filters, options)
 	ret0, _ := ret[0].(*jobs.GetJobLogsResponse)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
@@ -246,9 +246,9 @@ func (m *MockRepository) SearchJobLogs(ctx context.Context, jobID, workflowID, u
 }
 
 // SearchJobLogs indicates an expected call of SearchJobLogs.
-func (mr *MockRepositoryMockRecorder) SearchJobLogs(ctx, jobID, workflowID, userID, cursor, filters any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) SearchJobLogs(ctx, jobID, workflowID, userID, cursor, filters, options any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchJobLogs", reflect.TypeOf((*MockRepository)(nil).SearchJobLogs), ctx, jobID, workflowID, userID, cursor, filters)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchJobLogs", reflect.TypeOf((*MockRepository)(nil).SearchJobLogs), ctx, jobID, workflowID, userID, cursor, filters, options)
 }
 
 // StreamJobLogs mocks base method.

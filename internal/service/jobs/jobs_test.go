@@ -1,5 +1,5 @@
 package jobs_test
-
+ 
 import (
 	"context"
 	"database/sql"
@@ -8,34 +8,34 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
+ 
 	"github.com/go-playground/validator/v10"
 	"github.com/go-redis/redismock/v9"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
+ 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/service/jobs"
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/service/jobs/mock"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
-
+ 
 func TestScheduleJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	type want struct {
 		jobID string
 	}
-
+ 
 	// Test cases
 	tests := []struct {
 		name  string
@@ -172,9 +172,9 @@ func TestScheduleJob(t *testing.T) {
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
@@ -185,27 +185,27 @@ func TestScheduleJob(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
+ 
 			assert.Equal(t, jobID, tt.want.jobID)
 		})
 	}
 }
-
+ 
 func TestUpdateJobStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	// Test cases
 	tests := []struct {
 		name  string
@@ -306,9 +306,9 @@ func TestUpdateJobStatus(t *testing.T) {
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
@@ -319,7 +319,7 @@ func TestUpdateJobStatus(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
@@ -327,21 +327,21 @@ func TestUpdateJobStatus(t *testing.T) {
 		})
 	}
 }
-
+ 
 func TestGetJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	type want struct {
 		*jobsmodel.GetJobResponse
 	}
-
+ 
 	var (
 		createdAt   = time.Now()
 		updatedAt   = time.Now()
@@ -355,7 +355,7 @@ func TestGetJob(t *testing.T) {
 			Valid: false,
 		}
 	)
-
+ 
 	// Test cases
 	tests := []struct {
 		name  string
@@ -488,9 +488,9 @@ func TestGetJob(t *testing.T) {
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
@@ -501,31 +501,31 @@ func TestGetJob(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
+ 
 			assert.Equal(t, job, tt.want.GetJobResponse)
 		})
 	}
 }
-
+ 
 func TestGetJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	type want struct {
 		*jobsmodel.GetJobByIDResponse
 	}
-
+ 
 	var (
 		createdAt   = time.Now()
 		updatedAt   = time.Now()
@@ -539,7 +539,7 @@ func TestGetJobByID(t *testing.T) {
 			Valid: false,
 		}
 	)
-
+ 
 	// Test cases
 	tests := []struct {
 		name  string
@@ -622,9 +622,9 @@ func TestGetJobByID(t *testing.T) {
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
@@ -635,37 +635,37 @@ func TestGetJobByID(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
+ 
 			assert.Equal(t, job, tt.want.GetJobByIDResponse)
 		})
 	}
 }
-
+ 
 func TestGetJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	type want struct {
 		*jobsmodel.GetJobLogsResponse
 	}
-
+ 
 	var (
 		timestamp               = time.Now()
 		singleflightRepoCalls   int32
 		singleflightReleaseChan chan struct{}
 	)
-
+ 
 	// Test cases
 	tests := []struct {
 		name    string
@@ -1003,7 +1003,7 @@ func TestGetJobLogs(t *testing.T) {
 					jobsmodel.JobLogsSortOrderDesc,
 				)
 				filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
-
+ 
 				cache.EXPECT().
 					Get(gomock.Any(), cacheKey, gomock.Any()).
 					Return(nil, status.Error(codes.NotFound, "cache miss")).
@@ -1012,7 +1012,7 @@ func TestGetJobLogs(t *testing.T) {
 					Set(gomock.Any(), cacheKey, gomock.Any(), gomock.Any()).
 					Return(nil).
 					AnyTimes()
-
+ 
 				singleflightRepoCalls = 0
 				singleflightReleaseChan = make(chan struct{})
 				repo.EXPECT().
@@ -1036,18 +1036,18 @@ func TestGetJobLogs(t *testing.T) {
 			},
 			execute: func(t *testing.T, req *jobspb.GetJobLogsRequest, want want) {
 				t.Helper()
-
+ 
 				var wg sync.WaitGroup
 				results := make([]*jobsmodel.GetJobLogsResponse, 2)
 				errs := make([]error, 2)
-
+ 
 				for i := range 2 {
 					idx := i
 					wg.Go(func() {
 						results[idx], errs[idx] = s.GetJobLogs(t.Context(), req)
 					})
 				}
-
+ 
 				for range 50 {
 					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
 						break
@@ -1056,7 +1056,7 @@ func TestGetJobLogs(t *testing.T) {
 				}
 				close(singleflightReleaseChan)
 				wg.Wait()
-
+ 
 				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
 				assert.NoError(t, errs[0])
 				assert.NoError(t, errs[1])
@@ -1184,9 +1184,9 @@ func TestGetJobLogs(t *testing.T) {
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
@@ -1194,7 +1194,7 @@ func TestGetJobLogs(t *testing.T) {
 				tt.execute(t, tt.req, tt.want)
 				return
 			}
-
+ 
 			jobLogs, err := s.GetJobLogs(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
@@ -1202,25 +1202,25 @@ func TestGetJobLogs(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
+ 
 			assert.Equal(t, jobLogs, tt.want.GetJobLogsResponse)
 		})
 	}
 }
-
+ 
 func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
-
+ 
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	req := &jobspb.GetJobLogsRequest{
 		Id:         "job_id",
 		WorkflowId: "workflow_id",
@@ -1239,12 +1239,12 @@ func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 		req.GetFilters().GetStream(),
 		jobsmodel.JobLogsSortOrderAsc,
 	)
-
+ 
 	cache.EXPECT().Get(gomock.Any(), cacheKey, gomock.Any()).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 	repo.EXPECT().
 		GetJobLogs(gomock.Any(), req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor(), jobsmodel.JobLogsSortOrderAsc, filters).
 		Return(&jobsmodel.GetJobLogsResponse{ID: req.GetId(), WorkflowID: req.GetWorkflowId()}, jobsmodel.JobStatusRunning.ToString(), nil)
-
+ 
 	res, err := s.GetJobLogs(t.Context(), req)
 	if err != nil {
 		t.Fatalf("GetJobLogs() error = %v", err)
@@ -1253,21 +1253,21 @@ func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 		t.Fatalf("unexpected response ID: got %q want %q", res.ID, req.GetId())
 	}
 }
-
+ 
 func TestStreamJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	type want struct {
 		channelType string
 	}
-
+ 
 	// Test cases
 	tests := []struct {
 		name  string
@@ -1286,14 +1286,14 @@ func TestStreamJobLogs(t *testing.T) {
 			mock: func(req *jobspb.StreamJobLogsRequest) {
 				redisMock, _ := redismock.NewClientMock()
 				sub := redisMock.Subscribe(t.Context(), "job_logs")
-
+ 
 				repo.EXPECT().StreamJobLogs(
 					gomock.Any(),
 					req.GetId(),
 					req.GetWorkflowId(),
 					req.GetUserId(),
 				).Return(sub, nil)
-
+ 
 				// Simulate sending logs to the channel
 				go func() {
 					redisMock.Publish(t.Context(), "job_logs", &jobsmodel.JobLog{
@@ -1358,15 +1358,15 @@ func TestStreamJobLogs(t *testing.T) {
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-
+ 
 			stream, err := s.StreamJobLogs(ctx, tt.req)
 			if tt.isErr {
 				if err == nil {
@@ -1377,17 +1377,17 @@ func TestStreamJobLogs(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
+ 
 			if stream == nil {
 				t.Errorf("expected channel, got nil")
 				return
 			}
-
+ 
 			// Test that the channel is properly typed
 			select {
 			case <-stream:
@@ -1395,13 +1395,13 @@ func TestStreamJobLogs(t *testing.T) {
 			case <-time.After(100 * time.Millisecond):
 				// Channel is not immediately readable (also expected)
 			}
-
+ 
 			// Verify the channel can be closed without panic
 			go func() {
 				time.Sleep(50 * time.Millisecond)
 				cancel() // This should trigger cleanup in the goroutine
 			}()
-
+ 
 			// Try to read from channel with timeout to ensure cleanup works
 			select {
 			case <-stream:
@@ -1411,23 +1411,50 @@ func TestStreamJobLogs(t *testing.T) {
 		})
 	}
 }
-
+ 
+func searchJobLogsCacheKeyForTest(req *jobspb.SearchJobLogsRequest) string {
+	options := searchJobLogsOptionsForTest(req)
+ 
+	return fmt.Sprintf(
+		"job_logs:search:%s:%s:%s:%s:%s:%d:%t",
+		req.GetUserId(),
+		req.GetId(),
+		req.GetCursor(),
+		req.GetFilters().GetMessage(),
+		req.GetFilters().GetStream(),
+		options.SortOrder,
+		options.DisableHighlight,
+	)
+}
+ 
+func searchJobLogsOptionsForTest(req *jobspb.SearchJobLogsRequest) jobsmodel.SearchJobLogsOptions {
+	sortOrder := jobsmodel.JobLogsSortOrderDesc
+	if req.GetSortOrder() == jobspb.LogSortOrder_LOG_SORT_ORDER_ASC {
+		sortOrder = jobsmodel.JobLogsSortOrderAsc
+	}
+ 
+	return jobsmodel.SearchJobLogsOptions{
+		SortOrder:        sortOrder,
+		DisableHighlight: req.GetDisableHighlight(),
+	}
+}
+ 
 func TestSearchJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	type want struct {
 		*jobsmodel.GetJobLogsResponse
 	}
-
+ 
 	timestamp := time.Now()
-
+ 
 	// Test cases
 	tests := []struct {
 		name  string
@@ -1467,14 +1494,7 @@ func TestSearchJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1496,6 +1516,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(data, "COMPLETED", nil)
 				cache.EXPECT().Set(
 					gomock.Any(),
@@ -1527,6 +1548,66 @@ func TestSearchJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "success: ascending sort with highlights disabled",
+			req: &jobspb.SearchJobLogsRequest{
+				Id:               "job_id",
+				WorkflowId:       "workflow_id",
+				UserId:           "user_id",
+				Cursor:           "",
+				SortOrder:        jobspb.LogSortOrder_LOG_SORT_ORDER_ASC,
+				DisableHighlight: true,
+				Filters: &jobspb.SearchJobLogsFilters{
+					Stream:  jobspb.LogStream_LOG_STREAM_STDOUT,
+					Message: "message",
+				},
+			},
+			mock: func(req *jobspb.SearchJobLogsRequest) {
+				data := &jobsmodel.GetJobLogsResponse{
+					ID:         req.GetId(),
+					WorkflowID: req.GetWorkflowId(),
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "message 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+					},
+				}
+				filters := &jobsmodel.SearchJobLogsFilters{
+					Stream:  int(req.GetFilters().GetStream()),
+					Message: req.GetFilters().GetMessage(),
+				}
+				repo.EXPECT().SearchJobLogs(
+					gomock.Any(),
+					req.GetId(),
+					req.GetWorkflowId(),
+					req.GetUserId(),
+					req.GetCursor(),
+					filters,
+					jobsmodel.SearchJobLogsOptions{
+						SortOrder:        jobsmodel.JobLogsSortOrderAsc,
+						DisableHighlight: true,
+					},
+				).Return(data, "COMPLETED", nil)
+			},
+			want: want{
+				&jobsmodel.GetJobLogsResponse{
+					ID:         "job_id",
+					WorkflowID: "workflow_id",
+					JobLogs: []*jobsmodel.JobLog{
+						{
+							Timestamp:   timestamp,
+							Message:     "message 1",
+							SequenceNum: 1,
+							Stream:      "stdout",
+						},
+					},
+				},
+			},
+			isErr: false,
+		},
+		{
 			name: "success: with cache hit",
 			req: &jobspb.SearchJobLogsRequest{
 				Id:         "job_id",
@@ -1539,14 +1620,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				cache.EXPECT().Get(gomock.Any(), cacheKey, gomock.Any()).Return(&jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
 					WorkflowID: "workflow_id",
@@ -1622,14 +1696,7 @@ func TestSearchJobLogs(t *testing.T) {
 					},
 					Cursor: "cursor",
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1651,6 +1718,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(data, "COMPLETED", nil)
 				cache.EXPECT().Set(
 					gomock.Any(),
@@ -1707,14 +1775,7 @@ func TestSearchJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				filters := &jobsmodel.SearchJobLogsFilters{
 					Stream:  int(req.GetFilters().GetStream()),
 					Message: req.GetFilters().GetMessage(),
@@ -1729,6 +1790,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(data, jobsmodel.JobStatusRunning.ToString(), nil)
 			},
 			want: want{
@@ -1772,14 +1834,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1801,6 +1856,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(nil, "", status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
@@ -1819,14 +1875,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%s",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetMessage(),
-					req.GetFilters().GetStream(),
-				)
+				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1848,15 +1897,16 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetUserId(),
 					req.GetCursor(),
 					filters,
+					searchJobLogsOptionsForTest(req),
 				).Return(nil, "", status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
@@ -1867,31 +1917,31 @@ func TestSearchJobLogs(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
+ 
 			assert.Equal(t, jobLogs, tt.want.GetJobLogsResponse)
 		})
 	}
 }
-
+ 
 func TestListJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
-
+ 
 	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
-
+ 
 	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
-
+ 
 	type want struct {
 		*jobsmodel.ListJobsResponse
 	}
-
+ 
 	var (
 		createdAt   = time.Now()
 		updatedAt   = time.Now()
@@ -1905,7 +1955,7 @@ func TestListJobs(t *testing.T) {
 			Valid: false,
 		}
 	)
-
+ 
 	// Test cases
 	tests := []struct {
 		name  string
@@ -2068,9 +2118,9 @@ func TestListJobs(t *testing.T) {
 			isErr: true,
 		},
 	}
-
+ 
 	defer ctrl.Finish()
-
+ 
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
@@ -2081,12 +2131,12 @@ func TestListJobs(t *testing.T) {
 				}
 				return
 			}
-
+ 
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
+ 
 			assert.Equal(t, len(jobs.Jobs), len(tt.want.ListJobsResponse.Jobs))
 			assert.Equal(t, jobs.Jobs, tt.want.ListJobsResponse.Jobs)
 			assert.Equal(t, jobs.Cursor, tt.want.ListJobsResponse.Cursor)

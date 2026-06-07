@@ -1,8 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-
+ 
 @custom-variant dark (&:is(.dark *));
-
+ 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -40,7 +40,7 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
-
+ 
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -75,7 +75,7 @@
   --sidebar-border: oklch(0.923 0.003 48.717);
   --sidebar-ring: oklch(0.709 0.01 56.259);
 }
-
+ 
 .dark {
   --background: oklch(0.147 0.004 49.25);
   --foreground: oklch(0.985 0.001 106.423);
@@ -109,7 +109,7 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.553 0.013 58.071);
 }
-
+ 
 @layer base {
   * {
     @apply scroll-smooth;
@@ -122,7 +122,7 @@
     @apply antialiased;
     @apply h-full;
   }
-
+ 
   :root {
     --chart-1: oklch(0.646 0.222 41.116);
     --chart-2: oklch(0.6 0.118 184.704);
@@ -130,7 +130,7 @@
     --chart-4: oklch(0.828 0.189 84.429);
     --chart-5: oklch(0.769 0.188 70.08);
   }
-
+ 
   .dark {
     --chart-1: oklch(0.488 0.243 264.376);
     --chart-2: oklch(0.696 0.17 162.48);
@@ -138,12 +138,4 @@
     --chart-4: oklch(0.627 0.265 303.9);
     --chart-5: oklch(0.645 0.246 16.439);
   }
-}
-
-em {
-  background-color: var(--color-orange-400);
-  color: var(--color-white);
-  font-style: normal;
-  padding-block: calc(var(--spacing) * 0.5);
-  border-radius: var(--radius-xs)
 }

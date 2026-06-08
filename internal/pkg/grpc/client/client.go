@@ -9,6 +9,7 @@ import (
 
 	"github.com/eapache/go-resiliency/breaker"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -146,6 +147,7 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 
 	opts = append(
 		opts,
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
 		grpc.WithChainStreamInterceptor(streamInterceptors...),
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),

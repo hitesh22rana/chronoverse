@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-config
+  namespace: chronoverse
+  labels:
+    app: kafka
+    component: broker
+data:
+  KAFKA_KRAFT_MODE: "true"
+  KAFKA_NODE_ID: "1"
+  KAFKA_PROCESS_ROLES: "controller,broker"
+  KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+  KAFKA_LISTENERS: "SSL://kafka:9094,CONTROLLER://kafka:9093"
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "SSL:SSL,CONTROLLER:PLAINTEXT"
+  KAFKA_INTER_BROKER_LISTENER_NAME: "SSL"
+  KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+  KAFKA_ADVERTISED_LISTENERS: "SSL://kafka:9094"
+  KAFKA_SSL_KEYSTORE_LOCATION: "/etc/kafka/secrets"
+  KAFKA_SSL_KEYSTORE_FILENAME: "kafka.keystore.jks"
+  KAFKA_SSL_KEYSTORE_CREDENTIALS: "keystore_creds.txt"
+  KAFKA_SSL_TRUSTSTORE_CREDENTIALS: "truststore_creds.txt"
+  KAFKA_SSL_KEY_CREDENTIALS: "key_creds.txt"
+  KAFKA_SSL_TRUSTSTORE_LOCATION: "/etc/kafka/secrets"
+  KAFKA_SSL_TRUSTSTORE_FILENAME: "kafka.truststore.jks"
+  KAFKA_SSL_CLIENT_AUTH: "required"
+  KAFKA_SSL_ENABLED_PROTOCOLS: "TLSv1.2,TLSv1.3"
+  KAFKA_SSL_PROTOCOL: "TLS"
+  KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_CONFLUENT_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_CONFLUENT_DURABILITY_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_CONFLUENT_TIER_METADATA_REPLICATION_FACTOR: "1"
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+  KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_LOG_RETENTION_HOURS: "168"
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+  KAFKA_NUM_PARTITIONS: "2"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-connection-config
+  namespace: chronoverse
+  labels:
+    app: kafka
+    component: broker
+data:
+  KAFKA_BROKERS: kafka:9094
+  KAFKA_TLS_ENABLED: "true"
+  KAFKA_TLS_CA_FILE: "certs/ca/ca.crt"
+  KAFKA_TLS_CERT_FILE: "certs/clients/client.crt"
+  KAFKA_TLS_KEY_FILE: "certs/clients/client.key"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-secrets
+  namespace: chronoverse
+  labels:
+    app: kafka
+    component: broker
+type: Opaque
+data:
+  CLUSTER_ID: Y2hyb25vdmVyc2U=  # chronoverse
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: chronoverse
+  labels:
+    app: kafka
+    component: broker
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+        component: broker
+    spec:
+      hostname: kafka
+      initContainers:
+      - name: fix-permissions
+        image: busybox
+        command: ['sh', '-c', 'chown -R 1000:1000 /var/lib/kafka/data && chmod 755 /var/lib/kafka/data']
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+        securityContext:
+          runAsUser: 0
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:latest
+        ports:
+        - containerPort: 9094
+          name: kafka
+        - containerPort: 9093
+          name: controller
+        envFrom:
+        - configMapRef:
+            name: kafka-config
+        - secretRef:
+            name: kafka-secrets
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1536Mi"
+          requests:
+            cpu: "500m"
+            memory: "768Mi"
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+        - name: kafka-secrets-storage
+          mountPath: /etc/kafka/secrets
+          subPath: kafka
+          readOnly: true
+      volumes:
+      - name: kafka-storage
+        persistentVolumeClaim:
+          claimName: kafka-pvc
+      - name: kafka-secrets-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: chronoverse
+  labels:
+    app: kafka
+    component: broker
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: kafka
+  ports:
+  - port: 9094
+    targetPort: 9094
+    name: kafka
+  - port: 9093
+    targetPort: 9093
+    name: controller

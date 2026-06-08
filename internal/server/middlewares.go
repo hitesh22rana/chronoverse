@@ -29,15 +29,6 @@ func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 
 		startTime := time.Now()
 
-		log := s.logger.With(
-			zap.Any("ctx", r.Context()),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-			zap.String("host", r.Host),
-			zap.String("remote_addr", r.RemoteAddr),
-			zap.String("user_agent", r.UserAgent()),
-		)
-
 		// Start a new span for the request
 		ctx, span := s.tp.Start(
 			r.Context(),
@@ -51,6 +42,23 @@ func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 			),
 		)
 		defer span.End()
+
+		spanCtx := span.SpanContext()
+		requestLogFields := []zap.Field{
+			zap.Any("ctx", ctx),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("host", r.Host),
+			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("user_agent", r.UserAgent()),
+		}
+		if spanCtx.IsValid() {
+			requestLogFields = append(requestLogFields,
+				zap.String("trace_id", spanCtx.TraceID().String()),
+				zap.String("span_id", spanCtx.SpanID().String()),
+			)
+		}
+		log := s.logger.With(requestLogFields...)
 
 		// Wrapped response writer to capture the status code
 		wrw := &customResponseWriter{

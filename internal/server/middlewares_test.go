@@ -76,10 +76,23 @@ func TestOtelMiddlewareLogsTraceIdentifiers(t *testing.T) {
 	}
 
 	fields := entries[0].ContextMap()
-	if fields["trace_id"] == "" {
-		t.Fatalf("expected trace_id field, got %#v", fields)
+	assertNonEmptyStringField(t, fields, "trace_id")
+	assertNonEmptyStringField(t, fields, "span_id")
+}
+
+func assertNonEmptyStringField(t *testing.T, fields map[string]any, key string) {
+	t.Helper()
+
+	value, ok := fields[key]
+	if !ok {
+		t.Fatalf("expected %s field, got %#v", key, fields)
 	}
-	if fields["span_id"] == "" {
-		t.Fatalf("expected span_id field, got %#v", fields)
+
+	text, ok := value.(string)
+	if !ok {
+		t.Fatalf("expected %s field to be a string, got %T", key, value)
+	}
+	if text == "" {
+		t.Fatalf("expected %s field to be non-empty, got %#v", key, fields)
 	}
 }

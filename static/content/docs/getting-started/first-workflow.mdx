@@ -4,7 +4,18 @@ This walkthrough creates a container workflow and triggers an immediate manual j
 
 ## Authenticate
 
-Register through the dashboard or call `POST /auth/register`. Keep both the session and CSRF cookies returned by the server.
+Register through the API and tell curl to store the returned session and CSRF cookies in `cookies.txt`:
+
+```bash
+curl -c cookies.txt -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "operator@example.com",
+    "password": "password12345"
+  }'
+```
+
+If the user already exists, use the same command with `/auth/login`. Authentication through the dashboard stores cookies in the browser and does not populate `cookies.txt`. The remaining curl commands read both cookies from this file with `-b cookies.txt`.
 
 ## Create a container workflow
 
@@ -42,4 +53,3 @@ The returned job uses the `MANUAL` trigger. Reusing the same idempotency key for
 ## Inspect output
 
 Open the job in the dashboard while it is running to use the SSE stream. After completion, retained logs are available through the logs, search, and raw download endpoints because `log_retention` is enabled.
-

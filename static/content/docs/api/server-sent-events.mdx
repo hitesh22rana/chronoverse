@@ -21,12 +21,11 @@ If the response is already open, failures are emitted as:
 
 ```text
 event: error
-data: {"message":"..."}
+data: rpc error: code = FailedPrecondition desc = job is not running
 ```
 
-This includes non-running jobs, disabled retention policy checks at stream open, and downstream stream failures.
+The `data` value for an error event is plain text from the downstream error, not JSON. Clients should branch on the SSE event name and must not JSON-decode `error` event data. This includes non-running jobs, disabled retention policy checks at stream open, serialization failures, and downstream stream failures.
 
 ## Reconnection
 
 SSE reconnects can overlap with job completion. Clients should switch to retained logs after the job becomes terminal instead of assuming the live stream is a permanent log archive.
-

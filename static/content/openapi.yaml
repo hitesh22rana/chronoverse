@@ -290,7 +290,8 @@ paths:
               schema:
                 type: string
                 description: Newline-delimited JSON where each line conforms to JobLogDownloadEntry
-        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '400':
+          description: Invalid filter or format, or the job has not reached a terminal state
   /workflows/{workflow_id}/jobs/{job_id}/events:
     get:
       operationId: streamJobLogs
@@ -387,10 +388,12 @@ components:
         password: {type: string, format: password}
     User:
       type: object
+      required: [email, notification_preference, created_at, updated_at]
       properties:
-        id: {type: string, format: uuid}
         email: {type: string, format: email}
         notification_preference: {type: string, enum: [ALL, NONE]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     WorkflowInput:
       type: object
       required: [name, payload, kind, interval, max_consecutive_job_failures_allowed]

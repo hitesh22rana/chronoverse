@@ -13,6 +13,8 @@ analytics into one self-hosted stack.
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hitesh22rana/chronoverse)
 
+**[Website](https://hitesh22rana.github.io/chronoverse/)** · **[Documentation](https://hitesh22rana.github.io/chronoverse/docs/)** · **[API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/)**
+
 ## Features
 
 - **Workflow management**: create, update, terminate, delete, search, and monitor workflows.
@@ -155,6 +157,7 @@ More operational commands and troubleshooting notes are in the
 The canonical documentation is built from MDX and OpenAPI in `static/` and
 published as static HTML:
 
+- [Chronoverse website](https://hitesh22rana.github.io/chronoverse/)
 - [Documentation home](https://hitesh22rana.github.io/chronoverse/docs/)
 - [Engineering architecture](https://hitesh22rana.github.io/chronoverse/docs/engineering/architecture/)
 - [HTTP API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/)

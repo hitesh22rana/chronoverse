@@ -1,0 +1,28 @@
+# Troubleshooting
+
+## TLS or certificate failures
+
+Confirm `init-certs` completed and the failing service mounts the expected CA, certificate, and key. For a disposable local reset, use `down -v` and restart.
+
+## Compose readiness
+
+Find the first unhealthy dependency, not only the final service that failed to start. Check Kafka topic initialization and database migration output before worker logs.
+
+## Missing logs
+
+Confirm the workflow is `CONTAINER`, retention is enabled, the job logs processor is healthy, and ClickHouse plus Meilisearch are available. Heartbeat workflows and disabled retention intentionally have no retained logs.
+
+## SSE does not stream
+
+Confirm the job is running and use the production `/api/.../events` proxy path. Verify Nginx buffering is disabled and inspect `event: error` frames.
+
+## Duplicate or stale events
+
+Check idempotency-key reuse, outbox relay health, workflow generation mismatches, job lease ownership, and processor deduplication before treating a repeated Kafka record as corruption.
+
+## Dashboard cannot reach the API
+
+Verify `NEXT_PUBLIC_API_URL`, CORS origins, session cookie host and same-site policy, CSRF state, and the production Nginx path.
+
+<SourceLink path="docs/operations.md">Expanded operational runbook</SourceLink>
+

@@ -1,0 +1,28 @@
+# Authentication
+
+Chronoverse uses browser-oriented session authentication rather than exposing service JWTs to public clients.
+
+## Register
+
+`POST /auth/register` accepts email and password, creates the user, and issues session and CSRF cookies.
+
+## Login
+
+`POST /auth/login` validates credentials and issues fresh cookies.
+
+## Validate
+
+`POST /auth/validate` verifies the current session and CSRF state. It is useful for dashboard session bootstrap.
+
+## Logout
+
+`POST /auth/logout` removes both cookies and returns `204 No Content`.
+
+## Internal authorization
+
+The HTTP gateway signs authorization metadata for downstream gRPC services using Ed25519 keys. Service clients also use mTLS in the Compose topology.
+
+## Cookie deployment settings
+
+`SERVER_HOST_URL`, `SERVER_ALLOWED_ORIGINS`, `SERVER_SAME_SITE_MODE`, session expiry, CSRF expiry, and the CSRF HMAC secret must match the public deployment origin.
+

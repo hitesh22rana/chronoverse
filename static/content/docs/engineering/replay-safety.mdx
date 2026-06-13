@@ -1,0 +1,32 @@
+# Replay safety
+
+Kafka delivery, process crashes, and network timeouts can repeat work. Chronoverse treats at-least-once delivery as a normal condition.
+
+## Command idempotency
+
+Workflow create, workflow update, and manual scheduling require an `Idempotency-Key`. A repeated command with the same key returns the recorded result instead of creating another mutation.
+
+## Atomic publication intent
+
+Domain transactions write state and outbox rows together. The relay can retry publication without losing the relationship between committed state and its event.
+
+## Stale-event rejection
+
+Workflow generations and build hashes reject old or redundant preparation. Dispatch-attempt metadata rejects an execution event that no longer represents the current job attempt.
+
+## Deterministic side effects
+
+Notifications, analytics, and retained logs use stable event identifiers. Processors can observe the same event more than once without double-counting or duplicating stored logs.
+
+## Exclusive execution
+
+Durable job leases ensure one worker owns a running job. Lease tokens protect every claimed-job mutation from stale workers.
+
+## Ordered commits
+
+Partition-aware Kafka processing advances offsets only after the configured success, retry, or terminal policy permits it.
+
+<Callout title="Replay-safe does not mean exactly once">
+The system accepts duplicate delivery and makes the resulting operations idempotent or preconditioned. This is more explicit and recoverable than assuming the transport provides global exactly-once execution.
+</Callout>
+

@@ -1,0 +1,45 @@
+# Development environment
+
+## Start
+
+```bash
+docker compose -f compose.dev.yaml up -d
+```
+
+## Exposed ports
+
+| Component | Port |
+| --- | ---: |
+| Dashboard | `3001` |
+| API | `8080` |
+| LGTM | `3000` |
+| OTLP gRPC | `4317` |
+| PostgreSQL | `5432` |
+| ClickHouse TLS | `9440` |
+| Redis TLS | `6379` |
+| Meilisearch HTTPS | `7700` |
+| Kafka SSL | `9094` |
+| gRPC services | `50051`–`50055` |
+
+## Inspect
+
+```bash
+docker compose -f compose.dev.yaml ps
+docker compose -f compose.dev.yaml logs -f server
+docker compose -f compose.dev.yaml logs -f execution-worker
+```
+
+## Rebuild one service
+
+```bash
+docker compose -f compose.dev.yaml up -d --build jobs-service
+```
+
+## Reset local state
+
+```bash
+docker compose -f compose.dev.yaml down -v
+```
+
+This removes databases, Kafka data, and generated certificate volumes. Use it only for an intentional clean reset.
+

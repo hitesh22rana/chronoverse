@@ -1,0 +1,33 @@
+# Architecture
+
+Chronoverse separates synchronous domain ownership from asynchronous orchestration. The HTTP gateway serves browser and external clients, gRPC services own domain state, and Kafka workers perform delayed or distributed work.
+
+## Runtime topology
+
+<ArchitectureMap />
+
+The production entry point is Nginx. It serves the dashboard, proxies `/api/...` to the HTTP server, and disables response buffering for live job log routes.
+
+## Domain services
+
+Five gRPC services own users, workflows, jobs, notifications, and analytics. They expose ports `50051` through `50055` inside Compose.
+
+## Asynchronous plane
+
+Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Scheduling, workflow preparation, container execution, retained log processing, analytics, and outbox publication scale independently within topic and infrastructure constraints.
+
+## Persistence plane
+
+- PostgreSQL: transactional state, leases, idempotency, outbox rows, and analytics.
+- ClickHouse: retained high-volume job logs.
+- Redis: sessions, cached reads, live log pub/sub, and image-pull locks.
+- Meilisearch: retained log search.
+- Docker proxy: constrained container lifecycle access.
+- LGTM: OpenTelemetry collection and dashboards.
+
+## Design invariant
+
+Workers request state transitions from domain services rather than directly inventing workflow or job state. This keeps replay and ownership rules concentrated at the domain boundary.
+
+<SourceLink path="docs/architecture.md">Repository architecture notes</SourceLink>
+

@@ -1,0 +1,24 @@
+# Job scheduling
+
+Chronoverse creates jobs automatically from workflow intervals or immediately through a manual API command.
+
+## Automatic runs
+
+The scheduling worker polls for due workflows, validates generation and build state, and creates a job with trigger `AUTOMATIC`.
+
+## Manual runs
+
+An authenticated client calls `POST /workflows/{workflow_id}/jobs/schedule` with an `Idempotency-Key`. The created job uses trigger `MANUAL` but follows the same claim, lease, execution, logging, notification, and analytics path.
+
+## Duplicate prevention
+
+Manual requests use command idempotency. Automatic scheduling uses persisted dispatch metadata and generation guards. Kafka redelivery does not imply a new logical run.
+
+## Failure threshold
+
+Workflows track consecutive job failures against their configured limit. Terminal job events update that state and can affect subsequent workflow behavior.
+
+## Filtering
+
+The jobs list supports cursor pagination plus status and trigger filters, making automatic and manual history distinguishable without separate storage paths.
+

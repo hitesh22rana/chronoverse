@@ -1,0 +1,25 @@
+# Deployment overview
+
+Chronoverse ships two Docker Compose topologies.
+
+## Development
+
+`compose.dev.yaml` builds local images and exposes infrastructure, API, dashboard, gRPC, and observability ports for debugging.
+
+## Production
+
+`compose.prod.yaml` uses GHCR application images, keeps services on internal networks, applies resource constraints, runs replicated worker groups, and publishes Nginx plus the LGTM dashboard.
+
+## Startup phases
+
+<Steps>
+  <Step title="Bootstrap trust">Generate the local CA, service certificates, client certificates, Kafka stores, and Ed25519 keys.</Step>
+  <Step title="Start infrastructure">Bring PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, LGTM, and the Docker proxy to healthy state.</Step>
+  <Step title="Prepare schemas">Create Kafka topics and run PostgreSQL, ClickHouse, and Meilisearch migrations.</Step>
+  <Step title="Start application">Bring up gRPC services, workers, the HTTP server, dashboard, and production Nginx.</Step>
+</Steps>
+
+## Deployment boundary
+
+Compose is the documented deployment system. The services are containerized and can inform a future orchestrator deployment, but Kubernetes manifests and managed-cloud modules are not part of this repository.
+

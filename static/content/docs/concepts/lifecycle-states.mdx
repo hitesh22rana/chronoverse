@@ -1,0 +1,24 @@
+# Lifecycle states
+
+Chronoverse uses explicit state machines for workflow preparation and job execution. Preconditions reject transitions that arrive late, conflict with another owner, or target a terminal resource.
+
+## Workflow build states
+
+`QUEUED` → `STARTED` → `COMPLETED`
+
+A build may instead end as `FAILED` or `CANCELED`. Generation checks tie updates to the workflow revision that produced them.
+
+## Job states
+
+`PENDING` → `QUEUED` → `RUNNING` → `COMPLETED`
+
+Terminal alternatives are `FAILED` and `CANCELED`. System failures may return eligible work to a retryable state before the retry limit is exhausted.
+
+## Protected transitions
+
+Once a job is claimed, mutating RPCs require the current lease token. A stale worker cannot complete a job after another worker has recovered and reclaimed it.
+
+## Terminal workflow events
+
+Job completion and failure can update workflow failure counters, rescheduling metadata, notifications, and analytics. Deterministic event identifiers make those side effects safe to replay.
+

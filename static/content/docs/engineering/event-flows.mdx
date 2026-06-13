@@ -1,0 +1,27 @@
+# Event flows
+
+## Workflow creation
+
+<Steps>
+  <Step title="Accept the command">The HTTP gateway validates session, CSRF state, input, and the idempotency key before calling the workflows service.</Step>
+  <Step title="Commit state and intent">PostgreSQL stores workflow state, idempotency output, and an outbox event in one transaction.</Step>
+  <Step title="Publish durably">The outbox relay claims the row and publishes the workflow event to Kafka.</Step>
+  <Step title="Prepare execution">The workflow worker coordinates the image pull, builds execution metadata, and updates build state through gRPC.</Step>
+</Steps>
+
+## Automatic scheduling
+
+The scheduling worker scans due workflows, validates generation and build state, then creates replay-safe job dispatch work. Manual scheduling enters the same job lifecycle with trigger `MANUAL`.
+
+## Job execution
+
+The execution worker consumes the job event, claims a lease, starts the container through the Docker proxy, attaches its container ID, renews ownership, and publishes output. Terminal state changes require the lease token.
+
+## Logs and analytics
+
+Live output uses Redis pub/sub. Retained output flows through Kafka to ClickHouse and Meilisearch. Workflow, job, and log events feed replay-safe analytics updates in PostgreSQL.
+
+## Failure path
+
+If a worker disappears, lease recovery evaluates expired running jobs. Eligible system failures are retried; exhausted or invalid work becomes terminal and container cleanup is attempted.
+

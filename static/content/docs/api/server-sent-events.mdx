@@ -1,0 +1,31 @@
+# Server-Sent Events
+
+The job events route streams live stdout and stderr while a container job is running.
+
+## Connect
+
+```http
+GET /workflows/{workflow_id}/jobs/{job_id}/events
+Accept: text/event-stream
+```
+
+The browser must include the authenticated session cookie. In production, connect through `/api/workflows/.../events` so the bundled Nginx configuration disables buffering.
+
+## Data events
+
+Log events identify stream, sequence, timestamp, and message. Consumers should preserve sequence ordering rather than relying only on arrival time.
+
+## Error events
+
+If the response is already open, failures are emitted as:
+
+```text
+event: error
+data: rpc error: code = FailedPrecondition desc = job is not running
+```
+
+The `data` value for an error event is plain text from the downstream error, not JSON. Clients should branch on the SSE event name and must not JSON-decode `error` event data. This includes non-running jobs, disabled retention policy checks at stream open, serialization failures, and downstream stream failures.
+
+## Reconnection
+
+SSE reconnects can overlap with job completion. Clients should switch to retained logs after the job becomes terminal instead of assuming the live stream is a permanent log archive.

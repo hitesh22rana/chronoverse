@@ -1,0 +1,30 @@
+# API overview
+
+The public HTTP API is served directly at `http://localhost:8080` in development. Production Nginx exposes the same routes below `/api`.
+
+## Authentication model
+
+Application routes use an encrypted session cookie. Mutating routes additionally validate CSRF state. The gateway exchanges browser identity for signed service metadata on internal gRPC calls.
+
+## Content type
+
+Send `Content-Type: application/json` for JSON request bodies. SSE log streams use `text/event-stream`, and raw log downloads use `text/plain`.
+
+## Safe retries
+
+The following commands require `Idempotency-Key`:
+
+- `POST /workflows`
+- `PUT /workflows/{workflow_id}`
+- `POST /workflows/{workflow_id}/jobs/schedule`
+
+Reuse a key only when retrying the same logical command.
+
+## Reference
+
+The [endpoint reference](/docs/api/reference) is generated from the repository's OpenAPI document. It covers paths, parameters, request bodies, and response status codes.
+
+<Callout title="No documented rate limiter" type="warning">
+The current gateway maps `ResourceExhausted` to HTTP `429`, but the repository does not define a general public request-rate policy. Clients should not assume limits that are not configured by the deployment.
+</Callout>
+

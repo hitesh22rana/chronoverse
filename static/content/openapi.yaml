@@ -1,0 +1,535 @@
+openapi: 3.1.0
+info:
+  title: Chronoverse HTTP API
+  version: 1.0.0
+  description: Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+servers:
+  - url: http://localhost:8080
+    description: Development
+  - url: /api
+    description: Production Nginx proxy
+tags:
+  - name: Authentication
+  - name: Users
+  - name: Workflows
+  - name: Jobs
+  - name: Logs
+  - name: Notifications
+  - name: Analytics
+paths:
+  /auth/register:
+    post:
+      operationId: registerUser
+      summary: Register a user
+      tags: [Authentication]
+      description: Creates a user and issues session and CSRF cookies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthRequest'}
+      responses:
+        '201': {description: User registered and session created}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/login:
+    post:
+      operationId: loginUser
+      summary: Log in
+      tags: [Authentication]
+      description: Validates credentials and issues session and CSRF cookies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthRequest'}
+      responses:
+        '201': {description: Session created}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/logout:
+    post:
+      operationId: logoutUser
+      summary: Log out
+      tags: [Authentication]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '204': {description: Session and CSRF cookies deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/validate:
+    post:
+      operationId: validateSession
+      summary: Validate a session
+      tags: [Authentication]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '200': {description: Session and CSRF state are valid}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /users:
+    get:
+      operationId: getCurrentUser
+      summary: Get current user
+      tags: [Users]
+      security: [{cookieSession: []}]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: updateCurrentUser
+      summary: Update current user
+      tags: [Users]
+      security: [{cookieSession: [], csrfToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notification_preference:
+                  type: string
+                  enum: [ALL, NONE]
+              required: [notification_preference]
+      responses:
+        '204': {description: User preferences updated}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /workflows:
+    get:
+      operationId: listWorkflows
+      summary: List workflows
+      tags: [Workflows]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: query, in: query, schema: {type: string}, description: Workflow name search}
+        - {name: kind, in: query, schema: {type: string, enum: [HEARTBEAT, CONTAINER]}}
+        - {name: build_status, in: query, schema: {$ref: '#/components/schemas/BuildStatus'}}
+        - {name: terminated, in: query, schema: {type: boolean, default: false}}
+        - {name: interval_min, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: interval_max, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+      responses:
+        '200':
+          description: Paginated workflow list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflows: {type: array, items: {$ref: '#/components/schemas/WorkflowListItem'}}
+                  cursor: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createWorkflow
+      summary: Create a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WorkflowInput'}
+      responses:
+        '201':
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                {$ref: '#/components/schemas/IdentifierResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /workflows/{workflow_id}:
+    parameters: [{$ref: '#/components/parameters/WorkflowId'}]
+    get:
+      operationId: getWorkflow
+      summary: Get a workflow
+      tags: [Workflows]
+      security: [{cookieSession: []}]
+      responses:
+        '200':
+          description: Workflow details
+          content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowDetail'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      operationId: updateWorkflow
+      summary: Update a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowUpdateInput'}}}
+      responses:
+        '204': {description: Workflow updated}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: terminateWorkflow
+      summary: Terminate a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '204': {description: Workflow terminated}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+    delete:
+      operationId: deleteWorkflow
+      summary: Delete a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '204': {description: Terminated workflow deleted}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs:
+    get:
+      operationId: listJobs
+      summary: List workflow jobs
+      tags: [Jobs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/JobStatus'}}
+        - {name: trigger, in: query, schema: {type: string, enum: [AUTOMATIC, MANUAL]}}
+      responses:
+        '200':
+          description: Paginated job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: {type: array, items: {$ref: '#/components/schemas/JobListItem'}}
+                  cursor: {type: string}
+  /workflows/{workflow_id}/jobs/schedule:
+    post:
+      operationId: scheduleJob
+      summary: Schedule a job immediately
+      tags: [Jobs]
+      security: [{cookieSession: [], csrfToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201':
+          description: Manual job created
+          content:
+            application/json:
+              schema:
+                {$ref: '#/components/schemas/IdentifierResponse'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs/{job_id}:
+    get:
+      operationId: getJob
+      summary: Get a job
+      tags: [Jobs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+      responses:
+        '200':
+          description: Job details
+          content: {application/json: {schema: {$ref: '#/components/schemas/JobDetail'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /workflows/{workflow_id}/jobs/{job_id}/logs:
+    get:
+      operationId: getJobLogs
+      summary: Get retained job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200': {$ref: '#/components/responses/LogPage'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs/{job_id}/logs/search:
+    get:
+      operationId: searchJobLogs
+      summary: Search retained job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
+        - {name: q, in: query, schema: {type: string}, description: Search query. Omit for stream-only filtering.}
+      responses:
+        '200': {$ref: '#/components/responses/LogPage'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs/{job_id}/logs/raw:
+    get:
+      operationId: downloadJobLogs
+      summary: Download raw job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+        - name: format
+          in: query
+          description: Download encoding. Defaults to plain text.
+          schema: {type: string, enum: [txt, json, jsonl], default: txt}
+        - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
+        - {name: q, in: query, schema: {type: string}, description: Optional safe text filter}
+      responses:
+        '200':
+          description: Log download matching the requested filters, streamed in ascending sequence order
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Raw log messages separated by newlines
+            application/json:
+              schema: {$ref: '#/components/schemas/JobLogDownload'}
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON where each line conforms to JobLogDownloadEntry
+        '400':
+          description: Invalid filter or format, or the job has not reached a terminal state
+  /workflows/{workflow_id}/jobs/{job_id}/events:
+    get:
+      operationId: streamJobLogs
+      summary: Stream live job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+      responses:
+        '200':
+          description: "Server-Sent Events stream. Errors after headers are written use event:error frames."
+          content: {text/event-stream: {schema: {type: string}}}
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: List notifications
+      tags: [Notifications]
+      security: [{cookieSession: []}]
+      parameters: [{$ref: '#/components/parameters/Cursor'}]
+      responses:
+        '200':
+          description: Paginated notifications
+          content: {application/json: {schema: {$ref: '#/components/schemas/NotificationPage'}}}
+    put:
+      operationId: markNotificationsRead
+      summary: Mark notifications read
+      tags: [Notifications]
+      security: [{cookieSession: [], csrfToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties: {ids: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}}
+      responses:
+        '204': {description: Notifications marked read}
+  /analytics:
+    get:
+      operationId: getUserAnalytics
+      summary: Get user analytics
+      tags: [Analytics]
+      security: [{cookieSession: []}]
+      responses:
+        '200':
+          description: Aggregate totals for the authenticated user
+          content: {application/json: {schema: {$ref: '#/components/schemas/UserAnalytics'}}}
+  /analytics/{workflow_id}:
+    get:
+      operationId: getWorkflowAnalytics
+      summary: Get workflow analytics
+      tags: [Analytics]
+      security: [{cookieSession: []}]
+      parameters: [{$ref: '#/components/parameters/WorkflowId'}]
+      responses:
+        '200':
+          description: Aggregate totals for one workflow
+          content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
+components:
+  securitySchemes:
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Encrypted session cookie issued after registration or login.
+    csrfToken:
+      type: apiKey
+      in: cookie
+      name: csrf
+      description: CSRF cookie issued with the session and required for state-changing requests.
+  parameters:
+    WorkflowId: {name: workflow_id, in: path, required: true, schema: {type: string, format: uuid}}
+    JobId: {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
+    Cursor: {name: cursor, in: query, required: false, schema: {type: string}, description: Opaque pagination cursor}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string}, description: Stable key reused only when retrying the same mutation}
+  responses:
+    BadRequest: {description: Invalid input or missing required idempotency key}
+    Unauthorized: {description: Missing or invalid session}
+    NotFound: {description: Resource not found}
+    PreconditionFailed: {description: Current workflow or job state does not allow the operation}
+    LogPage:
+      description: Retained logs in descending sequence order
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/JobLogPage'}
+  schemas:
+    AuthRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, format: password, minLength: 8, maxLength: 72}
+    User:
+      type: object
+      required: [email, notification_preference, created_at, updated_at]
+      properties:
+        email: {type: string, format: email}
+        notification_preference: {type: string, enum: [ALL, NONE]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    WorkflowInput:
+      type: object
+      required: [name, payload, kind, interval, max_consecutive_job_failures_allowed]
+      properties:
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        kind: {type: string, enum: [HEARTBEAT, CONTAINER]}
+        interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
+        log_retention: {type: boolean, description: Supported for CONTAINER workflows; forced off for HEARTBEAT}
+    WorkflowUpdateInput:
+      type: object
+      required: [name, payload, interval, max_consecutive_job_failures_allowed]
+      properties:
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
+    BuildStatus: {type: string, enum: [QUEUED, STARTED, COMPLETED, FAILED, CANCELED]}
+    JobStatus: {type: string, enum: [PENDING, QUEUED, RUNNING, COMPLETED, FAILED, CANCELED]}
+    IdentifierResponse:
+      type: object
+      required: [id]
+      properties:
+        id: {type: string, format: uuid}
+    WorkflowListItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        kind: {type: string, enum: [HEARTBEAT, CONTAINER]}
+        build_status: {$ref: '#/components/schemas/BuildStatus'}
+        interval: {type: integer, description: Schedule interval in minutes}
+        consecutive_job_failures_count: {type: integer, minimum: 0}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        terminated_at: {type: string, format: date-time}
+        log_retention: {type: boolean}
+    WorkflowDetail:
+      allOf:
+        - {$ref: '#/components/schemas/WorkflowListItem'}
+        - type: object
+          properties:
+            generation: {type: integer, minimum: 0}
+    JobListItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        workflow_id: {type: string, format: uuid}
+        container_id: {type: string}
+        status: {$ref: '#/components/schemas/JobStatus'}
+        trigger: {type: string, enum: [AUTOMATIC, MANUAL]}
+        attempts: {type: integer, minimum: 0}
+        scheduled_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    JobDetail:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        workflow_id: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/JobStatus'}
+        trigger: {type: string, enum: [AUTOMATIC, MANUAL]}
+        scheduled_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    Log:
+      type: object
+      properties:
+        timestamp: {type: string, format: date-time}
+        message: {type: string}
+        sequence_num: {type: integer, minimum: 0}
+        stream: {type: string, enum: [stdout, stderr]}
+        event_id: {type: string}
+    JobLogPage:
+      type: object
+      properties:
+        id: {type: string, format: uuid, description: Job ID}
+        workflow_id: {type: string, format: uuid}
+        logs: {type: array, items: {$ref: '#/components/schemas/Log'}}
+        cursor: {type: string}
+        highlight_token: {type: string, description: Marker inserted around search matches in log messages}
+    JobLogDownloadFilter:
+      type: object
+      required: [q, stream]
+      properties:
+        q: {type: string}
+        stream: {type: string, enum: [all, stdout, stderr]}
+    JobLogDownloadEntry:
+      type: object
+      required: [timestamp, sequence_num, stream, event_id, message_raw]
+      properties:
+        timestamp: {type: string, format: date-time}
+        sequence_num: {type: integer, minimum: 0}
+        stream: {type: string, enum: [stdout, stderr]}
+        event_id: {type: string}
+        message_raw: {type: string}
+        message_json: {description: Parsed JSON value when message_raw contains valid JSON}
+    JobLogDownload:
+      type: object
+      required: [id, workflow_id, filters, logs]
+      properties:
+        id: {type: string, format: uuid, description: Job ID}
+        workflow_id: {type: string, format: uuid}
+        filters: {$ref: '#/components/schemas/JobLogDownloadFilter'}
+        logs: {type: array, items: {$ref: '#/components/schemas/JobLogDownloadEntry'}}
+    Notification:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        payload: {type: string, description: Notification-kind-specific JSON encoded as a string}
+        read_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    NotificationPage:
+      type: object
+      properties:
+        notifications: {type: array, items: {$ref: '#/components/schemas/Notification'}}
+        cursor: {type: string}
+    UserAnalytics:
+      type: object
+      properties:
+        total_workflows: {type: integer, minimum: 0}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0}
+        total_job_execution_duration: {type: integer, minimum: 0}
+    WorkflowAnalytics:
+      type: object
+      properties:
+        workflow_id: {type: string, format: uuid}
+        total_job_execution_duration: {type: integer, minimum: 0}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0}

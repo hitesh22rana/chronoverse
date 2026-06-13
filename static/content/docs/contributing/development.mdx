@@ -1,0 +1,37 @@
+# Development workflow
+
+## Generate dependencies
+
+```bash
+make tools
+make generate
+```
+
+`make generate` compiles protobuf contracts. Keep source and generated code in the same change.
+
+## Test
+
+```bash
+make test/short
+make test
+```
+
+The full target runs Go tests with the race detector and includes Docker-backed coverage where required.
+
+## Lint and build
+
+```bash
+make lint
+make build/all
+cd dashboard && npm run lint && npm run build
+cd ../static && npm run check
+```
+
+## Documentation changes
+
+Add or edit MDX under `static/content/docs`, update `docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
+
+## Releases
+
+Git tags matching `v*` trigger service image release jobs after lint, build, and test complete. The static site deploys from `main` through GitHub Pages.
+

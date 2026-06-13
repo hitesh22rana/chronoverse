@@ -1,0 +1,28 @@
+# Trace propagation
+
+Chronoverse propagates distributed trace context across synchronous and asynchronous boundaries.
+
+## HTTP entry
+
+The server middleware extracts incoming context, starts the request span, and keeps trace identity available for downstream calls and structured logging.
+
+## gRPC boundaries
+
+Client interceptors inject trace metadata and server middleware extracts it before handling the RPC. Domain spans therefore remain connected to the original HTTP request or worker operation.
+
+## Kafka boundaries
+
+Producers inject trace context into record headers. Consumers extract that context before creating processing spans, connecting an asynchronous event back to the transaction or worker that published it.
+
+## Worker-created work
+
+When a worker emits a follow-up event, the current processing context is injected so the trace continues through multi-stage workflow, execution, logging, and analytics paths.
+
+## Export
+
+Services and workers export OpenTelemetry traces, metrics, and logs to the bundled LGTM collector over OTLP gRPC.
+
+<Callout title="Propagation is correlation, not delivery">
+Trace context helps explain a distributed operation. Replay safety, outbox state, and leases remain the authoritative mechanisms for correctness.
+</Callout>
+

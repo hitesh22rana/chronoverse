@@ -1,0 +1,27 @@
+# Monitoring
+
+## Compose health
+
+Start with `docker compose ps` and identify the first unhealthy dependency. Application failures often originate in certificate generation, infrastructure readiness, topic initialization, or migrations.
+
+## Health checks
+
+Compose checks PostgreSQL with TLS `psql`, ClickHouse with the secure client, Redis with TLS, Meilisearch over HTTPS, and gRPC services with authenticated TLS probes.
+
+## Service signals
+
+Monitor request and RPC latency, Kafka consumer progress, outbox pending and dead rows, expired job leases, execution retries, log processor batch failures, ClickHouse insert latency, Meilisearch health, and database pool saturation.
+
+## User-visible checks
+
+Track scheduling delay, workflow build failures, jobs stuck outside terminal states, SSE connection failures, missing retained logs, and analytics lag.
+
+## First response
+
+```bash
+docker compose -f compose.prod.yaml ps
+docker compose -f compose.prod.yaml logs --since=15m server
+docker compose -f compose.prod.yaml logs --since=15m outbox-relay
+docker compose -f compose.prod.yaml logs --since=15m execution-worker
+```
+

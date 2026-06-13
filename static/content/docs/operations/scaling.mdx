@@ -1,0 +1,30 @@
+# Scaling
+
+## Kafka partitions
+
+Consumer throughput is bounded by partition count. Production defaults use more partitions for `jobs` and `job_logs` than for lower-volume workflow and analytics traffic.
+
+## Execution workers
+
+Scale concurrency only when Docker CPU, memory, image bandwidth, Kafka partitions, jobs-service latency, and lease-renewal headroom support it.
+
+## Workflow workers
+
+Replicas that share a Docker host coordinate identical image pulls through Redis. Different hosts still pull independently.
+
+## Outbox relay
+
+Multiple replicas use processing leases. Tune batch size and polling against PostgreSQL and Kafka latency, not in isolation.
+
+## Logs
+
+High log volume requires sufficient `job_logs` partitions, processor replicas, ClickHouse insertion capacity, Meilisearch indexing capacity, and network throughput.
+
+## Databases
+
+Review every service's connection pool when increasing replicas. Replica multiplication can exhaust PostgreSQL, ClickHouse, Redis, or Meilisearch before CPU becomes the limiting resource.
+
+## Safe sequence
+
+Measure backlog and latency, increase the constraining partition or store capacity, adjust worker replicas and concurrency, then confirm lease and retry behavior under failure.
+

@@ -1,0 +1,26 @@
+# CSRF and idempotency
+
+Chronoverse uses separate mechanisms for browser request authenticity and retry safety.
+
+## CSRF validation
+
+Authenticated mutations require CSRF validation in addition to the session cookie. Login and registration establish the browser cookie state used by later requests.
+
+## Idempotency keys
+
+Retry-prone workflow and manual scheduling commands require `Idempotency-Key`. The service stores the command result with the mutation so a retry returns the original outcome.
+
+## Key rules
+
+- Use a cryptographically random or otherwise globally unique key for a new user action.
+- Reuse the same key for retries of that exact action.
+- Do not reuse a key for changed request content or a different workflow.
+
+## Transaction boundary
+
+Idempotency records, domain state, and outbox events are committed together where the command emits asynchronous work.
+
+## Conflict behavior
+
+Invalid or missing keys are rejected as bad requests. State conflicts and failed preconditions remain distinct from idempotent replay.
+

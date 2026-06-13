@@ -1,0 +1,29 @@
+# Pagination and errors
+
+## Cursor pagination
+
+Workflow, job, notification, and retained log lists use opaque cursors. Clients should return the cursor unchanged and must not infer database offsets or identifiers from its contents.
+
+Filters must remain stable while traversing a result set. A cursor created for one search or stream filter should not be reused with another.
+
+## Status mapping
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid input, filter, or required idempotency header |
+| `401` | Missing or invalid session |
+| `403` | Permission denied |
+| `404` | Resource not found |
+| `409` | Already exists or aborted conflict |
+| `412` | Resource state does not permit the operation |
+| `429` | Downstream resource exhausted |
+| `503` | Required downstream service unavailable |
+
+## Stream exceptions
+
+After SSE headers are written, the gateway cannot replace the response status. Stream-open and receive failures are serialized as `event: error` frames.
+
+## Error stability
+
+Clients should branch on HTTP status and documented structured fields, not exact human-readable error strings.
+

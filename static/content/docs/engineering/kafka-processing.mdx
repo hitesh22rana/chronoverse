@@ -1,0 +1,31 @@
+# Kafka processing
+
+Chronoverse uses Kafka for durable asynchronous workflows and preserves ordering within each partition.
+
+## Topics
+
+| Topic | Primary traffic |
+| --- | --- |
+| `workflows` | Workflow build and lifecycle events |
+| `jobs` | Dispatch and execution work |
+| `job_logs` | Retained stdout and stderr events |
+| `analytics` | Workflow, job, and log analytics events |
+
+Topic auto-creation is disabled. The Compose initialization job creates or expands the required partition counts.
+
+## Partition runner
+
+Each assigned partition is processed independently. This avoids a slow record in one partition blocking unrelated partitions while retaining per-partition order.
+
+## Commit policy
+
+Handlers classify outcomes so the runner can decide whether to commit, retry with backoff, or treat an error as terminal. Offsets are not advanced simply because a handler returned.
+
+## Rebalances and cancellation
+
+Partition work is tied to assignment lifetime. Cancellation stops processing cleanly so records are not acknowledged after ownership changes.
+
+## Capacity
+
+Useful consumer parallelism is bounded by topic partitions. Increasing replicas beyond partitions adds standby capacity, not additional throughput.
+

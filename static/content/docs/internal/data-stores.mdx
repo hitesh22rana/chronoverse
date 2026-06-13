@@ -1,0 +1,30 @@
+# Data stores
+
+## PostgreSQL
+
+Stores users, workflows, jobs, notification state, analytics aggregates, idempotency records, outbox rows, job leases, retry metadata, and processed-event identity.
+
+## ClickHouse
+
+Stores retained job logs optimized for high-volume ordered reads. It is not the authoritative workflow or job state store.
+
+## Redis
+
+Stores HTTP sessions, cached service reads, live log pub/sub state, and workflow-worker image-pull locks.
+
+## Meilisearch
+
+Indexes retained log messages for text search and highlights. ClickHouse remains the retained log body store.
+
+## Kafka
+
+Carries durable asynchronous events. It is a transport log, not the only record of command completion or job ownership.
+
+## Docker proxy
+
+Exposes a narrow subset of Docker APIs to workers instead of mounting the daemon socket directly into every process.
+
+## Ownership rule
+
+Do not add a second writable source for a domain entity without defining reconciliation. Each store has a distinct operational role.
+

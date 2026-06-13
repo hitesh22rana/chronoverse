@@ -1,0 +1,24 @@
+# Log retention
+
+Log behavior depends on workflow kind, retention policy, and job state.
+
+## Supported workflows
+
+`HEARTBEAT` workflows never produce execution logs and persist with retention disabled. `CONTAINER` workflows can publish live output and optionally retain it.
+
+## Live logs
+
+While a container job is running, the execution worker publishes output for Redis-backed live delivery. The HTTP gateway exposes that stream as Server-Sent Events.
+
+## Retained logs
+
+When retention is enabled, deterministic log events are published to Kafka. The job logs processor batches them into ClickHouse and indexes searchable content in Meilisearch.
+
+## Disabled retention
+
+Retained read, search, and download routes return `412 Precondition Failed` when the workflow does not support retained logs. If SSE headers have already been written, stream-open failures use an `event: error` frame instead of changing the HTTP status.
+
+## Ordering
+
+Paginated retained results are returned in descending sequence order: newest entries first, with older entries on later cursor pages.
+

@@ -1,0 +1,16 @@
+# Endpoint reference
+
+This reference is generated from `static/content/openapi.yaml` during the static build. Each operation has a dedicated HTML page with its method, path, parameters, request body, and responses.
+
+## Authentication
+
+Public application endpoints use the Chronoverse session cookie. Mutating routes also require CSRF state, and selected retry-prone commands require `Idempotency-Key`.
+
+## Source of truth
+
+The OpenAPI document describes the public HTTP surface registered in `internal/server/server.go`. Internal lease and worker RPCs are intentionally documented separately under [gRPC services](/docs/internal/grpc-services).
+
+## Raw specification
+
+The generated site exposes the canonical file at `/docs/openapi.yaml` for client generation and inspection.
+

@@ -1,0 +1,24 @@
+# Scheduling
+
+Chronoverse supports periodic automatic scheduling and authenticated manual scheduling.
+
+## Automatic scheduling
+
+The scheduling worker polls PostgreSQL for due workflows in bounded batches. It checks that each workflow is active, has a valid build, and still matches the generation being scheduled.
+
+The resulting job state and Kafka publication intent use replay-safe persistence. Reprocessing a scheduling decision does not create unbounded duplicate jobs.
+
+## Manual scheduling
+
+`POST /workflows/{workflow_id}/jobs/schedule` creates an immediate job with trigger `MANUAL`. The request requires session authentication, CSRF validation, and an `Idempotency-Key` header.
+
+## Timing model
+
+Intervals are expressed in minutes. `SCHEDULING_WORKER_POLL_INTERVAL` determines scan frequency, while `SCHEDULING_WORKER_BATCH_SIZE` bounds work per pass.
+
+Lower polling intervals improve responsiveness but increase database pressure. Horizontal scheduler scaling must still respect the repository's locking and replay-safety rules.
+
+## Stale work
+
+Workflow generation checks prevent a delayed scheduling event from dispatching work for an older workflow definition.
+

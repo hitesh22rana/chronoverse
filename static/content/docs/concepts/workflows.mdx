@@ -1,0 +1,29 @@
+# Workflows
+
+A workflow is the persistent definition of work that Chronoverse schedules. It contains a kind, a kind-specific payload, a minute interval, a failure threshold, and log-retention policy.
+
+## Workflow kinds
+
+- `HEARTBEAT` performs a lightweight health check and never produces execution logs.
+- `CONTAINER` runs a Docker image and command and may retain stdout and stderr.
+
+## Build lifecycle
+
+Workflow execution inputs are prepared asynchronously by the workflow worker. Build states are `QUEUED`, `STARTED`, `COMPLETED`, `FAILED`, and `CANCELED`.
+
+## Generations and build hashes
+
+Each relevant update advances the workflow generation. Events carry the generation they belong to, allowing workers and services to reject stale build, reschedule, termination, and deletion work.
+
+Build hashes prevent repeated image and execution preparation when the effective execution inputs have not changed.
+
+## Termination and deletion
+
+Termination stops future scheduling and coordinates active state changes. Deletion requires a terminated workflow with no incompatible active work. These checks are deliberate preconditions, not best-effort cleanup.
+
+## Mutation safety
+
+Create and update requests require `Idempotency-Key`. Workflow state and its publication intent are committed together through the transactional outbox.
+
+<SourceLink path="proto/workflows/workflows.proto">Workflow gRPC contract</SourceLink>
+

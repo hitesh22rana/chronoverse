@@ -1,0 +1,28 @@
+# gRPC services
+
+Five internal gRPC services expose domain operations over mTLS-protected connections.
+
+## Users service
+
+Registration, login, user lookup, and preference updates.
+
+## Workflows service
+
+Workflow CRUD, build status, list filters, failure counters, termination, deletion, and internal lookup by ID.
+
+## Jobs service
+
+Scheduling, reads, status updates, lease claim and renewal, container attachment, completion, failure, cancellation, retry release, expired-lease recovery, logs, search, live streaming, and job listing.
+
+## Notifications service
+
+Notification creation, listing, and marking records read.
+
+## Analytics service
+
+User and workflow aggregate reads.
+
+## Transport security
+
+Compose configures service certificates, client certificates, CA trust, and signed authorization metadata. Direct host exposure of development ports is for debugging, not a substitute for authenticated service calls.
+

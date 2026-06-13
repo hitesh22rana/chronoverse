@@ -1,0 +1,45 @@
+# Quickstart
+
+Run the complete development stack with Docker Compose. Docker builds the Go services, workers, database migration job, and dashboard locally.
+
+## Prerequisites
+
+- Docker Engine with Compose support.
+- Enough memory for PostgreSQL, ClickHouse, Kafka, Redis, Meilisearch, LGTM, the application services, and workers.
+
+## Start the stack
+
+```bash
+git clone https://github.com/hitesh22rana/chronoverse.git
+cd chronoverse
+docker compose -f compose.dev.yaml up -d
+```
+
+## Verify readiness
+
+```bash
+docker compose -f compose.dev.yaml ps
+docker compose -f compose.dev.yaml logs -f init-database-migration
+```
+
+The development endpoints are:
+
+| Surface | URL |
+| --- | --- |
+| Dashboard | `http://localhost:3001` |
+| HTTP API | `http://localhost:8080` |
+| LGTM | `http://localhost:3000` |
+| gRPC services | `localhost:50051` through `localhost:50055` |
+
+<Callout title="Startup is dependency ordered" type="note">
+Certificates, infrastructure health, Kafka topics, and database migrations must complete before domain services and workers become ready.
+</Callout>
+
+## Stop the stack
+
+```bash
+docker compose -f compose.dev.yaml down
+```
+
+Use `down -v` only when you intentionally want to delete local data and certificate volumes.
+

@@ -1,0 +1,33 @@
+# Chronoverse
+
+Chronoverse is a self-hosted distributed scheduler and orchestrator for running heartbeat checks and containerized workloads on your own infrastructure.
+
+It combines a public HTTP API and dashboard with gRPC domain services, Kafka-driven workers, durable PostgreSQL state, live and retained logs, notifications, analytics, and OpenTelemetry observability.
+
+<Callout title="Designed for failure">
+Duplicate events, worker restarts, partial publication, stale workflow builds, and abandoned container executions are expected operating conditions. Chronoverse uses idempotency keys, transactional outbox delivery, workflow generations, deterministic event identifiers, and durable job leases to recover safely.
+</Callout>
+
+## What you can run
+
+- `HEARTBEAT` workflows for lightweight health checks without execution logs.
+- `CONTAINER` workflows for arbitrary Docker-backed commands with optional retained stdout and stderr.
+- Automatic interval-based jobs and immediate manual runs.
+
+## What the platform provides
+
+<CardGrid>
+  <DocCard title="Reliable dispatch" href="/docs/engineering/replay-safety">State changes and matching events survive retries and restarts.</DocCard>
+  <DocCard title="Execution ownership" href="/docs/engineering/job-leases">Only one execution worker owns a running job lease.</DocCard>
+  <DocCard title="Live and retained logs" href="/docs/features/log-streaming">Stream output over SSE, retain it in ClickHouse, and search it through Meilisearch.</DocCard>
+  <DocCard title="Observable by default" href="/docs/operations/observability">Traces, metrics, and structured logs flow into the bundled LGTM stack.</DocCard>
+</CardGrid>
+
+## System shape
+
+<ArchitectureMap />
+
+## Where to go next
+
+Start with the [quickstart](/docs/quickstart), then create [your first workflow](/docs/getting-started/first-workflow). For implementation detail, read the [architecture](/docs/engineering/architecture) and [replay-safety model](/docs/engineering/replay-safety).
+

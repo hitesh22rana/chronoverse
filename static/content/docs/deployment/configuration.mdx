@@ -1,0 +1,30 @@
+# Configuration reference
+
+Configuration is environment-variable driven. The Compose files provide runnable defaults; production values must be reviewed explicitly.
+
+## HTTP server
+
+Host and timeouts use `SERVER_HOST`, `SERVER_PORT`, request/read/header/idle timeout values, request body limit, session and CSRF expiry, host URL, allowed origins, same-site mode, `SERVER_CSRF_HMAC_SECRET`, and `CRYPTO_SECRET`.
+
+## gRPC
+
+Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients use per-service host, port, TLS enablement, CA path, plus shared client certificate and key paths.
+
+## Infrastructure
+
+- PostgreSQL: connection pool, dial timeout, credentials, database, and TLS paths.
+- ClickHouse: hosts, credentials, pool limits, dial timeout, and TLS paths.
+- Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths.
+- Meilisearch: URI, master key, and TLS client settings.
+- Kafka: brokers, consumer group, topic partitions, replication factor, and TLS paths.
+
+## Workers
+
+Scheduler settings control poll interval, context timeout, and batch size. Workflow worker settings control image-pull locks. Execution worker settings control concurrency, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention.
+
+## Detailed source
+
+The complete current variable inventory remains in `docs/configuration.md` and the typed files under `internal/config`.
+
+<SourceLink path="docs/configuration.md">Full environment variable inventory</SourceLink>
+

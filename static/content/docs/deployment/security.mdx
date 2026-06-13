@@ -1,0 +1,30 @@
+# Certificates and security
+
+## Local certificate bootstrap
+
+`init-certs` generates a local CA, server certificates, client certificates, Kafka keystore and truststore material, and Ed25519 authentication keys in the shared certificate volume.
+
+## Encrypted infrastructure
+
+Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC service connections.
+
+## Service authorization
+
+The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
+
+## Browser security
+
+Sessions are stored in encrypted cookies. Mutating browser requests require CSRF validation. CORS origins and same-site behavior are configurable.
+
+## Docker access
+
+Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access.
+
+## Production secrets
+
+Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation.
+
+<Callout title="Do not expose development ports" type="warning">
+The development profile publishes databases and gRPC services for debugging. That topology is not the production security boundary.
+</Callout>
+

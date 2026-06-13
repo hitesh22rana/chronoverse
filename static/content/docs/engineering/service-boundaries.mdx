@@ -1,0 +1,30 @@
+# Service boundaries
+
+## HTTP gateway
+
+The `server` process owns public HTTP concerns: method routing, request limits, CORS, compression, session validation, CSRF validation, idempotency headers, error mapping, and propagation of authorization metadata to gRPC.
+
+## Users service
+
+Owns registration, login, user reads, notification preference updates, password verification, and service authorization claims.
+
+## Workflows service
+
+Owns definitions, generations, build status, list filters, cleanup, termination, deletion, and workflow-side effects of terminal jobs.
+
+## Jobs service
+
+Owns scheduling, job reads, status transitions, durable leases, recovery, retained log reads, search, downloads, and live log streams.
+
+## Notifications service
+
+Owns notification creation, cursor-based listing, and read state.
+
+## Analytics service
+
+Reads user and workflow aggregates maintained by the analytics processor.
+
+## Authorization boundary
+
+The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Internal services validate the authorization context rather than trusting arbitrary callers on the network.
+

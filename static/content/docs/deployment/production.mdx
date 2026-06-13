@@ -1,0 +1,36 @@
+# Production deployment
+
+## Start
+
+```bash
+docker compose -f compose.prod.yaml up -d
+```
+
+Production publishes:
+
+- Dashboard and proxied API through Nginx on port `80`.
+- LGTM on port `3000`.
+
+Application services and infrastructure otherwise remain on Compose networks.
+
+## Images
+
+Application images are pulled from `ghcr.io/hitesh22rana/chronoverse/*:latest`. Tagged releases are built for supported architectures by GitHub Actions.
+
+## Worker replicas
+
+The production profile declares replicated workers and resource reservations. Effective parallelism still depends on Kafka partitions, Docker host capacity, database pools, and lease configuration.
+
+## Required hardening
+
+- Replace database and Meilisearch credentials.
+- Manage certificates and private keys with environment-specific controls.
+- Configure the public host URL, allowed origins, secure cookies, and same-site policy.
+- Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
+- Restrict access to the LGTM dashboard.
+- Define backup, restore, and retention procedures for PostgreSQL and ClickHouse.
+
+## Upgrade order
+
+Apply compatible migrations before new services depend on them. Event and protobuf changes should remain compatible with records and replicas from the previous version during rolling replacement.
+

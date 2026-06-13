@@ -1,0 +1,38 @@
+# Installation
+
+Docker Compose is the supported way to run the full platform. Local Go and Node.js tooling are needed only when developing individual components.
+
+## Runtime installation
+
+Clone the repository and use either `compose.dev.yaml` or `compose.prod.yaml`. The development profile builds local images and exposes debugging ports. The production profile uses GHCR images, internal networking, resource constraints, worker replicas, and Nginx as the public entry point.
+
+## Development toolchain
+
+- Go `1.25.4`
+- Node.js compatible with Next.js 16
+- Buf for protobuf generation
+- Docker for integration tests and container execution tests
+
+```bash
+make tools
+make generate
+make test/short
+make lint
+make build/all
+```
+
+## Frontend workspaces
+
+The application dashboard and public static site are separate Next.js applications:
+
+```bash
+cd dashboard && npm install
+cd ../static && npm install
+```
+
+The static site exports plain HTML into `static/out` and is deployed to GitHub Pages.
+
+## Production preparation
+
+Replace development credentials, generated local certificate assumptions, public hostnames, allowed origins, and cookie policy before exposing the stack. Continue with [production deployment](/docs/deployment/production) and [certificates and security](/docs/deployment/security).
+

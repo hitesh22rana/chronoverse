@@ -1,0 +1,28 @@
+# Workers
+
+Workers own asynchronous background processing. Kafka partitions provide distribution, while domain services remain responsible for authoritative state changes.
+
+## Worker inventory
+
+| Worker | Responsibility |
+| --- | --- |
+| Scheduling worker | Finds due workflows and creates dispatch work |
+| Workflow worker | Prepares executable workflow metadata and build state |
+| Execution worker | Claims jobs, runs containers, renews leases, and recovers abandoned work |
+| Job logs processor | Writes retained logs to ClickHouse and Meilisearch |
+| Analytics processor | Applies workflow, job, and log events to aggregates |
+| Outbox relay | Publishes committed outbox rows to Kafka |
+| Database migration | Applies PostgreSQL and ClickHouse migrations and Meilisearch setup |
+
+## Processing contract
+
+Workers process records per Kafka partition. Commit policy distinguishes successful work, retryable failures, and terminal handling so offsets are not advanced before the selected policy permits it.
+
+## Scaling
+
+Replica count cannot create useful parallelism beyond the relevant Kafka topic partition count. Execution capacity is also bounded by Docker hosts, job lease settings, downstream service latency, and log pipeline capacity.
+
+## State ownership
+
+Workers call gRPC services to mutate domain state. They do not become an alternate source of truth for workflows or jobs.
+

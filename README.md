@@ -13,6 +13,8 @@ analytics into one self-hosted stack.
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hitesh22rana/chronoverse)
 
+**[Website](https://hitesh22rana.github.io/chronoverse/)** · **[Documentation](https://hitesh22rana.github.io/chronoverse/docs/)** · **[API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/)**
+
 ## Features
 
 - **Workflow management**: create, update, terminate, delete, search, and monitor workflows.
@@ -42,7 +44,8 @@ Chronoverse uses a message-driven microservice architecture:
 - **Docker socket proxy** lets execution workers run containers without mounting the Docker socket directly.
 - **LGTM** provides local OpenTelemetry collection and dashboards.
 
-For the full event flow and replay-safety model, see [Architecture](./docs/architecture.md).
+For the full event flow and replay-safety model, see the
+[engineering documentation](https://hitesh22rana.github.io/chronoverse/docs/engineering/architecture/).
 
 ## Components
 
@@ -115,7 +118,8 @@ values. See [Configuration](./docs/configuration.md) and [Operations](./docs/ope
 ## API and Usage
 
 The dashboard talks to the HTTP API using cookie sessions and CSRF protection.
-External clients can use the same public routes documented in [API](./docs/api.md).
+External clients can use the same public routes documented in the
+[HTTP API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/).
 
 Important API notes:
 
@@ -145,14 +149,23 @@ npm run build
 npm run lint
 ```
 
-More operational commands and troubleshooting notes are in [Operations](./docs/operations.md).
+More operational commands and troubleshooting notes are in the
+[operations guide](https://hitesh22rana.github.io/chronoverse/docs/operations/monitoring/).
 
 ## Documentation
 
-- [Architecture](./docs/architecture.md)
-- [Configuration](./docs/configuration.md)
-- [API](./docs/api.md)
-- [Operations](./docs/operations.md)
+The canonical documentation is built from MDX and OpenAPI in `static/` and
+published as static HTML:
+
+- [Chronoverse website](https://hitesh22rana.github.io/chronoverse/)
+- [Documentation home](https://hitesh22rana.github.io/chronoverse/docs/)
+- [Engineering architecture](https://hitesh22rana.github.io/chronoverse/docs/engineering/architecture/)
+- [HTTP API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/)
+- [Deployment and configuration](https://hitesh22rana.github.io/chronoverse/docs/deployment/configuration/)
+- [Operations](https://hitesh22rana.github.io/chronoverse/docs/operations/monitoring/)
+
+The concise Markdown files under `docs/` remain useful for repository-local
+reading, while the static site is the complete product and engineering reference.
 
 ## Contributing
 

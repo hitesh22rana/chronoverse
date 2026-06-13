@@ -1,0 +1,23 @@
+# Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `cmd/` | Executable entry points for services, workers, migration, relay, and server |
+| `internal/server/` | Public HTTP gateway and middleware |
+| `internal/service/` | Domain service logic |
+| `internal/repository/` | Persistence and worker implementations |
+| `internal/pkg/` | Shared infrastructure clients and reliability primitives |
+| `proto/` | Source protobuf contracts |
+| `pkg/proto/go/` | Generated Go protobuf code |
+| `dashboard/` | Authenticated product dashboard |
+| `static/` | Public landing page and static MDX documentation |
+| `docs/` | Concise repository-level engineering references |
+
+## Ownership pattern
+
+Entry points compose configuration, infrastructure, repositories, and services. Business state transitions remain in domain layers; reusable transport and storage behavior belongs under `internal/pkg` only when it is truly cross-domain.
+
+## Generated files
+
+Do not edit generated protobuf Go files by hand. Change `proto/*.proto` and run the generation target.
+

@@ -1,0 +1,25 @@
+# Jobs
+
+A job is one execution attempt for a workflow. Jobs can be created by the scheduling worker or by an authenticated manual scheduling request.
+
+## Triggers
+
+- `AUTOMATIC` jobs are created when the scheduler finds a due workflow.
+- `MANUAL` jobs are created immediately through the public API.
+
+## Statuses
+
+Jobs move through `PENDING`, `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELED`. State transitions are protected by workflow generation, dispatch attempt, current status, and, once claimed, a lease token.
+
+## Attempts and retries
+
+Infrastructure failures may release a job for a bounded retry. The dispatch attempt identifies the expected delivery, while job attempts expose how many execution attempts have occurred.
+
+User workload failures and system failures are handled differently so an invalid command does not receive the same recovery policy as a lost worker or unavailable Docker host.
+
+## Execution ownership
+
+An execution worker must claim the job before starting a container. The jobs service returns a lease token, and that token is required to attach a container, renew ownership, complete, fail, cancel, or release the job.
+
+See [durable job leases](/docs/engineering/job-leases) for failure and recovery behavior.
+

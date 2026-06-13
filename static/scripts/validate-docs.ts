@@ -9,6 +9,18 @@ import { getOpenApiOperations, getOpenApiPath } from "../src/lib/openapi";
 
 const errors: string[] = [];
 const slugs = new Set<string>();
+const publicOperationIds = new Set(["registerUser", "loginUser"]);
+const csrfOperationIds = new Set([
+  "logoutUser",
+  "validateSession",
+  "updateCurrentUser",
+  "createWorkflow",
+  "updateWorkflow",
+  "terminateWorkflow",
+  "deleteWorkflow",
+  "scheduleJob",
+  "markNotificationsRead",
+]);
 
 function containsReference(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsReference);
@@ -47,6 +59,24 @@ await SwaggerParser.validate(getOpenApiPath()).catch((error: unknown) => errors.
 const operations = getOpenApiOperations();
 for (const operation of operations) {
   if (containsReference(operation)) errors.push(`Unresolved OpenAPI reference in generated operation ${operation.operationId}`);
+  const securitySchemeNames = new Set(operation.security.flatMap((requirement) => Object.keys(requirement)));
+  if (publicOperationIds.has(operation.operationId) && operation.security.length > 0) {
+    errors.push(`Public operation unexpectedly requires authentication: ${operation.operationId}`);
+  }
+  if (!publicOperationIds.has(operation.operationId) && !securitySchemeNames.has("cookieSession")) {
+    errors.push(`Protected operation is missing cookieSession security: ${operation.operationId}`);
+  }
+  if (csrfOperationIds.has(operation.operationId) !== securitySchemeNames.has("csrfToken")) {
+    errors.push(`Operation has incorrect csrfToken security: ${operation.operationId}`);
+  }
+  for (const name of securitySchemeNames) {
+    const scheme = operation.securitySchemes[name];
+    if (!scheme) errors.push(`Missing generated security scheme ${name} for ${operation.operationId}`);
+    if (!scheme?.description) errors.push(`Missing security scheme description for ${name}`);
+    if (scheme?.type === "apiKey" && (!scheme.in || !scheme.name)) {
+      errors.push(`Incomplete apiKey security scheme ${name}`);
+    }
+  }
   for (const [status, response] of Object.entries(operation.responses)) {
     if (!response.description) errors.push(`Missing response description for ${operation.operationId} HTTP ${status}`);
   }

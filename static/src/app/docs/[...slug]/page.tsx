@@ -43,7 +43,7 @@ export default async function DocumentationPage({ params }: PageProps) {
     const operation = getOpenApiOperation(slug.split("/").at(-1) ?? "");
     if (!operation) notFound();
     return (
-      <DocShell activeSlug={slug} description={`${operation.method} ${operation.path}`} headings={[{ id: "parameters", title: "Parameters", level: 2 }, ...(operation.requestBody ? [{ id: "request-body", title: "Request body", level: 2 } as const] : []), { id: "responses", title: "Responses", level: 2 }]} next={navigation.next} previous={navigation.previous} title={operation.summary}>
+      <DocShell activeSlug={slug} description={`${operation.method} ${operation.path}`} headings={[{ id: "authentication", title: "Authentication", level: 2 }, { id: "parameters", title: "Parameters", level: 2 }, ...(operation.requestBody ? [{ id: "request-body", title: "Request body", level: 2 } as const] : []), { id: "responses", title: "Responses", level: 2 }]} next={navigation.next} previous={navigation.previous} title={operation.summary}>
         <ApiOperation operation={operation} />
       </DocShell>
     );

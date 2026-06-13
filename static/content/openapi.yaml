@@ -357,10 +357,12 @@ components:
       type: apiKey
       in: cookie
       name: session
+      description: Encrypted session cookie issued after registration or login.
     csrfToken:
       type: apiKey
       in: cookie
       name: csrf
+      description: CSRF cookie issued with the session and required for state-changing requests.
   parameters:
     WorkflowId: {name: workflow_id, in: path, required: true, schema: {type: string, format: uuid}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}

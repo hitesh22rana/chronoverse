@@ -264,6 +264,10 @@ svg { flex: none; }
 .parameter-list [data-slot="card-content"] { min-width: 0; display: grid; gap: .75rem; }
 .schema-constraints { min-width: 0; display: flex; flex-wrap: wrap; gap: .45rem; }
 .schema-constraints code { max-width: 100%; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: .35rem; padding: .18rem .4rem; background: var(--muted); color: var(--muted-foreground); }
+.security-requirements, .security-alternative { min-width: 0; display: grid; gap: .75rem; }
+.security-alternative [data-slot="card-title"] { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .92rem; }
+.security-alternative [data-slot="card-content"] { min-width: 0; display: grid; gap: .75rem; }
+.security-note { margin: 0; color: var(--muted-foreground); font-size: .9rem; }
 .request-body-header { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
 .request-body-header p { margin: 0; }
 .content-schema-list { min-width: 0; display: grid; gap: .75rem; }

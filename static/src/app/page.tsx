@@ -69,7 +69,7 @@ export default function Home() {
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
             <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
           </div>
-          <div className="hero-command"><Terminal /><code>docker compose -f compose.dev.yaml up -d</code></div>
+          <div className="hero-command"><Terminal /><code>docker compose -f compose.prod.yaml up -d</code></div>
         </div>
         <div className="hero-visual" aria-label="Chronoverse engineering status panel">
           <Image src={withBasePath("/assets/chronoverse.png")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />

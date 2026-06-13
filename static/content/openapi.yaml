@@ -160,7 +160,7 @@ paths:
       parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody:
         required: true
-        content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowInput'}}}
+        content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowUpdateInput'}}}
       responses:
         '204': {description: Workflow updated}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -270,12 +270,26 @@ paths:
       parameters:
         - {$ref: '#/components/parameters/WorkflowId'}
         - {$ref: '#/components/parameters/JobId'}
+        - name: format
+          in: query
+          description: Download encoding. Defaults to plain text.
+          schema: {type: string, enum: [txt, json, jsonl], default: txt}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
         - {name: q, in: query, schema: {type: string}, description: Optional safe text filter}
       responses:
         '200':
-          description: Plain-text log download matching the requested filters
-          content: {text/plain: {schema: {type: string}}}
+          description: Log download matching the requested filters, streamed in ascending sequence order
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Raw log messages separated by newlines
+            application/json:
+              schema: {$ref: '#/components/schemas/JobLogDownload'}
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON where each line conforms to JobLogDownloadEntry
         '412': {$ref: '#/components/responses/PreconditionFailed'}
   /workflows/{workflow_id}/jobs/{job_id}/events:
     get:
@@ -344,7 +358,7 @@ components:
     csrfToken:
       type: apiKey
       in: cookie
-      name: csrf_token
+      name: csrf
   parameters:
     WorkflowId: {name: workflow_id, in: path, required: true, schema: {type: string, format: uuid}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -387,6 +401,14 @@ components:
         interval: {type: integer, description: Schedule interval in minutes}
         max_consecutive_job_failures_allowed: {type: integer}
         log_retention: {type: boolean, description: Supported for CONTAINER workflows; forced off for HEARTBEAT}
+    WorkflowUpdateInput:
+      type: object
+      required: [name, payload, interval, max_consecutive_job_failures_allowed]
+      properties:
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
     BuildStatus: {type: string, enum: [QUEUED, STARTED, COMPLETED, FAILED, CANCELED]}
     JobStatus: {type: string, enum: [PENDING, QUEUED, RUNNING, COMPLETED, FAILED, CANCELED]}
     Workflow:
@@ -419,6 +441,30 @@ components:
         message: {type: string}
         timestamp: {type: string, format: date-time}
         highlights: {type: array, items: {type: string}}
+    JobLogDownloadFilter:
+      type: object
+      required: [q, stream]
+      properties:
+        q: {type: string}
+        stream: {type: string, enum: [all, stdout, stderr]}
+    JobLogDownloadEntry:
+      type: object
+      required: [timestamp, sequence_num, stream, event_id, message_raw]
+      properties:
+        timestamp: {type: string, format: date-time}
+        sequence_num: {type: integer, minimum: 0}
+        stream: {type: string, enum: [stdout, stderr]}
+        event_id: {type: string}
+        message_raw: {type: string}
+        message_json: {description: Parsed JSON value when message_raw contains valid JSON}
+    JobLogDownload:
+      type: object
+      required: [id, workflow_id, filters, logs]
+      properties:
+        id: {type: string, format: uuid, description: Job ID}
+        workflow_id: {type: string, format: uuid}
+        filters: {$ref: '#/components/schemas/JobLogDownloadFilter'}
+        logs: {type: array, items: {$ref: '#/components/schemas/JobLogDownloadEntry'}}
     Analytics:
       type: object
       properties:

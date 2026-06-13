@@ -10,6 +10,13 @@ import { getOpenApiOperations, getOpenApiPath } from "../src/lib/openapi";
 const errors: string[] = [];
 const slugs = new Set<string>();
 
+function containsReference(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsReference);
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.$ref === "string" || Object.values(record).some(containsReference);
+}
+
 for (const page of docPages) {
   if (!page.slug || !page.title || !page.description || !page.source) {
     errors.push(`Malformed documentation metadata for ${page.slug || "<unknown>"}`);
@@ -39,6 +46,7 @@ for (const file of collectMdxFiles(contentRoot)) {
 await SwaggerParser.validate(getOpenApiPath()).catch((error: unknown) => errors.push(`Invalid OpenAPI document: ${String(error)}`));
 const operations = getOpenApiOperations();
 for (const operation of operations) {
+  if (containsReference(operation)) errors.push(`Unresolved OpenAPI reference in generated operation ${operation.operationId}`);
   for (const [status, response] of Object.entries(operation.responses)) {
     if (!response.description) errors.push(`Missing response description for ${operation.operationId} HTTP ${status}`);
   }

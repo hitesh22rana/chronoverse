@@ -8,7 +8,38 @@ export type OpenApiParameter = {
   in: "path" | "query" | "header" | "cookie";
   required?: boolean;
   description?: string;
-  schema?: { type?: string; enum?: string[]; format?: string; default?: unknown };
+  schema?: OpenApiSchema;
+};
+
+export type OpenApiSchema = {
+  type?: string;
+  format?: string;
+  description?: string;
+  enum?: unknown[];
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  minItems?: number;
+  maxItems?: number;
+  uniqueItems?: boolean;
+  required?: string[];
+  properties?: Record<string, OpenApiSchema>;
+  items?: OpenApiSchema;
+  allOf?: OpenApiSchema[];
+  anyOf?: OpenApiSchema[];
+  oneOf?: OpenApiSchema[];
+  additionalProperties?: boolean | OpenApiSchema;
+  [key: string]: unknown;
+};
+
+export type OpenApiContent = Record<string, { schema?: OpenApiSchema }>;
+
+export type OpenApiRequestBody = {
+  required?: boolean;
+  description?: string;
+  content?: OpenApiContent;
 };
 
 export type OpenApiOperation = {
@@ -19,13 +50,13 @@ export type OpenApiOperation = {
   description?: string;
   tags: string[];
   parameters: OpenApiParameter[];
-  requestBody?: Record<string, unknown>;
+  requestBody?: OpenApiRequestBody;
   responses: Record<string, OpenApiResponse>;
 };
 
-type OpenApiResponse = {
+export type OpenApiResponse = {
   description?: string;
-  content?: Record<string, unknown>;
+  content?: OpenApiContent;
 };
 
 type OpenApiDocument = {
@@ -34,6 +65,8 @@ type OpenApiDocument = {
   components?: {
     parameters?: Record<string, OpenApiParameter>;
     responses?: Record<string, OpenApiResponse>;
+    schemas?: Record<string, OpenApiSchema>;
+    requestBodies?: Record<string, OpenApiRequestBody>;
   };
 };
 
@@ -47,28 +80,52 @@ export function getOpenApiDocument() {
   return parse(fs.readFileSync(getOpenApiPath(), "utf8")) as OpenApiDocument;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveJsonPointer(document: OpenApiDocument, reference: string): unknown {
+  if (!reference.startsWith("#/")) {
+    throw new Error(`Unsupported external OpenAPI reference: ${reference}`);
+  }
+
+  return reference
+    .slice(2)
+    .split("/")
+    .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+    .reduce<unknown>((value, segment) => {
+      if (!isRecord(value) || !(segment in value)) {
+        throw new Error(`Unresolved OpenAPI reference: ${reference}`);
+      }
+      return value[segment];
+    }, document);
+}
+
+function dereferenceValue(value: unknown, document: OpenApiDocument, references = new Set<string>()): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => dereferenceValue(item, document, new Set(references)));
+  }
+  if (!isRecord(value)) return value;
+
+  if (typeof value.$ref === "string") {
+    if (references.has(value.$ref)) {
+      throw new Error(`Circular OpenAPI reference: ${value.$ref}`);
+    }
+    const nextReferences = new Set(references).add(value.$ref);
+    const resolved = resolveJsonPointer(document, value.$ref);
+    if (!isRecord(resolved)) throw new Error(`OpenAPI reference is not an object: ${value.$ref}`);
+    const siblings = { ...value };
+    delete siblings.$ref;
+    return dereferenceValue({ ...resolved, ...siblings }, document, nextReferences);
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, dereferenceValue(child, document, new Set(references))]),
+  );
+}
+
 export function getOpenApiOperations(): OpenApiOperation[] {
   const document = getOpenApiDocument();
-
-  function resolveParameter(parameter: OpenApiParameter | { $ref: string }): OpenApiParameter {
-    if (!("$ref" in parameter)) return parameter;
-    const name = parameter.$ref.split("/").at(-1) ?? "";
-    const resolved = document.components?.parameters?.[name];
-    if (!resolved) throw new Error(`Unresolved OpenAPI parameter reference: ${parameter.$ref}`);
-    return resolved;
-  }
-
-  function resolveResponse(response: OpenApiResponse | { $ref: string }): OpenApiResponse {
-    if (!("$ref" in response)) return response;
-    const prefix = "#/components/responses/";
-    if (!response.$ref.startsWith(prefix)) {
-      throw new Error(`Unsupported OpenAPI response reference: ${response.$ref}`);
-    }
-    const name = response.$ref.slice(prefix.length);
-    const resolved = document.components?.responses?.[name];
-    if (!resolved) throw new Error(`Unresolved OpenAPI response reference: ${response.$ref}`);
-    return resolved;
-  }
 
   return Object.entries(document.paths).flatMap(([route, pathItem]) =>
     Object.entries(pathItem)
@@ -84,12 +141,16 @@ export function getOpenApiOperations(): OpenApiOperation[] {
           summary: String(operation.summary ?? operation.operationId),
           description: operation.description ? String(operation.description) : undefined,
           tags: (operation.tags as string[] | undefined) ?? ["API"],
-          parameters: [...pathParameters, ...operationParameters].map(resolveParameter),
-          requestBody: operation.requestBody as Record<string, unknown> | undefined,
+          parameters: [...pathParameters, ...operationParameters].map((parameter) =>
+            dereferenceValue(parameter, document),
+          ) as OpenApiParameter[],
+          requestBody: operation.requestBody
+            ? (dereferenceValue(operation.requestBody, document) as OpenApiRequestBody)
+            : undefined,
           responses: Object.fromEntries(
             Object.entries(
               (operation.responses as Record<string, OpenApiResponse | { $ref: string }> | undefined) ?? {},
-            ).map(([status, response]) => [status, resolveResponse(response)]),
+            ).map(([status, response]) => [status, dereferenceValue(response, document) as OpenApiResponse]),
           ),
         };
       }),

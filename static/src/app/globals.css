@@ -261,10 +261,21 @@ svg { flex: none; }
 .endpoint code, .api-path code { min-width: 0; overflow-wrap: anywhere; }
 .parameter-list { display: grid; gap: .75rem; }
 .parameter-list [data-slot="card-title"] { display: flex; align-items: center; gap: .5rem; font-size: .92rem; }
-.parameter-list [data-slot="card-content"] { min-width: 0; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
+.parameter-list [data-slot="card-content"] { min-width: 0; display: grid; gap: .75rem; }
+.schema-constraints { min-width: 0; display: flex; flex-wrap: wrap; gap: .45rem; }
+.schema-constraints code { max-width: 100%; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: .35rem; padding: .18rem .4rem; background: var(--muted); color: var(--muted-foreground); }
+.request-body-header { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.request-body-header p { margin: 0; }
+.content-schema-list { min-width: 0; display: grid; gap: .75rem; }
+.content-schema { min-width: 0; display: grid; gap: .6rem; }
+.content-schema > [data-slot="badge"] { justify-self: start; }
+.schema-block { min-width: 0; max-width: 100%; margin: 0; }
+.schema-block pre { max-height: 34rem; overflow: auto; }
 .response-list { border: 1px solid var(--border); border-radius: .7rem; overflow: hidden; }
-.response-list > div { min-width: 0; display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); align-items: center; gap: 1rem; padding: .65rem .8rem; border-bottom: 1px solid var(--border); }
-.response-list > div:last-child { border-bottom: 0; }
+.response-item { min-width: 0; display: grid; gap: .75rem; padding: .8rem; border-bottom: 1px solid var(--border); }
+.response-item:last-child { border-bottom: 0; }
+.response-heading { min-width: 0; display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); align-items: center; gap: 1rem; }
+.response-heading p { margin: 0; }
 .docs-pagination { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 2rem; }
 .docs-pagination a { display: flex; align-items: center; gap: .8rem; border: 1px solid var(--border); border-radius: .65rem; padding: 1rem; }
 .docs-pagination a:hover { background: var(--muted); }

@@ -1,0 +1,24 @@
+# Observability
+
+Chronoverse emits OpenTelemetry traces, metrics, and structured logs to the bundled Grafana OTEL LGTM stack.
+
+## Collection
+
+Services and workers export over OTLP gRPC to `lgtm:4317`. The local Grafana UI is published on port `3000`.
+
+## Traces
+
+Trace context crosses HTTP, gRPC, and Kafka. Use a single trace to follow an API mutation into outbox publication, worker processing, domain RPCs, and follow-up events.
+
+## Metrics
+
+Runtime and host metrics complement application spans. Watch latency distributions and saturation rather than relying only on process uptime.
+
+## Logs
+
+Structured application logs include service context and trace correlation where available. Container job stdout and stderr are a separate product data stream and follow the live/retained log pipeline.
+
+## Investigation order
+
+Start from the user-visible request or job ID, locate its trace, inspect failed spans and correlated logs, then confirm durable state in PostgreSQL and transport progress in Kafka.
+

@@ -1,0 +1,45 @@
+# Your first workflow
+
+This walkthrough creates a container workflow and triggers an immediate manual job through the HTTP API.
+
+## Authenticate
+
+Register through the dashboard or call `POST /auth/register`. Keep both the session and CSRF cookies returned by the server.
+
+## Create a container workflow
+
+Every retry-prone mutation requires an `Idempotency-Key`.
+
+```bash
+curl -X POST http://localhost:8080/workflows \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: first-workflow-v1' \
+  -b cookies.txt \
+  -d '{
+    "name": "hello-chronoverse",
+    "payload": "{\"image\":\"alpine:3.22.2\",\"cmd\":[\"echo\",\"hello from chronoverse\"]}",
+    "kind": "CONTAINER",
+    "interval": 60,
+    "max_consecutive_job_failures_allowed": 3,
+    "log_retention": true
+  }'
+```
+
+## Wait for the build
+
+The workflow starts in a queued build state. The outbox relay publishes its event, the workflow worker validates and prepares execution metadata, and the workflows service records the terminal build state.
+
+## Trigger a manual run
+
+```bash
+curl -X POST http://localhost:8080/workflows/WORKFLOW_ID/jobs/schedule \
+  -H 'Idempotency-Key: first-manual-run-v1' \
+  -b cookies.txt
+```
+
+The returned job uses the `MANUAL` trigger. Reusing the same idempotency key for the same request returns the original result instead of creating another job.
+
+## Inspect output
+
+Open the job in the dashboard while it is running to use the SSE stream. After completion, retained logs are available through the logs, search, and raw download endpoints because `log_retention` is enabled.
+

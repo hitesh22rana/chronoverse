@@ -1,0 +1,28 @@
+# Image pull coordination
+
+Replicated workflow workers can share a Docker daemon. Without coordination, a cold image can trigger simultaneous pulls that waste bandwidth and amplify registry throttling.
+
+## Lock scope
+
+The Redis lock key includes the Docker host and exact image string. Workers sharing a host coordinate; workers on different Docker hosts may pull in parallel.
+
+## Acquisition flow
+
+The first worker acquires the lock and pulls or inspects the image. Other workers poll until the lock is released, the image becomes available, or the configured wait timeout expires.
+
+## Configuration
+
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL`
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+
+Set the TTL and wait timeout above normal large-image pull time. Aggressive polling increases Redis pressure.
+
+## Failure behavior
+
+A timeout is retryable Kafka work rather than permission to start another same-host pull. TTL expiry prevents a crashed owner from holding the lock forever.
+
+<Callout title="Host-scoped, not registry-scoped" type="note">
+Separate Docker hosts can still pull the same image concurrently. Registry-wide rate limits need capacity planning outside this lock.
+</Callout>
+

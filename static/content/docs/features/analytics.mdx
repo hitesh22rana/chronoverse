@@ -1,0 +1,24 @@
+# Analytics
+
+Chronoverse maintains user and workflow aggregates from workflow, job, and retained log events.
+
+## User aggregates
+
+`GET /analytics` returns totals across the authenticated user's workflows, including workflow count, job count, retained log count, and total execution duration.
+
+## Workflow aggregates
+
+`GET /analytics/{workflow_id}` returns job count, retained log count, and execution duration for one workflow.
+
+## Processing model
+
+The analytics processor consumes Kafka events and updates PostgreSQL aggregates. Processed-event records deduplicate replayed events.
+
+## Cleanup
+
+Processed event IDs are retained for a configurable window and removed in bounded cleanup batches. The retention period should exceed the longest replay window operators expect to tolerate.
+
+## Storage distinction
+
+Analytics aggregates are stored in PostgreSQL. ClickHouse is used for retained job log bodies, not as the analytics source of truth.
+

@@ -1,0 +1,27 @@
+# Kafka events
+
+Kafka events connect the durable state owned by services with the asynchronous work owned by workers.
+
+## Topic contracts
+
+- `workflows`: build, reschedule, termination, deletion, and workflow terminal effects.
+- `jobs`: dispatch and container execution work.
+- `job_logs`: deterministic retained stdout and stderr events.
+- `analytics`: workflow, job, and log aggregate inputs.
+
+## Event identity
+
+Events carry stable identifiers or deterministic keys for replay-sensitive side effects. Workflow generation and job dispatch attempt fields provide additional stale-work protection.
+
+## Trace headers
+
+OpenTelemetry propagation fields are injected into Kafka headers and extracted by consumers.
+
+## Compatibility
+
+Event schema changes must account for records already present in Kafka. Additive changes are preferred, and consumers must not assume a producer and every consumer deploy simultaneously.
+
+## Delivery expectation
+
+Events are delivered at least once. Consumers must remain idempotent, preconditioned, or deduplicated.
+

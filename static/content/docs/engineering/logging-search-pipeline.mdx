@@ -1,0 +1,31 @@
+# Logging and search pipeline
+
+Container output has a low-latency live path and a durable retained path.
+
+## Live path
+
+The execution worker publishes buffered stdout and stderr to Redis-backed channels. The jobs service exposes a gRPC stream, and the HTTP gateway translates it into Server-Sent Events.
+
+## Retained path
+
+When workflow retention is enabled, the worker also publishes deterministic log events to Kafka. The job logs processor batches records and writes them to ClickHouse, then indexes searchable fields in Meilisearch.
+
+## Replay handling
+
+Log event IDs remain stable across retries. ClickHouse storage and analytics processing use those identifiers to avoid duplicate retained output and counts.
+
+## Query behavior
+
+- Plain log listing reads ClickHouse.
+- Stream-only filtering reads retained data without a text query.
+- Text search uses Meilisearch and returns safe highlight fragments.
+- Raw downloads apply the same stream and text filters without rendering markup.
+
+## Ordering and pagination
+
+Results use descending sequence order. Cursor pagination moves toward older output and preserves filter context.
+
+## Security
+
+Meilisearch uses HTTPS and client certificate configuration in Compose. Search highlights are treated as data and rendered without unsafe HTML injection.
+

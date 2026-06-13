@@ -1,0 +1,24 @@
+# Notifications
+
+Notifications surface workflow and job state changes to authenticated users.
+
+## Creation
+
+Internal event processing creates notifications with deterministic event identity so replayed workflow or job events do not create repeated user-visible records.
+
+## Listing
+
+`GET /notifications` returns a cursor-paginated list for the current user.
+
+## Read state
+
+`PUT /notifications` accepts a list of notification IDs and marks them read. The request requires the normal authenticated mutation protections.
+
+## Preferences
+
+User notification preference is stored in the users domain and updated through `PUT /users`.
+
+## Delivery model
+
+The current product exposes notifications in the dashboard. The notifications service is the ownership boundary; external email or webhook delivery is not part of the documented runtime.
+

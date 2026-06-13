@@ -1,0 +1,26 @@
+# Retries and recovery
+
+## Outbox publication
+
+Failed Kafka publication is retried with backoff under a processing lease. Exhausted rows become dead and remain visible for operational handling.
+
+## Kafka handlers
+
+Partition processing distinguishes retryable from terminal outcomes. Records are committed only when policy permits.
+
+## Job execution
+
+System failures can release eligible jobs for bounded retry. User workload failures are recorded without treating every failure as infrastructure instability.
+
+## Expired leases
+
+Recovery scans for expired running jobs, invalidates old ownership, attempts container cleanup, and either retries or terminates the job according to current state and retry limits.
+
+## Stale events
+
+Generation, dispatch attempt, deterministic ID, and lease-token checks intentionally reject delayed work. A precondition failure can therefore indicate successful protection rather than a platform outage.
+
+## Cleanup loops
+
+Workflow state, outbox rows, and analytics processed-event IDs use bounded cleanup. Retention windows must remain long enough for expected replay and investigation periods.
+

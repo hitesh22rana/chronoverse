@@ -1,0 +1,28 @@
+# Transactional outbox
+
+The outbox closes the gap between committing PostgreSQL state and publishing the corresponding Kafka event.
+
+## Write path
+
+The domain transaction writes the resource change and an outbox row atomically. If the transaction fails, neither is visible. If it commits, publication intent remains durable even when Kafka is unavailable.
+
+## Claiming
+
+Relay replicas claim pending rows with a processing lease and worker identity. A row cannot be actively published by every replica at once, and an abandoned claim becomes eligible after its lease expires.
+
+## Publication outcomes
+
+- Successful rows are marked published.
+- Retryable failures increment attempt state and apply backoff.
+- Rows that exhaust `OUTBOX_RELAY_MAX_ATTEMPTS` are marked dead for inspection.
+
+## Cleanup
+
+Published rows remain available for a configurable retention period, then cleanup removes them in bounded batches. Dead rows are not equivalent to published rows and require operational attention.
+
+## Scaling guidance
+
+Tune batch size, poll interval, processing lease, Kafka latency, and PostgreSQL query latency together. A shorter poll interval cannot compensate for saturated Kafka or database connections.
+
+<SourceLink path="internal/repository/outboxrelay/outboxrelay.go">Outbox relay repository</SourceLink>
+

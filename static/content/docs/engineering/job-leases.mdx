@@ -1,0 +1,32 @@
+# Durable job leases
+
+Job leases provide exclusive, time-bounded execution ownership.
+
+## Claim
+
+An execution worker presents the expected workflow generation and dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible.
+
+## Protected mutations
+
+The token is required to:
+
+- renew the lease;
+- attach a container ID;
+- complete or fail the job;
+- cancel a claimed job;
+- release it for retry.
+
+## Renewal
+
+Workers renew while the workload runs. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
+
+## Recovery
+
+Execution workers periodically request expired-lease recovery in bounded batches. Recovery can clean up an abandoned container, retry eligible infrastructure failures, or mark work failed when limits and state require it.
+
+## Split-brain prevention
+
+After expiration and recovery, the old token is invalid. A delayed worker cannot report success for work that another worker now owns.
+
+<SourceLink path="internal/repository/jobs/lease.go">Lease state transitions</SourceLink>
+

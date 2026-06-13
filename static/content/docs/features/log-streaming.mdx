@@ -1,0 +1,32 @@
+# Log streaming and search
+
+## Live SSE
+
+Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events`. Events arrive as `text/event-stream`; production Nginx disables buffering for the `/api/.../events` route.
+
+## Retained listing
+
+`GET .../logs` reads ClickHouse in descending sequence order. It is available only when the workflow supports retained logs.
+
+## Search and filtering
+
+`GET .../logs/search` accepts:
+
+- `stream=stdout|stderr`
+- `q=<text>`
+- `cursor=<opaque cursor>`
+
+When `q` is absent, the route performs retained stream filtering. When present, Meilisearch supplies matches and highlight ranges.
+
+## Raw downloads
+
+`GET .../logs/raw` downloads plain text. Stream and text filters are applied consistently, and search highlights are not rendered into the download.
+
+## Safe rendering
+
+Search highlights are handled as structured data rather than trusted HTML. Client rendering must not pass Meilisearch fragments to an unsafe HTML sink.
+
+## Error behavior
+
+Retained routes return `412` for unsupported or disabled retention. An already-open SSE response reports equivalent failures through `event: error` frames.
+

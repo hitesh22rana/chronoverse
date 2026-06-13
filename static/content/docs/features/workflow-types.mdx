@@ -1,0 +1,22 @@
+# Workflow types
+
+## Heartbeat
+
+`HEARTBEAT` workflows perform lightweight health checks. They do not start general-purpose workload containers and never generate retained execution logs. `log_retention` is persisted as disabled.
+
+Use heartbeat workflows for endpoint availability and infrastructure checks where a full container command is unnecessary.
+
+## Container
+
+`CONTAINER` workflows describe a Docker image and command in the payload. The workflow worker prepares execution metadata and the execution worker runs the workload through the Docker socket proxy.
+
+Container workflows can retain stdout and stderr, stream output while running, and participate in text search and raw downloads after completion.
+
+## Shared controls
+
+Both kinds support interval scheduling, manual runs, failure thresholds, termination, notifications, and analytics. Their execution and logging behavior differs, but they share replay-safe scheduling and lifecycle state.
+
+## Choosing a kind
+
+Prefer heartbeat when the result is a health signal. Prefer container when the workload needs an image, command, environment, or output capture.
+

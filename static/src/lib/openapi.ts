@@ -20,13 +20,21 @@ export type OpenApiOperation = {
   tags: string[];
   parameters: OpenApiParameter[];
   requestBody?: Record<string, unknown>;
-  responses: Record<string, { description?: string; content?: Record<string, unknown> }>;
+  responses: Record<string, OpenApiResponse>;
+};
+
+type OpenApiResponse = {
+  description?: string;
+  content?: Record<string, unknown>;
 };
 
 type OpenApiDocument = {
   info: { title: string; version: string; description?: string };
   paths: Record<string, Record<string, Record<string, unknown>>>;
-  components?: { parameters?: Record<string, OpenApiParameter> };
+  components?: {
+    parameters?: Record<string, OpenApiParameter>;
+    responses?: Record<string, OpenApiResponse>;
+  };
 };
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
@@ -50,6 +58,18 @@ export function getOpenApiOperations(): OpenApiOperation[] {
     return resolved;
   }
 
+  function resolveResponse(response: OpenApiResponse | { $ref: string }): OpenApiResponse {
+    if (!("$ref" in response)) return response;
+    const prefix = "#/components/responses/";
+    if (!response.$ref.startsWith(prefix)) {
+      throw new Error(`Unsupported OpenAPI response reference: ${response.$ref}`);
+    }
+    const name = response.$ref.slice(prefix.length);
+    const resolved = document.components?.responses?.[name];
+    if (!resolved) throw new Error(`Unresolved OpenAPI response reference: ${response.$ref}`);
+    return resolved;
+  }
+
   return Object.entries(document.paths).flatMap(([route, pathItem]) =>
     Object.entries(pathItem)
       .filter(([method]) => HTTP_METHODS.has(method))
@@ -66,7 +86,11 @@ export function getOpenApiOperations(): OpenApiOperation[] {
           tags: (operation.tags as string[] | undefined) ?? ["API"],
           parameters: [...pathParameters, ...operationParameters].map(resolveParameter),
           requestBody: operation.requestBody as Record<string, unknown> | undefined,
-          responses: (operation.responses as OpenApiOperation["responses"] | undefined) ?? {},
+          responses: Object.fromEntries(
+            Object.entries(
+              (operation.responses as Record<string, OpenApiResponse | { $ref: string }> | undefined) ?? {},
+            ).map(([status, response]) => [status, resolveResponse(response)]),
+          ),
         };
       }),
   );

@@ -37,7 +37,13 @@ for (const file of collectMdxFiles(contentRoot)) {
 }
 
 await SwaggerParser.validate(getOpenApiPath()).catch((error: unknown) => errors.push(`Invalid OpenAPI document: ${String(error)}`));
-const operationSlugs = new Set(getOpenApiOperations().map((operation) => `api/reference/${operation.operationId}`));
+const operations = getOpenApiOperations();
+for (const operation of operations) {
+  for (const [status, response] of Object.entries(operation.responses)) {
+    if (!response.description) errors.push(`Missing response description for ${operation.operationId} HTTP ${status}`);
+  }
+}
+const operationSlugs = new Set(operations.map((operation) => `api/reference/${operation.operationId}`));
 const validSlugs = new Set([...slugs, ...operationSlugs]);
 
 for (const page of docPages) {

@@ -91,6 +91,7 @@ paths:
                 notification_preference:
                   type: string
                   enum: [ALL, NONE]
+              required: [notification_preference]
       responses:
         '204': {description: User preferences updated}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -105,9 +106,9 @@ paths:
         - {name: query, in: query, schema: {type: string}, description: Workflow name search}
         - {name: kind, in: query, schema: {type: string, enum: [HEARTBEAT, CONTAINER]}}
         - {name: build_status, in: query, schema: {$ref: '#/components/schemas/BuildStatus'}}
-        - {name: terminated, in: query, schema: {type: boolean}}
-        - {name: interval_min, in: query, schema: {type: integer}}
-        - {name: interval_max, in: query, schema: {type: integer}}
+        - {name: terminated, in: query, schema: {type: boolean, default: false}}
+        - {name: interval_min, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: interval_max, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
       responses:
         '200':
           description: Paginated workflow list
@@ -116,7 +117,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  workflows: {type: array, items: {$ref: '#/components/schemas/Workflow'}}
+                  workflows: {type: array, items: {$ref: '#/components/schemas/WorkflowListItem'}}
                   cursor: {type: string}
         '401': {$ref: '#/components/responses/Unauthorized'}
     post:
@@ -136,8 +137,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties: {id: {type: string, format: uuid}}
+                {$ref: '#/components/schemas/IdentifierResponse'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /workflows/{workflow_id}:
@@ -150,7 +150,7 @@ paths:
       responses:
         '200':
           description: Workflow details
-          content: {application/json: {schema: {$ref: '#/components/schemas/Workflow'}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowDetail'}}}
         '404': {$ref: '#/components/responses/NotFound'}
     put:
       operationId: updateWorkflow
@@ -199,7 +199,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  jobs: {type: array, items: {$ref: '#/components/schemas/Job'}}
+                  jobs: {type: array, items: {$ref: '#/components/schemas/JobListItem'}}
                   cursor: {type: string}
   /workflows/{workflow_id}/jobs/schedule:
     post:
@@ -216,8 +216,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties: {id: {type: string, format: uuid}}
+                {$ref: '#/components/schemas/IdentifierResponse'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
   /workflows/{workflow_id}/jobs/{job_id}:
     get:
@@ -231,7 +230,7 @@ paths:
       responses:
         '200':
           description: Job details
-          content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/JobDetail'}}}
         '404': {$ref: '#/components/responses/NotFound'}
   /workflows/{workflow_id}/jobs/{job_id}/logs:
     get:
@@ -313,7 +312,9 @@ paths:
       security: [{cookieSession: []}]
       parameters: [{$ref: '#/components/parameters/Cursor'}]
       responses:
-        '200': {description: Paginated notifications}
+        '200':
+          description: Paginated notifications
+          content: {application/json: {schema: {$ref: '#/components/schemas/NotificationPage'}}}
     put:
       operationId: markNotificationsRead
       summary: Mark notifications read
@@ -326,7 +327,7 @@ paths:
             schema:
               type: object
               required: [ids]
-              properties: {ids: {type: array, items: {type: string, format: uuid}}}
+              properties: {ids: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}}
       responses:
         '204': {description: Notifications marked read}
   /analytics:
@@ -338,7 +339,7 @@ paths:
       responses:
         '200':
           description: Aggregate totals for the authenticated user
-          content: {application/json: {schema: {$ref: '#/components/schemas/Analytics'}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/UserAnalytics'}}}
   /analytics/{workflow_id}:
     get:
       operationId: getWorkflowAnalytics
@@ -349,7 +350,7 @@ paths:
       responses:
         '200':
           description: Aggregate totals for one workflow
-          content: {application/json: {schema: {$ref: '#/components/schemas/Analytics'}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
 components:
   securitySchemes:
     cookieSession:
@@ -374,18 +375,14 @@ components:
       description: Retained logs in descending sequence order
       content:
         application/json:
-          schema:
-            type: object
-            properties:
-              logs: {type: array, items: {$ref: '#/components/schemas/Log'}}
-              cursor: {type: string}
+          schema: {$ref: '#/components/schemas/JobLogPage'}
   schemas:
     AuthRequest:
       type: object
       required: [email, password]
       properties:
         email: {type: string, format: email}
-        password: {type: string, format: password}
+        password: {type: string, format: password, minLength: 8, maxLength: 72}
     User:
       type: object
       required: [email, notification_preference, created_at, updated_at]
@@ -401,8 +398,8 @@ components:
         name: {type: string}
         payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
         kind: {type: string, enum: [HEARTBEAT, CONTAINER]}
-        interval: {type: integer, description: Schedule interval in minutes}
-        max_consecutive_job_failures_allowed: {type: integer}
+        interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
         log_retention: {type: boolean, description: Supported for CONTAINER workflows; forced off for HEARTBEAT}
     WorkflowUpdateInput:
       type: object
@@ -414,36 +411,74 @@ components:
         max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
     BuildStatus: {type: string, enum: [QUEUED, STARTED, COMPLETED, FAILED, CANCELED]}
     JobStatus: {type: string, enum: [PENDING, QUEUED, RUNNING, COMPLETED, FAILED, CANCELED]}
-    Workflow:
+    IdentifierResponse:
+      type: object
+      required: [id]
+      properties:
+        id: {type: string, format: uuid}
+    WorkflowListItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        kind: {type: string, enum: [HEARTBEAT, CONTAINER]}
+        build_status: {$ref: '#/components/schemas/BuildStatus'}
+        interval: {type: integer, description: Schedule interval in minutes}
+        consecutive_job_failures_count: {type: integer, minimum: 0}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        terminated_at: {type: string, format: date-time}
+        log_retention: {type: boolean}
+    WorkflowDetail:
       allOf:
-        - {$ref: '#/components/schemas/WorkflowInput'}
+        - {$ref: '#/components/schemas/WorkflowListItem'}
         - type: object
           properties:
-            id: {type: string, format: uuid}
-            build_status: {$ref: '#/components/schemas/BuildStatus'}
-            generation: {type: integer}
-            terminated_at: {type: string, format: date-time}
-            created_at: {type: string, format: date-time}
-            updated_at: {type: string, format: date-time}
-    Job:
+            generation: {type: integer, minimum: 0}
+    JobListItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        workflow_id: {type: string, format: uuid}
+        container_id: {type: string}
+        status: {$ref: '#/components/schemas/JobStatus'}
+        trigger: {type: string, enum: [AUTOMATIC, MANUAL]}
+        attempts: {type: integer, minimum: 0}
+        scheduled_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    JobDetail:
       type: object
       properties:
         id: {type: string, format: uuid}
         workflow_id: {type: string, format: uuid}
         status: {$ref: '#/components/schemas/JobStatus'}
         trigger: {type: string, enum: [AUTOMATIC, MANUAL]}
-        attempts: {type: integer}
         scheduled_at: {type: string, format: date-time}
         started_at: {type: string, format: date-time}
         completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     Log:
       type: object
       properties:
-        sequence: {type: integer}
-        stream: {type: string, enum: [stdout, stderr]}
-        message: {type: string}
         timestamp: {type: string, format: date-time}
-        highlights: {type: array, items: {type: string}}
+        message: {type: string}
+        sequence_num: {type: integer, minimum: 0}
+        stream: {type: string, enum: [stdout, stderr]}
+        event_id: {type: string}
+    JobLogPage:
+      type: object
+      properties:
+        id: {type: string, format: uuid, description: Job ID}
+        workflow_id: {type: string, format: uuid}
+        logs: {type: array, items: {$ref: '#/components/schemas/Log'}}
+        cursor: {type: string}
+        highlight_token: {type: string, description: Marker inserted around search matches in log messages}
     JobLogDownloadFilter:
       type: object
       required: [q, stream]
@@ -468,11 +503,31 @@ components:
         workflow_id: {type: string, format: uuid}
         filters: {$ref: '#/components/schemas/JobLogDownloadFilter'}
         logs: {type: array, items: {$ref: '#/components/schemas/JobLogDownloadEntry'}}
-    Analytics:
+    Notification:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        payload: {type: string, description: Notification-kind-specific JSON encoded as a string}
+        read_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    NotificationPage:
+      type: object
+      properties:
+        notifications: {type: array, items: {$ref: '#/components/schemas/Notification'}}
+        cursor: {type: string}
+    UserAnalytics:
+      type: object
+      properties:
+        total_workflows: {type: integer, minimum: 0}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0}
+        total_job_execution_duration: {type: integer, minimum: 0}
+    WorkflowAnalytics:
       type: object
       properties:
         workflow_id: {type: string, format: uuid}
-        total_workflows: {type: integer}
-        total_jobs: {type: integer}
-        total_joblogs: {type: integer}
-        total_job_execution_duration: {type: number}
+        total_job_execution_duration: {type: integer, minimum: 0}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0}

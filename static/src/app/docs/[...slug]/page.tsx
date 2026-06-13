@@ -6,6 +6,7 @@ import { DocShell } from "@/components/docs/doc-shell";
 import { docPages, getDocPage } from "../../../../docs.config";
 import { getDocHeadings, getDocNavigation, getPageMetadata, isGeneratedApiSlug } from "@/lib/docs";
 import { getOpenApiOperation, getOpenApiOperations } from "@/lib/openapi";
+import { SITE_URL } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string[] }> };
 
@@ -21,7 +22,17 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const slug = (await params).slug.join("/");
   const page = getPageMetadata(slug);
-  return page ? { title: `${page.title} | Docs`, description: page.description } : {};
+  if (!page) return {};
+
+  const title = `${page.title} | Docs`;
+  const url = `${SITE_URL}/docs/${slug}/`;
+  return {
+    title,
+    description: page.description,
+    alternates: { canonical: url },
+    openGraph: { title, description: page.description, type: "article", url },
+    twitter: { card: "summary", title, description: page.description },
+  };
 }
 
 export default async function DocumentationPage({ params }: PageProps) {

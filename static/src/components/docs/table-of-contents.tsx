@@ -16,15 +16,44 @@ export function TableOfContents({ headings }: { headings: DocHeading[] }) {
     if (elements.length === 0) return;
 
     const visible = new Set<string>();
+    let frame = 0;
+
+    const activateHeading = (id: string) => {
+      setActiveId((current) => current === id ? current : id);
+      const nextUrl = `${window.location.pathname}${window.location.search}#${encodeURIComponent(id)}`;
+      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) {
+        window.history.replaceState(window.history.state, "", nextUrl);
+      }
+    };
+
     const updateActiveHeading = () => {
+      const documentBottom = document.documentElement.scrollHeight - window.innerHeight;
+      if (window.scrollY >= documentBottom - 2) {
+        activateHeading(elements.at(-1)?.id ?? elements[0].id);
+        return;
+      }
+
       const visibleHeading = headings.find((heading) => visible.has(heading.id));
       if (visibleHeading) {
-        setActiveId(visibleHeading.id);
+        activateHeading(visibleHeading.id);
         return;
       }
 
       const latestHeading = elements.filter((element) => element.getBoundingClientRect().top <= 112).at(-1);
-      setActiveId(latestHeading?.id ?? elements[0].id);
+      activateHeading(latestHeading?.id ?? elements[0].id);
+    };
+
+    const scheduleUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        updateActiveHeading();
+      });
+    };
+
+    const syncFromHash = () => {
+      const hash = decodeURIComponent(window.location.hash.slice(1));
+      if (elements.some((element) => element.id === hash)) setActiveId(hash);
     };
 
     const observer = new IntersectionObserver(
@@ -33,15 +62,25 @@ export function TableOfContents({ headings }: { headings: DocHeading[] }) {
           if (entry.isIntersecting) visible.add(entry.target.id);
           else visible.delete(entry.target.id);
         });
-        updateActiveHeading();
+        scheduleUpdate();
       },
       { rootMargin: "-96px 0px -68% 0px", threshold: [0, 1] },
     );
 
     elements.forEach((element) => observer.observe(element));
-    updateActiveHeading();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("hashchange", syncFromHash);
+    syncFromHash();
+    scheduleUpdate();
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("hashchange", syncFromHash);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
   }, [headings]);
 
   if (headings.length === 0) return null;

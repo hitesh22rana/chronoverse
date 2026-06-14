@@ -10,8 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
@@ -23,13 +21,13 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Server implements the HTTP server.
 type Server struct {
-	tp                  trace.Tracer
 	logger              *zap.Logger
 	auth                auth.IAuth
 	crypto              *crypto.Crypto
@@ -111,7 +109,6 @@ func New(
 	}
 
 	srv := &Server{
-		tp:                  otel.Tracer(svcpkg.Info().GetName()),
 		logger:              logger,
 		auth:                auth,
 		crypto:              crypto,
@@ -141,10 +138,13 @@ func New(
 	srv.registerRoutes(router)
 
 	// Common middlewares
-	srv.httpServer.Handler = srv.withOtelMiddleware(
-		srv.withCORSMiddleware(
-			srv.withCompressionMiddleware(router),
+	srv.httpServer.Handler = otelpkg.HTTPHandler(
+		srv.withRequestLoggingMiddleware(
+			srv.withCORSMiddleware(
+				srv.withCompressionMiddleware(router),
+			),
 		),
+		svcpkg.Info().GetName(),
 	)
 	return srv
 }

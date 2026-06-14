@@ -7,6 +7,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 )
 
 // HeartBeat represents the HEARTBEAT workflow.
@@ -27,7 +29,8 @@ func (h *HeartBeat) Execute(
 ) error {
 	// HTTP client with timeout
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout:   timeout,
+		Transport: otelpkg.HTTPTransport(nil),
 	}
 
 	// Create request with context

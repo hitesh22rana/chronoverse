@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
-	"go.opentelemetry.io/otel/attribute"
+	"github.com/felixge/httpsnoop"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -18,36 +17,15 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
-// withOtelMiddleware adds OpenTelemetry tracing to the HTTP handler.
-func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
+// withRequestLoggingMiddleware logs completed HTTP requests. OpenTelemetry
+// tracing and metrics are provided by the shared OTEL HTTP handler wrapper.
+func (s *Server) withRequestLoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip tracing for streaming endpoints
-		if strings.Contains(r.URL.Path, "/logs/raw") || strings.Contains(r.URL.Path, "/events") {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		startTime := time.Now()
-
-		// Start a new span for the request
-		ctx, span := s.tp.Start(
-			r.Context(),
-			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-			trace.WithAttributes(
-				attribute.String("http.method", r.Method),
-				attribute.String("http.url", r.URL.String()),
-				attribute.String("http.host", r.Host),
-				attribute.String("http.remote_addr", r.RemoteAddr),
-				attribute.String("http.user_agent", r.UserAgent()),
-			),
-		)
-		defer span.End()
-
-		spanCtx := span.SpanContext()
+		spanCtx := trace.SpanContextFromContext(r.Context())
 		requestLogFields := []zap.Field{
-			zap.Any("ctx", ctx),
+			zap.Any("ctx", r.Context()),
 			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
+			zap.String("path", requestLogPath(r)),
 			zap.String("host", r.Host),
 			zap.String("remote_addr", r.RemoteAddr),
 			zap.String("user_agent", r.UserAgent()),
@@ -60,41 +38,32 @@ func (s *Server) withOtelMiddleware(next http.Handler) http.Handler {
 		}
 		log := s.logger.With(requestLogFields...)
 
-		// Wrapped response writer to capture the status code
-		wrw := &customResponseWriter{
-			ResponseWriter: w,
-			status:         http.StatusOK,
-		}
-
-		// Continue the request with the new context
-		next.ServeHTTP(wrw, r.WithContext(ctx))
-
-		duration := time.Since(startTime)
-
-		// Set the status code in the span
-		span.SetAttributes(attribute.Int("http.status_code", wrw.status))
+		metrics := httpsnoop.CaptureMetrics(next, w, r)
 
 		logFields := []zap.Field{
-			zap.Int("status", wrw.status),
-			zap.Duration("duration_ms", duration),
-			zap.String("duration", duration.String()),
+			zap.Int("status", metrics.Code),
+			zap.Duration("duration_ms", metrics.Duration),
+			zap.String("duration", metrics.Duration.String()),
 		}
 
-		msg := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		msg := fmt.Sprintf("%s %s", r.Method, requestLogPath(r))
 		//nolint:gocritic // This if-else chain is better than a switch statement
-		if wrw.status >= 500 {
+		if metrics.Code >= 500 {
 			log.Error(msg, logFields...)
-			span.SetAttributes(attribute.String("http.error", http.StatusText(wrw.status)))
-			span.RecordError(fmt.Errorf("server error: %s", http.StatusText(wrw.status)))
-		} else if wrw.status >= 400 {
+		} else if metrics.Code >= 400 {
 			log.Warn(msg, logFields...)
-			span.SetAttributes(attribute.String("http.error", http.StatusText(wrw.status)))
-			span.RecordError(fmt.Errorf("client error: %s", http.StatusText(wrw.status)))
 		} else {
 			log.Info(msg, logFields...)
-			span.SetAttributes(attribute.String("http.success", http.StatusText(wrw.status)))
 		}
 	})
+}
+
+func requestLogPath(r *http.Request) string {
+	if r.Pattern != "" {
+		return r.Pattern
+	}
+
+	return r.URL.Path
 }
 
 // withCORSMiddleware adds CORS headers to all responses.

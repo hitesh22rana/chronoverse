@@ -1,12 +1,18 @@
 package heartbeat_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 )
@@ -31,6 +37,54 @@ func TestNew(t *testing.T) {
 			_ = heartbeat.New()
 		})
 	}
+}
+
+func TestHeartBeatExecuteEmitsHTTPClientTelemetry(t *testing.T) {
+	oldMeterProvider := otel.GetMeterProvider()
+	oldTracerProvider := otel.GetTracerProvider()
+	oldPropagator := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetMeterProvider(oldMeterProvider)
+		otel.SetTracerProvider(oldTracerProvider)
+		otel.SetTextMapPropagator(oldPropagator)
+	})
+
+	reader := sdkmetric.NewManualReader()
+	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	tracerProvider := sdktrace.NewTracerProvider()
+	otel.SetMeterProvider(meterProvider)
+	otel.SetTracerProvider(tracerProvider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	traceparent := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceparent <- r.Header.Get("traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx, span := tracerProvider.Tracer("heartbeat-test").Start(context.Background(), "execute")
+	err := heartbeat.New().Execute(ctx, time.Second, server.URL, http.StatusOK, nil)
+	span.End()
+	if err != nil {
+		t.Fatalf("heartbeat execution failed: %v", err)
+	}
+	if got := <-traceparent; got == "" {
+		t.Fatal("expected heartbeat request to propagate trace context")
+	}
+
+	var metrics metricdata.ResourceMetrics
+	if err := reader.Collect(t.Context(), &metrics); err != nil {
+		t.Fatalf("failed to collect heartbeat metrics: %v", err)
+	}
+	for _, scope := range metrics.ScopeMetrics {
+		for _, metric := range scope.Metrics {
+			if metric.Name == "http.client.request.duration" {
+				return
+			}
+		}
+	}
+	t.Fatal("http.client.request.duration metric not found")
 }
 
 func TestHeartBeat_Execute(t *testing.T) {

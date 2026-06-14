@@ -7,12 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
+
+	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 )
 
 func TestCORSMiddlewareAllowsIdempotencyKeyHeader(t *testing.T) {
@@ -50,17 +53,20 @@ func TestOtelMiddlewareLogsTraceIdentifiers(t *testing.T) {
 		sdktrace.WithSpanProcessor(tracetest.NewSpanRecorder()),
 	)
 	s := &Server{
-		tp:     tracerProvider.Tracer("server-test"),
 		logger: zap.New(core),
 	}
 
-	handler := s.withOtelMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		spanCtx := oteltrace.SpanContextFromContext(r.Context())
-		if !spanCtx.IsValid() {
-			t.Fatal("expected traced request context")
-		}
-		w.WriteHeader(http.StatusAccepted)
-	}))
+	handler := otelpkg.HTTPHandler(
+		s.withRequestLoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			spanCtx := oteltrace.SpanContextFromContext(r.Context())
+			if !spanCtx.IsValid() {
+				t.Fatal("expected traced request context")
+			}
+			w.WriteHeader(http.StatusAccepted)
+		})),
+		"server-test",
+		otelhttp.WithTracerProvider(tracerProvider),
+	)
 
 	req := httptest.NewRequest(http.MethodGet, "/notifications", http.NoBody)
 	res := httptest.NewRecorder()
@@ -78,6 +84,21 @@ func TestOtelMiddlewareLogsTraceIdentifiers(t *testing.T) {
 	fields := entries[0].ContextMap()
 	assertNonEmptyStringField(t, fields, "trace_id")
 	assertNonEmptyStringField(t, fields, "span_id")
+}
+
+func TestRequestLoggingMiddlewarePreservesFlusher(t *testing.T) {
+	s := &Server{logger: zap.NewNop()}
+	flusherAvailable := false
+	handler := s.withRequestLoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, flusherAvailable = w.(http.Flusher)
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/events", http.NoBody))
+
+	if !flusherAvailable {
+		t.Fatal("expected request logging middleware to preserve http.Flusher")
+	}
 }
 
 func assertNonEmptyStringField(t *testing.T, fields map[string]any, key string) {

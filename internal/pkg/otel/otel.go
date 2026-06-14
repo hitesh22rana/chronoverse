@@ -52,11 +52,9 @@ func InitTracerProvider(ctx context.Context, res *resource.Resource) (*sdktrace.
 		return nil, status.Errorf(codes.Internal, "failed to create OTLP trace exporter: %v", err)
 	}
 
-	bsp := sdktrace.NewBatchSpanProcessor(exporter)
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
-		sdktrace.WithSpanProcessor(bsp),
 	)
 	otel.SetTracerProvider(tp)
 

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -29,6 +28,7 @@ import (
 	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -123,7 +123,7 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 
 	var serverOpts []grpc.ServerOption
 	serverOpts = append(serverOpts,
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),

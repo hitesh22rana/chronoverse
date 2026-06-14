@@ -139,21 +139,6 @@ func handleError(w http.ResponseWriter, err error, message ...string) {
 	}
 }
 
-// customResponseWriter wraps http.ResponseWriter to capture status code.
-type customResponseWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *customResponseWriter) WriteHeader(statusCode int) {
-	w.status = statusCode
-	w.ResponseWriter.WriteHeader(statusCode)
-}
-
-func (w *customResponseWriter) Write(b []byte) (int, error) {
-	return w.ResponseWriter.Write(b)
-}
-
 // gzipResponseWriter combines gzip compression with status code capture.
 type gzipResponseWriter struct {
 	http.ResponseWriter

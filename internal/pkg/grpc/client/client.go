@@ -9,13 +9,14 @@ import (
 
 	"github.com/eapache/go-resiliency/breaker"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/status"
+
+	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 )
 
 // TLSConfig holds the TLS configuration for gRPC client.
@@ -147,7 +148,7 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 
 	opts = append(
 		opts,
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithStatsHandler(otelpkg.GRPCClientHandler()),
 		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
 		grpc.WithChainStreamInterceptor(streamInterceptors...),
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),

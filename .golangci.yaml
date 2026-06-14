@@ -137,6 +137,8 @@ linters:
           - ireturn
         path: _test\.go
     paths:
+      - ^dashboard/
+      - ^static/
       - third_party$
       - builtin$
       - examples$
@@ -154,6 +156,8 @@ formatters:
   exclusions:
     generated: lax
     paths:
+      - ^dashboard/
+      - ^static/
       - third_party$
       - builtin$
       - examples$

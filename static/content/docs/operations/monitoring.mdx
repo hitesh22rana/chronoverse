@@ -12,6 +12,8 @@ Compose checks PostgreSQL with TLS `psql`, ClickHouse with the secure client, Re
 
 Monitor request and RPC latency, Kafka consumer progress, outbox pending and dead rows, expired job leases, execution retries, log processor batch failures, ClickHouse insert latency, Meilisearch health, and database pool saturation.
 
+For endpoint traffic, use histogram counts for request rate, status-code attributes for error ratios, and histogram buckets for latency percentiles. Group REST traffic by `http.route` rather than raw URL paths, and group gRPC traffic by `rpc.service` and `rpc.method`.
+
 ## User-visible checks
 
 Track scheduling delay, workflow build failures, jobs stuck outside terminal states, SSE connection failures, missing retained logs, and analytics lag.
@@ -24,4 +26,3 @@ docker compose -f compose.prod.yaml logs --since=15m server
 docker compose -f compose.prod.yaml logs --since=15m outbox-relay
 docker compose -f compose.prod.yaml logs --since=15m execution-worker
 ```
-

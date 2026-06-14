@@ -12,7 +12,53 @@ Trace context crosses HTTP, gRPC, and Kafka. Use a single trace to follow an API
 
 ## Metrics
 
-Runtime and host metrics complement application spans. Watch latency distributions and saturation rather than relying only on process uptime.
+Runtime and host metrics complement application spans. HTTP, gRPC, and Redis instrumentation uses the same global OpenTelemetry meter provider and exports through the configured OTLP endpoint.
+
+### Endpoint metrics
+
+The HTTP server emits the standard OpenTelemetry histograms:
+
+- `http.server.request.duration`
+- `http.server.request.body.size`
+- `http.server.response.body.size`
+
+Outbound heartbeat requests emit the corresponding `http.client.*` metrics. HTTP server metrics use route templates such as `/workflows/{workflow_id}`; workflow IDs, job IDs, users, URLs, and authentication data are not metric attributes.
+
+All gRPC servers and clients emit:
+
+- `rpc.server.duration` and `rpc.client.duration`
+- `rpc.server.request.size` and `rpc.client.request.size`
+- `rpc.server.response.size` and `rpc.client.response.size`
+- per-RPC request and response message counts
+
+Useful dimensions include HTTP method, route, and response status, plus gRPC service, method, and status code. Unary and streaming RPCs are both recorded.
+
+Request volume is derived from histogram sample counts rather than a separate request counter. In Grafana's Prometheus data source, the OTEL metrics are normalized to Prometheus names. Example queries include:
+
+```promql
+# REST requests per second by route and method
+sum by (http_route, http_request_method) (
+  rate(http_server_request_duration_seconds_count[5m])
+)
+
+# REST 5xx ratio
+sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+/
+sum(rate(http_server_request_duration_seconds_count[5m]))
+
+# REST p95 latency by route
+histogram_quantile(
+  0.95,
+  sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[5m]))
+)
+
+# gRPC requests per second by service and method
+sum by (rpc_service, rpc_method) (
+  rate(rpc_server_duration_milliseconds_count[5m])
+)
+```
+
+Watch latency distributions, error ratios, and saturation rather than relying only on process uptime.
 
 ## Logs
 
@@ -21,4 +67,3 @@ Structured application logs include service context and trace correlation where 
 ## Investigation order
 
 Start from the user-visible request or job ID, locate its trace, inspect failed spans and correlated logs, then confirm durable state in PostgreSQL and transport progress in Kafka.
-

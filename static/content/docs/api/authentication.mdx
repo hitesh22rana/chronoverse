@@ -10,6 +10,8 @@ Chronoverse uses browser-oriented session authentication rather than exposing se
 
 `POST /auth/login` validates credentials and issues fresh cookies.
 
+Invalid credentials return the same `401 Unauthorized` response whether or not the email is registered.
+
 ## Validate
 
 `POST /auth/validate` verifies the current session and CSRF state. It is useful for dashboard session bootstrap.

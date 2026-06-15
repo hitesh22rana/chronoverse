@@ -20,13 +20,15 @@ import (
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
+	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	defaultExpirationTTL = time.Minute * 30
-	cacheTimeout         = time.Second * 2
+	defaultExpirationTTL  = time.Minute * 30
+	cacheExpirationJitter = defaultExpirationTTL / 10
+	cacheTimeout          = time.Second * 2
 )
 
 // Repository provides user related operations.
@@ -70,8 +72,6 @@ type RegisterUserRequest struct {
 }
 
 // RegisterUser a new user.
-//
-//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (userID, authToken string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.RegisterUser"),
@@ -109,7 +109,7 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 			logger.Warn("failed to cache user",
 				zap.String("user_id", res.ID),
 				zap.String("cache_key", cacheKey),
@@ -133,8 +133,6 @@ type LoginUserRequest struct {
 }
 
 // LoginUser user.
-//
-//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (userID, authToken string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.LoginUser"),
@@ -160,7 +158,7 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 
 	res, authToken, err := s.repo.LoginUser(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
-		return "", "", err
+		return "", "", normalizeLoginError(err)
 	}
 
 	// Cache the response in the background
@@ -172,7 +170,7 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 			logger.Warn("failed to cache user",
 				zap.String("user_id", res.ID),
 				zap.String("cache_key", cacheKey),
@@ -242,7 +240,7 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
 
-			if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 				logger.Warn("failed to cache user",
 					zap.String("user_id", _res.ID),
 					zap.String("cache_key", cacheKey),
@@ -322,6 +320,15 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 			zap.String("user_id", req.GetId()),
 			zap.String("cache_key", cacheKey),
 		)
+	}
+
+	return err
+}
+
+func normalizeLoginError(err error) error {
+	code := status.Code(err)
+	if code == codes.NotFound || code == codes.InvalidArgument {
+		return status.Error(codes.Unauthenticated, "invalid email or password")
 	}
 
 	return err

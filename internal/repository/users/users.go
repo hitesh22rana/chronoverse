@@ -20,6 +20,9 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+// #nosec G101 -- This public bcrypt hash is only used to equalize login timing.
+const dummyPasswordHash = "$2a$10$jKOlozu2Vfz.vNPHnOvOKuKh5B2gNH4aLNs4SGYZy5KoWvjxOstCq"
+
 // Repository provides users repository.
 type Repository struct {
 	tp   trace.Tracer
@@ -136,7 +139,12 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	loginUserResponse, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
-			err = status.Errorf(codes.NotFound, "user not found: %v", err)
+			// Keep missing-user attempts on the same expensive path as invalid passwords.
+			compareErr := bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(pass))
+			if compareErr != nil && !errors.Is(compareErr, bcrypt.ErrMismatchedHashAndPassword) {
+				return nil, "", status.Errorf(codes.Internal, "failed to verify password: %v", compareErr)
+			}
+			err = invalidCredentialsError()
 			return nil, "", err
 		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
@@ -149,7 +157,11 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 
 	// Validate password
 	if err = bcrypt.CompareHashAndPassword([]byte(loginUserResponse.Password), []byte(pass)); err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid password: %v", err)
+		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+			return nil, "", invalidCredentialsError()
+		}
+
+		err = status.Errorf(codes.Internal, "failed to verify password: %v", err)
 		return nil, "", err
 	}
 
@@ -168,6 +180,10 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	}
 
 	return res, authToken, nil
+}
+
+func invalidCredentialsError() error {
+	return status.Error(codes.Unauthenticated, "invalid email or password")
 }
 
 // GetUser fetches user by ID.

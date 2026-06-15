@@ -157,6 +157,7 @@ func TestLoginUser(t *testing.T) {
 	type want struct {
 		userID string
 		pat    string
+		code   codes.Code
 	}
 
 	// Test cases
@@ -197,6 +198,7 @@ func TestLoginUser(t *testing.T) {
 			want: want{
 				userID: "userID",
 				pat:    "token",
+				code:   codes.OK,
 			},
 			isErr: false,
 		},
@@ -207,7 +209,7 @@ func TestLoginUser(t *testing.T) {
 				Password: "password12345",
 			},
 			mock:  func(_ *userspb.LoginUserRequest) {},
-			want:  want{},
+			want:  want{code: codes.InvalidArgument},
 			isErr: true,
 		},
 		{
@@ -217,7 +219,7 @@ func TestLoginUser(t *testing.T) {
 				Password: "pass",
 			},
 			mock:  func(_ *userspb.LoginUserRequest) {},
-			want:  want{},
+			want:  want{code: codes.InvalidArgument},
 			isErr: true,
 		},
 		{
@@ -227,7 +229,7 @@ func TestLoginUser(t *testing.T) {
 				Password: "password1234567890123456789012345678901234567890123456789012345678901234567890",
 			},
 			mock:  func(_ *userspb.LoginUserRequest) {},
-			want:  want{},
+			want:  want{code: codes.InvalidArgument},
 			isErr: true,
 		},
 		{
@@ -243,7 +245,23 @@ func TestLoginUser(t *testing.T) {
 					req.GetPassword(),
 				).Return(nil, "", status.Errorf(codes.NotFound, "user not found"))
 			},
-			want:  want{},
+			want:  want{code: codes.Unauthenticated},
+			isErr: true,
+		},
+		{
+			name: "error: invalid password",
+			req: &userspb.LoginUserRequest{
+				Email:    "test@gmail.com",
+				Password: "password12345",
+			},
+			mock: func(req *userspb.LoginUserRequest) {
+				repo.EXPECT().LoginUser(
+					gomock.Any(),
+					req.GetEmail(),
+					req.GetPassword(),
+				).Return(nil, "", status.Errorf(codes.InvalidArgument, "invalid password"))
+			},
+			want:  want{code: codes.Unauthenticated},
 			isErr: true,
 		},
 	}
@@ -265,6 +283,9 @@ func TestLoginUser(t *testing.T) {
 			}
 			if pat != tt.want.pat {
 				t.Errorf("LoginUser() pat = %v, want %v", pat, tt.want.pat)
+			}
+			if got := status.Code(err); got != tt.want.code {
+				t.Errorf("LoginUser() code = %v, want %v", got, tt.want.code)
 			}
 		})
 	}

@@ -22,6 +22,7 @@ import (
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
@@ -29,8 +30,9 @@ import (
 )
 
 const (
-	defaultExpirationTTL = time.Minute * 30
-	cacheTimeout         = time.Second * 5
+	defaultExpirationTTL  = time.Minute * 30
+	cacheExpirationJitter = defaultExpirationTTL / 10
+	cacheTimeout          = time.Second * 5
 )
 
 // Repository provides job related operations.
@@ -184,7 +186,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		// The key is in the format "workflow:{user_id}:{job_id}".
 		cacheKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), res.ID)
 
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 			logger.Warn("failed to cache workflow",
 				zap.String("user_id", req.GetUserId()),
 				zap.String("cache_key", cacheKey),
@@ -407,7 +409,7 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 
 			s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 
-			if setErr := s.cache.Set(bgCtx, cachedKey, _res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cachedKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 				logger.Warn("failed to cache workflow",
 					zap.String("user_id", req.GetUserId()),
 					zap.String("cache_key", cachedKey),
@@ -780,7 +782,7 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
 
-			if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 				logger.Warn("failed to cache workflows list",
 					zap.String("user_id", req.GetUserId()),
 					zap.String("cache_key", cacheKey),

@@ -20,13 +20,15 @@ import (
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
+	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 const (
-	defaultExpirationTTL = time.Minute * 30
-	cacheTimeout         = time.Second * 2
+	defaultExpirationTTL  = time.Minute * 30
+	cacheExpirationJitter = defaultExpirationTTL / 10
+	cacheTimeout          = time.Second * 2
 )
 
 // Repository provides user related operations.
@@ -107,7 +109,7 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 			logger.Warn("failed to cache user",
 				zap.String("user_id", res.ID),
 				zap.String("cache_key", cacheKey),
@@ -168,7 +170,7 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, defaultExpirationTTL); setErr != nil {
+		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 			logger.Warn("failed to cache user",
 				zap.String("user_id", res.ID),
 				zap.String("cache_key", cacheKey),
@@ -238,7 +240,7 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 			defer cancel()
 
-			if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
+			if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 				logger.Warn("failed to cache user",
 					zap.String("user_id", _res.ID),
 					zap.String("cache_key", cacheKey),

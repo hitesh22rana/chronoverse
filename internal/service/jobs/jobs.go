@@ -23,6 +23,7 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -30,7 +31,9 @@ import (
 
 const (
 	defaultExpirationTTL      = time.Minute * 30
+	cacheExpirationJitter     = defaultExpirationTTL / 10
 	jobLogSearchExpirationTTL = time.Minute * 15
+	jobLogSearchTTLJitter     = jobLogSearchExpirationTTL / 10
 	cacheTimeout              = time.Second * 5
 )
 
@@ -630,7 +633,7 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 				defer cancel()
 
-				if setErr := s.cache.Set(bgCtx, cacheKey, _res, defaultExpirationTTL); setErr != nil {
+				if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
 					logger.Warn("failed to cache job logs",
 						zap.String("user_id", req.GetUserId()),
 						zap.String("job_id", req.GetId()),
@@ -838,7 +841,7 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 				defer cancel()
 
-				if setErr := s.cache.Set(bgCtx, cacheKey, _res, jobLogSearchExpirationTTL); setErr != nil {
+				if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(jobLogSearchExpirationTTL, jobLogSearchTTLJitter)); setErr != nil {
 					logger.Warn("failed to cache job logs",
 						zap.String("user_id", req.GetUserId()),
 						zap.String("job_id", req.GetId()),

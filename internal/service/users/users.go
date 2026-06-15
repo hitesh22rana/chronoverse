@@ -70,8 +70,6 @@ type RegisterUserRequest struct {
 }
 
 // RegisterUser a new user.
-//
-//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (userID, authToken string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.RegisterUser"),
@@ -133,8 +131,6 @@ type LoginUserRequest struct {
 }
 
 // LoginUser user.
-//
-//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (userID, authToken string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.LoginUser"),
@@ -160,7 +156,7 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 
 	res, authToken, err := s.repo.LoginUser(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
-		return "", "", err
+		return "", "", normalizeLoginError(err)
 	}
 
 	// Cache the response in the background
@@ -322,6 +318,15 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 			zap.String("user_id", req.GetId()),
 			zap.String("cache_key", cacheKey),
 		)
+	}
+
+	return err
+}
+
+func normalizeLoginError(err error) error {
+	code := status.Code(err)
+	if code == codes.NotFound || code == codes.InvalidArgument {
+		return status.Error(codes.Unauthenticated, "invalid email or password")
 	}
 
 	return err

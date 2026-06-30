@@ -52,6 +52,12 @@ Production Kafka topic partition defaults are:
 Workers are configured with compose resource reservations and two replicas for
 the low/mid/high-resource worker groups.
 
+| Worker group | Services | Limit | Reservation |
+| --- | --- | --- | --- |
+| Low | `scheduling-worker`, `analytics-processor`, `outbox-relay` | `0.25` CPU, `512M` memory | `0.1` CPU, `256M` memory |
+| Mid | `workflow-worker`, `joblogs-processor` | `0.5` CPU, `2G` memory | `0.25` CPU, `1G` memory |
+| High | `execution-worker` | `2` CPU, `2G` memory | `1` CPU, `1G` memory |
+
 ## Core Environment Groups
 
 ### Server

@@ -215,7 +215,9 @@ The batch size controls how many due workflows are scanned per polling pass.
 
 These settings coordinate Docker image pulls for replicated workflow workers
 that share a Docker daemon. The lock is scoped by Docker host and exact image
-string. Compose defaults are `10m`, `10m`, and `500ms`.
+string. Compose defaults are `10m`, `10m`, and `500ms`. Workflow workers do not
+launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
+not apply to this image-pull path.
 
 ### Execution Worker
 
@@ -243,7 +245,8 @@ hostname. `EXECUTION_WORKER_CONCURRENCY=0` means auto concurrency from
 `GOMAXPROCS`, which is adjusted by `automaxprocs` from the worker container CPU
 quota. Workload container memory, CPU, and PID settings apply to the Docker
 containers launched by the worker; they are separate from the worker process
-resource limit. Keep lease duration longer than the renewal interval.
+resource limit and from workflow-worker image pulls. Keep lease duration longer
+than the renewal interval.
 
 ### Job Logs Processor
 

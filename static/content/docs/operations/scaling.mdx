@@ -8,7 +8,7 @@ Consumer throughput is bounded by partition count. Production defaults use more 
 
 Scale concurrency only when Docker CPU, memory, image bandwidth, Kafka partitions, jobs-service latency, and lease-renewal headroom support it.
 
-Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker.
+Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker, and do not apply to workflow-worker image pulls.
 
 ## Workflow workers
 

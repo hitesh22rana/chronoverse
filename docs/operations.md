@@ -146,7 +146,8 @@ Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are
 scoped to Docker host plus exact image string; different Docker hosts may still
 pull the same image in parallel, so registry-wide rate limits need separate
-capacity planning.
+capacity planning. Workflow workers do not launch workload containers, so
+execution-worker workload container limits do not apply to image pulls.
 
 ### Execution Workers
 
@@ -167,7 +168,8 @@ capacity planning.
 
 Keep the lease duration comfortably above the renewal interval. Increase
 concurrency only when Docker host capacity, per-workload resource limits, Kafka
-partitions, and downstream services can support it.
+partitions, and downstream services can support it. These per-workload limits
+are applied only when execution-worker creates Docker job containers.
 
 ### Outbox Relay
 

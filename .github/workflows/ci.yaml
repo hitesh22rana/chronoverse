@@ -79,9 +79,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -95,9 +92,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push users-service Docker image
         run: |
@@ -139,9 +133,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -155,9 +146,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push workflows-service Docker image
         run: |
@@ -199,9 +187,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -215,9 +200,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push jobs-service Docker image
         run: |
@@ -259,9 +241,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -275,9 +254,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push notifications-service Docker image
         run: |
@@ -319,9 +295,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -335,9 +308,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push analytics-service Docker image
         run: |
@@ -378,9 +348,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -394,9 +361,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push scheduling-worker Docker image
         run: |
@@ -438,9 +402,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -454,9 +415,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push workflow-worker Docker image
         run: |
@@ -498,9 +456,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -514,9 +469,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push execution-worker Docker image
         run: |
@@ -558,9 +510,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -574,9 +523,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push database-migration Docker image
         run: |
@@ -618,9 +564,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -634,9 +577,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push joblogs-processor Docker image
         run: |
@@ -678,9 +618,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -694,9 +631,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push analytics-processor Docker image
         run: |
@@ -737,9 +671,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -753,9 +684,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push outbox-relay Docker image
         run: |
@@ -797,9 +725,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go Environment and Dependencies
-        uses: ./.github/actions/setup-go-env
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -813,9 +738,6 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Go binaries with release version
-        run: make build/all APP_VERSION=${{ steps.version.outputs.TAG_NAME }}
 
       - name: Build and push server Docker image
         run: |

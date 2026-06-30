@@ -146,11 +146,17 @@ Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are
 scoped to Docker host plus exact image string; different Docker hosts may still
 pull the same image in parallel, so registry-wide rate limits need separate
-capacity planning.
+capacity planning. Workflow workers do not launch workload containers, so
+execution-worker workload container limits do not apply to image pulls.
 
 ### Execution Workers
 
-- `EXECUTION_WORKER_CONCURRENCY` controls parallel job execution.
+- `EXECUTION_WORKER_CONCURRENCY` controls parallel job execution. `0` or unset
+  uses auto concurrency from `GOMAXPROCS`.
+- `EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY`,
+  `EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS`, and
+  `EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT` bound each Docker workload
+  container launched by the execution worker.
 - `EXECUTION_WORKER_LEASE_DURATION` and
   `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` control lease ownership.
 - `EXECUTION_WORKER_SYSTEM_RETRY_LIMIT` and
@@ -161,8 +167,9 @@ capacity planning.
   publish timeout, and live log buffer size.
 
 Keep the lease duration comfortably above the renewal interval. Increase
-concurrency only when Docker host capacity, Kafka partitions, and downstream
-services can support it.
+concurrency only when Docker host capacity, per-workload resource limits, Kafka
+partitions, and downstream services can support it. These per-workload limits
+are applied only when execution-worker creates Docker job containers.
 
 ### Outbox Relay
 

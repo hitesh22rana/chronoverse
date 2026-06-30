@@ -30,7 +30,15 @@ const (
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
-	pullGroup singleflight.Group
+	pullGroup      singleflight.Group
+	resourceLimits ResourceLimits
+}
+
+// ResourceLimits defines Docker resource limits applied to executed workload containers.
+type ResourceLimits struct {
+	MemoryBytes int64
+	NanoCPUs    int64
+	PidsLimit   int64
 }
 
 // State represents the observed state of a Docker container.
@@ -40,8 +48,18 @@ type State struct {
 	Status   string
 }
 
+// DockerWorkflowOption configures a DockerWorkflow.
+type DockerWorkflowOption func(*DockerWorkflow)
+
+// WithResourceLimits configures resource limits for executed workload containers.
+func WithResourceLimits(limits ResourceLimits) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.resourceLimits = limits
+	}
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
-func NewDockerWorkflow() (*DockerWorkflow, error) {
+func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	cli, err := client.NewClientWithOpts(
 		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
@@ -52,6 +70,11 @@ func NewDockerWorkflow() (*DockerWorkflow, error) {
 
 	w := &DockerWorkflow{
 		Client: cli,
+	}
+	for _, option := range options {
+		if option != nil {
+			option(w)
+		}
 	}
 
 	if err := w.healthCheck(context.Background()); err != nil {
@@ -100,9 +123,7 @@ func (w *DockerWorkflow) Execute(
 			StopTimeout: &containerTimeout,
 			Env:         env,
 		},
-		&container.HostConfig{
-			AutoRemove: false,
-		},
+		w.hostConfig(),
 		nil, nil, "",
 	)
 	if err != nil || resp.ID == "" {
@@ -189,6 +210,30 @@ func (w *DockerWorkflow) Execute(
 	}()
 
 	return containerID, logs, errs, nil
+}
+
+func (w *DockerWorkflow) hostConfig() *container.HostConfig {
+	hostConfig := &container.HostConfig{
+		AutoRemove: false,
+	}
+	if w == nil {
+		return hostConfig
+	}
+
+	resources := container.Resources{}
+	if w.resourceLimits.MemoryBytes > 0 {
+		resources.Memory = w.resourceLimits.MemoryBytes
+	}
+	if w.resourceLimits.NanoCPUs > 0 {
+		resources.NanoCPUs = w.resourceLimits.NanoCPUs
+	}
+	if w.resourceLimits.PidsLimit > 0 {
+		pidsLimit := w.resourceLimits.PidsLimit
+		resources.PidsLimit = &pidsLimit
+	}
+	hostConfig.Resources = resources
+
+	return hostConfig
 }
 
 // Logs replays the retained logs for a container.

@@ -50,7 +50,13 @@ Production Kafka topic partition defaults are:
 - `KAFKA_ANALYTICS_TOPIC_PARTITIONS=2`
 
 Workers are configured with compose resource reservations and two replicas for
-the low/high-resource worker groups.
+the low/mid/high-resource worker groups.
+
+| Worker group | Services | Limit | Reservation |
+| --- | --- | --- | --- |
+| Low | `scheduling-worker`, `analytics-processor`, `outbox-relay` | `0.25` CPU, `512M` memory | `0.1` CPU, `256M` memory |
+| Mid | `workflow-worker`, `joblogs-processor` | `0.5` CPU, `2G` memory | `0.25` CPU, `1G` memory |
+| High | `execution-worker` | `2` CPU, `2G` memory | `1` CPU, `1G` memory |
 
 ## Core Environment Groups
 
@@ -136,7 +142,10 @@ Common settings:
 - `REDIS_TLS_ENABLED`, `REDIS_TLS_CA_FILE`, `REDIS_TLS_CERT_FILE`,
   `REDIS_TLS_KEY_FILE`
 
-Redis is used for sessions, cached reads, and live log stream state.
+Redis is used for sessions, cached reads, and live log stream state. Production
+compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` on every Redis
+client process so one late-starting service does not reset Redis back to the
+code default of `100mb`.
 
 ### Meilisearch
 
@@ -206,12 +215,17 @@ The batch size controls how many due workflows are scanned per polling pass.
 
 These settings coordinate Docker image pulls for replicated workflow workers
 that share a Docker daemon. The lock is scoped by Docker host and exact image
-string. Compose defaults are `10m`, `10m`, and `500ms`.
+string. Compose defaults are `10m`, `10m`, and `500ms`. Workflow workers do not
+launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
+not apply to this image-pull path.
 
 ### Execution Worker
 
 - `EXECUTION_WORKER_ID`
 - `EXECUTION_WORKER_CONCURRENCY`
+- `EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY`
+- `EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS`
+- `EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT`
 - `EXECUTION_WORKER_LEASE_DURATION`
 - `EXECUTION_WORKER_LEASE_RENEW_INTERVAL`
 - `EXECUTION_WORKER_SYSTEM_RETRY_LIMIT`
@@ -227,7 +241,12 @@ string. Compose defaults are `10m`, `10m`, and `500ms`.
 - `EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE`
 
 If `EXECUTION_WORKER_ID` is empty, the worker falls back to the container
-hostname. Keep lease duration longer than the renewal interval.
+hostname. `EXECUTION_WORKER_CONCURRENCY=0` means auto concurrency from
+`GOMAXPROCS`, which is adjusted by `automaxprocs` from the worker container CPU
+quota. Workload container memory, CPU, and PID settings apply to the Docker
+containers launched by the worker; they are separate from the worker process
+resource limit and from workflow-worker image pulls. Keep lease duration longer
+than the renewal interval.
 
 ### Job Logs Processor
 

@@ -147,7 +147,8 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize the container service
+	// Initialize the container service. Workflow workers only inspect and pull
+	// images; execution workers apply workload container limits when running jobs.
 	csvc, err := container.NewDockerWorkflow()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

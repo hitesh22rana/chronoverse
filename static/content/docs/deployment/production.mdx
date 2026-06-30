@@ -21,6 +21,12 @@ Application images are pulled from `ghcr.io/hitesh22rana/chronoverse/*:latest`. 
 
 The production profile declares replicated workers and resource reservations. Effective parallelism still depends on Kafka partitions, Docker host capacity, database pools, and lease configuration.
 
+| Worker group | Services | Limit | Reservation |
+| --- | --- | --- | --- |
+| Low | `scheduling-worker`, `analytics-processor`, `outbox-relay` | `0.25` CPU, `512M` memory | `0.1` CPU, `256M` memory |
+| Mid | `workflow-worker`, `joblogs-processor` | `0.5` CPU, `2G` memory | `0.25` CPU, `1G` memory |
+| High | `execution-worker` | `2` CPU, `2G` memory | `1` CPU, `1G` memory |
+
 ## Required hardening
 
 - Replace database and Meilisearch credentials.
@@ -33,4 +39,3 @@ The production profile declares replicated workers and resource reservations. Ef
 ## Upgrade order
 
 Apply compatible migrations before new services depend on them. Event and protobuf changes should remain compatible with records and replicas from the previous version during rolling replacement.
-

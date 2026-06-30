@@ -37,6 +37,9 @@ type ExecutionWorkerConfig struct {
 	JobLogPublishBackoff time.Duration `envconfig:"EXECUTION_WORKER_JOB_LOG_PUBLISH_BACKOFF" default:"250ms"`
 	JobLogLiveTimeout    time.Duration `envconfig:"EXECUTION_WORKER_JOB_LOG_LIVE_TIMEOUT" default:"100ms"`
 	JobLogLiveBufferSize int           `envconfig:"EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE" default:"4096"`
+	WorkloadMemory       string        `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY" default:"512m"`
+	WorkloadCPUs         float64       `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS" default:"1"`
+	WorkloadPidsLimit    int64         `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT" default:"256"`
 }
 
 // InitExecutionJobConfig initializes the execution worker configuration.

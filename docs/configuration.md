@@ -50,7 +50,7 @@ Production Kafka topic partition defaults are:
 - `KAFKA_ANALYTICS_TOPIC_PARTITIONS=2`
 
 Workers are configured with compose resource reservations and two replicas for
-the low/high-resource worker groups.
+the low/mid/high-resource worker groups.
 
 ## Core Environment Groups
 
@@ -136,7 +136,10 @@ Common settings:
 - `REDIS_TLS_ENABLED`, `REDIS_TLS_CA_FILE`, `REDIS_TLS_CERT_FILE`,
   `REDIS_TLS_KEY_FILE`
 
-Redis is used for sessions, cached reads, and live log stream state.
+Redis is used for sessions, cached reads, and live log stream state. Production
+compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` on every Redis
+client process so one late-starting service does not reset Redis back to the
+code default of `100mb`.
 
 ### Meilisearch
 
@@ -212,6 +215,9 @@ string. Compose defaults are `10m`, `10m`, and `500ms`.
 
 - `EXECUTION_WORKER_ID`
 - `EXECUTION_WORKER_CONCURRENCY`
+- `EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY`
+- `EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS`
+- `EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT`
 - `EXECUTION_WORKER_LEASE_DURATION`
 - `EXECUTION_WORKER_LEASE_RENEW_INTERVAL`
 - `EXECUTION_WORKER_SYSTEM_RETRY_LIMIT`
@@ -227,7 +233,11 @@ string. Compose defaults are `10m`, `10m`, and `500ms`.
 - `EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE`
 
 If `EXECUTION_WORKER_ID` is empty, the worker falls back to the container
-hostname. Keep lease duration longer than the renewal interval.
+hostname. `EXECUTION_WORKER_CONCURRENCY=0` means auto concurrency from
+`GOMAXPROCS`, which is adjusted by `automaxprocs` from the worker container CPU
+quota. Workload container memory, CPU, and PID settings apply to the Docker
+containers launched by the worker; they are separate from the worker process
+resource limit. Keep lease duration longer than the renewal interval.
 
 ### Job Logs Processor
 

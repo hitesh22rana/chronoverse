@@ -23,9 +23,20 @@ x-limits:
           cpus: "0.1" # 100 m CPU
           memory: 128M # 128 MB
 
-  # Low resources workers require a bit more cpu and memory
-  # but still less than the database
+  # Lightweight workers process bounded database/Kafka batches.
   low-resources-workers-limit: &low-resources-workers-limit
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "0.25" # 250 m CPU
+          memory: 512M # 512 MB
+        reservations:
+          cpus: "0.1" # 100 m CPU
+          memory: 256M # 256 MB
+
+  # Mid resources workers handle Docker image coordination or larger log batches.
+  mid-resources-workers-limit: &mid-resources-workers-limit
     deploy:
       replicas: 2
       resources:
@@ -43,10 +54,10 @@ x-limits:
       resources:
         limits:
           cpus: "2" # 2 CPU
-          memory: 4G # 4 GB
+          memory: 2G # 2 GB
         reservations:
           cpus: "1" # 1 CPU
-          memory: 2G # 2 GB
+          memory: 1G # 1 GB
 
 services:
   postgres:
@@ -706,6 +717,7 @@ services:
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt
@@ -769,6 +781,7 @@ services:
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt
@@ -835,6 +848,7 @@ services:
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt
@@ -1069,10 +1083,11 @@ services:
       - chronoverse
 
   workflow-worker:
-    <<: *low-resources-workers-limit
+    <<: *mid-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
     environment:
       REDIS_HOST: redis
+      REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt
@@ -1159,6 +1174,7 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     environment:
       REDIS_HOST: redis
+      REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt
@@ -1184,6 +1200,9 @@ services:
       NOTIFICATIONS_SERVICE_TLS_ENABLED: true
       NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
       EXECUTION_WORKER_CONCURRENCY: ${EXECUTION_WORKER_CONCURRENCY:-0}
+      EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: ${EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY:-512m}
+      EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: ${EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS:-1}
+      EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: ${EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT:-256}
       EXECUTION_WORKER_LEASE_DURATION: 30s
       EXECUTION_WORKER_LEASE_RENEW_INTERVAL: 10s
       EXECUTION_WORKER_SYSTEM_RETRY_LIMIT: 3
@@ -1235,7 +1254,7 @@ services:
       - chronoverse
 
   joblogs-processor:
-    <<: *low-resources-workers-limit
+    <<: *mid-resources-workers-limit
     image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
     environment:
       POSTGRES_HOST: postgres
@@ -1248,6 +1267,7 @@ services:
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
       REDIS_HOST: redis
+      REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt
@@ -1416,6 +1436,7 @@ services:
       SERVER_HOST: 0.0.0.0
       SERVER_ALLOWED_ORIGINS: "http://0.0.0.0:80,"
       REDIS_HOST: redis
+      REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
       REDIS_TLS_ENABLED: true
       REDIS_TLS_CA_FILE: certs/ca/ca.crt
       REDIS_TLS_CERT_FILE: certs/clients/client.crt

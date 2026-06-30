@@ -98,7 +98,7 @@ func applyJobLogConfigOverrides(normalized, cfg *Config) {
 
 func normalizeConcurrency(cfg *Config) {
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 1
+		cfg.Concurrency = max(1, runtime.GOMAXPROCS(0))
 	}
 }
 

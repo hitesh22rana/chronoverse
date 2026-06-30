@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"runtime"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 
 	_ "github.com/KimMachineGun/automemlimit"
+	"github.com/docker/go-units"
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
@@ -108,8 +110,14 @@ func run() int {
 	}
 	defer rdb.Close()
 
+	resourceLimits, err := workloadResourceLimits(&cfg.ExecutionWorkerConfig)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
+
 	// Initialize the container service
-	csvc, err := container.NewDockerWorkflow()
+	csvc, err := container.NewDockerWorkflow(container.WithResourceLimits(resourceLimits))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -201,4 +209,30 @@ func run() int {
 	}
 
 	return ExitOk
+}
+
+func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.ResourceLimits, error) {
+	if cfg == nil {
+		return container.ResourceLimits{}, nil
+	}
+
+	memoryBytes, err := units.RAMInBytes(cfg.WorkloadMemory)
+	if err != nil {
+		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: %w", err)
+	}
+	if memoryBytes < 0 {
+		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
+	}
+	if cfg.WorkloadCPUs < 0 {
+		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be non-negative")
+	}
+	if cfg.WorkloadPidsLimit < 0 {
+		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: must be non-negative")
+	}
+
+	return container.ResourceLimits{
+		MemoryBytes: memoryBytes,
+		NanoCPUs:    int64(math.Round(cfg.WorkloadCPUs * 1e9)),
+		PidsLimit:   cfg.WorkloadPidsLimit,
+	}, nil
 }

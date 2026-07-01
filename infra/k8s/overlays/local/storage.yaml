@@ -1,0 +1,164 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: localstorage
+provisioner: docker.io/hostpath
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/chronoverse-data/postgres
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/chronoverse-data/redis
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: clickhouse-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/chronoverse-data/clickhouse
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/chronoverse-data/kafka
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: meilisearch-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/chronoverse-data/meilisearch
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: certs-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/chronoverse-data/certs
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  volumeName: postgres-pv
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  volumeName: redis-pv
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clickhouse-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  volumeName: clickhouse-pv
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  volumeName: kafka-pv
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: meilisearch-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  volumeName: meilisearch-pv
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: certs-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: localstorage
+  volumeName: certs-pv
+  resources:
+    requests:
+      storage: 1Gi

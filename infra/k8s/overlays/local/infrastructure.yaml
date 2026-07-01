@@ -1,0 +1,471 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: postgres
+          containerPort: 5432
+        envFrom:
+        - secretRef:
+            name: postgres-secret
+        env:
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            cpu: 500m
+            memory: 768Mi
+          limits:
+            cpu: "1"
+            memory: 1536Mi
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/component: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:8.4-alpine
+        imagePullPolicy: IfNotPresent
+        args: ["redis-server", "--appendonly", "yes", "--maxmemory", "768mb", "--maxmemory-policy", "allkeys-lru"]
+        ports:
+        - name: redis
+          containerPort: 6379
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1536Mi
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "redis-cli ping | grep PONG"]
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "redis-cli ping | grep PONG"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/component: database
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+      - name: clickhouse
+        image: clickhouse/clickhouse-server:25.11-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: clickhouse
+          containerPort: 9000
+        env:
+        - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+          value: "1"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1024Mi
+          limits:
+            cpu: "2"
+            memory: 3072Mi
+        volumeMounts:
+        - name: clickhouse-storage
+          mountPath: /var/lib/clickhouse
+        readinessProbe:
+          exec:
+            command: ["clickhouse-client", "--host=localhost", "--query=SELECT 1"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command: ["clickhouse-client", "--host=localhost", "--query=SELECT 1"]
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 10
+      volumes:
+      - name: clickhouse-storage
+        persistentVolumeClaim:
+          claimName: clickhouse-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: clickhouse
+  ports:
+  - name: clickhouse
+    port: 9000
+    targetPort: clickhouse
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/component: broker
+    spec:
+      hostname: kafka
+      initContainers:
+      - name: wait-for-kafka-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ]; do echo waiting for kafka certificates; sleep 2; done"]
+        volumeMounts:
+        - name: kafka-secrets-storage
+          mountPath: /etc/kafka/secrets
+          subPath: kafka
+          readOnly: true
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:7.6.7
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: kafka
+          containerPort: 9094
+        - name: controller
+          containerPort: 9093
+        env:
+        - name: CLUSTER_ID
+          value: chronoverse
+        - name: KAFKA_KRAFT_MODE
+          value: "true"
+        - name: KAFKA_NODE_ID
+          value: "1"
+        - name: KAFKA_PROCESS_ROLES
+          value: controller,broker
+        - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+          value: 1@kafka:9093
+        - name: KAFKA_LISTENERS
+          value: SSL://kafka:9094,CONTROLLER://kafka:9093
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: SSL:SSL,CONTROLLER:PLAINTEXT
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: SSL
+        - name: KAFKA_CONTROLLER_LISTENER_NAMES
+          value: CONTROLLER
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: SSL://kafka:9094
+        - name: KAFKA_SSL_KEYSTORE_LOCATION
+          value: /etc/kafka/secrets
+        - name: KAFKA_SSL_KEYSTORE_FILENAME
+          value: kafka.keystore.jks
+        - name: KAFKA_SSL_KEYSTORE_CREDENTIALS
+          value: keystore_creds.txt
+        - name: KAFKA_SSL_TRUSTSTORE_LOCATION
+          value: /etc/kafka/secrets
+        - name: KAFKA_SSL_TRUSTSTORE_FILENAME
+          value: kafka.truststore.jks
+        - name: KAFKA_SSL_TRUSTSTORE_CREDENTIALS
+          value: truststore_creds.txt
+        - name: KAFKA_SSL_KEY_CREDENTIALS
+          value: key_creds.txt
+        - name: KAFKA_SSL_CLIENT_AUTH
+          value: required
+        - name: KAFKA_SSL_ENABLED_PROTOCOLS
+          value: TLSv1.2,TLSv1.3
+        - name: KAFKA_SSL_PROTOCOL
+          value: TLS
+        - name: KAFKA_LOG_DIRS
+          value: /var/lib/kafka/data
+        - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+          value: "false"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+          value: "1"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 768Mi
+          limits:
+            cpu: "1"
+            memory: 1536Mi
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+        - name: kafka-secrets-storage
+          mountPath: /etc/kafka/secrets
+          subPath: kafka
+          readOnly: true
+      volumes:
+      - name: kafka-storage
+        persistentVolumeClaim:
+          claimName: kafka-pvc
+      - name: kafka-secrets-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+  - name: kafka
+    port: 9094
+    targetPort: kafka
+  - name: controller
+    port: 9093
+    targetPort: controller
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: meilisearch
+  labels:
+    app.kubernetes.io/name: meilisearch
+    app.kubernetes.io/component: search
+spec:
+  serviceName: meilisearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: meilisearch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: meilisearch
+        app.kubernetes.io/component: search
+    spec:
+      containers:
+      - name: meilisearch
+        image: getmeili/meilisearch:v1.45.2
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 7700
+        envFrom:
+        - secretRef:
+            name: meilisearch-secret
+        env:
+        - name: MEILI_EXPERIMENTAL_DUMPLESS_UPGRADE
+          value: "true"
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1024Mi
+        volumeMounts:
+        - name: meilisearch-storage
+          mountPath: /meili_data
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 10
+      volumes:
+      - name: meilisearch-storage
+        persistentVolumeClaim:
+          claimName: meilisearch-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meilisearch
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: meilisearch
+  ports:
+  - name: http
+    port: 7700
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+  labels:
+    app.kubernetes.io/name: lgtm
+    app.kubernetes.io/component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lgtm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lgtm
+        app.kubernetes.io/component: monitoring
+    spec:
+      containers:
+      - name: lgtm
+        image: grafana/otel-lgtm:0.11.10
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: grafana
+          containerPort: 3000
+        - name: otlp-grpc
+          containerPort: 4317
+        - name: otlp-http
+          containerPort: 4318
+        env:
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: Admin
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1024Mi
+          limits:
+            cpu: "1"
+            memory: 2048Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lgtm
+  ports:
+  - name: grafana
+    port: 3000
+    targetPort: grafana
+  - name: otlp-grpc
+    port: 4317
+    targetPort: otlp-grpc
+  - name: otlp-http
+    port: 4318
+    targetPort: otlp-http

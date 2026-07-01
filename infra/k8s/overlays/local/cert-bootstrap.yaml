@@ -1,0 +1,131 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-certs
+  labels:
+    app.kubernetes.io/name: init-certs
+    app.kubernetes.io/component: init-job
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: init-certs
+        app.kubernetes.io/component: init-job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          apk add --no-cache openssl
+          if [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; then
+            openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
+            openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+          fi
+          chmod 0440 /certs/auth.ed /certs/auth.ed.pub
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+      volumes:
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-service-certs
+  labels:
+    app.kubernetes.io/name: init-service-certs
+    app.kubernetes.io/component: init-job
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: init-service-certs
+        app.kubernetes.io/component: init-job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init-service-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          apk add --no-cache openssl openjdk17-jre-headless
+
+          mkdir -p /certs/ca /certs/clients
+          services="kafka users-service workflows-service jobs-service notifications-service analytics-service"
+          for svc in $services; do
+            mkdir -p "/certs/$svc"
+          done
+
+          if [ ! -f /certs/ca/ca.key ] || [ ! -f /certs/ca/ca.crt ]; then
+            openssl genrsa -out /certs/ca/ca.key 4096
+            openssl req -x509 -new -nodes -key /certs/ca/ca.key -sha256 -days 365 -out /certs/ca/ca.crt -subj "/CN=Chronoverse Local CA"
+          fi
+
+          for svc in $services; do
+            cert_path="/certs/$svc"
+            if [ -f "$cert_path/$svc.crt" ] && [ -f "$cert_path/$svc.key" ]; then
+              continue
+            fi
+            openssl genrsa -out "$cert_path/$svc.key" 4096
+            openssl req -new -key "$cert_path/$svc.key" -out "$cert_path/$svc.csr" -subj "/CN=$svc"
+            printf "subjectAltName=DNS:%s,DNS:%s.chronoverse,DNS:%s.chronoverse.svc,DNS:%s.chronoverse.svc.cluster.local,IP:127.0.0.1\n" "$svc" "$svc" "$svc" "$svc" > "$cert_path/$svc-ext.cnf"
+            openssl x509 -req -in "$cert_path/$svc.csr" -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key -CAcreateserial -out "$cert_path/$svc.crt" -days 365 -extfile "$cert_path/$svc-ext.cnf"
+            rm -f "$cert_path/$svc.csr" "$cert_path/$svc-ext.cnf"
+          done
+
+          if [ ! -f /certs/clients/client.crt ] || [ ! -f /certs/clients/client.key ]; then
+            openssl genrsa -out /certs/clients/client.key 4096
+            openssl req -new -key /certs/clients/client.key -out /certs/clients/client.csr -subj "/CN=chronoverse-client"
+            echo "subjectAltName=DNS:client" > /certs/clients/client-ext.cnf
+            openssl x509 -req -in /certs/clients/client.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key -CAcreateserial -out /certs/clients/client.crt -days 365 -extfile /certs/clients/client-ext.cnf
+            rm -f /certs/clients/client.csr /certs/clients/client-ext.cnf
+          fi
+
+          if [ ! -f /certs/kafka/kafka.p12 ]; then
+            openssl pkcs12 -export -in /certs/kafka/kafka.crt -inkey /certs/kafka/kafka.key -certfile /certs/ca/ca.crt -out /certs/kafka/kafka.p12 -name kafka -password pass:chronoverse
+          fi
+          if [ ! -f /certs/kafka/kafka.keystore.jks ]; then
+            keytool -importkeystore -deststorepass chronoverse -destkeypass chronoverse -destkeystore /certs/kafka/kafka.keystore.jks -srckeystore /certs/kafka/kafka.p12 -srcstoretype PKCS12 -srcstorepass chronoverse -alias kafka
+          fi
+          if [ ! -f /certs/kafka/kafka.truststore.jks ]; then
+            keytool -import -trustcacerts -alias CARoot -file /certs/ca/ca.crt -keystore /certs/kafka/kafka.truststore.jks -storepass chronoverse -noprompt
+          fi
+
+          printf "chronoverse\n" > /certs/kafka/keystore_creds.txt
+          printf "chronoverse\n" > /certs/kafka/truststore_creds.txt
+          printf "chronoverse\n" > /certs/kafka/key_creds.txt
+          chmod -R go-rwx /certs
+          chmod -R g+rX /certs
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 768Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+      volumes:
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc

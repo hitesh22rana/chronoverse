@@ -1,11 +1,43 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+namespace: chronoverse
+
 resources:
 - ../../base
 - storage.yaml
 - infrastructure.yaml
 - cert-bootstrap.yaml
+
+replicas:
+- name: analytics-processor
+  count: 1
+- name: analytics-service
+  count: 1
+- name: dashboard
+  count: 1
+- name: execution-worker
+  count: 1
+- name: joblogs-processor
+  count: 1
+- name: jobs-service
+  count: 1
+- name: nginx
+  count: 1
+- name: notifications-service
+  count: 1
+- name: outbox-relay
+  count: 1
+- name: scheduling-worker
+  count: 1
+- name: server
+  count: 1
+- name: users-service
+  count: 1
+- name: workflow-worker
+  count: 1
+- name: workflows-service
+  count: 1
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -18,7 +50,7 @@ secretGenerator:
   - POSTGRES_DB=chronoverse
 - name: clickhouse-secret
   literals:
-  - CLICKHOUSE_PASSWORD=chronoverse
+  - CLICKHOUSE_PASSWORD=
 - name: meilisearch-secret
   literals:
   - MEILISEARCH_MASTER_KEY=35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
@@ -70,6 +102,14 @@ patches:
       - name: wait-for-certs
         image: alpine:3.22.2
         command: ["sh", "-c", "until [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         volumeMounts:
         - name: certs
           mountPath: /certs
@@ -89,6 +129,14 @@ patches:
       - name: wait-for-certs
         image: alpine:3.22.2
         command: ["sh", "-c", "until [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         volumeMounts:
         - name: certs
           mountPath: /certs
@@ -108,6 +156,14 @@ patches:
       - name: wait-for-kafka-certs
         image: alpine:3.22.2
         command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ]; do echo waiting for kafka certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         volumeMounts:
         - name: kafka-client-secrets
           mountPath: /etc/kafka/secrets
@@ -119,4 +175,10 @@ patches:
         name: kafka-client-secrets
         persistentVolumeClaim:
           claimName: certs-pvc
-
+    - op: replace
+      path: /spec/template/spec/containers/0/volumeMounts/0
+      value:
+        name: kafka-client-secrets
+        mountPath: /etc/kafka/secrets
+        subPath: kafka
+        readOnly: true

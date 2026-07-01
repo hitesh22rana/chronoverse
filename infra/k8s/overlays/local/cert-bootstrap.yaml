@@ -27,7 +27,7 @@ spec:
             openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
             openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
           fi
-          chmod 0440 /certs/auth.ed /certs/auth.ed.pub
+          chmod 0444 /certs/auth.ed /certs/auth.ed.pub
         resources:
           requests:
             cpu: 50m
@@ -113,8 +113,7 @@ spec:
           printf "chronoverse\n" > /certs/kafka/keystore_creds.txt
           printf "chronoverse\n" > /certs/kafka/truststore_creds.txt
           printf "chronoverse\n" > /certs/kafka/key_creds.txt
-          chmod -R go-rwx /certs
-          chmod -R g+rX /certs
+          chmod -R a+rX /certs
         resources:
           requests:
             cpu: 100m

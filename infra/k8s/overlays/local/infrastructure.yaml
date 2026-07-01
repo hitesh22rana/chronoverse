@@ -21,7 +21,7 @@ spec:
         fsGroup: 999
       containers:
       - name: postgres
-        image: postgres:15-alpine
+        image: postgres:18.0-alpine3.22
         imagePullPolicy: IfNotPresent
         ports:
         - name: postgres
@@ -34,11 +34,11 @@ spec:
           value: /var/lib/postgresql/data/pgdata
         resources:
           requests:
-            cpu: 500m
-            memory: 768Mi
+            cpu: 250m
+            memory: 384Mi
           limits:
             cpu: "1"
-            memory: 1536Mi
+            memory: 1024Mi
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
@@ -101,11 +101,11 @@ spec:
           containerPort: 6379
         resources:
           requests:
-            cpu: 250m
-            memory: 512Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
-            cpu: "1"
-            memory: 1536Mi
+            cpu: 500m
+            memory: 512Mi
         volumeMounts:
         - name: redis-storage
           mountPath: /data
@@ -165,28 +165,31 @@ spec:
         ports:
         - name: clickhouse
           containerPort: 9000
+        envFrom:
+        - secretRef:
+            name: clickhouse-secret
         env:
         - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
           value: "1"
         resources:
           requests:
-            cpu: 500m
-            memory: 1024Mi
+            cpu: 250m
+            memory: 512Mi
           limits:
-            cpu: "2"
-            memory: 3072Mi
+            cpu: "1"
+            memory: 1536Mi
         volumeMounts:
         - name: clickhouse-storage
           mountPath: /var/lib/clickhouse
         readinessProbe:
           exec:
-            command: ["clickhouse-client", "--host=localhost", "--query=SELECT 1"]
+            command: ["sh", "-c", "clickhouse-client --host=localhost --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 10
         livenessProbe:
           exec:
-            command: ["clickhouse-client", "--host=localhost", "--query=SELECT 1"]
+            command: ["sh", "-c", "clickhouse-client --host=localhost --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 10
@@ -227,6 +230,7 @@ spec:
         app.kubernetes.io/name: kafka
         app.kubernetes.io/component: broker
     spec:
+      enableServiceLinks: false
       hostname: kafka
       initContainers:
       - name: wait-for-kafka-certs
@@ -248,7 +252,7 @@ spec:
           containerPort: 9093
         env:
         - name: CLUSTER_ID
-          value: chronoverse
+          value: eCkcIadWQ-6iYFZWSxNJag
         - name: KAFKA_KRAFT_MODE
           value: "true"
         - name: KAFKA_NODE_ID
@@ -258,7 +262,7 @@ spec:
         - name: KAFKA_CONTROLLER_QUORUM_VOTERS
           value: 1@kafka:9093
         - name: KAFKA_LISTENERS
-          value: SSL://kafka:9094,CONTROLLER://kafka:9093
+          value: SSL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
         - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
           value: SSL:SSL,CONTROLLER:PLAINTEXT
         - name: KAFKA_INTER_BROKER_LISTENER_NAME
@@ -300,10 +304,10 @@ spec:
         resources:
           requests:
             cpu: 500m
-            memory: 768Mi
+            memory: 512Mi
           limits:
             cpu: "1"
-            memory: 1536Mi
+            memory: 1024Mi
         volumeMounts:
         - name: kafka-storage
           mountPath: /var/lib/kafka/data
@@ -369,11 +373,11 @@ spec:
           value: "true"
         resources:
           requests:
-            cpu: 250m
-            memory: 512Mi
+            cpu: 100m
+            memory: 256Mi
           limits:
-            cpu: "1"
-            memory: 1024Mi
+            cpu: 500m
+            memory: 768Mi
         volumeMounts:
         - name: meilisearch-storage
           mountPath: /meili_data
@@ -445,11 +449,11 @@ spec:
           value: Admin
         resources:
           requests:
-            cpu: 500m
-            memory: 1024Mi
+            cpu: 250m
+            memory: 384Mi
           limits:
             cpu: "1"
-            memory: 2048Mi
+            memory: 1024Mi
 ---
 apiVersion: v1
 kind: Service

@@ -9,9 +9,9 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
-`overlays/local` is a self-contained single-node profile. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, local hostPath storage, certificate bootstrap jobs, Kafka topic initialization, application services, workers, dashboard, Nginx, and the Docker socket proxy.
+`overlays/local` is a self-contained single-node profile. It runs one replica per application deployment and includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, local hostPath storage, certificate bootstrap jobs, Kafka topic initialization, application services, workers, dashboard, Nginx, and the Docker socket proxy.
 
-`overlays/production` is external-ready. It deploys Chronoverse services, workers, dashboard, Nginx, Docker proxy, Kafka topic initialization, and database migration jobs while expecting PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, and secret material to be supplied by the environment.
+`overlays/production` is external-ready. It deploys Chronoverse services, workers, dashboard, Nginx, Docker proxy, Kafka topic initialization, database migration jobs, and HorizontalPodAutoscalers while expecting PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, and secret material to be supplied by the environment.
 
 ## Required production secrets
 
@@ -49,6 +49,18 @@ Production overlay ConfigMaps contain placeholder hosts such as `postgres.exampl
 
 The production overlay intentionally does not create in-cluster stateful data stores. Use managed services, operators, or separate platform-owned manifests for PostgreSQL, Redis, Kafka, ClickHouse, and Meilisearch. Size Kafka partitions with worker replicas: `workflows`, `jobs`, `job_logs`, and `analytics` are created by `init-kafka-topics`.
 
+## Scaling
+
+The local overlay is intentionally single-replica so it can run on one Docker Desktop or Minikube node. The production overlay starts app services and workers with multi-replica baselines and includes CPU/memory HorizontalPodAutoscalers for stateless APIs and background workers.
+
+Install metrics-server, or provide equivalent `autoscaling/v2` resource metrics, before relying on HPAs:
+
+```bash
+kubectl -n chronoverse get hpa
+```
+
+Kafka-lag-driven worker scaling is not built into the Kustomize overlay. Use KEDA or a custom metrics adapter when worker count should follow topic lag instead of CPU or memory pressure.
+
 ## Docker execution model
 
 Container workflows still execute through the Docker socket proxy. Kubernetes nodes that run `workflow-worker` or `execution-worker` need Docker Engine and `/var/run/docker.sock`. Treat the proxy as privileged infrastructure and restrict node scheduling, network access, and RBAC accordingly.
@@ -62,4 +74,3 @@ kubectl apply --dry-run=client --validate=false -k infra/k8s/overlays/production
 ```
 
 Schema validation with OpenAPI requires a live cluster or an external validator such as `kubeconform`.
-

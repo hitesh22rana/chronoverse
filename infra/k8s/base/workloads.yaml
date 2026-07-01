@@ -514,14 +514,12 @@ spec:
           mountPath: /certs
           readOnly: true
         readinessProbe:
-          httpGet:
-            path: /health
+          tcpSocket:
             port: http
           periodSeconds: 10
           failureThreshold: 6
         livenessProbe:
-          httpGet:
-            path: /health
+          tcpSocket:
             port: http
           periodSeconds: 20
           failureThreshold: 6
@@ -568,6 +566,8 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:

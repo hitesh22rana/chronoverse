@@ -15,8 +15,8 @@ kubectl apply -k infra/k8s/overlays/production
 ## Layout
 
 - `base/`: application services, workers, dashboard, Nginx, Docker proxy, RBAC, network policy, PDBs, Kafka topic initialization, and shared configuration.
-- `overlays/local/`: single-node profile with in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs.
-- `overlays/production/`: external-ready profile that expects managed data stores and pre-created Secrets.
+- `overlays/local/`: single-node profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs.
+- `overlays/production/`: external-ready profile that expects managed data stores and pre-created Secrets. It includes HorizontalPodAutoscalers for stateless APIs and workers.
 
 ## Required production Secrets
 
@@ -35,5 +35,6 @@ Create these before applying `overlays/production`:
 
 - Patch the production ConfigMaps for real PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, public URL, and allowed origins.
 - `init-kafka-topics` creates or expands `workflows`, `jobs`, `job_logs`, and `analytics` topics.
+- Production HPAs require metrics-server or another provider for `autoscaling/v2` resource metrics. CPU/memory HPAs are included for app services and workers; Kafka-lag-based worker scaling needs KEDA or custom metrics.
 - Container workflows still use the Docker socket proxy. Worker nodes must expose Docker Engine at `/var/run/docker.sock`.
 - The local overlay uses hostPath storage and generated cert material. Do not use it as the production security or persistence model.

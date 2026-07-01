@@ -43,9 +43,12 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
-The local overlay is self-contained for single-node validation. The production
-overlay expects managed or separately provisioned PostgreSQL, Redis, Kafka,
-ClickHouse, Meilisearch, and Kubernetes Secrets.
+The local overlay is self-contained for single-node validation and runs one
+replica per app deployment. The production overlay expects managed or separately
+provisioned PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, and Kubernetes
+Secrets, and includes CPU/memory HorizontalPodAutoscalers for app services and
+workers. Production autoscaling requires metrics-server or an equivalent
+`autoscaling/v2` resource metrics provider.
 
 ### Stop and Inspect
 

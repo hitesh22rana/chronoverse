@@ -116,6 +116,8 @@ data:
   GRPC_TLS_CA_FILE: certs/ca/ca.crt
   GRPC_TLS_CERT_FILE: certs/jobs-service/jobs-service.crt
   GRPC_TLS_KEY_FILE: certs/jobs-service/jobs-service.key
+  CLIENT_TLS_CERT_FILE: certs/clients/client.crt
+  CLIENT_TLS_KEY_FILE: certs/clients/client.key
   WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
   WORKFLOWS_SERVICE_PORT: "50052"
   WORKFLOWS_SERVICE_TLS_ENABLED: "true"

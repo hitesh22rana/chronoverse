@@ -2,6 +2,8 @@
 
 Configuration is environment-variable driven. The Compose files provide runnable defaults; production values must be reviewed explicitly.
 
+Kubernetes manifests keep the same environment-variable contract. Kustomize overlays merge the ConfigMaps and Secrets that provide those values.
+
 ## HTTP server
 
 Host and timeouts use `SERVER_HOST`, `SERVER_PORT`, request/read/header/idle timeout values, request body limit, session and CSRF expiry, host URL, allowed origins, same-site mode, `SERVER_CSRF_HMAC_SECRET`, and `CRYPTO_SECRET`.
@@ -27,3 +29,5 @@ Scheduler settings control poll interval, context timeout, and batch size. Jobs 
 The complete current variable inventory remains in `docs/configuration.md` and the typed files under `internal/config`.
 
 <SourceLink path="docs/configuration.md">Full environment variable inventory</SourceLink>
+
+<SourceLink path="infra/k8s/README.md">Kubernetes manifest configuration</SourceLink>

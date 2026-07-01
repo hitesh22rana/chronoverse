@@ -6,12 +6,18 @@
 docker compose -f compose.prod.yaml up -d
 ```
 
+For Kubernetes, render or apply the production overlay after creating the required Secrets and external dependency configuration:
+
+```bash
+kubectl apply -k infra/k8s/overlays/production
+```
+
 Production publishes:
 
 - Dashboard and proxied API through Nginx on port `80`.
 - LGTM on port `3000`.
 
-Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`; a multi-node Kubernetes deployment should run one runtime-agent beside each node-local Docker proxy.
+Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`; a multi-node Kubernetes deployment should run one runtime-agent beside each node-local Docker proxy. In Kubernetes, application services run in the `chronoverse` namespace while PostgreSQL, Redis, Kafka, ClickHouse, and Meilisearch are expected to be externally managed for production.
 
 ## Images
 
@@ -31,6 +37,7 @@ The production profile declares replicated workers and resource reservations. Ef
 
 - Replace database and Meilisearch credentials.
 - Manage certificates and private keys with environment-specific controls.
+- Create Kubernetes Secrets for auth keys, CA, client TLS, service TLS, Kafka stores, database credentials, ClickHouse credentials, and Meilisearch credentials before applying the production overlay.
 - Configure the public host URL, allowed origins, secure cookies, and same-site policy.
 - Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
 - Restrict access to the LGTM dashboard.

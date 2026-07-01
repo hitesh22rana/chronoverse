@@ -1,0 +1,65 @@
+# Kubernetes deployment
+
+Chronoverse ships `kubectl`-native Kustomize overlays under `infra/k8s`.
+
+## Overlays
+
+```bash
+kubectl apply -k infra/k8s/overlays/local
+kubectl apply -k infra/k8s/overlays/production
+```
+
+`overlays/local` is a self-contained single-node profile. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, local hostPath storage, certificate bootstrap jobs, Kafka topic initialization, application services, workers, dashboard, Nginx, and the Docker socket proxy.
+
+`overlays/production` is external-ready. It deploys Chronoverse services, workers, dashboard, Nginx, Docker proxy, Kafka topic initialization, and database migration jobs while expecting PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, and secret material to be supplied by the environment.
+
+## Required production secrets
+
+Create these Secrets before applying the production overlay:
+
+```bash
+kubectl -n chronoverse create secret generic postgres-secret \
+  --from-literal=POSTGRES_USER=primary \
+  --from-literal=POSTGRES_PASSWORD='replace-me' \
+  --from-literal=POSTGRES_DB=chronoverse
+
+kubectl -n chronoverse create secret generic clickhouse-secret \
+  --from-literal=CLICKHOUSE_PASSWORD='replace-me'
+
+kubectl -n chronoverse create secret generic meilisearch-secret \
+  --from-literal=MEILISEARCH_MASTER_KEY='replace-me'
+
+kubectl -n chronoverse create secret generic chronoverse-auth \
+  --from-file=auth.ed=certs/auth.ed \
+  --from-file=auth.ed.pub=certs/auth.ed.pub
+
+kubectl -n chronoverse create secret generic chronoverse-ca \
+  --from-file=ca.crt=certs/ca/ca.crt
+
+kubectl -n chronoverse create secret tls chronoverse-client-tls \
+  --cert=certs/clients/client.crt \
+  --key=certs/clients/client.key
+```
+
+`chronoverse-service-tls` must contain `users-service`, `workflows-service`, `jobs-service`, `notifications-service`, and `analytics-service` certificate/key pairs. `chronoverse-kafka-tls` must contain `kafka.keystore.jks`, `kafka.truststore.jks`, `keystore_creds.txt`, `truststore_creds.txt`, and `key_creds.txt` for the topic initializer.
+
+## External dependency configuration
+
+Production overlay ConfigMaps contain placeholder hosts such as `postgres.example.internal` and `chronoverse.example.com`. Patch those values with environment-specific hostnames, TLS paths, origins, and public URLs before rollout.
+
+The production overlay intentionally does not create in-cluster stateful data stores. Use managed services, operators, or separate platform-owned manifests for PostgreSQL, Redis, Kafka, ClickHouse, and Meilisearch. Size Kafka partitions with worker replicas: `workflows`, `jobs`, `job_logs`, and `analytics` are created by `init-kafka-topics`.
+
+## Docker execution model
+
+Container workflows still execute through the Docker socket proxy. Kubernetes nodes that run `workflow-worker` or `execution-worker` need Docker Engine and `/var/run/docker.sock`. Treat the proxy as privileged infrastructure and restrict node scheduling, network access, and RBAC accordingly.
+
+## Validation
+
+```bash
+kubectl kustomize infra/k8s/overlays/local
+kubectl kustomize infra/k8s/overlays/production
+kubectl apply --dry-run=client --validate=false -k infra/k8s/overlays/production
+```
+
+Schema validation with OpenAPI requires a live cluster or an external validator such as `kubeconform`.
+

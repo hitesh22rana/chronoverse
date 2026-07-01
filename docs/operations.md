@@ -1,7 +1,7 @@
 # Operations
 
 This guide covers day-to-day commands, startup behavior, health checks, tuning,
-and common troubleshooting paths for the compose-based Chronoverse stack.
+and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 
 ## Running the Stack
 
@@ -36,6 +36,17 @@ Useful endpoints:
 Production uses published images, internal service ports, generated TLS
 configuration, resource limits, and replicated worker settings.
 
+### Kubernetes
+
+```sh
+kubectl apply -k infra/k8s/overlays/local
+kubectl apply -k infra/k8s/overlays/production
+```
+
+The local overlay is self-contained for single-node validation. The production
+overlay expects managed or separately provisioned PostgreSQL, Redis, Kafka,
+ClickHouse, Meilisearch, and Kubernetes Secrets.
+
 ### Stop and Inspect
 
 ```sh
@@ -45,6 +56,14 @@ docker compose -f compose.dev.yaml down
 ```
 
 Use `compose.prod.yaml` in the same commands for the production stack.
+
+For Kubernetes:
+
+```sh
+kubectl -n chronoverse get pods
+kubectl -n chronoverse get deploy,sts,job
+kubectl -n chronoverse logs deploy/server
+```
 
 ## Startup Order
 
@@ -60,6 +79,11 @@ Use `compose.prod.yaml` in the same commands for the production stack.
 7. The dashboard starts after backend services.
 8. Production Nginx starts after dashboard and server.
 
+Kubernetes does not provide Compose-style dependency ordering for long-running
+Deployments. The overlays include explicit Jobs for certificate bootstrap
+where local, Kafka topic initialization, and database migration; operators
+should inspect those Jobs before scaling application workloads during rollout.
+
 ## Health Checks
 
 Compose includes health checks for infrastructure and gRPC services:
@@ -72,6 +96,10 @@ Compose includes health checks for infrastructure and gRPC services:
 
 If a service is stuck in `starting`, inspect the logs for that service and the
 dependency immediately before it in the startup order.
+
+Kubernetes uses readiness and liveness probes for app services and local
+infrastructure where practical. Use `kubectl describe pod` to inspect probe
+failures and missing Secret or ConfigMap references.
 
 ## Build, Test, and Lint
 
@@ -239,6 +267,21 @@ docker compose -f compose.dev.yaml up -d
 ```
 
 This deletes local data volumes.
+
+For Kubernetes production, verify that `chronoverse-auth`, `chronoverse-ca`,
+`chronoverse-client-tls`, `chronoverse-service-tls`, and
+`chronoverse-kafka-tls` exist in the `chronoverse` namespace and contain the
+expected keys.
+
+### Kubernetes Readiness Problems
+
+- Run `kubectl -n chronoverse get pods,job` and find the first failing pod or
+  incomplete Job.
+- Inspect `init-kafka-topics` and `database-migration` before application logs.
+- Confirm production overlay placeholder hosts were patched for real external
+  dependencies.
+- Confirm worker nodes that run `workflow-worker` or `execution-worker` expose
+  Docker Engine at `/var/run/docker.sock` for the Docker socket proxy.
 
 ### Compose Readiness Problems
 

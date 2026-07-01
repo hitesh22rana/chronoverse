@@ -1,17 +1,15 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: chronoverse-ingress
-  namespace: chronoverse
-  labels:
-    app: chronoverse
-    component: ingress
+  name: chronoverse
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:
-  - host: localhost
+  - host: chronoverse.example.com
     http:
       paths:
       - path: /
@@ -21,3 +19,4 @@ spec:
             name: nginx
             port:
               number: 80
+

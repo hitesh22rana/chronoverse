@@ -4,4 +4,5 @@ metadata:
   name: chronoverse
   labels:
     name: chronoverse
-    environment: production
+    app.kubernetes.io/name: chronoverse
+

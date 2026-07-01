@@ -1,0 +1,120 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-kafka-topics
+  labels:
+    app.kubernetes.io/name: init-kafka-topics
+    app.kubernetes.io/component: init-job
+    chronoverse.io/certs: "true"
+spec:
+  backoffLimit: 12
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: init-kafka-topics
+        app.kubernetes.io/component: init-job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init-kafka-topics
+        image: confluentinc/cp-kafka:7.6.7
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVER
+          valueFrom:
+            configMapKeyRef:
+              name: kafka-connection-config
+              key: KAFKA_BROKERS
+        - name: KAFKA_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_WORKFLOWS_TOPIC_PARTITIONS
+          value: "2"
+        - name: KAFKA_JOBS_TOPIC_PARTITIONS
+          value: "4"
+        - name: KAFKA_JOB_LOGS_TOPIC_PARTITIONS
+          value: "4"
+        - name: KAFKA_ANALYTICS_TOPIC_PARTITIONS
+          value: "2"
+        command:
+        - bash
+        - -ec
+        - |
+          bootstrap_server="${KAFKA_BOOTSTRAP_SERVER:-kafka:9094}"
+          replication_factor="${KAFKA_TOPIC_REPLICATION_FACTOR:-1}"
+          client_config="/tmp/kafka-client.properties"
+
+          cat > "$client_config" <<'PROPERTIES'
+          security.protocol=SSL
+          ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.jks
+          ssl.truststore.password=chronoverse
+          ssl.keystore.location=/etc/kafka/secrets/kafka.keystore.jks
+          ssl.keystore.password=chronoverse
+          ssl.key.password=chronoverse
+          PROPERTIES
+
+          kafka_topics() {
+            kafka-topics --bootstrap-server "$bootstrap_server" --command-config "$client_config" "$@"
+          }
+
+          require_positive_int() {
+            name="$1"
+            value="$2"
+            if ! [[ "$value" =~ ^[0-9]+$ ]] || (( value < 1 )); then
+              echo "$name must be a positive integer, got: $value" >&2
+              exit 1
+            fi
+          }
+
+          topic_partitions() {
+            topic="$1"
+            description="$(kafka_topics --describe --topic "$topic" 2>/dev/null || true)"
+            if [[ -z "$description" ]]; then
+              return 1
+            fi
+            while IFS= read -r line; do
+              if [[ "$line" == *"PartitionCount:"* ]]; then
+                remainder="${line#*PartitionCount: }"
+                printf '%s\n' "${remainder%%[[:space:]]*}"
+                return 0
+              fi
+            done <<< "$description"
+            return 1
+          }
+
+          create_or_update_topic() {
+            topic="$1"
+            desired_partitions="$2"
+            require_positive_int "partition count for $topic" "$desired_partitions"
+            if current_partitions="$(topic_partitions "$topic")"; then
+              if (( current_partitions < desired_partitions )); then
+                kafka_topics --alter --topic "$topic" --partitions "$desired_partitions"
+              fi
+              return
+            fi
+            kafka_topics --create --if-not-exists --topic "$topic" --partitions "$desired_partitions" --replication-factor "$replication_factor"
+          }
+
+          require_positive_int "KAFKA_TOPIC_REPLICATION_FACTOR" "$replication_factor"
+          until kafka_topics --list >/dev/null 2>&1; do
+            sleep 2
+          done
+          create_or_update_topic workflows "${KAFKA_WORKFLOWS_TOPIC_PARTITIONS:-2}"
+          create_or_update_topic jobs "${KAFKA_JOBS_TOPIC_PARTITIONS:-4}"
+          create_or_update_topic job_logs "${KAFKA_JOB_LOGS_TOPIC_PARTITIONS:-4}"
+          create_or_update_topic analytics "${KAFKA_ANALYTICS_TOPIC_PARTITIONS:-2}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 768Mi
+        volumeMounts:
+        - name: kafka-client-secrets
+          mountPath: /etc/kafka/secrets
+          readOnly: true
+      volumes:
+      - name: kafka-client-secrets
+        secret:
+          secretName: chronoverse-kafka-tls
+

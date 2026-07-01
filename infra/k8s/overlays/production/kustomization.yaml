@@ -1,0 +1,133 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../../base
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+- name: postgres-connection-config
+  behavior: merge
+  literals:
+  - POSTGRES_HOST=postgres.example.internal
+  - POSTGRES_PORT=5432
+- name: redis-connection-config
+  behavior: merge
+  literals:
+  - REDIS_HOST=redis.example.internal
+  - REDIS_PORT=6379
+- name: clickhouse-connection-config
+  behavior: merge
+  literals:
+  - CLICKHOUSE_HOSTS=clickhouse.example.internal:9440
+  - CLICKHOUSE_USERNAME=chronoverse-client
+- name: meilisearch-connection-config
+  behavior: merge
+  literals:
+  - MEILISEARCH_URI=https://meilisearch.example.internal:7700
+- name: kafka-connection-config
+  behavior: merge
+  literals:
+  - KAFKA_BROKERS=kafka.example.internal:9094
+- name: server-config
+  behavior: merge
+  literals:
+  - SERVER_HOST_URL=https://chronoverse.example.com
+  - SERVER_FRONTEND_URL=https://chronoverse.example.com
+  - SERVER_ALLOWED_ORIGINS=https://chronoverse.example.com,
+
+patches:
+- target:
+    kind: Deployment
+    labelSelector: chronoverse.io/certs=true
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: auth.ed
+                path: auth.ed
+              - key: auth.ed.pub
+                path: auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+    - op: add
+      path: /spec/template/spec/topologySpreadConstraints
+      value:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/part-of: chronoverse
+- target:
+    kind: Job
+    name: database-migration
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: auth.ed
+                path: auth.ed
+              - key: auth.ed.pub
+                path: auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key

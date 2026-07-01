@@ -1,0 +1,1053 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-service
+  labels:
+    app.kubernetes.io/name: users-service
+    app.kubernetes.io/component: backend
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: users-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: users-service
+        app.kubernetes.io/component: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: users-service
+        image: ghcr.io/hitesh22rana/chronoverse/users-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: grpc
+          containerPort: 50051
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: users-service-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50051", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/users-service/users-service.crt", "-tls-client-key=certs/users-service/users-service.key", "-tls-server-name=users-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50051", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/users-service/users-service.crt", "-tls-client-key=certs/users-service/users-service.key", "-tls-server-name=users-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: auth.ed
+                path: auth.ed
+              - key: auth.ed.pub
+                path: auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflows-service
+  labels:
+    app.kubernetes.io/name: workflows-service
+    app.kubernetes.io/component: backend
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workflows-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: workflows-service
+        app.kubernetes.io/component: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: workflows-service
+        image: ghcr.io/hitesh22rana/chronoverse/workflows-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: grpc
+          containerPort: 50052
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: workflows-service-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50052", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/workflows-service/workflows-service.crt", "-tls-client-key=certs/workflows-service/workflows-service.key", "-tls-server-name=workflows-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50052", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/workflows-service/workflows-service.crt", "-tls-client-key=certs/workflows-service/workflows-service.key", "-tls-server-name=workflows-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jobs-service
+  labels:
+    app.kubernetes.io/name: jobs-service
+    app.kubernetes.io/component: backend
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jobs-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jobs-service
+        app.kubernetes.io/component: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: jobs-service
+        image: ghcr.io/hitesh22rana/chronoverse/jobs-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: grpc
+          containerPort: 50053
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        - secretRef:
+            name: clickhouse-secret
+        - configMapRef:
+            name: meilisearch-connection-config
+        - secretRef:
+            name: meilisearch-secret
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: jobs-service-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50053", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/jobs-service/jobs-service.crt", "-tls-client-key=certs/jobs-service/jobs-service.key", "-tls-server-name=jobs-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50053", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/jobs-service/jobs-service.crt", "-tls-client-key=certs/jobs-service/jobs-service.key", "-tls-server-name=jobs-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-service
+  labels:
+    app.kubernetes.io/name: notifications-service
+    app.kubernetes.io/component: backend
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notifications-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notifications-service
+        app.kubernetes.io/component: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: notifications-service
+        image: ghcr.io/hitesh22rana/chronoverse/notifications-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: grpc
+          containerPort: 50054
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: notifications-service-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50054", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/notifications-service/notifications-service.crt", "-tls-client-key=certs/notifications-service/notifications-service.key", "-tls-server-name=notifications-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50054", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/notifications-service/notifications-service.crt", "-tls-client-key=certs/notifications-service/notifications-service.key", "-tls-server-name=notifications-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  labels:
+    app.kubernetes.io/name: analytics-service
+    app.kubernetes.io/component: backend
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: analytics-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: analytics-service
+        app.kubernetes.io/component: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: analytics-service
+        image: ghcr.io/hitesh22rana/chronoverse/analytics-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: grpc
+          containerPort: 50055
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: analytics-service-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50055", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/analytics-service/analytics-service.crt", "-tls-client-key=certs/analytics-service/analytics-service.key", "-tls-server-name=analytics-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50055", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/analytics-service/analytics-service.crt", "-tls-client-key=certs/analytics-service/analytics-service.key", "-tls-server-name=analytics-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  labels:
+    app.kubernetes.io/name: server
+    app.kubernetes.io/component: gateway
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: server
+        app.kubernetes.io/component: gateway
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: server
+        image: ghcr.io/hitesh22rana/chronoverse/server:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: server-config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 10
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 20
+          failureThreshold: 6
+          initialDelaySeconds: 20
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dashboard
+        app.kubernetes.io/component: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: dashboard
+        image: ghcr.io/hitesh22rana/chronoverse/dashboard:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 3000
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 10
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 20
+          failureThreshold: 6
+          initialDelaySeconds: 20
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduling-worker
+  labels:
+    app.kubernetes.io/name: scheduling-worker
+    app.kubernetes.io/component: worker
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scheduling-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scheduling-worker
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: scheduling-worker
+        image: ghcr.io/hitesh22rana/chronoverse/scheduling-worker:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: scheduling-worker-config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+          - secret:
+              name: chronoverse-client-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-worker
+  labels:
+    app.kubernetes.io/name: workflow-worker
+    app.kubernetes.io/component: worker
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workflow-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: workflow-worker
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: workflow-worker
+        image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        - secretRef:
+            name: clickhouse-secret
+        - configMapRef:
+            name: meilisearch-connection-config
+        - secretRef:
+            name: meilisearch-secret
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: workflow-worker-config
+        - configMapRef:
+            name: docker-proxy-connection-config
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+          - secret:
+              name: chronoverse-client-tls
+          - secret:
+              name: chronoverse-service-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: execution-worker
+  labels:
+    app.kubernetes.io/name: execution-worker
+    app.kubernetes.io/component: worker
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: execution-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: execution-worker
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: execution-worker
+        image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: execution-worker-config
+        - configMapRef:
+            name: docker-proxy-connection-config
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+          - secret:
+              name: chronoverse-client-tls
+          - secret:
+              name: chronoverse-service-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: joblogs-processor
+  labels:
+    app.kubernetes.io/name: joblogs-processor
+    app.kubernetes.io/component: worker
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: joblogs-processor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: joblogs-processor
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: joblogs-processor
+        image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: redis-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        - secretRef:
+            name: clickhouse-secret
+        - configMapRef:
+            name: meilisearch-connection-config
+        - secretRef:
+            name: meilisearch-secret
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: joblogs-processor-config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+          - secret:
+              name: chronoverse-client-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-processor
+  labels:
+    app.kubernetes.io/name: analytics-processor
+    app.kubernetes.io/component: worker
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: analytics-processor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: analytics-processor
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: analytics-processor
+        image: ghcr.io/hitesh22rana/chronoverse/analytics-processor:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: analytics-processor-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+          - secret:
+              name: chronoverse-client-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outbox-relay
+  labels:
+    app.kubernetes.io/name: outbox-relay
+    app.kubernetes.io/component: worker
+    chronoverse.io/certs: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: outbox-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: outbox-relay
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: outbox-relay
+        image: ghcr.io/hitesh22rana/chronoverse/outbox-relay:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: OUTBOX_RELAY_WORKER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: kafka-connection-config
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: outbox-relay-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+          - secret:
+              name: chronoverse-client-tls
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-migration
+  labels:
+    app.kubernetes.io/name: database-migration
+    app.kubernetes.io/component: init-job
+    chronoverse.io/certs: "true"
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: database-migration
+        app.kubernetes.io/component: init-job
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: database-migration
+        image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: clickhouse-connection-config
+        - secretRef:
+            name: clickhouse-secret
+        - configMapRef:
+            name: meilisearch-connection-config
+        - secretRef:
+            name: meilisearch-secret
+        - configMapRef:
+            name: observability-config
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+          - secret:
+              name: chronoverse-ca
+          - secret:
+              name: chronoverse-client-tls

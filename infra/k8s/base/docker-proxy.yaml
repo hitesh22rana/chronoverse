@@ -2,10 +2,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: docker-proxy-config
-  namespace: chronoverse
-  labels:
-    app: docker-proxy
-    component: proxy
 data:
   IMAGES: "1"
   IMAGE_CREATE: "1"
@@ -22,51 +18,40 @@ data:
   NETWORKS: "0"
   VOLUMES: "0"
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: docker-proxy-connection-config
-  namespace: chronoverse
-  labels:
-    app: docker-proxy
-    component: proxy
-data:
-  DOCKER_HOST: "tcp://docker-proxy:2375"
----
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: docker-proxy
-  namespace: chronoverse
   labels:
-    app: docker-proxy
-    component: proxy
+    app.kubernetes.io/name: docker-proxy
+    app.kubernetes.io/component: proxy
 spec:
   selector:
     matchLabels:
-      app: docker-proxy
-      component: proxy
+      app.kubernetes.io/name: docker-proxy
   template:
     metadata:
       labels:
-        app: docker-proxy
-        component: proxy
+        app.kubernetes.io/name: docker-proxy
+        app.kubernetes.io/component: proxy
     spec:
       containers:
       - name: docker-proxy
-        image: tecnativa/docker-socket-proxy
+        image: tecnativa/docker-socket-proxy:v0.4.1
+        imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 2375
+        - name: docker
+          containerPort: 2375
         envFrom:
         - configMapRef:
             name: docker-proxy-config
         resources:
-          limits:
-            cpu: "200m"
-            memory: "256Mi"
           requests:
-            cpu: "50m"
-            memory: "64Mi"
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
         volumeMounts:
         - name: docker-socket
           mountPath: /var/run/docker.sock
@@ -80,15 +65,15 @@ apiVersion: v1
 kind: Service
 metadata:
   name: docker-proxy
-  namespace: chronoverse
   labels:
-    app: docker-proxy
-    component: proxy
+    app.kubernetes.io/name: docker-proxy
+    app.kubernetes.io/component: proxy
 spec:
   type: ClusterIP
   selector:
-    app: docker-proxy
-    component: proxy
+    app.kubernetes.io/name: docker-proxy
   ports:
-  - port: 2375
-    targetPort: 2375
+  - name: docker
+    port: 2375
+    targetPort: docker
+

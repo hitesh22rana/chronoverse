@@ -35,6 +35,14 @@ spec:
         app.kubernetes.io/name: docker-proxy
         app.kubernetes.io/component: proxy
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: chronoverse.io/docker-workloads
+                operator: In
+                values: ["true"]
       containers:
       - name: docker-proxy
         image: tecnativa/docker-socket-proxy:v0.4.1
@@ -70,10 +78,10 @@ metadata:
     app.kubernetes.io/component: proxy
 spec:
   type: ClusterIP
+  internalTrafficPolicy: Local
   selector:
     app.kubernetes.io/name: docker-proxy
   ports:
   - name: docker
     port: 2375
     targetPort: docker
-

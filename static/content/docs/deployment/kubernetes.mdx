@@ -13,6 +13,23 @@ kubectl apply -k infra/k8s/overlays/production
 
 `overlays/production` is external-ready. It deploys Chronoverse services, workers, dashboard, Nginx, Docker proxy, Kafka topic initialization, database migration jobs, and HorizontalPodAutoscalers while expecting PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, and secret material to be supplied by the environment.
 
+## Local kind cluster
+
+For kind, create the cluster with the repository config. It mounts the host Docker socket into the kind node and labels that node for Docker-backed workers:
+
+```bash
+kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl apply -k infra/k8s/overlays/local
+```
+
+If the cluster already exists without that socket mount, recreate it with the config. A Kubernetes manifest cannot create `/var/run/docker.sock` inside a kind node after the node container has already started.
+
+For non-kind clusters, label the Docker-capable node before applying the overlay:
+
+```bash
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
 ## Required production secrets
 
 Create these Secrets before applying the production overlay:
@@ -63,7 +80,9 @@ Kafka-lag-driven worker scaling is not built into the Kustomize overlay. Use KED
 
 ## Docker execution model
 
-Container workflows still execute through the Docker socket proxy. Kubernetes nodes that run `workflow-worker` or `execution-worker` need Docker Engine and `/var/run/docker.sock`. Treat the proxy as privileged infrastructure and restrict node scheduling, network access, and RBAC accordingly.
+Container workflows still execute through the Docker socket proxy. Kubernetes nodes that run `docker-proxy`, `workflow-worker`, or `execution-worker` need Docker Engine, `/var/run/docker.sock`, and the `chronoverse.io/docker-workloads=true` node label. The Docker proxy Service uses node-local traffic so a worker talks to the proxy backed by its own node's Docker socket.
+
+When workflow image builds and job execution depend on the local Docker image cache, label a single Docker-capable node. If multiple Docker nodes are labeled, use a registry or another shared image distribution model so `execution-worker` can run images built by `workflow-worker`.
 
 ## Validation
 

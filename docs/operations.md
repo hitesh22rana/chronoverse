@@ -50,6 +50,21 @@ Secrets, and includes CPU/memory HorizontalPodAutoscalers for app services and
 workers. Production autoscaling requires metrics-server or an equivalent
 `autoscaling/v2` resource metrics provider.
 
+When using kind, create the cluster with the checked-in config so the host
+Docker socket is mounted into the kind node and the node is labeled for
+Docker-backed workers:
+
+```sh
+kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl apply -k infra/k8s/overlays/local
+```
+
+For other clusters, label the node that exposes Docker Engine:
+
+```sh
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
 ### Stop and Inspect
 
 ```sh
@@ -84,8 +99,11 @@ kubectl -n chronoverse logs deploy/server
 
 Kubernetes does not provide Compose-style dependency ordering for long-running
 Deployments. The overlays include explicit Jobs for certificate bootstrap
-where local, Kafka topic initialization, and database migration; operators
-should inspect those Jobs before scaling application workloads during rollout.
+where local, Kafka topic initialization, and database migration. The local
+overlay also adds init-container waits so app pods do not start until local
+datastores, Kafka, certificates, and the Docker proxy endpoint are reachable.
+Operators should still inspect those Jobs before scaling application workloads
+during rollout.
 
 ## Health Checks
 
@@ -284,7 +302,11 @@ expected keys.
 - Confirm production overlay placeholder hosts were patched for real external
   dependencies.
 - Confirm worker nodes that run `workflow-worker` or `execution-worker` expose
-  Docker Engine at `/var/run/docker.sock` for the Docker socket proxy.
+  Docker Engine at `/var/run/docker.sock` for the Docker socket proxy and have
+  the `chronoverse.io/docker-workloads=true` label.
+- In kind, recreate the cluster with
+  `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
+  `/var/run/docker.sock is not a socket file`.
 
 ### Compose Readiness Problems
 

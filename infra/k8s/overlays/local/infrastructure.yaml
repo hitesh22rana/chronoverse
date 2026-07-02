@@ -233,6 +233,19 @@ spec:
       enableServiceLinks: false
       hostname: kafka
       initContainers:
+      - name: prepare-kafka-storage
+        image: alpine:3.22.2
+        command: ["sh", "-c", "mkdir -p /var/lib/kafka/data && chown -R 1000:1000 /var/lib/kafka/data"]
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["CHOWN", "FOWNER"]
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
       - name: wait-for-kafka-certs
         image: alpine:3.22.2
         command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ]; do echo waiting for kafka certificates; sleep 2; done"]

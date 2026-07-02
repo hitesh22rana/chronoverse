@@ -56,8 +56,14 @@ Docker-backed workers:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl config use-context kind-chronoverse
 kubectl apply -k infra/k8s/overlays/local
 ```
+
+Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient
+for Docker-backed workers because its node does not expose Docker Engine at
+`/var/run/docker.sock` to pods. Use kind with the checked-in config, or use a
+cluster whose nodes really provide that socket.
 
 For other clusters, label the node that exposes Docker Engine:
 
@@ -309,6 +315,8 @@ expected keys.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.
+- If `kubectl config current-context` returns `docker-desktop`, switch to the
+  `kind-chronoverse` context or another Docker-capable cluster.
 
 ### Compose Readiness Problems
 

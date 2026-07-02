@@ -134,11 +134,17 @@ Kubernetes manifests are available as Kustomize overlays:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl config use-context kind-chronoverse
 kubectl apply -k infra/k8s/overlays/local
+```
+
+For production:
+
+```sh
 kubectl apply -k infra/k8s/overlays/production
 ```
 
-The local overlay is self-contained for a single-node cluster. For kind, create the cluster with the provided config so `/var/run/docker.sock` is mounted into the node and the node is labeled for Docker-backed workers. The production overlay expects managed PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, and pre-created Kubernetes Secrets. See [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md), and [operations](./docs/operations.md).
+The local overlay is self-contained for a single-node cluster. For kind, create the cluster with the provided config so `/var/run/docker.sock` is mounted into the node and the node is labeled for Docker-backed workers. Docker Desktop's built-in `docker-desktop` Kubernetes context does not expose a Docker Engine socket to pods, so `docker-proxy` will not start there. The production overlay expects managed PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, and pre-created Kubernetes Secrets. See [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md), and [operations](./docs/operations.md).
 
 ## API and Usage
 

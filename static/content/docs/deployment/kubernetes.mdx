@@ -19,10 +19,13 @@ For kind, create the cluster with the repository config. It mounts the host Dock
 
 ```bash
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl config use-context kind-chronoverse
 kubectl apply -k infra/k8s/overlays/local
 ```
 
 If the cluster already exists without that socket mount, recreate it with the config. A Kubernetes manifest cannot create `/var/run/docker.sock` inside a kind node after the node container has already started.
+
+Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient for Docker-backed workers. It runs containerd and does not expose Docker Engine at `/var/run/docker.sock` inside the node, so `docker-proxy` fails with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
 
 For non-kind clusters, label the Docker-capable node before applying the overlay:
 
@@ -68,7 +71,7 @@ The production overlay intentionally does not create in-cluster stateful data st
 
 ## Scaling
 
-The local overlay is intentionally single-replica so it can run on one Docker Desktop or Minikube node. The production overlay starts app services and workers with multi-replica baselines and includes CPU/memory HorizontalPodAutoscalers for stateless APIs and background workers.
+The local overlay is intentionally single-replica so it can run on one kind node created with the repository config, or another single-node cluster that exposes Docker Engine to the node. The production overlay starts app services and workers with multi-replica baselines and includes CPU/memory HorizontalPodAutoscalers for stateless APIs and background workers.
 
 Install metrics-server, or provide equivalent `autoscaling/v2` resource metrics, before relying on HPAs:
 

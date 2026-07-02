@@ -17,8 +17,14 @@ mounted into the kind node and the node is labeled for Docker-backed workers:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl config use-context kind-chronoverse
 kubectl apply -k infra/k8s/overlays/local
 ```
+
+Do not use Docker Desktop's built-in `docker-desktop` Kubernetes context for
+the Docker-backed worker path. That cluster runs containerd and does not expose
+Docker Engine at `/var/run/docker.sock` inside the node, so `docker-proxy` fails
+with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
 
 For other local clusters, label the node that exposes Docker Engine:
 

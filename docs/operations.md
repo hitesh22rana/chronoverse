@@ -99,11 +99,13 @@ kubectl -n chronoverse logs deploy/server
 
 Kubernetes does not provide Compose-style dependency ordering for long-running
 Deployments. The overlays include explicit Jobs for certificate bootstrap
-where local, Kafka topic initialization, and database migration. The local
-overlay also adds init-container waits so app pods do not start until local
-datastores, Kafka, certificates, and the Docker proxy endpoint are reachable.
-Operators should still inspect those Jobs before scaling application workloads
-during rollout.
+where local, Kafka topic initialization, and database migration. Application
+containers are expected to retry transient dependency failures, while readiness
+and liveness probes decide when pods receive traffic or are restarted. The local
+overlay uses init containers only for prerequisites that must exist before the
+process starts, such as generated certificate files and hostPath permissions.
+Operators should still inspect bootstrap Jobs before scaling application
+workloads during rollout.
 
 ## Health Checks
 

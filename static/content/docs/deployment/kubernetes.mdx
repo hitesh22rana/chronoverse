@@ -78,6 +78,10 @@ kubectl -n chronoverse get hpa
 
 Kafka-lag-driven worker scaling is not built into the Kustomize overlay. Use KEDA or a custom metrics adapter when worker count should follow topic lag instead of CPU or memory pressure.
 
+## Startup behavior
+
+Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with application retry behavior, readiness/liveness probes, and bootstrap Jobs for one-time setup such as migrations and Kafka topics. Init containers are reserved for prerequisites that must exist before the process starts, such as generated local certificate files, Kafka keystores, and hostPath permission preparation.
+
 ## Docker execution model
 
 Container workflows still execute through the Docker socket proxy. Kubernetes nodes that run `docker-proxy`, `workflow-worker`, or `execution-worker` need Docker Engine, `/var/run/docker.sock`, and the `chronoverse.io/docker-workloads=true` node label. The Docker proxy Service uses node-local traffic so a worker talks to the proxy backed by its own node's Docker socket.

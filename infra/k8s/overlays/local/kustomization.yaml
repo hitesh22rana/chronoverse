@@ -113,33 +113,6 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
-      - name: wait-for-local-dependencies
-        image: alpine:3.22.2
-        command:
-        - sh
-        - -c
-        - |
-          wait_tcp() {
-            host="$1"
-            port="$2"
-            until nc -z -w 2 "$host" "$port"; do
-              echo "waiting for ${host}:${port}"
-              sleep 2
-            done
-          }
-          wait_tcp postgres 5432
-          wait_tcp redis 6379
-          wait_tcp clickhouse 9000
-          wait_tcp meilisearch 7700
-          wait_tcp kafka 9094
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 0
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
     - op: replace
       path: /spec/template/spec/volumes/0
       value:
@@ -167,31 +140,6 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
-      - name: wait-for-local-datastores
-        image: alpine:3.22.2
-        command:
-        - sh
-        - -c
-        - |
-          wait_tcp() {
-            host="$1"
-            port="$2"
-            until nc -z -w 2 "$host" "$port"; do
-              echo "waiting for ${host}:${port}"
-              sleep 2
-            done
-          }
-          wait_tcp postgres 5432
-          wait_tcp clickhouse 9000
-          wait_tcp meilisearch 7700
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 0
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
     - op: replace
       path: /spec/template/spec/volumes/0
       value:
@@ -207,7 +155,7 @@ patches:
       value:
       - name: wait-for-kafka-certs
         image: alpine:3.22.2
-        command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ]; do echo waiting for kafka certificates; sleep 2; done; until nc -z -w 2 kafka 9094; do echo waiting for kafka:9094; sleep 2; done"]
+        command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ]; do echo waiting for kafka certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532
@@ -234,75 +182,3 @@ patches:
         mountPath: /etc/kafka/secrets
         subPath: kafka
         readOnly: true
-- target:
-    kind: Deployment
-    name: workflow-worker
-  patch: |-
-    - op: add
-      path: /spec/template/spec/initContainers/-
-      value:
-        name: wait-for-docker-proxy
-        image: alpine:3.22.2
-        command: ["sh", "-c", "until nc -z -w 2 docker-proxy 2375; do echo waiting for docker-proxy:2375; sleep 2; done"]
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 0
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
-- target:
-    kind: Deployment
-    name: execution-worker
-  patch: |-
-    - op: add
-      path: /spec/template/spec/initContainers/-
-      value:
-        name: wait-for-docker-proxy
-        image: alpine:3.22.2
-        command: ["sh", "-c", "until nc -z -w 2 docker-proxy 2375; do echo waiting for docker-proxy:2375; sleep 2; done"]
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 0
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
-- target:
-    kind: Deployment
-    name: dashboard
-  patch: |-
-    - op: add
-      path: /spec/template/spec/initContainers
-      value:
-      - name: wait-for-server
-        image: alpine:3.22.2
-        command: ["sh", "-c", "until nc -z -w 2 server 8080; do echo waiting for server:8080; sleep 2; done"]
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 0
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
-- target:
-    kind: Deployment
-    name: nginx
-  patch: |-
-    - op: add
-      path: /spec/template/spec/initContainers
-      value:
-      - name: wait-for-public-backends
-        image: alpine:3.22.2
-        command: ["sh", "-c", "until nc -z -w 2 server 8080; do echo waiting for server:8080; sleep 2; done; until nc -z -w 2 dashboard 3000; do echo waiting for dashboard:3000; sleep 2; done"]
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 0
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]

@@ -12,8 +12,21 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
-For kind, create the cluster with the provided config so the Docker socket is
-mounted into the kind node and the node is labeled for Docker-backed workers:
+Kubernetes does not include a generic `kubectl` command to create a cluster.
+Use your cluster lifecycle tool, such as kind, minikube, kubeadm, or managed
+Kubernetes provisioning, then apply the Kustomize overlay with `kubectl`.
+
+Container workflows require Docker-capable nodes. Before applying the overlay,
+make sure every node that may run `docker-proxy`, `workflow-worker`, or
+`execution-worker` exposes Docker Engine at `/var/run/docker.sock` and has this
+label:
+
+```sh
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
+For kind, the socket mount and node label must be configured when the cluster is
+created. The repository includes a local example:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -25,12 +38,6 @@ Do not use Docker Desktop's built-in `docker-desktop` Kubernetes context for
 the Docker-backed worker path. That cluster runs containerd and does not expose
 Docker Engine at `/var/run/docker.sock` inside the node, so `docker-proxy` fails
 with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
-
-For other local clusters, label the node that exposes Docker Engine:
-
-```sh
-kubectl label node <node-name> chronoverse.io/docker-workloads=true
-```
 
 ## Layout
 

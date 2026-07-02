@@ -13,9 +13,17 @@ kubectl apply -k infra/k8s/overlays/production
 
 `overlays/production` is external-ready. It deploys Chronoverse services, workers, dashboard, Nginx, Docker proxy, Kafka topic initialization, database migration jobs, and HorizontalPodAutoscalers while expecting PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, and secret material to be supplied by the environment.
 
-## Local kind cluster
+## Cluster prerequisites
 
-For kind, create the cluster with the repository config. It mounts the host Docker socket into the kind node and labels that node for Docker-backed workers:
+Kubernetes does not include a generic `kubectl` command to create a cluster. Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or managed Kubernetes provisioning, then apply the Kustomize overlay with `kubectl`.
+
+Container workflows require Docker-capable nodes. Before applying the overlay, make sure every node that may run `docker-proxy`, `workflow-worker`, or `execution-worker` exposes Docker Engine at `/var/run/docker.sock` and has this label:
+
+```bash
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
+For kind, the socket mount and node label must be configured when the cluster is created. The repository includes a local example:
 
 ```bash
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -26,12 +34,6 @@ kubectl apply -k infra/k8s/overlays/local
 If the cluster already exists without that socket mount, recreate it with the config. A Kubernetes manifest cannot create `/var/run/docker.sock` inside a kind node after the node container has already started.
 
 Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient for Docker-backed workers. It runs containerd and does not expose Docker Engine at `/var/run/docker.sock` inside the node, so `docker-proxy` fails with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
-
-For non-kind clusters, label the Docker-capable node before applying the overlay:
-
-```bash
-kubectl label node <node-name> chronoverse.io/docker-workloads=true
-```
 
 ## Required production secrets
 

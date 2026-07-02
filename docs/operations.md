@@ -50,9 +50,22 @@ Secrets, and includes CPU/memory HorizontalPodAutoscalers for app services and
 workers. Production autoscaling requires metrics-server or an equivalent
 `autoscaling/v2` resource metrics provider.
 
-When using kind, create the cluster with the checked-in config so the host
-Docker socket is mounted into the kind node and the node is labeled for
-Docker-backed workers:
+Kubernetes does not include a generic `kubectl` command to create a cluster.
+Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or
+managed Kubernetes provisioning, then apply the Kustomize overlay with
+`kubectl`.
+
+Container workflows require Docker-capable nodes. Before applying the overlay,
+make sure every node that may run `docker-proxy`, `workflow-worker`, or
+`execution-worker` exposes Docker Engine at `/var/run/docker.sock` and has this
+label:
+
+```sh
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
+For kind, the socket mount and node label must be configured when the cluster is
+created. The repository includes a local example:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -64,12 +77,6 @@ Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient
 for Docker-backed workers because its node does not expose Docker Engine at
 `/var/run/docker.sock` to pods. Use kind with the checked-in config, or use a
 cluster whose nodes really provide that socket.
-
-For other clusters, label the node that exposes Docker Engine:
-
-```sh
-kubectl label node <node-name> chronoverse.io/docker-workloads=true
-```
 
 ### Stop and Inspect
 

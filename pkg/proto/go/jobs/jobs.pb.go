@@ -442,6 +442,8 @@ type ClaimJobResponse struct {
 	DispatchAttempts int32                  `protobuf:"varint,8,opt,name=dispatch_attempts,json=dispatchAttempts,proto3" json:"dispatch_attempts,omitempty"` // Number of dispatch attempts
 	Attempts         int32                  `protobuf:"varint,9,opt,name=attempts,proto3" json:"attempts,omitempty"`                                         // Number of execution attempts
 	LeaseToken       string                 `protobuf:"bytes,10,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                   // Lease token required for updates
+	RuntimeNodeId    string                 `protobuf:"bytes,11,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`        // Runtime node selected for Docker-backed execution
+	RuntimeEndpoint  string                 `protobuf:"bytes,12,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`    // Docker endpoint selected for Docker-backed execution
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -542,6 +544,20 @@ func (x *ClaimJobResponse) GetAttempts() int32 {
 func (x *ClaimJobResponse) GetLeaseToken() string {
 	if x != nil {
 		return x.LeaseToken
+	}
+	return ""
+}
+
+func (x *ClaimJobResponse) GetRuntimeNodeId() string {
+	if x != nil {
+		return x.RuntimeNodeId
+	}
+	return ""
+}
+
+func (x *ClaimJobResponse) GetRuntimeEndpoint() string {
+	if x != nil {
+		return x.RuntimeEndpoint
 	}
 	return ""
 }
@@ -647,9 +663,10 @@ func (*RenewJobLeaseResponse) Descriptor() ([]byte, []int) {
 // AttachJobContainerRequest contains the details needed to attach a container ID to a running job.
 type AttachJobContainerRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                      // ID of the job
-	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`    // Current lease token
-	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"` // Container ID
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                              // ID of the job
+	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`            // Current lease token
+	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`         // Container ID
+	RuntimeNodeId string                 `protobuf:"bytes,4,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"` // Runtime node that owns the container
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -701,6 +718,13 @@ func (x *AttachJobContainerRequest) GetLeaseToken() string {
 func (x *AttachJobContainerRequest) GetContainerId() string {
 	if x != nil {
 		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *AttachJobContainerRequest) GetRuntimeNodeId() string {
+	if x != nil {
+		return x.RuntimeNodeId
 	}
 	return ""
 }
@@ -1152,19 +1176,22 @@ func (*ReleaseJobForRetryResponse) Descriptor() ([]byte, []int) {
 
 // ExpiredJobLease contains a running job whose lease has expired.
 type ExpiredJobLease struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                           // ID of the job
-	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`         // ID of the workflow
-	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                     // ID of the user
-	ContainerId   string                 `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`      // Container ID, if available
-	LeaseToken    string                 `protobuf:"bytes,5,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`         // Expired lease token
-	LeasedBy      string                 `protobuf:"bytes,6,opt,name=leased_by,json=leasedBy,proto3" json:"leased_by,omitempty"`               // Worker that held the lease
-	Trigger       string                 `protobuf:"bytes,7,opt,name=trigger,proto3" json:"trigger,omitempty"`                                 // Trigger type of the job
-	ScheduledAt   string                 `protobuf:"bytes,8,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`      // Time the job was scheduled to run
-	Attempts      int32                  `protobuf:"varint,9,opt,name=attempts,proto3" json:"attempts,omitempty"`                              // Number of execution attempts
-	LogRetention  bool                   `protobuf:"varint,10,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"` // Whether logs should be durably retained
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
+	WorkflowId         string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                           // ID of the workflow
+	UserId             string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                       // ID of the user
+	ContainerId        string                 `protobuf:"bytes,4,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`                        // Container ID, if available
+	LeaseToken         string                 `protobuf:"bytes,5,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                           // Expired lease token
+	LeasedBy           string                 `protobuf:"bytes,6,opt,name=leased_by,json=leasedBy,proto3" json:"leased_by,omitempty"`                                 // Worker that held the lease
+	Trigger            string                 `protobuf:"bytes,7,opt,name=trigger,proto3" json:"trigger,omitempty"`                                                   // Trigger type of the job
+	ScheduledAt        string                 `protobuf:"bytes,8,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`                        // Time the job was scheduled to run
+	Attempts           int32                  `protobuf:"varint,9,opt,name=attempts,proto3" json:"attempts,omitempty"`                                                // Number of execution attempts
+	LogRetention       bool                   `protobuf:"varint,10,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                   // Whether logs should be durably retained
+	RuntimeNodeId      string                 `protobuf:"bytes,11,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`               // Runtime node that owns the container
+	RuntimeEndpoint    string                 `protobuf:"bytes,12,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`           // Docker endpoint for the owning runtime node
+	RuntimeUnavailable bool                   `protobuf:"varint,13,opt,name=runtime_unavailable,json=runtimeUnavailable,proto3" json:"runtime_unavailable,omitempty"` // Whether the owning runtime is considered unavailable
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ExpiredJobLease) Reset() {
@@ -1263,6 +1290,27 @@ func (x *ExpiredJobLease) GetAttempts() int32 {
 func (x *ExpiredJobLease) GetLogRetention() bool {
 	if x != nil {
 		return x.LogRetention
+	}
+	return false
+}
+
+func (x *ExpiredJobLease) GetRuntimeNodeId() string {
+	if x != nil {
+		return x.RuntimeNodeId
+	}
+	return ""
+}
+
+func (x *ExpiredJobLease) GetRuntimeEndpoint() string {
+	if x != nil {
+		return x.RuntimeEndpoint
+	}
+	return ""
+}
+
+func (x *ExpiredJobLease) GetRuntimeUnavailable() bool {
+	if x != nil {
+		return x.RuntimeUnavailable
 	}
 	return false
 }
@@ -2328,20 +2376,22 @@ func (x *ListJobsRequest) GetFilters() *ListJobsFilters {
 
 // JobsResponse contains the result of a job listing attempt.
 type JobsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                      // ID of the job
-	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`    // ID of the workflow
-	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"` // ID of the container (if applicable)
-	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`                              // Status of the job
-	Trigger       string                 `protobuf:"bytes,5,opt,name=trigger,proto3" json:"trigger,omitempty"`                            // Trigger type of the job (AUTOMATIC or MANUAL)
-	ScheduledAt   string                 `protobuf:"bytes,6,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"` // Time the job is scheduled to run
-	StartedAt     string                 `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`       // Time the job was started
-	CompletedAt   string                 `protobuf:"bytes,8,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"` // Time the job was completed
-	CreatedAt     string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`       // Time the job was created
-	UpdatedAt     string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`      // Time the job was last updated
-	Attempts      int32                  `protobuf:"varint,11,opt,name=attempts,proto3" json:"attempts,omitempty"`                        // Number of execution attempts
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                   // ID of the job
+	WorkflowId      string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                 // ID of the workflow
+	ContainerId     string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`              // ID of the container (if applicable)
+	Status          string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`                                           // Status of the job
+	Trigger         string                 `protobuf:"bytes,5,opt,name=trigger,proto3" json:"trigger,omitempty"`                                         // Trigger type of the job (AUTOMATIC or MANUAL)
+	ScheduledAt     string                 `protobuf:"bytes,6,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`              // Time the job is scheduled to run
+	StartedAt       string                 `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`                    // Time the job was started
+	CompletedAt     string                 `protobuf:"bytes,8,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`              // Time the job was completed
+	CreatedAt       string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                    // Time the job was created
+	UpdatedAt       string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                   // Time the job was last updated
+	Attempts        int32                  `protobuf:"varint,11,opt,name=attempts,proto3" json:"attempts,omitempty"`                                     // Number of execution attempts
+	RuntimeNodeId   string                 `protobuf:"bytes,12,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`     // Runtime node that owns the container
+	RuntimeEndpoint string                 `protobuf:"bytes,13,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"` // Docker endpoint snapshot for the owning runtime node
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *JobsResponse) Reset() {
@@ -2451,6 +2501,20 @@ func (x *JobsResponse) GetAttempts() int32 {
 	return 0
 }
 
+func (x *JobsResponse) GetRuntimeNodeId() string {
+	if x != nil {
+		return x.RuntimeNodeId
+	}
+	return ""
+}
+
+func (x *JobsResponse) GetRuntimeEndpoint() string {
+	if x != nil {
+		return x.RuntimeEndpoint
+	}
+	return ""
+}
+
 type ListJobsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Jobs          []*JobsResponse        `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`     // List of jobs
@@ -2529,7 +2593,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"workflowId\x12\x1b\n" +
 	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x124\n" +
 	"\x16lease_duration_seconds\x18\x04 \x01(\x05R\x14leaseDurationSeconds\x12)\n" +
-	"\x10dispatch_attempt\x18\x05 \x01(\x05R\x0fdispatchAttempt\"\xb5\x02\n" +
+	"\x10dispatch_attempt\x18\x05 \x01(\x05R\x0fdispatchAttempt\"\x88\x03\n" +
 	"\x10ClaimJobResponse\x12\x18\n" +
 	"\aclaimed\x18\x01 \x01(\bR\aclaimed\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x0e\n" +
@@ -2543,18 +2607,21 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\battempts\x18\t \x01(\x05R\battempts\x12\x1f\n" +
 	"\vlease_token\x18\n" +
 	" \x01(\tR\n" +
-	"leaseToken\"}\n" +
+	"leaseToken\x12&\n" +
+	"\x0fruntime_node_id\x18\v \x01(\tR\rruntimeNodeId\x12)\n" +
+	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\"}\n" +
 	"\x14RenewJobLeaseRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x124\n" +
 	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\"\x17\n" +
-	"\x15RenewJobLeaseResponse\"o\n" +
+	"\x15RenewJobLeaseResponse\"\x97\x01\n" +
 	"\x19AttachJobContainerRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x12!\n" +
-	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\"\x1c\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12&\n" +
+	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\"\x1c\n" +
 	"\x1aAttachJobContainerResponse\"E\n" +
 	"\x12CompleteJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -2583,7 +2650,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x1c\n" +
-	"\x1aReleaseJobForRetryResponse\"\xba\x02\n" +
+	"\x1aReleaseJobForRetryResponse\"\xbe\x03\n" +
 	"\x0fExpiredJobLease\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -2597,7 +2664,10 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\fscheduled_at\x18\b \x01(\tR\vscheduledAt\x12\x1a\n" +
 	"\battempts\x18\t \x01(\x05R\battempts\x12#\n" +
 	"\rlog_retention\x18\n" +
-	" \x01(\bR\flogRetention\"\x92\x01\n" +
+	" \x01(\bR\flogRetention\x12&\n" +
+	"\x0fruntime_node_id\x18\v \x01(\tR\rruntimeNodeId\x12)\n" +
+	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\x12/\n" +
+	"\x13runtime_unavailable\x18\r \x01(\bR\x12runtimeUnavailable\"\x92\x01\n" +
 	"\x1eRecoverExpiredJobLeasesRequest\x12\x1d\n" +
 	"\n" +
 	"batch_size\x18\x01 \x01(\x05R\tbatchSize\x12\x1b\n" +
@@ -2695,7 +2765,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x124\n" +
 	"\afilters\x18\x04 \x01(\v2\x15.jobs.ListJobsFiltersH\x00R\afilters\x88\x01\x01B\n" +
 	"\n" +
-	"\b_filters\"\xd3\x02\n" +
+	"\b_filters\"\xa6\x03\n" +
 	"\fJobsResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -2712,7 +2782,9 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\n" +
 	" \x01(\tR\tupdatedAt\x12\x1a\n" +
-	"\battempts\x18\v \x01(\x05R\battempts\"R\n" +
+	"\battempts\x18\v \x01(\x05R\battempts\x12&\n" +
+	"\x0fruntime_node_id\x18\f \x01(\tR\rruntimeNodeId\x12)\n" +
+	"\x10runtime_endpoint\x18\r \x01(\tR\x0fruntimeEndpoint\"R\n" +
 	"\x10ListJobsResponse\x12&\n" +
 	"\x04jobs\x18\x01 \x03(\v2\x12.jobs.JobsResponseR\x04jobs\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor*i\n" +

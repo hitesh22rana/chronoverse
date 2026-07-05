@@ -142,14 +142,16 @@ type ScheduledJobEntry struct {
 
 // ClaimedJob represents a job claimed by an execution worker.
 type ClaimedJob struct {
-	ID               string    `db:"id"`
-	WorkflowID       string    `db:"workflow_id"`
-	UserID           string    `db:"user_id"`
-	Trigger          string    `db:"trigger"`
-	ScheduledAt      time.Time `db:"scheduled_at"`
-	DispatchAttempts int32     `db:"dispatch_attempts"`
-	Attempts         int32     `db:"attempts"`
-	LeaseToken       string    `db:"lease_token"`
+	ID               string         `db:"id"`
+	WorkflowID       string         `db:"workflow_id"`
+	UserID           string         `db:"user_id"`
+	Trigger          string         `db:"trigger"`
+	ScheduledAt      time.Time      `db:"scheduled_at"`
+	DispatchAttempts int32          `db:"dispatch_attempts"`
+	Attempts         int32          `db:"attempts"`
+	LeaseToken       string         `db:"lease_token"`
+	RuntimeNodeID    sql.NullString `db:"runtime_node_id,omitempty"`
+	RuntimeEndpoint  sql.NullString `db:"runtime_endpoint,omitempty"`
 }
 
 // ToClaimJobProto converts a ClaimedJob to a ClaimJobResponse.
@@ -172,36 +174,44 @@ func (j *ClaimedJob) ToClaimJobProto(claimed bool, reason string) *jobspb.ClaimJ
 		DispatchAttempts: j.DispatchAttempts,
 		Attempts:         j.Attempts,
 		LeaseToken:       j.LeaseToken,
+		RuntimeNodeId:    j.RuntimeNodeID.String,
+		RuntimeEndpoint:  j.RuntimeEndpoint.String,
 	}
 }
 
 // ExpiredJobLease represents a running job with an expired lease.
 type ExpiredJobLease struct {
-	ID           string         `db:"id"`
-	WorkflowID   string         `db:"workflow_id"`
-	UserID       string         `db:"user_id"`
-	ContainerID  sql.NullString `db:"container_id,omitempty"`
-	LeaseToken   string         `db:"lease_token"`
-	LeasedBy     sql.NullString `db:"leased_by,omitempty"`
-	Trigger      string         `db:"trigger"`
-	ScheduledAt  time.Time      `db:"scheduled_at"`
-	Attempts     int32          `db:"attempts"`
-	LogRetention bool           `db:"log_retention"`
+	ID                 string         `db:"id"`
+	WorkflowID         string         `db:"workflow_id"`
+	UserID             string         `db:"user_id"`
+	ContainerID        sql.NullString `db:"container_id,omitempty"`
+	LeaseToken         string         `db:"lease_token"`
+	LeasedBy           sql.NullString `db:"leased_by,omitempty"`
+	Trigger            string         `db:"trigger"`
+	ScheduledAt        time.Time      `db:"scheduled_at"`
+	Attempts           int32          `db:"attempts"`
+	LogRetention       bool           `db:"log_retention"`
+	RuntimeNodeID      sql.NullString `db:"runtime_node_id,omitempty"`
+	RuntimeEndpoint    sql.NullString `db:"runtime_endpoint,omitempty"`
+	RuntimeUnavailable bool           `db:"runtime_unavailable"`
 }
 
 // ToProto converts an ExpiredJobLease to its protobuf representation.
 func (j *ExpiredJobLease) ToProto() *jobspb.ExpiredJobLease {
 	return &jobspb.ExpiredJobLease{
-		Id:           j.ID,
-		WorkflowId:   j.WorkflowID,
-		UserId:       j.UserID,
-		ContainerId:  j.ContainerID.String,
-		LeaseToken:   j.LeaseToken,
-		LeasedBy:     j.LeasedBy.String,
-		Trigger:      j.Trigger,
-		ScheduledAt:  j.ScheduledAt.Format(time.RFC3339Nano),
-		Attempts:     j.Attempts,
-		LogRetention: j.LogRetention,
+		Id:                 j.ID,
+		WorkflowId:         j.WorkflowID,
+		UserId:             j.UserID,
+		ContainerId:        j.ContainerID.String,
+		LeaseToken:         j.LeaseToken,
+		LeasedBy:           j.LeasedBy.String,
+		Trigger:            j.Trigger,
+		ScheduledAt:        j.ScheduledAt.Format(time.RFC3339Nano),
+		Attempts:           j.Attempts,
+		LogRetention:       j.LogRetention,
+		RuntimeNodeId:      j.RuntimeNodeID.String,
+		RuntimeEndpoint:    j.RuntimeEndpoint.String,
+		RuntimeUnavailable: j.RuntimeUnavailable,
 	}
 }
 
@@ -280,17 +290,19 @@ type SearchJobLogsOptions struct {
 
 // JobByWorkflowIDResponse represents the response of ListJobsByID.
 type JobByWorkflowIDResponse struct {
-	ID          string         `db:"id"`
-	WorkflowID  string         `db:"workflow_id"`
-	ContainerID sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
-	JobStatus   string         `db:"status"`
-	JobTrigger  string         `db:"trigger"`
-	Attempts    int32          `db:"attempts"`
-	ScheduledAt time.Time      `db:"scheduled_at"`
-	StartedAt   sql.NullTime   `db:"started_at,omitempty"`
-	CompletedAt sql.NullTime   `db:"completed_at,omitempty"`
-	CreatedAt   time.Time      `db:"created_at"`
-	UpdatedAt   time.Time      `db:"updated_at"`
+	ID              string         `db:"id"`
+	WorkflowID      string         `db:"workflow_id"`
+	ContainerID     sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
+	JobStatus       string         `db:"status"`
+	JobTrigger      string         `db:"trigger"`
+	Attempts        int32          `db:"attempts"`
+	ScheduledAt     time.Time      `db:"scheduled_at"`
+	StartedAt       sql.NullTime   `db:"started_at,omitempty"`
+	CompletedAt     sql.NullTime   `db:"completed_at,omitempty"`
+	CreatedAt       time.Time      `db:"created_at"`
+	UpdatedAt       time.Time      `db:"updated_at"`
+	RuntimeNodeID   sql.NullString `db:"runtime_node_id,omitempty"`
+	RuntimeEndpoint sql.NullString `db:"runtime_endpoint,omitempty"`
 }
 
 // ListJobsFilters represents the filters for listing jobs.
@@ -335,6 +347,8 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 
 		if internalService {
 			jobs[i].ContainerId = j.ContainerID.String
+			jobs[i].RuntimeNodeId = j.RuntimeNodeID.String
+			jobs[i].RuntimeEndpoint = j.RuntimeEndpoint.String
 		}
 	}
 

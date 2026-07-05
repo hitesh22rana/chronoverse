@@ -60,8 +60,10 @@ type Services struct {
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit     int
-	LogsFetchLimit int
+	FetchLimit          int
+	LogsFetchLimit      int
+	RuntimeHeartbeatTTL time.Duration
+	RuntimeLostAfter    time.Duration
 }
 
 // Repository provides jobs repository.
@@ -78,6 +80,15 @@ type Repository struct {
 
 // New creates a new jobs repository.
 func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager, svc *Services) *Repository {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	if cfg.RuntimeHeartbeatTTL <= 0 {
+		cfg.RuntimeHeartbeatTTL = 30 * time.Second
+	}
+	if cfg.RuntimeLostAfter <= 0 {
+		cfg.RuntimeLostAfter = 5 * time.Minute
+	}
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
@@ -897,7 +908,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 
 	// Add the cursor to the query
 	query := fmt.Sprintf(`
-        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at
+        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at, runtime_node_id, runtime_endpoint
         FROM %s
         WHERE workflow_id = $1 AND user_id = $2
     `, postgres.TableJobs)

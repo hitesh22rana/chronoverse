@@ -1,8 +1,15 @@
+DO $$
+BEGIN
+    CREATE TYPE runtime_node_status AS ENUM ('READY', 'DRAINING', 'UNHEALTHY');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS runtime_nodes (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,
     docker_endpoint TEXT NOT NULL,
-    status TEXT NOT NULL,
+    status runtime_node_status NOT NULL,
     last_heartbeat_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     max_concurrency INTEGER NOT NULL CHECK (max_concurrency > 0),
     running_jobs INTEGER NOT NULL DEFAULT 0 CHECK (running_jobs >= 0),

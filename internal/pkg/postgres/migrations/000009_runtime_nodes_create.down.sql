@@ -12,3 +12,4 @@ ALTER TABLE jobs
 DROP INDEX IF EXISTS idx_runtime_nodes_ready_fresh;
 DROP INDEX IF EXISTS idx_runtime_nodes_node_name;
 DROP TABLE IF EXISTS runtime_nodes;
+DROP TYPE IF EXISTS runtime_node_status;

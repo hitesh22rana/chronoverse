@@ -101,7 +101,7 @@ func (r *Repository) upsert(ctx context.Context, nodeStatus string) error {
             $1,
             $2,
             $3,
-            $4,
+            $4::runtime_node_status,
             now() AT TIME ZONE 'utc',
             $5,
             0,

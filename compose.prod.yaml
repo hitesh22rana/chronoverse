@@ -425,6 +425,8 @@ services:
       RUNTIME_AGENT_DOCKER_ENDPOINT: tcp://docker-proxy:2375
       RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
       RUNTIME_AGENT_MAX_CONCURRENCY: ${RUNTIME_AGENT_MAX_CONCURRENCY:-4}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       ENV: production
     restart: on-failure
     volumes:
@@ -433,6 +435,8 @@ services:
       postgres:
         condition: service_healthy
       docker-proxy:
+        condition: service_started
+      lgtm:
         condition: service_started
       init-certs:
         condition: service_completed_successfully

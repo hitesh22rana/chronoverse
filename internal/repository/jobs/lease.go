@@ -499,7 +499,7 @@ func (r *Repository) RecoverExpiredJobLeases(
                     OR rn.last_heartbeat_at <= (now() AT TIME ZONE 'utc') - ($6::int * interval '1 second')
                 )
             ORDER BY j.lease_expires_at ASC, j.id ASC
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF j SKIP LOCKED
             LIMIT $1
         )
         UPDATE %s AS j

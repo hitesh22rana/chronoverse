@@ -1232,6 +1232,7 @@ services:
 
   execution-worker:
     image: execution-worker
+    container_name: execution-worker
     environment:
       REDIS_HOST: redis
       REDIS_TLS_ENABLED: true

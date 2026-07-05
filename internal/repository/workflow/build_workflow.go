@@ -229,7 +229,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return err
 		}
 
-		csvc, err := r.containerSvcForEndpoint(r.svc.BuildDockerEndpoint)
+		csvc, err := r.containerSvcForEndpoint("")
 		if err != nil {
 			return err
 		}

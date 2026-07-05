@@ -52,11 +52,10 @@ type ContainerSvcFactory func(endpoint string) (ContainerSvc, error)
 
 // Services represents the services used by the workflow.
 type Services struct {
-	Workflows           workflowspb.WorkflowsServiceClient
-	Jobs                jobspb.JobsServiceClient
-	Notifications       notificationspb.NotificationsServiceClient
-	CsvcForEndpoint     ContainerSvcFactory
-	BuildDockerEndpoint string
+	Workflows       workflowspb.WorkflowsServiceClient
+	Jobs            jobspb.JobsServiceClient
+	Notifications   notificationspb.NotificationsServiceClient
+	CsvcForEndpoint ContainerSvcFactory
 }
 
 type kafkaProducer interface {

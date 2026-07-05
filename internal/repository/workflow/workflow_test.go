@@ -579,9 +579,8 @@ func newBuildWorkflowTestRepository(t *testing.T, opts *buildWorkflowTestOptions
 				workflow:      opts.workflow,
 				statusUpdates: opts.statusUpdates,
 			},
-			Jobs:                &testJobsClient{},
-			Notifications:       testNotificationsClient{events: opts.notifications},
-			BuildDockerEndpoint: "tcp://docker-proxy:2375",
+			Jobs:          &testJobsClient{},
+			Notifications: testNotificationsClient{events: opts.notifications},
 			CsvcForEndpoint: func(string) (ContainerSvc, error) {
 				return &testContainerSvc{
 					buildErr: opts.buildErr,

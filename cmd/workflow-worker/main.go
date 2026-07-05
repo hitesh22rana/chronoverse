@@ -227,11 +227,10 @@ func run() int {
 
 	// Initialize the workflow job components
 	repo := workflowrepo.New(auth, rdb, cdb, msdb, kfk, kafkaLifecycle, &workflowrepo.Services{
-		Workflows:           workflowspb.NewWorkflowsServiceClient(workflowsConn),
-		Jobs:                jobpb.NewJobsServiceClient(jobsConn),
-		Notifications:       notificationspb.NewNotificationsServiceClient(notificationsConn),
-		CsvcForEndpoint:     containerSvcForEndpoint,
-		BuildDockerEndpoint: os.Getenv("DOCKER_HOST"),
+		Workflows:       workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:            jobpb.NewJobsServiceClient(jobsConn),
+		Notifications:   notificationspb.NewNotificationsServiceClient(notificationsConn),
+		CsvcForEndpoint: containerSvcForEndpoint,
 	})
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)

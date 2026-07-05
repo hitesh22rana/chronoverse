@@ -229,7 +229,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return err
 		}
 
-		resolvedImageRef, resolvedImageDigest, err = r.svc.Csvc.ResolveImageDigest(ctx, details.Image)
+		csvc, err := r.containerSvcForEndpoint(r.svc.BuildDockerEndpoint)
+		if err != nil {
+			return err
+		}
+
+		resolvedImageRef, resolvedImageDigest, err = csvc.ResolveImageDigest(ctx, details.Image)
 		return err
 	})
 

@@ -197,11 +197,11 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	}
 
 	if state.ExitCode == 0 {
-		return r.completeClaimedJob(ctx, claim, job.GetContainerId())
+		return r.completeClaimedJob(ctx, claim, csvc, job.GetContainerId())
 	}
 
 	execErr := status.Errorf(codes.Aborted, "container exited with non-zero code during lease recovery: %d", state.ExitCode)
-	return r.failClaimedJob(ctx, claim, execErr, job.GetContainerId())
+	return r.failClaimedJob(ctx, claim, csvc, execErr, job.GetContainerId())
 }
 
 func (r *Repository) containerSvcForEndpoint(endpoint string) (ContainerSvc, error) {
@@ -210,9 +210,6 @@ func (r *Repository) containerSvcForEndpoint(endpoint string) (ContainerSvc, err
 	}
 	if r.svc.CsvcForEndpoint != nil {
 		return r.svc.CsvcForEndpoint(endpoint)
-	}
-	if r.svc.Csvc != nil {
-		return r.svc.Csvc, nil
 	}
 	return nil, status.Error(codes.FailedPrecondition, "container service is not configured")
 }
@@ -226,7 +223,7 @@ func (r *Repository) releaseOrFailRecoveredSystem(
 		return r.releaseClaimForSystemRetry(ctx, claim, cause)
 	}
 
-	return r.failClaimedJob(ctx, claim, cause, "")
+	return r.failClaimedJob(ctx, claim, nil, cause, "")
 }
 
 func (r *Repository) recoveryBatchSize() int32 {

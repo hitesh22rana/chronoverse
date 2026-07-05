@@ -116,13 +116,6 @@ func run() int {
 		return ExitError
 	}
 
-	// Initialize the container service
-	csvc, err := container.NewDockerWorkflow(container.WithResourceLimits(resourceLimits))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
@@ -185,7 +178,6 @@ func run() int {
 	}, auth, kfk, rdb, kafkaLifecycle, &executorrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
-		Csvc:      csvc,
 		CsvcForEndpoint: func(endpoint string) (executorrepo.ContainerSvc, error) {
 			return container.NewDockerWorkflow(
 				container.WithDockerHost(endpoint),

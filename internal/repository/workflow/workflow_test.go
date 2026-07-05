@@ -278,7 +278,9 @@ func TestCancelJobsMarksAllJobsCanceledBeforeContainerCleanup(t *testing.T) {
 				},
 			},
 			Notifications: testNotificationsClient{},
-			Csvc:          &testContainerSvc{events: events},
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				return &testContainerSvc{events: events}, nil
+			},
 		},
 	}
 
@@ -289,12 +291,14 @@ func TestCancelJobsMarksAllJobsCanceledBeforeContainerCleanup(t *testing.T) {
 		&jobspb.ListJobsResponse{
 			Jobs: []*jobspb.JobsResponse{
 				{
-					Id:          "job-1",
-					ContainerId: "container-1",
+					Id:              "job-1",
+					ContainerId:     "container-1",
+					RuntimeEndpoint: "tcp://docker-proxy:2375",
 				},
 				{
-					Id:          "job-2",
-					ContainerId: "container-2",
+					Id:              "job-2",
+					ContainerId:     "container-2",
+					RuntimeEndpoint: "tcp://docker-proxy:2375",
 				},
 			},
 		},
@@ -334,7 +338,9 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 				},
 			},
 			Notifications: testNotificationsClient{},
-			Csvc:          &testContainerSvc{events: events},
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				return &testContainerSvc{events: events}, nil
+			},
 		},
 	}
 
@@ -348,8 +354,9 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 		"user-1",
 		&jobspb.ListJobsResponse{
 			Jobs: []*jobspb.JobsResponse{{
-				Id:          "job-1",
-				ContainerId: "container-1",
+				Id:              "job-1",
+				ContainerId:     "container-1",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
 			}},
 		},
 		nil,
@@ -372,13 +379,15 @@ func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testin
 	events := &orderedEvents{}
 	repo := &Repository{
 		svc: &Services{
-			Csvc: &testContainerSvc{
-				events: events,
-				logs: []*jobsmodel.JobLog{{
-					Message:     "canceled log",
-					Stream:      "stdout",
-					SequenceNum: 1,
-				}},
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				return &testContainerSvc{
+					events: events,
+					logs: []*jobsmodel.JobLog{{
+						Message:     "canceled log",
+						Stream:      "stdout",
+						SequenceNum: 1,
+					}},
+				}, nil
 			},
 		},
 	}
@@ -390,8 +399,9 @@ func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testin
 			Kind: workflowsmodel.KindContainer.ToString(),
 		},
 		&jobspb.JobsResponse{
-			Id:          "job-1",
-			ContainerId: "container-1",
+			Id:              "job-1",
+			ContainerId:     "container-1",
+			RuntimeEndpoint: "tcp://docker-proxy:2375",
 		},
 	)
 	if err != nil {
@@ -422,7 +432,9 @@ func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 				},
 			},
 			Notifications: testNotificationsClient{},
-			Csvc:          &testContainerSvc{events: &orderedEvents{}},
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				return &testContainerSvc{events: &orderedEvents{}}, nil
+			},
 		},
 	}
 
@@ -436,8 +448,9 @@ func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 		"user-1",
 		&jobspb.ListJobsResponse{
 			Jobs: []*jobspb.JobsResponse{{
-				Id:          "job-1",
-				ContainerId: "container-1",
+				Id:              "job-1",
+				ContainerId:     "container-1",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
 			}},
 		},
 		nil,
@@ -566,11 +579,14 @@ func newBuildWorkflowTestRepository(t *testing.T, opts *buildWorkflowTestOptions
 				workflow:      opts.workflow,
 				statusUpdates: opts.statusUpdates,
 			},
-			Jobs:          &testJobsClient{},
-			Notifications: testNotificationsClient{events: opts.notifications},
-			Csvc: &testContainerSvc{
-				buildErr: opts.buildErr,
-				builds:   opts.builds,
+			Jobs:                &testJobsClient{},
+			Notifications:       testNotificationsClient{events: opts.notifications},
+			BuildDockerEndpoint: "tcp://docker-proxy:2375",
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				return &testContainerSvc{
+					buildErr: opts.buildErr,
+					builds:   opts.builds,
+				}, nil
 			},
 		},
 	}

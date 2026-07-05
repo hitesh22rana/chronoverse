@@ -52,11 +52,11 @@ type ContainerSvcFactory func(endpoint string) (ContainerSvc, error)
 
 // Services represents the services used by the workflow.
 type Services struct {
-	Workflows       workflowspb.WorkflowsServiceClient
-	Jobs            jobspb.JobsServiceClient
-	Notifications   notificationspb.NotificationsServiceClient
-	Csvc            ContainerSvc
-	CsvcForEndpoint ContainerSvcFactory
+	Workflows           workflowspb.WorkflowsServiceClient
+	Jobs                jobspb.JobsServiceClient
+	Notifications       notificationspb.NotificationsServiceClient
+	CsvcForEndpoint     ContainerSvcFactory
+	BuildDockerEndpoint string
 }
 
 type kafkaProducer interface {
@@ -249,4 +249,12 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 // withAuthorization issues the necessary headers and tokens for authorization.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
 	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
+}
+
+func (r *Repository) containerSvcForEndpoint(endpoint string) (ContainerSvc, error) {
+	if r.svc.CsvcForEndpoint == nil {
+		return nil, status.Error(codes.FailedPrecondition, "container service factory is not configured")
+	}
+
+	return r.svc.CsvcForEndpoint(endpoint)
 }

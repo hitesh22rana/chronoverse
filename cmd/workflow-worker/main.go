@@ -147,18 +147,20 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize the container service. Workflow workers only inspect and pull
-	// images; execution workers apply workload container limits when running jobs.
-	csvc, err := container.NewDockerWorkflow()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	lockedCsvc := workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, workflowrepo.ImagePullLockConfig{
+	// Workflow workers resolve image metadata through the configured Docker
+	// endpoint. Execution and cleanup use the runtime endpoint stored on jobs.
+	imagePullLockConfig := workflowrepo.ImagePullLockConfig{
 		TTL:           cfg.ImagePullLockTTL,
 		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
 		RetryInterval: cfg.ImagePullLockRetryInterval,
-	})
+	}
+	containerSvcForEndpoint := func(endpoint string) (workflowrepo.ContainerSvc, error) {
+		csvc, csvcErr := container.NewDockerWorkflow(container.WithDockerHost(endpoint))
+		if csvcErr != nil {
+			return nil, csvcErr
+		}
+		return workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, imagePullLockConfig), nil
+	}
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
@@ -225,13 +227,11 @@ func run() int {
 
 	// Initialize the workflow job components
 	repo := workflowrepo.New(auth, rdb, cdb, msdb, kfk, kafkaLifecycle, &workflowrepo.Services{
-		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
-		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
-		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
-		Csvc:          lockedCsvc,
-		CsvcForEndpoint: func(endpoint string) (workflowrepo.ContainerSvc, error) {
-			return container.NewDockerWorkflow(container.WithDockerHost(endpoint))
-		},
+		Workflows:           workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:                jobpb.NewJobsServiceClient(jobsConn),
+		Notifications:       notificationspb.NewNotificationsServiceClient(notificationsConn),
+		CsvcForEndpoint:     containerSvcForEndpoint,
+		BuildDockerEndpoint: os.Getenv("DOCKER_HOST"),
 	})
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)

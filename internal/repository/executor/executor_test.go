@@ -214,8 +214,10 @@ func TestRecoverExpiredLeaseRenewsLeaseWhileReplayingLogs(t *testing.T) {
 		auth: fakeAuth{},
 		svc: &Services{
 			Jobs: jobsClient,
-			Csvc: &blockingRecoveryContainerSvc{
-				replayCanFinish: replayCanFinish,
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				return &blockingRecoveryContainerSvc{
+					replayCanFinish: replayCanFinish,
+				}, nil
 			},
 		},
 	}
@@ -317,8 +319,10 @@ func TestRecoverExpiredLeaseBatchStartsRenewalForEveryClaimedJob(t *testing.T) {
 		auth: fakeAuth{},
 		svc: &Services{
 			Jobs: jobsClient,
-			Csvc: &blockingRecoveryContainerSvc{
-				replayCanFinish: replayCanFinish,
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				return &blockingRecoveryContainerSvc{
+					replayCanFinish: replayCanFinish,
+				}, nil
 			},
 		},
 	}
@@ -415,22 +419,24 @@ func (c *batchRecoveryJobsClient) RecoverExpiredJobLeases(_ context.Context, req
 	return &jobspb.RecoverExpiredJobLeasesResponse{
 		Jobs: []*jobspb.ExpiredJobLease{
 			{
-				Id:          "job-1",
-				WorkflowId:  "workflow-1",
-				UserId:      "user-1",
-				ContainerId: "container-1",
-				LeaseToken:  "lease-1",
-				Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-				Attempts:    1,
+				Id:              "job-1",
+				WorkflowId:      "workflow-1",
+				UserId:          "user-1",
+				ContainerId:     "container-1",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
+				LeaseToken:      "lease-1",
+				Trigger:         jobsmodel.JobTriggerAutomatic.ToString(),
+				Attempts:        1,
 			},
 			{
-				Id:          "job-2",
-				WorkflowId:  "workflow-1",
-				UserId:      "user-1",
-				ContainerId: "container-2",
-				LeaseToken:  "lease-2",
-				Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-				Attempts:    1,
+				Id:              "job-2",
+				WorkflowId:      "workflow-1",
+				UserId:          "user-1",
+				ContainerId:     "container-2",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
+				LeaseToken:      "lease-2",
+				Trigger:         jobsmodel.JobTriggerAutomatic.ToString(),
+				Attempts:        1,
 			},
 		},
 	}, nil

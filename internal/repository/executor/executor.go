@@ -57,7 +57,6 @@ type HeartBeatSvc interface {
 type Services struct {
 	Workflows       workflowspb.WorkflowsServiceClient
 	Jobs            jobspb.JobsServiceClient
-	Csvc            ContainerSvc
 	CsvcForEndpoint ContainerSvcFactory
 	Hsvc            HeartBeatSvc
 }
@@ -306,20 +305,23 @@ func (r *Repository) runClaimedWorkflow(
 		}
 	case jobsmodel.JobTriggerManual.ToString():
 	default:
-		return r.failClaimedJob(ctx, claim, status.Errorf(codes.FailedPrecondition, "unknown job trigger: %s", claim.GetTrigger()), "")
+		return r.failClaimedJob(ctx, claim, nil, status.Errorf(codes.FailedPrecondition, "unknown job trigger: %s", claim.GetTrigger()), "")
 	}
 
-	csvc, err := r.containerSvcForClaim(claim, workflow)
-	if err != nil {
-		return r.releaseClaimForSystemRetry(ctx, claim, err)
+	var csvc ContainerSvc
+	if workflow.GetKind() == workflowsmodel.KindContainer.ToString() {
+		csvc, err = r.containerSvcForClaim(claim)
+		if err != nil {
+			return r.releaseClaimForSystemRetry(ctx, claim, err)
+		}
 	}
 
 	containerID, executeErr := r.executeWorkflow(ctx, csvc, claim.GetId(), claim.GetLeaseToken(), claim.GetRuntimeNodeId(), claim.GetAttempts(), workflow)
 	if executeErr != nil {
-		return r.failClaimedJob(ctx, claim, executeErr, containerID)
+		return r.failClaimedJob(ctx, claim, csvc, executeErr, containerID)
 	}
 
-	return r.completeClaimedJob(ctx, claim, containerID)
+	return r.completeClaimedJob(ctx, claim, csvc, containerID)
 }
 
 func (r *Repository) scheduleNextAutomaticJob(
@@ -411,7 +413,7 @@ func (r *Repository) cancelClaimedJob(ctx context.Context, claim *jobspb.ClaimJo
 
 func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobspb.ClaimJobResponse, cause error) error {
 	if int(claim.GetAttempts()) >= r.cfg.SystemRetryLimit {
-		return r.failClaimedJob(ctx, claim, cause, "")
+		return r.failClaimedJob(ctx, claim, nil, cause, "")
 	}
 
 	authCtx, err := r.withAuthorization(ctx)
@@ -433,13 +435,14 @@ func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobs
 func (r *Repository) failClaimedJob(
 	ctx context.Context,
 	claim *jobspb.ClaimJobResponse,
+	csvc ContainerSvc,
 	executeErr error,
 	containerID string,
 ) error {
 	decision := classifyExecutionFailure(executeErr)
 	if decision.Retryable && int(claim.GetAttempts()) < r.cfg.SystemRetryLimit {
 		retryCtx := context.WithoutCancel(ctx)
-		if cleanupErr := r.cleanupContainer(retryCtx, containerID); cleanupErr != nil {
+		if cleanupErr := r.cleanupContainer(retryCtx, csvc, containerID); cleanupErr != nil {
 			loggerpkg.FromContext(ctx).Warn("failed to cleanup container before retry",
 				zap.String("job_id", claim.GetId()),
 				zap.String("container_id", containerID),
@@ -465,7 +468,7 @@ func (r *Repository) failClaimedJob(
 		return err
 	}
 
-	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), containerID); cleanupErr != nil {
+	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, containerID); cleanupErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job failure",
 			zap.String("job_id", claim.GetId()),
 			zap.String("container_id", containerID),
@@ -479,6 +482,7 @@ func (r *Repository) failClaimedJob(
 func (r *Repository) completeClaimedJob(
 	ctx context.Context,
 	claim *jobspb.ClaimJobResponse,
+	csvc ContainerSvc,
 	containerID string,
 ) error {
 	authCtx, err := r.withAuthorization(ctx)
@@ -493,7 +497,7 @@ func (r *Repository) completeClaimedJob(
 		return err
 	}
 
-	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), containerID); cleanupErr != nil {
+	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, containerID); cleanupErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job completion",
 			zap.String("job_id", claim.GetId()),
 			zap.String("container_id", containerID),
@@ -504,12 +508,15 @@ func (r *Repository) completeClaimedJob(
 	return nil
 }
 
-func (r *Repository) cleanupContainer(ctx context.Context, containerID string) error {
+func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, containerID string) error {
 	if containerID == "" {
 		return nil
 	}
+	if csvc == nil {
+		return status.Error(codes.FailedPrecondition, "container service is not configured")
+	}
 
-	return r.svc.Csvc.Remove(ctx, containerID)
+	return csvc.Remove(ctx, containerID)
 }
 
 type executionFailureDecision struct {
@@ -605,18 +612,12 @@ func (r *Repository) executeWorkflow(
 	}
 }
 
-func (r *Repository) containerSvcForClaim(claim *jobspb.ClaimJobResponse, workflow *workflowspb.GetWorkflowByIDResponse) (ContainerSvc, error) {
-	if workflow.GetKind() != workflowsmodel.KindContainer.ToString() {
-		return r.svc.Csvc, nil
-	}
+func (r *Repository) containerSvcForClaim(claim *jobspb.ClaimJobResponse) (ContainerSvc, error) {
 	if claim.GetRuntimeEndpoint() == "" {
 		return nil, status.Error(codes.Unavailable, "container job claim has no runtime endpoint")
 	}
 	if r.svc.CsvcForEndpoint != nil {
 		return r.svc.CsvcForEndpoint(claim.GetRuntimeEndpoint())
-	}
-	if r.svc.Csvc != nil {
-		return r.svc.Csvc, nil
 	}
 	return nil, status.Error(codes.FailedPrecondition, "container service is not configured")
 }

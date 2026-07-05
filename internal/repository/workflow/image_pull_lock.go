@@ -87,6 +87,13 @@ func (s *imagePullLockedContainerSvc) Build(ctx context.Context, imageName strin
 	}
 }
 
+func (s *imagePullLockedContainerSvc) ResolveImageDigest(ctx context.Context, imageName string) (string, string, error) {
+	if err := s.Build(ctx, imageName); err != nil {
+		return imageName, "", err
+	}
+	return s.inner.ResolveImageDigest(ctx, imageName)
+}
+
 func (s *imagePullLockedContainerSvc) buildWithLock(ctx context.Context, imageName, lockKey, token string) error {
 	buildCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

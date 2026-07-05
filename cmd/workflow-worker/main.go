@@ -229,6 +229,9 @@ func run() int {
 		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
 		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
 		Csvc:          lockedCsvc,
+		CsvcForEndpoint: func(endpoint string) (workflowrepo.ContainerSvc, error) {
+			return container.NewDockerWorkflow(container.WithDockerHost(endpoint))
+		},
 	})
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)

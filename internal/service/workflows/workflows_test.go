@@ -642,10 +642,12 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 		{
 			name: "success",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-				Id:          "workflow_id",
-				UserId:      "user_id",
-				BuildStatus: "COMPLETED",
-				Generation:  2,
+				Id:                  "workflow_id",
+				UserId:              "user_id",
+				BuildStatus:         "COMPLETED",
+				Generation:          2,
+				ResolvedImageRef:    "alpine:3.22",
+				ResolvedImageDigest: "alpine@sha256:test",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
@@ -654,6 +656,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetUserId(),
 					req.GetBuildStatus(),
 					req.GetGeneration(),
+					req.GetResolvedImageRef(),
+					req.GetResolvedImageDigest(),
 				).Return(nil)
 
 				// Simulate a cache delete
@@ -714,6 +718,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetUserId(),
 					req.GetBuildStatus(),
 					req.GetGeneration(),
+					req.GetResolvedImageRef(),
+					req.GetResolvedImageDigest(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
 			isErr: true,
@@ -732,6 +738,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetUserId(),
 					req.GetBuildStatus(),
 					req.GetGeneration(),
+					req.GetResolvedImageRef(),
+					req.GetResolvedImageDigest(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,

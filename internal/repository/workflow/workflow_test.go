@@ -690,6 +690,13 @@ func (s *testContainerSvc) Build(_ context.Context, image string) error {
 	return s.buildErr
 }
 
+func (s *testContainerSvc) ResolveImageDigest(ctx context.Context, image string) (string, string, error) {
+	if err := s.Build(ctx, image); err != nil {
+		return "", "", err
+	}
+	return image, image + "@sha256:test", nil
+}
+
 func (s *testContainerSvc) ImageExists(context.Context, string) (bool, error) {
 	return s.imageExists, nil
 }

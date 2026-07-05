@@ -162,10 +162,14 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 	}
 
 	cleanupCtx := context.WithoutCancel(parentCtx)
-	if err := r.svc.Csvc.Terminate(cleanupCtx, job.GetContainerId()); err != nil {
+	csvc, err := r.containerSvcForJob(job)
+	if err != nil {
 		return err
 	}
-	if err := r.replayCanceledJobContainerLogs(parentCtx, workflow, job); err != nil {
+	if err := csvc.Terminate(cleanupCtx, job.GetContainerId()); err != nil {
+		return err
+	}
+	if err := r.replayCanceledJobContainerLogs(parentCtx, csvc, workflow, job); err != nil {
 		loggerpkg.FromContext(parentCtx).Warn("failed to replay canceled job logs",
 			zap.String("workflow_id", workflow.GetId()),
 			zap.String("job_id", job.GetId()),
@@ -174,18 +178,19 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 		)
 	}
 
-	return r.svc.Csvc.Remove(cleanupCtx, job.GetContainerId())
+	return csvc.Remove(cleanupCtx, job.GetContainerId())
 }
 
 func (r *Repository) replayCanceledJobContainerLogs(
 	parentCtx context.Context,
+	csvc ContainerSvc,
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	job *jobspb.JobsResponse,
 ) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), canceledJobLogReplayTimeout)
 	defer cancel()
 
-	logs, errs, err := r.svc.Csvc.Logs(ctx, job.GetContainerId())
+	logs, errs, err := csvc.Logs(ctx, job.GetContainerId())
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil
@@ -221,6 +226,16 @@ func (r *Repository) replayCanceledJobContainerLogs(
 	}
 
 	return nil
+}
+
+func (r *Repository) containerSvcForJob(job *jobspb.JobsResponse) (ContainerSvc, error) {
+	if job.GetRuntimeEndpoint() == "" {
+		return r.svc.Csvc, nil
+	}
+	if r.svc.CsvcForEndpoint != nil {
+		return r.svc.CsvcForEndpoint(job.GetRuntimeEndpoint())
+	}
+	return r.svc.Csvc, nil
 }
 
 func (r *Repository) publishCanceledJobLog(

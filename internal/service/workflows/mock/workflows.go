@@ -189,17 +189,17 @@ func (mr *MockRepositoryMockRecorder) UpdateWorkflow(ctx, workflowID, userID, na
 }
 
 // UpdateWorkflowBuildStatus mocks base method.
-func (m *MockRepository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) error {
+func (m *MockRepository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64, resolvedImageRef, resolvedImageDigest string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateWorkflowBuildStatus", ctx, workflowID, userID, buildStatus, generation)
+	ret := m.ctrl.Call(m, "UpdateWorkflowBuildStatus", ctx, workflowID, userID, buildStatus, generation, resolvedImageRef, resolvedImageDigest)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateWorkflowBuildStatus indicates an expected call of UpdateWorkflowBuildStatus.
-func (mr *MockRepositoryMockRecorder) UpdateWorkflowBuildStatus(ctx, workflowID, userID, buildStatus, generation any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateWorkflowBuildStatus(ctx, workflowID, userID, buildStatus, generation, resolvedImageRef, resolvedImageDigest any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkflowBuildStatus", reflect.TypeOf((*MockRepository)(nil).UpdateWorkflowBuildStatus), ctx, workflowID, userID, buildStatus, generation)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkflowBuildStatus", reflect.TypeOf((*MockRepository)(nil).UpdateWorkflowBuildStatus), ctx, workflowID, userID, buildStatus, generation, resolvedImageRef, resolvedImageDigest)
 }
 
 // MockCache is a mock of Cache interface.

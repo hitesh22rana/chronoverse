@@ -39,6 +39,7 @@ const (
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
+	ResolveImageDigest(ctx context.Context, imageName string) (string, string, error)
 	ImageExists(ctx context.Context, imageName string) (bool, error)
 	DockerHost() string
 	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
@@ -46,12 +47,16 @@ type ContainerSvc interface {
 	Terminate(ctx context.Context, containerID string) error
 }
 
+// ContainerSvcFactory creates a container service for a runtime endpoint.
+type ContainerSvcFactory func(endpoint string) (ContainerSvc, error)
+
 // Services represents the services used by the workflow.
 type Services struct {
-	Workflows     workflowspb.WorkflowsServiceClient
-	Jobs          jobspb.JobsServiceClient
-	Notifications notificationspb.NotificationsServiceClient
-	Csvc          ContainerSvc
+	Workflows       workflowspb.WorkflowsServiceClient
+	Jobs            jobspb.JobsServiceClient
+	Notifications   notificationspb.NotificationsServiceClient
+	Csvc            ContainerSvc
+	CsvcForEndpoint ContainerSvcFactory
 }
 
 type kafkaProducer interface {

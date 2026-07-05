@@ -161,7 +161,7 @@ func (s *fakeContainerSvc) Build(context.Context, string) error {
 	return nil
 }
 
-func (s *fakeContainerSvc) ResolveImageDigest(ctx context.Context, image string) (string, string, error) {
+func (s *fakeContainerSvc) ResolveImageDigest(ctx context.Context, image string) (resolvedImageRef, resolvedImageDigest string, err error) {
 	if err := s.Build(ctx, image); err != nil {
 		return "", "", err
 	}

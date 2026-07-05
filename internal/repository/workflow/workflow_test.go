@@ -690,7 +690,7 @@ func (s *testContainerSvc) Build(_ context.Context, image string) error {
 	return s.buildErr
 }
 
-func (s *testContainerSvc) ResolveImageDigest(ctx context.Context, image string) (string, string, error) {
+func (s *testContainerSvc) ResolveImageDigest(ctx context.Context, image string) (resolvedImageRef, resolvedImageDigest string, err error) {
 	if err := s.Build(ctx, image); err != nil {
 		return "", "", err
 	}

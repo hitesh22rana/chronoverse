@@ -281,8 +281,8 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken string) 
 	if err := r.insertTerminalJobOutboxEvents(ctx, tx, snapshot, workflowsmodel.ActionJobCompleted, "", "", ""); err != nil {
 		return err
 	}
-	if err := r.decrementRuntimeSlotForJob(ctx, tx, jobID); err != nil {
-		return err
+	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
+		return decrementErr
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -337,8 +337,8 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 	if err := r.insertTerminalJobOutboxEvents(ctx, tx, snapshot, workflowsmodel.ActionJobFailed, failureKind, errorCode, truncatedMessage); err != nil {
 		return err
 	}
-	if err := r.decrementRuntimeSlotForJob(ctx, tx, jobID); err != nil {
-		return err
+	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
+		return decrementErr
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -420,8 +420,8 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 			err = r.mapJobLeaseWriteError(rollbackErr, "rollback release job for retry transaction")
 		}
 	}()
-	if err := r.decrementRuntimeSlotForJob(ctx, tx, jobID); err != nil {
-		return err
+	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
+		return decrementErr
 	}
 
 	query := fmt.Sprintf(`

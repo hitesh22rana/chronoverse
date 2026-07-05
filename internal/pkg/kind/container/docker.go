@@ -444,12 +444,12 @@ func (w *DockerWorkflow) ImageExists(ctx context.Context, imageName string) (boo
 }
 
 // ResolveImageDigest ensures an image can be resolved and returns an immutable image reference.
-func (w *DockerWorkflow) ResolveImageDigest(ctx context.Context, imageName string) (string, string, error) {
+func (w *DockerWorkflow) ResolveImageDigest(ctx context.Context, imageName string) (resolvedImageRef, resolvedImageDigest string, err error) {
 	if strings.Contains(imageName, "@sha256:") {
 		return imageName, imageName, nil
 	}
-	if err := w.Build(ctx, imageName); err != nil {
-		return imageName, "", err
+	if buildErr := w.Build(ctx, imageName); buildErr != nil {
+		return imageName, "", buildErr
 	}
 	inspect, err := w.Client.ImageInspect(ctx, imageName)
 	if err != nil {

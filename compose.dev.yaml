@@ -351,6 +351,49 @@ services:
     networks:
       - chronoverse
 
+  runtime-agent:
+    image: runtime-agent
+    container_name: runtime-agent
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: primary
+      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_DB: chronoverse
+      POSTGRES_TLS_ENABLED: true
+      POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+      POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+      POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+      POSTGRES_MIN_CONNS: 1
+      DOCKER_HOST: tcp://docker-proxy:2375
+      RUNTIME_AGENT_ID: local-docker
+      RUNTIME_AGENT_NODE_NAME: compose-local
+      RUNTIME_AGENT_DOCKER_ENDPOINT: tcp://docker-proxy:2375
+      RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
+      RUNTIME_AGENT_MAX_CONCURRENCY: ${RUNTIME_AGENT_MAX_CONCURRENCY:-4}
+      ENV: development
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VERSION=v0.0.1
+        - NAME=runtime-agent
+        - PRIVATE_KEY_PATH=certs/auth.ed
+        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+    restart: on-failure
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+      init-certs:
+        condition: service_completed_successfully
+      init-database-migration:
+        condition: service_completed_successfully
+    networks:
+      - chronoverse
+
   init-certs:
     image: alpine:3.22.2
     container_name: init-certs
@@ -1158,6 +1201,8 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      runtime-agent:
+        condition: service_started
       redis:
         condition: service_healthy
       clickhouse:
@@ -1251,6 +1296,8 @@ services:
       '
     depends_on:
       docker-proxy:
+        condition: service_started
+      runtime-agent:
         condition: service_started
       redis:
         condition: service_healthy

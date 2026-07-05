@@ -7,8 +7,9 @@ Workers own asynchronous background processing. Kafka partitions provide distrib
 | Worker | Responsibility |
 | --- | --- |
 | Scheduling worker | Finds due workflows and creates dispatch work |
-| Workflow worker | Prepares executable workflow metadata and build state |
-| Execution worker | Claims jobs, runs containers, renews leases, and recovers abandoned work |
+| Workflow worker | Validates container payloads, resolves image digests, and updates build state |
+| Execution worker | Claims jobs, routes containers to the assigned runtime endpoint, renews leases, and recovers abandoned work |
+| Runtime agent | Registers a Docker-capable runtime node and heartbeats endpoint capacity |
 | Job logs processor | Writes retained logs to ClickHouse and Meilisearch |
 | Analytics processor | Applies workflow, job, and log events to aggregates |
 | Outbox relay | Publishes committed outbox rows to Kafka |
@@ -20,9 +21,10 @@ Workers process records per Kafka partition. Commit policy distinguishes success
 
 ## Scaling
 
-Replica count cannot create useful parallelism beyond the relevant Kafka topic partition count. Execution capacity is also bounded by Docker hosts, job lease settings, downstream service latency, and log pipeline capacity.
+Replica count cannot create useful parallelism beyond the relevant Kafka topic partition count. Execution capacity is also bounded by registered runtime nodes, Docker hosts, job lease settings, downstream service latency, and log pipeline capacity.
 
 ## State ownership
 
 Workers call gRPC services to mutate domain state. They do not become an alternate source of truth for workflows or jobs.
 
+For `CONTAINER` jobs, `jobs-service` is also the runtime ownership boundary. It chooses a fresh `READY` runtime node while claiming the job, stores the runtime owner on the job, and returns the Docker endpoint that the execution worker should use.

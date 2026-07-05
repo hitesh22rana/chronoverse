@@ -6,13 +6,19 @@ Consumer throughput is bounded by partition count. Production defaults use more 
 
 ## Execution workers
 
-Scale concurrency only when Docker CPU, memory, image bandwidth, Kafka partitions, jobs-service latency, and lease-renewal headroom support it.
+Scale concurrency only when registered runtime capacity, Docker CPU, memory, image bandwidth, Kafka partitions, jobs-service latency, and lease-renewal headroom support it.
 
 Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker, and do not apply to workflow-worker image pulls.
 
+Execution workers do not need to run on the same node as the Docker daemon. They receive `runtime_endpoint` from `jobs-service` and use the direct Docker data plane for container start, logs, and cleanup.
+
+## Runtime agents
+
+Run one runtime agent beside each Docker-capable daemon. New container claims only use fresh `READY` runtime rows. Missing heartbeats pause new claims for that runtime, while expired-lease recovery uses the stored job owner to decide whether to clean up or retry.
+
 ## Workflow workers
 
-Replicas that share a Docker host coordinate identical image pulls through Redis. Different hosts still pull independently.
+Replicas that share a Docker host coordinate identical image pulls through Redis. Different hosts still pull independently. Build completion records the resolved workflow image digest but does not imply that every runtime node has already cached the image.
 
 ## Outbox relay
 

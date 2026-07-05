@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ type DockerWorkflow struct {
 	*client.Client
 	pullGroup      singleflight.Group
 	resourceLimits ResourceLimits
+	dockerHost     string
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -58,24 +60,37 @@ func WithResourceLimits(limits ResourceLimits) DockerWorkflowOption {
 	}
 }
 
+// WithDockerHost configures the Docker daemon endpoint for this workflow.
+func WithDockerHost(host string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.dockerHost = host
+	}
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
-	cli, err := client.NewClientWithOpts(
-		client.FromEnv,
-		client.WithAPIVersionNegotiation(),
-	)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to initialize docker client: %v", err)
-	}
-
-	w := &DockerWorkflow{
-		Client: cli,
-	}
+	w := &DockerWorkflow{}
 	for _, option := range options {
 		if option != nil {
 			option(w)
 		}
 	}
+
+	clientOptions := []client.Opt{
+		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
+	}
+	if w.dockerHost != "" {
+		clientOptions = append(clientOptions, client.WithHost(w.dockerHost))
+	}
+	cli, err := client.NewClientWithOpts(
+		clientOptions...,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to initialize docker client: %v", err)
+	}
+
+	w.Client = cli
 
 	if err := w.healthCheck(context.Background()); err != nil {
 		return nil, err
@@ -426,6 +441,29 @@ func (w *DockerWorkflow) ImageExists(ctx context.Context, imageName string) (boo
 	}
 
 	return false, nil
+}
+
+// ResolveImageDigest ensures an image can be resolved and returns an immutable image reference.
+func (w *DockerWorkflow) ResolveImageDigest(ctx context.Context, imageName string) (string, string, error) {
+	if strings.Contains(imageName, "@sha256:") {
+		return imageName, imageName, nil
+	}
+	if err := w.Build(ctx, imageName); err != nil {
+		return imageName, "", err
+	}
+	inspect, err := w.Client.ImageInspect(ctx, imageName)
+	if err != nil {
+		return imageName, "", dockerImageInspectError(err)
+	}
+	for _, repoDigest := range inspect.RepoDigests {
+		if repoDigest != "" {
+			return imageName, repoDigest, nil
+		}
+	}
+	if inspect.ID != "" {
+		return imageName, fmt.Sprintf("%s@%s", imageName, inspect.ID), nil
+	}
+	return imageName, "", status.Errorf(codes.NotFound, "image digest not found for %s", imageName)
 }
 
 func dockerImageInspectError(err error) error {

@@ -160,6 +160,14 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 	if !shouldCleanupJobContainer(workflow, job) {
 		return nil
 	}
+	if job.GetRuntimeEndpoint() == "" {
+		loggerpkg.FromContext(parentCtx).Warn("skipping container cleanup without runtime endpoint",
+			zap.String("workflow_id", workflow.GetId()),
+			zap.String("job_id", job.GetId()),
+			zap.String("container_id", job.GetContainerId()),
+		)
+		return nil
+	}
 
 	cleanupCtx := context.WithoutCancel(parentCtx)
 	csvc, err := r.containerSvcForJob(job)

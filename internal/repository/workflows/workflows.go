@@ -437,9 +437,9 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 
 	query := fmt.Sprintf(`
         UPDATE %s
-        SET build_status = $1,
-            resolved_image_ref = CASE WHEN $1 = 'COMPLETED' THEN NULLIF($5, '') ELSE resolved_image_ref END,
-            resolved_image_digest = CASE WHEN $1 = 'COMPLETED' THEN NULLIF($6, '') ELSE resolved_image_digest END
+        SET build_status = $1::TEXT,
+            resolved_image_ref = CASE WHEN $1::TEXT = 'COMPLETED' THEN NULLIF($5, '') ELSE resolved_image_ref END,
+            resolved_image_digest = CASE WHEN $1::TEXT = 'COMPLETED' THEN NULLIF($6, '') ELSE resolved_image_digest END
         WHERE id = $2 AND user_id = $3
             AND ($4::BIGINT = 0 OR generation = $4);
     `, postgres.TableWorkflows)

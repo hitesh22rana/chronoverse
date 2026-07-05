@@ -413,6 +413,38 @@ func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testin
 	}
 }
 
+func TestCleanupCanceledJobContainerSkipsLegacyContainerWithoutRuntimeEndpoint(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	repo := &Repository{
+		svc: &Services{
+			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+				called = true
+				return &testContainerSvc{}, nil
+			},
+		},
+	}
+
+	err := repo.cleanupCanceledJobContainer(
+		t.Context(),
+		&workflowspb.GetWorkflowByIDResponse{
+			Id:   "workflow-1",
+			Kind: workflowsmodel.KindContainer.ToString(),
+		},
+		&jobspb.JobsResponse{
+			Id:          "job-1",
+			ContainerId: "container-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("cleanupCanceledJobContainer() error = %v", err)
+	}
+	if called {
+		t.Fatal("container service factory called for job without runtime endpoint")
+	}
+}
+
 func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 	issueTokenCalls := 0
 	repo := &Repository{

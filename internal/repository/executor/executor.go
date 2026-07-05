@@ -45,6 +45,9 @@ type ContainerSvc interface {
 	Terminate(ctx context.Context, containerID string) error
 }
 
+// ContainerSvcFactory creates a container service for a runtime endpoint.
+type ContainerSvcFactory func(endpoint string) (ContainerSvc, error)
+
 // HeartBeatSvc represents the heartbeat service.
 type HeartBeatSvc interface {
 	Execute(ctx context.Context, timeout time.Duration, endpoint string, expectedStatusCode int, headers map[string][]string) error
@@ -52,10 +55,11 @@ type HeartBeatSvc interface {
 
 // Services represents the services used by the executor.
 type Services struct {
-	Workflows workflowspb.WorkflowsServiceClient
-	Jobs      jobspb.JobsServiceClient
-	Csvc      ContainerSvc
-	Hsvc      HeartBeatSvc
+	Workflows       workflowspb.WorkflowsServiceClient
+	Jobs            jobspb.JobsServiceClient
+	Csvc            ContainerSvc
+	CsvcForEndpoint ContainerSvcFactory
+	Hsvc            HeartBeatSvc
 }
 
 // Config represents the execution worker configuration.
@@ -305,7 +309,12 @@ func (r *Repository) runClaimedWorkflow(
 		return r.failClaimedJob(ctx, claim, status.Errorf(codes.FailedPrecondition, "unknown job trigger: %s", claim.GetTrigger()), "")
 	}
 
-	containerID, executeErr := r.executeWorkflow(ctx, claim.GetId(), claim.GetLeaseToken(), claim.GetAttempts(), workflow)
+	csvc, err := r.containerSvcForClaim(claim, workflow)
+	if err != nil {
+		return r.releaseClaimForSystemRetry(ctx, claim, err)
+	}
+
+	containerID, executeErr := r.executeWorkflow(ctx, csvc, claim.GetId(), claim.GetLeaseToken(), claim.GetRuntimeNodeId(), claim.GetAttempts(), workflow)
 	if executeErr != nil {
 		return r.failClaimedJob(ctx, claim, executeErr, containerID)
 	}
@@ -577,8 +586,10 @@ func (r *Repository) withAuthorization(parentCtx context.Context) (context.Conte
 // executeWorkflow executes the workflow.
 func (r *Repository) executeWorkflow(
 	ctx context.Context,
+	csvc ContainerSvc,
 	jobID,
 	leaseToken string,
+	runtimeNodeID string,
 	attempts int32,
 	workflow *workflowspb.GetWorkflowByIDResponse,
 ) (string, error) {
@@ -588,8 +599,24 @@ func (r *Repository) executeWorkflow(
 		return "", r.executeHeartbeatWorkflow(ctx, workflow)
 	// Execute the CONTAINER workflow
 	case workflowsmodel.KindContainer.ToString():
-		return r.executeContainerWorkflow(ctx, jobID, leaseToken, attempts, workflow)
+		return r.executeContainerWorkflow(ctx, csvc, jobID, leaseToken, runtimeNodeID, attempts, workflow)
 	default:
 		return "", status.Error(codes.InvalidArgument, "invalid workflow kind")
 	}
+}
+
+func (r *Repository) containerSvcForClaim(claim *jobspb.ClaimJobResponse, workflow *workflowspb.GetWorkflowByIDResponse) (ContainerSvc, error) {
+	if workflow.GetKind() != workflowsmodel.KindContainer.ToString() {
+		return r.svc.Csvc, nil
+	}
+	if claim.GetRuntimeEndpoint() == "" {
+		return nil, status.Error(codes.Unavailable, "container job claim has no runtime endpoint")
+	}
+	if r.svc.CsvcForEndpoint != nil {
+		return r.svc.CsvcForEndpoint(claim.GetRuntimeEndpoint())
+	}
+	if r.svc.Csvc != nil {
+		return r.svc.Csvc, nil
+	}
+	return nil, status.Error(codes.FailedPrecondition, "container service is not configured")
 }

@@ -186,7 +186,13 @@ func run() int {
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
 		Csvc:      csvc,
-		Hsvc:      heartbeat.New(),
+		CsvcForEndpoint: func(endpoint string) (executorrepo.ContainerSvc, error) {
+			return container.NewDockerWorkflow(
+				container.WithDockerHost(endpoint),
+				container.WithResourceLimits(resourceLimits),
+			)
+		},
+		Hsvc: heartbeat.New(),
 	})
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)

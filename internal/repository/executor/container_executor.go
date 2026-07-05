@@ -23,8 +23,10 @@ import (
 // executeContainerWorkflow executes the CONTAINER workflow.
 func (r *Repository) executeContainerWorkflow(
 	ctx context.Context,
+	csvc ContainerSvc,
 	jobID,
 	leaseToken string,
+	runtimeNodeID string,
 	attempts int32,
 	workflow *workflowspb.GetWorkflowByIDResponse,
 ) (string, error) {
@@ -33,10 +35,15 @@ func (r *Repository) executeContainerWorkflow(
 		return "", err
 	}
 
-	containerID, logs, errs, workflowErr := r.svc.Csvc.Execute(
+	image := workflow.GetResolvedImageDigest()
+	if image == "" {
+		image = details.Image
+	}
+
+	containerID, logs, errs, workflowErr := csvc.Execute(
 		ctx,
 		details.TimeOut,
-		details.Image,
+		image,
 		details.Cmd,
 		details.Env,
 	)
@@ -46,7 +53,7 @@ func (r *Repository) executeContainerWorkflow(
 	}
 
 	if containerID != "" {
-		if err := r.attachJobContainer(ctx, jobID, leaseToken, containerID); err != nil {
+		if err := r.attachJobContainer(ctx, jobID, leaseToken, containerID, runtimeNodeID); err != nil {
 			return containerID, err
 		}
 	}
@@ -58,16 +65,17 @@ func (r *Repository) executeContainerWorkflow(
 	return containerID, r.processContainerExecution(ctx, jobID, attempts, workflow, logs, errs)
 }
 
-func (r *Repository) attachJobContainer(ctx context.Context, jobID, leaseToken, containerID string) error {
+func (r *Repository) attachJobContainer(ctx context.Context, jobID, leaseToken, containerID, runtimeNodeID string) error {
 	jobCtx, err := r.withAuthorization(ctx)
 	if err != nil {
 		return err
 	}
 
 	_, err = r.svc.Jobs.AttachJobContainer(jobCtx, &jobspb.AttachJobContainerRequest{
-		Id:          jobID,
-		LeaseToken:  leaseToken,
-		ContainerId: containerID,
+		Id:            jobID,
+		LeaseToken:    leaseToken,
+		ContainerId:   containerID,
+		RuntimeNodeId: runtimeNodeID,
 	})
 	return err
 }

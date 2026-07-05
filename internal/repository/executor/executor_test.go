@@ -223,13 +223,15 @@ func TestRecoverExpiredLeaseRenewsLeaseWhileReplayingLogs(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- repo.recoverExpiredLease(context.Background(), &jobspb.ExpiredJobLease{
-			Id:          "job-1",
-			WorkflowId:  "workflow-1",
-			UserId:      "user-1",
-			ContainerId: "container-1",
-			LeaseToken:  "lease-1",
-			Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-			Attempts:    1,
+			Id:              "job-1",
+			WorkflowId:      "workflow-1",
+			UserId:          "user-1",
+			ContainerId:     "container-1",
+			RuntimeNodeId:   "runtime-1",
+			RuntimeEndpoint: "tcp://docker-proxy:2375",
+			LeaseToken:      "lease-1",
+			Trigger:         jobsmodel.JobTriggerAutomatic.ToString(),
+			Attempts:        1,
 		})
 	}()
 

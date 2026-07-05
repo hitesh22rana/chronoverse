@@ -420,34 +420,48 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 			err = r.mapJobLeaseWriteError(rollbackErr, "rollback release job for retry transaction")
 		}
 	}()
-	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-		return decrementErr
-	}
 
 	query := fmt.Sprintf(`
-        UPDATE %s
-        SET status = 'PENDING',
-            queued_at = NULL,
-            container_id = NULL,
-            runtime_node_id = NULL,
-            runtime_endpoint = NULL,
-            started_at = NULL,
-            completed_at = NULL,
-            lease_token = NULL,
-            leased_by = NULL,
-            lease_expires_at = NULL,
-            last_heartbeat_at = NULL,
-            next_attempt_at = $3,
-            failure_kind = $4,
-            last_error_code = $5,
-            last_error_message = $6
-        WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING';
-    `, postgres.TableJobs)
-	ct, err := tx.Exec(ctx, query, jobID, leaseToken, nextAttemptAtTime, jobsmodel.FailureKindSystem.ToString(), errorCode, truncateJobError(errorMessage))
+        WITH released AS (
+            UPDATE %s
+            SET status = 'PENDING',
+                queued_at = NULL,
+                container_id = NULL,
+                runtime_node_id = NULL,
+                runtime_endpoint = NULL,
+                started_at = NULL,
+                completed_at = NULL,
+                lease_token = NULL,
+                leased_by = NULL,
+                lease_expires_at = NULL,
+                last_heartbeat_at = NULL,
+                next_attempt_at = $3,
+                failure_kind = $4,
+                last_error_code = $5,
+                last_error_message = $6
+            WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
+            RETURNING runtime_node_id
+        ),
+        decrement_runtime AS (
+            UPDATE %s AS rn
+            SET running_jobs = GREATEST(0, running_jobs - 1),
+                updated_at = now() AT TIME ZONE 'utc'
+            FROM released
+            WHERE released.runtime_node_id IS NOT NULL
+                AND rn.id = released.runtime_node_id
+            RETURNING rn.id
+        )
+        SELECT
+            (SELECT COUNT(*) FROM released),
+            (SELECT COUNT(*) FROM decrement_runtime);
+    `, postgres.TableJobs, postgres.TableRuntimeNodes)
+	var releasedCount int
+	var decrementedCount int
+	err = tx.QueryRow(ctx, query, jobID, leaseToken, nextAttemptAtTime, jobsmodel.FailureKindSystem.ToString(), errorCode, truncateJobError(errorMessage)).Scan(&releasedCount, &decrementedCount)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "release job for retry")
 	}
-	if ct.RowsAffected() == 0 {
+	if releasedCount == 0 {
 		return status.Errorf(grpccodes.FailedPrecondition, "%s: job lease not held", "release job for retry")
 	}
 	if err := tx.Commit(ctx); err != nil {

@@ -115,6 +115,11 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
+	imagePullLockConfig := executorrepo.ImagePullLockConfig{
+		TTL:           cfg.ImagePullLockTTL,
+		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
+		RetryInterval: cfg.ImagePullLockRetryInterval,
+	}
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
@@ -179,10 +184,14 @@ func run() int {
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
 		CsvcForEndpoint: func(endpoint string) (executorrepo.ContainerSvc, error) {
-			return container.NewDockerWorkflow(
+			csvc, csvcErr := container.NewDockerWorkflow(
 				container.WithDockerHost(endpoint),
 				container.WithResourceLimits(resourceLimits),
 			)
+			if csvcErr != nil {
+				return nil, csvcErr
+			}
+			return executorrepo.NewImagePullLockedContainerSvc(csvc, rdb, imagePullLockConfig), nil
 		},
 		Hsvc: heartbeat.New(),
 	})

@@ -165,11 +165,16 @@ execution-worker workload container limits do not apply to image pulls.
   `EXECUTION_WORKER_RECOVERY_BATCH_SIZE` control expired lease recovery.
 - `EXECUTION_WORKER_JOB_LOG_*` settings tune log batching, publish retries, live
   publish timeout, and live log buffer size.
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_*` settings coordinate cold image pulls on
+  the selected runtime node before Docker container creation.
 
 Keep the lease duration comfortably above the renewal interval. Increase
 concurrency only when Docker host capacity, per-workload resource limits, Kafka
 partitions, and downstream services can support it. These per-workload limits
-are applied only when execution-worker creates Docker job containers.
+are applied only when execution-worker creates Docker job containers. Execution
+image pulls use the same host-scoped lock model as workflow-worker digest
+resolution: workers sharing one runtime daemon serialize the same image pull,
+while different runtime nodes may pull independently.
 
 ### Outbox Relay
 

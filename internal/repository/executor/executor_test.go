@@ -195,6 +195,43 @@ func TestProcessContainerExecutionDrainsExecutionErrorsUntilClosed(t *testing.T)
 	}
 }
 
+func TestExecuteContainerWorkflowEnsuresResolvedImageBeforeExecute(t *testing.T) {
+	t.Parallel()
+
+	csvc := &recordingContainerSvc{
+		logs: make(chan *jobsmodel.JobLog),
+		errs: make(chan error),
+	}
+	close(csvc.logs)
+	close(csvc.errs)
+
+	repo := &Repository{cfg: defaultConfig()}
+	workflow := &workflowspb.GetWorkflowByIDResponse{
+		Id:                  "workflow-1",
+		UserId:              "user-1",
+		Payload:             `{"image":"alpine:3.22","cmd":["echo","ok"],"env":{"A":"B"},"timeout":"1s"}`,
+		ResolvedImageDigest: "alpine@sha256:abc",
+		LogRetention:        true,
+	}
+
+	containerID, err := repo.executeContainerWorkflow(t.Context(), csvc, "job-1", "lease-1", "runtime-1", 1, workflow)
+	if err != nil {
+		t.Fatalf("executeContainerWorkflow() error = %v", err)
+	}
+	if containerID != "" {
+		t.Fatalf("containerID = %q, want empty", containerID)
+	}
+	if got, want := csvc.buildImage, "alpine@sha256:abc"; got != want {
+		t.Fatalf("Build image = %q, want %q", got, want)
+	}
+	if got, want := csvc.executeImage, "alpine@sha256:abc"; got != want {
+		t.Fatalf("Execute image = %q, want %q", got, want)
+	}
+	if !csvc.buildBeforeExecute {
+		t.Fatal("Build was not called before Execute")
+	}
+}
+
 func TestRecoverExpiredLeaseRenewsLeaseWhileReplayingLogs(t *testing.T) {
 	t.Parallel()
 
@@ -465,6 +502,18 @@ type blockingRecoveryContainerSvc struct {
 	replayCanFinish <-chan struct{}
 }
 
+func (*blockingRecoveryContainerSvc) Build(context.Context, string) error {
+	return nil
+}
+
+func (*blockingRecoveryContainerSvc) ImageExists(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+func (*blockingRecoveryContainerSvc) DockerHost() string {
+	return "tcp://docker-proxy:2375"
+}
+
 func (*blockingRecoveryContainerSvc) Execute(context.Context, time.Duration, string, []string, []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
 	return "", nil, nil, nil
 }
@@ -494,5 +543,48 @@ func (*blockingRecoveryContainerSvc) Remove(context.Context, string) error {
 }
 
 func (*blockingRecoveryContainerSvc) Terminate(context.Context, string) error {
+	return nil
+}
+
+type recordingContainerSvc struct {
+	buildImage         string
+	executeImage       string
+	buildBeforeExecute bool
+	logs               chan *jobsmodel.JobLog
+	errs               chan error
+}
+
+func (s *recordingContainerSvc) Build(_ context.Context, image string) error {
+	s.buildImage = image
+	return nil
+}
+
+func (*recordingContainerSvc) ImageExists(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+func (*recordingContainerSvc) DockerHost() string {
+	return "tcp://docker-proxy:2375"
+}
+
+func (s *recordingContainerSvc) Execute(_ context.Context, _ time.Duration, image string, _, _ []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	s.executeImage = image
+	s.buildBeforeExecute = s.buildImage != ""
+	return "", s.logs, s.errs, nil
+}
+
+func (*recordingContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	return nil, nil, nil
+}
+
+func (*recordingContainerSvc) Inspect(context.Context, string) (*containerpkg.State, error) {
+	return &containerpkg.State{}, nil
+}
+
+func (*recordingContainerSvc) Remove(context.Context, string) error {
+	return nil
+}
+
+func (*recordingContainerSvc) Terminate(context.Context, string) error {
 	return nil
 }

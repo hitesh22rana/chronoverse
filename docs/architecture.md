@@ -61,7 +61,7 @@ debugging.
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
 - **ClickHouse** stores retained job logs.
 - **Redis** stores HTTP sessions, cached service reads, live log
-  publish/subscribe state, and workflow-worker image pull locks.
+  publish/subscribe state, and host-scoped image pull locks.
 - **Meilisearch** indexes retained job logs for search.
 - **Runtime agent** registers each Docker-capable node and heartbeats endpoint
   liveness/capacity into PostgreSQL.
@@ -105,8 +105,9 @@ debugging.
 2. `jobs-service` grants a lease only when the job, workflow, dispatch attempt,
    current state, and runtime availability are valid. `CONTAINER` jobs receive a
    fresh `READY` runtime node; `HEARTBEAT` jobs do not.
-3. The worker creates a Docker client for the returned runtime endpoint, runs
-   the resolved image digest, attaches the container ID with `runtime_node_id`,
+3. The worker creates a Docker client for the returned runtime endpoint, ensures
+   the resolved image digest exists on that runtime under a host-scoped image
+   pull lock, runs the image, attaches the container ID with `runtime_node_id`,
    and renews the lease while the job runs.
 4. Logs are emitted both for live streaming and durable processing when retention
    is enabled.

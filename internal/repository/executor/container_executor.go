@@ -40,6 +40,10 @@ func (r *Repository) executeContainerWorkflow(
 		image = details.Image
 	}
 
+	if err := csvc.Build(ctx, image); err != nil {
+		return "", err
+	}
+
 	containerID, logs, errs, workflowErr := csvc.Execute(
 		ctx,
 		details.TimeOut,

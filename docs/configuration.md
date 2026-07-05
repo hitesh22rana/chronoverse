@@ -262,15 +262,20 @@ payload remains user-authored configuration.
 - `EXECUTION_WORKER_JOB_LOG_PUBLISH_BACKOFF`
 - `EXECUTION_WORKER_JOB_LOG_LIVE_TIMEOUT`
 - `EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
 
 If `EXECUTION_WORKER_ID` is empty, the worker falls back to the container
 hostname. `EXECUTION_WORKER_CONCURRENCY=0` means auto concurrency from
 `GOMAXPROCS`, which is adjusted by `automaxprocs` from the worker container CPU
 quota. Workload container memory, CPU, and PID settings apply to the Docker
 containers launched by the worker; they are separate from the worker process
-resource limit and from workflow-worker image pulls. Keep lease duration longer
-than the renewal interval. Container execution uses the runtime endpoint
-returned by `ClaimJob`, not the worker pod's own Docker host.
+resource limit and from image pulls. Keep lease duration longer than the
+renewal interval. Container execution uses the runtime endpoint
+returned by `ClaimJob`, not the worker pod's own Docker host. Before creating a
+container, the worker ensures the resolved image exists on that runtime daemon
+under a Redis lock scoped to Docker host plus exact image string.
 
 ### Job Logs Processor
 

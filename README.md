@@ -40,7 +40,7 @@ Chronoverse uses a message-driven microservice architecture:
 - **Kafka topics** carry workflow, job, log, and analytics events between workers.
 - **PostgreSQL** stores transactional state, analytics, leases, runtime ownership, idempotency records, and outbox events.
 - **ClickHouse** stores retained job logs.
-- **Redis** stores sessions, cached reads, live log pub/sub state, and workflow-worker image pull locks.
+- **Redis** stores sessions, cached reads, live log pub/sub state, and host-scoped image pull locks.
 - **Meilisearch** indexes retained job logs for search.
 - **Runtime agent + Docker socket proxy** register Docker-capable nodes and expose the node-local Docker API without mounting the Docker socket directly into workers.
 - **LGTM** provides local OpenTelemetry collection and dashboards.

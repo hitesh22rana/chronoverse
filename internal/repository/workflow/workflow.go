@@ -47,8 +47,8 @@ type ContainerSvc interface {
 	Terminate(ctx context.Context, containerID string) error
 }
 
-// ContainerSvcFactory creates a container service for a runtime endpoint.
-type ContainerSvcFactory func(endpoint string) (ContainerSvc, error)
+// ContainerSvcFactory creates a container service for a runtime node endpoint.
+type ContainerSvcFactory func(runtimeNodeID, endpoint string) (ContainerSvc, error)
 
 // Services represents the services used by the workflow.
 type Services struct {
@@ -250,10 +250,10 @@ func (r *Repository) withAuthorization(parentCtx context.Context) (context.Conte
 	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
 }
 
-func (r *Repository) containerSvcForEndpoint(endpoint string) (ContainerSvc, error) {
+func (r *Repository) containerSvcForRuntime(runtimeNodeID, endpoint string) (ContainerSvc, error) {
 	if r.svc.CsvcForEndpoint == nil {
 		return nil, status.Error(codes.FailedPrecondition, "container service factory is not configured")
 	}
 
-	return r.svc.CsvcForEndpoint(endpoint)
+	return r.svc.CsvcForEndpoint(runtimeNodeID, endpoint)
 }

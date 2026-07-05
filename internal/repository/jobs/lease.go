@@ -196,6 +196,46 @@ func (r *Repository) ClaimJob(
 	return nil, false, reason, nil
 }
 
+// GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
+func (r *Repository) GetReadyRuntimeNode(ctx context.Context) (node *jobsmodel.RuntimeNode, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.GetReadyRuntimeNode")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	query := fmt.Sprintf(`
+		SELECT id, docker_endpoint
+		FROM %s
+		WHERE status = 'READY'
+			AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($1::int * interval '1 second')
+			AND running_jobs < max_concurrency
+		ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC
+		LIMIT 1;
+	`, postgres.TableRuntimeNodes)
+
+	node = &jobsmodel.RuntimeNode{}
+	err = r.pg.QueryRow(ctx, query, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(
+		&node.RuntimeNodeID,
+		&node.RuntimeEndpoint,
+	)
+	if err == nil {
+		span.SetAttributes(
+			attribute.String("runtime_node_id", node.RuntimeNodeID),
+			attribute.String("runtime_endpoint", node.RuntimeEndpoint),
+		)
+		return node, nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, status.Error(grpccodes.Unavailable, "no healthy runtime node is available")
+	}
+
+	return nil, r.mapJobLeaseReadError(err, "get ready runtime node")
+}
+
 // RenewJobLease renews a running job lease.
 func (r *Repository) RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.RenewJobLease")

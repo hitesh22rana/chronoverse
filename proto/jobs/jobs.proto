@@ -54,6 +54,15 @@ message ClaimJobResponse {
   string runtime_endpoint  = 12; // Docker endpoint selected for Docker-backed execution
 }
 
+// GetReadyRuntimeNodeRequest contains the details needed to select a runtime node.
+message GetReadyRuntimeNodeRequest {}
+
+// GetReadyRuntimeNodeResponse contains a fresh READY runtime node.
+message GetReadyRuntimeNodeResponse {
+  string runtime_node_id  = 1; // Runtime node selected for Docker data plane work
+  string runtime_endpoint = 2; // Docker endpoint selected for Docker data plane work
+}
+
 // RenewJobLeaseRequest contains the details needed to renew a running job lease.
 message RenewJobLeaseRequest {
   string id                     = 1; // ID of the job
@@ -306,6 +315,10 @@ service JobsService {
     // ClaimJob atomically claims a queued job for execution.
     // This is an internal API and should not be exposed to the public.
   rpc ClaimJob(ClaimJobRequest) returns (ClaimJobResponse) {}
+
+    // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
+    // This is an internal API and should not be exposed to the public.
+  rpc GetReadyRuntimeNode(GetReadyRuntimeNodeRequest) returns (GetReadyRuntimeNodeResponse) {}
 
     // RenewJobLease renews a running job lease.
     // This is an internal API and should not be exposed to the public.

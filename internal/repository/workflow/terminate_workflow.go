@@ -240,7 +240,7 @@ func (r *Repository) containerSvcForJob(job *jobspb.JobsResponse) (ContainerSvc,
 	if job.GetRuntimeEndpoint() == "" {
 		return nil, status.Error(codes.Unavailable, "container job has no runtime endpoint")
 	}
-	return r.containerSvcForEndpoint(job.GetRuntimeEndpoint())
+	return r.containerSvcForRuntime(job.GetRuntimeNodeId(), job.GetRuntimeEndpoint())
 }
 
 func (r *Repository) publishCanceledJobLog(

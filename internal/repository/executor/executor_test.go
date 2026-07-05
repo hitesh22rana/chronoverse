@@ -251,7 +251,7 @@ func TestRecoverExpiredLeaseRenewsLeaseWhileReplayingLogs(t *testing.T) {
 		auth: fakeAuth{},
 		svc: &Services{
 			Jobs: jobsClient,
-			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
 				return &blockingRecoveryContainerSvc{
 					replayCanFinish: replayCanFinish,
 				}, nil
@@ -356,7 +356,7 @@ func TestRecoverExpiredLeaseBatchStartsRenewalForEveryClaimedJob(t *testing.T) {
 		auth: fakeAuth{},
 		svc: &Services{
 			Jobs: jobsClient,
-			CsvcForEndpoint: func(string) (ContainerSvc, error) {
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
 				return &blockingRecoveryContainerSvc{
 					replayCanFinish: replayCanFinish,
 				}, nil

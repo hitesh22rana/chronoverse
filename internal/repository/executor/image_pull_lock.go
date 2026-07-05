@@ -14,6 +14,7 @@ type ImagePullLockConfig struct {
 	TTL           time.Duration
 	WaitTimeout   time.Duration
 	RetryInterval time.Duration
+	LockScope     string
 }
 
 // NewImagePullLockedContainerSvc wraps a container service with Redis-backed image pull coordination.
@@ -25,6 +26,7 @@ func NewImagePullLockedContainerSvc(inner ContainerSvc, locks imagepull.LockStor
 			TTL:           cfg.TTL,
 			WaitTimeout:   cfg.WaitTimeout,
 			RetryInterval: cfg.RetryInterval,
+			LockScope:     cfg.LockScope,
 		},
 	}
 }

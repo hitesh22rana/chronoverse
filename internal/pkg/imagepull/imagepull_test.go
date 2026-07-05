@@ -60,6 +60,25 @@ func TestEnsureAcquiresLockAndBuilds(t *testing.T) {
 	}
 }
 
+func TestEnsureUsesConfiguredLockScope(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeClient{dockerHost: "tcp://docker-a:2375"}
+	locks := &fakeLockStore{acquireResults: []bool{true}}
+
+	if err := imagepull.Ensure(t.Context(), client, locks, "alpine:3.22", imagepull.Config{
+		TTL:           time.Minute,
+		WaitTimeout:   time.Minute,
+		RetryInterval: time.Millisecond,
+		LockScope:     "runtime-node-a",
+	}); err != nil {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+	if got, want := locks.keys[0], imagepull.LockKey("runtime-node-a", "alpine:3.22"); got != want {
+		t.Fatalf("lock key = %q, want %q", got, want)
+	}
+}
+
 func TestEnsureWaitsForHeldLock(t *testing.T) {
 	t.Parallel()
 

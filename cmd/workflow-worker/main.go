@@ -147,19 +147,21 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Workflow workers resolve image metadata through the configured Docker
-	// endpoint. Execution and cleanup use the runtime endpoint stored on jobs.
+	// Workflow workers resolve image metadata through the runtime registry.
+	// Runtime identity scopes image pull locks to the owning Docker daemon.
 	imagePullLockConfig := workflowrepo.ImagePullLockConfig{
 		TTL:           cfg.ImagePullLockTTL,
 		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
 		RetryInterval: cfg.ImagePullLockRetryInterval,
 	}
-	containerSvcForEndpoint := func(endpoint string) (workflowrepo.ContainerSvc, error) {
+	containerSvcForEndpoint := func(runtimeNodeID, endpoint string) (workflowrepo.ContainerSvc, error) {
 		csvc, csvcErr := container.NewDockerWorkflow(container.WithDockerHost(endpoint))
 		if csvcErr != nil {
 			return nil, csvcErr
 		}
-		return workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, imagePullLockConfig), nil
+		cfg := imagePullLockConfig
+		cfg.LockScope = runtimeNodeID
+		return workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, cfg), nil
 	}
 
 	// Connect to the workflows service

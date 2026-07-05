@@ -229,7 +229,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return err
 		}
 
-		csvc, err := r.containerSvcForEndpoint("")
+		runtimeNode, err := r.svc.Jobs.GetReadyRuntimeNode(ctx, &jobspb.GetReadyRuntimeNodeRequest{})
+		if err != nil {
+			return err
+		}
+
+		csvc, err := r.containerSvcForRuntime(runtimeNode.GetRuntimeNodeId(), runtimeNode.GetRuntimeEndpoint())
 		if err != nil {
 			return err
 		}

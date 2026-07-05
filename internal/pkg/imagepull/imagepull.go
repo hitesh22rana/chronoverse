@@ -38,6 +38,7 @@ type Config struct {
 	TTL           time.Duration
 	WaitTimeout   time.Duration
 	RetryInterval time.Duration
+	LockScope     string
 }
 
 // Ensure makes imageName available on client, serializing cold pulls per Docker host.
@@ -49,7 +50,11 @@ func Ensure(ctx context.Context, client Client, locks LockStore, imageName strin
 		return err
 	}
 
-	lockKey := LockKey(client.DockerHost(), imageName)
+	lockScope := cfg.LockScope
+	if lockScope == "" {
+		lockScope = client.DockerHost()
+	}
+	lockKey := LockKey(lockScope, imageName)
 	waitCtx, cancel := context.WithTimeout(ctx, cfg.WaitTimeout)
 	defer cancel()
 
@@ -168,9 +173,9 @@ func waitError(parentCtx context.Context, err error) error {
 	return err
 }
 
-// LockKey returns the Redis key used to coordinate a Docker host and image pair.
-func LockKey(dockerHost, imageName string) string {
-	return fmt.Sprintf("container:image-pull:%s:%s", sha256Hex(dockerHost), sha256Hex(imageName))
+// LockKey returns the Redis key used to coordinate a runtime scope and image pair.
+func LockKey(lockScope, imageName string) string {
+	return fmt.Sprintf("container:image-pull:%s:%s", sha256Hex(lockScope), sha256Hex(imageName))
 }
 
 func sha256Hex(value string) string {

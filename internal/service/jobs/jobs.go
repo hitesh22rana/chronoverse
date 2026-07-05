@@ -42,6 +42,7 @@ type Repository interface {
 	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error)
 	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
 	ClaimJob(ctx context.Context, jobID, workflowID, workerID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobsmodel.ClaimedJob, bool, string, error)
+	GetReadyRuntimeNode(ctx context.Context) (*jobsmodel.RuntimeNode, error)
 	RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) error
 	AttachJobContainer(ctx context.Context, jobID, leaseToken, containerID, runtimeNodeID string) error
 	CompleteJob(ctx context.Context, jobID, leaseToken string) error
@@ -245,6 +246,25 @@ func (s *Service) ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (re
 	}
 
 	return claimed.ToClaimJobProto(ok, reason), nil
+}
+
+// GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
+func (s *Service) GetReadyRuntimeNode(ctx context.Context, _ *jobspb.GetReadyRuntimeNodeRequest) (res *jobspb.GetReadyRuntimeNodeResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.GetReadyRuntimeNode")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	node, err := s.repo.GetReadyRuntimeNode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return node.ToProto(), nil
 }
 
 // RenewJobLeaseRequest holds the request parameters for renewing a job lease.

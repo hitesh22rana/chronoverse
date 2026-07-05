@@ -156,7 +156,7 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	if job.GetRuntimeEndpoint() == "" {
 		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "job lease expired without a runtime endpoint"))
 	}
-	csvc, err := r.containerSvcForEndpoint(job.GetRuntimeEndpoint())
+	csvc, err := r.containerSvcForEndpoint(job.GetRuntimeNodeId(), job.GetRuntimeEndpoint())
 	if err != nil {
 		return r.releaseOrFailRecoveredSystem(ctx, claim, err)
 	}
@@ -204,12 +204,12 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	return r.failClaimedJob(ctx, claim, csvc, execErr, job.GetContainerId())
 }
 
-func (r *Repository) containerSvcForEndpoint(endpoint string) (ContainerSvc, error) {
+func (r *Repository) containerSvcForEndpoint(runtimeNodeID, endpoint string) (ContainerSvc, error) {
 	if endpoint == "" {
 		return nil, status.Error(codes.Unavailable, "runtime endpoint is required")
 	}
 	if r.svc.CsvcForEndpoint != nil {
-		return r.svc.CsvcForEndpoint(endpoint)
+		return r.svc.CsvcForEndpoint(runtimeNodeID, endpoint)
 	}
 	return nil, status.Error(codes.FailedPrecondition, "container service is not configured")
 }

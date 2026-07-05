@@ -154,6 +154,24 @@ type ClaimedJob struct {
 	RuntimeEndpoint  sql.NullString `db:"runtime_endpoint,omitempty"`
 }
 
+// RuntimeNode represents a fresh runtime node selected for Docker data plane work.
+type RuntimeNode struct {
+	RuntimeNodeID   string `db:"id"`
+	RuntimeEndpoint string `db:"docker_endpoint"`
+}
+
+// ToProto converts a RuntimeNode to its protobuf representation.
+func (n *RuntimeNode) ToProto() *jobspb.GetReadyRuntimeNodeResponse {
+	if n == nil {
+		return &jobspb.GetReadyRuntimeNodeResponse{}
+	}
+
+	return &jobspb.GetReadyRuntimeNodeResponse{
+		RuntimeNodeId:   n.RuntimeNodeID,
+		RuntimeEndpoint: n.RuntimeEndpoint,
+	}
+}
+
 // ToClaimJobProto converts a ClaimedJob to a ClaimJobResponse.
 func (j *ClaimedJob) ToClaimJobProto(claimed bool, reason string) *jobspb.ClaimJobResponse {
 	if j == nil {

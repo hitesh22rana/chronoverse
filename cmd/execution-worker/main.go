@@ -183,7 +183,7 @@ func run() int {
 	}, auth, kfk, rdb, kafkaLifecycle, &executorrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
-		CsvcForEndpoint: func(endpoint string) (executorrepo.ContainerSvc, error) {
+		CsvcForEndpoint: func(runtimeNodeID, endpoint string) (executorrepo.ContainerSvc, error) {
 			csvc, csvcErr := container.NewDockerWorkflow(
 				container.WithDockerHost(endpoint),
 				container.WithResourceLimits(resourceLimits),
@@ -191,7 +191,9 @@ func run() int {
 			if csvcErr != nil {
 				return nil, csvcErr
 			}
-			return executorrepo.NewImagePullLockedContainerSvc(csvc, rdb, imagePullLockConfig), nil
+			cfg := imagePullLockConfig
+			cfg.LockScope = runtimeNodeID
+			return executorrepo.NewImagePullLockedContainerSvc(csvc, rdb, cfg), nil
 		},
 		Hsvc: heartbeat.New(),
 	})

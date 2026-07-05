@@ -48,8 +48,8 @@ type ContainerSvc interface {
 	Terminate(ctx context.Context, containerID string) error
 }
 
-// ContainerSvcFactory creates a container service for a runtime endpoint.
-type ContainerSvcFactory func(endpoint string) (ContainerSvc, error)
+// ContainerSvcFactory creates a container service for a runtime node endpoint.
+type ContainerSvcFactory func(runtimeNodeID, endpoint string) (ContainerSvc, error)
 
 // HeartBeatSvc represents the heartbeat service.
 type HeartBeatSvc interface {
@@ -620,7 +620,7 @@ func (r *Repository) containerSvcForClaim(claim *jobspb.ClaimJobResponse) (Conta
 		return nil, status.Error(codes.Unavailable, "container job claim has no runtime endpoint")
 	}
 	if r.svc.CsvcForEndpoint != nil {
-		return r.svc.CsvcForEndpoint(claim.GetRuntimeEndpoint())
+		return r.svc.CsvcForEndpoint(claim.GetRuntimeNodeId(), claim.GetRuntimeEndpoint())
 	}
 	return nil, status.Error(codes.FailedPrecondition, "container service is not configured")
 }

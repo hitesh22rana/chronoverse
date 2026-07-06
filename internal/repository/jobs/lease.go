@@ -211,15 +211,7 @@ func (r *Repository) GetReadyRuntimeNode(ctx context.Context) (node *jobsmodel.R
 		span.End()
 	}()
 
-	query := fmt.Sprintf(`
-		SELECT id, docker_endpoint
-		FROM %s
-		WHERE status = 'READY'
-			AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($1::int * interval '1 second')
-			AND running_jobs < max_concurrency
-		ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC
-		LIMIT 1;
-	`, postgres.TableRuntimeNodes)
+	query := getReadyRuntimeNodeQuery()
 
 	node = &jobsmodel.RuntimeNode{}
 	err = r.pg.QueryRow(ctx, query, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(
@@ -238,6 +230,17 @@ func (r *Repository) GetReadyRuntimeNode(ctx context.Context) (node *jobsmodel.R
 	}
 
 	return nil, r.mapJobLeaseReadError(err, "get ready runtime node")
+}
+
+func getReadyRuntimeNodeQuery() string {
+	return fmt.Sprintf(`
+		SELECT id, docker_endpoint
+		FROM %s
+		WHERE status = 'READY'
+			AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($1::int * interval '1 second')
+		ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC
+		LIMIT 1;
+	`, postgres.TableRuntimeNodes)
 }
 
 // RenewJobLease renews a running job lease.

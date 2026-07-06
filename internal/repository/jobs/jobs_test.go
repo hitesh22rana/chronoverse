@@ -44,6 +44,16 @@ func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {
 	assertContains(t, query, "AND EXISTS (SELECT 1 FROM workflow WHERE kind = 'CONTAINER')")
 	assertContains(t, query, "(SELECT kind FROM workflow) <> 'CONTAINER'")
 	assertContains(t, query, "OR EXISTS (SELECT 1 FROM selected_runtime)")
+	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
+}
+
+func TestGetReadyRuntimeNodeQueryIgnoresExecutionCapacity(t *testing.T) {
+	query := getReadyRuntimeNodeQuery()
+
+	assertContains(t, query, "WHERE status = 'READY'")
+	assertContains(t, query, "last_heartbeat_at >")
+	assertContains(t, query, "ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC")
+	assertNotContains(t, query, "running_jobs < max_concurrency")
 }
 
 func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJobs(t *testing.T) {

@@ -622,6 +622,8 @@ func recoverExpiredJobLeasesQuery() string {
             w.log_retention,
             j.runtime_node_id,
             COALESCE(NULLIF(j.runtime_endpoint, ''), rn.docker_endpoint) AS runtime_endpoint,
+            -- DRAINING stops new claims but may still allow owner-aware Docker cleanup.
+            -- Only missing, unhealthy, or lost runtimes are treated as unavailable.
             (
                 j.runtime_node_id IS NOT NULL
                 AND (

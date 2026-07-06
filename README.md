@@ -87,7 +87,8 @@ Both compose files use one local runtime named `local-docker`; multi-node
 deployments run one `runtime-agent` beside each node-local Docker proxy.
 Runtime readiness is based on successful Docker health heartbeats; `UNHEALTHY`
 means the agent is alive but its Docker endpoint is unusable, while `DRAINING`
-means intentional shutdown or scale-down.
+means intentional shutdown or scale-down. `RUNTIME_AGENT_ID` must be stable per
+runtime node across restarts, not randomly regenerated at startup.
 
 ### Development Stack
 

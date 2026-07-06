@@ -217,6 +217,9 @@ PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
 In a multi-node deployment, run one agent beside each node-local Docker proxy
 and set the endpoint to the address workers should use for that node.
+`RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
+it from durable node identity, such as the Kubernetes node name, hostname, or a
+mounted identity file; do not generate a new random ID on every restart.
 `last_heartbeat_at` is the last successful Docker-health heartbeat. If Docker
 becomes unavailable while PostgreSQL is reachable, the agent marks the runtime
 `UNHEALTHY` without refreshing that timestamp; a successful unhealthy update

@@ -587,6 +587,7 @@ func recoverExpiredJobLeasesQuery() string {
                 AND (
                     j.runtime_node_id IS NULL
                     OR rn.id IS NULL
+                    OR rn.status IN ('UNHEALTHY', 'DRAINING')
                     OR (
                         rn.status = 'READY'
                         AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($5::int * interval '1 second')
@@ -622,6 +623,7 @@ func recoverExpiredJobLeasesQuery() string {
                 j.runtime_node_id IS NOT NULL
                 AND (
                     rn.id IS NULL
+                    OR rn.status = 'UNHEALTHY'
                     OR rn.last_heartbeat_at <= (now() AT TIME ZONE 'utc') - ($6::int * interval '1 second')
                 )
             ) AS runtime_unavailable;

@@ -75,6 +75,21 @@ func TestRecoverExpiredJobLeasesQueryPrefersStoredRuntimeEndpoint(t *testing.T) 
 	assertContains(t, query, "COALESCE(NULLIF(j.runtime_endpoint, ''), rn.docker_endpoint) AS runtime_endpoint")
 }
 
+func TestRecoverExpiredJobLeasesQueryIncludesNonReadyRuntimes(t *testing.T) {
+	query := recoverExpiredJobLeasesQuery()
+
+	assertContains(t, query, "rn.status IN ('UNHEALTHY', 'DRAINING')")
+}
+
+func TestRecoverExpiredJobLeasesQueryFlagsOnlyUnavailableRuntimeStates(t *testing.T) {
+	expr := recoverExpiredRuntimeUnavailableExpression(t)
+
+	assertContains(t, expr, "rn.id IS NULL")
+	assertContains(t, expr, "rn.status = 'UNHEALTHY'")
+	assertContains(t, expr, "rn.last_heartbeat_at <=")
+	assertNotContains(t, expr, "rn.status = 'DRAINING'")
+}
+
 func assertContains(t *testing.T, value, want string) {
 	t.Helper()
 
@@ -89,6 +104,21 @@ func assertNotContains(t *testing.T, value, forbidden string) {
 	if strings.Contains(value, forbidden) {
 		t.Fatalf("expected query not to contain %q:\n%s", forbidden, value)
 	}
+}
+
+func recoverExpiredRuntimeUnavailableExpression(t *testing.T) string {
+	t.Helper()
+
+	query := recoverExpiredJobLeasesQuery()
+	start := strings.Index(query, "j.runtime_node_id IS NOT NULL")
+	if start == -1 {
+		t.Fatalf("expected query to contain runtime unavailable expression:\n%s", query)
+	}
+	end := strings.Index(query[start:], ") AS runtime_unavailable")
+	if end == -1 {
+		t.Fatalf("expected query to contain runtime unavailable alias:\n%s", query)
+	}
+	return query[start : start+end]
 }
 
 func TestEncodeJobLogsCursorEmpty(t *testing.T) {

@@ -61,7 +61,7 @@ For the full event flow and replay-safety model, see the
 
 ### Runtime Plane
 
-- `runtime-agent`: registers one Docker-capable runtime node in PostgreSQL, heartbeats liveness/capacity, and marks itself draining on graceful shutdown.
+- `runtime-agent`: registers one Docker-capable runtime node in PostgreSQL, heartbeats Docker endpoint health/capacity, marks unhealthy when Docker is unavailable, and marks itself draining on graceful shutdown.
 - `docker-proxy`: exposes the node-local Docker API that `execution-worker` and `workflow-worker` use after `jobs-service` returns runtime ownership.
 
 ### Workers and Jobs
@@ -85,6 +85,9 @@ The compose stacks build or pull all runtime services. Local Go, Node.js, Buf,
 and lint tooling are only needed when developing the codebase directly.
 Both compose files use one local runtime named `local-docker`; multi-node
 deployments run one `runtime-agent` beside each node-local Docker proxy.
+Runtime readiness is based on successful Docker health heartbeats; `UNHEALTHY`
+means the agent is alive but its Docker endpoint is unusable, while `DRAINING`
+means intentional shutdown or scale-down.
 
 ### Development Stack
 

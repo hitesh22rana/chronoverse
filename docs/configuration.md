@@ -213,12 +213,17 @@ lease should be treated as owned by an unavailable runtime.
 - `DOCKER_HOST`
 
 `runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
-PostgreSQL, then heartbeats liveness and capacity. In Compose there is one
-runtime named `local-docker` pointing at `tcp://docker-proxy:2375`. In a
-multi-node deployment, run one agent beside each node-local Docker proxy and set
-the endpoint to the address workers should use for that node. The agent marks
-itself `DRAINING` on graceful shutdown; missed heartbeats make it ineligible for
-new container job claims.
+PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
+there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
+In a multi-node deployment, run one agent beside each node-local Docker proxy
+and set the endpoint to the address workers should use for that node.
+`last_heartbeat_at` is the last successful Docker-health heartbeat. If Docker
+becomes unavailable while PostgreSQL is reachable, the agent marks the runtime
+`UNHEALTHY` without refreshing that timestamp; a successful unhealthy update
+stops new container claims immediately. If PostgreSQL is unavailable, the agent
+exits and existing heartbeat TTL behavior applies. The agent marks itself
+`DRAINING` on graceful shutdown; missed heartbeats make it ineligible for new
+container job claims.
 
 ### Scheduling Worker
 

@@ -151,6 +151,12 @@ limits need separate capacity planning. Workflow workers do not launch workload
 containers, so execution-worker workload container limits do not apply to image
 pulls.
 
+Runtime-agent heartbeats represent Docker endpoint health. A successful
+`UNHEALTHY` update stops new container claims immediately when the Docker proxy
+or daemon is unavailable. If PostgreSQL is unavailable, runtime-agent exits and
+the existing runtime heartbeat TTL controls when the last `READY` row becomes
+ineligible.
+
 ### Execution Workers
 
 - `EXECUTION_WORKER_CONCURRENCY` controls parallel job execution. `0` or unset

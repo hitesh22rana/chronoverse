@@ -63,8 +63,8 @@ debugging.
 - **Redis** stores HTTP sessions, cached service reads, live log
   publish/subscribe state, and runtime-node-scoped image pull locks.
 - **Meilisearch** indexes retained job logs for search.
-- **Runtime agent** registers each Docker-capable node and heartbeats endpoint
-  liveness/capacity into PostgreSQL.
+- **Runtime agent** registers each Docker-capable node and heartbeats Docker
+  endpoint health/capacity into PostgreSQL.
 - **Docker socket proxy** exposes a narrow node-local Docker API surface to
   workers for container lifecycle and log access.
 - **LGTM** receives OpenTelemetry data and exposes local dashboards.
@@ -104,7 +104,8 @@ debugging.
    job.
 2. `jobs-service` grants a lease only when the job, workflow, dispatch attempt,
    current state, and runtime availability are valid. `CONTAINER` jobs receive a
-   fresh `READY` runtime node; `HEARTBEAT` jobs do not.
+   fresh `READY` runtime node whose last heartbeat reflects a successful Docker
+   health check; `HEARTBEAT` jobs do not.
 3. The worker creates a Docker client for the returned runtime endpoint, ensures
    the resolved image digest exists on that runtime under a runtime-node-scoped
    image pull lock, runs the image, attaches the container ID with

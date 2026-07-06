@@ -11,6 +11,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -460,20 +461,33 @@ func (w *DockerWorkflow) ResolveImageDigest(ctx context.Context, imageName strin
 	if alreadyDigested {
 		return imageName, imageName, nil
 	}
-	resolvedDigest, err := firstRepositoryDigest(imageName, inspect.RepoDigests)
+	resolvedDigest, err := matchingRepositoryDigest(imageName, inspect.RepoDigests)
 	if err != nil {
 		return imageName, "", err
 	}
 	return imageName, resolvedDigest, nil
 }
 
-func firstRepositoryDigest(imageName string, repoDigests []string) (string, error) {
+func matchingRepositoryDigest(imageName string, repoDigests []string) (string, error) {
+	requestedRef, err := reference.ParseNormalizedNamed(imageName)
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "invalid image reference %s: %v", imageName, err)
+	}
+	requestedRepo := reference.TrimNamed(requestedRef).Name()
+
 	for _, repoDigest := range repoDigests {
-		if repoDigest != "" {
+		if repoDigest == "" {
+			continue
+		}
+		candidateRef, err := reference.ParseNormalizedNamed(repoDigest)
+		if err != nil {
+			continue
+		}
+		if reference.TrimNamed(candidateRef).Name() == requestedRepo {
 			return repoDigest, nil
 		}
 	}
-	return "", status.Errorf(codes.FailedPrecondition, "image %s has no repository digest; use a registry-pullable image", imageName)
+	return "", status.Errorf(codes.FailedPrecondition, "image %s has no matching repository digest; use a registry-pullable image", imageName)
 }
 
 func dockerImageInspectError(err error) error {

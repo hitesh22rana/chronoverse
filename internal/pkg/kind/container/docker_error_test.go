@@ -118,27 +118,82 @@ func writeDockerTestResponse(t *testing.T, w http.ResponseWriter, body string) {
 	}
 }
 
-func TestFirstRepositoryDigestReturnsFirstNonEmptyDigest(t *testing.T) {
+func TestMatchingRepositoryDigestReturnsDigestForRequestedRepository(t *testing.T) {
 	t.Parallel()
 
-	got, err := firstRepositoryDigest("registry.example.com/app:latest", []string{
+	const want = "registry.example.com/app@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	got, err := matchingRepositoryDigest("registry.example.com/app:latest", []string{
 		"",
-		"registry.example.com/app@sha256:abc",
-		"registry.example.com/app@sha256:def",
+		"other.example.com/app@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		want,
 	})
 	if err != nil {
-		t.Fatalf("firstRepositoryDigest() error = %v", err)
+		t.Fatalf("matchingRepositoryDigest() error = %v", err)
 	}
-	if got != "registry.example.com/app@sha256:abc" {
-		t.Fatalf("firstRepositoryDigest() = %q", got)
+	if got != want {
+		t.Fatalf("matchingRepositoryDigest() = %q, want %q", got, want)
 	}
 }
 
-func TestFirstRepositoryDigestFailsWithoutRepoDigest(t *testing.T) {
+func TestMatchingRepositoryDigestSkipsMalformedCandidates(t *testing.T) {
 	t.Parallel()
 
-	_, err := firstRepositoryDigest("local-app:dev", []string{"", ""})
+	const want = "registry.example.com/app@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+	got, err := matchingRepositoryDigest("registry.example.com/app:latest", []string{
+		"not a digest",
+		"registry.example.com/app@sha256:not-hex",
+		"other.example.com/app@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		want,
+	})
+	if err != nil {
+		t.Fatalf("matchingRepositoryDigest() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("matchingRepositoryDigest() = %q, want %q", got, want)
+	}
+}
+
+func TestMatchingRepositoryDigestSupportsDockerHubShorthand(t *testing.T) {
+	t.Parallel()
+
+	const want = "docker.io/library/alpine@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+	got, err := matchingRepositoryDigest("alpine:latest", []string{want})
+	if err != nil {
+		t.Fatalf("matchingRepositoryDigest() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("matchingRepositoryDigest() = %q, want %q", got, want)
+	}
+}
+
+func TestMatchingRepositoryDigestFailsWithoutMatchingRepoDigest(t *testing.T) {
+	t.Parallel()
+
+	_, err := matchingRepositoryDigest("registry.example.com/app:latest", []string{
+		"",
+		"other.example.com/app@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+	})
 	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("firstRepositoryDigest() code = %s, want %s: %v", status.Code(err), codes.FailedPrecondition, err)
+		t.Fatalf("matchingRepositoryDigest() code = %s, want %s: %v", status.Code(err), codes.FailedPrecondition, err)
+	}
+}
+
+func TestMatchingRepositoryDigestFailsWithoutRepoDigest(t *testing.T) {
+	t.Parallel()
+
+	_, err := matchingRepositoryDigest("local-app:dev", []string{"", ""})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("matchingRepositoryDigest() code = %s, want %s: %v", status.Code(err), codes.FailedPrecondition, err)
+	}
+}
+
+func TestMatchingRepositoryDigestFailsForInvalidRequestedImage(t *testing.T) {
+	t.Parallel()
+
+	_, err := matchingRepositoryDigest("bad@@image", []string{
+		"registry.example.com/app@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("matchingRepositoryDigest() code = %s, want %s: %v", status.Code(err), codes.InvalidArgument, err)
 	}
 }

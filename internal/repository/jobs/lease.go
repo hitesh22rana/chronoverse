@@ -56,7 +56,71 @@ func (r *Repository) ClaimJob(
 	}()
 
 	leaseToken := fmt.Sprintf("%s:%s", workerID, uuid.NewString())
-	query := fmt.Sprintf(`
+	query := claimJobQuery()
+
+	claimed = &jobsmodel.ClaimedJob{}
+	err = r.pg.QueryRow(
+		ctx,
+		query,
+		jobID,
+		workflowID,
+		leaseToken,
+		workerID,
+		leaseSeconds(leaseDuration),
+		dispatchAttempt,
+		int64(r.cfg.RuntimeHeartbeatTTL.Seconds()),
+	).Scan(
+		&claimed.ID,
+		&claimed.WorkflowID,
+		&claimed.UserID,
+		&claimed.Trigger,
+		&claimed.ScheduledAt,
+		&claimed.DispatchAttempts,
+		&claimed.Attempts,
+		&claimed.LeaseToken,
+		&claimed.RuntimeNodeID,
+		&claimed.RuntimeEndpoint,
+	)
+	if err == nil {
+		span.SetAttributes(
+			attribute.String("job_id", claimed.ID),
+			attribute.String("workflow_id", claimed.WorkflowID),
+			attribute.Int("attempts", int(claimed.Attempts)),
+		)
+		return claimed, true, "", nil
+	}
+	if mappedErr := r.mapJobLeaseReadError(err, "claim job"); mappedErr != nil {
+		if status.Code(mappedErr) != grpccodes.NotFound {
+			return nil, false, "", mappedErr
+		}
+	}
+
+	deferred, err := r.deferQueuedJobBlockedFromClaim(ctx, jobID)
+	if err != nil {
+		return nil, false, "", err
+	}
+	if deferred {
+		return nil, false, "job deferred behind another workflow job", nil
+	}
+
+	noRuntime, runtimeErr := r.queuedContainerJobMissingRuntime(ctx, jobID, workflowID, dispatchAttempt)
+	if runtimeErr != nil {
+		return nil, false, "", runtimeErr
+	}
+	if noRuntime {
+		return nil, false, "", status.Error(grpccodes.Unavailable, "no healthy runtime node is available")
+	}
+
+	reason, err = r.jobClaimRejectionReason(ctx, jobID)
+	if err != nil {
+		return nil, false, "", err
+	}
+
+	return nil, false, reason, nil
+}
+
+func claimJobQuery() string {
+	return fmt.Sprintf(`
         WITH workflow AS (
             SELECT kind
             FROM %s
@@ -70,7 +134,7 @@ func (r *Repository) ClaimJob(
                 AND rn.running_jobs < rn.max_concurrency
                 AND EXISTS (SELECT 1 FROM workflow WHERE kind = 'CONTAINER')
             ORDER BY rn.running_jobs ASC, rn.last_heartbeat_at DESC, rn.id ASC
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE
             LIMIT 1
         ),
         claimed AS (
@@ -134,66 +198,6 @@ func (r *Repository) ClaimJob(
         SELECT id, workflow_id, user_id, trigger, scheduled_at, dispatch_attempts, attempts, lease_token, runtime_node_id, runtime_endpoint
         FROM claimed;
     `, postgres.TableWorkflows, postgres.TableRuntimeNodes, postgres.TableJobs, postgres.TableJobs, postgres.TableJobs, postgres.TableRuntimeNodes)
-
-	claimed = &jobsmodel.ClaimedJob{}
-	err = r.pg.QueryRow(
-		ctx,
-		query,
-		jobID,
-		workflowID,
-		leaseToken,
-		workerID,
-		leaseSeconds(leaseDuration),
-		dispatchAttempt,
-		int64(r.cfg.RuntimeHeartbeatTTL.Seconds()),
-	).Scan(
-		&claimed.ID,
-		&claimed.WorkflowID,
-		&claimed.UserID,
-		&claimed.Trigger,
-		&claimed.ScheduledAt,
-		&claimed.DispatchAttempts,
-		&claimed.Attempts,
-		&claimed.LeaseToken,
-		&claimed.RuntimeNodeID,
-		&claimed.RuntimeEndpoint,
-	)
-	if err == nil {
-		span.SetAttributes(
-			attribute.String("job_id", claimed.ID),
-			attribute.String("workflow_id", claimed.WorkflowID),
-			attribute.Int("attempts", int(claimed.Attempts)),
-		)
-		return claimed, true, "", nil
-	}
-	if mappedErr := r.mapJobLeaseReadError(err, "claim job"); mappedErr != nil {
-		if status.Code(mappedErr) != grpccodes.NotFound {
-			return nil, false, "", mappedErr
-		}
-	}
-
-	deferred, err := r.deferQueuedJobBlockedFromClaim(ctx, jobID)
-	if err != nil {
-		return nil, false, "", err
-	}
-	if deferred {
-		return nil, false, "job deferred behind another workflow job", nil
-	}
-
-	noRuntime, runtimeErr := r.queuedContainerJobMissingRuntime(ctx, jobID, workflowID, dispatchAttempt)
-	if runtimeErr != nil {
-		return nil, false, "", runtimeErr
-	}
-	if noRuntime {
-		return nil, false, "", status.Error(grpccodes.Unavailable, "no healthy runtime node is available")
-	}
-
-	reason, err = r.jobClaimRejectionReason(ctx, jobID)
-	if err != nil {
-		return nil, false, "", err
-	}
-
-	return nil, false, reason, nil
 }
 
 // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
@@ -625,7 +629,16 @@ func recoverExpiredJobLeasesQuery() string {
 }
 
 func (r *Repository) queuedContainerJobMissingRuntime(ctx context.Context, jobID, workflowID string, dispatchAttempt int32) (bool, error) {
-	query := fmt.Sprintf(`
+	query := queuedContainerJobMissingRuntimeQuery()
+	var missing bool
+	if err := r.pg.QueryRow(ctx, query, jobID, workflowID, dispatchAttempt, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(&missing); err != nil {
+		return false, r.mapJobLeaseReadError(err, "check runtime availability")
+	}
+	return missing, nil
+}
+
+func queuedContainerJobMissingRuntimeQuery() string {
+	return fmt.Sprintf(`
         SELECT EXISTS (
             SELECT 1
             FROM %s AS j
@@ -644,11 +657,6 @@ func (r *Repository) queuedContainerJobMissingRuntime(ctx context.Context, jobID
                 )
         );
     `, postgres.TableJobs, postgres.TableWorkflows, postgres.TableRuntimeNodes)
-	var missing bool
-	if err := r.pg.QueryRow(ctx, query, jobID, workflowID, dispatchAttempt, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(&missing); err != nil {
-		return false, r.mapJobLeaseReadError(err, "check runtime availability")
-	}
-	return missing, nil
 }
 
 func (r *Repository) decrementRuntimeSlotForJob(ctx context.Context, tx pgx.Tx, jobID string) error {

@@ -30,6 +30,35 @@ func TestJobLogsCursorRoundTrip(t *testing.T) {
 	}
 }
 
+func TestClaimJobQueryWaitsForRuntimeRowLock(t *testing.T) {
+	query := claimJobQuery()
+
+	assertContains(t, query, "ORDER BY rn.running_jobs ASC, rn.last_heartbeat_at DESC, rn.id ASC")
+	assertContains(t, query, "FOR UPDATE")
+	assertNotContains(t, query, "SKIP LOCKED")
+}
+
+func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {
+	query := claimJobQuery()
+
+	assertContains(t, query, "AND EXISTS (SELECT 1 FROM workflow WHERE kind = 'CONTAINER')")
+	assertContains(t, query, "(SELECT kind FROM workflow) <> 'CONTAINER'")
+	assertContains(t, query, "OR EXISTS (SELECT 1 FROM selected_runtime)")
+}
+
+func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJobs(t *testing.T) {
+	query := queuedContainerJobMissingRuntimeQuery()
+
+	assertContains(t, query, "j.id = $1")
+	assertContains(t, query, "j.workflow_id = $2")
+	assertContains(t, query, "j.status = 'QUEUED'")
+	assertContains(t, query, "j.dispatch_attempts = $3")
+	assertContains(t, query, "w.kind = 'CONTAINER'")
+	assertContains(t, query, "rn.status = 'READY'")
+	assertContains(t, query, "rn.last_heartbeat_at >")
+	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
+}
+
 func TestReleaseJobForRetryQueryCarriesPreviousRuntimeOwner(t *testing.T) {
 	query := releaseJobForRetryQuery()
 
@@ -51,6 +80,14 @@ func assertContains(t *testing.T, value, want string) {
 
 	if !strings.Contains(value, want) {
 		t.Fatalf("expected query to contain %q:\n%s", want, value)
+	}
+}
+
+func assertNotContains(t *testing.T, value, forbidden string) {
+	t.Helper()
+
+	if strings.Contains(value, forbidden) {
+		t.Fatalf("expected query not to contain %q:\n%s", forbidden, value)
 	}
 }
 

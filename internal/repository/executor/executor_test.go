@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -74,6 +76,51 @@ func TestExtractFieldFromRecordValueRequiresDispatchAttempt(t *testing.T) {
 	}
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("extractFieldFromRecordValue() error code = %v, want %v", status.Code(err), codes.InvalidArgument)
+	}
+}
+
+func TestProcessRecordPropagatesUnavailableClaimError(t *testing.T) {
+	t.Parallel()
+
+	payload, err := json.Marshal(&jobsmodel.ScheduledJobEntry{
+		JobID:              "job-1",
+		WorkflowID:         "workflow-1",
+		ScheduledAt:        time.Now().Format(time.RFC3339Nano),
+		DispatchAttempt:    1,
+		WorkflowGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	repo := &Repository{
+		tp: otel.Tracer("executor-test"),
+		cfg: Config{
+			WorkerID:      "worker-1",
+			Concurrency:   1,
+			LeaseDuration: 30 * time.Second,
+		},
+		auth:  fakeAuth{},
+		slots: make(chan struct{}, 1),
+		svc: &Services{
+			Jobs: &claimErrorJobsClient{
+				err: status.Error(codes.Unavailable, "no healthy runtime node is available"),
+			},
+		},
+	}
+
+	err = repo.processRecord(context.Background(), &kgo.Record{
+		Topic:     "jobs",
+		Partition: 0,
+		Offset:    1,
+		Key:       []byte("workflow-1"),
+		Value:     payload,
+	})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("processRecord() error code = %s, want %s: %v", status.Code(err), codes.Unavailable, err)
+	}
+	if got := len(repo.slots); got != 0 {
+		t.Fatalf("execution slots held = %d, want 0", got)
 	}
 }
 
@@ -395,6 +442,16 @@ func (fakeAuth) IssueToken(context.Context, string) (string, error) {
 
 func (fakeAuth) ValidateToken(context.Context) (*jwt.Token, error) {
 	return &jwt.Token{}, nil
+}
+
+type claimErrorJobsClient struct {
+	jobspb.JobsServiceClient
+
+	err error
+}
+
+func (c *claimErrorJobsClient) ClaimJob(context.Context, *jobspb.ClaimJobRequest, ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
+	return nil, c.err
 }
 
 type renewingRecoveryJobsClient struct {

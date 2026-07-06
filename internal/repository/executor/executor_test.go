@@ -158,6 +158,12 @@ func TestClassifyExecutionFailure(t *testing.T) {
 			kind:      jobsmodel.FailureKindSystem.ToString(),
 		},
 		{
+			name:      "image pull lock exhaustion is retryable system failure",
+			err:       status.Error(codes.ResourceExhausted, "timed out waiting for image pull lock"),
+			retryable: true,
+			kind:      jobsmodel.FailureKindSystem.ToString(),
+		},
+		{
 			name:      "non-zero exit is user failure",
 			err:       status.Error(codes.Aborted, "container exited with non-zero code: 1"),
 			retryable: false,

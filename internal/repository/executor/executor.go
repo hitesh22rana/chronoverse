@@ -533,7 +533,7 @@ func classifyExecutionFailure(err error) executionFailureDecision {
 	}
 
 	switch status.Code(err) { //nolint:exhaustive // Only retryable infrastructure codes need special handling here.
-	case codes.Canceled, codes.Internal, codes.Unavailable:
+	case codes.Canceled, codes.Internal, codes.ResourceExhausted, codes.Unavailable:
 		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString()}
 	case codes.DeadlineExceeded:
 		message := strings.ToLower(err.Error())

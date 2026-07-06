@@ -2,6 +2,7 @@ package imagepull_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -100,6 +101,63 @@ func TestEnsureWaitsForHeldLock(t *testing.T) {
 	}
 }
 
+func TestEnsureSkipsBuildWhenImageAppearsAfterWaitingForLock(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeClient{
+		dockerHost:         "tcp://docker-a:2375",
+		imageExistsResults: []bool{false, true},
+	}
+	locks := &fakeLockStore{acquireResults: []bool{false, true}}
+
+	if err := imagepull.Ensure(t.Context(), client, locks, "alpine:3.22", imagepull.Config{
+		TTL:           time.Minute,
+		WaitTimeout:   time.Second,
+		RetryInterval: time.Millisecond,
+	}); err != nil {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+	if locks.acquireCalls != 2 {
+		t.Fatalf("AcquireDistributedLockWithToken calls = %d, want 2", locks.acquireCalls)
+	}
+	if client.imageExistsCalls != 2 {
+		t.Fatalf("ImageExists() calls = %d, want 2", client.imageExistsCalls)
+	}
+	if client.buildCalls != 0 {
+		t.Fatalf("Build() calls = %d, want 0", client.buildCalls)
+	}
+	if locks.releaseCalls != 1 {
+		t.Fatalf("ReleaseDistributedLockWithToken calls = %d, want 1", locks.releaseCalls)
+	}
+}
+
+func TestEnsureReturnsSecondImageExistsErrorAndReleasesLock(t *testing.T) {
+	t.Parallel()
+
+	imageExistsErr := errors.New("inspect failed")
+	client := &fakeClient{
+		dockerHost:         "tcp://docker-a:2375",
+		imageExistsResults: []bool{false},
+		imageExistsErrors:  []error{nil, imageExistsErr},
+	}
+	locks := &fakeLockStore{acquireResults: []bool{true}}
+
+	err := imagepull.Ensure(t.Context(), client, locks, "alpine:3.22", imagepull.Config{
+		TTL:           time.Minute,
+		WaitTimeout:   time.Second,
+		RetryInterval: time.Millisecond,
+	})
+	if !errors.Is(err, imageExistsErr) {
+		t.Fatalf("Ensure() error = %v, want %v", err, imageExistsErr)
+	}
+	if client.buildCalls != 0 {
+		t.Fatalf("Build() calls = %d, want 0", client.buildCalls)
+	}
+	if locks.releaseCalls != 1 {
+		t.Fatalf("ReleaseDistributedLockWithToken calls = %d, want 1", locks.releaseCalls)
+	}
+}
+
 func TestEnsureWaitTimeoutIsRetryable(t *testing.T) {
 	t.Parallel()
 
@@ -165,9 +223,12 @@ func (s *fakeLockStore) ReleaseDistributedLockWithToken(context.Context, string,
 }
 
 type fakeClient struct {
-	imageExists bool
-	dockerHost  string
-	buildCalls  int
+	imageExists        bool
+	imageExistsResults []bool
+	imageExistsErrors  []error
+	imageExistsCalls   int
+	dockerHost         string
+	buildCalls         int
 }
 
 func (s *fakeClient) Build(context.Context, string) error {
@@ -176,6 +237,20 @@ func (s *fakeClient) Build(context.Context, string) error {
 }
 
 func (s *fakeClient) ImageExists(context.Context, string) (bool, error) {
+	s.imageExistsCalls++
+	var err error
+	if len(s.imageExistsErrors) > 0 {
+		err = s.imageExistsErrors[0]
+		s.imageExistsErrors = s.imageExistsErrors[1:]
+	}
+	if err != nil {
+		return false, err
+	}
+	if len(s.imageExistsResults) > 0 {
+		exists := s.imageExistsResults[0]
+		s.imageExistsResults = s.imageExistsResults[1:]
+		return exists, nil
+	}
 	return s.imageExists, nil
 }
 

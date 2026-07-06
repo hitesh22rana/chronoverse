@@ -87,14 +87,20 @@ func normalizeConfig(cfg Config) Config {
 }
 
 func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config) error {
-	buildCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	stopRenewal, renewalErrCh := startLockRenewal(buildCtx, locks, lockKey, token, cfg.TTL)
 	defer func(ctx context.Context) {
 		//nolint:errcheck // A lost or expired lock should not mask the build result.
 		_ = locks.ReleaseDistributedLockWithToken(ctx, lockKey, token)
 	}(context.WithoutCancel(ctx))
+
+	exists, err := client.ImageExists(ctx, imageName)
+	if err != nil || exists {
+		return err
+	}
+
+	buildCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stopRenewal, renewalErrCh := startLockRenewal(buildCtx, locks, lockKey, token, cfg.TTL)
 	defer stopRenewal()
 
 	buildErrCh := make(chan error, 1)

@@ -120,6 +120,17 @@ func run() int {
 		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
 		RetryInterval: cfg.ImagePullLockRetryInterval,
 	}
+	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
+		return container.NewDockerWorkflow(
+			container.WithDockerHost(endpoint),
+			container.WithResourceLimits(resourceLimits),
+		)
+	})
+	defer func() {
+		if closeErr := dockerClients.Close(); closeErr != nil {
+			loggerpkg.FromContext(ctx).Warn("failed to close docker endpoint clients", zap.Error(closeErr))
+		}
+	}()
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
@@ -184,10 +195,7 @@ func run() int {
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
 		CsvcForEndpoint: func(runtimeNodeID, endpoint string) (executorrepo.ContainerSvc, error) {
-			csvc, csvcErr := container.NewDockerWorkflow(
-				container.WithDockerHost(endpoint),
-				container.WithResourceLimits(resourceLimits),
-			)
+			csvc, csvcErr := dockerClients.Get(endpoint)
 			if csvcErr != nil {
 				return nil, csvcErr
 			}

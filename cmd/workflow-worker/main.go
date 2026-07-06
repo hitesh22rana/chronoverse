@@ -154,8 +154,16 @@ func run() int {
 		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
 		RetryInterval: cfg.ImagePullLockRetryInterval,
 	}
+	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
+		return container.NewDockerWorkflow(container.WithDockerHost(endpoint))
+	})
+	defer func() {
+		if closeErr := dockerClients.Close(); closeErr != nil {
+			loggerpkg.FromContext(ctx).Warn("failed to close docker endpoint clients", zap.Error(closeErr))
+		}
+	}()
 	containerSvcForEndpoint := func(runtimeNodeID, endpoint string) (workflowrepo.ContainerSvc, error) {
-		csvc, csvcErr := container.NewDockerWorkflow(container.WithDockerHost(endpoint))
+		csvc, csvcErr := dockerClients.Get(endpoint)
 		if csvcErr != nil {
 			return nil, csvcErr
 		}

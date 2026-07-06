@@ -46,7 +46,7 @@ func New(cfg Config, pg *postgres.Postgres) *Repository {
 
 // RegisterReady upserts this runtime node as ready.
 func (r *Repository) RegisterReady(ctx context.Context) error {
-	return r.upsert(ctx, runtimemodel.NodeStatusReady)
+	return r.upsert(ctx, runtimemodel.NodeStatusReady, true)
 }
 
 // Heartbeat refreshes this runtime node heartbeat.
@@ -101,10 +101,15 @@ func (r *Repository) Heartbeat(ctx context.Context) error {
 
 // MarkDraining marks this runtime node as draining.
 func (r *Repository) MarkDraining(ctx context.Context) error {
-	return r.upsert(ctx, runtimemodel.NodeStatusDraining)
+	return r.upsert(ctx, runtimemodel.NodeStatusDraining, true)
 }
 
-func (r *Repository) upsert(ctx context.Context, nodeStatus string) error {
+// MarkUnhealthy marks this runtime node as unhealthy without refreshing its last successful Docker heartbeat.
+func (r *Repository) MarkUnhealthy(ctx context.Context) error {
+	return r.upsert(ctx, runtimemodel.NodeStatusUnhealthy, false)
+}
+
+func (r *Repository) upsert(ctx context.Context, nodeStatus string, refreshHeartbeat bool) error {
 	ctx, span := r.tp.Start(ctx, "runtime.Repository.Upsert")
 	defer span.End()
 
@@ -124,7 +129,39 @@ func (r *Repository) upsert(ctx context.Context, nodeStatus string) error {
 		_ = tx.Rollback(ctx)
 	}()
 
-	query := `
+	query := upsertRuntimeNodeQuery()
+	if _, err := tx.Exec(
+		ctx,
+		query,
+		r.cfg.ID,
+		r.cfg.NodeName,
+		r.cfg.DockerEndpoint,
+		nodeStatus,
+		r.cfg.MaxConcurrency,
+		metadata,
+		refreshHeartbeat,
+		staleRuntimeHeartbeatAt(),
+	); err != nil {
+		return status.Errorf(codes.Internal, "failed to upsert runtime node: %v", err)
+	}
+	if err := r.lockRuntimeNodeTx(ctx, tx); err != nil {
+		return status.Errorf(codes.Internal, "failed to lock runtime node after upsert: %v", err)
+	}
+	if err := r.reconcileRunningJobsTx(ctx, tx); err != nil {
+		return status.Errorf(codes.Internal, "failed to reconcile runtime running jobs: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return status.Errorf(codes.Internal, "failed to commit runtime upsert transaction: %v", err)
+	}
+	return nil
+}
+
+func staleRuntimeHeartbeatAt() time.Time {
+	return time.Unix(0, 0).UTC()
+}
+
+func upsertRuntimeNodeQuery() string {
+	return `
         INSERT INTO runtime_nodes (
             id,
             node_name,
@@ -141,7 +178,7 @@ func (r *Repository) upsert(ctx context.Context, nodeStatus string) error {
             $2,
             $3,
             $4::runtime_node_status,
-            now() AT TIME ZONE 'utc',
+            CASE WHEN $7 THEN now() AT TIME ZONE 'utc' ELSE $8::timestamp END,
             $5,
             0,
             $6,
@@ -152,24 +189,14 @@ func (r *Repository) upsert(ctx context.Context, nodeStatus string) error {
         SET node_name = EXCLUDED.node_name,
             docker_endpoint = EXCLUDED.docker_endpoint,
             status = EXCLUDED.status,
-            last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+            last_heartbeat_at = CASE
+                WHEN $7 THEN EXCLUDED.last_heartbeat_at
+                ELSE runtime_nodes.last_heartbeat_at
+            END,
             max_concurrency = EXCLUDED.max_concurrency,
             metadata = EXCLUDED.metadata,
             updated_at = EXCLUDED.updated_at;
     `
-	if _, err := tx.Exec(ctx, query, r.cfg.ID, r.cfg.NodeName, r.cfg.DockerEndpoint, nodeStatus, r.cfg.MaxConcurrency, metadata); err != nil {
-		return status.Errorf(codes.Internal, "failed to upsert runtime node: %v", err)
-	}
-	if err := r.lockRuntimeNodeTx(ctx, tx); err != nil {
-		return status.Errorf(codes.Internal, "failed to lock runtime node after upsert: %v", err)
-	}
-	if err := r.reconcileRunningJobsTx(ctx, tx); err != nil {
-		return status.Errorf(codes.Internal, "failed to reconcile runtime running jobs: %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return status.Errorf(codes.Internal, "failed to commit runtime upsert transaction: %v", err)
-	}
-	return nil
 }
 
 func (r *Repository) lockRuntimeNodeTx(ctx context.Context, tx pgx.Tx) error {

@@ -107,6 +107,11 @@ func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
 	return nil
 }
 
+// Healthy checks whether the configured Docker daemon is reachable.
+func (w *DockerWorkflow) Healthy(ctx context.Context) error {
+	return w.healthCheck(ctx)
+}
+
 // DockerHost returns the Docker daemon host configured for this client.
 func (w *DockerWorkflow) DockerHost() string {
 	return w.Client.DaemonHost()

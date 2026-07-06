@@ -78,10 +78,16 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	if _, err := container.NewDockerWorkflow(container.WithDockerHost(cfg.RuntimeAgentConfig.DockerEndpoint)); err != nil {
+	health, err := container.NewDockerWorkflow(container.WithDockerHost(cfg.RuntimeAgentConfig.DockerEndpoint))
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to ping runtime Docker endpoint: %v\n", err)
 		return ExitError
 	}
+	defer func() {
+		if err := health.Close(); err != nil {
+			loggerpkg.FromContext(ctx).Warn("failed to close Docker health checker", zap.Error(err))
+		}
+	}()
 
 	repo := runtimerepo.New(runtimerepo.Config{
 		ID:             cfg.RuntimeAgentConfig.ID,
@@ -103,7 +109,7 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	if err := repo.RunHeartbeats(ctx, cfg.RuntimeAgentConfig.HeartbeatInterval); err != nil && ctx.Err() == nil {
+	if err := startRuntimeHeartbeats(ctx, repo, health, cfg.RuntimeAgentConfig.HeartbeatInterval); err != nil && ctx.Err() == nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}

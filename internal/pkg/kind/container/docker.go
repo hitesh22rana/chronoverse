@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -455,15 +454,20 @@ func (w *DockerWorkflow) ResolveImageDigest(ctx context.Context, imageName strin
 	if err != nil {
 		return imageName, "", dockerImageInspectError(err)
 	}
-	for _, repoDigest := range inspect.RepoDigests {
+	resolvedDigest, err := firstRepositoryDigest(imageName, inspect.RepoDigests)
+	if err != nil {
+		return imageName, "", err
+	}
+	return imageName, resolvedDigest, nil
+}
+
+func firstRepositoryDigest(imageName string, repoDigests []string) (string, error) {
+	for _, repoDigest := range repoDigests {
 		if repoDigest != "" {
-			return imageName, repoDigest, nil
+			return repoDigest, nil
 		}
 	}
-	if inspect.ID != "" {
-		return imageName, fmt.Sprintf("%s@%s", imageName, inspect.ID), nil
-	}
-	return imageName, "", status.Errorf(codes.NotFound, "image digest not found for %s", imageName)
+	return "", status.Errorf(codes.FailedPrecondition, "image %s has no repository digest; use a registry-pullable image", imageName)
 }
 
 func dockerImageInspectError(err error) error {

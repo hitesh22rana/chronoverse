@@ -461,43 +461,18 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 		}
 	}()
 
-	query := fmt.Sprintf(`
-        WITH released AS (
-            UPDATE %s
-            SET status = 'PENDING',
-                queued_at = NULL,
-                container_id = NULL,
-                runtime_node_id = NULL,
-                runtime_endpoint = NULL,
-                started_at = NULL,
-                completed_at = NULL,
-                lease_token = NULL,
-                leased_by = NULL,
-                lease_expires_at = NULL,
-                last_heartbeat_at = NULL,
-                next_attempt_at = $3,
-                failure_kind = $4,
-                last_error_code = $5,
-                last_error_message = $6
-            WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
-            RETURNING runtime_node_id
-        ),
-        decrement_runtime AS (
-            UPDATE %s AS rn
-            SET running_jobs = GREATEST(0, running_jobs - 1),
-                updated_at = now() AT TIME ZONE 'utc'
-            FROM released
-            WHERE released.runtime_node_id IS NOT NULL
-                AND rn.id = released.runtime_node_id
-            RETURNING rn.id
-        )
-        SELECT
-            (SELECT COUNT(*) FROM released),
-            (SELECT COUNT(*) FROM decrement_runtime);
-    `, postgres.TableJobs, postgres.TableRuntimeNodes)
 	var releasedCount int
 	var decrementedCount int
-	err = tx.QueryRow(ctx, query, jobID, leaseToken, nextAttemptAtTime, jobsmodel.FailureKindSystem.ToString(), errorCode, truncateJobError(errorMessage)).Scan(&releasedCount, &decrementedCount)
+	err = tx.QueryRow(
+		ctx,
+		releaseJobForRetryQuery(),
+		jobID,
+		leaseToken,
+		nextAttemptAtTime,
+		jobsmodel.FailureKindSystem.ToString(),
+		errorCode,
+		truncateJobError(errorMessage),
+	).Scan(&releasedCount, &decrementedCount)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "release job for retry")
 	}
@@ -534,7 +509,69 @@ func (r *Repository) RecoverExpiredJobLeases(
 	}
 
 	leaseToken := fmt.Sprintf("%s:%s", workerID, uuid.NewString())
-	query := fmt.Sprintf(`
+	query := recoverExpiredJobLeasesQuery()
+
+	rows, err := r.pg.Query(ctx, query, batchSize, leaseToken, workerID, leaseSeconds(leaseDuration), int64(r.cfg.RuntimeHeartbeatTTL.Seconds()), int64(r.cfg.RuntimeLostAfter.Seconds()))
+	if err != nil {
+		if mappedErr := r.mapJobLeaseReadError(err, "recover expired job leases"); mappedErr != nil {
+			return nil, mappedErr
+		}
+	}
+
+	jobs, err = pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
+	if err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
+	}
+
+	return jobs, nil
+}
+
+func releaseJobForRetryQuery() string {
+	return fmt.Sprintf(`
+        WITH target AS (
+            SELECT id, runtime_node_id
+            FROM %s
+            WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
+            FOR UPDATE
+        ),
+        released AS (
+            UPDATE %s AS j
+            SET status = 'PENDING',
+                queued_at = NULL,
+                container_id = NULL,
+                runtime_node_id = NULL,
+                runtime_endpoint = NULL,
+                started_at = NULL,
+                completed_at = NULL,
+                lease_token = NULL,
+                leased_by = NULL,
+                lease_expires_at = NULL,
+                last_heartbeat_at = NULL,
+                next_attempt_at = $3,
+                failure_kind = $4,
+                last_error_code = $5,
+                last_error_message = $6
+            FROM target
+            WHERE j.id = target.id
+            RETURNING target.runtime_node_id AS previous_runtime_node_id
+        ),
+        decrement_runtime AS (
+            UPDATE %s AS rn
+            SET running_jobs = GREATEST(0, running_jobs - 1),
+                updated_at = now() AT TIME ZONE 'utc'
+            FROM released
+            WHERE released.previous_runtime_node_id IS NOT NULL
+                AND rn.id = released.previous_runtime_node_id
+            RETURNING rn.id
+        )
+        SELECT
+            (SELECT COUNT(*) FROM released),
+            (SELECT COUNT(*) FROM decrement_runtime);
+    `, postgres.TableJobs, postgres.TableJobs, postgres.TableRuntimeNodes)
+}
+
+func recoverExpiredJobLeasesQuery() string {
+	return fmt.Sprintf(`
         WITH expired AS (
             SELECT j.id
             FROM %s AS j
@@ -576,7 +613,7 @@ func (r *Repository) RecoverExpiredJobLeases(
             j.attempts,
             w.log_retention,
             j.runtime_node_id,
-            COALESCE(rn.docker_endpoint, j.runtime_endpoint) AS runtime_endpoint,
+            COALESCE(NULLIF(j.runtime_endpoint, ''), rn.docker_endpoint) AS runtime_endpoint,
             (
                 j.runtime_node_id IS NOT NULL
                 AND (
@@ -585,20 +622,6 @@ func (r *Repository) RecoverExpiredJobLeases(
                 )
             ) AS runtime_unavailable;
     `, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs, postgres.TableWorkflows, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs)
-
-	rows, err := r.pg.Query(ctx, query, batchSize, leaseToken, workerID, leaseSeconds(leaseDuration), int64(r.cfg.RuntimeHeartbeatTTL.Seconds()), int64(r.cfg.RuntimeLostAfter.Seconds()))
-	if err != nil {
-		if mappedErr := r.mapJobLeaseReadError(err, "recover expired job leases"); mappedErr != nil {
-			return nil, mappedErr
-		}
-	}
-
-	jobs, err = pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
-	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
-	}
-
-	return jobs, nil
 }
 
 func (r *Repository) queuedContainerJobMissingRuntime(ctx context.Context, jobID, workflowID string, dispatchAttempt int32) (bool, error) {

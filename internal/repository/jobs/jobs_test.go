@@ -3,6 +3,7 @@ package jobs
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
@@ -26,6 +27,30 @@ func TestJobLogsCursorRoundTrip(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("unexpected cursor: got %+v want %+v", got, want)
+	}
+}
+
+func TestReleaseJobForRetryQueryCarriesPreviousRuntimeOwner(t *testing.T) {
+	query := releaseJobForRetryQuery()
+
+	assertContains(t, query, "SELECT id, runtime_node_id")
+	assertContains(t, query, "FOR UPDATE")
+	assertContains(t, query, "RETURNING target.runtime_node_id AS previous_runtime_node_id")
+	assertContains(t, query, "released.previous_runtime_node_id IS NOT NULL")
+	assertContains(t, query, "rn.id = released.previous_runtime_node_id")
+}
+
+func TestRecoverExpiredJobLeasesQueryPrefersStoredRuntimeEndpoint(t *testing.T) {
+	query := recoverExpiredJobLeasesQuery()
+
+	assertContains(t, query, "COALESCE(NULLIF(j.runtime_endpoint, ''), rn.docker_endpoint) AS runtime_endpoint")
+}
+
+func assertContains(t *testing.T, value, want string) {
+	t.Helper()
+
+	if !strings.Contains(value, want) {
+		t.Fatalf("expected query to contain %q:\n%s", want, value)
 	}
 }
 

@@ -61,7 +61,7 @@ debugging.
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
 - **ClickHouse** stores retained job logs.
 - **Redis** stores HTTP sessions, cached service reads, live log
-  publish/subscribe state, and host-scoped image pull locks.
+  publish/subscribe state, and runtime-node-scoped image pull locks.
 - **Meilisearch** indexes retained job logs for search.
 - **Runtime agent** registers each Docker-capable node and heartbeats endpoint
   liveness/capacity into PostgreSQL.
@@ -106,9 +106,9 @@ debugging.
    current state, and runtime availability are valid. `CONTAINER` jobs receive a
    fresh `READY` runtime node; `HEARTBEAT` jobs do not.
 3. The worker creates a Docker client for the returned runtime endpoint, ensures
-   the resolved image digest exists on that runtime under a host-scoped image
-   pull lock, runs the image, attaches the container ID with `runtime_node_id`,
-   and renews the lease while the job runs.
+   the resolved image digest exists on that runtime under a runtime-node-scoped
+   image pull lock, runs the image, attaches the container ID with
+   `runtime_node_id`, and renews the lease while the job runs.
 4. Logs are emitted both for live streaming and durable processing when retention
    is enabled.
 5. Completion, user failures, system failures, retries, and cancellations are
@@ -148,9 +148,9 @@ expected operating conditions.
 - **Build hashes** avoid unnecessary rebuild work when workflow execution inputs
   have not changed. Resolved image references and digests are derived workflow
   metadata and are not part of the user-authored build hash.
-- **Image pull locks** prevent replicated workflow workers that share a Docker
-  daemon from cold-pulling the same image concurrently. Locks are scoped by
-  Docker host and image.
+- **Image pull locks** prevent replicated workers that share a runtime daemon
+  from cold-pulling the same image concurrently. Locks are scoped by runtime
+  node and image, with Docker host fallback for legacy/local clients.
 - **Runtime ownership** records `runtime_node_id` and `runtime_endpoint` on
   running container jobs so execution, logs, termination, deletion, and lease
   recovery target the Docker daemon that owns the container.

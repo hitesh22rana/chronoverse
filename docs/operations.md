@@ -137,17 +137,19 @@ Lower intervals increase scheduling responsiveness and database load.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL` controls how long a worker owns an image
   pull lock before renewal.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT` controls how long another
-  worker waits for the same Docker host and image before retrying the Kafka
+  worker waits for the same runtime node and image before retrying the Kafka
   record.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL` controls Redis polling while
   waiting for a held image pull lock.
 
 Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are
-scoped to Docker host plus exact image string; different Docker hosts may still
-pull the same image in parallel, so registry-wide rate limits need separate
-capacity planning. Workflow workers do not launch workload containers, so
-execution-worker workload container limits do not apply to image pulls.
+scoped to runtime node plus exact image string; Docker host is used only as a
+fallback for legacy/local clients without an explicit runtime scope. Different
+runtime nodes may still pull the same image in parallel, so registry-wide rate
+limits need separate capacity planning. Workflow workers do not launch workload
+containers, so execution-worker workload container limits do not apply to image
+pulls.
 
 ### Execution Workers
 
@@ -172,9 +174,9 @@ Keep the lease duration comfortably above the renewal interval. Increase
 concurrency only when Docker host capacity, per-workload resource limits, Kafka
 partitions, and downstream services can support it. These per-workload limits
 are applied only when execution-worker creates Docker job containers. Execution
-image pulls use the same host-scoped lock model as workflow-worker digest
-resolution: workers sharing one runtime daemon serialize the same image pull,
-while different runtime nodes may pull independently.
+image pulls use the same runtime-node-scoped lock model as workflow-worker
+digest resolution: workers sharing one runtime daemon serialize the same image
+pull, while different runtime nodes may pull independently.
 
 ### Outbox Relay
 

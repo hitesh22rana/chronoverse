@@ -41,7 +41,7 @@ type Config struct {
 	LockScope     string
 }
 
-// Ensure makes imageName available on client, serializing cold pulls per Docker host.
+// Ensure makes imageName available on client, serializing cold pulls per runtime scope.
 func Ensure(ctx context.Context, client Client, locks LockStore, imageName string, cfg Config) error {
 	cfg = normalizeConfig(cfg)
 

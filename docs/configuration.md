@@ -235,8 +235,10 @@ The batch size controls how many due workflows are scanned per polling pass.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
 
 These settings coordinate Docker image pulls for replicated workflow workers
-that share a Docker daemon. The lock is scoped by Docker host and exact image
-string. Compose defaults are `10m`, `10m`, and `500ms`. Workflow workers do not
+that share a runtime node. The lock is scoped by runtime node and exact image
+string; Docker host is used only as a fallback for legacy/local clients without
+an explicit runtime scope. Compose defaults are `10m`, `10m`, and `500ms`.
+Workflow workers do not
 launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
 not apply to this image-pull path. For `CONTAINER` workflows, successful build
 stores resolved image reference and digest as derived workflow metadata; the
@@ -275,7 +277,7 @@ resource limit and from image pulls. Keep lease duration longer than the
 renewal interval. Container execution uses the runtime endpoint
 returned by `ClaimJob`, not the worker pod's own Docker host. Before creating a
 container, the worker ensures the resolved image exists on that runtime daemon
-under a Redis lock scoped to Docker host plus exact image string.
+under a Redis lock scoped to runtime node plus exact image string.
 
 ### Job Logs Processor
 

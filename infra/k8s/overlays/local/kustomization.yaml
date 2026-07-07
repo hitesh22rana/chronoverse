@@ -124,6 +124,12 @@ patches:
         name: certs
         persistentVolumeClaim:
           claimName: certs-pvc
+    - op: replace
+      path: /spec/template/spec/containers/1/env/5/value
+      value: tcp://$(POD_IP):2375
+    - op: replace
+      path: /spec/template/spec/containers/1/env/6/value
+      value: tcp://$(POD_IP):2375
 - target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true

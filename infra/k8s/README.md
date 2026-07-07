@@ -43,7 +43,7 @@ with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
 ## Layout
 
 - `base/`: application services, workers, dashboard, Nginx, Docker proxy, RBAC, network policy, PDBs, Kafka topic initialization, and shared configuration.
-- `overlays/local/`: multi-node-capable kind profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs. The stateful dependencies and Chronoverse app pods use generated local TLS material from the shared cert volume, which is mounted by every Docker-capable kind node.
+- `overlays/local/`: multi-node-capable kind profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs. The stateful dependencies and Chronoverse app pods use generated local TLS material from the shared cert volume, which is mounted by every Docker-capable kind node. Runtime-agent registers Docker proxy pod IP endpoints in this overlay because kind node-container host ports are not reliably reachable from pods on other kind nodes.
 - `overlays/production/`: external-ready profile that expects managed data stores and pre-created Secrets. It includes HorizontalPodAutoscalers for stateless APIs and workers.
 
 ## Required production Secrets
@@ -65,7 +65,8 @@ Create these before applying `overlays/production`:
 - `init-kafka-topics` creates or expands `workflows`, `jobs`, `job_logs`, and `analytics` topics.
 - Production HPAs require metrics-server or another provider for `autoscaling/v2` resource metrics. CPU/memory HPAs are included for app services and workers; Kafka-lag-based worker scaling needs KEDA or custom metrics.
 - Container workflows use the Docker socket proxy through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Workers do not need the Docker node label and can schedule anywhere.
-- Runtime-agent registers `tcp://$(NODE_IP):2375` through the Docker proxy `hostPort`, not pod IP or `tcp://docker-proxy:2375`. This keeps running job cleanup valid across proxy pod restarts on the same node.
+- In production, runtime-agent registers `tcp://$(NODE_IP):2375` through the Docker proxy `hostPort`, not pod IP or `tcp://docker-proxy:2375`. This keeps running job cleanup valid across proxy pod restarts on the same node.
+- In the local kind overlay, runtime-agent registers `tcp://$(POD_IP):2375`. Kind routes pod-to-pod traffic across node containers, but node-container host ports are only reachable from pods on the same kind node. This is a local validation compromise, not the production endpoint model.
 - Worker pods need egress to TCP `2375` on runtime node IPs. The base NetworkPolicy allows that port, but production should also restrict access with private networking, node firewalls or security groups, and the Docker socket proxy allowlist. Do not expose TCP `2375` publicly.
 - If a host already runs a Docker TCP listener on `2375`, the DaemonSet cannot bind the same host port. Move the host listener or choose a different restricted port consistently in `containerPort`, `hostPort`, `DOCKER_HOST`, and `RUNTIME_AGENT_DOCKER_ENDPOINT`.
 - The local overlay uses hostPath storage and generated cert material. Do not use it as the production security or persistence model.

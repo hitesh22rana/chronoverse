@@ -95,6 +95,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         - name: RUNTIME_AGENT_ID
           value: $(NODE_NAME)
         - name: RUNTIME_AGENT_NODE_NAME

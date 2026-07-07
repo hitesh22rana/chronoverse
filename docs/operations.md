@@ -80,13 +80,17 @@ for Docker-backed workers because its node does not expose Docker Engine at
 cluster whose nodes really provide that socket.
 
 The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
-Docker-capable node. The agent registers `tcp://$(NODE_IP):2375` so running job
-cleanup survives proxy pod restarts on the same node. `workflow-worker` and
-`execution-worker` do not need the Docker node label; they can schedule anywhere
-with network access to TCP `2375` on runtime node IPs. Local stateful
-dependencies, services, workers, processors, and init jobs use the generated
-CA/server/client certificates from the shared cert volume, so runtime-agent
-validates the same Postgres client TLS path used by the rest of the stack.
+Docker-capable node. In production, the agent registers
+`tcp://$(NODE_IP):2375` so running job cleanup survives proxy pod restarts on
+the same node. In the local kind overlay, the agent registers
+`tcp://$(POD_IP):2375` because kind node-container host ports are not reliably
+reachable from pods on other kind nodes, while pod-to-pod traffic is routable.
+`workflow-worker` and `execution-worker` do not need the Docker node label; they
+can schedule anywhere with network access to TCP `2375` on registered runtime
+endpoints. Local stateful dependencies, services, workers, processors, and init
+jobs use the generated CA/server/client certificates from the shared cert
+volume, so runtime-agent validates the same Postgres client TLS path used by the
+rest of the stack.
 
 ### Stop and Inspect
 

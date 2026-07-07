@@ -248,6 +248,10 @@ In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
 and register a node-stable endpoint such as `tcp://$(NODE_IP):2375`, not a pod
 IP or `tcp://docker-proxy:2375` service DNS name. The Docker proxy host port
 must stay private and reachable only by trusted Chronoverse workers.
+The local kind overlay intentionally registers `tcp://$(POD_IP):2375` instead
+because kind node-container host ports are not reachable from pods on other kind
+nodes, while pod-to-pod traffic is routable. Do not use that local endpoint
+choice for production.
 `RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
 it from durable node identity, such as the Kubernetes node name, hostname, or a
 mounted identity file; do not generate a new random ID on every restart.

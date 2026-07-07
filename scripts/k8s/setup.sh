@@ -170,8 +170,8 @@ fi
 if [ "$CREATE_KIND" = true ]; then
   need_cmd kind
   [ "$MODE" = "local" ] || die "--create-kind is only supported with --mode local"
-  info "Creating local kind cluster when missing"
-  if ! kind get clusters | grep -qx chronoverse; then
+  info "Preparing local kind cluster"
+  if ! kind get clusters 2>/dev/null | grep -qx chronoverse; then
     kind create cluster --name chronoverse --config "$ROOT_DIR/infra/k8s/overlays/local/kind-cluster.yaml"
   fi
   CONTEXT="${CONTEXT:-kind-chronoverse}"
@@ -480,6 +480,6 @@ Open LGTM locally:
   http://localhost:3000
 
 Check registered runtimes:
-  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE exec postgres-0 -- sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select id,node_name,docker_endpoint,status from runtime_nodes;"'
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE exec postgres-0 -- sh -c 'PGPASSWORD="\$POSTGRES_PASSWORD" psql -U "\$POSTGRES_USER" -d "\$POSTGRES_DB" -c "select id,node_name,docker_endpoint,status from runtime_nodes;"'
 EOF
 fi

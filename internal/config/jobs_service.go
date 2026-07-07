@@ -1,6 +1,10 @@
 package config
 
-import "github.com/kelseyhightower/envconfig"
+import (
+	"time"
+
+	"github.com/kelseyhightower/envconfig"
+)
 
 // JobsConfig holds the jobs service configuration.
 type JobsConfig struct {
@@ -18,8 +22,10 @@ type JobsConfig struct {
 
 // JobsServiceConfig holds the configuration for the jobs service.
 type JobsServiceConfig struct {
-	FetchLimit     int `envconfig:"JOBS_SERVICE_CONFIG_FETCH_LIMIT" default:"10"`
-	LogsFetchLimit int `envconfig:"JOBS_SERVICE_CONFIG_LOGS_FETCH_LIMIT" default:"100"`
+	FetchLimit          int           `envconfig:"JOBS_SERVICE_CONFIG_FETCH_LIMIT" default:"10"`
+	LogsFetchLimit      int           `envconfig:"JOBS_SERVICE_CONFIG_LOGS_FETCH_LIMIT" default:"100"`
+	RuntimeHeartbeatTTL time.Duration `envconfig:"JOBS_SERVICE_RUNTIME_HEARTBEAT_TTL" default:"30s"`
+	RuntimeLostAfter    time.Duration `envconfig:"JOBS_SERVICE_RUNTIME_LOST_AFTER" default:"5m"`
 }
 
 // InitJobsServiceConfig initializes the jobs service configuration.

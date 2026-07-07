@@ -2,7 +2,7 @@
 
 ## PostgreSQL
 
-Stores users, workflows, jobs, notification state, analytics aggregates, idempotency records, outbox rows, job leases, retry metadata, and processed-event identity.
+Stores users, workflows, jobs, runtime nodes, notification state, analytics aggregates, idempotency records, outbox rows, job leases, retry metadata, and processed-event identity.
 
 ## ClickHouse
 
@@ -10,7 +10,7 @@ Stores retained job logs optimized for high-volume ordered reads. It is not the 
 
 ## Redis
 
-Stores HTTP sessions, cached service reads, live log pub/sub state, and workflow-worker image-pull locks.
+Stores HTTP sessions, cached service reads, live log pub/sub state, and runtime-node-scoped image-pull locks.
 
 ## Meilisearch
 
@@ -24,7 +24,10 @@ Carries durable asynchronous events. It is a transport log, not the only record 
 
 Exposes a narrow subset of Docker APIs to workers instead of mounting the daemon socket directly into every process.
 
+## Runtime nodes
+
+`runtime-agent` owns rows in `runtime_nodes`. Jobs store `runtime_node_id` and an endpoint snapshot while they are running so execution, logs, termination, deletion, and expired-lease recovery use the Docker daemon that owns the container.
+
 ## Ownership rule
 
 Do not add a second writable source for a domain entity without defining reconciliation. Each store has a distinct operational role.
-

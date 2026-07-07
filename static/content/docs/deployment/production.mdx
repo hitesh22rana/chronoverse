@@ -11,7 +11,7 @@ Production publishes:
 - Dashboard and proxied API through Nginx on port `80`.
 - LGTM on port `3000`.
 
-Application services and infrastructure otherwise remain on Compose networks.
+Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`; a multi-node Kubernetes deployment should run one runtime-agent beside each node-local Docker proxy.
 
 ## Images
 
@@ -19,7 +19,7 @@ Application images are pulled from `ghcr.io/hitesh22rana/chronoverse/*:latest`. 
 
 ## Worker replicas
 
-The production profile declares replicated workers and resource reservations. Effective parallelism still depends on Kafka partitions, Docker host capacity, database pools, and lease configuration.
+The production profile declares replicated workers and resource reservations. Effective parallelism still depends on Kafka partitions, registered runtime capacity, Docker host capacity, database pools, and lease configuration.
 
 | Worker group | Services | Limit | Reservation |
 | --- | --- | --- | --- |

@@ -1,28 +1,30 @@
 # Image pull coordination
 
-Replicated workflow workers can share a Docker daemon. Without coordination, a cold image can trigger simultaneous pulls that waste bandwidth and amplify registry throttling.
+Replicated workflow and execution workers can share a runtime daemon. Without coordination, a cold image can trigger simultaneous pulls that waste bandwidth and amplify registry throttling.
 
 ## Lock scope
 
-The Redis lock key includes the Docker host and exact image string. Workers sharing a host coordinate; workers on different Docker hosts may pull in parallel.
+The Redis lock key includes the runtime node scope and exact image string. Workers sharing a runtime node coordinate; workers on different runtime nodes may pull in parallel. Docker host is used only as a fallback for legacy/local clients that do not pass an explicit runtime scope.
 
 ## Acquisition flow
 
-The first worker acquires the lock and pulls or inspects the image. Other workers poll until the lock is released, the image becomes available, or the configured wait timeout expires.
+The first worker acquires the lock and pulls or inspects the image. Other workers poll until the lock is released, the image becomes available, or the configured wait timeout expires. Workflow workers use this while resolving image digests. Execution workers use it before container creation so cold runtime nodes can pull the resolved digest safely.
 
 ## Configuration
 
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
 
 Set the TTL and wait timeout above normal large-image pull time. Aggressive polling increases Redis pressure.
 
 ## Failure behavior
 
-A timeout is retryable Kafka work rather than permission to start another same-host pull. TTL expiry prevents a crashed owner from holding the lock forever.
+A timeout is retryable Kafka work rather than permission to start another same-runtime pull. TTL expiry prevents a crashed owner from holding the lock forever.
 
-<Callout title="Host-scoped, not registry-scoped" type="note">
-Separate Docker hosts can still pull the same image concurrently. Registry-wide rate limits need capacity planning outside this lock.
+<Callout title="Runtime-scoped, not registry-scoped" type="note">
+Separate runtime nodes can still pull the same image concurrently. Registry-wide rate limits need capacity planning outside this lock.
 </Callout>
-

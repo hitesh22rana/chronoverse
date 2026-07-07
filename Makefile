@@ -75,6 +75,10 @@ build/workflow-worker: dependencies
 build/execution-worker: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=execution-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/execution-worker ./cmd/execution-worker
 
+.PHONY: build/runtime-agent
+build/runtime-agent: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=runtime-agent' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/runtime-agent ./cmd/runtime-agent
+
 .PHONY: build/joblogs-processor
 build/joblogs-processor: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=joblogs-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/joblogs-processor ./cmd/joblogs-processor
@@ -96,7 +100,7 @@ build/server: dependencies
 	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=server' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/server ./cmd/server
 
 .PHONY: build/all
-build/all: build/users-service build/workflows-service build/jobs-service build/notifications-service build/analytics-service build/scheduling-worker build/workflow-worker build/execution-worker build/joblogs-processor build/analytics-processor build/outbox-relay build/database-migration build/server
+build/all: build/users-service build/workflows-service build/jobs-service build/notifications-service build/analytics-service build/scheduling-worker build/workflow-worker build/execution-worker build/runtime-agent build/joblogs-processor build/analytics-processor build/outbox-relay build/database-migration build/server
 	@echo "All services and workers built successfully."
 
 .PHONY: run/users-service
@@ -130,6 +134,10 @@ run/workflow-worker: build/workflow-worker
 .PHONY: run/execution-worker
 run/execution-worker: build/execution-worker
 	@./.bin/execution-worker
+
+.PHONY: run/runtime-agent
+run/runtime-agent: build/runtime-agent
+	@./.bin/runtime-agent
 
 .PHONY: run/joblogs-processor
 run/joblogs-processor: build/joblogs-processor

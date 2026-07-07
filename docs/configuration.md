@@ -195,9 +195,38 @@ service implementation.
 
 - `JOBS_SERVICE_CONFIG_FETCH_LIMIT`
 - `JOBS_SERVICE_CONFIG_LOGS_FETCH_LIMIT`
+- `JOBS_SERVICE_RUNTIME_HEARTBEAT_TTL`
+- `JOBS_SERVICE_RUNTIME_LOST_AFTER`
 
 The jobs service also needs workflows-service client settings so log endpoints
-can enforce workflow retention policy.
+can enforce workflow retention policy. Runtime heartbeat settings control which
+`runtime_nodes` are fresh enough for new container claims and when an expired
+lease should be treated as owned by an unavailable runtime.
+
+### Runtime Agent
+
+- `RUNTIME_AGENT_ID`
+- `RUNTIME_AGENT_NODE_NAME`
+- `RUNTIME_AGENT_DOCKER_ENDPOINT`
+- `RUNTIME_AGENT_HEARTBEAT_INTERVAL`
+- `RUNTIME_AGENT_MAX_CONCURRENCY`
+- `DOCKER_HOST`
+
+`runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
+PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
+there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
+In a multi-node deployment, run one agent beside each node-local Docker proxy
+and set the endpoint to the address workers should use for that node.
+`RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
+it from durable node identity, such as the Kubernetes node name, hostname, or a
+mounted identity file; do not generate a new random ID on every restart.
+`last_heartbeat_at` is the last successful Docker-health heartbeat. If Docker
+becomes unavailable while PostgreSQL is reachable, the agent marks the runtime
+`UNHEALTHY` without refreshing that timestamp; a successful unhealthy update
+stops new container claims immediately. If PostgreSQL is unavailable, the agent
+exits and existing heartbeat TTL behavior applies. The agent marks itself
+`DRAINING` on graceful shutdown; missed heartbeats make it ineligible for new
+container job claims.
 
 ### Scheduling Worker
 
@@ -214,10 +243,14 @@ The batch size controls how many due workflows are scanned per polling pass.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
 
 These settings coordinate Docker image pulls for replicated workflow workers
-that share a Docker daemon. The lock is scoped by Docker host and exact image
-string. Compose defaults are `10m`, `10m`, and `500ms`. Workflow workers do not
+that share a runtime node. The lock is scoped by runtime node and exact image
+string; Docker host is used only as a fallback for legacy/local clients without
+an explicit runtime scope. Compose defaults are `10m`, `10m`, and `500ms`.
+Workflow workers do not
 launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
-not apply to this image-pull path.
+not apply to this image-pull path. For `CONTAINER` workflows, successful build
+stores resolved image reference and digest as derived workflow metadata; the
+payload remains user-authored configuration.
 
 ### Execution Worker
 
@@ -239,14 +272,20 @@ not apply to this image-pull path.
 - `EXECUTION_WORKER_JOB_LOG_PUBLISH_BACKOFF`
 - `EXECUTION_WORKER_JOB_LOG_LIVE_TIMEOUT`
 - `EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
 
 If `EXECUTION_WORKER_ID` is empty, the worker falls back to the container
 hostname. `EXECUTION_WORKER_CONCURRENCY=0` means auto concurrency from
 `GOMAXPROCS`, which is adjusted by `automaxprocs` from the worker container CPU
 quota. Workload container memory, CPU, and PID settings apply to the Docker
 containers launched by the worker; they are separate from the worker process
-resource limit and from workflow-worker image pulls. Keep lease duration longer
-than the renewal interval.
+resource limit and from image pulls. Keep lease duration longer than the
+renewal interval. Container execution uses the runtime endpoint
+returned by `ClaimJob`, not the worker pod's own Docker host. Before creating a
+container, the worker ensures the resolved image exists on that runtime daemon
+under a Redis lock scoped to runtime node plus exact image string.
 
 ### Job Logs Processor
 

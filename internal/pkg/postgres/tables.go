@@ -19,4 +19,6 @@ const (
 	TableProcessedEvents = "processed_events"
 	// TableWorkflowFailureEvents is the name of the workflow failure events table.
 	TableWorkflowFailureEvents = "workflow_failure_events"
+	// TableRuntimeNodes is the name of the runtime nodes table.
+	TableRuntimeNodes = "runtime_nodes"
 )

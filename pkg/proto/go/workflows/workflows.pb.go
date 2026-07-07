@@ -299,13 +299,15 @@ func (*UpdateWorkflowResponse) Descriptor() ([]byte, []int) {
 
 // UpdateWorkflowBuildStatusRequest contains the details needed to update the build status of a workflow.
 type UpdateWorkflowBuildStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                      // ID of the workflow
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                // ID of the user
-	BuildStatus   string                 `protobuf:"bytes,3,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"` // Build Status of the workflow
-	Generation    int64                  `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`                     // Optional generation guard. Zero disables the guard.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                // ID of the workflow
+	UserId              string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                          // ID of the user
+	BuildStatus         string                 `protobuf:"bytes,3,opt,name=build_status,json=buildStatus,proto3" json:"build_status,omitempty"`                           // Build Status of the workflow
+	Generation          int64                  `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`                                               // Optional generation guard. Zero disables the guard.
+	ResolvedImageRef    string                 `protobuf:"bytes,5,opt,name=resolved_image_ref,json=resolvedImageRef,proto3" json:"resolved_image_ref,omitempty"`          // Resolved source image ref for container workflows
+	ResolvedImageDigest string                 `protobuf:"bytes,6,opt,name=resolved_image_digest,json=resolvedImageDigest,proto3" json:"resolved_image_digest,omitempty"` // Immutable image digest for container workflows
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *UpdateWorkflowBuildStatusRequest) Reset() {
@@ -364,6 +366,20 @@ func (x *UpdateWorkflowBuildStatusRequest) GetGeneration() int64 {
 		return x.Generation
 	}
 	return 0
+}
+
+func (x *UpdateWorkflowBuildStatusRequest) GetResolvedImageRef() string {
+	if x != nil {
+		return x.ResolvedImageRef
+	}
+	return ""
+}
+
+func (x *UpdateWorkflowBuildStatusRequest) GetResolvedImageDigest() string {
+	if x != nil {
+		return x.ResolvedImageDigest
+	}
+	return ""
 }
 
 // UpdateWorkflowBuildStatusResponse contains the result of a workflow build status update attempt.
@@ -472,6 +488,8 @@ type GetWorkflowResponse struct {
 	TerminatedAt                     string                 `protobuf:"bytes,11,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
 	LogRetention                     bool                   `protobuf:"varint,12,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
 	Generation                       int64                  `protobuf:"varint,13,opt,name=generation,proto3" json:"generation,omitempty"`                                                                                          // Workflow generation
+	ResolvedImageRef                 string                 `protobuf:"bytes,14,opt,name=resolved_image_ref,json=resolvedImageRef,proto3" json:"resolved_image_ref,omitempty"`                                                     // Resolved source image ref for container workflows
+	ResolvedImageDigest              string                 `protobuf:"bytes,15,opt,name=resolved_image_digest,json=resolvedImageDigest,proto3" json:"resolved_image_digest,omitempty"`                                            // Immutable image digest for container workflows
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -597,6 +615,20 @@ func (x *GetWorkflowResponse) GetGeneration() int64 {
 	return 0
 }
 
+func (x *GetWorkflowResponse) GetResolvedImageRef() string {
+	if x != nil {
+		return x.ResolvedImageRef
+	}
+	return ""
+}
+
+func (x *GetWorkflowResponse) GetResolvedImageDigest() string {
+	if x != nil {
+		return x.ResolvedImageDigest
+	}
+	return ""
+}
+
 // GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
 type GetWorkflowByIDRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -659,6 +691,8 @@ type GetWorkflowByIDResponse struct {
 	TerminatedAt                     string                 `protobuf:"bytes,12,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
 	LogRetention                     bool                   `protobuf:"varint,13,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
 	Generation                       int64                  `protobuf:"varint,14,opt,name=generation,proto3" json:"generation,omitempty"`                                                                                          // Workflow generation
+	ResolvedImageRef                 string                 `protobuf:"bytes,15,opt,name=resolved_image_ref,json=resolvedImageRef,proto3" json:"resolved_image_ref,omitempty"`                                                     // Resolved source image ref for container workflows
+	ResolvedImageDigest              string                 `protobuf:"bytes,16,opt,name=resolved_image_digest,json=resolvedImageDigest,proto3" json:"resolved_image_digest,omitempty"`                                            // Immutable image digest for container workflows
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -789,6 +823,20 @@ func (x *GetWorkflowByIDResponse) GetGeneration() int64 {
 		return x.Generation
 	}
 	return 0
+}
+
+func (x *GetWorkflowByIDResponse) GetResolvedImageRef() string {
+	if x != nil {
+		return x.ResolvedImageRef
+	}
+	return ""
+}
+
+func (x *GetWorkflowByIDResponse) GetResolvedImageDigest() string {
+	if x != nil {
+		return x.ResolvedImageDigest
+	}
+	return ""
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
@@ -1327,6 +1375,8 @@ type WorkflowsByUserIDResponse struct {
 	UpdatedAt                        string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                                                            // Time the workflow was last updated
 	TerminatedAt                     string                 `protobuf:"bytes,12,opt,name=terminated_at,json=terminatedAt,proto3" json:"terminated_at,omitempty"`                                                                   // Time the workflow was terminated
 	LogRetention                     bool                   `protobuf:"varint,11,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`                                                                  // Indicates log retention status
+	ResolvedImageRef                 string                 `protobuf:"bytes,13,opt,name=resolved_image_ref,json=resolvedImageRef,proto3" json:"resolved_image_ref,omitempty"`                                                     // Resolved source image ref for container workflows
+	ResolvedImageDigest              string                 `protobuf:"bytes,14,opt,name=resolved_image_digest,json=resolvedImageDigest,proto3" json:"resolved_image_digest,omitempty"`                                            // Immutable image digest for container workflows
 	unknownFields                    protoimpl.UnknownFields
 	sizeCache                        protoimpl.SizeCache
 }
@@ -1445,6 +1495,20 @@ func (x *WorkflowsByUserIDResponse) GetLogRetention() bool {
 	return false
 }
 
+func (x *WorkflowsByUserIDResponse) GetResolvedImageRef() string {
+	if x != nil {
+		return x.ResolvedImageRef
+	}
+	return ""
+}
+
+func (x *WorkflowsByUserIDResponse) GetResolvedImageDigest() string {
+	if x != nil {
+		return x.ResolvedImageDigest
+	}
+	return ""
+}
+
 // ListWorkflowsResponse contains the result of a workflow listing attempt.
 type ListWorkflowsResponse struct {
 	state         protoimpl.MessageState       `protogen:"open.v1"`
@@ -1523,18 +1587,20 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\binterval\x18\x05 \x01(\x05R\binterval\x12N\n" +
 	"$max_consecutive_job_failures_allowed\x18\x06 \x01(\x05R maxConsecutiveJobFailuresAllowed\x12'\n" +
 	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\"\x18\n" +
-	"\x16UpdateWorkflowResponse\"\x8e\x01\n" +
+	"\x16UpdateWorkflowResponse\"\xf0\x01\n" +
 	" UpdateWorkflowBuildStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12!\n" +
 	"\fbuild_status\x18\x03 \x01(\tR\vbuildStatus\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x04 \x01(\x03R\n" +
-	"generation\"#\n" +
+	"generation\x12,\n" +
+	"\x12resolved_image_ref\x18\x05 \x01(\tR\x10resolvedImageRef\x122\n" +
+	"\x15resolved_image_digest\x18\x06 \x01(\tR\x13resolvedImageDigest\"#\n" +
 	"!UpdateWorkflowBuildStatusResponse\"=\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\"\xe3\x03\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\xc5\x04\n" +
 	"\x13GetWorkflowResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -1553,9 +1619,11 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\rlog_retention\x18\f \x01(\bR\flogRetention\x12\x1e\n" +
 	"\n" +
 	"generation\x18\r \x01(\x03R\n" +
-	"generation\"(\n" +
+	"generation\x12,\n" +
+	"\x12resolved_image_ref\x18\x0e \x01(\tR\x10resolvedImageRef\x122\n" +
+	"\x15resolved_image_digest\x18\x0f \x01(\tR\x13resolvedImageDigest\"(\n" +
 	"\x16GetWorkflowByIDRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x80\x04\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xe2\x04\n" +
 	"\x17GetWorkflowByIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
@@ -1575,7 +1643,9 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\rlog_retention\x18\r \x01(\bR\flogRetention\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x0e \x01(\x03R\n" +
-	"generation\"u\n" +
+	"generation\x12,\n" +
+	"\x12resolved_image_ref\x18\x0f \x01(\tR\x10resolvedImageRef\x122\n" +
+	"\x15resolved_image_digest\x18\x10 \x01(\tR\x13resolvedImageDigest\"u\n" +
 	"3IncrementWorkflowConsecutiveJobFailuresCountRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x15\n" +
@@ -1606,7 +1676,7 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12>\n" +
 	"\afilters\x18\x03 \x01(\v2\x1f.workflows.ListWorkflowsFiltersH\x00R\afilters\x88\x01\x01B\n" +
 	"\n" +
-	"\b_filters\"\xc9\x03\n" +
+	"\b_filters\"\xab\x04\n" +
 	"\x19WorkflowsByUserIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -1622,7 +1692,9 @@ const file_workflows_workflows_proto_rawDesc = "" +
 	"updated_at\x18\n" +
 	" \x01(\tR\tupdatedAt\x12#\n" +
 	"\rterminated_at\x18\f \x01(\tR\fterminatedAt\x12#\n" +
-	"\rlog_retention\x18\v \x01(\bR\flogRetention\"s\n" +
+	"\rlog_retention\x18\v \x01(\bR\flogRetention\x12,\n" +
+	"\x12resolved_image_ref\x18\r \x01(\tR\x10resolvedImageRef\x122\n" +
+	"\x15resolved_image_digest\x18\x0e \x01(\tR\x13resolvedImageDigest\"s\n" +
 	"\x15ListWorkflowsResponse\x12B\n" +
 	"\tworkflows\x18\x01 \x03(\v2$.workflows.WorkflowsByUserIDResponseR\tworkflows\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor2\xd7\b\n" +

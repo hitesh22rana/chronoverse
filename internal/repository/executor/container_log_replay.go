@@ -15,6 +15,7 @@ import (
 
 func (r *Repository) replayContainerLogs(
 	parentCtx context.Context,
+	csvc ContainerSvc,
 	claim *jobspb.ClaimJobResponse,
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	containerID string,
@@ -26,7 +27,7 @@ func (r *Repository) replayContainerLogs(
 	ctx, cancel := context.WithTimeout(parentCtx, containerLogReplayTimeout)
 	defer cancel()
 
-	logs, errs, err := r.svc.Csvc.Logs(ctx, containerID)
+	logs, errs, err := csvc.Logs(ctx, containerID)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil

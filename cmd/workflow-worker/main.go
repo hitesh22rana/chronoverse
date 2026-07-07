@@ -147,18 +147,30 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize the container service. Workflow workers only inspect and pull
-	// images; execution workers apply workload container limits when running jobs.
-	csvc, err := container.NewDockerWorkflow()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	lockedCsvc := workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, workflowrepo.ImagePullLockConfig{
+	// Workflow workers resolve image metadata through the runtime registry.
+	// Runtime identity scopes image pull locks to the owning Docker daemon.
+	imagePullLockConfig := workflowrepo.ImagePullLockConfig{
 		TTL:           cfg.ImagePullLockTTL,
 		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
 		RetryInterval: cfg.ImagePullLockRetryInterval,
+	}
+	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
+		return container.NewDockerWorkflow(container.WithDockerHost(endpoint))
 	})
+	defer func() {
+		if closeErr := dockerClients.Close(); closeErr != nil {
+			loggerpkg.FromContext(ctx).Warn("failed to close docker endpoint clients", zap.Error(closeErr))
+		}
+	}()
+	containerSvcForEndpoint := func(runtimeNodeID, endpoint string) (workflowrepo.ContainerSvc, error) {
+		csvc, csvcErr := dockerClients.Get(endpoint)
+		if csvcErr != nil {
+			return nil, csvcErr
+		}
+		cfg := imagePullLockConfig
+		cfg.LockScope = runtimeNodeID
+		return workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, cfg), nil
+	}
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
@@ -225,10 +237,10 @@ func run() int {
 
 	// Initialize the workflow job components
 	repo := workflowrepo.New(auth, rdb, cdb, msdb, kfk, kafkaLifecycle, &workflowrepo.Services{
-		Workflows:     workflowspb.NewWorkflowsServiceClient(workflowsConn),
-		Jobs:          jobpb.NewJobsServiceClient(jobsConn),
-		Notifications: notificationspb.NewNotificationsServiceClient(notificationsConn),
-		Csvc:          lockedCsvc,
+		Workflows:       workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:            jobpb.NewJobsServiceClient(jobsConn),
+		Notifications:   notificationspb.NewNotificationsServiceClient(notificationsConn),
+		CsvcForEndpoint: containerSvcForEndpoint,
 	})
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)

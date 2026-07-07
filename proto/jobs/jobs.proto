@@ -50,6 +50,17 @@ message ClaimJobResponse {
   int32  dispatch_attempts = 8; // Number of dispatch attempts
   int32  attempts          = 9; // Number of execution attempts
   string lease_token       = 10; // Lease token required for updates
+  string runtime_node_id   = 11; // Runtime node selected for Docker-backed execution
+  string runtime_endpoint  = 12; // Docker endpoint selected for Docker-backed execution
+}
+
+// GetReadyRuntimeNodeRequest contains the details needed to select a runtime node.
+message GetReadyRuntimeNodeRequest {}
+
+// GetReadyRuntimeNodeResponse contains a fresh READY runtime node.
+message GetReadyRuntimeNodeResponse {
+  string runtime_node_id  = 1; // Runtime node selected for Docker data plane work
+  string runtime_endpoint = 2; // Docker endpoint selected for Docker data plane work
 }
 
 // RenewJobLeaseRequest contains the details needed to renew a running job lease.
@@ -64,9 +75,10 @@ message RenewJobLeaseResponse {}
 
 // AttachJobContainerRequest contains the details needed to attach a container ID to a running job.
 message AttachJobContainerRequest {
-  string id           = 1; // ID of the job
-  string lease_token  = 2; // Current lease token
-  string container_id = 3; // Container ID
+  string id              = 1; // ID of the job
+  string lease_token     = 2; // Current lease token
+  string container_id    = 3; // Container ID
+  string runtime_node_id = 4; // Runtime node that owns the container
 }
 
 // AttachJobContainerResponse contains the result of attaching a container ID.
@@ -126,6 +138,9 @@ message ExpiredJobLease {
   string scheduled_at  = 8; // Time the job was scheduled to run
   int32  attempts      = 9; // Number of execution attempts
   bool   log_retention = 10; // Whether logs should be durably retained
+  string runtime_node_id     = 11; // Runtime node that owns the container
+  string runtime_endpoint    = 12; // Docker endpoint for the owning runtime node
+  bool   runtime_unavailable = 13; // Whether the owning runtime is considered unavailable
 }
 
 // RecoverExpiredJobLeasesRequest contains the details needed to fetch expired leases.
@@ -279,6 +294,8 @@ message JobsResponse {
   string created_at   = 9; // Time the job was created
   string updated_at   = 10; // Time the job was last updated
   int32  attempts     = 11; // Number of execution attempts
+  string runtime_node_id  = 12; // Runtime node that owns the container
+  string runtime_endpoint = 13; // Docker endpoint snapshot for the owning runtime node
 }
 
 message ListJobsResponse {
@@ -298,6 +315,10 @@ service JobsService {
     // ClaimJob atomically claims a queued job for execution.
     // This is an internal API and should not be exposed to the public.
   rpc ClaimJob(ClaimJobRequest) returns (ClaimJobResponse) {}
+
+    // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
+    // This is an internal API and should not be exposed to the public.
+  rpc GetReadyRuntimeNode(GetReadyRuntimeNodeRequest) returns (GetReadyRuntimeNodeResponse) {}
 
     // RenewJobLease renews a running job lease.
     // This is an internal API and should not be exposed to the public.

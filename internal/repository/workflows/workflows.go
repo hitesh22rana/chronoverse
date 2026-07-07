@@ -121,7 +121,8 @@ func (r *Repository) CreateWorkflow(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, name, payload, kind, build_status, interval,
             consecutive_job_failures_count, max_consecutive_job_failures_allowed,
-            created_at, updated_at, terminated_at, log_retention, generation, build_hash;
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash,
+            resolved_image_ref, resolved_image_digest;
     `, postgres.TableWorkflows)
 	args := []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed, logRetention, buildHashArg}
 
@@ -314,10 +315,12 @@ func (r *Repository) UpdateWorkflow(
             build_hash = $5,
             generation = $6,
             build_status = %s,
+            resolved_image_ref = CASE WHEN %s THEN NULL ELSE resolved_image_ref END,
+            resolved_image_digest = CASE WHEN %s THEN NULL ELSE resolved_image_digest END,
             consecutive_job_failures_count = 0,
             terminated_at = NULL
         WHERE id = $7 AND user_id = $8;
-    `, postgres.TableWorkflows, buildStatus)
+    `, postgres.TableWorkflows, buildStatus, boolSQL(decision.buildRequired), boolSQL(decision.buildRequired))
 	ct, err := tx.Exec(ctx, query, name, payload, interval, maxConsecutiveJobFailuresAllowed, buildHashArg, decision.nextGeneration, workflowID, userID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -414,7 +417,15 @@ func (r *Repository) UpdateWorkflow(
 }
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
-func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) (err error) {
+func (r *Repository) UpdateWorkflowBuildStatus(
+	ctx context.Context,
+	workflowID,
+	userID,
+	buildStatus string,
+	generation int64,
+	resolvedImageRef,
+	resolvedImageDigest string,
+) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateWorkflowBuildStatus")
 	defer func() {
 		if err != nil {
@@ -426,13 +437,15 @@ func (r *Repository) UpdateWorkflowBuildStatus(ctx context.Context, workflowID, 
 
 	query := fmt.Sprintf(`
         UPDATE %s
-        SET build_status = $1
+        SET build_status = $1::workflow_build_status,
+            resolved_image_ref = CASE WHEN $1::workflow_build_status = 'COMPLETED' THEN NULLIF($5, '') ELSE resolved_image_ref END,
+            resolved_image_digest = CASE WHEN $1::workflow_build_status = 'COMPLETED' THEN NULLIF($6, '') ELSE resolved_image_digest END
         WHERE id = $2 AND user_id = $3
             AND ($4::BIGINT = 0 OR generation = $4);
     `, postgres.TableWorkflows)
 
 	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID, generation)
+	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID, generation, resolvedImageRef, resolvedImageDigest)
 	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -477,7 +490,8 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 	query := fmt.Sprintf(`
         SELECT id, name, payload, kind, build_status, interval,
             consecutive_job_failures_count, max_consecutive_job_failures_allowed,
-            created_at, updated_at, terminated_at, log_retention, generation, build_hash
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash,
+            resolved_image_ref, resolved_image_digest
         FROM %s
         WHERE id = $1 AND user_id = $2
         LIMIT 1;
@@ -523,7 +537,8 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 	query := fmt.Sprintf(`
         SELECT id, user_id, name, payload, kind, build_status, interval,
             consecutive_job_failures_count, max_consecutive_job_failures_allowed,
-            created_at, updated_at, terminated_at, log_retention, generation, build_hash
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash,
+            resolved_image_ref, resolved_image_digest
         FROM %s
         WHERE id = $1
         LIMIT 1;
@@ -976,7 +991,8 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 	query := fmt.Sprintf(`
         SELECT id, name, payload, kind, build_status, interval,
             consecutive_job_failures_count, max_consecutive_job_failures_allowed,
-            created_at, updated_at, terminated_at, log_retention, generation, build_hash
+            created_at, updated_at, terminated_at, log_retention, generation, build_hash,
+            resolved_image_ref, resolved_image_digest
         FROM %s
         WHERE user_id = $1
     `, postgres.TableWorkflows)
@@ -1077,4 +1093,11 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 		Workflows: data,
 		Cursor:    encodeCursor(cursor),
 	}, nil
+}
+
+func boolSQL(value bool) string {
+	if value {
+		return "TRUE"
+	}
+	return "FALSE"
 }

@@ -25,7 +25,8 @@ log delivery, notifications, analytics, and replay-safe event publication.
 - `workflows-service` owns workflow definitions, workflow generations, build
   status, termination/deletion rules, cleanup, and workflow list filters.
 - `jobs-service` owns scheduled jobs, manual job creation, job status, job
-  leases, log reads, log search, raw log download, and live log streams.
+  leases, runtime assignment, log reads, log search, raw log download, and live
+  log streams.
 - `notifications-service` owns notification listing and marking notifications as
   read.
 - `analytics-service` reads user and workflow analytics.
@@ -39,9 +40,10 @@ debugging.
 - `scheduling-worker` scans PostgreSQL for workflows that are due and creates
   job dispatch work.
 - `workflow-worker` consumes workflow events, builds Docker execution metadata,
-  and updates workflow build state.
+  resolves container image digests, and updates workflow build state.
 - `execution-worker` consumes job events, claims durable leases, runs containers,
-  streams/publishes logs, renews leases, and recovers expired leases.
+  streams/publishes logs through the assigned runtime endpoint, renews leases,
+  and recovers expired leases.
 - `joblogs-processor` consumes log events and batches retained logs into
   ClickHouse and Meilisearch.
 - `analytics-processor` consumes workflow, job, and log events and updates
@@ -52,15 +54,18 @@ debugging.
 
 ## Data Stores and Infrastructure
 
-- **PostgreSQL** stores users, workflows, jobs, analytics, idempotency keys,
-  outbox events, leases, retry state, and transactional metadata.
+- **PostgreSQL** stores users, workflows, jobs, runtime nodes, analytics,
+  idempotency keys, outbox events, leases, retry state, and transactional
+  metadata.
 - **Kafka** carries asynchronous events on the `workflows`, `jobs`, `job_logs`,
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
 - **ClickHouse** stores retained job logs.
 - **Redis** stores HTTP sessions, cached service reads, live log
-  publish/subscribe state, and workflow-worker image pull locks.
+  publish/subscribe state, and runtime-node-scoped image pull locks.
 - **Meilisearch** indexes retained job logs for search.
-- **Docker socket proxy** exposes a narrow Docker API surface to execution
+- **Runtime agent** registers each Docker-capable node and heartbeats Docker
+  endpoint health/capacity into PostgreSQL.
+- **Docker socket proxy** exposes a narrow node-local Docker API surface to
   workers for container lifecycle and log access.
 - **LGTM** receives OpenTelemetry data and exposes local dashboards.
 
@@ -77,9 +82,10 @@ debugging.
    creates outbox events in the same transaction.
 4. `outbox-relay` claims pending outbox rows and publishes workflow events to
    Kafka.
-5. `workflow-worker` consumes the workflow event, coordinates Docker image pulls
-   by Docker host and image through Redis, builds workflow execution metadata,
-   and updates the workflow build status through `workflows-service`.
+5. `workflow-worker` consumes the workflow event, validates the container
+   payload when needed, resolves the image digest, stores resolved image
+   metadata on the workflow row, and updates the workflow build status through
+   `workflows-service`.
 6. Notification and analytics events are published through the same durable
    event path.
 
@@ -97,15 +103,20 @@ debugging.
 1. `execution-worker` consumes job events and calls `jobs-service` to claim the
    job.
 2. `jobs-service` grants a lease only when the job, workflow, dispatch attempt,
-   and current state are valid.
-3. The worker starts the container through the Docker proxy, attaches the
-   container ID, and renews the lease while the job runs.
+   current state, and runtime availability are valid. `CONTAINER` jobs receive a
+   fresh `READY` runtime node whose last heartbeat reflects a successful Docker
+   health check; `HEARTBEAT` jobs do not.
+3. The worker creates a Docker client for the returned runtime endpoint, ensures
+   the resolved image digest exists on that runtime under a runtime-node-scoped
+   image pull lock, runs the image, attaches the container ID with
+   `runtime_node_id`, and renews the lease while the job runs.
 4. Logs are emitted both for live streaming and durable processing when retention
    is enabled.
 5. Completion, user failures, system failures, retries, and cancellations are
    recorded through lease-token-protected job APIs.
-6. Expired running leases are recovered by workers and either retried, failed, or
-   cleaned up according to the job state.
+6. Expired running leases are recovered by workers using the job's stored
+   runtime owner and endpoint. If the runtime is unavailable, recovery releases
+   or fails the job according to retry policy instead of guessing another node.
 
 ### Logs, Search, and Analytics
 
@@ -136,9 +147,14 @@ expected operating conditions.
 - **Workflow generations** guard stale build, scheduling, reschedule,
   termination, and deletion events.
 - **Build hashes** avoid unnecessary rebuild work when workflow execution inputs
-  have not changed.
-- **Image pull locks** prevent replicated workflow workers that share a Docker
-  daemon from cold-pulling the same image concurrently.
+  have not changed. Resolved image references and digests are derived workflow
+  metadata and are not part of the user-authored build hash.
+- **Image pull locks** prevent replicated workers that share a runtime daemon
+  from cold-pulling the same image concurrently. Locks are scoped by runtime
+  node and image, with Docker host fallback for legacy/local clients.
+- **Runtime ownership** records `runtime_node_id` and `runtime_endpoint` on
+  running container jobs so execution, logs, termination, deletion, and lease
+  recovery target the Docker daemon that owns the container.
 - **Deterministic event keys** deduplicate workflow, job, notification,
   analytics, and log side effects.
 - **Durable job leases** ensure only one execution worker owns a running job at a

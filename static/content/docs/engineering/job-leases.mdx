@@ -4,14 +4,14 @@ Job leases provide exclusive, time-bounded execution ownership.
 
 ## Claim
 
-An execution worker presents the expected workflow generation and dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible.
+An execution worker presents the expected workflow generation and dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible. For `CONTAINER` jobs, claim also selects a fresh `READY` runtime node and returns its Docker endpoint. `HEARTBEAT` jobs do not receive runtime ownership.
 
 ## Protected mutations
 
 The token is required to:
 
 - renew the lease;
-- attach a container ID;
+- attach a container ID with the expected runtime node;
 - complete or fail the job;
 - cancel a claimed job;
 - release it for retry.
@@ -22,11 +22,10 @@ Workers renew while the workload runs. `EXECUTION_WORKER_LEASE_DURATION` must re
 
 ## Recovery
 
-Execution workers periodically request expired-lease recovery in bounded batches. Recovery can clean up an abandoned container, retry eligible infrastructure failures, or mark work failed when limits and state require it.
+Execution workers periodically request expired-lease recovery in bounded batches. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
 
 ## Split-brain prevention
 
 After expiration and recovery, the old token is invalid. A delayed worker cannot report success for work that another worker now owns.
 
 <SourceLink path="internal/repository/jobs/lease.go">Lease state transitions</SourceLink>
-

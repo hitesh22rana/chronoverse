@@ -37,10 +37,12 @@ message UpdateWorkflowResponse {}
 
 // UpdateWorkflowBuildStatusRequest contains the details needed to update the build status of a workflow.
 message UpdateWorkflowBuildStatusRequest {
-  string id           = 1; // ID of the workflow
-  string user_id      = 2; // ID of the user
-  string build_status = 3; // Build Status of the workflow
-  int64  generation   = 4; // Optional generation guard. Zero disables the guard.
+  string id                    = 1; // ID of the workflow
+  string user_id               = 2; // ID of the user
+  string build_status          = 3; // Build Status of the workflow
+  int64  generation            = 4; // Optional generation guard. Zero disables the guard.
+  string resolved_image_ref    = 5; // Resolved source image ref for container workflows
+  string resolved_image_digest = 6; // Immutable image digest for container workflows
 }
 
 // UpdateWorkflowBuildStatusResponse contains the result of a workflow build status update attempt.
@@ -67,6 +69,8 @@ message GetWorkflowResponse {
   string terminated_at                        = 11; // Time the workflow was terminated
   bool   log_retention                        = 12; // Indicates log retention status
   int64  generation                           = 13; // Workflow generation
+  string resolved_image_ref                   = 14; // Resolved source image ref for container workflows
+  string resolved_image_digest                = 15; // Immutable image digest for container workflows
 }
 
 // GetWorkflowByIDRequest contains the details needed to get a workflow by workflow_id.
@@ -90,6 +94,8 @@ message GetWorkflowByIDResponse {
   string terminated_at                        = 12; // Time the workflow was terminated
   bool   log_retention                        = 13; // Indicates log retention status
   int64  generation                           = 14; // Workflow generation
+  string resolved_image_ref                   = 15; // Resolved source image ref for container workflows
+  string resolved_image_digest                = 16; // Immutable image digest for container workflows
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest contains the details needed to increment the consecutive job failures count of a workflow.
@@ -161,6 +167,8 @@ message WorkflowsByUserIDResponse {
   string updated_at                           = 10; // Time the workflow was last updated
   string terminated_at                        = 12; // Time the workflow was terminated
   bool   log_retention                        = 11; // Indicates log retention status
+  string resolved_image_ref                   = 13; // Resolved source image ref for container workflows
+  string resolved_image_digest                = 14; // Immutable image digest for container workflows
 }
 
 // ListWorkflowsResponse contains the result of a workflow listing attempt.

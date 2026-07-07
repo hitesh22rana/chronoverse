@@ -3,6 +3,7 @@ package jobs
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
@@ -27,6 +28,107 @@ func TestJobLogsCursorRoundTrip(t *testing.T) {
 	if got != want {
 		t.Fatalf("unexpected cursor: got %+v want %+v", got, want)
 	}
+}
+
+func TestClaimJobQueryWaitsForRuntimeRowLock(t *testing.T) {
+	query := claimJobQuery()
+
+	assertContains(t, query, "ORDER BY rn.running_jobs ASC, rn.last_heartbeat_at DESC, rn.id ASC")
+	assertContains(t, query, "FOR UPDATE")
+	assertNotContains(t, query, "SKIP LOCKED")
+}
+
+func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {
+	query := claimJobQuery()
+
+	assertContains(t, query, "AND EXISTS (SELECT 1 FROM workflow WHERE kind = 'CONTAINER')")
+	assertContains(t, query, "(SELECT kind FROM workflow) <> 'CONTAINER'")
+	assertContains(t, query, "OR EXISTS (SELECT 1 FROM selected_runtime)")
+	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
+}
+
+func TestGetReadyRuntimeNodeQueryIgnoresExecutionCapacity(t *testing.T) {
+	query := getReadyRuntimeNodeQuery()
+
+	assertContains(t, query, "WHERE status = 'READY'")
+	assertContains(t, query, "last_heartbeat_at >")
+	assertContains(t, query, "ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC")
+	assertNotContains(t, query, "running_jobs < max_concurrency")
+}
+
+func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJobs(t *testing.T) {
+	query := queuedContainerJobMissingRuntimeQuery()
+
+	assertContains(t, query, "j.id = $1")
+	assertContains(t, query, "j.workflow_id = $2")
+	assertContains(t, query, "j.status = 'QUEUED'")
+	assertContains(t, query, "j.dispatch_attempts = $3")
+	assertContains(t, query, "w.kind = 'CONTAINER'")
+	assertContains(t, query, "rn.status = 'READY'")
+	assertContains(t, query, "rn.last_heartbeat_at >")
+	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
+}
+
+func TestReleaseJobForRetryQueryCarriesPreviousRuntimeOwner(t *testing.T) {
+	query := releaseJobForRetryQuery()
+
+	assertContains(t, query, "SELECT id, runtime_node_id")
+	assertContains(t, query, "FOR UPDATE")
+	assertContains(t, query, "RETURNING target.runtime_node_id AS previous_runtime_node_id")
+	assertContains(t, query, "released.previous_runtime_node_id IS NOT NULL")
+	assertContains(t, query, "rn.id = released.previous_runtime_node_id")
+}
+
+func TestRecoverExpiredJobLeasesQueryPrefersStoredRuntimeEndpoint(t *testing.T) {
+	query := recoverExpiredJobLeasesQuery()
+
+	assertContains(t, query, "COALESCE(NULLIF(j.runtime_endpoint, ''), rn.docker_endpoint) AS runtime_endpoint")
+}
+
+func TestRecoverExpiredJobLeasesQueryIncludesNonReadyRuntimes(t *testing.T) {
+	query := recoverExpiredJobLeasesQuery()
+
+	assertContains(t, query, "rn.status IN ('UNHEALTHY', 'DRAINING')")
+}
+
+func TestRecoverExpiredJobLeasesQueryFlagsOnlyUnavailableRuntimeStates(t *testing.T) {
+	expr := recoverExpiredRuntimeUnavailableExpression(t)
+
+	assertContains(t, expr, "rn.id IS NULL")
+	assertContains(t, expr, "rn.status = 'UNHEALTHY'")
+	assertContains(t, expr, "rn.last_heartbeat_at <=")
+	assertNotContains(t, expr, "rn.status = 'DRAINING'")
+}
+
+func assertContains(t *testing.T, value, want string) {
+	t.Helper()
+
+	if !strings.Contains(value, want) {
+		t.Fatalf("expected query to contain %q:\n%s", want, value)
+	}
+}
+
+func assertNotContains(t *testing.T, value, forbidden string) {
+	t.Helper()
+
+	if strings.Contains(value, forbidden) {
+		t.Fatalf("expected query not to contain %q:\n%s", forbidden, value)
+	}
+}
+
+func recoverExpiredRuntimeUnavailableExpression(t *testing.T) string {
+	t.Helper()
+
+	query := recoverExpiredJobLeasesQuery()
+	start := strings.Index(query, "j.runtime_node_id IS NOT NULL")
+	if start == -1 {
+		t.Fatalf("expected query to contain runtime unavailable expression:\n%s", query)
+	}
+	end := strings.Index(query[start:], ") AS runtime_unavailable")
+	if end == -1 {
+		t.Fatalf("expected query to contain runtime unavailable alias:\n%s", query)
+	}
+	return query[start : start+end]
 }
 
 func TestEncodeJobLogsCursorEmpty(t *testing.T) {

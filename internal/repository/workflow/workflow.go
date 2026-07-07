@@ -39,6 +39,7 @@ const (
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
+	ResolveImageDigest(ctx context.Context, imageName string) (string, string, error)
 	ImageExists(ctx context.Context, imageName string) (bool, error)
 	DockerHost() string
 	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
@@ -46,12 +47,15 @@ type ContainerSvc interface {
 	Terminate(ctx context.Context, containerID string) error
 }
 
+// ContainerSvcFactory creates a container service for a runtime node endpoint.
+type ContainerSvcFactory func(runtimeNodeID, endpoint string) (ContainerSvc, error)
+
 // Services represents the services used by the workflow.
 type Services struct {
-	Workflows     workflowspb.WorkflowsServiceClient
-	Jobs          jobspb.JobsServiceClient
-	Notifications notificationspb.NotificationsServiceClient
-	Csvc          ContainerSvc
+	Workflows       workflowspb.WorkflowsServiceClient
+	Jobs            jobspb.JobsServiceClient
+	Notifications   notificationspb.NotificationsServiceClient
+	CsvcForEndpoint ContainerSvcFactory
 }
 
 type kafkaProducer interface {
@@ -244,4 +248,12 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 // withAuthorization issues the necessary headers and tokens for authorization.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
 	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
+}
+
+func (r *Repository) containerSvcForRuntime(runtimeNodeID, endpoint string) (ContainerSvc, error) {
+	if r.svc.CsvcForEndpoint == nil {
+		return nil, status.Error(codes.FailedPrecondition, "container service factory is not configured")
+	}
+
+	return r.svc.CsvcForEndpoint(runtimeNodeID, endpoint)
 }

@@ -60,8 +60,10 @@ type Services struct {
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit     int
-	LogsFetchLimit int
+	FetchLimit          int
+	LogsFetchLimit      int
+	RuntimeHeartbeatTTL time.Duration
+	RuntimeLostAfter    time.Duration
 }
 
 // Repository provides jobs repository.
@@ -78,6 +80,15 @@ type Repository struct {
 
 // New creates a new jobs repository.
 func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager, svc *Services) *Repository {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	if cfg.RuntimeHeartbeatTTL <= 0 {
+		cfg.RuntimeHeartbeatTTL = 30 * time.Second
+	}
+	if cfg.RuntimeLostAfter <= 0 {
+		cfg.RuntimeLostAfter = 5 * time.Minute
+	}
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
@@ -247,6 +258,10 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
 		span.End()
 	}()
 
+	if isRuntimeSlotReleasingStatus(jobStatus) {
+		return r.updateTerminalJobStatus(ctx, jobID, jobStatus)
+	}
+
 	query := fmt.Sprintf(`
     UPDATE %s
     SET status = $1`, postgres.TableJobs)
@@ -263,23 +278,6 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
             WHERE id = $4;`
 			args = append(args, time.Now(), containerID, jobID)
 		}
-	case jobsmodel.JobStatusCompleted.ToString(), jobsmodel.JobStatusFailed.ToString():
-		query += `, completed_at = $2,
-            lease_token = NULL,
-            leased_by = NULL,
-            lease_expires_at = NULL,
-            last_heartbeat_at = NULL
-        WHERE id = $3;`
-		args = append(args, time.Now(), jobID)
-	case jobsmodel.JobStatusCanceled.ToString():
-		query += `, completed_at = $2,
-                lease_token = NULL,
-                leased_by = NULL,
-                lease_expires_at = NULL,
-                last_heartbeat_at = NULL
-            WHERE id = $3
-                AND status IN ('PENDING', 'QUEUED', 'RUNNING');`
-		args = append(args, time.Now(), jobID)
 	default:
 		query += ` WHERE id = $2;`
 		args = append(args, jobID)
@@ -312,6 +310,77 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
 
 		err = status.Errorf(codes.NotFound, "job not found")
 		return err
+	}
+
+	return nil
+}
+
+func isRuntimeSlotReleasingStatus(jobStatus string) bool {
+	return jobStatus == jobsmodel.JobStatusCompleted.ToString() ||
+		jobStatus == jobsmodel.JobStatusFailed.ToString() ||
+		jobStatus == jobsmodel.JobStatusCanceled.ToString()
+}
+
+func (r *Repository) updateTerminalJobStatus(ctx context.Context, jobID, jobStatus string) error {
+	statusPredicate := ""
+	if jobStatus == jobsmodel.JobStatusCanceled.ToString() {
+		statusPredicate = "AND status IN ('PENDING', 'QUEUED', 'RUNNING')"
+	}
+
+	query := fmt.Sprintf(`
+        WITH target AS (
+            SELECT id, status, runtime_node_id
+            FROM %s
+            WHERE id = $2
+                %s
+            FOR UPDATE
+        ),
+        updated AS (
+            UPDATE %s AS j
+            SET status = $1,
+                completed_at = $3,
+                lease_token = NULL,
+                leased_by = NULL,
+                lease_expires_at = NULL,
+                last_heartbeat_at = NULL
+            FROM target
+            WHERE j.id = target.id
+            RETURNING target.status AS previous_status, target.runtime_node_id
+        ),
+        decrement_runtime AS (
+            UPDATE %s AS rn
+            SET running_jobs = GREATEST(0, running_jobs - 1),
+                updated_at = now() AT TIME ZONE 'utc'
+            FROM updated
+            WHERE updated.previous_status = 'RUNNING'
+                AND updated.runtime_node_id IS NOT NULL
+                AND rn.id = updated.runtime_node_id
+            RETURNING rn.id
+        )
+        SELECT COUNT(*) FROM updated;
+    `, postgres.TableJobs, statusPredicate, postgres.TableJobs, postgres.TableRuntimeNodes)
+
+	var updatedCount int
+	err := r.pg.QueryRow(ctx, query, jobStatus, jobID, time.Now()).Scan(&updatedCount)
+	if err != nil {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			return status.Error(codes.DeadlineExceeded, err.Error())
+		case errors.Is(err, context.Canceled):
+			return status.Error(codes.Canceled, err.Error())
+		case r.pg.IsInvalidTextRepresentation(err):
+			return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
+		}
+
+		return status.Errorf(codes.Internal, "failed to update job: %v", err)
+	}
+
+	if updatedCount == 0 {
+		if jobStatus == jobsmodel.JobStatusCanceled.ToString() {
+			return status.Errorf(codes.FailedPrecondition, "job not found or not cancellable")
+		}
+
+		return status.Errorf(codes.NotFound, "job not found")
 	}
 
 	return nil
@@ -897,7 +966,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 
 	// Add the cursor to the query
 	query := fmt.Sprintf(`
-        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at
+        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at, runtime_node_id, runtime_endpoint
         FROM %s
         WHERE workflow_id = $1 AND user_id = $2
     `, postgres.TableJobs)

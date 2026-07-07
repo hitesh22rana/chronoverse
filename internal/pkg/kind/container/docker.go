@@ -11,6 +11,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -32,6 +33,7 @@ type DockerWorkflow struct {
 	*client.Client
 	pullGroup      singleflight.Group
 	resourceLimits ResourceLimits
+	dockerHost     string
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -58,24 +60,37 @@ func WithResourceLimits(limits ResourceLimits) DockerWorkflowOption {
 	}
 }
 
+// WithDockerHost configures the Docker daemon endpoint for this workflow.
+func WithDockerHost(host string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.dockerHost = host
+	}
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
-	cli, err := client.NewClientWithOpts(
-		client.FromEnv,
-		client.WithAPIVersionNegotiation(),
-	)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to initialize docker client: %v", err)
-	}
-
-	w := &DockerWorkflow{
-		Client: cli,
-	}
+	w := &DockerWorkflow{}
 	for _, option := range options {
 		if option != nil {
 			option(w)
 		}
 	}
+
+	clientOptions := []client.Opt{
+		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
+	}
+	if w.dockerHost != "" {
+		clientOptions = append(clientOptions, client.WithHost(w.dockerHost))
+	}
+	cli, err := client.NewClientWithOpts(
+		clientOptions...,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to initialize docker client: %v", err)
+	}
+
+	w.Client = cli
 
 	if err := w.healthCheck(context.Background()); err != nil {
 		return nil, err
@@ -91,6 +106,11 @@ func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Healthy checks whether the configured Docker daemon is reachable.
+func (w *DockerWorkflow) Healthy(ctx context.Context) error {
+	return w.healthCheck(ctx)
 }
 
 // DockerHost returns the Docker daemon host configured for this client.
@@ -426,6 +446,48 @@ func (w *DockerWorkflow) ImageExists(ctx context.Context, imageName string) (boo
 	}
 
 	return false, nil
+}
+
+// ResolveImageDigest ensures an image can be resolved and returns an immutable image reference.
+func (w *DockerWorkflow) ResolveImageDigest(ctx context.Context, imageName string) (resolvedImageRef, resolvedImageDigest string, err error) {
+	alreadyDigested := strings.Contains(imageName, "@sha256:")
+	if buildErr := w.Build(ctx, imageName); buildErr != nil {
+		return imageName, "", buildErr
+	}
+	inspect, err := w.Client.ImageInspect(ctx, imageName)
+	if err != nil {
+		return imageName, "", dockerImageInspectError(err)
+	}
+	if alreadyDigested {
+		return imageName, imageName, nil
+	}
+	resolvedDigest, err := matchingRepositoryDigest(imageName, inspect.RepoDigests)
+	if err != nil {
+		return imageName, "", err
+	}
+	return imageName, resolvedDigest, nil
+}
+
+func matchingRepositoryDigest(imageName string, repoDigests []string) (string, error) {
+	requestedRef, err := reference.ParseNormalizedNamed(imageName)
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "invalid image reference %s: %v", imageName, err)
+	}
+	requestedRepo := reference.TrimNamed(requestedRef).Name()
+
+	for _, repoDigest := range repoDigests {
+		if repoDigest == "" {
+			continue
+		}
+		candidateRef, err := reference.ParseNormalizedNamed(repoDigest)
+		if err != nil {
+			continue
+		}
+		if reference.TrimNamed(candidateRef).Name() == requestedRepo {
+			return repoDigest, nil
+		}
+	}
+	return "", status.Errorf(codes.FailedPrecondition, "image %s has no matching repository digest; use a registry-pullable image", imageName)
 }
 
 func dockerImageInspectError(err error) error {

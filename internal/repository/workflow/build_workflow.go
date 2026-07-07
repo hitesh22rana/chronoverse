@@ -155,6 +155,8 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			workflowEvent.Generation,
 			scheduleIdempotencyKey,
 			workflowEvent,
+			"",
+			"",
 		)
 		if _err != nil {
 			return _err
@@ -193,6 +195,8 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			workflow.GetUserId(),
 			workflowsmodel.WorkflowBuildStatusStarted.ToString(),
 			workflowEvent.Generation,
+			"",
+			"",
 		)
 		if _err != nil {
 			return _err
@@ -218,13 +222,25 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	)
 
 	// Execute the build process with retry enabled
+	var resolvedImageRef, resolvedImageDigest string
 	workflowErr := retrypkg.Do(ctx, 2, retryBackoff, func() error {
 		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 		if err != nil {
 			return err
 		}
 
-		return r.svc.Csvc.Build(ctx, details.Image)
+		runtimeNode, err := r.svc.Jobs.GetReadyRuntimeNode(ctx, &jobspb.GetReadyRuntimeNodeRequest{})
+		if err != nil {
+			return err
+		}
+
+		csvc, err := r.containerSvcForRuntime(runtimeNode.GetRuntimeNodeId(), runtimeNode.GetRuntimeEndpoint())
+		if err != nil {
+			return err
+		}
+
+		resolvedImageRef, resolvedImageDigest, err = csvc.ResolveImageDigest(ctx, details.Image)
+		return err
 	})
 
 	// Since, build process can take time to execute and can led to authorization issues
@@ -251,6 +267,8 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			workflow.GetUserId(),
 			workflowsmodel.WorkflowBuildStatusFailed.ToString(),
 			workflowEvent.Generation,
+			"",
+			"",
 		)
 		if _err != nil {
 			return _err
@@ -284,6 +302,8 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		workflowEvent.Generation,
 		scheduleIdempotencyKey,
 		workflowEvent,
+		resolvedImageRef,
+		resolvedImageDigest,
 	)
 	if _err != nil {
 		return _err
@@ -329,12 +349,22 @@ func isTransientBuildRetryError(err error) bool {
 	return slices.Contains(transientBuildRetryErrorCodes, status.Code(err))
 }
 
-func (r *Repository) updateWorkflowBuildStatus(ctx context.Context, workflowID, userID, buildStatus string, generation int64) (bool, error) {
+func (r *Repository) updateWorkflowBuildStatus(
+	ctx context.Context,
+	workflowID,
+	userID,
+	buildStatus string,
+	generation int64,
+	resolvedImageRef,
+	resolvedImageDigest string,
+) (bool, error) {
 	_, err := r.svc.Workflows.UpdateWorkflowBuildStatus(ctx, &workflowspb.UpdateWorkflowBuildStatusRequest{
-		Id:          workflowID,
-		UserId:      userID,
-		BuildStatus: buildStatus,
-		Generation:  generation,
+		Id:                  workflowID,
+		UserId:              userID,
+		BuildStatus:         buildStatus,
+		Generation:          generation,
+		ResolvedImageRef:    resolvedImageRef,
+		ResolvedImageDigest: resolvedImageDigest,
 	})
 	if err != nil {
 		if status.Code(err) == codes.FailedPrecondition {
@@ -353,6 +383,8 @@ func (r *Repository) completeWorkflowBuildAndSchedule(
 	generation int64,
 	scheduleIdempotencyKey string,
 	workflowEvent *workflowsmodel.WorkflowEvent,
+	resolvedImageRef,
+	resolvedImageDigest string,
 ) (*workflowspb.GetWorkflowByIDResponse, bool, error) {
 	updated, err := r.updateWorkflowBuildStatus(
 		ctx,
@@ -360,6 +392,8 @@ func (r *Repository) completeWorkflowBuildAndSchedule(
 		userID,
 		workflowsmodel.WorkflowBuildStatusCompleted.ToString(),
 		generation,
+		resolvedImageRef,
+		resolvedImageDigest,
 	)
 	if err != nil || !updated {
 		return nil, false, err

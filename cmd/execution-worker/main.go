@@ -115,13 +115,22 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-
-	// Initialize the container service
-	csvc, err := container.NewDockerWorkflow(container.WithResourceLimits(resourceLimits))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
+	imagePullLockConfig := executorrepo.ImagePullLockConfig{
+		TTL:           cfg.ImagePullLockTTL,
+		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
+		RetryInterval: cfg.ImagePullLockRetryInterval,
 	}
+	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
+		return container.NewDockerWorkflow(
+			container.WithDockerHost(endpoint),
+			container.WithResourceLimits(resourceLimits),
+		)
+	})
+	defer func() {
+		if closeErr := dockerClients.Close(); closeErr != nil {
+			loggerpkg.FromContext(ctx).Warn("failed to close docker endpoint clients", zap.Error(closeErr))
+		}
+	}()
 
 	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
@@ -185,8 +194,16 @@ func run() int {
 	}, auth, kfk, rdb, kafkaLifecycle, &executorrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
-		Csvc:      csvc,
-		Hsvc:      heartbeat.New(),
+		CsvcForEndpoint: func(runtimeNodeID, endpoint string) (executorrepo.ContainerSvc, error) {
+			csvc, csvcErr := dockerClients.Get(endpoint)
+			if csvcErr != nil {
+				return nil, csvcErr
+			}
+			cfg := imagePullLockConfig
+			cfg.LockScope = runtimeNodeID
+			return executorrepo.NewImagePullLockedContainerSvc(csvc, rdb, cfg), nil
+		},
+		Hsvc: heartbeat.New(),
 	})
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)

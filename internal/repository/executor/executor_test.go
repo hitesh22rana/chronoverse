@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -77,6 +79,51 @@ func TestExtractFieldFromRecordValueRequiresDispatchAttempt(t *testing.T) {
 	}
 }
 
+func TestProcessRecordPropagatesUnavailableClaimError(t *testing.T) {
+	t.Parallel()
+
+	payload, err := json.Marshal(&jobsmodel.ScheduledJobEntry{
+		JobID:              "job-1",
+		WorkflowID:         "workflow-1",
+		ScheduledAt:        time.Now().Format(time.RFC3339Nano),
+		DispatchAttempt:    1,
+		WorkflowGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	repo := &Repository{
+		tp: otel.Tracer("executor-test"),
+		cfg: Config{
+			WorkerID:      "worker-1",
+			Concurrency:   1,
+			LeaseDuration: 30 * time.Second,
+		},
+		auth:  fakeAuth{},
+		slots: make(chan struct{}, 1),
+		svc: &Services{
+			Jobs: &claimErrorJobsClient{
+				err: status.Error(codes.Unavailable, "no healthy runtime node is available"),
+			},
+		},
+	}
+
+	err = repo.processRecord(context.Background(), &kgo.Record{
+		Topic:     "jobs",
+		Partition: 0,
+		Offset:    1,
+		Key:       []byte("workflow-1"),
+		Value:     payload,
+	})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("processRecord() error code = %s, want %s: %v", status.Code(err), codes.Unavailable, err)
+	}
+	if got := len(repo.slots); got != 0 {
+		t.Fatalf("execution slots held = %d, want 0", got)
+	}
+}
+
 func TestClassifyExecutionFailure(t *testing.T) {
 	t.Parallel()
 
@@ -107,6 +154,12 @@ func TestClassifyExecutionFailure(t *testing.T) {
 		{
 			name:      "canceled execution is retryable system failure",
 			err:       status.Error(codes.Canceled, "lease renewal failed"),
+			retryable: true,
+			kind:      jobsmodel.FailureKindSystem.ToString(),
+		},
+		{
+			name:      "image pull lock exhaustion is retryable system failure",
+			err:       status.Error(codes.ResourceExhausted, "timed out waiting for image pull lock"),
 			retryable: true,
 			kind:      jobsmodel.FailureKindSystem.ToString(),
 		},
@@ -195,6 +248,43 @@ func TestProcessContainerExecutionDrainsExecutionErrorsUntilClosed(t *testing.T)
 	}
 }
 
+func TestExecuteContainerWorkflowEnsuresResolvedImageBeforeExecute(t *testing.T) {
+	t.Parallel()
+
+	csvc := &recordingContainerSvc{
+		logs: make(chan *jobsmodel.JobLog),
+		errs: make(chan error),
+	}
+	close(csvc.logs)
+	close(csvc.errs)
+
+	repo := &Repository{cfg: defaultConfig()}
+	workflow := &workflowspb.GetWorkflowByIDResponse{
+		Id:                  "workflow-1",
+		UserId:              "user-1",
+		Payload:             `{"image":"alpine:3.22","cmd":["echo","ok"],"env":{"A":"B"},"timeout":"1s"}`,
+		ResolvedImageDigest: "alpine@sha256:abc",
+		LogRetention:        true,
+	}
+
+	containerID, err := repo.executeContainerWorkflow(t.Context(), csvc, "job-1", "lease-1", "runtime-1", 1, workflow)
+	if err != nil {
+		t.Fatalf("executeContainerWorkflow() error = %v", err)
+	}
+	if containerID != "" {
+		t.Fatalf("containerID = %q, want empty", containerID)
+	}
+	if got, want := csvc.buildImage, "alpine@sha256:abc"; got != want {
+		t.Fatalf("Build image = %q, want %q", got, want)
+	}
+	if got, want := csvc.executeImage, "alpine@sha256:abc"; got != want {
+		t.Fatalf("Execute image = %q, want %q", got, want)
+	}
+	if !csvc.buildBeforeExecute {
+		t.Fatal("Build was not called before Execute")
+	}
+}
+
 func TestRecoverExpiredLeaseRenewsLeaseWhileReplayingLogs(t *testing.T) {
 	t.Parallel()
 
@@ -214,8 +304,10 @@ func TestRecoverExpiredLeaseRenewsLeaseWhileReplayingLogs(t *testing.T) {
 		auth: fakeAuth{},
 		svc: &Services{
 			Jobs: jobsClient,
-			Csvc: &blockingRecoveryContainerSvc{
-				replayCanFinish: replayCanFinish,
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				return &blockingRecoveryContainerSvc{
+					replayCanFinish: replayCanFinish,
+				}, nil
 			},
 		},
 	}
@@ -223,13 +315,15 @@ func TestRecoverExpiredLeaseRenewsLeaseWhileReplayingLogs(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- repo.recoverExpiredLease(context.Background(), &jobspb.ExpiredJobLease{
-			Id:          "job-1",
-			WorkflowId:  "workflow-1",
-			UserId:      "user-1",
-			ContainerId: "container-1",
-			LeaseToken:  "lease-1",
-			Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-			Attempts:    1,
+			Id:              "job-1",
+			WorkflowId:      "workflow-1",
+			UserId:          "user-1",
+			ContainerId:     "container-1",
+			RuntimeNodeId:   "runtime-1",
+			RuntimeEndpoint: "tcp://docker-proxy:2375",
+			LeaseToken:      "lease-1",
+			Trigger:         jobsmodel.JobTriggerAutomatic.ToString(),
+			Attempts:        1,
 		})
 	}()
 
@@ -315,8 +409,10 @@ func TestRecoverExpiredLeaseBatchStartsRenewalForEveryClaimedJob(t *testing.T) {
 		auth: fakeAuth{},
 		svc: &Services{
 			Jobs: jobsClient,
-			Csvc: &blockingRecoveryContainerSvc{
-				replayCanFinish: replayCanFinish,
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				return &blockingRecoveryContainerSvc{
+					replayCanFinish: replayCanFinish,
+				}, nil
 			},
 		},
 	}
@@ -352,6 +448,16 @@ func (fakeAuth) IssueToken(context.Context, string) (string, error) {
 
 func (fakeAuth) ValidateToken(context.Context) (*jwt.Token, error) {
 	return &jwt.Token{}, nil
+}
+
+type claimErrorJobsClient struct {
+	jobspb.JobsServiceClient
+
+	err error
+}
+
+func (c *claimErrorJobsClient) ClaimJob(context.Context, *jobspb.ClaimJobRequest, ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
+	return nil, c.err
 }
 
 type renewingRecoveryJobsClient struct {
@@ -413,22 +519,24 @@ func (c *batchRecoveryJobsClient) RecoverExpiredJobLeases(_ context.Context, req
 	return &jobspb.RecoverExpiredJobLeasesResponse{
 		Jobs: []*jobspb.ExpiredJobLease{
 			{
-				Id:          "job-1",
-				WorkflowId:  "workflow-1",
-				UserId:      "user-1",
-				ContainerId: "container-1",
-				LeaseToken:  "lease-1",
-				Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-				Attempts:    1,
+				Id:              "job-1",
+				WorkflowId:      "workflow-1",
+				UserId:          "user-1",
+				ContainerId:     "container-1",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
+				LeaseToken:      "lease-1",
+				Trigger:         jobsmodel.JobTriggerAutomatic.ToString(),
+				Attempts:        1,
 			},
 			{
-				Id:          "job-2",
-				WorkflowId:  "workflow-1",
-				UserId:      "user-1",
-				ContainerId: "container-2",
-				LeaseToken:  "lease-2",
-				Trigger:     jobsmodel.JobTriggerAutomatic.ToString(),
-				Attempts:    1,
+				Id:              "job-2",
+				WorkflowId:      "workflow-1",
+				UserId:          "user-1",
+				ContainerId:     "container-2",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
+				LeaseToken:      "lease-2",
+				Trigger:         jobsmodel.JobTriggerAutomatic.ToString(),
+				Attempts:        1,
 			},
 		},
 	}, nil
@@ -455,6 +563,18 @@ func (c *batchRecoveryJobsClient) ReleaseJobForRetry(context.Context, *jobspb.Re
 
 type blockingRecoveryContainerSvc struct {
 	replayCanFinish <-chan struct{}
+}
+
+func (*blockingRecoveryContainerSvc) Build(context.Context, string) error {
+	return nil
+}
+
+func (*blockingRecoveryContainerSvc) ImageExists(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+func (*blockingRecoveryContainerSvc) DockerHost() string {
+	return "tcp://docker-proxy:2375"
 }
 
 func (*blockingRecoveryContainerSvc) Execute(context.Context, time.Duration, string, []string, []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
@@ -486,5 +606,48 @@ func (*blockingRecoveryContainerSvc) Remove(context.Context, string) error {
 }
 
 func (*blockingRecoveryContainerSvc) Terminate(context.Context, string) error {
+	return nil
+}
+
+type recordingContainerSvc struct {
+	buildImage         string
+	executeImage       string
+	buildBeforeExecute bool
+	logs               chan *jobsmodel.JobLog
+	errs               chan error
+}
+
+func (s *recordingContainerSvc) Build(_ context.Context, image string) error {
+	s.buildImage = image
+	return nil
+}
+
+func (*recordingContainerSvc) ImageExists(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+func (*recordingContainerSvc) DockerHost() string {
+	return "tcp://docker-proxy:2375"
+}
+
+func (s *recordingContainerSvc) Execute(_ context.Context, _ time.Duration, image string, _, _ []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	s.executeImage = image
+	s.buildBeforeExecute = s.buildImage != ""
+	return "", s.logs, s.errs, nil
+}
+
+func (*recordingContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	return nil, nil, nil
+}
+
+func (*recordingContainerSvc) Inspect(context.Context, string) (*containerpkg.State, error) {
+	return &containerpkg.State{}, nil
+}
+
+func (*recordingContainerSvc) Remove(context.Context, string) error {
+	return nil
+}
+
+func (*recordingContainerSvc) Terminate(context.Context, string) error {
 	return nil
 }

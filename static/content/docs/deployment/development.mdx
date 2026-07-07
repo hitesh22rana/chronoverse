@@ -6,6 +6,8 @@
 docker compose -f compose.dev.yaml up -d
 ```
 
+The development stack starts one `runtime-agent` named `local-docker` beside `docker-proxy`. Container job claims use that registered runtime endpoint, so the same runtime ownership path is exercised locally even though there is only one Docker daemon.
+
 ## Exposed ports
 
 | Component | Port |
@@ -27,6 +29,7 @@ docker compose -f compose.dev.yaml up -d
 docker compose -f compose.dev.yaml ps
 docker compose -f compose.dev.yaml logs -f server
 docker compose -f compose.dev.yaml logs -f execution-worker
+docker compose -f compose.dev.yaml logs -f runtime-agent
 ```
 
 ## Rebuild one service
@@ -42,4 +45,3 @@ docker compose -f compose.dev.yaml down -v
 ```
 
 This removes databases, Kafka data, and generated certificate volumes. Use it only for an intentional clean reset.
-

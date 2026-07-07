@@ -18,16 +18,18 @@ Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Schedulin
 
 ## Persistence plane
 
-- PostgreSQL: transactional state, leases, idempotency, outbox rows, and analytics.
+- PostgreSQL: transactional state, runtime nodes, leases, idempotency, outbox rows, and analytics.
 - ClickHouse: retained high-volume job logs.
 - Redis: sessions, cached reads, live log pub/sub, and image-pull locks.
 - Meilisearch: retained log search.
-- Docker proxy: constrained container lifecycle access.
+- Runtime agent: Docker-capable node registration, heartbeat, and capacity metadata.
+- Docker proxy: constrained node-local container lifecycle access.
 - LGTM: OpenTelemetry collection and dashboards.
 
 ## Design invariant
 
 Workers request state transitions from domain services rather than directly inventing workflow or job state. This keeps replay and ownership rules concentrated at the domain boundary.
 
-<SourceLink path="docs/architecture.md">Repository architecture notes</SourceLink>
+Container execution has an additional locality invariant: a `container_id` is never enough on its own. `jobs-service` assigns a fresh `READY` runtime node during claim, persists `runtime_node_id` and a Docker endpoint snapshot on the job, and workers use that endpoint directly for execution, live logs, cleanup, and expired-lease recovery.
 
+<SourceLink path="docs/architecture.md">Repository architecture notes</SourceLink>

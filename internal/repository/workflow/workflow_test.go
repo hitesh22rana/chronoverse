@@ -278,7 +278,9 @@ func TestCancelJobsMarksAllJobsCanceledBeforeContainerCleanup(t *testing.T) {
 				},
 			},
 			Notifications: testNotificationsClient{},
-			Csvc:          &testContainerSvc{events: events},
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				return &testContainerSvc{events: events}, nil
+			},
 		},
 	}
 
@@ -289,12 +291,14 @@ func TestCancelJobsMarksAllJobsCanceledBeforeContainerCleanup(t *testing.T) {
 		&jobspb.ListJobsResponse{
 			Jobs: []*jobspb.JobsResponse{
 				{
-					Id:          "job-1",
-					ContainerId: "container-1",
+					Id:              "job-1",
+					ContainerId:     "container-1",
+					RuntimeEndpoint: "tcp://docker-proxy:2375",
 				},
 				{
-					Id:          "job-2",
-					ContainerId: "container-2",
+					Id:              "job-2",
+					ContainerId:     "container-2",
+					RuntimeEndpoint: "tcp://docker-proxy:2375",
 				},
 			},
 		},
@@ -334,7 +338,9 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 				},
 			},
 			Notifications: testNotificationsClient{},
-			Csvc:          &testContainerSvc{events: events},
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				return &testContainerSvc{events: events}, nil
+			},
 		},
 	}
 
@@ -348,8 +354,9 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 		"user-1",
 		&jobspb.ListJobsResponse{
 			Jobs: []*jobspb.JobsResponse{{
-				Id:          "job-1",
-				ContainerId: "container-1",
+				Id:              "job-1",
+				ContainerId:     "container-1",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
 			}},
 		},
 		nil,
@@ -372,13 +379,49 @@ func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testin
 	events := &orderedEvents{}
 	repo := &Repository{
 		svc: &Services{
-			Csvc: &testContainerSvc{
-				events: events,
-				logs: []*jobsmodel.JobLog{{
-					Message:     "canceled log",
-					Stream:      "stdout",
-					SequenceNum: 1,
-				}},
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				return &testContainerSvc{
+					events: events,
+					logs: []*jobsmodel.JobLog{{
+						Message:     "canceled log",
+						Stream:      "stdout",
+						SequenceNum: 1,
+					}},
+				}, nil
+			},
+		},
+	}
+
+	err := repo.cleanupCanceledJobContainer(
+		t.Context(),
+		&workflowspb.GetWorkflowByIDResponse{
+			Id:   "workflow-1",
+			Kind: workflowsmodel.KindContainer.ToString(),
+		},
+		&jobspb.JobsResponse{
+			Id:              "job-1",
+			ContainerId:     "container-1",
+			RuntimeEndpoint: "tcp://docker-proxy:2375",
+		},
+	)
+	if err != nil {
+		t.Fatalf("cleanupCanceledJobContainer() error = %v", err)
+	}
+
+	if got := events.items(); len(got) != 2 || got[0] != "terminate" || got[1] != "remove" {
+		t.Fatalf("cleanup events = %v, want terminate then remove", got)
+	}
+}
+
+func TestCleanupCanceledJobContainerSkipsLegacyContainerWithoutRuntimeEndpoint(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	repo := &Repository{
+		svc: &Services{
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				called = true
+				return &testContainerSvc{}, nil
 			},
 		},
 	}
@@ -397,9 +440,8 @@ func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testin
 	if err != nil {
 		t.Fatalf("cleanupCanceledJobContainer() error = %v", err)
 	}
-
-	if got := events.items(); len(got) != 2 || got[0] != "terminate" || got[1] != "remove" {
-		t.Fatalf("cleanup events = %v, want terminate then remove", got)
+	if called {
+		t.Fatal("container service factory called for job without runtime endpoint")
 	}
 }
 
@@ -422,7 +464,9 @@ func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 				},
 			},
 			Notifications: testNotificationsClient{},
-			Csvc:          &testContainerSvc{events: &orderedEvents{}},
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				return &testContainerSvc{events: &orderedEvents{}}, nil
+			},
 		},
 	}
 
@@ -436,8 +480,9 @@ func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 		"user-1",
 		&jobspb.ListJobsResponse{
 			Jobs: []*jobspb.JobsResponse{{
-				Id:          "job-1",
-				ContainerId: "container-1",
+				Id:              "job-1",
+				ContainerId:     "container-1",
+				RuntimeEndpoint: "tcp://docker-proxy:2375",
 			}},
 		},
 		nil,
@@ -568,9 +613,11 @@ func newBuildWorkflowTestRepository(t *testing.T, opts *buildWorkflowTestOptions
 			},
 			Jobs:          &testJobsClient{},
 			Notifications: testNotificationsClient{events: opts.notifications},
-			Csvc: &testContainerSvc{
-				buildErr: opts.buildErr,
-				builds:   opts.builds,
+			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				return &testContainerSvc{
+					buildErr: opts.buildErr,
+					builds:   opts.builds,
+				}, nil
 			},
 		},
 	}
@@ -593,9 +640,10 @@ func (testAuth) ValidateToken(context.Context) (*jwt.Token, error) {
 
 type testJobsClient struct {
 	jobspb.JobsServiceClient
-	updateJobStatus func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error)
-	scheduleJob     func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
-	listJobs        func(context.Context, *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error)
+	updateJobStatus     func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error)
+	scheduleJob         func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
+	listJobs            func(context.Context, *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error)
+	getReadyRuntimeNode func(context.Context, *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
 }
 
 func (c *testJobsClient) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest, _ ...grpc.CallOption) (*jobspb.UpdateJobStatusResponse, error) {
@@ -617,6 +665,16 @@ func (c *testJobsClient) ListJobs(ctx context.Context, req *jobspb.ListJobsReque
 		return c.listJobs(ctx, req)
 	}
 	return &jobspb.ListJobsResponse{}, nil
+}
+
+func (c *testJobsClient) GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRuntimeNodeRequest, _ ...grpc.CallOption) (*jobspb.GetReadyRuntimeNodeResponse, error) {
+	if c.getReadyRuntimeNode != nil {
+		return c.getReadyRuntimeNode(ctx, req)
+	}
+	return &jobspb.GetReadyRuntimeNodeResponse{
+		RuntimeNodeId:   "runtime-1",
+		RuntimeEndpoint: "tcp://docker-proxy:2375",
+	}, nil
 }
 
 type testWorkflowsClient struct {
@@ -688,6 +746,13 @@ func (s *testContainerSvc) Build(_ context.Context, image string) error {
 		s.builds.add(image)
 	}
 	return s.buildErr
+}
+
+func (s *testContainerSvc) ResolveImageDigest(ctx context.Context, image string) (resolvedImageRef, resolvedImageDigest string, err error) {
+	if err := s.Build(ctx, image); err != nil {
+		return "", "", err
+	}
+	return image, image + "@sha256:test", nil
 }
 
 func (s *testContainerSvc) ImageExists(context.Context, string) (bool, error) {

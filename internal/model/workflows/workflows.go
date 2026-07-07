@@ -54,6 +54,8 @@ type GetWorkflowResponse struct {
 	LogRetention                     bool           `db:"log_retention"`
 	Generation                       int64          `db:"generation"`
 	BuildHash                        sql.NullString `db:"build_hash,omitempty"`
+	ResolvedImageRef                 sql.NullString `db:"resolved_image_ref,omitempty"`
+	ResolvedImageDigest              sql.NullString `db:"resolved_image_digest,omitempty"`
 }
 
 // ToProto converts the GetWorkflowResponse to its protobuf representation.
@@ -77,6 +79,8 @@ func (r *GetWorkflowResponse) ToProto() *workflowspb.GetWorkflowResponse {
 		TerminatedAt:                     terminatedAt,
 		LogRetention:                     r.LogRetention,
 		Generation:                       r.Generation,
+		ResolvedImageRef:                 r.ResolvedImageRef.String,
+		ResolvedImageDigest:              r.ResolvedImageDigest.String,
 	}
 }
 
@@ -97,6 +101,8 @@ type GetWorkflowByIDResponse struct {
 	LogRetention                     bool           `db:"log_retention"`
 	Generation                       int64          `db:"generation"`
 	BuildHash                        sql.NullString `db:"build_hash,omitempty"`
+	ResolvedImageRef                 sql.NullString `db:"resolved_image_ref,omitempty"`
+	ResolvedImageDigest              sql.NullString `db:"resolved_image_digest,omitempty"`
 }
 
 // ToProto converts the GetWorkflowByIDResponse to its protobuf representation.
@@ -121,6 +127,8 @@ func (r *GetWorkflowByIDResponse) ToProto() *workflowspb.GetWorkflowByIDResponse
 		TerminatedAt:                     terminatedAt,
 		LogRetention:                     r.LogRetention,
 		Generation:                       r.Generation,
+		ResolvedImageRef:                 r.ResolvedImageRef.String,
+		ResolvedImageDigest:              r.ResolvedImageDigest.String,
 	}
 }
 
@@ -140,6 +148,8 @@ type WorkflowByUserIDResponse struct {
 	LogRetention                     bool           `db:"log_retention"`
 	Generation                       int64          `db:"generation"`
 	BuildHash                        sql.NullString `db:"build_hash,omitempty"`
+	ResolvedImageRef                 sql.NullString `db:"resolved_image_ref,omitempty"`
+	ResolvedImageDigest              sql.NullString `db:"resolved_image_digest,omitempty"`
 }
 
 // ListWorkflowsResponse represents the response of ListWorkflowsByUserID.
@@ -172,6 +182,8 @@ func (r *ListWorkflowsResponse) ToProto() *workflowspb.ListWorkflowsResponse {
 			UpdatedAt:                        j.UpdatedAt.Format(time.RFC3339Nano),
 			TerminatedAt:                     terminatedAt,
 			LogRetention:                     j.LogRetention,
+			ResolvedImageRef:                 j.ResolvedImageRef.String,
+			ResolvedImageDigest:              j.ResolvedImageDigest.String,
 		}
 	}
 

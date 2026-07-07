@@ -44,17 +44,17 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 }
 
 // AttachJobContainer mocks base method.
-func (m *MockRepository) AttachJobContainer(ctx context.Context, jobID, leaseToken, containerID string) error {
+func (m *MockRepository) AttachJobContainer(ctx context.Context, jobID, leaseToken, containerID, runtimeNodeID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AttachJobContainer", ctx, jobID, leaseToken, containerID)
+	ret := m.ctrl.Call(m, "AttachJobContainer", ctx, jobID, leaseToken, containerID, runtimeNodeID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AttachJobContainer indicates an expected call of AttachJobContainer.
-func (mr *MockRepositoryMockRecorder) AttachJobContainer(ctx, jobID, leaseToken, containerID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) AttachJobContainer(ctx, jobID, leaseToken, containerID, runtimeNodeID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachJobContainer", reflect.TypeOf((*MockRepository)(nil).AttachJobContainer), ctx, jobID, leaseToken, containerID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachJobContainer", reflect.TypeOf((*MockRepository)(nil).AttachJobContainer), ctx, jobID, leaseToken, containerID, runtimeNodeID)
 }
 
 // CancelClaimedJob mocks base method.
@@ -160,6 +160,21 @@ func (m *MockRepository) GetJobLogs(ctx context.Context, jobID, workflowID, user
 func (mr *MockRepositoryMockRecorder) GetJobLogs(ctx, jobID, workflowID, userID, cursor, sortOrder, filters any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJobLogs", reflect.TypeOf((*MockRepository)(nil).GetJobLogs), ctx, jobID, workflowID, userID, cursor, sortOrder, filters)
+}
+
+// GetReadyRuntimeNode mocks base method.
+func (m *MockRepository) GetReadyRuntimeNode(ctx context.Context) (*jobs.RuntimeNode, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetReadyRuntimeNode", ctx)
+	ret0, _ := ret[0].(*jobs.RuntimeNode)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetReadyRuntimeNode indicates an expected call of GetReadyRuntimeNode.
+func (mr *MockRepositoryMockRecorder) GetReadyRuntimeNode(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReadyRuntimeNode", reflect.TypeOf((*MockRepository)(nil).GetReadyRuntimeNode), ctx)
 }
 
 // ListJobs mocks base method.

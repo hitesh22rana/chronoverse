@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -X '${PKG_PATH}.name=${NAME}' \
     -X '${PKG_PATH}.authPrivateKeyPath=${PRIVATE_KEY_PATH}' \
     -X '${PKG_PATH}.authPublicKeyPath=${PUBLIC_KEY_PATH}'" \
-    -o /go/bin/service cmd/${NAME}/main.go
+    -o /go/bin/service ./cmd/${NAME}
 
 # Final minimal stage
 FROM alpine:3.22.2

@@ -196,6 +196,75 @@ func TestScheduleJob(t *testing.T) {
 	}
 }
 
+func TestClaimJobPropagatesRuntimeUnavailable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
+	s := jobs.New(validator.New(), repo, cache)
+	req := &jobspb.ClaimJobRequest{
+		Id:                   "job_id",
+		WorkflowId:           "workflow_id",
+		WorkerId:             "execution-worker",
+		LeaseDurationSeconds: 30,
+		DispatchAttempt:      1,
+	}
+
+	repo.EXPECT().ClaimJob(
+		gomock.Any(),
+		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetWorkerId(),
+		30*time.Second,
+		req.GetDispatchAttempt(),
+	).Return(nil, false, "", status.Error(codes.Unavailable, "no healthy runtime node is available"))
+
+	res, err := s.ClaimJob(t.Context(), req)
+	if res != nil {
+		t.Fatalf("ClaimJob() response = %+v, want nil", res)
+	}
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("ClaimJob() error code = %s, want %s: %v", status.Code(err), codes.Unavailable, err)
+	}
+}
+
+func TestClaimJobReturnsDurableUnclaimedResponse(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := jobsmock.NewMockRepository(ctrl)
+	cache := jobsmock.NewMockCache(ctrl)
+	s := jobs.New(validator.New(), repo, cache)
+	req := &jobspb.ClaimJobRequest{
+		Id:                   "job_id",
+		WorkflowId:           "workflow_id",
+		WorkerId:             "execution-worker",
+		LeaseDurationSeconds: 30,
+		DispatchAttempt:      1,
+	}
+
+	repo.EXPECT().ClaimJob(
+		gomock.Any(),
+		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetWorkerId(),
+		30*time.Second,
+		req.GetDispatchAttempt(),
+	).Return(nil, false, "job status is COMPLETED with dispatch attempts 1", nil)
+
+	res, err := s.ClaimJob(t.Context(), req)
+	if err != nil {
+		t.Fatalf("ClaimJob() error = %v", err)
+	}
+	if res.GetClaimed() {
+		t.Fatal("ClaimJob() claimed = true, want false")
+	}
+	if res.GetReason() != "job status is COMPLETED with dispatch attempts 1" {
+		t.Fatalf("ClaimJob() reason = %q", res.GetReason())
+	}
+}
+
 func TestUpdateJobStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 

@@ -23,6 +23,7 @@ analytics into one self-hosted stack.
   - `HEARTBEAT`: lightweight health-check workflow without execution logs.
   - `CONTAINER`: runs containerized workloads and can retain stdout/stderr logs.
 - **Replay-safe execution**: idempotency keys, workflow generations, deterministic event keys, transactional outbox delivery, durable job leases, Redis-coordinated Docker image pulls, worker retries, and stale-event guards.
+- **Runtime-aware Docker execution**: `runtime-agent` registers each Docker-capable node, `jobs-service` assigns runtime ownership during claim, and workers talk directly to the selected Docker endpoint for execution, logs, and cleanup.
 - **Job execution lifecycle**: queued, running, completed, failed, and canceled jobs with automatic retry handling for system failures.
 - **Retained job logs**: ClickHouse-backed logs, Meilisearch-backed search, raw log download, stream filtering, and Server-Sent Events for live output.
 - **Retention controls**: per-workflow log retention with explicit behavior for non-log-producing or retention-disabled workflows.
@@ -37,11 +38,11 @@ Chronoverse uses a message-driven microservice architecture:
 - **HTTP server** exposes the public REST API and mediates browser sessions, CSRF checks, and gRPC calls.
 - **gRPC services** own user, workflow, job, notification, and analytics domains.
 - **Kafka topics** carry workflow, job, log, and analytics events between workers.
-- **PostgreSQL** stores transactional state, analytics, leases, idempotency records, and outbox events.
+- **PostgreSQL** stores transactional state, analytics, leases, runtime ownership, idempotency records, and outbox events.
 - **ClickHouse** stores retained job logs.
-- **Redis** stores sessions, cached reads, live log pub/sub state, and workflow-worker image pull locks.
+- **Redis** stores sessions, cached reads, live log pub/sub state, and runtime-node-scoped image pull locks.
 - **Meilisearch** indexes retained job logs for search.
-- **Docker socket proxy** lets execution workers run containers without mounting the Docker socket directly.
+- **Runtime agent + Docker socket proxy** register Docker-capable nodes and expose the node-local Docker API without mounting the Docker socket directly into workers.
 - **LGTM** provides local OpenTelemetry collection and dashboards.
 
 For the full event flow and replay-safety model, see the
@@ -58,11 +59,16 @@ For the full event flow and replay-safety model, see the
 - `notifications-service`: notification creation and read-state management.
 - `analytics-service`: user and workflow analytics reads.
 
+### Runtime Plane
+
+- `runtime-agent`: registers one Docker-capable runtime node in PostgreSQL, heartbeats Docker endpoint health/capacity, marks unhealthy when Docker is unavailable, and marks itself draining on graceful shutdown.
+- `docker-proxy`: exposes the node-local Docker API that `execution-worker` and `workflow-worker` use after `jobs-service` returns runtime ownership.
+
 ### Workers and Jobs
 
 - `scheduling-worker`: scans due workflows and creates replay-safe job dispatch events.
-- `workflow-worker`: processes workflow build events and prepares executable workflow configuration.
-- `execution-worker`: claims leased jobs, runs containers, renews leases, publishes logs, and recovers expired leases.
+- `workflow-worker`: processes workflow build events, resolves container image digests, and performs owner-aware cleanup.
+- `execution-worker`: claims leased jobs, routes container execution to the assigned runtime endpoint, renews leases, publishes logs, and recovers expired leases.
 - `joblogs-processor`: batches log events into ClickHouse and Meilisearch when retention is enabled.
 - `analytics-processor`: consumes workflow, job, and log events into analytics tables with dedupe.
 - `outbox-relay`: publishes transactional outbox events to Kafka with processing leases, retries, dead handling, and cleanup.
@@ -77,6 +83,12 @@ For the full event flow and replay-safety model, see the
 
 The compose stacks build or pull all runtime services. Local Go, Node.js, Buf,
 and lint tooling are only needed when developing the codebase directly.
+Both compose files use one local runtime named `local-docker`; multi-node
+deployments run one `runtime-agent` beside each node-local Docker proxy.
+Runtime readiness is based on successful Docker health heartbeats; `UNHEALTHY`
+means the agent is alive but its Docker endpoint is unusable, while `DRAINING`
+means intentional shutdown or scale-down. `RUNTIME_AGENT_ID` must be stable per
+runtime node across restarts, not randomly regenerated at startup.
 
 ### Development Stack
 

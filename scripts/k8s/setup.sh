@@ -488,6 +488,9 @@ Watch pod rollout:
 Check jobs and daemonsets:
   kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE get jobs,ds
 
+EOF
+  if [ "$MODE" = "local" ]; then
+    cat <<EOF
 Open the dashboard/API locally:
   kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE port-forward svc/nginx 8080:80
   http://localhost:8080
@@ -496,6 +499,24 @@ Open LGTM locally:
   kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE port-forward svc/lgtm 3000:3000
   http://localhost:3000
 
+EOF
+  else
+    cat <<EOF
+Production access:
+  Chronoverse is exposed through the Kubernetes Ingress named chronoverse.
+  The default host is chronoverse.example.com; replace it with your domain and
+  point DNS to your ingress controller external address.
+
+Inspect the production ingress:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE get ingress chronoverse
+
+Check the ingress controller address:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}get ingressclass
+  kubectl ${KUBECTL_CONTEXT_PREFIX}get svc -A | grep -E 'ingress|nginx'
+
+EOF
+  fi
+  cat <<EOF
 Check registered runtimes:
   kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE exec postgres-0 -- sh -c 'PGPASSWORD="\$POSTGRES_PASSWORD" psql -U "\$POSTGRES_USER" -d "\$POSTGRES_DB" -c "select id,node_name,docker_endpoint,status from runtime_nodes;"'
 EOF

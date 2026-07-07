@@ -70,21 +70,22 @@ the low/mid/high-resource worker groups.
   and shared ConfigMaps.
 - `overlays/local/` adds in-cluster PostgreSQL, Redis, ClickHouse, Kafka,
   Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs.
-- `overlays/production/` expects externally managed PostgreSQL, Redis, Kafka,
-  ClickHouse, Meilisearch, and pre-created Secrets.
+- `overlays/production/` deploys self-hosted PostgreSQL, Redis, ClickHouse,
+  Kafka, Meilisearch, runtime-agent, dynamic PVCs, and HPAs for services and
+  workers.
 
 Common commands:
 
 ```sh
 kubectl kustomize infra/k8s/overlays/local
 kubectl kustomize infra/k8s/overlays/production
-kubectl apply -k infra/k8s/overlays/local
-kubectl apply -k infra/k8s/overlays/production
+scripts/k8s/setup.sh --mode local
+scripts/k8s/setup.sh --mode production
 ```
 
-Production ConfigMaps include placeholder hosts such as
-`postgres.example.internal` and `chronoverse.example.com`. Patch those values
-before rollout.
+The setup script preserves complete pre-created Secrets and generates missing
+bootstrap material. Patch public URLs and allowed origins for your deployment
+before exposing the HTTP entrypoint.
 
 ## Core Environment Groups
 
@@ -248,10 +249,11 @@ In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
 and register a node-stable endpoint such as `tcp://$(NODE_IP):2375`, not a pod
 IP or `tcp://docker-proxy:2375` service DNS name. The Docker proxy host port
 must stay private and reachable only by trusted Chronoverse workers.
-The local kind overlay intentionally registers `tcp://$(POD_IP):2375` instead
-because kind node-container host ports are not reachable from pods on other kind
-nodes, while pod-to-pod traffic is routable. Do not use that local endpoint
-choice for production.
+Multi-node kind and similar Docker-container-based Kubernetes emulators can
+make node host ports reachable only from pods on the same emulator node. In that
+specific topology, use a pod-IP endpoint override as an emulator workaround; do
+not use pod-IP runtime endpoints for real Kubernetes clusters where node IPs are
+routable.
 `RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
 it from durable node identity, such as the Kubernetes node name, hostname, or a
 mounted identity file; do not generate a new random ID on every restart.

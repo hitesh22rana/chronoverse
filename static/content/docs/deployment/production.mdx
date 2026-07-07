@@ -6,10 +6,10 @@
 docker compose -f compose.prod.yaml up -d
 ```
 
-For Kubernetes, render or apply the production overlay after creating the required Secrets and external dependency configuration:
+For Kubernetes, use the setup script. It preserves complete pre-created Secrets and generates missing bootstrap material:
 
 ```bash
-kubectl apply -k infra/k8s/overlays/production
+scripts/k8s/setup.sh --mode production
 ```
 
 Production publishes:
@@ -17,7 +17,7 @@ Production publishes:
 - Dashboard and proxied API through Nginx on port `80`.
 - LGTM on port `3000`.
 
-Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry. PostgreSQL, Redis, Kafka, ClickHouse, and Meilisearch are expected to be externally managed for production.
+Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry.
 
 ## Images
 
@@ -37,7 +37,7 @@ The production profile declares replicated workers and resource reservations. Ef
 
 - Replace database and Meilisearch credentials.
 - Manage certificates and private keys with environment-specific controls.
-- Create Kubernetes Secrets for auth keys, CA, client TLS, service TLS, Kafka stores, database credentials, ClickHouse credentials, and Meilisearch credentials before applying the production overlay.
+- Pre-create Kubernetes Secrets when you need operator-owned credentials or certificates; otherwise the setup script generates missing bootstrap material and never overwrites complete existing Secrets.
 - Configure the public host URL, allowed origins, secure cookies, and same-site policy.
 - Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
 - Restrict access to the LGTM dashboard.

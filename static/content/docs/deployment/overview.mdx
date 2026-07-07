@@ -10,7 +10,7 @@ Chronoverse ships Docker Compose topologies and Kubernetes Kustomize overlays.
 
 `compose.prod.yaml` uses GHCR application images, keeps services on internal networks, applies resource constraints, runs replicated worker groups, and publishes Nginx plus the LGTM dashboard.
 
-`infra/k8s/overlays/production` provides the Kubernetes deployment shape for externally managed stateful dependencies and pre-created Secrets. `infra/k8s/overlays/local` provides a self-contained single-node Kubernetes profile for validation.
+`infra/k8s/overlays/local` provides a self-contained single-node Kubernetes profile for validation. `infra/k8s/overlays/production` provides the self-hosted Kubernetes deployment shape with in-cluster PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, services, workers, dynamic PVCs, and HPAs.
 
 ## Startup phases
 
@@ -23,4 +23,4 @@ Chronoverse ships Docker Compose topologies and Kubernetes Kustomize overlays.
 
 ## Deployment boundary
 
-Compose remains the quickest full-stack path. Kubernetes support is provided through Kustomize and expects production operators to own managed storage, secret lifecycle, ingress hostnames, and Docker-capable worker nodes.
+Compose remains the quickest full-stack path. Kubernetes support is provided through Kustomize and `scripts/k8s/setup.sh`; production operators own storage class selection, secret lifecycle, ingress hostnames, and Docker-capable runtime nodes.

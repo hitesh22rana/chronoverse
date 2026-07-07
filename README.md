@@ -133,16 +133,23 @@ values. See [Configuration](./docs/configuration.md) and [Operations](./docs/ope
 Kubernetes manifests are available as Kustomize overlays:
 
 ```sh
-kubectl apply -k infra/k8s/overlays/local
+scripts/k8s/setup.sh --mode local
 ```
 
 For production:
 
 ```sh
-kubectl apply -k infra/k8s/overlays/production
+scripts/k8s/setup.sh --mode production
 ```
 
-The local overlay is self-contained and includes a two-node kind example at `infra/k8s/overlays/local/kind-cluster.yaml`. Kubernetes does not include a generic `kubectl` command to create a cluster; use your cluster lifecycle tool and label only Docker-capable nodes with `chronoverse.io/docker-workloads=true`. Those nodes run the `docker-proxy` DaemonSet with a `runtime-agent` sidecar, while workers can schedule anywhere and route through runtime ownership. Docker Desktop's built-in `docker-desktop` Kubernetes context does not expose a Docker Engine socket to pods, so `docker-proxy` will not start there. The production overlay expects managed PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, and pre-created Kubernetes Secrets. See [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md), and [operations](./docs/operations.md).
+The local strategy is a single-node, self-contained Kubernetes setup for
+validation with kind/minikube-style clusters. The production strategy is the
+self-hosted Chronoverse stack on your Kubernetes infrastructure: services,
+workers, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, and
+storage all run under your cluster. The setup script preserves complete
+operator-provided Secrets and generates only missing bootstrap material. See
+[infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md),
+and [operations](./docs/operations.md).
 
 ## API and Usage
 

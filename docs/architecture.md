@@ -77,9 +77,9 @@ namespace.
 - **LGTM** receives OpenTelemetry data and exposes local dashboards.
 
 The Kubernetes local overlay includes these infrastructure systems for
-single-node validation. The Kubernetes production overlay is external-ready:
-PostgreSQL, Redis, Kafka, ClickHouse, and Meilisearch should be provided by
-managed services, operators, or separately owned manifests.
+single-node validation. The Kubernetes production overlay is self-hosted:
+PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, services, and
+workers are deployed together on the user's Kubernetes infrastructure.
 
 ## Event Flow
 

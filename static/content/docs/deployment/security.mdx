@@ -4,7 +4,7 @@
 
 `init-certs` generates a local CA, server certificates, client certificates, Kafka keystore and truststore material, and Ed25519 authentication keys in the shared certificate volume.
 
-The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production overlay does not generate private material in-cluster; it mounts pre-created Kubernetes Secrets.
+The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves complete operator-provided Secrets.
 
 ## Encrypted infrastructure
 
@@ -26,7 +26,7 @@ Execution components use a socket proxy with a narrow API surface instead of bro
 
 Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation.
 
-For Kubernetes, create `chronoverse-auth`, `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-kafka-tls`, `postgres-secret`, `clickhouse-secret`, and `meilisearch-secret` before applying the production overlay.
+For Kubernetes, pre-create `chronoverse-auth`, `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, `postgres-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. Otherwise `scripts/k8s/setup.sh --mode production` generates missing Secrets.
 
 <Callout title="Do not expose development ports" type="warning">
 The development profile publishes databases and gRPC services for debugging. That topology is not the production security boundary.

@@ -1,8 +1,38 @@
 # Chronoverse Kubernetes manifests
 
-Chronoverse Kubernetes support is packaged with Kustomize, which is available through `kubectl`.
+Chronoverse Kubernetes support is packaged with Kustomize and an operator-facing
+setup script.
 
-## Render and apply
+## Setup
+
+Use the setup script as the primary entrypoint:
+
+```sh
+scripts/k8s/setup.sh --mode local
+scripts/k8s/setup.sh --mode production
+```
+
+`local` is a single-node, self-contained validation strategy. It includes
+in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath
+storage, generated local certificate bootstrap jobs, one replica per app, and a
+single-node kind example.
+
+`production` is a self-hosted strategy for your Kubernetes infrastructure. It
+includes Chronoverse services, workers, PostgreSQL, Redis, Kafka, ClickHouse,
+Meilisearch, runtime-agent, Docker proxy, Nginx, migrations, topic
+initialization, dynamic PVCs, and HPAs.
+
+The script is interactive by default and also supports repeatable flags:
+
+```sh
+scripts/k8s/setup.sh --mode production --namespace chronoverse --dry-run
+scripts/k8s/setup.sh --mode production --storage-class fast-ssd
+scripts/k8s/setup.sh --mode local --create-kind
+```
+
+## Render and Apply Directly
+
+Direct Kustomize usage remains available after prerequisites are prepared:
 
 ```sh
 kubectl kustomize infra/k8s/overlays/local
@@ -12,61 +42,88 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
-Kubernetes does not include a generic `kubectl` command to create a cluster.
-Use your cluster lifecycle tool, such as kind, minikube, kubeadm, or managed
-Kubernetes provisioning, then apply the Kustomize overlay with `kubectl`.
+## Cluster Prerequisites
 
-Container workflows require Docker-capable runtime nodes. Before applying the
-overlay, make sure every node that should own Docker containers exposes Docker
-Engine at `/var/run/docker.sock` and has this label:
+Kubernetes does not include a generic `kubectl` command to create a cluster.
+Use your lifecycle tool, such as kind, minikube, kubeadm, or managed Kubernetes
+provisioning, then apply Chronoverse.
+
+Container workflows require Docker-capable runtime nodes. Label every node that
+should own Docker containers:
 
 ```sh
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
-For kind, the Docker socket mount, shared certificate mount, and node label must
-be configured when the cluster is created. The repository includes a two-node
-local example where both nodes are Docker-capable and mount the same host
-certificate directory into `/var/lib/chronoverse-data/certs`:
+Those nodes must expose Docker Engine at `/var/run/docker.sock`. Docker
+Desktop's built-in `docker-desktop` Kubernetes context is not sufficient for the
+Docker-backed worker path because it does not expose a Docker Engine socket to
+pods.
+
+For kind validation:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
 kubectl config use-context kind-chronoverse
-kubectl apply -k infra/k8s/overlays/local
+scripts/k8s/setup.sh --mode local
 ```
 
-Do not use Docker Desktop's built-in `docker-desktop` Kubernetes context for
-the Docker-backed worker path. That cluster runs containerd and does not expose
-Docker Engine at `/var/run/docker.sock` inside the node, so `docker-proxy` fails
-with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
+## Secrets
 
-## Layout
+The setup script checks required Secrets before applying manifests. Complete
+operator-provided Secrets are preserved and never overwritten. Missing Secrets
+are generated and created. Partial Secrets fail with a clear missing-key error.
 
-- `base/`: application services, workers, dashboard, Nginx, Docker proxy, RBAC, network policy, PDBs, Kafka topic initialization, and shared configuration.
-- `overlays/local/`: multi-node-capable kind profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs. The stateful dependencies and Chronoverse app pods use generated local TLS material from the shared cert volume, which is mounted by every Docker-capable kind node. Runtime-agent registers Docker proxy pod IP endpoints in this overlay because kind node-container host ports are not reliably reachable from pods on other kind nodes.
-- `overlays/production/`: external-ready profile that expects managed data stores and pre-created Secrets. It includes HorizontalPodAutoscalers for stateless APIs and workers.
-
-## Required production Secrets
-
-Create these before applying `overlays/production`:
+Production Secrets include:
 
 - `postgres-secret`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 - `clickhouse-secret`: `CLICKHOUSE_PASSWORD`
-- `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`
+- `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`, `MEILI_MASTER_KEY`
+- `kafka-tls-secret`: `KAFKA_SSL_KEYSTORE_PASSWORD`, `KAFKA_SSL_TRUSTSTORE_PASSWORD`, `KAFKA_SSL_KEY_PASSWORD`
 - `chronoverse-auth`: `auth.ed`, `auth.ed.pub`
 - `chronoverse-ca`: `ca.crt`
 - `chronoverse-client-tls`: `tls.crt`, `tls.key`
-- `chronoverse-service-tls`: `users-service.crt`, `users-service.key`, `workflows-service.crt`, `workflows-service.key`, `jobs-service.crt`, `jobs-service.key`, `notifications-service.crt`, `notifications-service.key`, `analytics-service.crt`, `analytics-service.key`
+- `chronoverse-service-tls`: service certificate/key pairs for users, workflows, jobs, notifications, and analytics services
+- `chronoverse-infra-tls`: certificate/key pairs for PostgreSQL, Redis, ClickHouse, Kafka, and Meilisearch
 - `chronoverse-kafka-tls`: `kafka.keystore.jks`, `kafka.truststore.jks`, `keystore_creds.txt`, `truststore_creds.txt`, `key_creds.txt`
 
-## Production notes
+## Storage
 
-- Patch the production ConfigMaps for real PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, public URL, and allowed origins.
-- `init-kafka-topics` creates or expands `workflows`, `jobs`, `job_logs`, and `analytics` topics.
-- Production HPAs require metrics-server or another provider for `autoscaling/v2` resource metrics. CPU/memory HPAs are included for app services and workers; Kafka-lag-based worker scaling needs KEDA or custom metrics.
-- Container workflows use the Docker socket proxy through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Workers do not need the Docker node label and can schedule anywhere.
-- In production, runtime-agent registers `tcp://$(NODE_IP):2375` through the Docker proxy `hostPort`, not pod IP or `tcp://docker-proxy:2375`. This keeps running job cleanup valid across proxy pod restarts on the same node.
-- In the local kind overlay, runtime-agent registers `tcp://$(POD_IP):2375`. Kind routes pod-to-pod traffic across node containers, but node-container host ports are only reachable from pods on the same kind node. This is a local validation compromise, not the production endpoint model.
-- Worker pods need egress to TCP `2375` on runtime node IPs. The base NetworkPolicy allows that port, but production should also restrict access with private networking, node firewalls or security groups, and the Docker socket proxy allowlist. Do not expose TCP `2375` publicly.
-- If a host already runs a Docker TCP listener on `2375`, the DaemonSet cannot bind the same host port. Move the host listener or choose a different restricted port consistently in `containerPort`, `hostPort`, `DOCKER_HOST`, and `RUNTIME_AGENT_DOCKER_ENDPOINT`.
-- The local overlay uses hostPath storage and generated cert material. Do not use it as the production security or persistence model.
+The local overlay uses hostPath PVs and is intended for single-node validation.
+
+The production overlay uses dynamic PVCs by default. Provide a StorageClass with
+`scripts/k8s/setup.sh --mode production --storage-class <name>` or rely on the
+cluster default StorageClass. HostPath in production is a non-HA fallback only
+and should be used only after explicitly accepting the risk.
+
+## Runtime Ownership
+
+Container workflows use Docker through runtime ownership. Each labeled
+Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent`
+sidecar. Workers do not need the Docker node label and can schedule anywhere.
+
+Official overlays register `tcp://$(NODE_IP):2375` through the Docker proxy
+`hostPort`, not `tcp://docker-proxy:2375`. This keeps running job cleanup valid
+across proxy pod restarts on the same node.
+
+Multi-node kind and similar Docker-container-based Kubernetes emulators may not
+route one emulator node's hostPort from pods on another emulator node. If you
+choose that topology, use a pod-IP runtime endpoint override as an
+emulator-specific workaround. Real single-node and multi-node Kubernetes
+clusters should use node-stable runtime endpoints.
+
+Worker pods need egress to TCP `2375` on runtime node IPs. The base
+NetworkPolicy allows that port, but production should also restrict access with
+private networking, node firewalls or security groups, and the Docker socket
+proxy allowlist. Do not expose TCP `2375` publicly.
+
+## Validation
+
+```sh
+make k8s/render/local
+make k8s/render/production
+make k8s/dry-run/local
+make k8s/dry-run/production
+scripts/k8s/setup.sh --mode local --dry-run
+scripts/k8s/setup.sh --mode production --dry-run
+```

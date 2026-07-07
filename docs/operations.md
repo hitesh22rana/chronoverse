@@ -39,16 +39,16 @@ configuration, resource limits, and replicated worker settings.
 ### Kubernetes
 
 ```sh
-kubectl apply -k infra/k8s/overlays/local
-kubectl apply -k infra/k8s/overlays/production
+scripts/k8s/setup.sh --mode local
+scripts/k8s/setup.sh --mode production
 ```
 
-The local overlay is self-contained for single-node validation and runs one
-replica per app deployment. The production overlay expects managed or separately
-provisioned PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, and Kubernetes
-Secrets, and includes CPU/memory HorizontalPodAutoscalers for app services and
-workers. Production autoscaling requires metrics-server or an equivalent
-`autoscaling/v2` resource metrics provider.
+The local strategy is self-contained for single-node validation and runs one
+replica per app deployment. The production strategy is self-hosted on your
+Kubernetes infrastructure and includes PostgreSQL, Redis, Kafka, ClickHouse,
+Meilisearch, application services, workers, runtime-agent, and CPU/memory
+HorizontalPodAutoscalers. Production autoscaling requires metrics-server or an
+equivalent `autoscaling/v2` resource metrics provider.
 
 Kubernetes does not include a generic `kubectl` command to create a cluster.
 Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or
@@ -63,15 +63,14 @@ Engine at `/var/run/docker.sock` and has this label:
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
-For kind, the Docker socket mount, shared certificate mount, and node label must
-be configured when the cluster is created. The repository includes a two-node
-local example where both nodes are Docker-capable and mount the same host
-certificate directory into `/var/lib/chronoverse-data/certs`:
+For kind, the Docker socket mount, certificate mount, and node label must be
+configured when the cluster is created. The repository includes a single-node
+local example:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
 kubectl config use-context kind-chronoverse
-kubectl apply -k infra/k8s/overlays/local
+scripts/k8s/setup.sh --mode local
 ```
 
 Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient
@@ -80,17 +79,14 @@ for Docker-backed workers because its node does not expose Docker Engine at
 cluster whose nodes really provide that socket.
 
 The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
-Docker-capable node. In production, the agent registers
-`tcp://$(NODE_IP):2375` so running job cleanup survives proxy pod restarts on
-the same node. In the local kind overlay, the agent registers
-`tcp://$(POD_IP):2375` because kind node-container host ports are not reliably
-reachable from pods on other kind nodes, while pod-to-pod traffic is routable.
-`workflow-worker` and `execution-worker` do not need the Docker node label; they
-can schedule anywhere with network access to TCP `2375` on registered runtime
-endpoints. Local stateful dependencies, services, workers, processors, and init
-jobs use the generated CA/server/client certificates from the shared cert
-volume, so runtime-agent validates the same Postgres client TLS path used by the
-rest of the stack.
+Docker-capable node. Official overlays register `tcp://$(NODE_IP):2375` so
+running job cleanup survives proxy pod restarts on the same node. Multi-node
+kind and other Docker-container-based Kubernetes emulators can have a specific
+hostPort routing limitation where pods on one emulator node cannot reach another
+emulator node's host port; if you choose that topology, use a pod-IP endpoint
+override as an emulator-only workaround. `workflow-worker` and
+`execution-worker` do not need the Docker node label; they can schedule anywhere
+with network access to TCP `2375` on registered runtime endpoints.
 
 ### Stop and Inspect
 

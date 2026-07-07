@@ -73,6 +73,10 @@ scripts/k8s/setup.sh --mode local
 The setup script checks required Secrets before applying manifests. Complete
 operator-provided Secrets are preserved and never overwritten. Missing Secrets
 are generated and created. Partial Secrets fail with a clear missing-key error.
+Local generated data-store credentials are deterministic development defaults
+so retained hostPath data can survive a resource delete/recreate without
+drifting away from regenerated Secrets. Production generated fallback
+credentials remain random.
 
 Production Secrets include:
 
@@ -90,6 +94,9 @@ Production Secrets include:
 ## Storage
 
 The local overlay uses hostPath PVs and is intended for single-node validation.
+Those PVs use retained node-local paths; delete the kind cluster or clear the
+hostPath directories when you intentionally want a completely empty local data
+set.
 
 The production overlay uses dynamic PVCs by default. Provide a StorageClass with
 `scripts/k8s/setup.sh --mode production --storage-class <name>` or rely on the

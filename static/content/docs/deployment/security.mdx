@@ -8,7 +8,7 @@ The Kubernetes local overlay uses the same bootstrap idea through Jobs and a loc
 
 ## Encrypted infrastructure
 
-Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC service connections.
+Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC service connections. Kubernetes uses the same posture: data-store clients mount the generated or operator-provided client certificate, and PostgreSQL host connections require TLS plus a CA-verified client certificate.
 
 ## Service authorization
 

@@ -256,23 +256,33 @@ cleanup() {
 trap cleanup EXIT
 
 create_data_secrets() {
+  local postgres_password clickhouse_password meili_key kafka_keystore kafka_truststore
+  if [ "$MODE" = "local" ]; then
+    postgres_password="chronoverse-local-postgres-password"
+    clickhouse_password="chronoverse-local-clickhouse-password"
+    meili_key="chronoverse-local-meilisearch-master-key"
+    kafka_keystore="chronoverse-local-kafka-keystore-password"
+    kafka_truststore="chronoverse-local-kafka-truststore-password"
+  else
+    postgres_password="$(random_hex 24)"
+    clickhouse_password="$(random_hex 24)"
+    meili_key="$(random_hex 32)"
+    kafka_keystore="$(random_hex 18)"
+    kafka_truststore="$(random_hex 18)"
+  fi
+
   create_literal_secret postgres-secret \
     --from-literal=POSTGRES_USER=postgres \
-    --from-literal=POSTGRES_PASSWORD="$(random_hex 24)" \
+    --from-literal=POSTGRES_PASSWORD="$postgres_password" \
     --from-literal=POSTGRES_DB=chronoverse
 
   create_literal_secret clickhouse-secret \
-    --from-literal=CLICKHOUSE_PASSWORD="$(random_hex 24)"
+    --from-literal=CLICKHOUSE_PASSWORD="$clickhouse_password"
 
-  local meili_key
-  meili_key="$(random_hex 32)"
   create_literal_secret meilisearch-secret \
     --from-literal=MEILISEARCH_MASTER_KEY="$meili_key" \
     --from-literal=MEILI_MASTER_KEY="$meili_key"
 
-  local kafka_keystore kafka_truststore
-  kafka_keystore="$(random_hex 18)"
-  kafka_truststore="$(random_hex 18)"
   create_literal_secret kafka-tls-secret \
     --from-literal=KAFKA_SSL_KEYSTORE_PASSWORD="$kafka_keystore" \
     --from-literal=KAFKA_SSL_TRUSTSTORE_PASSWORD="$kafka_truststore" \

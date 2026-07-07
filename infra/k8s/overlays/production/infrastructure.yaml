@@ -37,6 +37,15 @@ spec:
           chown 70:70 /postgres-tls/ca.crt /postgres-tls/server.crt /postgres-tls/server.key
           chmod 0644 /postgres-tls/ca.crt /postgres-tls/server.crt
           chmod 0600 /postgres-tls/server.key
+
+          cat > /postgres-config/pg_hba.conf <<'EOF'
+          local   all             all                                     trust
+          local   replication     all                                     trust
+          hostnossl all           all             all                     reject
+          hostnossl replication   all             all                     reject
+          hostssl all             all             all                     scram-sha-256 clientcert=verify-ca
+          hostssl replication     all             all                     scram-sha-256 clientcert=verify-ca
+          EOF
         resources:
           requests:
             cpu: 25m
@@ -50,6 +59,8 @@ spec:
           readOnly: true
         - name: postgres-tls
           mountPath: /postgres-tls
+        - name: postgres-config
+          mountPath: /postgres-config
       containers:
       - name: postgres
         image: postgres:18.0-alpine3.22
@@ -64,6 +75,8 @@ spec:
         - ssl_key_file=/postgres-tls/server.key
         - -c
         - ssl_ca_file=/postgres-tls/ca.crt
+        - -c
+        - hba_file=/postgres-config/pg_hba.conf
         ports:
         - name: postgres
           containerPort: 5432
@@ -86,6 +99,9 @@ spec:
         - name: postgres-tls
           mountPath: /postgres-tls
           readOnly: true
+        - name: postgres-config
+          mountPath: /postgres-config
+          readOnly: true
         readinessProbe:
           exec:
             command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
@@ -106,6 +122,8 @@ spec:
         persistentVolumeClaim:
           claimName: certs-pvc
       - name: postgres-tls
+        emptyDir: {}
+      - name: postgres-config
         emptyDir: {}
 ---
 apiVersion: v1
@@ -639,6 +657,8 @@ spec:
         - secretRef:
             name: meilisearch-secret
         env:
+        - name: MEILI_ENV
+          value: production
         - name: MEILI_EXPERIMENTAL_DUMPLESS_UPGRADE
           value: "true"
         - name: MEILI_SSL_AUTH_PATH

@@ -41,6 +41,10 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "$1 is required"
 }
 
+is_tty() {
+  [ -t 0 ]
+}
+
 kubectl_cmd() {
   if [ -n "$CONTEXT" ]; then
     kubectl --context "$CONTEXT" "$@"
@@ -132,9 +136,6 @@ EOF
 
 need_cmd kubectl
 need_cmd openssl
-if [ "$CREATE_KIND" = true ]; then
-  need_cmd kind
-fi
 if [ "$MODE" = "production" ]; then
   need_cmd keytool
 fi
@@ -142,16 +143,42 @@ fi
 KUSTOMIZE_DIR="$ROOT_DIR/infra/k8s/overlays/$MODE"
 [ -d "$KUSTOMIZE_DIR" ] || die "missing overlay: $KUSTOMIZE_DIR"
 
+CURRENT_CONTEXT="$(kubectl_cmd config current-context 2>/dev/null || true)"
+
+if [ "$MODE" = "local" ] && [ "$DRY_RUN" = false ] && [ "$CREATE_KIND" = false ] && [ -z "$CONTEXT" ]; then
+  if [ "$CURRENT_CONTEXT" = "docker-desktop" ]; then
+    cat <<'EOF'
+The current kubectl context is docker-desktop.
+
+Docker Desktop's built-in Kubernetes cluster does not expose Docker Engine at
+/var/run/docker.sock inside the node, so Chronoverse container workflows cannot
+start the docker-proxy DaemonSet there.
+EOF
+    if is_tty && confirm "Create or reuse the repo's local kind cluster instead?"; then
+      CREATE_KIND=true
+    else
+      die "use --create-kind or --context <compatible-context> for local Kubernetes setup"
+    fi
+  elif command -v kind >/dev/null 2>&1 && kind get clusters 2>/dev/null | grep -qx chronoverse; then
+    if is_tty && confirm "Use existing kind-chronoverse context for local setup?"; then
+      CONTEXT="kind-chronoverse"
+      CURRENT_CONTEXT="$CONTEXT"
+    fi
+  fi
+fi
+
 if [ "$CREATE_KIND" = true ]; then
+  need_cmd kind
   [ "$MODE" = "local" ] || die "--create-kind is only supported with --mode local"
   info "Creating local kind cluster when missing"
   if ! kind get clusters | grep -qx chronoverse; then
     kind create cluster --name chronoverse --config "$ROOT_DIR/infra/k8s/overlays/local/kind-cluster.yaml"
   fi
   CONTEXT="${CONTEXT:-kind-chronoverse}"
+  CURRENT_CONTEXT="$CONTEXT"
 fi
 
-info "Using kubectl context: $(kubectl_cmd config current-context 2>/dev/null || echo default)"
+info "Using kubectl context: ${CURRENT_CONTEXT:-default}"
 
 if [ "$DRY_RUN" = false ]; then
   info "Ensuring namespace $NAMESPACE exists"
@@ -433,4 +460,26 @@ else
   else
     kubectl_cmd apply -k "$KUSTOMIZE_DIR"
   fi
+  KUBECTL_CONTEXT_PREFIX=""
+  if [ -n "$CONTEXT" ]; then
+    KUBECTL_CONTEXT_PREFIX="--context $CONTEXT "
+  fi
+  cat <<EOF
+
+Chronoverse Kubernetes resources were applied.
+
+Watch rollout:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE get pods,jobs,ds -w
+
+Open the dashboard/API locally:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE port-forward svc/nginx 8080:80
+  http://localhost:8080
+
+Open LGTM locally:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE port-forward svc/lgtm 3000:3000
+  http://localhost:3000
+
+Check registered runtimes:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE exec postgres-0 -- sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select id,node_name,docker_endpoint,status from runtime_nodes;"'
+EOF
 fi

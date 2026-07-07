@@ -31,6 +31,8 @@ spec:
     - protocol: TCP
       port: 443
     - protocol: TCP
+      port: 2375
+    - protocol: TCP
       port: 5432
     - protocol: TCP
       port: 6379
@@ -40,4 +42,3 @@ spec:
       port: 9094
     - protocol: TCP
       port: 9440
-

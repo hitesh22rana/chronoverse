@@ -192,6 +192,15 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: runtime-agent-config
+data:
+  ENV: production
+  RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
+  RUNTIME_AGENT_MAX_CONCURRENCY: "4"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: scheduling-worker-config
 data:
   ENV: production

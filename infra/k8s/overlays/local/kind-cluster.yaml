@@ -11,3 +11,13 @@ nodes:
     nodeRegistration:
       kubeletExtraArgs:
         node-labels: chronoverse.io/docker-workloads=true
+- role: worker
+  extraMounts:
+  - hostPath: /var/run/docker.sock
+    containerPath: /var/run/docker.sock
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: chronoverse.io/docker-workloads=true

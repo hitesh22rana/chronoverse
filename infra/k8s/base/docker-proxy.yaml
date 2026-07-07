@@ -25,6 +25,7 @@ metadata:
   labels:
     app.kubernetes.io/name: docker-proxy
     app.kubernetes.io/component: proxy
+    chronoverse.io/client-certs: "true"
 spec:
   selector:
     matchLabels:
@@ -35,6 +36,7 @@ spec:
         app.kubernetes.io/name: docker-proxy
         app.kubernetes.io/component: proxy
     spec:
+      terminationGracePeriodSeconds: 30
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -50,6 +52,8 @@ spec:
         ports:
         - name: docker
           containerPort: 2375
+          hostPort: 2375
+          protocol: TCP
         envFrom:
         - configMapRef:
             name: docker-proxy-config
@@ -63,11 +67,75 @@ spec:
         volumeMounts:
         - name: docker-socket
           mountPath: /var/run/docker.sock
+      - name: runtime-agent
+        image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: observability-config
+        - configMapRef:
+            name: runtime-agent-config
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: RUNTIME_AGENT_ID
+          value: $(NODE_NAME)
+        - name: RUNTIME_AGENT_NODE_NAME
+          value: $(NODE_NAME)
+        - name: DOCKER_HOST
+          value: tcp://$(NODE_IP):2375
+        - name: RUNTIME_AGENT_DOCKER_ENDPOINT
+          value: tcp://$(NODE_IP):2375
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
       volumes:
       - name: docker-socket
         hostPath:
           path: /var/run/docker.sock
           type: Socket
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
 ---
 apiVersion: v1
 kind: Service

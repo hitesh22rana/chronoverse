@@ -70,7 +70,7 @@ spec:
           apk add --no-cache openssl openjdk17-jre-headless
 
           mkdir -p /certs/ca /certs/clients
-          services="kafka users-service workflows-service jobs-service notifications-service analytics-service"
+          services="kafka postgres users-service workflows-service jobs-service notifications-service analytics-service"
           for svc in $services; do
             mkdir -p "/certs/$svc"
           done

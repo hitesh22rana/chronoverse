@@ -63,9 +63,10 @@ Engine at `/var/run/docker.sock` and has this label:
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
-For kind, the socket mount and node label must be configured when the cluster is
-created. The repository includes a two-node local example where both nodes are
-Docker-capable:
+For kind, the Docker socket mount, shared certificate mount, and node label must
+be configured when the cluster is created. The repository includes a two-node
+local example where both nodes are Docker-capable and mount the same host
+certificate directory into `/var/lib/chronoverse-data/certs`:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -82,7 +83,9 @@ The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
 Docker-capable node. The agent registers `tcp://$(NODE_IP):2375` so running job
 cleanup survives proxy pod restarts on the same node. `workflow-worker` and
 `execution-worker` do not need the Docker node label; they can schedule anywhere
-with network access to TCP `2375` on runtime node IPs.
+with network access to TCP `2375` on runtime node IPs. Local PostgreSQL uses the
+generated CA/server/client certificates, so runtime-agent validates the same
+client TLS path used by other Postgres clients.
 
 ### Stop and Inspect
 

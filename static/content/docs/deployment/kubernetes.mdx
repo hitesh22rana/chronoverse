@@ -23,7 +23,7 @@ Container workflows require Docker-capable runtime nodes. Before applying the ov
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
-For kind, the socket mount and node label must be configured when the cluster is created. The repository includes a two-node local example where both nodes are Docker-capable:
+For kind, the Docker socket mount, shared certificate mount, and node label must be configured when the cluster is created. The repository includes a two-node local example where both nodes are Docker-capable and mount the same host certificate directory into `/var/lib/chronoverse-data/certs`:
 
 ```bash
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -73,7 +73,7 @@ The production overlay intentionally does not create in-cluster stateful data st
 
 ## Scaling
 
-The local overlay is intentionally single-replica so it can run on one kind node created with the repository config, or another single-node cluster that exposes Docker Engine to the node. The production overlay starts app services and workers with multi-replica baselines and includes CPU/memory HorizontalPodAutoscalers for stateless APIs and background workers.
+The local overlay is intentionally single-replica for app deployments, but the checked-in kind config creates two Docker-capable runtime nodes. PostgreSQL uses generated local TLS material, and the shared cert volume is mounted by each kind node so DaemonSet pods can read the same client certificates. The production overlay starts app services and workers with multi-replica baselines and includes CPU/memory HorizontalPodAutoscalers for stateless APIs and background workers.
 
 Install metrics-server, or provide equivalent `autoscaling/v2` resource metrics, before relying on HPAs:
 

@@ -19,10 +19,51 @@ spec:
     spec:
       securityContext:
         fsGroup: 999
+      initContainers:
+      - name: prepare-postgres-tls
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/postgres/postgres.crt ] && [ -f /certs/postgres/postgres.key ]; do
+            echo waiting for local postgres certificates
+            sleep 2
+          done
+          cp /certs/ca/ca.crt /postgres-tls/ca.crt
+          cp /certs/postgres/postgres.crt /postgres-tls/server.crt
+          cp /certs/postgres/postgres.key /postgres-tls/server.key
+          chown 70:70 /postgres-tls/ca.crt /postgres-tls/server.crt /postgres-tls/server.key
+          chmod 0644 /postgres-tls/ca.crt /postgres-tls/server.crt
+          chmod 0600 /postgres-tls/server.key
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        - name: postgres-tls
+          mountPath: /postgres-tls
       containers:
       - name: postgres
         image: postgres:18.0-alpine3.22
         imagePullPolicy: IfNotPresent
+        args:
+        - postgres
+        - -c
+        - ssl=on
+        - -c
+        - ssl_cert_file=/postgres-tls/server.crt
+        - -c
+        - ssl_key_file=/postgres-tls/server.key
+        - -c
+        - ssl_ca_file=/postgres-tls/ca.crt
         ports:
         - name: postgres
           containerPort: 5432
@@ -42,6 +83,9 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
+        - name: postgres-tls
+          mountPath: /postgres-tls
+          readOnly: true
         readinessProbe:
           exec:
             command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
@@ -58,6 +102,11 @@ spec:
       - name: postgres-storage
         persistentVolumeClaim:
           claimName: postgres-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: postgres-tls
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

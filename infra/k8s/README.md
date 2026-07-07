@@ -24,9 +24,10 @@ Engine at `/var/run/docker.sock` and has this label:
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
-For kind, the socket mount and node label must be configured when the cluster is
-created. The repository includes a two-node local example where both nodes are
-Docker-capable:
+For kind, the Docker socket mount, shared certificate mount, and node label must
+be configured when the cluster is created. The repository includes a two-node
+local example where both nodes are Docker-capable and mount the same host
+certificate directory into `/var/lib/chronoverse-data/certs`:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -42,7 +43,7 @@ with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
 ## Layout
 
 - `base/`: application services, workers, dashboard, Nginx, Docker proxy, RBAC, network policy, PDBs, Kafka topic initialization, and shared configuration.
-- `overlays/local/`: single-node profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs.
+- `overlays/local/`: multi-node-capable kind profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs. PostgreSQL runs with generated local TLS material, and the shared cert volume is mounted by every Docker-capable kind node.
 - `overlays/production/`: external-ready profile that expects managed data stores and pre-created Secrets. It includes HorizontalPodAutoscalers for stateless APIs and workers.
 
 ## Required production Secrets

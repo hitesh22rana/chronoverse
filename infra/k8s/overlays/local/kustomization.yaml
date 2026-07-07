@@ -62,7 +62,7 @@ configMapGenerator:
   literals:
   - POSTGRES_HOST=postgres
   - POSTGRES_PORT=5432
-  - POSTGRES_TLS_ENABLED=false
+  - POSTGRES_TLS_ENABLED=true
 - name: redis-connection-config
   behavior: merge
   literals:
@@ -96,10 +96,29 @@ patches:
     kind: DaemonSet
     labelSelector: chronoverse.io/client-certs=true
   patch: |-
-    - op: remove
-      path: /spec/template/spec/containers/1/volumeMounts/0
-    - op: remove
+    - op: add
+      path: /spec/template/spec/initContainers
+      value:
+      - name: wait-for-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do echo waiting for local certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+    - op: replace
       path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
 - target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true

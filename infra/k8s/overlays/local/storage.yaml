@@ -96,7 +96,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
 spec:
-  accessModes: [ReadWriteMany]
+  accessModes: [ReadWriteOnce]
   storageClassName: localstorage
   volumeName: postgres-pv
   resources:
@@ -156,7 +156,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: certs-pvc
 spec:
-  accessModes: [ReadWriteOnce]
+  accessModes: [ReadWriteMany]
   storageClassName: localstorage
   volumeName: certs-pv
   resources:

@@ -43,7 +43,7 @@ with `hostPath type check failed: /var/run/docker.sock is not a socket file`.
 ## Layout
 
 - `base/`: application services, workers, dashboard, Nginx, Docker proxy, RBAC, network policy, PDBs, Kafka topic initialization, and shared configuration.
-- `overlays/local/`: multi-node-capable kind profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs. PostgreSQL runs with generated local TLS material, and the shared cert volume is mounted by every Docker-capable kind node.
+- `overlays/local/`: multi-node-capable kind profile with one replica per app deployment, in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs. The stateful dependencies and Chronoverse app pods use generated local TLS material from the shared cert volume, which is mounted by every Docker-capable kind node.
 - `overlays/production/`: external-ready profile that expects managed data stores and pre-created Secrets. It includes HorizontalPodAutoscalers for stateless APIs and workers.
 
 ## Required production Secrets

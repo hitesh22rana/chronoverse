@@ -70,7 +70,7 @@ spec:
           apk add --no-cache openssl openjdk17-jre-headless
 
           mkdir -p /certs/ca /certs/clients
-          services="kafka postgres users-service workflows-service jobs-service notifications-service analytics-service"
+          services="postgres redis clickhouse kafka meilisearch users-service workflows-service jobs-service notifications-service analytics-service"
           for svc in $services; do
             mkdir -p "/certs/$svc"
           done
@@ -100,6 +100,10 @@ spec:
             rm -f /certs/clients/client.csr /certs/clients/client-ext.cnf
           fi
 
+          mkdir -p /certs/clickhouse/clients
+          cp -f /certs/clients/client.key /certs/clickhouse/clients/client.key
+          cp -f /certs/clients/client.crt /certs/clickhouse/clients/client.crt
+
           if [ ! -f /certs/kafka/kafka.p12 ]; then
             openssl pkcs12 -export -in /certs/kafka/kafka.crt -inkey /certs/kafka/kafka.key -certfile /certs/ca/ca.crt -out /certs/kafka/kafka.p12 -name kafka -password pass:chronoverse
           fi
@@ -114,6 +118,9 @@ spec:
           printf "chronoverse\n" > /certs/kafka/truststore_creds.txt
           printf "chronoverse\n" > /certs/kafka/key_creds.txt
           chmod -R a+rX /certs
+          chmod 0600 /certs/postgres/postgres.key /certs/clients/client.key
+          chmod 0640 /certs/clickhouse/clickhouse.key /certs/clickhouse/clients/client.key
+          chmod 0644 /certs/clickhouse/clickhouse.crt /certs/clickhouse/clients/client.crt
         resources:
           requests:
             cpu: 100m

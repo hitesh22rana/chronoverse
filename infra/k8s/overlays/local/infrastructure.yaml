@@ -140,11 +140,53 @@ spec:
         app.kubernetes.io/name: redis
         app.kubernetes.io/component: cache
     spec:
+      initContainers:
+      - name: wait-for-redis-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/redis/redis.crt ] && [ -f /certs/redis/redis.key ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do
+            echo waiting for local redis certificates
+            sleep 2
+          done
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
       containers:
       - name: redis
         image: redis:8.4-alpine
         imagePullPolicy: IfNotPresent
-        args: ["redis-server", "--appendonly", "yes", "--maxmemory", "768mb", "--maxmemory-policy", "allkeys-lru"]
+        args:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - 768mb
+        - --maxmemory-policy
+        - allkeys-lru
+        - --port
+        - "0"
+        - --tls-port
+        - "6379"
+        - --tls-cert-file
+        - /certs/redis/redis.crt
+        - --tls-key-file
+        - /certs/redis/redis.key
+        - --tls-ca-cert-file
+        - /certs/ca/ca.crt
+        - --tls-auth-clients
+        - "yes"
         ports:
         - name: redis
           containerPort: 6379
@@ -158,15 +200,18 @@ spec:
         volumeMounts:
         - name: redis-storage
           mountPath: /data
+        - name: certs
+          mountPath: /certs
+          readOnly: true
         readinessProbe:
           exec:
-            command: ["sh", "-c", "redis-cli ping | grep PONG"]
+            command: ["sh", "-c", "redis-cli --tls --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -p 6379 ping | grep PONG"]
           periodSeconds: 5
           timeoutSeconds: 5
           failureThreshold: 10
         livenessProbe:
           exec:
-            command: ["sh", "-c", "redis-cli ping | grep PONG"]
+            command: ["sh", "-c", "redis-cli --tls --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -p 6379 ping | grep PONG"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 6
@@ -174,6 +219,9 @@ spec:
       - name: redis-storage
         persistentVolumeClaim:
           claimName: redis-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -207,17 +255,104 @@ spec:
         app.kubernetes.io/name: clickhouse
         app.kubernetes.io/component: database
     spec:
+      initContainers:
+      - name: prepare-clickhouse-tls
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/clickhouse/clickhouse.crt ] && [ -f /certs/clickhouse/clickhouse.key ] && [ -f /certs/clickhouse/clients/client.crt ] && [ -f /certs/clickhouse/clients/client.key ]; do
+            echo waiting for local clickhouse certificates
+            sleep 2
+          done
+
+          cat > /clickhouse-config/tls.xml <<'EOF'
+          <clickhouse>
+            <tcp_port>0</tcp_port>
+            <tcp_port_secure>9440</tcp_port_secure>
+            <openSSL>
+              <server>
+                <certificateFile>/etc/clickhouse-server/certs/clickhouse.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/certs/clickhouse.key</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+                <verificationMode>strict</verificationMode>
+                <minVersion>TLSv1_2</minVersion>
+                <maxVersion>TLSv1_3</maxVersion>
+              </server>
+              <client>
+                <loadDefaultCAFile>false</loadDefaultCAFile>
+                <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+                <verificationMode>strict</verificationMode>
+                <minVersion>TLSv1_2</minVersion>
+              </client>
+            </openSSL>
+          </clickhouse>
+          EOF
+
+          cat > /clickhouse-users/users.xml <<'EOF'
+          <clickhouse>
+            <users>
+              <chronoverse-client>
+                <password>chronoverse</password>
+                <networks>
+                  <ip>::/0</ip>
+                  <ip>0.0.0.0/0</ip>
+                </networks>
+                <profile>default</profile>
+                <quota>default</quota>
+              </chronoverse-client>
+            </users>
+          </clickhouse>
+          EOF
+
+          cat > /clickhouse-client/config.xml <<'EOF'
+          <config>
+            <secure>true</secure>
+            <openSSL>
+              <client>
+                <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+                <verificationMode>strict</verificationMode>
+                <minVersion>TLSv1_2</minVersion>
+              </client>
+            </openSSL>
+          </config>
+          EOF
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        - name: clickhouse-config
+          mountPath: /clickhouse-config
+        - name: clickhouse-users
+          mountPath: /clickhouse-users
+        - name: clickhouse-client
+          mountPath: /clickhouse-client
       containers:
       - name: clickhouse
         image: clickhouse/clickhouse-server:25.11-alpine
         imagePullPolicy: IfNotPresent
         ports:
         - name: clickhouse
-          containerPort: 9000
+          containerPort: 9440
         envFrom:
         - secretRef:
             name: clickhouse-secret
         env:
+        - name: CLICKHOUSE_USER
+          value: chronoverse-client
         - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
           value: "1"
         resources:
@@ -230,15 +365,33 @@ spec:
         volumeMounts:
         - name: clickhouse-storage
           mountPath: /var/lib/clickhouse
+        - name: clickhouse-certs
+          mountPath: /etc/clickhouse-server/certs
+          subPath: clickhouse
+          readOnly: true
+        - name: clickhouse-ca
+          mountPath: /etc/clickhouse-server/ca
+          subPath: ca
+          readOnly: true
+        - name: clickhouse-config
+          mountPath: /etc/clickhouse-server/config.d
+          readOnly: true
+        - name: clickhouse-users
+          mountPath: /etc/clickhouse-server/users.d
+          readOnly: true
+        - name: clickhouse-client
+          mountPath: /etc/clickhouse-client/config.xml
+          subPath: config.xml
+          readOnly: true
         readinessProbe:
           exec:
-            command: ["sh", "-c", "clickhouse-client --host=localhost --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
+            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=chronoverse-client --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 10
         livenessProbe:
           exec:
-            command: ["sh", "-c", "clickhouse-client --host=localhost --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
+            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=chronoverse-client --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 10
@@ -246,6 +399,21 @@ spec:
       - name: clickhouse-storage
         persistentVolumeClaim:
           claimName: clickhouse-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: clickhouse-certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: clickhouse-ca
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: clickhouse-config
+        emptyDir: {}
+      - name: clickhouse-users
+        emptyDir: {}
+      - name: clickhouse-client
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -257,7 +425,7 @@ spec:
     app.kubernetes.io/name: clickhouse
   ports:
   - name: clickhouse
-    port: 9000
+    port: 9440
     targetPort: clickhouse
 ---
 apiVersion: apps/v1
@@ -420,6 +588,29 @@ spec:
         app.kubernetes.io/name: meilisearch
         app.kubernetes.io/component: search
     spec:
+      initContainers:
+      - name: wait-for-meilisearch-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/meilisearch/meilisearch.crt ] && [ -f /certs/meilisearch/meilisearch.key ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do
+            echo waiting for local meilisearch certificates
+            sleep 2
+          done
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
       containers:
       - name: meilisearch
         image: getmeili/meilisearch:v1.45.2
@@ -433,6 +624,14 @@ spec:
         env:
         - name: MEILI_EXPERIMENTAL_DUMPLESS_UPGRADE
           value: "true"
+        - name: MEILI_SSL_AUTH_PATH
+          value: /certs/ca/ca.crt
+        - name: MEILI_SSL_REQUIRE_AUTH
+          value: "true"
+        - name: MEILI_SSL_CERT_PATH
+          value: /certs/meilisearch/meilisearch.crt
+        - name: MEILI_SSL_KEY_PATH
+          value: /certs/meilisearch/meilisearch.key
         resources:
           requests:
             cpu: 100m
@@ -443,17 +642,18 @@ spec:
         volumeMounts:
         - name: meilisearch-storage
           mountPath: /meili_data
+        - name: certs
+          mountPath: /certs
+          readOnly: true
         readinessProbe:
-          httpGet:
-            path: /health
-            port: http
+          exec:
+            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://meilisearch:7700/health"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 10
         livenessProbe:
-          httpGet:
-            path: /health
-            port: http
+          exec:
+            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://meilisearch:7700/health"]
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 10
@@ -461,6 +661,9 @@ spec:
       - name: meilisearch-storage
         persistentVolumeClaim:
           claimName: meilisearch-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
 ---
 apiVersion: v1
 kind: Service

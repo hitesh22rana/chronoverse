@@ -50,7 +50,7 @@ secretGenerator:
   - POSTGRES_DB=chronoverse
 - name: clickhouse-secret
   literals:
-  - CLICKHOUSE_PASSWORD=
+  - CLICKHOUSE_PASSWORD=chronoverse
 - name: meilisearch-secret
   literals:
   - MEILISEARCH_MASTER_KEY=35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
@@ -68,18 +68,18 @@ configMapGenerator:
   literals:
   - REDIS_HOST=redis
   - REDIS_PORT=6379
-  - REDIS_TLS_ENABLED=false
+  - REDIS_TLS_ENABLED=true
 - name: clickhouse-connection-config
   behavior: merge
   literals:
-  - CLICKHOUSE_HOSTS=clickhouse:9000
-  - CLICKHOUSE_USERNAME=default
-  - CLICKHOUSE_TLS_ENABLED=false
+  - CLICKHOUSE_HOSTS=clickhouse:9440
+  - CLICKHOUSE_USERNAME=chronoverse-client
+  - CLICKHOUSE_TLS_ENABLED=true
 - name: meilisearch-connection-config
   behavior: merge
   literals:
-  - MEILISEARCH_URI=http://meilisearch:7700
-  - MEILISEARCH_TLS_ENABLED=false
+  - MEILISEARCH_URI=https://meilisearch:7700
+  - MEILISEARCH_TLS_ENABLED=true
 - name: kafka-connection-config
   behavior: merge
   literals:

@@ -676,14 +676,6 @@ spec:
         app.kubernetes.io/name: workflow-worker
         app.kubernetes.io/component: worker
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: chronoverse.io/docker-workloads
-                operator: In
-                values: ["true"]
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -709,8 +701,6 @@ spec:
             name: observability-config
         - configMapRef:
             name: workflow-worker-config
-        - configMapRef:
-            name: docker-proxy-connection-config
         resources:
           requests:
             cpu: 200m
@@ -755,14 +745,6 @@ spec:
         app.kubernetes.io/name: execution-worker
         app.kubernetes.io/component: worker
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: chronoverse.io/docker-workloads
-                operator: In
-                values: ["true"]
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -780,8 +762,6 @@ spec:
             name: observability-config
         - configMapRef:
             name: execution-worker-config
-        - configMapRef:
-            name: docker-proxy-connection-config
         resources:
           requests:
             cpu: 200m

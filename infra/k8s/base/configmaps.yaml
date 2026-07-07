@@ -74,13 +74,6 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: docker-proxy-connection-config
-data:
-  DOCKER_HOST: tcp://docker-proxy:2375
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
   name: users-service-config
 data:
   ENV: production

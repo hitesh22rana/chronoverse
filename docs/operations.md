@@ -55,17 +55,17 @@ Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or
 managed Kubernetes provisioning, then apply the Kustomize overlay with
 `kubectl`.
 
-Container workflows require Docker-capable nodes. Before applying the overlay,
-make sure every node that may run `docker-proxy`, `workflow-worker`, or
-`execution-worker` exposes Docker Engine at `/var/run/docker.sock` and has this
-label:
+Container workflows require Docker-capable runtime nodes. Before applying the
+overlay, make sure every node that should own Docker containers exposes Docker
+Engine at `/var/run/docker.sock` and has this label:
 
 ```sh
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
 For kind, the socket mount and node label must be configured when the cluster is
-created. The repository includes a local example:
+created. The repository includes a two-node local example where both nodes are
+Docker-capable:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -77,6 +77,12 @@ Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient
 for Docker-backed workers because its node does not expose Docker Engine at
 `/var/run/docker.sock` to pods. Use kind with the checked-in config, or use a
 cluster whose nodes really provide that socket.
+
+The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
+Docker-capable node. The agent registers `tcp://$(NODE_IP):2375` so running job
+cleanup survives proxy pod restarts on the same node. `workflow-worker` and
+`execution-worker` do not need the Docker node label; they can schedule anywhere
+with network access to TCP `2375` on runtime node IPs.
 
 ### Stop and Inspect
 
@@ -316,9 +322,10 @@ expected keys.
 - Inspect `init-kafka-topics` and `database-migration` before application logs.
 - Confirm production overlay placeholder hosts were patched for real external
   dependencies.
-- Confirm worker nodes that run `workflow-worker` or `execution-worker` expose
-  Docker Engine at `/var/run/docker.sock` for the Docker socket proxy and have
-  the `chronoverse.io/docker-workloads=true` label.
+- Confirm Docker-capable nodes expose Docker Engine at `/var/run/docker.sock`
+  and have the `chronoverse.io/docker-workloads=true` label.
+- Confirm workers can reach runtime node IPs on TCP `2375`; NetworkPolicy,
+  node firewall rules, or security groups may block hostPort traffic.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

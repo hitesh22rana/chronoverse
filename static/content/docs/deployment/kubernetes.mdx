@@ -9,7 +9,7 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
-`overlays/local` is a self-contained single-node profile. It runs one replica per application deployment and includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, local hostPath storage, certificate bootstrap jobs, Kafka topic initialization, application services, workers, dashboard, Nginx, and the Docker socket proxy.
+`overlays/local` is a self-contained local profile. It runs one replica per application deployment and includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, local hostPath storage, certificate bootstrap jobs, Kafka topic initialization, application services, workers, dashboard, Nginx, and the Docker socket proxy with a runtime-agent sidecar.
 
 `overlays/production` is external-ready. It deploys Chronoverse services, workers, dashboard, Nginx, Docker proxy, Kafka topic initialization, database migration jobs, and HorizontalPodAutoscalers while expecting PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, and secret material to be supplied by the environment.
 
@@ -17,13 +17,13 @@ kubectl apply -k infra/k8s/overlays/production
 
 Kubernetes does not include a generic `kubectl` command to create a cluster. Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or managed Kubernetes provisioning, then apply the Kustomize overlay with `kubectl`.
 
-Container workflows require Docker-capable nodes. Before applying the overlay, make sure every node that may run `docker-proxy`, `workflow-worker`, or `execution-worker` exposes Docker Engine at `/var/run/docker.sock` and has this label:
+Container workflows require Docker-capable runtime nodes. Before applying the overlay, make sure every node that should own Docker containers exposes Docker Engine at `/var/run/docker.sock` and has this label:
 
 ```bash
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
-For kind, the socket mount and node label must be configured when the cluster is created. The repository includes a local example:
+For kind, the socket mount and node label must be configured when the cluster is created. The repository includes a two-node local example where both nodes are Docker-capable:
 
 ```bash
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -89,9 +89,18 @@ Kubernetes does not provide deployment startup ordering for long-running pods. C
 
 ## Docker execution model
 
-Container workflows still execute through the Docker socket proxy. Kubernetes nodes that run `docker-proxy`, `workflow-worker`, or `execution-worker` need Docker Engine, `/var/run/docker.sock`, and the `chronoverse.io/docker-workloads=true` node label. The Docker proxy Service uses node-local traffic so a worker talks to the proxy backed by its own node's Docker socket.
+Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Runtime-agent registers a stable node endpoint, `tcp://$(NODE_IP):2375`, exposed by the Docker proxy `hostPort`; pod IPs and `tcp://docker-proxy:2375` must not be persisted as runtime endpoints.
 
-When workflow image builds and job execution depend on the local Docker image cache, label a single Docker-capable node. If multiple Docker nodes are labeled, use a registry or another shared image distribution model so `execution-worker` can run images built by `workflow-worker`.
+`workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
+
+Workers must be able to reach runtime node IPs on TCP `2375`. The base NetworkPolicy allows that egress port, but production clusters should also restrict the host port with private networking, node firewall rules or security groups, and the Docker socket proxy API allowlist. Docker API port `2375` must never be publicly exposed. If the host already runs a Docker TCP listener on `2375`, the DaemonSet cannot bind the host port; choose one restricted port and update `containerPort`, `hostPort`, `DOCKER_HOST`, and `RUNTIME_AGENT_DOCKER_ENDPOINT` together.
+
+For local kind validation, expect one `docker-proxy` pod per labeled Docker-capable node:
+
+```bash
+kubectl get nodes --show-labels
+kubectl -n chronoverse get pods -l app.kubernetes.io/name=docker-proxy -o wide
+```
 
 ## Validation
 

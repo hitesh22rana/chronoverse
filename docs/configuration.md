@@ -244,8 +244,10 @@ lease should be treated as owned by an unavailable runtime.
 `runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
 PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
-In a multi-node deployment, run one agent beside each node-local Docker proxy
-and set the endpoint to the address workers should use for that node.
+In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
+and register a node-stable endpoint such as `tcp://$(NODE_IP):2375`, not a pod
+IP or `tcp://docker-proxy:2375` service DNS name. The Docker proxy host port
+must stay private and reachable only by trusted Chronoverse workers.
 `RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
 it from durable node identity, such as the Kubernetes node name, hostname, or a
 mounted identity file; do not generate a new random ID on every restart.

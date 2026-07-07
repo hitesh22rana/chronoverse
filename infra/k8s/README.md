@@ -16,17 +16,17 @@ Kubernetes does not include a generic `kubectl` command to create a cluster.
 Use your cluster lifecycle tool, such as kind, minikube, kubeadm, or managed
 Kubernetes provisioning, then apply the Kustomize overlay with `kubectl`.
 
-Container workflows require Docker-capable nodes. Before applying the overlay,
-make sure every node that may run `docker-proxy`, `workflow-worker`, or
-`execution-worker` exposes Docker Engine at `/var/run/docker.sock` and has this
-label:
+Container workflows require Docker-capable runtime nodes. Before applying the
+overlay, make sure every node that should own Docker containers exposes Docker
+Engine at `/var/run/docker.sock` and has this label:
 
 ```sh
 kubectl label node <node-name> chronoverse.io/docker-workloads=true
 ```
 
 For kind, the socket mount and node label must be configured when the cluster is
-created. The repository includes a local example:
+created. The repository includes a two-node local example where both nodes are
+Docker-capable:
 
 ```sh
 kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
@@ -63,6 +63,8 @@ Create these before applying `overlays/production`:
 - Patch the production ConfigMaps for real PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, public URL, and allowed origins.
 - `init-kafka-topics` creates or expands `workflows`, `jobs`, `job_logs`, and `analytics` topics.
 - Production HPAs require metrics-server or another provider for `autoscaling/v2` resource metrics. CPU/memory HPAs are included for app services and workers; Kafka-lag-based worker scaling needs KEDA or custom metrics.
-- Container workflows still use the Docker socket proxy. Nodes that run `docker-proxy`, `workflow-worker`, or `execution-worker` must expose Docker Engine at `/var/run/docker.sock` and carry the `chronoverse.io/docker-workloads=true` label. The Docker proxy Service uses node-local traffic, so workers talk to the proxy on their own node instead of another node's Docker socket.
-- If workflow builds and execution containers rely on a local Docker image cache, label a single Docker-capable node for `chronoverse.io/docker-workloads=true`, or provide a registry/shared image distribution model before labeling multiple nodes.
+- Container workflows use the Docker socket proxy through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Workers do not need the Docker node label and can schedule anywhere.
+- Runtime-agent registers `tcp://$(NODE_IP):2375` through the Docker proxy `hostPort`, not pod IP or `tcp://docker-proxy:2375`. This keeps running job cleanup valid across proxy pod restarts on the same node.
+- Worker pods need egress to TCP `2375` on runtime node IPs. The base NetworkPolicy allows that port, but production should also restrict access with private networking, node firewalls or security groups, and the Docker socket proxy allowlist. Do not expose TCP `2375` publicly.
+- If a host already runs a Docker TCP listener on `2375`, the DaemonSet cannot bind the same host port. Move the host listener or choose a different restricted port consistently in `containerPort`, `hostPort`, `DOCKER_HOST`, and `RUNTIME_AGENT_DOCKER_ENDPOINT`.
 - The local overlay uses hostPath storage and generated cert material. Do not use it as the production security or persistence model.

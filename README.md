@@ -142,7 +142,7 @@ For production:
 kubectl apply -k infra/k8s/overlays/production
 ```
 
-The local overlay is self-contained for a single-node cluster. Kubernetes does not include a generic `kubectl` command to create a cluster; use your cluster lifecycle tool and make sure nodes that run Docker-backed workers expose Docker Engine at `/var/run/docker.sock` and carry the `chronoverse.io/docker-workloads=true` label. A kind example is provided at `infra/k8s/overlays/local/kind-cluster.yaml`. Docker Desktop's built-in `docker-desktop` Kubernetes context does not expose a Docker Engine socket to pods, so `docker-proxy` will not start there. The production overlay expects managed PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, and pre-created Kubernetes Secrets. See [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md), and [operations](./docs/operations.md).
+The local overlay is self-contained and includes a two-node kind example at `infra/k8s/overlays/local/kind-cluster.yaml`. Kubernetes does not include a generic `kubectl` command to create a cluster; use your cluster lifecycle tool and label only Docker-capable nodes with `chronoverse.io/docker-workloads=true`. Those nodes run the `docker-proxy` DaemonSet with a `runtime-agent` sidecar, while workers can schedule anywhere and route through runtime ownership. Docker Desktop's built-in `docker-desktop` Kubernetes context does not expose a Docker Engine socket to pods, so `docker-proxy` will not start there. The production overlay expects managed PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, and pre-created Kubernetes Secrets. See [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md), and [operations](./docs/operations.md).
 
 ## API and Usage
 

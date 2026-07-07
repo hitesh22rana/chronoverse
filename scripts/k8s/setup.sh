@@ -270,14 +270,13 @@ create_data_secrets() {
     --from-literal=MEILISEARCH_MASTER_KEY="$meili_key" \
     --from-literal=MEILI_MASTER_KEY="$meili_key"
 
-  local kafka_keystore kafka_truststore kafka_key
+  local kafka_keystore kafka_truststore
   kafka_keystore="$(random_hex 18)"
   kafka_truststore="$(random_hex 18)"
-  kafka_key="$(random_hex 18)"
   create_literal_secret kafka-tls-secret \
     --from-literal=KAFKA_SSL_KEYSTORE_PASSWORD="$kafka_keystore" \
     --from-literal=KAFKA_SSL_TRUSTSTORE_PASSWORD="$kafka_truststore" \
-    --from-literal=KAFKA_SSL_KEY_PASSWORD="$kafka_key"
+    --from-literal=KAFKA_SSL_KEY_PASSWORD="$kafka_keystore"
 }
 
 generate_ca() {
@@ -372,16 +371,15 @@ create_production_tls_secrets() {
     --from-file=meilisearch.crt="$TMP_DIR/meilisearch.crt" \
     --from-file=meilisearch.key="$TMP_DIR/meilisearch.key"
 
-  local keystore_password truststore_password key_password
+  local keystore_password truststore_password
   keystore_password="$(random_hex 18)"
   truststore_password="$(random_hex 18)"
-  key_password="$(random_hex 18)"
   openssl pkcs12 -export -in "$TMP_DIR/kafka.crt" -inkey "$TMP_DIR/kafka.key" -certfile "$TMP_DIR/ca.crt" -out "$TMP_DIR/kafka.p12" -name kafka -password "pass:$keystore_password" >/dev/null 2>&1
-  keytool -importkeystore -deststorepass "$keystore_password" -destkeypass "$key_password" -destkeystore "$TMP_DIR/kafka.keystore.jks" -srckeystore "$TMP_DIR/kafka.p12" -srcstoretype PKCS12 -srcstorepass "$keystore_password" -alias kafka >/dev/null 2>&1
+  keytool -importkeystore -deststorepass "$keystore_password" -destkeypass "$keystore_password" -destkeystore "$TMP_DIR/kafka.keystore.jks" -srckeystore "$TMP_DIR/kafka.p12" -srcstoretype PKCS12 -srcstorepass "$keystore_password" -alias kafka >/dev/null 2>&1
   keytool -import -trustcacerts -alias CARoot -file "$TMP_DIR/ca.crt" -keystore "$TMP_DIR/kafka.truststore.jks" -storepass "$truststore_password" -noprompt >/dev/null 2>&1
   printf "%s\n" "$keystore_password" > "$TMP_DIR/keystore_creds.txt"
   printf "%s\n" "$truststore_password" > "$TMP_DIR/truststore_creds.txt"
-  printf "%s\n" "$key_password" > "$TMP_DIR/key_creds.txt"
+  printf "%s\n" "$keystore_password" > "$TMP_DIR/key_creds.txt"
   create_file_secret chronoverse-kafka-tls \
     --from-file=kafka.keystore.jks="$TMP_DIR/kafka.keystore.jks" \
     --from-file=kafka.truststore.jks="$TMP_DIR/kafka.truststore.jks" \
@@ -416,6 +414,20 @@ check_storage() {
   die "production requires a default StorageClass, --storage-class, or explicit storage provisioning"
 }
 
+delete_bootstrap_jobs() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  local jobs=(database-migration init-kafka-topics)
+  if [ "$MODE" = "local" ]; then
+    jobs+=(init-certs init-service-certs)
+  fi
+
+  info "Recreating bootstrap jobs for $MODE apply"
+  kubectl_cmd -n "$NAMESPACE" delete job "${jobs[@]}" --ignore-not-found --wait=false >/dev/null
+}
+
 create_data_secrets
 if [ "$MODE" = "production" ]; then
   create_production_tls_secrets
@@ -446,6 +458,8 @@ if [ "$SKIP_APPLY" = true ]; then
   exit 0
 fi
 
+delete_bootstrap_jobs
+
 if [ "$DRY_RUN" = true ]; then
   info "Running dry-run apply for $MODE"
   if [ -n "$STORAGE_CLASS" ]; then
@@ -468,8 +482,11 @@ else
 
 Chronoverse Kubernetes resources were applied.
 
-Watch rollout:
-  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE get pods,jobs,ds -w
+Watch pod rollout:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE get pods -w
+
+Check jobs and daemonsets:
+  kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE get jobs,ds
 
 Open the dashboard/API locally:
   kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE port-forward svc/nginx 8080:80

@@ -165,7 +165,7 @@ patches:
       value:
       - name: wait-for-kafka-certs
         image: alpine:3.22.2
-        command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ]; do echo waiting for kafka certificates; sleep 2; done"]
+        command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ] && [ -f /etc/kafka/secrets/keystore_creds.txt ] && [ -f /etc/kafka/secrets/truststore_creds.txt ] && [ -f /etc/kafka/secrets/key_creds.txt ]; do echo waiting for kafka certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532

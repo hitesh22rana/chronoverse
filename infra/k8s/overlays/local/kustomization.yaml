@@ -55,6 +55,11 @@ secretGenerator:
   literals:
   - MEILISEARCH_MASTER_KEY=35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
   - MEILI_MASTER_KEY=35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+- name: kafka-tls-secret
+  literals:
+  - KAFKA_SSL_KEYSTORE_PASSWORD=chronoverse
+  - KAFKA_SSL_TRUSTSTORE_PASSWORD=chronoverse
+  - KAFKA_SSL_KEY_PASSWORD=chronoverse
 
 configMapGenerator:
 - name: postgres-connection-config

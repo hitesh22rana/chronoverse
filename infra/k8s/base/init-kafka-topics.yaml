@@ -42,14 +42,17 @@ spec:
           bootstrap_server="${KAFKA_BOOTSTRAP_SERVER:-kafka:9094}"
           replication_factor="${KAFKA_TOPIC_REPLICATION_FACTOR:-1}"
           client_config="/tmp/kafka-client.properties"
+          truststore_password="$(cat /etc/kafka/secrets/truststore_creds.txt)"
+          keystore_password="$(cat /etc/kafka/secrets/keystore_creds.txt)"
+          key_password="$(cat /etc/kafka/secrets/key_creds.txt)"
 
-          cat > "$client_config" <<'PROPERTIES'
+          cat > "$client_config" <<PROPERTIES
           security.protocol=SSL
           ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.jks
-          ssl.truststore.password=chronoverse
+          ssl.truststore.password=$truststore_password
           ssl.keystore.location=/etc/kafka/secrets/kafka.keystore.jks
-          ssl.keystore.password=chronoverse
-          ssl.key.password=chronoverse
+          ssl.keystore.password=$keystore_password
+          ssl.key.password=$key_password
           PROPERTIES
 
           kafka_topics() {
@@ -117,4 +120,3 @@ spec:
       - name: kafka-client-secrets
         secret:
           secretName: chronoverse-kafka-tls
-

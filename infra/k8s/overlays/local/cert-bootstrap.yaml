@@ -104,19 +104,14 @@ spec:
           cp -f /certs/clients/client.key /certs/clickhouse/clients/client.key
           cp -f /certs/clients/client.crt /certs/clickhouse/clients/client.crt
 
-          if [ ! -f /certs/kafka/kafka.p12 ]; then
-            openssl pkcs12 -export -in /certs/kafka/kafka.crt -inkey /certs/kafka/kafka.key -certfile /certs/ca/ca.crt -out /certs/kafka/kafka.p12 -name kafka -password pass:chronoverse
-          fi
-          if [ ! -f /certs/kafka/kafka.keystore.jks ]; then
-            keytool -importkeystore -deststorepass chronoverse -destkeypass chronoverse -destkeystore /certs/kafka/kafka.keystore.jks -srckeystore /certs/kafka/kafka.p12 -srcstoretype PKCS12 -srcstorepass chronoverse -alias kafka
-          fi
-          if [ ! -f /certs/kafka/kafka.truststore.jks ]; then
-            keytool -import -trustcacerts -alias CARoot -file /certs/ca/ca.crt -keystore /certs/kafka/kafka.truststore.jks -storepass chronoverse -noprompt
-          fi
+          rm -f /certs/kafka/kafka.p12 /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
+          openssl pkcs12 -export -in /certs/kafka/kafka.crt -inkey /certs/kafka/kafka.key -certfile /certs/ca/ca.crt -out /certs/kafka/kafka.p12 -name kafka -password "pass:${KAFKA_SSL_KEYSTORE_PASSWORD}"
+          keytool -importkeystore -deststorepass "${KAFKA_SSL_KEYSTORE_PASSWORD}" -destkeypass "${KAFKA_SSL_KEY_PASSWORD}" -destkeystore /certs/kafka/kafka.keystore.jks -srckeystore /certs/kafka/kafka.p12 -srcstoretype PKCS12 -srcstorepass "${KAFKA_SSL_KEYSTORE_PASSWORD}" -alias kafka
+          keytool -import -trustcacerts -alias CARoot -file /certs/ca/ca.crt -keystore /certs/kafka/kafka.truststore.jks -storepass "${KAFKA_SSL_TRUSTSTORE_PASSWORD}" -noprompt
 
-          printf "chronoverse\n" > /certs/kafka/keystore_creds.txt
-          printf "chronoverse\n" > /certs/kafka/truststore_creds.txt
-          printf "chronoverse\n" > /certs/kafka/key_creds.txt
+          printf "%s\n" "${KAFKA_SSL_KEYSTORE_PASSWORD}" > /certs/kafka/keystore_creds.txt
+          printf "%s\n" "${KAFKA_SSL_TRUSTSTORE_PASSWORD}" > /certs/kafka/truststore_creds.txt
+          printf "%s\n" "${KAFKA_SSL_KEY_PASSWORD}" > /certs/kafka/key_creds.txt
           chmod -R a+rX /certs
           chmod 0600 /certs/postgres/postgres.key /certs/clients/client.key
           chmod 0640 /certs/clickhouse/clickhouse.key /certs/clickhouse/clients/client.key
@@ -131,6 +126,9 @@ spec:
         volumeMounts:
         - name: certs
           mountPath: /certs
+        envFrom:
+        - secretRef:
+            name: kafka-tls-secret
       volumes:
       - name: certs
         persistentVolumeClaim:

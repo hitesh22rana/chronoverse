@@ -270,6 +270,7 @@ spec:
 
           cat > /clickhouse-config/tls.xml <<'EOF'
           <clickhouse>
+            <listen_host>0.0.0.0</listen_host>
             <tcp_port>0</tcp_port>
             <tcp_port_secure>9440</tcp_port_secure>
             <openSSL>
@@ -296,18 +297,19 @@ spec:
           cat > /clickhouse-users/users.xml <<'EOF'
           <clickhouse>
             <users>
-              <chronoverse-client>
-                <password>chronoverse</password>
+              <__CLICKHOUSE_USERNAME__>
+                <password>__CLICKHOUSE_PASSWORD__</password>
                 <networks>
                   <ip>::/0</ip>
                   <ip>0.0.0.0/0</ip>
                 </networks>
                 <profile>default</profile>
                 <quota>default</quota>
-              </chronoverse-client>
+              </__CLICKHOUSE_USERNAME__>
             </users>
           </clickhouse>
           EOF
+          sed -i "s|__CLICKHOUSE_USERNAME__|${CLICKHOUSE_USERNAME}|g; s|__CLICKHOUSE_PASSWORD__|${CLICKHOUSE_PASSWORD}|g" /clickhouse-users/users.xml
 
           cat > /clickhouse-client/config.xml <<'EOF'
           <config>
@@ -330,6 +332,17 @@ spec:
           limits:
             cpu: 100m
             memory: 64Mi
+        env:
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: clickhouse-secret
+              key: CLICKHOUSE_PASSWORD
+        - name: CLICKHOUSE_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: clickhouse-connection-config
+              key: CLICKHOUSE_USERNAME
         volumeMounts:
         - name: certs
           mountPath: /certs
@@ -347,14 +360,17 @@ spec:
         ports:
         - name: clickhouse
           containerPort: 9440
-        envFrom:
-        - secretRef:
-            name: clickhouse-secret
         env:
-        - name: CLICKHOUSE_USER
-          value: chronoverse-client
-        - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
-          value: "1"
+        - name: CLICKHOUSE_PROBE_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: clickhouse-connection-config
+              key: CLICKHOUSE_USERNAME
+        - name: CLICKHOUSE_PROBE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: clickhouse-secret
+              key: CLICKHOUSE_PASSWORD
         resources:
           requests:
             cpu: 250m
@@ -377,7 +393,8 @@ spec:
           mountPath: /etc/clickhouse-server/config.d
           readOnly: true
         - name: clickhouse-users
-          mountPath: /etc/clickhouse-server/users.d
+          mountPath: /etc/clickhouse-server/users.d/chronoverse-local-users.xml
+          subPath: users.xml
           readOnly: true
         - name: clickhouse-client
           mountPath: /etc/clickhouse-client/config.xml
@@ -385,13 +402,13 @@ spec:
           readOnly: true
         readinessProbe:
           exec:
-            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=chronoverse-client --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
+            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=\"$CLICKHOUSE_PROBE_USERNAME\" --password \"$CLICKHOUSE_PROBE_PASSWORD\" --query='SELECT 1'"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 10
         livenessProbe:
           exec:
-            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=chronoverse-client --password \"$CLICKHOUSE_PASSWORD\" --query='SELECT 1'"]
+            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=\"$CLICKHOUSE_PROBE_USERNAME\" --password \"$CLICKHOUSE_PROBE_PASSWORD\" --query='SELECT 1'"]
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 10
@@ -647,13 +664,13 @@ spec:
           readOnly: true
         readinessProbe:
           exec:
-            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://meilisearch:7700/health"]
+            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://127.0.0.1:7700/health"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 10
         livenessProbe:
           exec:
-            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://meilisearch:7700/health"]
+            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://127.0.0.1:7700/health"]
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 10

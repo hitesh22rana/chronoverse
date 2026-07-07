@@ -29,6 +29,26 @@ test/short: dependencies
 test: dependencies
 	@go test -race -v ./...
 
+.PHONY: k8s/setup
+k8s/setup:
+	@./scripts/k8s/setup.sh
+
+.PHONY: k8s/render/local
+k8s/render/local:
+	@kubectl kustomize infra/k8s/overlays/local
+
+.PHONY: k8s/render/production
+k8s/render/production:
+	@kubectl kustomize infra/k8s/overlays/production
+
+.PHONY: k8s/dry-run/local
+k8s/dry-run/local:
+	@kubectl apply --dry-run=client --validate=false -k infra/k8s/overlays/local
+
+.PHONY: k8s/dry-run/production
+k8s/dry-run/production:
+	@kubectl apply --dry-run=client --validate=false -k infra/k8s/overlays/production
+
 .PHONY: tools
 tools:
 	@mkdir -p ${GO_BIN}

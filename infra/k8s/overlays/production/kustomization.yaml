@@ -3,6 +3,8 @@ kind: Kustomization
 
 resources:
 - ../../base
+- infrastructure.yaml
+- storage.yaml
 - hpa.yaml
 
 generatorOptions:
@@ -12,26 +14,30 @@ configMapGenerator:
 - name: postgres-connection-config
   behavior: merge
   literals:
-  - POSTGRES_HOST=postgres.example.internal
+  - POSTGRES_HOST=postgres
   - POSTGRES_PORT=5432
+  - POSTGRES_TLS_ENABLED=true
 - name: redis-connection-config
   behavior: merge
   literals:
-  - REDIS_HOST=redis.example.internal
+  - REDIS_HOST=redis
   - REDIS_PORT=6379
+  - REDIS_TLS_ENABLED=true
 - name: clickhouse-connection-config
   behavior: merge
   literals:
-  - CLICKHOUSE_HOSTS=clickhouse.example.internal:9440
+  - CLICKHOUSE_HOSTS=clickhouse:9440
   - CLICKHOUSE_USERNAME=chronoverse-client
+  - CLICKHOUSE_TLS_ENABLED=true
 - name: meilisearch-connection-config
   behavior: merge
   literals:
-  - MEILISEARCH_URI=https://meilisearch.example.internal:7700
+  - MEILISEARCH_URI=https://meilisearch:7700
+  - MEILISEARCH_TLS_ENABLED=true
 - name: kafka-connection-config
   behavior: merge
   literals:
-  - KAFKA_BROKERS=kafka.example.internal:9094
+  - KAFKA_BROKERS=kafka:9094
 - name: server-config
   behavior: merge
   literals:
@@ -44,55 +50,6 @@ patches:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true
   patch: |-
-    - op: replace
-      path: /spec/template/spec/volumes/0
-      value:
-        name: certs
-        projected:
-          defaultMode: 0440
-          sources:
-          - secret:
-              name: chronoverse-auth
-              items:
-              - key: auth.ed
-                path: auth.ed
-              - key: auth.ed.pub
-                path: auth.ed.pub
-          - secret:
-              name: chronoverse-ca
-              items:
-              - key: ca.crt
-                path: ca/ca.crt
-          - secret:
-              name: chronoverse-client-tls
-              items:
-              - key: tls.crt
-                path: clients/client.crt
-              - key: tls.key
-                path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
     - op: add
       path: /spec/template/spec/topologySpreadConstraints
       value:
@@ -103,23 +60,39 @@ patches:
           matchLabels:
             app.kubernetes.io/part-of: chronoverse
 - target:
-    kind: Job
-    name: database-migration
+    kind: StatefulSet
+    name: postgres
   patch: |-
     - op: replace
-      path: /spec/template/spec/volumes/0
+      path: /spec/template/spec/volumes/1
       value:
         name: certs
         projected:
           defaultMode: 0440
           sources:
           - secret:
-              name: chronoverse-auth
+              name: chronoverse-ca
               items:
-              - key: auth.ed
-                path: auth.ed
-              - key: auth.ed.pub
-                path: auth.ed.pub
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: postgres.crt
+                path: postgres/postgres.crt
+              - key: postgres.key
+                path: postgres/postgres.key
+- target:
+    kind: StatefulSet
+    name: redis
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
           - secret:
               name: chronoverse-ca
               items:
@@ -132,3 +105,119 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: redis.crt
+                path: redis/redis.crt
+              - key: redis.key
+                path: redis/redis.key
+- target:
+    kind: StatefulSet
+    name: clickhouse
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clickhouse/clients/client.crt
+              - key: tls.key
+                path: clickhouse/clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: clickhouse.crt
+                path: clickhouse/clickhouse.crt
+              - key: clickhouse.key
+                path: clickhouse/clickhouse.key
+    - op: replace
+      path: /spec/template/spec/volumes/2
+      value:
+        name: clickhouse-certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: clickhouse.crt
+                path: clickhouse.crt
+              - key: clickhouse.key
+                path: clickhouse.key
+    - op: replace
+      path: /spec/template/spec/volumes/3
+      value:
+        name: clickhouse-ca
+        secret:
+          secretName: chronoverse-ca
+          items:
+          - key: ca.crt
+            path: ca.crt
+    - op: remove
+      path: /spec/template/spec/containers/0/volumeMounts/1/subPath
+    - op: remove
+      path: /spec/template/spec/containers/0/volumeMounts/2/subPath
+- target:
+    kind: StatefulSet
+    name: kafka
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: kafka-secrets-storage
+        secret:
+          secretName: chronoverse-kafka-tls
+          defaultMode: 0440
+    - op: remove
+      path: /spec/template/spec/initContainers/1/volumeMounts/0/subPath
+    - op: remove
+      path: /spec/template/spec/containers/0/volumeMounts/1/subPath
+- target:
+    kind: StatefulSet
+    name: meilisearch
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: meilisearch.crt
+                path: meilisearch/meilisearch.crt
+              - key: meilisearch.key
+                path: meilisearch/meilisearch.key

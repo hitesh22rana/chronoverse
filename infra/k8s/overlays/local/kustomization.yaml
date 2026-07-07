@@ -39,28 +39,6 @@ replicas:
 - name: workflows-service
   count: 1
 
-generatorOptions:
-  disableNameSuffixHash: true
-
-secretGenerator:
-- name: postgres-secret
-  literals:
-  - POSTGRES_USER=postgres
-  - POSTGRES_PASSWORD=postgres
-  - POSTGRES_DB=chronoverse
-- name: clickhouse-secret
-  literals:
-  - CLICKHOUSE_PASSWORD=chronoverse
-- name: meilisearch-secret
-  literals:
-  - MEILISEARCH_MASTER_KEY=35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
-  - MEILI_MASTER_KEY=35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
-- name: kafka-tls-secret
-  literals:
-  - KAFKA_SSL_KEYSTORE_PASSWORD=chronoverse
-  - KAFKA_SSL_TRUSTSTORE_PASSWORD=chronoverse
-  - KAFKA_SSL_KEY_PASSWORD=chronoverse
-
 configMapGenerator:
 - name: postgres-connection-config
   behavior: merge
@@ -124,12 +102,6 @@ patches:
         name: certs
         persistentVolumeClaim:
           claimName: certs-pvc
-    - op: replace
-      path: /spec/template/spec/containers/1/env/5/value
-      value: tcp://$(POD_IP):2375
-    - op: replace
-      path: /spec/template/spec/containers/1/env/6/value
-      value: tcp://$(POD_IP):2375
 - target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true

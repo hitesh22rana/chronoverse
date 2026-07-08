@@ -158,6 +158,9 @@ spec:
         app.kubernetes.io/name: redis
         app.kubernetes.io/component: cache
     spec:
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
       initContainers:
       - name: wait-for-redis-certs
         image: alpine:3.22.2
@@ -484,6 +487,11 @@ spec:
     spec:
       enableServiceLinks: false
       hostname: kafka
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       initContainers:
       - name: prepare-kafka-storage
         image: alpine:3.22.2

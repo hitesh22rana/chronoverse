@@ -1,6 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+namespace: chronoverse
+
 resources:
 - ../../base
 - infrastructure.yaml
@@ -59,6 +61,85 @@ patches:
         labelSelector:
           matchLabels:
             app.kubernetes.io/part-of: chronoverse
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: auth.ed
+                path: auth.ed
+              - key: auth.ed.pub
+                path: auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Job
+    name: database-migration
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: auth.ed
+                path: auth.ed
+              - key: auth.ed.pub
+                path: auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
 - target:
     kind: StatefulSet
     name: postgres
@@ -87,9 +168,47 @@ patches:
     name: redis
   patch: |-
     - op: replace
+      path: /spec/template/spec/initContainers/0
+      value:
+        name: prepare-redis-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /source-certs/ca/ca.crt ] && [ -f /source-certs/redis/redis.crt ] && [ -f /source-certs/redis/redis.key ] && [ -f /source-certs/clients/client.crt ] && [ -f /source-certs/clients/client.key ]; do
+            echo waiting for redis certificates
+            sleep 2
+          done
+          cp -R /source-certs/. /certs/
+          chown -R 999:999 /certs
+          find /certs -type d -exec chmod 0750 {} \;
+          find /certs -type f -exec chmod 0640 {} \;
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["CHOWN", "FOWNER"]
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: redis-certs-source
+          mountPath: /source-certs
+          readOnly: true
+        - name: certs
+          mountPath: /certs
+    - op: replace
       path: /spec/template/spec/volumes/1
       value:
-        name: certs
+        name: redis-certs-source
         projected:
           defaultMode: 0440
           sources:
@@ -112,6 +231,11 @@ patches:
                 path: redis/redis.crt
               - key: redis.key
                 path: redis/redis.key
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: certs
+        emptyDir: {}
 - target:
     kind: StatefulSet
     name: clickhouse

@@ -214,7 +214,7 @@ validate_secret_complete() {
   local missing=()
   local key
   for key in $(secret_keys "$name"); do
-    if ! kubectl_cmd -n "$NAMESPACE" get secret "$name" -o "jsonpath={.data['$key']}" 2>/dev/null | grep -q .; then
+    if ! kubectl_cmd -n "$NAMESPACE" get secret "$name" -o "go-template={{ index .data \"$key\" }}" 2>/dev/null | grep -q .; then
       missing+=("$key")
     fi
   done

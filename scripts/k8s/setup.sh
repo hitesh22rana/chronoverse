@@ -517,6 +517,11 @@ Production access:
   The default host is chronoverse.example.com; replace it with your domain and
   point DNS to your ingress controller external address.
 
+Authentication cookies are issued for SERVER_HOST_URL. Do not use
+http://localhost port-forwarding as the normal production access URL unless you
+also override SERVER_HOST_URL, SERVER_FRONTEND_URL, and SERVER_ALLOWED_ORIGINS
+for a local-only smoke test.
+
 Inspect the production ingress:
   kubectl ${KUBECTL_CONTEXT_PREFIX}-n $NAMESPACE get ingress chronoverse
 

@@ -73,3 +73,27 @@ scripts/k8s/setup.sh --mode production --dry-run
 ```
 
 Schema validation with OpenAPI requires a live cluster or an external validator such as `kubeconform`.
+
+## Local production smoke access
+
+The production overlay is configured for the Ingress host in `SERVER_HOST_URL`.
+If that value is `https://chronoverse.example.com`, browser cookies are scoped to
+that host and marked secure. A plain port-forward to `http://localhost:8080`
+will load the UI, but signup/login cookies will be rejected by the browser.
+
+For normal local browser validation, use the `local` strategy. For a temporary
+production-overlay smoke test in kind, you may override the server origin to
+localhost and restart only the server deployment:
+
+```bash
+kubectl --context kind-chronoverse -n chronoverse patch configmap server-config \
+  --type merge \
+  -p '{"data":{"SERVER_HOST_URL":"http://localhost:8080","SERVER_FRONTEND_URL":"http://localhost:8080","SERVER_ALLOWED_ORIGINS":"http://localhost:8080,"}}'
+kubectl --context kind-chronoverse -n chronoverse rollout restart deployment/server
+kubectl --context kind-chronoverse -n chronoverse rollout status deployment/server
+kubectl --context kind-chronoverse -n chronoverse port-forward svc/nginx 8080:80
+```
+
+This is a local-only smoke-test override. Reapply the production overlay, or set
+the production values to your real HTTPS domain, before using the cluster as a
+production environment.

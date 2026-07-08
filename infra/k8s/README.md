@@ -124,6 +124,14 @@ NetworkPolicy allows that port, but production should also restrict access with
 private networking, node firewalls or security groups, and the Docker socket
 proxy allowlist. Do not expose TCP `2375` publicly.
 
+Production authentication cookies are scoped from `SERVER_HOST_URL`. A
+production overlay configured for `https://chronoverse.example.com` will reject
+cookies when accessed through `http://localhost:8080` port-forwarding. Use the
+`local` strategy for normal localhost browser testing. For a temporary
+production-overlay smoke test in kind, patch `server-config` to
+`http://localhost:8080`, restart `deployment/server`, and reapply the production
+overlay before treating the cluster as production again.
+
 ## Validation
 
 ```sh

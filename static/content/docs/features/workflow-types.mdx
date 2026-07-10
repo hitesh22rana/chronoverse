@@ -8,7 +8,7 @@ Use heartbeat workflows for endpoint availability and infrastructure checks wher
 
 ## Container
 
-`CONTAINER` workflows describe a Docker image and command in the payload. The workflow worker prepares execution metadata and the execution worker runs the workload through the Docker socket proxy.
+`CONTAINER` workflows describe a Docker image and command in the payload. The workflow worker resolves execution metadata, `jobs-service` assigns a fresh runtime node during claim, and the execution worker runs the workload through the runtime endpoint registered by `runtime-agent`.
 
 Container workflows can retain stdout and stderr, stream output while running, and participate in text search and raw downloads after completion.
 
@@ -19,4 +19,3 @@ Both kinds support interval scheduling, manual runs, failure thresholds, termina
 ## Choosing a kind
 
 Prefer heartbeat when the result is a health signal. Prefer container when the workload needs an image, command, environment, or output capture.
-

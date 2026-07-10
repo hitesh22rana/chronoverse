@@ -32,7 +32,7 @@ import { REPOSITORY_URL, withBasePath } from "@/lib/site";
 const capabilities = [
   { icon: Workflow, title: "Scheduled workflows", text: "Run interval-based workloads with generation guards and asynchronous build preparation." },
   { icon: TimerReset, title: "Manual runs", text: "Dispatch immediate jobs through the same replay-safe lifecycle as automatic scheduling." },
-  { icon: Container, title: "Container execution", text: "Execute Docker-backed commands through a constrained socket proxy and durable job ownership." },
+  { icon: Container, title: "Container execution", text: "Execute Docker-backed commands through runtime ownership, node health, and constrained socket proxies." },
   { icon: Activity, title: "Heartbeat checks", text: "Model lightweight service checks separately from log-producing container workloads." },
   { icon: ScrollText, title: "Live logs", text: "Stream running stdout and stderr to the dashboard over Server-Sent Events." },
   { icon: FileSearch, title: "Retained search", text: "Store logs in ClickHouse, search with Meilisearch, and download safely filtered output." },
@@ -53,7 +53,7 @@ const timeline = [
   ["01", "Command", "The gateway validates session, CSRF state, input, and idempotency."],
   ["02", "Commit", "The domain service writes state and an outbox event atomically."],
   ["03", "Dispatch", "The relay publishes to Kafka and partition workers take ownership."],
-  ["04", "Execute", "A worker claims a lease, runs the container, and renews ownership."],
+  ["04", "Execute", "An execution worker claims a lease, receives a runtime endpoint, runs the container, and renews ownership."],
   ["05", "Observe", "Logs, notifications, analytics, traces, and terminal state converge."],
 ];
 
@@ -84,9 +84,9 @@ export default function Home() {
 
       <section className="signal-strip" aria-label="Platform summary">
         <div><strong>5</strong><span>gRPC domains</span></div>
-        <div><strong>7</strong><span>worker roles</span></div>
+        <div><strong>6</strong><span>worker roles</span></div>
         <div><strong>4</strong><span>Kafka topics</span></div>
-        <div><strong>6</strong><span>infrastructure systems</span></div>
+        <div><strong>1+</strong><span>runtime nodes</span></div>
       </section>
 
       <section className="section-shell landing-section" id="product">
@@ -103,7 +103,7 @@ export default function Home() {
 
       <section className="engineering-section" id="engineering">
         <div className="section-shell landing-section">
-          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The public API stays responsive through gRPC domain boundaries while Kafka workers absorb delayed, distributed, and failure-prone execution.</p></div>
+          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The public API stays responsive through gRPC domain boundaries while Kafka workers route delayed, distributed, and failure-prone execution through runtime-owned Docker nodes.</p></div>
           <ArchitectureMap />
 
           <div className="engineering-split">
@@ -133,7 +133,7 @@ export default function Home() {
           <div className="infra-grid">
             <Card><CardHeader><Database /><CardTitle>PostgreSQL</CardTitle></CardHeader><CardContent><CardDescription>Transactional state, idempotency, outbox rows, leases, retries, and analytics.</CardDescription></CardContent></Card>
             <Card><CardHeader><Boxes /><CardTitle>ClickHouse + Meilisearch</CardTitle></CardHeader><CardContent><CardDescription>Ordered retained output with low-latency text search and safe highlights.</CardDescription></CardContent></Card>
-            <Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and shared-host image-pull coordination.</CardDescription></CardContent></Card>
+            <Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and runtime-node-scoped image-pull coordination.</CardDescription></CardContent></Card>
             <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS service communication and trace propagation across HTTP, gRPC, and Kafka.</CardDescription></CardContent></Card>
           </div>
         </div>
@@ -143,9 +143,10 @@ export default function Home() {
         <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Built to be inspected while it runs.</h2><p>Health checks establish startup order. LGTM receives traces, metrics, and logs. Recovery loops make abandoned work visible and bounded.</p></div>
         <div className="operations-panel">
           <div className="operations-code">
-            <span>$ kubectl -n chronoverse get deploy</span>
+            <span>$ kubectl -n chronoverse get deploy,ds</span>
             <code>outbox-relay       2/2 available</code>
             <code>execution-worker   2/2 available</code>
+            <code>docker-proxy ds    runtime-agent sidecars ready</code>
             <code>joblogs-processor  2/2 available</code>
             <code>server             2/2 available</code>
           </div>

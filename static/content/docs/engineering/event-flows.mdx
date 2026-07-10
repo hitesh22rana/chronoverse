@@ -15,7 +15,7 @@ The scheduling worker scans due workflows, validates generation and build state,
 
 ## Job execution
 
-The execution worker consumes the job event, claims a lease, ensures the resolved image on the assigned runtime, starts the container through the Docker proxy, attaches its container ID, renews ownership, and publishes output. Terminal state changes require the lease token.
+The execution worker consumes the job event, claims a lease, receives the runtime endpoint registered by `runtime-agent`, ensures the resolved image on that runtime, starts the container through the Docker proxy, attaches its container ID, renews ownership, and publishes output. Terminal state changes require the lease token.
 
 ## Logs and analytics
 

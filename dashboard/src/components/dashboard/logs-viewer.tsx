@@ -7,18 +7,22 @@ import {
     useState,
     useTransition,
 } from "react"
+import type { MouseEvent as ReactMouseEvent } from "react"
 import {
     usePathname,
     useRouter,
     useSearchParams,
 } from "next/navigation"
 import {
+    Copy,
     Download,
     Filter,
     Loader2,
     Search,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Virtuoso } from "react-virtuoso"
+import type { VirtuosoHandle } from "react-virtuoso"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,11 +41,24 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 import { useJobLogs } from "@/hooks/use-job-logs"
 import type { DownloadLogsFormat } from "@/hooks/use-job-logs"
 
 import { cn, jsonRegex } from "@/lib/utils"
+import {
+    formatLogLineSelection,
+    isLogLineSelected,
+    normalizeLogLineSelection,
+    parseLogLineSelection,
+    shouldFetchMoreLogsForSelection,
+} from "@/lib/log-line-selection"
+import type { LogLineSelection } from "@/lib/log-line-selection"
 
 interface LogViewerProps {
     workflowId: string
@@ -75,6 +92,7 @@ const highlightTokenPattern = /^[a-f0-9]{32}$/
 const highlightStartPrefix = "__CV_HL_START_"
 const highlightEndPrefix = "__CV_HL_END_"
 const highlightSuffix = "__"
+const shareableJobStatuses = new Set(["COMPLETED", "FAILED", "CANCELED"])
 
 const escapeHtml = (value: string) => {
     return value.replace(/[&<>"']/g, (char) => {
@@ -211,6 +229,13 @@ export function LogsViewer({
     const [downloadPopoverOpen, setDownloadPopoverOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
     const searchInputRef = useRef<HTMLInputElement>(null)
+    const virtuosoRef = useRef<VirtuosoHandle>(null)
+    const deepLinkFetchInFlightRef = useRef(false)
+    const lastScrolledSelectionRef = useRef("")
+    const lastUnavailableSelectionRef = useRef("")
+    const [lineSelection, setLineSelection] = useState<LogLineSelection | null>(null)
+    const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null)
+    const [isSelectionUnavailable, setIsSelectionUnavailable] = useState(false)
 
     const {
         logs,
@@ -237,6 +262,25 @@ export function LogsViewer({
     const [downloadFormat, setDownloadFormat] = useState<DownloadLogsFormat>("txt")
     const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
     const parseJson = searchParams.get("json") === "true"
+    const datasetKey = `${pathname}?${searchParams.toString()}`
+    const selectionFragment = lineSelection ? formatLogLineSelection(lineSelection) : ""
+    const selectionKey = `${datasetKey}${selectionFragment}`
+    const canCopySelection = Boolean(
+        lineSelection &&
+        shareableJobStatuses.has(jobStatus) &&
+        !disableLogInteractions &&
+        !isSelectionUnavailable &&
+        logs.length >= lineSelection.end
+    )
+    const copyLinkTooltip = !lineSelection
+        ? "Select a log line first"
+        : jobStatus === "RUNNING"
+            ? "Links can be copied after the job finishes"
+            : isSelectionUnavailable
+                ? "The selected log line is unavailable"
+                : canCopySelection
+                    ? "Copy a link to the selected logs"
+                    : "Log links are unavailable"
 
     const updateJsonRendering = useCallback((enabled: boolean) => {
         const params = new URLSearchParams(searchParams.toString())
@@ -248,12 +292,133 @@ export function LogsViewer({
         }
 
         const query = params.toString()
-        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+        const hash = window.location.hash
+        router.replace(`${pathname}${query ? `?${query}` : ""}${hash}`, { scroll: false })
     }, [pathname, router, searchParams])
+
+    const updateLineSelection = useCallback((selection: LogLineSelection) => {
+        const normalized = normalizeLogLineSelection(selection.start, selection.end)
+        if (!normalized) {
+            return
+        }
+
+        setLineSelection(normalized)
+        setIsSelectionUnavailable(false)
+
+        const url = new URL(window.location.href)
+        url.hash = formatLogLineSelection(normalized)
+        window.history.replaceState(window.history.state, "", url)
+    }, [])
+
+    const handleLineClick = useCallback((
+        lineNumber: number,
+        event: ReactMouseEvent<HTMLAnchorElement>
+    ) => {
+        event.preventDefault()
+
+        if (event.shiftKey) {
+            const anchor = selectionAnchor ?? lineSelection?.start ?? lineNumber
+            const range = normalizeLogLineSelection(anchor, lineNumber)
+            if (range) {
+                updateLineSelection(range)
+            }
+            return
+        }
+
+        setSelectionAnchor(lineNumber)
+        updateLineSelection({ start: lineNumber, end: lineNumber })
+    }, [lineSelection?.start, selectionAnchor, updateLineSelection])
+
+    const copySelectionLink = useCallback(async () => {
+        try {
+            await navigator.clipboard.writeText(window.location.href)
+            toast.success("Log link copied")
+        } catch {
+            toast.error("Failed to copy log link")
+        }
+    }, [])
 
     useEffect(() => {
         setDownloadFilename(`${jobId}-logs`)
     }, [jobId])
+
+    useEffect(() => {
+        const syncSelectionFromFragment = () => {
+            const selection = parseLogLineSelection(window.location.hash)
+            setLineSelection(selection)
+            setSelectionAnchor(selection?.start ?? null)
+            setIsSelectionUnavailable(false)
+        }
+
+        syncSelectionFromFragment()
+        window.addEventListener("hashchange", syncSelectionFromFragment)
+        window.addEventListener("popstate", syncSelectionFromFragment)
+
+        return () => {
+            window.removeEventListener("hashchange", syncSelectionFromFragment)
+            window.removeEventListener("popstate", syncSelectionFromFragment)
+        }
+    }, [workflowId, jobId])
+
+    useEffect(() => {
+        if (!lineSelection || isLogsLoading || isWorkflowLoading || logsError) {
+            return
+        }
+
+        if (logs.length >= lineSelection.end) {
+            setIsSelectionUnavailable(false)
+
+            if (lastScrolledSelectionRef.current !== selectionKey) {
+                lastScrolledSelectionRef.current = selectionKey
+                requestAnimationFrame(() => {
+                    virtuosoRef.current?.scrollToIndex({
+                        index: lineSelection.start - 1,
+                        align: "start",
+                    })
+                })
+            }
+            return
+        }
+
+        if (shouldFetchMoreLogsForSelection(lineSelection, logs.length, Boolean(hasNextPage))) {
+            if (isFetchingNextPage || deepLinkFetchInFlightRef.current) {
+                return
+            }
+
+            deepLinkFetchInFlightRef.current = true
+            void fetchNextPage().finally(() => {
+                deepLinkFetchInFlightRef.current = false
+            })
+            return
+        }
+
+        if (!isFetchingNextPage && hasNextPage === false) {
+            setIsSelectionUnavailable(true)
+        }
+    }, [
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLogsLoading,
+        isWorkflowLoading,
+        lineSelection,
+        logs.length,
+        logsError,
+        selectionKey,
+    ])
+
+    useEffect(() => {
+        if (!isSelectionUnavailable || !lineSelection) {
+            return
+        }
+
+        if (lastUnavailableSelectionRef.current === selectionKey) {
+            return
+        }
+
+        lastUnavailableSelectionRef.current = selectionKey
+        toast.warning(`Log line ${lineSelection.end} is unavailable`)
+    }, [isSelectionUnavailable, lineSelection, selectionKey])
 
     // Debounced search update
     useEffect(() => {
@@ -319,14 +484,32 @@ export function LogsViewer({
     const LogRow = (index: number) => {
         const log = logs[index]
         if (!log) return null
+        const lineNumber = index + 1
+        const isSelected = isLogLineSelected(lineNumber, lineSelection)
         const formattedMessage = parseLog(log.message, log.highlightToken)
         return (
             <div
+                id={`L${lineNumber}`}
                 className={cn(
                     "flex min-h-6 hover:bg-muted/50 group",
-                    getLogStreamStyles(log.stream)
+                    getLogStreamStyles(log.stream),
+                    { "bg-accent hover:bg-accent": isSelected }
                 )}
+                data-line-number={lineNumber}
+                data-selected={isSelected || undefined}
             >
+                <a
+                    href={`#L${lineNumber}`}
+                    onClick={(event) => handleLineClick(lineNumber, event)}
+                    className={cn(
+                        "flex w-14 shrink-0 items-start justify-end border-r px-2 py-1 text-xs tabular-nums text-muted-foreground select-none",
+                        { "text-foreground": isSelected }
+                    )}
+                    aria-label={`Select log line ${lineNumber}`}
+                    aria-current={isSelected ? "location" : undefined}
+                >
+                    {lineNumber}
+                </a>
                 <span
                     className={cn("my-1 w-1 flex-none rounded-sm", getLogStreamStripStyles(log.stream))}
                     title={log.stream}
@@ -433,6 +616,22 @@ export function LogsViewer({
                                 disabled={(jobStatus === "CANCELED" && logs.length === 0) || (logs.length === 0 && !!completedAt)}
                             />
                         </div>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={!canCopySelection}
+                                        onClick={copySelectionLink}
+                                    >
+                                        <Copy data-icon="inline-start" />
+                                        Copy link
+                                    </Button>
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{copyLinkTooltip}</TooltipContent>
+                        </Tooltip>
                         <Popover open={downloadPopoverOpen} onOpenChange={setDownloadPopoverOpen}>
                             <PopoverTrigger asChild>
                                 <Button
@@ -527,6 +726,7 @@ export function LogsViewer({
                     </div>
                 ) : logs.length > 0 ? (
                     <Virtuoso
+                        ref={virtuosoRef}
                         totalCount={logs.length}
                         itemContent={LogRow}
                         endReached={handleEndReached}

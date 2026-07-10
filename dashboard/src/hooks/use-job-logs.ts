@@ -182,7 +182,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             params.delete("q")
         }
 
-        router.push(`?${params.toString()}`)
+        const query = params.toString()
+        const hash = window.location.hash
+        router.push(`${query ? `?${query}` : ""}${hash}`)
     }, [router, searchParams])
 
     // Apply stream filter in URL params
@@ -195,7 +197,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             params.delete("stream")
         }
 
-        router.push(`?${params.toString()}`)
+        const query = params.toString()
+        const hash = window.location.hash
+        router.push(`${query ? `?${query}` : ""}${hash}`)
     }, [router, searchParams])
 
     // Build query parameters for the search job logs request

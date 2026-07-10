@@ -211,7 +211,18 @@ validate_secret_complete() {
   if [ "${#missing[@]}" -gt 0 ]; then
     die "secret $name exists but is missing required key(s): ${missing[*]}"
   fi
-  info "Keeping existing complete secret $name"
+}
+
+secret_decoded_length() {
+  local name="$1"
+  local key="$2"
+  local encoded
+  encoded="$(kubectl_cmd -n "$NAMESPACE" get secret "$name" -o "go-template={{ index .data \"$key\" }}" 2>/dev/null || true)"
+  if [ -z "$encoded" ]; then
+    echo 0
+    return
+  fi
+  printf '%s' "$encoded" | openssl base64 -d -A | wc -c | tr -d ' '
 }
 
 apply_secret_yaml() {
@@ -228,6 +239,7 @@ create_literal_secret() {
   shift
   if secret_exists "$name"; then
     validate_secret_complete "$name"
+    info "Keeping existing complete secret $name"
     return
   fi
   info "Creating missing secret $name"
@@ -253,15 +265,15 @@ create_data_secrets() {
     meili_key="chronoverse-local-meilisearch-master-key"
     kafka_keystore="chronoverse-local-kafka-keystore-password"
     kafka_truststore="chronoverse-local-kafka-truststore-password"
-    crypto_secret="chronoverse-local-cookie-encryption-secret"
-    csrf_secret="chronoverse-local-csrf-hmac-secret"
+    crypto_secret="chronoverse-local-crypto-key-001"
+    csrf_secret="chronoverse-local-csrf-hmac-0001"
   else
     postgres_password="$(random_hex 24)"
     clickhouse_password="$(random_hex 24)"
     meili_key="$(random_hex 32)"
     kafka_keystore="$(random_hex 18)"
     kafka_truststore="$(random_hex 18)"
-    crypto_secret="$(random_hex 32)"
+    crypto_secret="$(random_hex 16)"
     csrf_secret="$(random_hex 32)"
   fi
 
@@ -282,7 +294,43 @@ create_data_secrets() {
     --from-literal=KAFKA_SSL_TRUSTSTORE_PASSWORD="$kafka_truststore" \
     --from-literal=KAFKA_SSL_KEY_PASSWORD="$kafka_keystore"
 
-  create_literal_secret chronoverse-server-security \
+  create_server_security_secret "$crypto_secret" "$csrf_secret"
+}
+
+create_server_security_secret() {
+  local crypto_secret="$1"
+  local csrf_secret="$2"
+  local secret_name="chronoverse-server-security"
+
+  if secret_exists "$secret_name"; then
+    validate_secret_complete "$secret_name"
+
+    local crypto_len
+    crypto_len="$(secret_decoded_length "$secret_name" CRYPTO_SECRET)"
+    if [ "$crypto_len" = "32" ]; then
+      info "Keeping existing complete secret $secret_name"
+      return
+    fi
+
+    if [ "$MODE" != "local" ]; then
+      die "secret $secret_name has CRYPTO_SECRET length $crypto_len bytes; it must be exactly 32 bytes"
+    fi
+
+    info "Replacing invalid local secret $secret_name because CRYPTO_SECRET is $crypto_len bytes; expected 32"
+    if [ "$DRY_RUN" = true ]; then
+      local yaml
+      yaml="$(kubectl_cmd -n "$NAMESPACE" create secret generic "$secret_name" \
+        --from-literal=CRYPTO_SECRET="$crypto_secret" \
+        --from-literal=SERVER_CSRF_HMAC_SECRET="$csrf_secret" \
+        --dry-run=client -o yaml)"
+      apply_secret_yaml "$yaml"
+      return
+    fi
+
+    kubectl_cmd -n "$NAMESPACE" delete secret "$secret_name" --ignore-not-found >/dev/null
+  fi
+
+  create_literal_secret "$secret_name" \
     --from-literal=CRYPTO_SECRET="$crypto_secret" \
     --from-literal=SERVER_CSRF_HMAC_SECRET="$csrf_secret"
 }
@@ -307,6 +355,7 @@ create_file_secret() {
   shift
   if secret_exists "$name"; then
     validate_secret_complete "$name"
+    info "Keeping existing complete secret $name"
     return
   fi
   info "Creating missing secret $name"
@@ -321,6 +370,7 @@ create_tls_secret() {
   local key="$3"
   if secret_exists "$name"; then
     validate_secret_complete "$name"
+    info "Keeping existing complete secret $name"
     return
   fi
   info "Creating missing secret $name"
@@ -332,6 +382,7 @@ create_tls_secret() {
 create_ingress_tls_secret() {
   if secret_exists chronoverse-ingress-tls; then
     validate_secret_complete chronoverse-ingress-tls
+    info "Keeping existing complete secret chronoverse-ingress-tls"
     return
   fi
 

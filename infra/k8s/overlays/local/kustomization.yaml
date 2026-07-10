@@ -150,6 +150,32 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
+      - name: wait-for-datastores
+        image: alpine:3.22.2
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          first_clickhouse="${CLICKHOUSE_HOSTS%%,*}"
+          clickhouse_host="${first_clickhouse%%:*}"
+          clickhouse_port="${first_clickhouse##*:}"
+          if [ "$clickhouse_port" = "$first_clickhouse" ]; then clickhouse_port=9440; fi
+          until nc -z "$POSTGRES_HOST" "$POSTGRES_PORT"; do echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT"; sleep 2; done
+          until nc -z "$clickhouse_host" "$clickhouse_port"; do echo "waiting for clickhouse at $clickhouse_host:$clickhouse_port"; sleep 2; done
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
     - op: replace
       path: /spec/template/spec/volumes/0
       value:

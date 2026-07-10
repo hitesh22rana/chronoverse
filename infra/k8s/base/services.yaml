@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: users-service
+  labels:
+    app.kubernetes.io/name: users-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: users-service
+  ports:
+  - name: grpc
+    port: 50051
+    targetPort: grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflows-service
+  labels:
+    app.kubernetes.io/name: workflows-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: workflows-service
+  ports:
+  - name: grpc
+    port: 50052
+    targetPort: grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jobs-service
+  labels:
+    app.kubernetes.io/name: jobs-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: jobs-service
+  ports:
+  - name: grpc
+    port: 50053
+    targetPort: grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-service
+  labels:
+    app.kubernetes.io/name: notifications-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: notifications-service
+  ports:
+  - name: grpc
+    port: 50054
+    targetPort: grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  labels:
+    app.kubernetes.io/name: analytics-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: analytics-service
+  ports:
+  - name: grpc
+    port: 50055
+    targetPort: grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  labels:
+    app.kubernetes.io/name: server
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: server
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: dashboard
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http
+

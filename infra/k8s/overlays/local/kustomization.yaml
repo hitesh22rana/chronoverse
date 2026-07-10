@@ -1,0 +1,220 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: chronoverse
+
+resources:
+- ../../base
+- storage.yaml
+- infrastructure.yaml
+- cert-bootstrap.yaml
+
+replicas:
+- name: analytics-processor
+  count: 1
+- name: analytics-service
+  count: 1
+- name: dashboard
+  count: 1
+- name: execution-worker
+  count: 1
+- name: joblogs-processor
+  count: 1
+- name: jobs-service
+  count: 1
+- name: nginx
+  count: 1
+- name: notifications-service
+  count: 1
+- name: outbox-relay
+  count: 1
+- name: scheduling-worker
+  count: 1
+- name: server
+  count: 1
+- name: users-service
+  count: 1
+- name: workflow-worker
+  count: 1
+- name: workflows-service
+  count: 1
+
+configMapGenerator:
+- name: postgres-connection-config
+  behavior: merge
+  literals:
+  - POSTGRES_HOST=postgres
+  - POSTGRES_PORT=5432
+  - POSTGRES_TLS_ENABLED=true
+- name: redis-connection-config
+  behavior: merge
+  literals:
+  - REDIS_HOST=redis
+  - REDIS_PORT=6379
+  - REDIS_TLS_ENABLED=true
+- name: clickhouse-connection-config
+  behavior: merge
+  literals:
+  - CLICKHOUSE_HOSTS=clickhouse:9440
+  - CLICKHOUSE_USERNAME=chronoverse-client
+  - CLICKHOUSE_TLS_ENABLED=true
+- name: meilisearch-connection-config
+  behavior: merge
+  literals:
+  - MEILISEARCH_URI=https://meilisearch:7700
+  - MEILISEARCH_TLS_ENABLED=true
+- name: kafka-connection-config
+  behavior: merge
+  literals:
+  - KAFKA_BROKERS=kafka:9094
+- name: server-config
+  behavior: merge
+  literals:
+  - SERVER_HOST_URL=http://localhost
+  - SERVER_FRONTEND_URL=http://localhost
+  - SERVER_ALLOWED_ORIGINS=http://localhost,http://localhost:3000,
+
+patches:
+- target:
+    kind: DaemonSet
+    labelSelector: chronoverse.io/client-certs=true
+  patch: |-
+    - op: add
+      path: /spec/template/spec/initContainers
+      value:
+      - name: wait-for-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do echo waiting for local certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+- target:
+    kind: Deployment
+    labelSelector: chronoverse.io/certs=true
+  patch: |-
+    - op: add
+      path: /spec/template/spec/initContainers
+      value:
+      - name: wait-for-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+- target:
+    kind: Job
+    name: database-migration
+  patch: |-
+    - op: add
+      path: /spec/template/spec/initContainers
+      value:
+      - name: wait-for-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+      - name: wait-for-datastores
+        image: alpine:3.22.2
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          first_clickhouse="${CLICKHOUSE_HOSTS%%,*}"
+          clickhouse_host="${first_clickhouse%%:*}"
+          clickhouse_port="${first_clickhouse##*:}"
+          if [ "$clickhouse_port" = "$first_clickhouse" ]; then clickhouse_port=9440; fi
+          until nc -z "$POSTGRES_HOST" "$POSTGRES_PORT"; do echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT"; sleep 2; done
+          until nc -z "$clickhouse_host" "$clickhouse_port"; do echo "waiting for clickhouse at $clickhouse_host:$clickhouse_port"; sleep 2; done
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+- target:
+    kind: Job
+    name: init-kafka-topics
+  patch: |-
+    - op: add
+      path: /spec/template/spec/initContainers
+      value:
+      - name: wait-for-kafka-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ] && [ -f /etc/kafka/secrets/keystore_creds.txt ] && [ -f /etc/kafka/secrets/truststore_creds.txt ] && [ -f /etc/kafka/secrets/key_creds.txt ]; do echo waiting for kafka certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: kafka-client-secrets
+          mountPath: /etc/kafka/secrets
+          subPath: kafka
+          readOnly: true
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: kafka-client-secrets
+        persistentVolumeClaim:
+          claimName: certs-pvc
+    - op: replace
+      path: /spec/template/spec/containers/0/volumeMounts/0
+      value:
+        name: kafka-client-secrets
+        mountPath: /etc/kafka/secrets
+        subPath: kafka
+        readOnly: true

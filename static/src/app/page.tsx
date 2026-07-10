@@ -69,7 +69,7 @@ export default function Home() {
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
             <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
           </div>
-          <div className="hero-command"><Terminal /><code>docker compose -f compose.prod.yaml up -d</code></div>
+          <div className="hero-command"><Terminal /><code>kubectl apply -k infra/k8s/overlays/local</code></div>
         </div>
         <div className="hero-visual" aria-label="Chronoverse engineering status panel">
           <Image src={withBasePath("/assets/chronoverse.png")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />
@@ -143,11 +143,11 @@ export default function Home() {
         <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Built to be inspected while it runs.</h2><p>Health checks establish startup order. LGTM receives traces, metrics, and logs. Recovery loops make abandoned work visible and bounded.</p></div>
         <div className="operations-panel">
           <div className="operations-code">
-            <span>$ docker compose -f compose.prod.yaml ps</span>
-            <code>outbox-relay       running   healthy</code>
-            <code>execution-worker   running   2/2 replicas</code>
-            <code>joblogs-processor  running   healthy</code>
-            <code>server             running   healthy</code>
+            <span>$ kubectl -n chronoverse get deploy</span>
+            <code>outbox-relay       2/2 available</code>
+            <code>execution-worker   2/2 available</code>
+            <code>joblogs-processor  2/2 available</code>
+            <code>server             2/2 available</code>
           </div>
           <div className="operations-links">
             <Link href="/docs/operations/monitoring"><strong>Monitoring</strong><span>Health signals and first response</span><ArrowRight /></Link>

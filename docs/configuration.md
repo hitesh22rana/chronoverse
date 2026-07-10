@@ -4,6 +4,9 @@ Chronoverse configuration is environment-variable driven. The compose files
 provide working local defaults, but production deployments should replace
 default credentials, keys, hostnames, retention settings, and resource sizing.
 
+Kubernetes uses the same environment variables through Kustomize-generated
+ConfigMaps and Kubernetes Secrets under `infra/k8s`.
+
 ## Compose Profiles
 
 ### Development: `compose.dev.yaml`
@@ -57,6 +60,32 @@ the low/mid/high-resource worker groups.
 | Low | `scheduling-worker`, `analytics-processor`, `outbox-relay` | `0.25` CPU, `512M` memory | `0.1` CPU, `256M` memory |
 | Mid | `workflow-worker`, `joblogs-processor` | `0.5` CPU, `2G` memory | `0.25` CPU, `1G` memory |
 | High | `execution-worker` | `2` CPU, `2G` memory | `1` CPU, `1G` memory |
+
+## Kubernetes Overlays
+
+`infra/k8s` is organized as Kustomize:
+
+- `base/` contains application services, workers, dashboard, Nginx, Docker
+  proxy, RBAC, network policy, PodDisruptionBudgets, Kafka topic initialization,
+  and shared ConfigMaps.
+- `overlays/local/` adds in-cluster PostgreSQL, Redis, ClickHouse, Kafka,
+  Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs.
+- `overlays/production/` deploys self-hosted PostgreSQL, Redis, ClickHouse,
+  Kafka, Meilisearch, runtime-agent, dynamic PVCs, and HPAs for services and
+  workers.
+
+Common commands:
+
+```sh
+kubectl kustomize infra/k8s/overlays/local
+kubectl kustomize infra/k8s/overlays/production
+scripts/k8s/setup.sh --mode local
+scripts/k8s/setup.sh --mode production
+```
+
+The setup script preserves complete pre-created Secrets and generates missing
+bootstrap material. Patch public URLs and allowed origins for your deployment
+before exposing the HTTP entrypoint.
 
 ## Core Environment Groups
 
@@ -178,6 +207,7 @@ Topic initialization uses:
 
 Kafka auto topic creation is disabled in compose. `init-kafka-topics` creates or
 expands the expected topics: `workflows`, `jobs`, `job_logs`, and `analytics`.
+The Kubernetes overlays include the same topic initializer.
 
 ## Domain and Worker Settings
 
@@ -215,8 +245,15 @@ lease should be treated as owned by an unavailable runtime.
 `runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
 PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
-In a multi-node deployment, run one agent beside each node-local Docker proxy
-and set the endpoint to the address workers should use for that node.
+In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
+and register a node-stable endpoint such as `tcp://$(NODE_IP):2375`, not a pod
+IP or `tcp://docker-proxy:2375` service DNS name. The Docker proxy host port
+must stay private and reachable only by trusted Chronoverse workers.
+Multi-node kind and similar Docker-container-based Kubernetes emulators can
+make node host ports reachable only from pods on the same emulator node. In that
+specific topology, use a pod-IP endpoint override as an emulator workaround; do
+not use pod-IP runtime endpoints for real Kubernetes clusters where node IPs are
+routable.
 `RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
 it from durable node identity, such as the Kubernetes node name, hostname, or a
 mounted identity file; do not generate a new random ID on every restart.
@@ -344,3 +381,15 @@ production environments should manage:
 - `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`.
 - Database passwords and `MEILISEARCH_MASTER_KEY`.
 - Public hostnames, allowed origins, and same-site cookie policy.
+
+Kubernetes production deployments should create these Secrets before applying
+the production overlay:
+
+- `postgres-secret`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
+- `clickhouse-secret`: `CLICKHOUSE_PASSWORD`
+- `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`
+- `chronoverse-auth`: `auth.ed`, `auth.ed.pub`
+- `chronoverse-ca`: `ca.crt`
+- `chronoverse-client-tls`: `tls.crt`, `tls.key`
+- `chronoverse-service-tls`: per-service gRPC certificate and key files
+- `chronoverse-kafka-tls`: Kafka keystore, truststore, and credential files

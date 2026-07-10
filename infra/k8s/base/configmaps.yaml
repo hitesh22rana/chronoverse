@@ -1,0 +1,271 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-connection-config
+data:
+  POSTGRES_HOST: postgres.example.internal
+  POSTGRES_PORT: "5432"
+  POSTGRES_MIN_CONNS: "2"
+  POSTGRES_TLS_ENABLED: "true"
+  POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
+  POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
+  POSTGRES_TLS_KEY_FILE: certs/clients/client.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-connection-config
+data:
+  REDIS_HOST: redis.example.internal
+  REDIS_PORT: "6379"
+  REDIS_MAX_MEMORY: 768mb
+  REDIS_TLS_ENABLED: "true"
+  REDIS_TLS_CA_FILE: certs/ca/ca.crt
+  REDIS_TLS_CERT_FILE: certs/clients/client.crt
+  REDIS_TLS_KEY_FILE: certs/clients/client.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-connection-config
+data:
+  CLICKHOUSE_HOSTS: clickhouse.example.internal:9440
+  CLICKHOUSE_USERNAME: chronoverse-client
+  CLICKHOUSE_TLS_ENABLED: "true"
+  CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
+  CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
+  CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meilisearch-connection-config
+data:
+  MEILISEARCH_URI: https://meilisearch.example.internal:7700
+  MEILISEARCH_TLS_ENABLED: "true"
+  MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
+  MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
+  MEILISEARCH_TLS_KEY_FILE: certs/clients/client.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-connection-config
+data:
+  KAFKA_BROKERS: kafka.example.internal:9094
+  KAFKA_TLS_ENABLED: "true"
+  KAFKA_TLS_CA_FILE: certs/ca/ca.crt
+  KAFKA_TLS_CERT_FILE: certs/clients/client.crt
+  KAFKA_TLS_KEY_FILE: certs/clients/client.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-config
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://lgtm:4317
+  OTEL_EXPORTER_OTLP_LOGS_INSECURE: "true"
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_METRIC_EXPORT_INTERVAL: "500"
+  OTEL_BSP_SCHEDULE_DELAY: "500"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: users-service-config
+data:
+  ENV: production
+  GRPC_PORT: "50051"
+  GRPC_REQUEST_TIMEOUT: 1s
+  GRPC_TLS_ENABLED: "true"
+  GRPC_TLS_CA_FILE: certs/ca/ca.crt
+  GRPC_TLS_CERT_FILE: certs/users-service/users-service.crt
+  GRPC_TLS_KEY_FILE: certs/users-service/users-service.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflows-service-config
+data:
+  ENV: production
+  GRPC_PORT: "50052"
+  GRPC_REQUEST_TIMEOUT: 1s
+  GRPC_TLS_ENABLED: "true"
+  GRPC_TLS_CA_FILE: certs/ca/ca.crt
+  GRPC_TLS_CERT_FILE: certs/workflows-service/workflows-service.crt
+  GRPC_TLS_KEY_FILE: certs/workflows-service/workflows-service.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jobs-service-config
+data:
+  ENV: production
+  GRPC_PORT: "50053"
+  GRPC_REQUEST_TIMEOUT: 1s
+  GRPC_TLS_ENABLED: "true"
+  GRPC_TLS_CA_FILE: certs/ca/ca.crt
+  GRPC_TLS_CERT_FILE: certs/jobs-service/jobs-service.crt
+  GRPC_TLS_KEY_FILE: certs/jobs-service/jobs-service.key
+  CLIENT_TLS_CERT_FILE: certs/clients/client.crt
+  CLIENT_TLS_KEY_FILE: certs/clients/client.key
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-service-config
+data:
+  ENV: production
+  GRPC_PORT: "50054"
+  GRPC_REQUEST_TIMEOUT: 1s
+  GRPC_TLS_ENABLED: "true"
+  GRPC_TLS_CA_FILE: certs/ca/ca.crt
+  GRPC_TLS_CERT_FILE: certs/notifications-service/notifications-service.crt
+  GRPC_TLS_KEY_FILE: certs/notifications-service/notifications-service.key
+  CLIENT_TLS_CERT_FILE: certs/clients/client.crt
+  CLIENT_TLS_KEY_FILE: certs/clients/client.key
+  USERS_SERVICE_HOST: dns:///users-service.chronoverse.svc.cluster.local
+  USERS_SERVICE_PORT: "50051"
+  USERS_SERVICE_TLS_ENABLED: "true"
+  USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-service-config
+data:
+  ENV: production
+  GRPC_PORT: "50055"
+  GRPC_REQUEST_TIMEOUT: 1s
+  GRPC_TLS_ENABLED: "true"
+  GRPC_TLS_CA_FILE: certs/ca/ca.crt
+  GRPC_TLS_CERT_FILE: certs/analytics-service/analytics-service.crt
+  GRPC_TLS_KEY_FILE: certs/analytics-service/analytics-service.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-config
+data:
+  ENV: production
+  SERVER_HOST: 0.0.0.0
+  SERVER_PORT: "8080"
+  SERVER_HOST_URL: https://chronoverse.example.com
+  SERVER_FRONTEND_URL: https://chronoverse.example.com
+  SERVER_ALLOWED_ORIGINS: https://chronoverse.example.com,
+  CLIENT_TLS_CERT_FILE: certs/clients/client.crt
+  CLIENT_TLS_KEY_FILE: certs/clients/client.key
+  USERS_SERVICE_HOST: dns:///users-service.chronoverse.svc.cluster.local
+  USERS_SERVICE_PORT: "50051"
+  USERS_SERVICE_TLS_ENABLED: "true"
+  USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc.cluster.local
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc.cluster.local
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  ANALYTICS_SERVICE_HOST: dns:///analytics-service.chronoverse.svc.cluster.local
+  ANALYTICS_SERVICE_PORT: "50055"
+  ANALYTICS_SERVICE_TLS_ENABLED: "true"
+  ANALYTICS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runtime-agent-config
+data:
+  ENV: production
+  RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
+  RUNTIME_AGENT_MAX_CONCURRENCY: "4"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scheduling-worker-config
+data:
+  ENV: production
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-worker-config
+data:
+  ENV: production
+  KAFKA_CONSUMER_GROUP: workflow-worker
+  CLIENT_TLS_CERT_FILE: certs/clients/client.crt
+  CLIENT_TLS_KEY_FILE: certs/clients/client.key
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc.cluster.local
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc.cluster.local
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: execution-worker-config
+data:
+  ENV: production
+  KAFKA_CONSUMER_GROUP: execution-worker
+  CLIENT_TLS_CERT_FILE: certs/clients/client.crt
+  CLIENT_TLS_KEY_FILE: certs/clients/client.key
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_PORT: "50052"
+  WORKFLOWS_SERVICE_TLS_ENABLED: "true"
+  WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc.cluster.local
+  JOBS_SERVICE_PORT: "50053"
+  JOBS_SERVICE_TLS_ENABLED: "true"
+  JOBS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc.cluster.local
+  NOTIFICATIONS_SERVICE_PORT: "50054"
+  NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
+  NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: joblogs-processor-config
+data:
+  ENV: production
+  KAFKA_CONSUMER_GROUP: joblogs-processor
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-processor-config
+data:
+  ENV: production
+  KAFKA_CONSUMER_GROUP: analytics-processor
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: outbox-relay-config
+data:
+  ENV: production
+  OUTBOX_RELAY_PROCESSING_LEASE: 30s
+  OUTBOX_RELAY_CLEANUP_ENABLED: "true"
+  OUTBOX_RELAY_CLEANUP_INTERVAL: 15m
+  OUTBOX_RELAY_CLEANUP_BATCH_SIZE: "1000"
+  OUTBOX_RELAY_PUBLISHED_RETENTION: 168h

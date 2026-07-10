@@ -4,8 +4,6 @@ import { useRouter } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { logout } from "@/actions"
-
 import { fetchWithAuth } from "@/lib/api-client"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
@@ -86,13 +84,13 @@ export function useAuth() {
                 throw new Error("failed to logout")
             }
         },
-        onSuccess: async () => {
-            await logout()
+        onSuccess: () => {
+            router.replace("/login")
             router.refresh()
         },
-        onError: async (error: Error) => {
-            await logout()
+        onError: (error: Error) => {
             toast.error(error.message)
+            router.replace("/login")
             router.refresh()
         },
     })

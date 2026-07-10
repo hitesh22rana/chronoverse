@@ -1,0 +1,44 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-default
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector: {}
+  - ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 3000
+  egress:
+  - to:
+    - podSelector: {}
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 2375
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 7700
+    - protocol: TCP
+      port: 9094
+    - protocol: TCP
+      port: 9440

@@ -80,6 +80,7 @@ For the full event flow and replay-safety model, see the
 
 - Docker
 - Docker Compose
+- `kubectl` for Kubernetes deployments
 
 The compose stacks build or pull all runtime services. Local Go, Node.js, Buf,
 and lint tooling are only needed when developing the codebase directly.
@@ -126,6 +127,30 @@ replicated workers, and a single Nginx entry point:
 Before running a real deployment, replace development secrets, default
 passwords, and generated local certificate assumptions with environment-specific
 values. See [Configuration](./docs/configuration.md) and [Operations](./docs/operations.md).
+
+### Kubernetes
+
+Kubernetes manifests are available as Kustomize overlays:
+
+```sh
+scripts/k8s/setup.sh --mode local
+```
+
+For production:
+
+```sh
+scripts/k8s/setup.sh --mode production
+```
+
+The local strategy is a single-node, self-contained Kubernetes setup for
+validation with kind/minikube-style clusters. The production strategy is the
+self-hosted Chronoverse stack on your Kubernetes infrastructure: services,
+workers, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, and
+storage all run under your cluster. The setup script preserves complete
+operator-provided Secrets, rejects partial production TLS trust chains, and
+generates missing bootstrap material. See
+[infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md),
+and [operations](./docs/operations.md).
 
 ## API and Usage
 
@@ -174,6 +199,7 @@ published as static HTML:
 - [Engineering architecture](https://hitesh22rana.github.io/chronoverse/docs/engineering/architecture/)
 - [HTTP API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/)
 - [Deployment and configuration](https://hitesh22rana.github.io/chronoverse/docs/deployment/configuration/)
+- [Kubernetes deployment](https://hitesh22rana.github.io/chronoverse/docs/deployment/kubernetes/)
 - [Operations](https://hitesh22rana.github.io/chronoverse/docs/operations/monitoring/)
 
 The concise Markdown files under `docs/` remain useful for repository-local

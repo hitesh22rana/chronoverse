@@ -1,10 +1,14 @@
 # Installation
 
-Docker Compose is the supported way to run the full platform. Local Go and Node.js tooling are needed only when developing individual components.
+Docker Compose is the quickest way to run the full platform. Kubernetes deployment support is available through Kustomize overlays under `infra/k8s`.
 
 ## Runtime installation
 
-Clone the repository and use either `compose.dev.yaml` or `compose.prod.yaml`. The development profile builds local images and exposes debugging ports. The production profile uses GHCR images, internal networking, resource constraints, worker replicas, and Nginx as the public entry point.
+Clone the repository and use either `compose.dev.yaml`, `compose.prod.yaml`, or a Kubernetes overlay. The development Compose profile builds local images and exposes debugging ports. The production Compose profile uses GHCR images, internal networking, resource constraints, worker replicas, and Nginx as the public entry point.
+
+```bash
+kubectl apply -k infra/k8s/overlays/local
+```
 
 ## Development toolchain
 
@@ -35,4 +39,3 @@ The static site exports plain HTML into `static/out` and is deployed to GitHub P
 ## Production preparation
 
 Replace development credentials, generated local certificate assumptions, public hostnames, allowed origins, and cookie policy before exposing the stack. Continue with [production deployment](/docs/deployment/production) and [certificates and security](/docs/deployment/security).
-

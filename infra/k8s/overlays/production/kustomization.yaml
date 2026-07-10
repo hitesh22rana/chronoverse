@@ -1,0 +1,381 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: chronoverse
+
+resources:
+- ../../base
+- infrastructure.yaml
+- storage.yaml
+- hpa.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+- name: postgres-connection-config
+  behavior: merge
+  literals:
+  - POSTGRES_HOST=postgres
+  - POSTGRES_PORT=5432
+  - POSTGRES_TLS_ENABLED=true
+- name: redis-connection-config
+  behavior: merge
+  literals:
+  - REDIS_HOST=redis
+  - REDIS_PORT=6379
+  - REDIS_TLS_ENABLED=true
+- name: clickhouse-connection-config
+  behavior: merge
+  literals:
+  - CLICKHOUSE_HOSTS=clickhouse:9440
+  - CLICKHOUSE_USERNAME=chronoverse-client
+  - CLICKHOUSE_TLS_ENABLED=true
+- name: meilisearch-connection-config
+  behavior: merge
+  literals:
+  - MEILISEARCH_URI=https://meilisearch:7700
+  - MEILISEARCH_TLS_ENABLED=true
+- name: kafka-connection-config
+  behavior: merge
+  literals:
+  - KAFKA_BROKERS=kafka:9094
+- name: server-config
+  behavior: merge
+  literals:
+  - SERVER_HOST_URL=https://chronoverse.example.com
+  - SERVER_FRONTEND_URL=https://chronoverse.example.com
+  - SERVER_ALLOWED_ORIGINS=https://chronoverse.example.com,
+
+patches:
+- target:
+    kind: Deployment
+    labelSelector: chronoverse.io/certs=true
+  patch: |-
+    - op: add
+      path: /spec/template/spec/topologySpreadConstraints
+      value:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/part-of: chronoverse
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: auth.ed
+                path: auth.ed
+              - key: auth.ed.pub
+                path: auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Job
+    name: database-migration
+  patch: |-
+    - op: add
+      path: /spec/template/spec/initContainers
+      value:
+      - name: wait-for-datastores
+        image: alpine:3.22.2
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          first_clickhouse="${CLICKHOUSE_HOSTS%%,*}"
+          clickhouse_host="${first_clickhouse%%:*}"
+          clickhouse_port="${first_clickhouse##*:}"
+          if [ "$clickhouse_port" = "$first_clickhouse" ]; then clickhouse_port=9440; fi
+          until nc -z "$POSTGRES_HOST" "$POSTGRES_PORT"; do echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT"; sleep 2; done
+          until nc -z "$clickhouse_host" "$clickhouse_port"; do echo "waiting for clickhouse at $clickhouse_host:$clickhouse_port"; sleep 2; done
+        envFrom:
+        - configMapRef:
+            name: postgres-connection-config
+        - configMapRef:
+            name: clickhouse-connection-config
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: auth.ed
+                path: auth.ed
+              - key: auth.ed.pub
+                path: auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+- target:
+    kind: StatefulSet
+    name: postgres
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: postgres.crt
+                path: postgres/postgres.crt
+              - key: postgres.key
+                path: postgres/postgres.key
+- target:
+    kind: StatefulSet
+    name: redis
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/initContainers/0
+      value:
+        name: prepare-redis-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /source-certs/ca/ca.crt ] && [ -f /source-certs/redis/redis.crt ] && [ -f /source-certs/redis/redis.key ] && [ -f /source-certs/clients/client.crt ] && [ -f /source-certs/clients/client.key ]; do
+            echo waiting for redis certificates
+            sleep 2
+          done
+          cp -R /source-certs/. /certs/
+          chown -R 999:999 /certs
+          find /certs -type d -exec chmod 0750 {} \;
+          find /certs -type f -exec chmod 0640 {} \;
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["CHOWN", "FOWNER"]
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: redis-certs-source
+          mountPath: /source-certs
+          readOnly: true
+        - name: certs
+          mountPath: /certs
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: redis-certs-source
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: redis.crt
+                path: redis/redis.crt
+              - key: redis.key
+                path: redis/redis.key
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: certs
+        emptyDir: {}
+- target:
+    kind: StatefulSet
+    name: clickhouse
+  patch: |-
+    - op: add
+      path: /spec/template/spec/securityContext
+      value:
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clickhouse/clients/client.crt
+              - key: tls.key
+                path: clickhouse/clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: clickhouse.crt
+                path: clickhouse/clickhouse.crt
+              - key: clickhouse.key
+                path: clickhouse/clickhouse.key
+    - op: replace
+      path: /spec/template/spec/volumes/2
+      value:
+        name: clickhouse-certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: clickhouse.crt
+                path: clickhouse.crt
+              - key: clickhouse.key
+                path: clickhouse.key
+    - op: replace
+      path: /spec/template/spec/volumes/3
+      value:
+        name: clickhouse-ca
+        secret:
+          secretName: chronoverse-ca
+          items:
+          - key: ca.crt
+            path: ca.crt
+    - op: remove
+      path: /spec/template/spec/containers/0/volumeMounts/1/subPath
+    - op: remove
+      path: /spec/template/spec/containers/0/volumeMounts/2/subPath
+- target:
+    kind: StatefulSet
+    name: kafka
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: kafka-secrets-storage
+        secret:
+          secretName: chronoverse-kafka-tls
+          defaultMode: 0440
+    - op: remove
+      path: /spec/template/spec/initContainers/1/volumeMounts/0/subPath
+    - op: remove
+      path: /spec/template/spec/containers/0/volumeMounts/1/subPath
+- target:
+    kind: StatefulSet
+    name: meilisearch
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/1
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: meilisearch.crt
+                path: meilisearch/meilisearch.crt
+              - key: meilisearch.key
+                path: meilisearch/meilisearch.key

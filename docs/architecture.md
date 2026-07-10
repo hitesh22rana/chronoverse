@@ -18,6 +18,12 @@ log delivery, notifications, analytics, and replay-safe event publication.
   `dashboard:3000`, rewrites `/api/...` to `server:8080`, and disables buffering
   for job log SSE routes.
 
+In Kubernetes, `infra/k8s` provides Kustomize overlays. The local overlay
+deploys the same entry points inside a single namespace. The production overlay
+deploys the application, workers, Nginx, Docker proxy, Kafka topic initializer,
+and migration job while expecting stateful infrastructure to be managed outside
+the overlay.
+
 ### Domain Services
 
 - `users-service` owns users, authentication, authorization metadata, and
@@ -33,7 +39,8 @@ log delivery, notifications, analytics, and replay-safe event publication.
 
 These services expose gRPC ports `50051` through `50055` inside the stack. The
 development compose file also exposes those ports on the host for direct
-debugging.
+debugging. Kubernetes services expose the same ports inside the `chronoverse`
+namespace.
 
 ### Workers
 
@@ -68,6 +75,11 @@ debugging.
 - **Docker socket proxy** exposes a narrow node-local Docker API surface to
   workers for container lifecycle and log access.
 - **LGTM** receives OpenTelemetry data and exposes local dashboards.
+
+The Kubernetes local overlay includes these infrastructure systems for
+single-node validation. The Kubernetes production overlay is self-hosted:
+PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, services, and
+workers are deployed together on the user's Kubernetes infrastructure.
 
 ## Event Flow
 
@@ -169,6 +181,10 @@ expected operating conditions.
 
 - Compose generates a local CA, service certificates, client certificates, and
   Ed25519 auth keys through `init-certs`.
+- The Kubernetes local overlay generates development certificates into a local
+  certificate PVC. The production overlay mounts pre-created Kubernetes Secrets
+  for auth keys, CA material, client TLS, service TLS, Kafka stores, and
+  datastore credentials.
 - PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC services run with
   TLS or mTLS in compose.
 - The HTTP server uses encrypted session cookies, CSRF cookies, and service JWT

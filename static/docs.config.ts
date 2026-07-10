@@ -81,7 +81,8 @@ export const docsConfig: DocGroup[] = [
     pages: [
       { slug: "deployment/overview", title: "Deployment overview", description: "Development and production topology.", source: "deployment/overview", sourceRefs: ["compose.dev.yaml", "compose.prod.yaml"] },
       { slug: "deployment/development", title: "Development environment", description: "Local stack, ports, and debugging workflow.", source: "deployment/development", sourceRefs: ["compose.dev.yaml"] },
-      { slug: "deployment/production", title: "Production deployment", description: "Images, Nginx, replicas, and hardening.", source: "deployment/production", sourceRefs: ["compose.prod.yaml"] },
+      { slug: "deployment/production", title: "Production deployment", description: "Images, Nginx, replicas, and hardening.", source: "deployment/production", sourceRefs: ["compose.prod.yaml", "infra/k8s"] },
+      { slug: "deployment/kubernetes", title: "Kubernetes", description: "Kustomize overlays, secrets, storage, and rollout commands.", source: "deployment/kubernetes", sourceRefs: ["infra/k8s"] },
       { slug: "deployment/configuration", title: "Configuration reference", description: "Environment variables by service and worker.", source: "deployment/configuration", sourceRefs: ["docs/configuration.md", "internal/config"] },
       { slug: "deployment/security", title: "Certificates and security", description: "TLS, mTLS, JWTs, cookies, and secrets.", source: "deployment/security", sourceRefs: ["certs", "internal/pkg/auth/auth.go"] },
     ],

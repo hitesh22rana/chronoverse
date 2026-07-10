@@ -1,7 +1,7 @@
 # Operations
 
 This guide covers day-to-day commands, startup behavior, health checks, tuning,
-and common troubleshooting paths for the compose-based Chronoverse stack.
+and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 
 ## Running the Stack
 
@@ -36,6 +36,58 @@ Useful endpoints:
 Production uses published images, internal service ports, generated TLS
 configuration, resource limits, and replicated worker settings.
 
+### Kubernetes
+
+```sh
+scripts/k8s/setup.sh --mode local
+scripts/k8s/setup.sh --mode production
+```
+
+The local strategy is self-contained for single-node validation and runs one
+replica per app deployment. The production strategy is self-hosted on your
+Kubernetes infrastructure and includes PostgreSQL, Redis, Kafka, ClickHouse,
+Meilisearch, application services, workers, runtime-agent, and CPU/memory
+HorizontalPodAutoscalers. Production autoscaling requires metrics-server or an
+equivalent `autoscaling/v2` resource metrics provider.
+
+Kubernetes does not include a generic `kubectl` command to create a cluster.
+Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or
+managed Kubernetes provisioning, then apply the Kustomize overlay with
+`kubectl`.
+
+Container workflows require Docker-capable runtime nodes. Before applying the
+overlay, make sure every node that should own Docker containers exposes Docker
+Engine at `/var/run/docker.sock` and has this label:
+
+```sh
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
+For kind, the Docker socket mount, certificate mount, and node label must be
+configured when the cluster is created. The repository includes a single-node
+local example:
+
+```sh
+kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl config use-context kind-chronoverse
+scripts/k8s/setup.sh --mode local
+```
+
+Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient
+for Docker-backed workers because its node does not expose Docker Engine at
+`/var/run/docker.sock` to pods. Use kind with the checked-in config, or use a
+cluster whose nodes really provide that socket.
+
+The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
+Docker-capable node. Official overlays register `tcp://$(NODE_IP):2375` so
+running job cleanup survives proxy pod restarts on the same node. Multi-node
+kind and other Docker-container-based Kubernetes emulators can have a specific
+hostPort routing limitation where pods on one emulator node cannot reach another
+emulator node's host port; if you choose that topology, use a pod-IP endpoint
+override as an emulator-only workaround. `workflow-worker` and
+`execution-worker` do not need the Docker node label; they can schedule anywhere
+with network access to TCP `2375` on registered runtime endpoints.
+
 ### Stop and Inspect
 
 ```sh
@@ -45,6 +97,14 @@ docker compose -f compose.dev.yaml down
 ```
 
 Use `compose.prod.yaml` in the same commands for the production stack.
+
+For Kubernetes:
+
+```sh
+kubectl -n chronoverse get pods
+kubectl -n chronoverse get deploy,sts,job
+kubectl -n chronoverse logs deploy/server
+```
 
 ## Startup Order
 
@@ -60,6 +120,16 @@ Use `compose.prod.yaml` in the same commands for the production stack.
 7. The dashboard starts after backend services.
 8. Production Nginx starts after dashboard and server.
 
+Kubernetes does not provide Compose-style dependency ordering for long-running
+Deployments. The overlays include explicit Jobs for certificate bootstrap
+where local, Kafka topic initialization, and database migration. Application
+containers are expected to retry transient dependency failures, while readiness
+and liveness probes decide when pods receive traffic or are restarted. The local
+overlay uses init containers only for prerequisites that must exist before the
+process starts, such as generated certificate files and hostPath permissions.
+Operators should still inspect bootstrap Jobs before scaling application
+workloads during rollout.
+
 ## Health Checks
 
 Compose includes health checks for infrastructure and gRPC services:
@@ -72,6 +142,10 @@ Compose includes health checks for infrastructure and gRPC services:
 
 If a service is stuck in `starting`, inspect the logs for that service and the
 dependency immediately before it in the startup order.
+
+Kubernetes uses readiness and liveness probes for app services and local
+infrastructure where practical. Use `kubectl describe pod` to inspect probe
+failures and missing Secret or ConfigMap references.
 
 ## Build, Test, and Lint
 
@@ -239,6 +313,28 @@ docker compose -f compose.dev.yaml up -d
 ```
 
 This deletes local data volumes.
+
+For Kubernetes production, verify that `chronoverse-auth`, `chronoverse-ca`,
+`chronoverse-client-tls`, `chronoverse-service-tls`, and
+`chronoverse-kafka-tls` exist in the `chronoverse` namespace and contain the
+expected keys.
+
+### Kubernetes Readiness Problems
+
+- Run `kubectl -n chronoverse get pods,job` and find the first failing pod or
+  incomplete Job.
+- Inspect `init-kafka-topics` and `database-migration` before application logs.
+- Confirm production overlay placeholder hosts were patched for real external
+  dependencies.
+- Confirm Docker-capable nodes expose Docker Engine at `/var/run/docker.sock`
+  and have the `chronoverse.io/docker-workloads=true` label.
+- Confirm workers can reach runtime node IPs on TCP `2375`; NetworkPolicy,
+  node firewall rules, or security groups may block hostPort traffic.
+- In kind, recreate the cluster with
+  `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
+  `/var/run/docker.sock is not a socket file`.
+- If `kubectl config current-context` returns `docker-desktop`, switch to the
+  `kind-chronoverse` context or another Docker-capable cluster.
 
 ### Compose Readiness Problems
 

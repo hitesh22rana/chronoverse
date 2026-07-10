@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chronoverse-sa
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: service-account
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chronoverse-readonly
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chronoverse-readonly
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: rolebinding
+subjects:
+- kind: ServiceAccount
+  name: chronoverse-sa
+roleRef:
+  kind: Role
+  name: chronoverse-readonly
+  apiGroup: rbac.authorization.k8s.io
+

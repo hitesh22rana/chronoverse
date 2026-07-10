@@ -1,0 +1,785 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+    spec:
+      securityContext:
+        fsGroup: 999
+      initContainers:
+      - name: prepare-postgres-tls
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/postgres/postgres.crt ] && [ -f /certs/postgres/postgres.key ]; do
+            echo waiting for local postgres certificates
+            sleep 2
+          done
+          cp /certs/ca/ca.crt /postgres-tls/ca.crt
+          cp /certs/postgres/postgres.crt /postgres-tls/server.crt
+          cp /certs/postgres/postgres.key /postgres-tls/server.key
+          chown 70:70 /postgres-tls/ca.crt /postgres-tls/server.crt /postgres-tls/server.key
+          chmod 0644 /postgres-tls/ca.crt /postgres-tls/server.crt
+          chmod 0600 /postgres-tls/server.key
+
+          cat > /postgres-config/pg_hba.conf <<'EOF'
+          local   all             all                                     trust
+          local   replication     all                                     trust
+          hostnossl all           all             all                     reject
+          hostnossl replication   all             all                     reject
+          hostssl all             all             all                     scram-sha-256 clientcert=verify-ca
+          hostssl replication     all             all                     scram-sha-256 clientcert=verify-ca
+          EOF
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        - name: postgres-tls
+          mountPath: /postgres-tls
+        - name: postgres-config
+          mountPath: /postgres-config
+      containers:
+      - name: postgres
+        image: postgres:18.0-alpine3.22
+        imagePullPolicy: IfNotPresent
+        args:
+        - postgres
+        - -c
+        - ssl=on
+        - -c
+        - ssl_cert_file=/postgres-tls/server.crt
+        - -c
+        - ssl_key_file=/postgres-tls/server.key
+        - -c
+        - ssl_ca_file=/postgres-tls/ca.crt
+        - -c
+        - hba_file=/postgres-config/pg_hba.conf
+        ports:
+        - name: postgres
+          containerPort: 5432
+        envFrom:
+        - secretRef:
+            name: postgres-secret
+        env:
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            cpu: 250m
+            memory: 384Mi
+          limits:
+            cpu: "1"
+            memory: 1024Mi
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-tls
+          mountPath: /postgres-tls
+          readOnly: true
+        - name: postgres-config
+          mountPath: /postgres-config
+          readOnly: true
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: postgres-tls
+        emptyDir: {}
+      - name: postgres-config
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/component: cache
+    spec:
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+      - name: wait-for-redis-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/redis/redis.crt ] && [ -f /certs/redis/redis.key ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do
+            echo waiting for local redis certificates
+            sleep 2
+          done
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      containers:
+      - name: redis
+        image: redis:8.4-alpine
+        imagePullPolicy: IfNotPresent
+        args:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - 768mb
+        - --maxmemory-policy
+        - allkeys-lru
+        - --port
+        - "0"
+        - --tls-port
+        - "6379"
+        - --tls-cert-file
+        - /certs/redis/redis.crt
+        - --tls-key-file
+        - /certs/redis/redis.key
+        - --tls-ca-cert-file
+        - /certs/ca/ca.crt
+        - --tls-auth-clients
+        - "yes"
+        ports:
+        - name: redis
+          containerPort: 6379
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "redis-cli --tls --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -p 6379 ping | grep PONG"]
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "redis-cli --tls --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -p 6379 ping | grep PONG"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/component: database
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse
+        app.kubernetes.io/component: database
+    spec:
+      initContainers:
+      - name: prepare-clickhouse-tls
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/clickhouse/clickhouse.crt ] && [ -f /certs/clickhouse/clickhouse.key ] && [ -f /certs/clickhouse/clients/client.crt ] && [ -f /certs/clickhouse/clients/client.key ]; do
+            echo waiting for local clickhouse certificates
+            sleep 2
+          done
+
+          cat > /clickhouse-config/tls.xml <<'EOF'
+          <clickhouse>
+            <listen_host>0.0.0.0</listen_host>
+            <tcp_port>0</tcp_port>
+            <tcp_port_secure>9440</tcp_port_secure>
+            <openSSL>
+              <server>
+                <certificateFile>/etc/clickhouse-server/certs/clickhouse.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/certs/clickhouse.key</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+                <verificationMode>strict</verificationMode>
+                <minVersion>TLSv1_2</minVersion>
+                <maxVersion>TLSv1_3</maxVersion>
+              </server>
+              <client>
+                <loadDefaultCAFile>false</loadDefaultCAFile>
+                <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+                <verificationMode>strict</verificationMode>
+                <minVersion>TLSv1_2</minVersion>
+              </client>
+            </openSSL>
+          </clickhouse>
+          EOF
+
+          cat > /clickhouse-users/users.xml <<'EOF'
+          <clickhouse>
+            <users>
+              <__CLICKHOUSE_USERNAME__>
+                <password>__CLICKHOUSE_PASSWORD__</password>
+                <networks>
+                  <ip>::/0</ip>
+                  <ip>0.0.0.0/0</ip>
+                </networks>
+                <profile>default</profile>
+                <quota>default</quota>
+              </__CLICKHOUSE_USERNAME__>
+            </users>
+          </clickhouse>
+          EOF
+          sed -i "s|__CLICKHOUSE_USERNAME__|${CLICKHOUSE_USERNAME}|g; s|__CLICKHOUSE_PASSWORD__|${CLICKHOUSE_PASSWORD}|g" /clickhouse-users/users.xml
+
+          cat > /clickhouse-client/config.xml <<'EOF'
+          <config>
+            <secure>true</secure>
+            <openSSL>
+              <client>
+                <certificateFile>/etc/clickhouse-server/certs/clients/client.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/certs/clients/client.key</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/ca/ca.crt</caConfig>
+                <verificationMode>strict</verificationMode>
+                <minVersion>TLSv1_2</minVersion>
+              </client>
+            </openSSL>
+          </config>
+          EOF
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        env:
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: clickhouse-secret
+              key: CLICKHOUSE_PASSWORD
+        - name: CLICKHOUSE_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: clickhouse-connection-config
+              key: CLICKHOUSE_USERNAME
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        - name: clickhouse-config
+          mountPath: /clickhouse-config
+        - name: clickhouse-users
+          mountPath: /clickhouse-users
+        - name: clickhouse-client
+          mountPath: /clickhouse-client
+      containers:
+      - name: clickhouse
+        image: clickhouse/clickhouse-server:25.11-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: clickhouse
+          containerPort: 9440
+        env:
+        - name: CLICKHOUSE_PROBE_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: clickhouse-connection-config
+              key: CLICKHOUSE_USERNAME
+        - name: CLICKHOUSE_PROBE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: clickhouse-secret
+              key: CLICKHOUSE_PASSWORD
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1536Mi
+        volumeMounts:
+        - name: clickhouse-storage
+          mountPath: /var/lib/clickhouse
+        - name: clickhouse-certs
+          mountPath: /etc/clickhouse-server/certs
+          subPath: clickhouse
+          readOnly: true
+        - name: clickhouse-ca
+          mountPath: /etc/clickhouse-server/ca
+          subPath: ca
+          readOnly: true
+        - name: clickhouse-config
+          mountPath: /etc/clickhouse-server/config.d
+          readOnly: true
+        - name: clickhouse-users
+          mountPath: /etc/clickhouse-server/users.d/chronoverse-local-users.xml
+          subPath: users.xml
+          readOnly: true
+        - name: clickhouse-client
+          mountPath: /etc/clickhouse-client/config.xml
+          subPath: config.xml
+          readOnly: true
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=\"$CLICKHOUSE_PROBE_USERNAME\" --password \"$CLICKHOUSE_PROBE_PASSWORD\" --query='SELECT 1'"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=\"$CLICKHOUSE_PROBE_USERNAME\" --password \"$CLICKHOUSE_PROBE_PASSWORD\" --query='SELECT 1'"]
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 10
+      volumes:
+      - name: clickhouse-storage
+        persistentVolumeClaim:
+          claimName: clickhouse-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: clickhouse-certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: clickhouse-ca
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: clickhouse-config
+        emptyDir: {}
+      - name: clickhouse-users
+        emptyDir: {}
+      - name: clickhouse-client
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: clickhouse
+  ports:
+  - name: clickhouse
+    port: 9440
+    targetPort: clickhouse
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/component: broker
+    spec:
+      enableServiceLinks: false
+      hostname: kafka
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+      - name: prepare-kafka-storage
+        image: alpine:3.22.2
+        command: ["sh", "-c", "mkdir -p /var/lib/kafka/data && chown -R 1000:1000 /var/lib/kafka/data"]
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["CHOWN", "FOWNER"]
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+      - name: wait-for-kafka-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ] && [ -f /etc/kafka/secrets/keystore_creds.txt ] && [ -f /etc/kafka/secrets/truststore_creds.txt ] && [ -f /etc/kafka/secrets/key_creds.txt ]; do echo waiting for kafka certificates; sleep 2; done"]
+        volumeMounts:
+        - name: kafka-secrets-storage
+          mountPath: /etc/kafka/secrets
+          subPath: kafka
+          readOnly: true
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:7.6.7
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: kafka
+          containerPort: 9094
+        - name: controller
+          containerPort: 9093
+        env:
+        - name: CLUSTER_ID
+          value: eCkcIadWQ-6iYFZWSxNJag
+        - name: KAFKA_KRAFT_MODE
+          value: "true"
+        - name: KAFKA_NODE_ID
+          value: "1"
+        - name: KAFKA_PROCESS_ROLES
+          value: controller,broker
+        - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+          value: 1@kafka:9093
+        - name: KAFKA_LISTENERS
+          value: SSL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: SSL:SSL,CONTROLLER:PLAINTEXT
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: SSL
+        - name: KAFKA_CONTROLLER_LISTENER_NAMES
+          value: CONTROLLER
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: SSL://kafka:9094
+        - name: KAFKA_SSL_KEYSTORE_LOCATION
+          value: /etc/kafka/secrets
+        - name: KAFKA_SSL_KEYSTORE_FILENAME
+          value: kafka.keystore.jks
+        - name: KAFKA_SSL_KEYSTORE_CREDENTIALS
+          value: keystore_creds.txt
+        - name: KAFKA_SSL_TRUSTSTORE_LOCATION
+          value: /etc/kafka/secrets
+        - name: KAFKA_SSL_TRUSTSTORE_FILENAME
+          value: kafka.truststore.jks
+        - name: KAFKA_SSL_TRUSTSTORE_CREDENTIALS
+          value: truststore_creds.txt
+        - name: KAFKA_SSL_KEY_CREDENTIALS
+          value: key_creds.txt
+        - name: KAFKA_SSL_CLIENT_AUTH
+          value: required
+        - name: KAFKA_SSL_ENABLED_PROTOCOLS
+          value: TLSv1.2,TLSv1.3
+        - name: KAFKA_SSL_PROTOCOL
+          value: TLS
+        - name: KAFKA_LOG_DIRS
+          value: /var/lib/kafka/data
+        - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+          value: "false"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+          value: "1"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1024Mi
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+        - name: kafka-secrets-storage
+          mountPath: /etc/kafka/secrets
+          subPath: kafka
+          readOnly: true
+      volumes:
+      - name: kafka-storage
+        persistentVolumeClaim:
+          claimName: kafka-pvc
+      - name: kafka-secrets-storage
+        persistentVolumeClaim:
+          claimName: certs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+  - name: kafka
+    port: 9094
+    targetPort: kafka
+  - name: controller
+    port: 9093
+    targetPort: controller
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: meilisearch
+  labels:
+    app.kubernetes.io/name: meilisearch
+    app.kubernetes.io/component: search
+spec:
+  serviceName: meilisearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: meilisearch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: meilisearch
+        app.kubernetes.io/component: search
+    spec:
+      initContainers:
+      - name: wait-for-meilisearch-certs
+        image: alpine:3.22.2
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          until [ -f /certs/ca/ca.crt ] && [ -f /certs/meilisearch/meilisearch.crt ] && [ -f /certs/meilisearch/meilisearch.key ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do
+            echo waiting for local meilisearch certificates
+            sleep 2
+          done
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      containers:
+      - name: meilisearch
+        image: getmeili/meilisearch:v1.45.2
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 7700
+        envFrom:
+        - secretRef:
+            name: meilisearch-secret
+        env:
+        - name: MEILI_ENV
+          value: production
+        - name: MEILI_EXPERIMENTAL_DUMPLESS_UPGRADE
+          value: "true"
+        - name: MEILI_SSL_AUTH_PATH
+          value: /certs/ca/ca.crt
+        - name: MEILI_SSL_REQUIRE_AUTH
+          value: "true"
+        - name: MEILI_SSL_CERT_PATH
+          value: /certs/meilisearch/meilisearch.crt
+        - name: MEILI_SSL_KEY_PATH
+          value: /certs/meilisearch/meilisearch.key
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 768Mi
+        volumeMounts:
+        - name: meilisearch-storage
+          mountPath: /meili_data
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://127.0.0.1:7700/health"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "curl --cert /certs/clients/client.crt --key /certs/clients/client.key --cacert /certs/ca/ca.crt -f https://127.0.0.1:7700/health"]
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 10
+      volumes:
+      - name: meilisearch-storage
+        persistentVolumeClaim:
+          claimName: meilisearch-pvc
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meilisearch
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: meilisearch
+  ports:
+  - name: http
+    port: 7700
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+  labels:
+    app.kubernetes.io/name: lgtm
+    app.kubernetes.io/component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lgtm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lgtm
+        app.kubernetes.io/component: monitoring
+    spec:
+      containers:
+      - name: lgtm
+        image: grafana/otel-lgtm:0.11.10
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: grafana
+          containerPort: 3000
+        - name: otlp-grpc
+          containerPort: 4317
+        - name: otlp-http
+          containerPort: 4318
+        env:
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: Admin
+        resources:
+          requests:
+            cpu: 250m
+            memory: 384Mi
+          limits:
+            cpu: "1"
+            memory: 1024Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lgtm
+  ports:
+  - name: grafana
+    port: 3000
+    targetPort: grafana
+  - name: otlp-grpc
+    port: 4317
+    targetPort: otlp-grpc
+  - name: otlp-http
+    port: 4318
+    targetPort: otlp-http

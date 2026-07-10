@@ -1,0 +1,99 @@
+# Kubernetes deployment
+
+Chronoverse ships Kustomize overlays and an interactive setup script under `infra/k8s`.
+
+## Deployment strategies
+
+```bash
+scripts/k8s/setup.sh --mode local
+scripts/k8s/setup.sh --mode production
+```
+
+`local` is a single-node, self-contained validation strategy. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, generated local certificate bootstrap jobs, Kafka topic initialization, one replica per application deployment, Nginx, and the Docker socket proxy with a runtime-agent sidecar.
+
+`production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services and workers, runtime-agent, Docker proxy, migrations, and topic initialization.
+
+The script keeps complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error.
+
+## Cluster prerequisites
+
+Kubernetes does not include a generic `kubectl` command to create a cluster. Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or managed Kubernetes provisioning.
+
+Container workflows require Docker-capable runtime nodes. Label every node that should own Docker containers:
+
+```bash
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
+Those nodes must expose Docker Engine at `/var/run/docker.sock`. Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient for Docker-backed workers because it does not expose Docker Engine to pods.
+
+For local kind validation:
+
+```bash
+kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl config use-context kind-chronoverse
+scripts/k8s/setup.sh --mode local
+```
+
+## Secrets and storage
+
+Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. You can pre-create those Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites complete existing Secrets. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
+
+The local strategy uses hostPath PVs for single-node validation. Those PVs use retained node-local paths; delete the kind cluster or clear those paths when you intentionally want an empty local data set. Production uses dynamic PVCs by default; provide `--storage-class <name>` to the setup script or rely on the cluster default StorageClass. Production requires dynamic storage; use the local strategy for single-node hostPath validation.
+
+## Scaling
+
+The local strategy runs one replica per app deployment. The production strategy includes CPU/memory HorizontalPodAutoscalers for app services and background workers. Install metrics-server or provide equivalent `autoscaling/v2` resource metrics before relying on HPAs.
+
+Kafka-lag-driven worker scaling is not built into the Kustomize overlay. Use KEDA or a custom metrics adapter when worker count should follow topic lag.
+
+## Startup behavior
+
+Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with application retry behavior, readiness/liveness probes, and bootstrap Jobs for migrations, Kafka topics, and local certificate material.
+
+## Docker execution model
+
+Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register a node-stable endpoint, `tcp://$(NODE_IP):2375`, exposed by the Docker proxy `hostPort`; `tcp://docker-proxy:2375` must not be persisted as a runtime endpoint.
+
+`workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
+
+Workers must be able to reach runtime node IPs on TCP `2375`. The base NetworkPolicy allows that egress port, but production clusters should also restrict the host port with private networking, node firewall rules or security groups, and the Docker socket proxy API allowlist. Docker API port `2375` must never be publicly exposed.
+
+Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's hostPort from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.
+
+## Validation
+
+```bash
+make k8s/render/local
+make k8s/render/production
+make k8s/dry-run/local
+make k8s/dry-run/production
+scripts/k8s/setup.sh --mode local --dry-run
+scripts/k8s/setup.sh --mode production --dry-run
+```
+
+Schema validation with OpenAPI requires a live cluster or an external validator such as `kubeconform`.
+
+## Local production smoke access
+
+The production overlay is configured for the Ingress host in `SERVER_HOST_URL`.
+If that value is `https://chronoverse.example.com`, browser cookies are scoped to
+that host and marked secure. A plain port-forward to `http://localhost:8080`
+will load the UI, but signup/login cookies will be rejected by the browser.
+
+For normal local browser validation, use the `local` strategy. For a temporary
+production-overlay smoke test in kind, you may override the server origin to
+localhost and restart only the server deployment:
+
+```bash
+kubectl --context kind-chronoverse -n chronoverse patch configmap server-config \
+  --type merge \
+  -p '{"data":{"SERVER_HOST_URL":"http://localhost:8080","SERVER_FRONTEND_URL":"http://localhost:8080","SERVER_ALLOWED_ORIGINS":"http://localhost:8080,"}}'
+kubectl --context kind-chronoverse -n chronoverse rollout restart deployment/server
+kubectl --context kind-chronoverse -n chronoverse rollout status deployment/server
+kubectl --context kind-chronoverse -n chronoverse port-forward svc/nginx 8080:80
+```
+
+This is a local-only smoke-test override. Reapply the production overlay, or set
+the production values to your real HTTPS domain, before using the cluster as a
+production environment.

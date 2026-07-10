@@ -81,6 +81,8 @@ For the full event flow and replay-safety model, see the
 - Docker
 - Docker Compose
 - `kubectl` for Kubernetes deployments
+- OpenSSL for Kubernetes bootstrap; Java `keytool` when generating production Kafka TLS material
+- kind when using the repository's `--create-kind` local-cluster workflow
 
 The compose stacks build or pull all runtime services. Local Go, Node.js, Buf,
 and lint tooling are only needed when developing the codebase directly.
@@ -170,12 +172,20 @@ Important API notes:
 
 ```sh
 make tools
+make dependencies
 make generate
+make mockgen
 make test/short
 make test
 make lint
 make build/all
 ```
+
+`make dependencies` regenerates protobuf stubs and runs `go mod tidy`; use
+`make mockgen` after changing an interface with a `//go:generate` directive.
+Kubernetes changes should also pass all four `make k8s/render/*` and
+`make k8s/dry-run/*` targets plus both setup-script dry runs documented in the
+[Kubernetes guide](https://hitesh22rana.github.io/chronoverse/docs/deployment/kubernetes/#validation).
 
 Dashboard commands live in `dashboard/`:
 
@@ -185,6 +195,9 @@ npm run dev:port
 npm run build
 npm run lint
 ```
+
+Static-site commands live in `static/`; `npm run check` validates MDX and
+OpenAPI, lints, type-checks, and performs the static export.
 
 More operational commands and troubleshooting notes are in the
 [operations guide](https://hitesh22rana.github.io/chronoverse/docs/operations/monitoring/).

@@ -89,6 +89,11 @@ before exposing the HTTP entrypoint.
 
 ## Core Environment Groups
 
+Every Go process accepts `ENV`; its code default is `development`. Compose and
+Kubernetes set it explicitly for the selected topology. Treat it as a runtime
+mode label rather than a substitute for configuring credentials, TLS, public
+origins, or storage.
+
 ### Server
 
 The public HTTP server reads:
@@ -232,6 +237,12 @@ The jobs service also needs workflows-service client settings so log endpoints
 can enforce workflow retention policy. Runtime heartbeat settings control which
 `runtime_nodes` are fresh enough for new container claims and when an expired
 lease should be treated as owned by an unavailable runtime.
+
+### Notifications Service
+
+- `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT`
+
+This caps the fetch size used by the notification list operation.
 
 ### Runtime Agent
 
@@ -382,14 +393,20 @@ production environments should manage:
 - Database passwords and `MEILISEARCH_MASTER_KEY`.
 - Public hostnames, allowed origins, and same-site cookie policy.
 
-Kubernetes production deployments should create these Secrets before applying
-the production overlay:
+Kubernetes production deployments may pre-create these Secrets to own their
+credentials and trust material. `scripts/k8s/setup.sh` preserves complete
+operator-provided Secrets and generates missing bootstrap material; it rejects
+partial Secrets and partial internal TLS trust chains:
 
 - `postgres-secret`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 - `clickhouse-secret`: `CLICKHOUSE_PASSWORD`
-- `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`
+- `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`, `MEILI_MASTER_KEY`
+- `kafka-tls-secret`: Kafka keystore, truststore, and key passwords
+- `chronoverse-server-security`: `CRYPTO_SECRET`, `SERVER_CSRF_HMAC_SECRET`
 - `chronoverse-auth`: `auth.ed`, `auth.ed.pub`
 - `chronoverse-ca`: `ca.crt`
+- `chronoverse-ingress-tls`: `tls.crt`, `tls.key`
 - `chronoverse-client-tls`: `tls.crt`, `tls.key`
 - `chronoverse-service-tls`: per-service gRPC certificate and key files
+- `chronoverse-infra-tls`: PostgreSQL, Redis, ClickHouse, Kafka, and Meilisearch certificate/key pairs
 - `chronoverse-kafka-tls`: Kafka keystore, truststore, and credential files

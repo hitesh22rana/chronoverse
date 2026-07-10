@@ -4,22 +4,25 @@ Docker Compose is the quickest way to run the full platform. Kubernetes deployme
 
 ## Runtime installation
 
-Clone the repository and use either `compose.dev.yaml`, `compose.prod.yaml`, or a Kubernetes overlay. The development Compose profile builds local images and exposes debugging ports. The production Compose profile uses GHCR images, internal networking, resource constraints, worker replicas, and Nginx as the public entry point.
+Clone the repository and use either `compose.dev.yaml`, `compose.prod.yaml`, or the Kubernetes setup workflow. The development Compose profile builds local images and exposes debugging ports. The production Compose profile uses GHCR images, internal networking, resource constraints, worker replicas, and Nginx as the public entry point.
 
 ```bash
-kubectl apply -k infra/k8s/overlays/local
+scripts/k8s/setup.sh --mode local --create-kind
 ```
+
+The setup script prepares required Secrets and certificates before applying the local Kustomize overlay. Direct `kubectl apply -k` is supported only after those prerequisites exist; see [Kubernetes deployment](/docs/deployment/kubernetes).
 
 ## Development toolchain
 
 - Go `1.25.4`
-- Node.js compatible with Next.js 16
+- Node.js 24 for the static-site CI path; the dashboard container builds with Node.js 25
 - Buf for protobuf generation
 - Docker for integration tests and container execution tests
 
 ```bash
 make tools
-make generate
+make dependencies
+make mockgen # after changing generated-mock interfaces
 make test/short
 make lint
 make build/all
@@ -30,8 +33,8 @@ make build/all
 The application dashboard and public static site are separate Next.js applications:
 
 ```bash
-cd dashboard && npm install
-cd ../static && npm install
+cd dashboard && npm ci
+cd ../static && npm ci
 ```
 
 The static site exports plain HTML into `static/out` and is deployed to GitHub Pages.

@@ -75,14 +75,22 @@ func sessionFromContext(ctx context.Context) (string, error) {
 
 // setCookie sets a cookie in the response.
 func setCookie(w http.ResponseWriter, name, value, host string, secure bool, expires time.Duration, sameSite http.SameSite) {
+	maxAge := int(expires.Seconds())
+	if expires < 0 {
+		maxAge = -1
+	}
+
 	cookie := &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
-		MaxAge:   int(expires.Seconds()),
+		MaxAge:   maxAge,
 		SameSite: sameSite,
+	}
+	if expires < 0 {
+		cookie.Expires = time.Unix(0, 0).UTC()
 	}
 
 	// Only set Domain for non-localhost and non-127.0.0.1

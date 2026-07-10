@@ -9,7 +9,9 @@ export async function proxy(request: NextRequest) {
     // Check if the requested path is a public route
     const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))
 
-    const validUser = request.cookies.has("session") && request.cookies.has("csrf")
+    const session = request.cookies.get("session")?.value
+    const csrf = request.cookies.get("csrf")?.value
+    const validUser = Boolean(session && csrf)
 
     // If user is not authenticated and trying to access a protected route
     // Redirect unauthenticated users to login

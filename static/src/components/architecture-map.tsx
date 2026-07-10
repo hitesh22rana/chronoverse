@@ -1,8 +1,9 @@
-import { ArrowRight, Database, RadioTower, Server, Workflow } from "lucide-react";
+import { ArrowRight, Container, Database, RadioTower, Server, Workflow } from "lucide-react";
 
 const services = ["users", "workflows", "jobs", "notifications", "analytics"];
 const workers = ["scheduler", "workflow", "execution", "job logs", "analytics", "outbox"];
-const stores = ["PostgreSQL", "ClickHouse", "Redis", "Meilisearch", "Docker proxy", "LGTM"];
+const runtime = ["runtime-agent", "Docker proxy", "runtime_nodes"];
+const stores = ["PostgreSQL", "ClickHouse", "Redis", "Kafka", "Meilisearch", "LGTM"];
 
 export function ArchitectureMap() {
   return (
@@ -21,6 +22,11 @@ export function ArchitectureMap() {
         <div className="architecture-column architecture-bus">
           <div className="architecture-label"><RadioTower /> Kafka workers</div>
           <div className="architecture-chips">{workers.map((worker) => <span key={worker}>{worker}</span>)}</div>
+        </div>
+        <ArrowRight className="architecture-arrow" aria-hidden="true" />
+        <div className="architecture-column">
+          <div className="architecture-label"><Container /> Runtime data plane</div>
+          <div className="architecture-chips">{runtime.map((item) => <span key={item}>{item}</span>)}</div>
         </div>
         <ArrowRight className="architecture-arrow" aria-hidden="true" />
         <div className="architecture-column">

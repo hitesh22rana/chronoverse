@@ -20,11 +20,9 @@ Indexes retained log messages for text search and highlights. ClickHouse remains
 
 Carries durable asynchronous events. It is a transport log, not the only record of command completion or job ownership.
 
-## Docker proxy
+## Runtime registry and Docker proxy
 
-Exposes a narrow subset of Docker APIs to workers instead of mounting the daemon socket directly into every process.
-
-## Runtime nodes
+`runtime-agent` registers Docker-capable nodes in PostgreSQL and heartbeats Docker endpoint health, capacity, and status. The Docker proxy exposes a narrow subset of Docker APIs to workers instead of mounting the daemon socket directly into every process.
 
 `runtime-agent` owns rows in `runtime_nodes`. Jobs store `runtime_node_id` and an endpoint snapshot while they are running so execution, logs, termination, deletion, and expired-lease recovery use the Docker daemon that owns the container.
 

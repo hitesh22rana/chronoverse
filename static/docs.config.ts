@@ -100,8 +100,8 @@ export const docsConfig: DocGroup[] = [
   {
     title: "Contributing",
     pages: [
-      { slug: "contributing/repository-layout", title: "Repository layout", description: "Where services, workers, contracts, and frontends live.", source: "contributing/repository-layout", sourceRefs: ["README.md"] },
-      { slug: "contributing/development", title: "Development workflow", description: "Generate, lint, test, build, and release changes.", source: "contributing/development", sourceRefs: ["Makefile", ".github/workflows/ci.yaml"] },
+      { slug: "contributing/repository-layout", title: "Repository layout", description: "Where runtime, deployment, contracts, frontends, and documentation live.", source: "contributing/repository-layout", sourceRefs: ["README.md", "Makefile", "infra/k8s", "scripts/k8s"] },
+      { slug: "contributing/development", title: "Development workflow", description: "Generate, lint, test, build, validate deployment, and release changes.", source: "contributing/development", sourceRefs: ["Makefile", ".github/workflows/ci.yaml", ".github/workflows/deploy-static.yml", "static/package.json"] },
     ],
   },
 ];

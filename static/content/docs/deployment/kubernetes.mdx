@@ -15,9 +15,21 @@ scripts/k8s/setup.sh --mode production
 
 The script keeps complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error.
 
+Useful non-interactive options include:
+
+```bash
+scripts/k8s/setup.sh --mode local --create-kind
+scripts/k8s/setup.sh --mode production --context <context> --storage-class <name>
+scripts/k8s/setup.sh --mode production --skip-apply
+```
+
+`--skip-apply` prepares prerequisites without applying the overlay. `--context` keeps every kubectl operation on the named context. Run `scripts/k8s/setup.sh --help` for the current option list.
+
 ## Cluster prerequisites
 
 Kubernetes does not include a generic `kubectl` command to create a cluster. Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or managed Kubernetes provisioning.
+
+The setup workflow requires `kubectl` and OpenSSL. Production Secret generation also requires Java `keytool`; `--create-kind` additionally requires kind. The production overlay needs a default dynamic StorageClass or an explicit `--storage-class`, and its HPAs need metrics-server or an equivalent `autoscaling/v2` resource-metrics provider.
 
 Container workflows require Docker-capable runtime nodes. Label every node that should own Docker containers:
 
@@ -72,7 +84,14 @@ scripts/k8s/setup.sh --mode local --dry-run
 scripts/k8s/setup.sh --mode production --dry-run
 ```
 
-Schema validation with OpenAPI requires a live cluster or an external validator such as `kubeconform`.
+The render targets work offline. Both `kubectl apply --dry-run=client` and the setup-script dry runs still use API discovery and therefore require a reachable selected cluster. Full OpenAPI schema validation requires that live cluster or an external validator such as `kubeconform`.
+
+Direct Kustomize apply remains available after required Secrets, certificates, node labels, storage, public URLs, and ingress values have been prepared:
+
+```bash
+kubectl apply -k infra/k8s/overlays/local
+kubectl apply -k infra/k8s/overlays/production
+```
 
 ## Local production smoke access
 

@@ -3,6 +3,19 @@
 Chronoverse Kubernetes support is packaged with Kustomize and an operator-facing
 setup script.
 
+## Prerequisites
+
+- `kubectl` configured for the intended cluster.
+- OpenSSL for generated credentials and certificates.
+- Java `keytool` when production Kafka TLS material must be generated.
+- kind only when using `--create-kind`.
+- A default dynamic StorageClass or `--storage-class <name>` for production.
+- metrics-server or an equivalent `autoscaling/v2` resource-metrics provider
+  before relying on the production HPAs.
+
+Container execution also requires labeled Docker-capable nodes as described
+under [Cluster Prerequisites](#cluster-prerequisites).
+
 ## Setup
 
 Use the setup script as the primary entrypoint:
@@ -27,12 +40,19 @@ The script is interactive by default and also supports repeatable flags:
 ```sh
 scripts/k8s/setup.sh --mode production --dry-run
 scripts/k8s/setup.sh --mode production --storage-class fast-ssd
+scripts/k8s/setup.sh --mode production --context my-cluster
+scripts/k8s/setup.sh --mode production --skip-apply
 scripts/k8s/setup.sh --mode local --create-kind
 ```
 
+`--skip-apply` bootstraps prerequisites without applying manifests. `--context`
+is passed to every kubectl operation. Run `scripts/k8s/setup.sh --help` for the
+authoritative option list.
+
 ## Render and Apply Directly
 
-Direct Kustomize usage remains available after prerequisites are prepared:
+Direct Kustomize usage remains available after required Secrets, certificates,
+node labels, storage, public URLs, and ingress values are prepared:
 
 ```sh
 kubectl kustomize infra/k8s/overlays/local
@@ -152,3 +172,7 @@ make k8s/dry-run/production
 scripts/k8s/setup.sh --mode local --dry-run
 scripts/k8s/setup.sh --mode production --dry-run
 ```
+
+The render targets work offline. The kubectl and setup-script dry runs still use
+API discovery and must point at a reachable cluster. Use a separate validator
+such as `kubeconform` when live-cluster OpenAPI validation is not available.

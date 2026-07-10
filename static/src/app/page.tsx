@@ -27,7 +27,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { getOpenApiOperations } from "@/lib/openapi";
 import { REPOSITORY_URL, withBasePath } from "@/lib/site";
+import { docPages } from "../../docs.config";
 
 const capabilities = [
   { icon: Workflow, title: "Scheduled workflows", text: "Run interval-based workloads with generation guards and asynchronous build preparation." },
@@ -58,6 +60,8 @@ const timeline = [
 ];
 
 export default function Home() {
+  const operationCount = getOpenApiOperations().length;
+
   return (
     <main>
       <section className="hero section-shell">
@@ -69,7 +73,7 @@ export default function Home() {
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
             <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
           </div>
-          <div className="hero-command"><Terminal /><code>kubectl apply -k infra/k8s/overlays/local</code></div>
+          <div className="hero-command"><Terminal /><code>scripts/k8s/setup.sh --mode local --create-kind</code></div>
         </div>
         <div className="hero-visual" aria-label="Chronoverse engineering status panel">
           <Image src={withBasePath("/assets/chronoverse.png")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />
@@ -161,7 +165,7 @@ export default function Home() {
       <section className="section-shell docs-cta">
         <div>
           <Braces />
-          <span>46 authored guides · 23 generated API operations · static HTML</span>
+          <span>{docPages.length} authored guides · {operationCount} generated API operations · static HTML</span>
         </div>
         <h2>The engineering reference lives with the code.</h2>
         <p>MDX content, OpenAPI contracts, navigation, validation, and search are built in this repository and deployed with the landing page.</p>

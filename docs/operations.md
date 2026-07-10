@@ -153,7 +153,9 @@ Repository commands:
 
 ```sh
 make tools
+make dependencies
 make generate
+make mockgen
 make test/short
 make test
 make lint
@@ -164,6 +166,9 @@ make build/all
 Important notes:
 
 - `make generate` requires `buf`.
+- `make dependencies` regenerates protobuf stubs and runs `go mod tidy -v`.
+- `make mockgen` installs the configured tools and runs every `//go:generate`
+  directive.
 - `make tools` installs Go tooling into `./.bin`.
 - `make test` runs Go tests with the race detector.
 - `make build/all` builds all Go services and workers, including `outbox-relay`.
@@ -181,6 +186,18 @@ npm run lint:fix
 
 The dashboard `dev:port` script runs on port `3001`, matching the dev compose
 dashboard port.
+
+Static documentation commands:
+
+```sh
+cd static
+npm ci
+npm run validate:docs
+npm run check
+```
+
+`npm run check` includes documentation validation, lint, type checking, and the
+static Next.js export.
 
 ## Operational Tuning
 
@@ -324,8 +341,9 @@ expected keys.
 - Run `kubectl -n chronoverse get pods,job` and find the first failing pod or
   incomplete Job.
 - Inspect `init-kafka-topics` and `database-migration` before application logs.
-- Confirm production overlay placeholder hosts were patched for real external
-  dependencies.
+- Confirm the production StorageClass, Ingress hostname/TLS certificate,
+  `SERVER_HOST_URL`, `SERVER_FRONTEND_URL`, allowed origins, credentials, and
+  generated or operator-provided Secrets match the target cluster.
 - Confirm Docker-capable nodes expose Docker Engine at `/var/run/docker.sock`
   and have the `chronoverse.io/docker-workloads=true` label.
 - Confirm workers can reach runtime node IPs on TCP `2375`; NetworkPolicy,

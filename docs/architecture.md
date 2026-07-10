@@ -9,20 +9,22 @@ log delivery, notifications, analytics, and replay-safe event publication.
 
 ### Entry Points
 
-- `dashboard` is the Next.js UI. In development it is exposed on host port
-  `3001`; in production it sits behind Nginx on port `80`.
+- `dashboard` is the Next.js UI. Compose development exposes it on host port
+  `3001`; Compose production puts it behind Nginx on port `80`.
 - `server` is the public HTTP API. In development it is exposed on host port
   `8080`; in production it is only reachable inside the compose network and is
   proxied by Nginx under `/api/`.
-- `nginx` exists in production only. It proxies dashboard traffic to
+- In Compose, `nginx` exists in production only. It proxies dashboard traffic to
   `dashboard:3000`, rewrites `/api/...` to `server:8080`, and disables buffering
   for job log SSE routes.
 
 In Kubernetes, `infra/k8s` provides Kustomize overlays. The local overlay
 deploys the same entry points inside a single namespace. The production overlay
 deploys the application, workers, Nginx, Docker proxy, Kafka topic initializer,
-and migration job while expecting stateful infrastructure to be managed outside
-the overlay.
+migration job, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, LGTM, dynamic
+PVCs, and HorizontalPodAutoscalers. It is a self-hosted topology; operators own
+the StorageClass, Secret lifecycle, ingress hostnames, runtime-node preparation,
+backups, and production sizing.
 
 ### Domain Services
 
@@ -182,9 +184,11 @@ expected operating conditions.
 - Compose generates a local CA, service certificates, client certificates, and
   Ed25519 auth keys through `init-certs`.
 - The Kubernetes local overlay generates development certificates into a local
-  certificate PVC. The production overlay mounts pre-created Kubernetes Secrets
-  for auth keys, CA material, client TLS, service TLS, Kafka stores, and
-  datastore credentials.
+  certificate PVC. Production mounts Kubernetes Secrets for auth keys, CA
+  material, client TLS, service TLS, infrastructure TLS, Kafka stores, and
+  datastore credentials. The setup script preserves complete operator-provided
+  Secrets and can generate a missing fallback set; partial internal TLS trust
+  chains are rejected.
 - PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC services run with
   TLS or mTLS in compose.
 - The HTTP server uses encrypted session cookies, CSRF cookies, and service JWT

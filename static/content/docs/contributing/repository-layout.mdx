@@ -2,7 +2,10 @@
 
 | Path | Purpose |
 | --- | --- |
-| `cmd/` | Executable entry points for services, workers, migration, relay, and server |
+| `cmd/` | Executable entry points for five domain services, the HTTP server, workers, processors, runtime agent, relay, and migrations |
+| `internal/app/` | Interfaces between entry points and domain implementations; source for generated mocks |
+| `internal/config/` | Typed environment-variable contracts for every Go process |
+| `internal/model/` | Shared domain models and asynchronous event envelopes |
 | `internal/server/` | Public HTTP gateway and middleware |
 | `internal/service/` | Domain service logic |
 | `internal/repository/` | Persistence and worker implementations |
@@ -12,12 +15,22 @@
 | `dashboard/` | Authenticated product dashboard |
 | `static/` | Public landing page and static MDX documentation |
 | `docs/` | Concise repository-level engineering references |
+| `infra/k8s/` | Kustomize base plus local and production overlays; includes the operator runbook |
+| `scripts/k8s/` | Kubernetes prerequisite, Secret bootstrap, render, validation, and apply workflow |
+| `certs/` | Git-ignored local workspace populated and mounted by Compose certificate/bootstrap jobs |
+| `compose.dev.yaml` | Locally built, debug-friendly full-stack topology |
+| `compose.prod.yaml` | Published-image topology with Nginx, resource limits, and replicated workers |
+| `Makefile` and `tools.go` | Generation, test, lint, build, run, and Kubernetes validation entry points |
+| `.github/` | CI, release-image, and GitHub Pages deployment automation |
 
 ## Ownership pattern
 
 Entry points compose configuration, infrastructure, repositories, and services. Business state transitions remain in domain layers; reusable transport and storage behavior belongs under `internal/pkg` only when it is truly cross-domain.
 
+Deployment ownership follows the same separation. `infra/k8s/base` owns shared application resources. `infra/k8s/overlays/local` and `infra/k8s/overlays/production` own strategy-specific infrastructure, storage, replica, and patch choices. `scripts/k8s/setup.sh` owns prerequisite and Secret bootstrap before Kustomize apply. Compose remains a separate supported topology rather than generated Kubernetes input.
+
 ## Generated files
 
-Do not edit generated protobuf Go files by hand. Change `proto/*.proto` and run the generation target.
+Do not edit generated protobuf Go files by hand. Change the source files below `proto/` and run `make generate`; commit changes under `pkg/proto/go/` and `buf.lock` with the contract change.
 
+Mocks below `internal/**/mock/` come from `//go:generate` directives. After changing an interface, run `make mockgen` and commit the resulting mock changes. Build artifacts under `.bin/`, `dashboard/.next/`, `static/.next/`, and `static/out/` are local output and are not source documentation.

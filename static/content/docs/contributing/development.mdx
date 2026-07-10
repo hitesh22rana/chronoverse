@@ -1,13 +1,25 @@
 # Development workflow
 
-## Generate dependencies
+## Install tools and synchronize dependencies
 
 ```bash
 make tools
+make dependencies
+```
+
+`make tools` installs the repository's Go generators and linter into `.bin`; Buf itself must also be installed and available on `PATH`. `make dependencies` runs `make generate` and then `go mod tidy -v`. Generation removes and recreates `pkg/proto`, updates `buf.lock`, and compiles the protobuf contracts. Keep `proto/`, `pkg/proto/go/`, `buf.lock`, `go.mod`, and `go.sum` changes together when applicable.
+
+Run the narrower target when only protobuf output needs verification:
+
+```bash
 make generate
 ```
 
-`make generate` compiles protobuf contracts. Keep source and generated code in the same change.
+After changing a Go interface with a `//go:generate` directive, regenerate mocks:
+
+```bash
+make mockgen
+```
 
 ## Test
 
@@ -27,11 +39,27 @@ cd dashboard && npm run lint && npm run build
 cd ../static && npm run check
 ```
 
+Use `npm ci` in both frontend workspaces when reproducing CI from their committed lockfiles. `npm run check` in `static/` validates the MDX/OpenAPI registry, lints, type-checks, and performs the static Next.js export.
+
+## Kubernetes changes
+
+Render and client-dry-run both overlays after changing `infra/k8s`, `scripts/k8s`, deployment configuration, image arguments, ports, probes, or Secrets:
+
+```bash
+make k8s/render/local
+make k8s/render/production
+make k8s/dry-run/local
+make k8s/dry-run/production
+scripts/k8s/setup.sh --mode local --dry-run
+scripts/k8s/setup.sh --mode production --dry-run
+```
+
+The render targets work offline. The kubectl client dry runs still use API discovery and therefore need a reachable selected cluster; full OpenAPI schema validation likewise needs a live target cluster or a separate validator such as `kubeconform`. The setup-script dry runs additionally exercise prerequisite, existing-Secret inspection, and Secret preparation logic against the selected kubectl context.
+
 ## Documentation changes
 
-Add or edit MDX under `static/content/docs`, update `docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
+Add or edit MDX under `static/content/docs`, update `static/docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. Keep the concise repository references under `docs/`, `README.md`, `infra/k8s/README.md`, and landing-page copy aligned when the same behavior is described there. From `static/`, `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
 
 ## Releases
 
-Git tags matching `v*` trigger service image release jobs after lint, build, and test complete. The static site deploys from `main` through GitHub Pages.
-
+Git tags matching `v*` trigger service image release jobs after lint, build, generated-protobuf verification, and tests complete. The static site validates and deploys from `main` through GitHub Pages.

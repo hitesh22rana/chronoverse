@@ -502,6 +502,8 @@ spec:
             name: observability-config
         - configMapRef:
             name: server-config
+        - secretRef:
+            name: chronoverse-server-security
         resources:
           requests:
             cpu: 100m

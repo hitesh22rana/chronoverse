@@ -14,10 +14,23 @@ spec:
         app.kubernetes.io/component: init-job
     spec:
       restartPolicy: OnFailure
+      initContainers:
+      - name: prepare-certs-volume
+        image: alpine:3.22.2
+        command: ["sh", "-c", "mkdir -p /certs && chown -R 0:101 /certs && chmod 0775 /certs"]
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
       containers:
       - name: init-certs
         image: confluentinc/cp-kafka:7.6.7
         imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
         command:
         - sh
         - -ec
@@ -58,10 +71,23 @@ spec:
         app.kubernetes.io/component: init-job
     spec:
       restartPolicy: OnFailure
+      initContainers:
+      - name: prepare-certs-volume
+        image: alpine:3.22.2
+        command: ["sh", "-c", "mkdir -p /certs && chown -R 0:101 /certs && chmod 0775 /certs"]
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
       containers:
       - name: init-service-certs
         image: confluentinc/cp-kafka:7.6.7
         imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
         command:
         - sh
         - -ec
@@ -114,8 +140,12 @@ spec:
           printf "%s\n" "${KAFKA_SSL_KEYSTORE_PASSWORD}" > /certs/kafka/keystore_creds.txt
           printf "%s\n" "${KAFKA_SSL_TRUSTSTORE_PASSWORD}" > /certs/kafka/truststore_creds.txt
           printf "%s\n" "${KAFKA_SSL_KEYSTORE_PASSWORD}" > /certs/kafka/key_creds.txt
+          chown -R 0:101 /certs
+          chown -R 101:101 /certs/clickhouse
           chmod -R a+rX /certs
           chmod 0600 /certs/postgres/postgres.key /certs/clients/client.key
+          chgrp 101 /certs/clients/client.key
+          chmod 0640 /certs/clients/client.key
           chmod 0640 /certs/clickhouse/clickhouse.key /certs/clickhouse/clients/client.key
           chmod 0644 /certs/clickhouse/clickhouse.crt /certs/clickhouse/clients/client.crt
         resources:

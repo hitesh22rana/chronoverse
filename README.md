@@ -147,7 +147,8 @@ validation with kind/minikube-style clusters. The production strategy is the
 self-hosted Chronoverse stack on your Kubernetes infrastructure: services,
 workers, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, and
 storage all run under your cluster. The setup script preserves complete
-operator-provided Secrets and generates only missing bootstrap material. See
+operator-provided Secrets, rejects partial production TLS trust chains, and
+generates missing bootstrap material. See
 [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md),
 and [operations](./docs/operations.md).
 

@@ -25,7 +25,7 @@ initialization, dynamic PVCs, and HPAs.
 The script is interactive by default and also supports repeatable flags:
 
 ```sh
-scripts/k8s/setup.sh --mode production --namespace chronoverse --dry-run
+scripts/k8s/setup.sh --mode production --dry-run
 scripts/k8s/setup.sh --mode production --storage-class fast-ssd
 scripts/k8s/setup.sh --mode local --create-kind
 ```
@@ -84,12 +84,22 @@ Production Secrets include:
 - `clickhouse-secret`: `CLICKHOUSE_PASSWORD`
 - `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`, `MEILI_MASTER_KEY`
 - `kafka-tls-secret`: `KAFKA_SSL_KEYSTORE_PASSWORD`, `KAFKA_SSL_TRUSTSTORE_PASSWORD`, `KAFKA_SSL_KEY_PASSWORD`
+- `chronoverse-server-security`: `CRYPTO_SECRET`, `SERVER_CSRF_HMAC_SECRET`
 - `chronoverse-auth`: `auth.ed`, `auth.ed.pub`
 - `chronoverse-ca`: `ca.crt`
+- `chronoverse-ingress-tls`: `tls.crt`, `tls.key`
 - `chronoverse-client-tls`: `tls.crt`, `tls.key`
 - `chronoverse-service-tls`: service certificate/key pairs for users, workflows, jobs, notifications, and analytics services
 - `chronoverse-infra-tls`: certificate/key pairs for PostgreSQL, Redis, ClickHouse, Kafka, and Meilisearch
 - `chronoverse-kafka-tls`: `kafka.keystore.jks`, `kafka.truststore.jks`, `keystore_creds.txt`, `truststore_creds.txt`, `key_creds.txt`
+
+Internal production trust-chain Secrets are atomic. If you bring your own
+`chronoverse-ca`, also provide `chronoverse-client-tls`,
+`chronoverse-service-tls`, `chronoverse-infra-tls`, and
+`chronoverse-kafka-tls` from the same trust chain. The setup script rejects
+partial internal TLS Secret sets instead of mixing generated and
+operator-provided CAs. `chronoverse-ingress-tls` is external edge TLS and can be
+managed independently.
 
 ## Storage
 
@@ -100,8 +110,8 @@ set.
 
 The production overlay uses dynamic PVCs by default. Provide a StorageClass with
 `scripts/k8s/setup.sh --mode production --storage-class <name>` or rely on the
-cluster default StorageClass. HostPath in production is a non-HA fallback only
-and should be used only after explicitly accepting the risk.
+cluster default StorageClass. Production requires dynamic storage; use the
+`local` strategy for single-node hostPath validation.
 
 ## Runtime Ownership
 

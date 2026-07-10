@@ -8,6 +8,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - chronoverse.example.com
+    secretName: chronoverse-ingress-tls
   rules:
   - host: chronoverse.example.com
     http:
@@ -19,4 +23,3 @@ spec:
             name: nginx
             port:
               number: 80
-

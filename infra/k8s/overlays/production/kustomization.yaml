@@ -240,6 +240,11 @@ patches:
     kind: StatefulSet
     name: clickhouse
   patch: |-
+    - op: add
+      path: /spec/template/spec/securityContext
+      value:
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
     - op: replace
       path: /spec/template/spec/volumes/1
       value:

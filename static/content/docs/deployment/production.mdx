@@ -21,6 +21,9 @@ Kubernetes production is expected to be accessed through the configured Ingress
 host over HTTPS. Authentication cookies are scoped from `SERVER_HOST_URL`, so a
 plain `http://localhost` port-forward will not preserve login cookies when the
 server is configured for `https://chronoverse.example.com`.
+The production Ingress references `chronoverse-ingress-tls`; replace the
+generated self-signed fallback with a trusted certificate before exposing real
+traffic.
 
 Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry.
 

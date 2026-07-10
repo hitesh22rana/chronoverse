@@ -9,7 +9,6 @@ DRY_RUN=false
 SKIP_APPLY=false
 CREATE_KIND=false
 STORAGE_CLASS=""
-HOSTPATH_FALLBACK=false
 
 usage() {
   cat <<'EOF'
@@ -17,12 +16,10 @@ Usage: scripts/k8s/setup.sh [options]
 
 Options:
   --mode local|production       Deployment strategy.
-  --namespace <name>            Kubernetes namespace. Default: chronoverse.
   --context <name>              kubectl context to use.
   --dry-run                     Validate and print dry-run apply output.
   --skip-apply                  Bootstrap prerequisites but do not apply manifests.
   --storage-class <name>        Production StorageClass override.
-  --hostpath-fallback           Allow production hostPath fallback warning path.
   --create-kind                 Create the local kind cluster before applying local.
   -h, --help                    Show this help.
 EOF
@@ -69,10 +66,6 @@ while [ "$#" -gt 0 ]; do
       MODE="${2:-}"
       shift 2
       ;;
-    --namespace)
-      NAMESPACE="${2:-}"
-      shift 2
-      ;;
     --context)
       CONTEXT="${2:-}"
       shift 2
@@ -88,10 +81,6 @@ while [ "$#" -gt 0 ]; do
     --storage-class)
       STORAGE_CLASS="${2:-}"
       shift 2
-      ;;
-    --hostpath-fallback)
-      HOSTPATH_FALLBACK=true
-      shift
       ;;
     --create-kind)
       CREATE_KIND=true
@@ -132,7 +121,6 @@ EOF
 
 [ -n "$MODE" ] || select_mode
 [ "$MODE" = "local" ] || [ "$MODE" = "production" ] || die "--mode must be local or production"
-[ -n "$NAMESPACE" ] || die "--namespace cannot be empty"
 
 need_cmd kubectl
 need_cmd openssl
@@ -195,8 +183,10 @@ secret_keys() {
     clickhouse-secret) echo "CLICKHOUSE_PASSWORD" ;;
     meilisearch-secret) echo "MEILISEARCH_MASTER_KEY MEILI_MASTER_KEY" ;;
     kafka-tls-secret) echo "KAFKA_SSL_KEYSTORE_PASSWORD KAFKA_SSL_TRUSTSTORE_PASSWORD KAFKA_SSL_KEY_PASSWORD" ;;
+    chronoverse-server-security) echo "CRYPTO_SECRET SERVER_CSRF_HMAC_SECRET" ;;
     chronoverse-auth) echo "auth.ed auth.ed.pub" ;;
     chronoverse-ca) echo "ca.crt" ;;
+    chronoverse-ingress-tls) echo "tls.crt tls.key" ;;
     chronoverse-client-tls) echo "tls.crt tls.key" ;;
     chronoverse-service-tls) echo "users-service.crt users-service.key workflows-service.crt workflows-service.key jobs-service.crt jobs-service.key notifications-service.crt notifications-service.key analytics-service.crt analytics-service.key" ;;
     chronoverse-infra-tls) echo "postgres.crt postgres.key redis.crt redis.key clickhouse.crt clickhouse.key kafka.crt kafka.key meilisearch.crt meilisearch.key" ;;
@@ -256,19 +246,23 @@ cleanup() {
 trap cleanup EXIT
 
 create_data_secrets() {
-  local postgres_password clickhouse_password meili_key kafka_keystore kafka_truststore
+  local postgres_password clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret
   if [ "$MODE" = "local" ]; then
     postgres_password="chronoverse-local-postgres-password"
     clickhouse_password="chronoverse-local-clickhouse-password"
     meili_key="chronoverse-local-meilisearch-master-key"
     kafka_keystore="chronoverse-local-kafka-keystore-password"
     kafka_truststore="chronoverse-local-kafka-truststore-password"
+    crypto_secret="chronoverse-local-cookie-encryption-secret"
+    csrf_secret="chronoverse-local-csrf-hmac-secret"
   else
     postgres_password="$(random_hex 24)"
     clickhouse_password="$(random_hex 24)"
     meili_key="$(random_hex 32)"
     kafka_keystore="$(random_hex 18)"
     kafka_truststore="$(random_hex 18)"
+    crypto_secret="$(random_hex 32)"
+    csrf_secret="$(random_hex 32)"
   fi
 
   create_literal_secret postgres-secret \
@@ -287,6 +281,10 @@ create_data_secrets() {
     --from-literal=KAFKA_SSL_KEYSTORE_PASSWORD="$kafka_keystore" \
     --from-literal=KAFKA_SSL_TRUSTSTORE_PASSWORD="$kafka_truststore" \
     --from-literal=KAFKA_SSL_KEY_PASSWORD="$kafka_keystore"
+
+  create_literal_secret chronoverse-server-security \
+    --from-literal=CRYPTO_SECRET="$crypto_secret" \
+    --from-literal=SERVER_CSRF_HMAC_SECRET="$csrf_secret"
 }
 
 generate_ca() {
@@ -317,42 +315,84 @@ create_file_secret() {
   apply_secret_yaml "$yaml"
 }
 
+create_tls_secret() {
+  local name="$1"
+  local cert="$2"
+  local key="$3"
+  if secret_exists "$name"; then
+    validate_secret_complete "$name"
+    return
+  fi
+  info "Creating missing secret $name"
+  local yaml
+  yaml="$(kubectl_cmd -n "$NAMESPACE" create secret tls "$name" --cert="$cert" --key="$key" --dry-run=client -o yaml)"
+  apply_secret_yaml "$yaml"
+}
+
+create_ingress_tls_secret() {
+  if secret_exists chronoverse-ingress-tls; then
+    validate_secret_complete chronoverse-ingress-tls
+    return
+  fi
+
+  info "Generating missing production ingress TLS material"
+  openssl req -x509 -newkey rsa:4096 -nodes \
+    -keyout "$TMP_DIR/ingress.key" \
+    -out "$TMP_DIR/ingress.crt" \
+    -sha256 -days 365 \
+    -subj "/CN=chronoverse.example.com" \
+    -addext "subjectAltName=DNS:chronoverse.example.com" >/dev/null 2>&1
+  create_tls_secret chronoverse-ingress-tls "$TMP_DIR/ingress.crt" "$TMP_DIR/ingress.key"
+}
+
+create_auth_secret() {
+  if secret_exists chronoverse-auth; then
+    validate_secret_complete chronoverse-auth
+    return
+  fi
+
+  info "Generating missing production auth material"
+  openssl genpkey -algorithm ED25519 -outform pem -out "$TMP_DIR/auth.ed" >/dev/null 2>&1
+  openssl pkey -in "$TMP_DIR/auth.ed" -pubout -out "$TMP_DIR/auth.ed.pub" >/dev/null 2>&1
+  create_file_secret chronoverse-auth \
+    --from-file=auth.ed="$TMP_DIR/auth.ed" \
+    --from-file=auth.ed.pub="$TMP_DIR/auth.ed.pub"
+}
+
 create_production_tls_secrets() {
-  local required=(
-    chronoverse-auth
+  local tls_required=(
     chronoverse-ca
     chronoverse-client-tls
     chronoverse-service-tls
     chronoverse-infra-tls
     chronoverse-kafka-tls
   )
-  local existing_complete=true
+  create_auth_secret
+  create_ingress_tls_secret
+
+  local existing_count=0
   local secret
-  for secret in "${required[@]}"; do
+  for secret in "${tls_required[@]}"; do
     if secret_exists "$secret"; then
       validate_secret_complete "$secret"
-    else
-      existing_complete=false
+      existing_count=$((existing_count + 1))
     fi
   done
-  if [ "$existing_complete" = true ]; then
+  if [ "$existing_count" -eq "${#tls_required[@]}" ]; then
     return
   fi
+  if [ "$existing_count" -gt 0 ]; then
+    die "production TLS secrets are an atomic trust chain; either provide all of ${tls_required[*]} or delete the partial set and rerun setup"
+  fi
 
-  info "Generating missing production TLS/auth material"
+  info "Generating missing production TLS material"
   generate_ca
-  openssl genpkey -algorithm ED25519 -outform pem -out "$TMP_DIR/auth.ed" >/dev/null 2>&1
-  openssl pkey -in "$TMP_DIR/auth.ed" -pubout -out "$TMP_DIR/auth.ed.pub" >/dev/null 2>&1
-
   local svc
   for svc in users-service workflows-service jobs-service notifications-service analytics-service postgres redis clickhouse kafka meilisearch; do
     generate_cert "$svc" "$svc" "DNS:$svc,DNS:$svc.$NAMESPACE,DNS:$svc.$NAMESPACE.svc,DNS:$svc.$NAMESPACE.svc.cluster.local,IP:127.0.0.1"
   done
   generate_cert client chronoverse-client "DNS:client"
 
-  create_file_secret chronoverse-auth \
-    --from-file=auth.ed="$TMP_DIR/auth.ed" \
-    --from-file=auth.ed.pub="$TMP_DIR/auth.ed.pub"
   create_file_secret chronoverse-ca \
     --from-file=ca.crt="$TMP_DIR/ca.crt"
   create_file_secret chronoverse-client-tls \
@@ -396,6 +436,7 @@ create_production_tls_secrets() {
     --from-file=keystore_creds.txt="$TMP_DIR/keystore_creds.txt" \
     --from-file=truststore_creds.txt="$TMP_DIR/truststore_creds.txt" \
     --from-file=key_creds.txt="$TMP_DIR/key_creds.txt"
+
 }
 
 check_storage() {
@@ -410,12 +451,8 @@ check_storage() {
     info "Using cluster default StorageClass"
     return
   fi
-  if [ "$HOSTPATH_FALLBACK" = true ]; then
-    info "No default StorageClass found; hostPath fallback explicitly allowed"
-    return
-  fi
   if [ "$DRY_RUN" = true ]; then
-    info "No default StorageClass found during dry-run; production apply will require --storage-class or --hostpath-fallback"
+    info "No default StorageClass found during dry-run; production apply will require --storage-class"
     return
   fi
   if confirm "No default StorageClass was found. Continue only if your PVCs will bind through another provisioner?"; then
@@ -435,7 +472,7 @@ delete_bootstrap_jobs() {
   fi
 
   info "Recreating bootstrap jobs for $MODE apply"
-  kubectl_cmd -n "$NAMESPACE" delete job "${jobs[@]}" --ignore-not-found --wait=false >/dev/null
+  kubectl_cmd -n "$NAMESPACE" delete job "${jobs[@]}" --ignore-not-found >/dev/null
 }
 
 create_data_secrets
@@ -515,7 +552,9 @@ EOF
 Production access:
   Chronoverse is exposed through the Kubernetes Ingress named chronoverse.
   The default host is chronoverse.example.com; replace it with your domain and
-  point DNS to your ingress controller external address.
+  point DNS to your ingress controller external address. The generated fallback
+  ingress TLS certificate is self-signed; use a trusted certificate before
+  exposing production traffic.
 
 Authentication cookies are issued for SERVER_HOST_URL. Do not use
 http://localhost port-forwarding as the normal production access URL unless you

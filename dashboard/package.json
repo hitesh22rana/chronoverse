@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "start:port": "next start --port 3001",
+    "test": "vitest run",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix"
   },
@@ -62,6 +63,7 @@
     "eslint-config-next": "16.0.4",
     "globals": "^16.5.0",
     "tailwindcss": "^4.1.17",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }

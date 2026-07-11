@@ -4,11 +4,13 @@ import {
     buildLogViewerUrl,
     formatLogLineSelection,
     getSelectedLogText,
+    getNextLogLineSelection,
     getUnavailableSelectionMessage,
     isLogLineSelected,
     normalizeLogLineSelection,
     parseLogLineSelection,
     shouldFetchMoreLogsForSelection,
+    shouldIgnoreLogRowSelection,
 } from "./log-line-selection"
 
 describe("log line fragments", () => {
@@ -72,5 +74,17 @@ describe("log line selection", () => {
     it("describes unavailable single lines and ranges", () => {
         expect(getUnavailableSelectionMessage({ start: 10, end: 10 })).toBe("Log line 10 is unavailable")
         expect(getUnavailableSelectionMessage({ start: 1, end: 10 })).toBe("Some selected log lines are unavailable")
+    })
+
+    it("creates single and extended row selections", () => {
+        expect(getNextLogLineSelection(4, 2, false)).toEqual({ start: 4, end: 4 })
+        expect(getNextLogLineSelection(7, 2, true)).toEqual({ start: 2, end: 7 })
+        expect(getNextLogLineSelection(2, 7, true)).toEqual({ start: 2, end: 7 })
+    })
+
+    it("ignores text selection and line-option interactions", () => {
+        expect(shouldIgnoreLogRowSelection(true, false)).toBe(true)
+        expect(shouldIgnoreLogRowSelection(false, true)).toBe(true)
+        expect(shouldIgnoreLogRowSelection(false, false)).toBe(false)
     })
 })

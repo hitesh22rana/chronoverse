@@ -4,6 +4,7 @@ import {
     buildLogViewerUrl,
     formatLogLineSelection,
     getSelectedLogText,
+    getUnavailableSelectionMessage,
     isLogLineSelected,
     normalizeLogLineSelection,
     parseLogLineSelection,
@@ -66,5 +67,10 @@ describe("log line selection", () => {
 
         expect(getSelectedLogText(messages, { start: 2, end: 2 })).toBe("middle")
         expect(getSelectedLogText(messages, { start: 1, end: 3 })).toBe("newest\nmiddle\noldest")
+    })
+
+    it("describes unavailable single lines and ranges", () => {
+        expect(getUnavailableSelectionMessage({ start: 10, end: 10 })).toBe("Log line 10 is unavailable")
+        expect(getUnavailableSelectionMessage({ start: 1, end: 10 })).toBe("Some selected log lines are unavailable")
     })
 })

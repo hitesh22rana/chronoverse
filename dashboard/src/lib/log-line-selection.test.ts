@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
     formatLogLineSelection,
+    getSelectedLogText,
     isLogLineSelected,
     normalizeLogLineSelection,
     parseLogLineSelection,
@@ -51,5 +52,12 @@ describe("log line selection", () => {
         expect(shouldFetchMoreLogsForSelection(selection, 119, true)).toBe(false)
         expect(shouldFetchMoreLogsForSelection(selection, 100, false)).toBe(false)
         expect(shouldFetchMoreLogsForSelection(null, 0, true)).toBe(false)
+    })
+
+    it("copies selected log messages in displayed order", () => {
+        const messages = ["newest", "middle", "oldest"]
+
+        expect(getSelectedLogText(messages, { start: 2, end: 2 })).toBe("middle")
+        expect(getSelectedLogText(messages, { start: 1, end: 3 })).toBe("newest\nmiddle\noldest")
     })
 })

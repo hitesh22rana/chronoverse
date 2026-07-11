@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+    buildLogViewerUrl,
     formatLogLineSelection,
     getSelectedLogText,
     isLogLineSelected,
@@ -32,6 +33,11 @@ describe("log line fragments", () => {
     it("formats canonical fragments", () => {
         expect(formatLogLineSelection({ start: 6, end: 6 })).toBe("#L6")
         expect(formatLogLineSelection({ start: 6, end: 19 })).toBe("#L6-L19")
+    })
+
+    it("builds a pathname-based URL when filters are cleared", () => {
+        expect(buildLogViewerUrl("/jobs/1", "", "#L1-L7")).toBe("/jobs/1#L1-L7")
+        expect(buildLogViewerUrl("/jobs/1", "q=level", "#L1-L7")).toBe("/jobs/1?q=level#L1-L7")
     })
 })
 

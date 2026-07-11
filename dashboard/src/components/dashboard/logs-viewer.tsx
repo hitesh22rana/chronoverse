@@ -64,6 +64,7 @@ import {
     buildLogViewerUrl,
     formatLogLineSelection,
     getSelectedLogText,
+    getUnavailableSelectionMessage,
     isLogLineSelected,
     normalizeLogLineSelection,
     parseLogLineSelection,
@@ -462,7 +463,7 @@ export function LogsViewer({
         }
 
         lastUnavailableSelectionRef.current = selectionKey
-        toast.warning(`Log line ${lineSelection.end} is unavailable`)
+        toast.warning(getUnavailableSelectionMessage(lineSelection))
     }, [isSelectionUnavailable, lineSelection, selectionKey])
 
     // Debounced search update

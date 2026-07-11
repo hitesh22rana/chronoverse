@@ -77,3 +77,11 @@ export const buildLogViewerUrl = (
 ) => {
     return `${pathname}${query ? `?${query}` : ""}${fragment}`
 }
+
+export const getUnavailableSelectionMessage = (selection: LogLineSelection) => {
+    if (selection.start === selection.end) {
+        return `Log line ${selection.end} is unavailable`
+    }
+
+    return "Some selected log lines are unavailable"
+}

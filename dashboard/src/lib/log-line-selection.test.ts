@@ -38,6 +38,7 @@ describe("log line fragments", () => {
     it("builds a pathname-based URL when filters are cleared", () => {
         expect(buildLogViewerUrl("/jobs/1", "", "#L1-L7")).toBe("/jobs/1#L1-L7")
         expect(buildLogViewerUrl("/jobs/1", "q=level", "#L1-L7")).toBe("/jobs/1?q=level#L1-L7")
+        expect(buildLogViewerUrl("/jobs/1", "q=level", "")).toBe("/jobs/1?q=level")
     })
 })
 

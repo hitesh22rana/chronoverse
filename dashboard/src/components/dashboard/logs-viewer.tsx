@@ -16,7 +16,9 @@ import {
 import {
     Copy,
     Download,
+    Ellipsis,
     Filter,
+    Link,
     Loader2,
     Search,
 } from "lucide-react"
@@ -42,6 +44,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
@@ -53,6 +62,7 @@ import type { DownloadLogsFormat } from "@/hooks/use-job-logs"
 import { cn, jsonRegex } from "@/lib/utils"
 import {
     formatLogLineSelection,
+    getSelectedLogText,
     isLogLineSelected,
     normalizeLogLineSelection,
     parseLogLineSelection,
@@ -262,25 +272,9 @@ export function LogsViewer({
     const [downloadFormat, setDownloadFormat] = useState<DownloadLogsFormat>("txt")
     const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
     const parseJson = searchParams.get("json") === "true"
-    const datasetKey = `${pathname}?${searchParams.toString()}`
+    const datasetKey = `${pathname}?q=${searchQuery}&stream=${streamFilter}`
     const selectionFragment = lineSelection ? formatLogLineSelection(lineSelection) : ""
     const selectionKey = `${datasetKey}${selectionFragment}`
-    const canCopySelection = Boolean(
-        lineSelection &&
-        shareableJobStatuses.has(jobStatus) &&
-        !disableLogInteractions &&
-        !isSelectionUnavailable &&
-        logs.length >= lineSelection.end
-    )
-    const copyLinkTooltip = !lineSelection
-        ? "Select a log line first"
-        : jobStatus === "RUNNING"
-            ? "Links can be copied after the job finishes"
-            : isSelectionUnavailable
-                ? "The selected log line is unavailable"
-                : canCopySelection
-                    ? "Copy a link to the selected logs"
-                    : "Log links are unavailable"
 
     const updateJsonRendering = useCallback((enabled: boolean) => {
         const params = new URLSearchParams(searchParams.toString())
@@ -329,18 +323,45 @@ export function LogsViewer({
         updateLineSelection({ start: lineNumber, end: lineNumber })
     }, [lineSelection?.start, selectionAnchor, updateLineSelection])
 
-    const copySelectionLink = useCallback(async () => {
+    const copyLogLines = useCallback(async (selection: LogLineSelection) => {
         try {
-            await navigator.clipboard.writeText(window.location.href)
-            toast.success("Log link copied")
+            const text = getSelectedLogText(logs.map((log) => log.message), selection)
+            await navigator.clipboard.writeText(text)
+            toast.success(selection.start === selection.end ? "Log line copied" : "Log lines copied")
         } catch {
-            toast.error("Failed to copy log link")
+            toast.error("Failed to copy log lines")
         }
-    }, [])
+    }, [logs])
+
+    const copyPermalink = useCallback(async (selection: LogLineSelection) => {
+        try {
+            updateLineSelection(selection)
+
+            const url = new URL(window.location.href)
+            url.hash = formatLogLineSelection(selection)
+            await navigator.clipboard.writeText(url.toString())
+            toast.success("Log permalink copied")
+        } catch {
+            toast.error("Failed to copy log permalink")
+        }
+    }, [updateLineSelection])
 
     useEffect(() => {
         setDownloadFilename(`${jobId}-logs`)
     }, [jobId])
+
+    useEffect(() => {
+        setSearchInput(searchQuery)
+    }, [searchQuery])
+
+    useEffect(() => {
+        setStream(streamFilter || "all")
+    }, [streamFilter])
+
+    useEffect(() => {
+        deepLinkFetchInFlightRef.current = false
+        setIsSelectionUnavailable(false)
+    }, [datasetKey])
 
     useEffect(() => {
         const syncSelectionFromFragment = () => {
@@ -486,6 +507,17 @@ export function LogsViewer({
         if (!log) return null
         const lineNumber = index + 1
         const isSelected = isLogLineSelected(lineNumber, lineSelection)
+        const isTopSelectedLine = isSelected && lineSelection?.start === lineNumber
+        const showLineOptions = !isSelected || isTopSelectedLine
+        const actionSelection = isTopSelectedLine && lineSelection
+            ? lineSelection
+            : { start: lineNumber, end: lineNumber }
+        const canCopyLines = actionSelection.end <= logs.length
+        const canCopyPermalink = Boolean(
+            shareableJobStatuses.has(jobStatus) &&
+            !disableLogInteractions &&
+            canCopyLines
+        )
         const formattedMessage = parseLog(log.message, log.highlightToken)
         return (
             <div
@@ -498,11 +530,55 @@ export function LogsViewer({
                 data-line-number={lineNumber}
                 data-selected={isSelected || undefined}
             >
+                <div className="flex w-9 shrink-0 items-center justify-center">
+                    {showLineOptions && (
+                        <DropdownMenu>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            size="icon"
+                                            className={cn(
+                                                "size-7 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100",
+                                                { "opacity-100": isTopSelectedLine }
+                                            )}
+                                            aria-label={`Line ${lineNumber} options`}
+                                        >
+                                            <Ellipsis />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">
+                                    Line {lineNumber} options
+                                </TooltipContent>
+                            </Tooltip>
+                            <DropdownMenuContent align="start" className="min-w-40">
+                                <DropdownMenuGroup>
+                                    <DropdownMenuItem
+                                        disabled={!canCopyLines}
+                                        onSelect={() => void copyLogLines(actionSelection)}
+                                    >
+                                        <Copy />
+                                        Copy line
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        disabled={!canCopyPermalink}
+                                        onSelect={() => void copyPermalink(actionSelection)}
+                                    >
+                                        <Link />
+                                        Copy permalink
+                                    </DropdownMenuItem>
+                                </DropdownMenuGroup>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
+                </div>
                 <a
                     href={`#L${lineNumber}`}
                     onClick={(event) => handleLineClick(lineNumber, event)}
                     className={cn(
-                        "flex w-14 shrink-0 items-start justify-end border-r px-2 py-1 text-xs tabular-nums text-muted-foreground select-none",
+                        "flex w-11 shrink-0 items-start justify-end border-r px-2 py-1 text-xs tabular-nums text-muted-foreground select-none",
                         { "text-foreground": isSelected }
                     )}
                     aria-label={`Select log line ${lineNumber}`}
@@ -616,22 +692,6 @@ export function LogsViewer({
                                 disabled={(jobStatus === "CANCELED" && logs.length === 0) || (logs.length === 0 && !!completedAt)}
                             />
                         </div>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <span>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        disabled={!canCopySelection}
-                                        onClick={copySelectionLink}
-                                    >
-                                        <Copy data-icon="inline-start" />
-                                        Copy link
-                                    </Button>
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent>{copyLinkTooltip}</TooltipContent>
-                        </Tooltip>
                         <Popover open={downloadPopoverOpen} onOpenChange={setDownloadPopoverOpen}>
                             <PopoverTrigger asChild>
                                 <Button

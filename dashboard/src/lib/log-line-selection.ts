@@ -62,3 +62,10 @@ export const shouldFetchMoreLogsForSelection = (
 ) => {
     return Boolean(selection && hasNextPage && loadedLogCount < selection.end)
 }
+
+export const getSelectedLogText = (
+    messages: readonly string[],
+    selection: LogLineSelection
+) => {
+    return messages.slice(selection.start - 1, selection.end).join("\n")
+}

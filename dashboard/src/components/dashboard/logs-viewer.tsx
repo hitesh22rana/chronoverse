@@ -7,7 +7,10 @@ import {
     useState,
     useTransition,
 } from "react"
-import type { MouseEvent as ReactMouseEvent } from "react"
+import type {
+    KeyboardEvent as ReactKeyboardEvent,
+    MouseEvent as ReactMouseEvent,
+} from "react"
 import {
     usePathname,
     useRouter,
@@ -63,12 +66,14 @@ import { cn, jsonRegex } from "@/lib/utils"
 import {
     buildLogViewerUrl,
     formatLogLineSelection,
+    getNextLogLineSelection,
     getSelectedLogText,
     getUnavailableSelectionMessage,
     isLogLineSelected,
     normalizeLogLineSelection,
     parseLogLineSelection,
     shouldFetchMoreLogsForSelection,
+    shouldIgnoreLogRowSelection,
 } from "@/lib/log-line-selection"
 import type { LogLineSelection } from "@/lib/log-line-selection"
 
@@ -321,24 +326,46 @@ export function LogsViewer({
         window.history.replaceState(window.history.state, "", url)
     }, [lineSelection])
 
-    const handleLineClick = useCallback((
-        lineNumber: number,
-        event: ReactMouseEvent<HTMLAnchorElement>
-    ) => {
-        event.preventDefault()
-
-        if (event.shiftKey) {
-            const anchor = selectionAnchor ?? lineSelection?.start ?? lineNumber
-            const range = normalizeLogLineSelection(anchor, lineNumber)
-            if (range) {
-                updateLineSelection(range)
-            }
+    const selectLogLine = useCallback((lineNumber: number, extendSelection: boolean) => {
+        const anchor = selectionAnchor ?? lineSelection?.start ?? null
+        const selection = getNextLogLineSelection(lineNumber, anchor, extendSelection)
+        if (!selection) {
             return
         }
 
-        setSelectionAnchor(lineNumber)
-        updateLineSelection({ start: lineNumber, end: lineNumber })
+        if (!extendSelection) {
+            setSelectionAnchor(lineNumber)
+        }
+        updateLineSelection(selection)
     }, [lineSelection?.start, selectionAnchor, updateLineSelection])
+
+    const handleLogRowClick = useCallback((
+        lineNumber: number,
+        event: ReactMouseEvent<HTMLDivElement>
+    ) => {
+        const target = event.target
+        const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
+        const textSelection = window.getSelection()
+        const hasTextSelection = Boolean(textSelection && !textSelection.isCollapsed)
+
+        if (shouldIgnoreLogRowSelection(hasTextSelection, isLineOptionsInteraction)) {
+            return
+        }
+
+        selectLogLine(lineNumber, event.shiftKey)
+    }, [selectLogLine])
+
+    const handleLogRowKeyDown = useCallback((
+        lineNumber: number,
+        event: ReactKeyboardEvent<HTMLSpanElement>
+    ) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return
+        }
+
+        event.preventDefault()
+        selectLogLine(lineNumber, event.shiftKey)
+    }, [selectLogLine])
 
     const copyLogLines = useCallback(async (selection: LogLineSelection) => {
         try {
@@ -555,8 +582,9 @@ export function LogsViewer({
                 )}
                 data-line-number={lineNumber}
                 data-selected={isSelected || undefined}
+                onClick={(event) => handleLogRowClick(lineNumber, event)}
             >
-                <div className="flex w-9 shrink-0 items-center justify-center">
+                <div className="flex w-9 shrink-0 items-center justify-center" data-line-options>
                     {showLineOptions && (
                         <DropdownMenu>
                             <Tooltip>
@@ -569,17 +597,17 @@ export function LogsViewer({
                                                 "size-7 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100",
                                                 { "opacity-100": isTopSelectedLine }
                                             )}
-                                            aria-label={`Line ${lineNumber} options`}
+                                            aria-label="Line options"
                                         >
                                             <Ellipsis />
                                         </Button>
                                     </DropdownMenuTrigger>
                                 </TooltipTrigger>
                                 <TooltipContent side="left">
-                                    Line {lineNumber} options
+                                    Line options
                                 </TooltipContent>
                             </Tooltip>
-                            <DropdownMenuContent align="start" className="min-w-40">
+                            <DropdownMenuContent align="start" className="min-w-40" data-line-options>
                                 <DropdownMenuGroup>
                                     <DropdownMenuItem
                                         disabled={!canCopyLines}
@@ -600,18 +628,6 @@ export function LogsViewer({
                         </DropdownMenu>
                     )}
                 </div>
-                <a
-                    href={`#L${lineNumber}`}
-                    onClick={(event) => handleLineClick(lineNumber, event)}
-                    className={cn(
-                        "flex w-11 shrink-0 items-start justify-end border-r px-2 py-1 text-xs tabular-nums text-muted-foreground select-none",
-                        { "text-foreground": isSelected }
-                    )}
-                    aria-label={`Select log line ${lineNumber}`}
-                    aria-current={isSelected ? "location" : undefined}
-                >
-                    {lineNumber}
-                </a>
                 <span
                     className={cn("my-1 w-1 flex-none rounded-sm", getLogStreamStripStyles(log.stream))}
                     title={log.stream}
@@ -619,6 +635,11 @@ export function LogsViewer({
                 />
                 <span
                     className="flex-1 whitespace-pre-wrap break-all px-3 py-1"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Select log entry"
+                    aria-pressed={isSelected}
+                    onKeyDown={(event) => handleLogRowKeyDown(lineNumber, event)}
                     dangerouslySetInnerHTML={{
                         __html: formattedMessage,
                     }}

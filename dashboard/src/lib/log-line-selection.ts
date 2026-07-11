@@ -85,3 +85,22 @@ export const getUnavailableSelectionMessage = (selection: LogLineSelection) => {
 
     return "Some selected log lines are unavailable"
 }
+
+export const getNextLogLineSelection = (
+    lineNumber: number,
+    anchor: number | null,
+    extendSelection: boolean
+) => {
+    if (!extendSelection || anchor === null) {
+        return normalizeLogLineSelection(lineNumber)
+    }
+
+    return normalizeLogLineSelection(anchor, lineNumber)
+}
+
+export const shouldIgnoreLogRowSelection = (
+    hasTextSelection: boolean,
+    isLineOptionsInteraction: boolean
+) => {
+    return hasTextSelection || isLineOptionsInteraction
+}

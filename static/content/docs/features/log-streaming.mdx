@@ -20,7 +20,7 @@ When `q` is absent, the route performs retained stream filtering. When present, 
 
 ## Shareable line selections
 
-The dashboard numbers logs within the current descending result set. Select a line to store it in the URL as `#L6`, or Shift-select another line to create a range such as `#L6-L19`. The first selected line exposes actions to copy the selected log text or its permalink. Search and stream filters remain part of a shared URL, so line numbers resolve against the same filtered or unfiltered result set. Changing either filter clears the current line selection because it changes the numbered result set.
+The dashboard tracks each log's position within the current descending result set without displaying line numbers. Click a log to store its position in the URL as `#L6`, or Shift-click another log to create a range such as `#L6-L19`. The first selected log exposes actions to copy the selected log text or its permalink. Search and stream filters remain part of a shared URL, so positions resolve against the same filtered or unfiltered result set. Changing either filter clears the current selection because it changes the positioned result set.
 
 Opening a line link loads older cursor pages until the selected range is available, then scrolls to and highlights it. If a requested range extends beyond the available results, the dashboard reports that some selected log lines are unavailable. Running jobs support line selection, but the dashboard enables copying a share link only after the job reaches `COMPLETED`, `FAILED`, or `CANCELED`, because new live logs can change result positions.
 

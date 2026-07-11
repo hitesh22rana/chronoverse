@@ -306,6 +306,20 @@ export function LogsViewer({
         window.history.replaceState(window.history.state, "", url)
     }, [])
 
+    const clearLineSelection = useCallback(() => {
+        if (!lineSelection && !window.location.hash) {
+            return
+        }
+
+        setLineSelection(null)
+        setSelectionAnchor(null)
+        setIsSelectionUnavailable(false)
+
+        const url = new URL(window.location.href)
+        url.hash = ""
+        window.history.replaceState(window.history.state, "", url)
+    }, [lineSelection])
+
     const handleLineClick = useCallback((
         lineNumber: number,
         event: ReactMouseEvent<HTMLAnchorElement>
@@ -633,7 +647,10 @@ export function LogsViewer({
                             ref={searchInputRef}
                             placeholder="Search logs... (Ctrl+F)"
                             value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
+                            onChange={(e) => {
+                                setSearchInput(e.target.value)
+                                clearLineSelection()
+                            }}
                             onFocus={() => setIsSearchFocused(true)}
                             onBlur={() => setIsSearchFocused(false)}
                             className="pl-10 pr-8 w-full"
@@ -660,6 +677,7 @@ export function LogsViewer({
                                             setStream(value)
                                             setPopoverOpen(false)
                                             if (value !== (streamFilter || "all")) {
+                                                clearLineSelection()
                                                 startSearchTransition(() => {
                                                     applyStreamFilter(value === "all" ? "" : value)
                                                 })

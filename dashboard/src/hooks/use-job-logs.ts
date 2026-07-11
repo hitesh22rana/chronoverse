@@ -186,8 +186,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
 
         const query = params.toString()
-        const hash = window.location.hash
-        router.push(buildLogViewerUrl(pathname, query, hash))
+        router.push(buildLogViewerUrl(pathname, query, ""))
     }, [pathname, router, searchParams])
 
     // Apply stream filter in URL params
@@ -201,8 +200,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
 
         const query = params.toString()
-        const hash = window.location.hash
-        router.push(buildLogViewerUrl(pathname, query, hash))
+        router.push(buildLogViewerUrl(pathname, query, ""))
     }, [pathname, router, searchParams])
 
     // Build query parameters for the search job logs request

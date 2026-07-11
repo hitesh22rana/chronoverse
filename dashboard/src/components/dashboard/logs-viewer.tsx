@@ -61,6 +61,7 @@ import type { DownloadLogsFormat } from "@/hooks/use-job-logs"
 
 import { cn, jsonRegex } from "@/lib/utils"
 import {
+    buildLogViewerUrl,
     formatLogLineSelection,
     getSelectedLogText,
     isLogLineSelected,
@@ -239,6 +240,7 @@ export function LogsViewer({
     const [downloadPopoverOpen, setDownloadPopoverOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
     const searchInputRef = useRef<HTMLInputElement>(null)
+    const pendingSearchQueryRef = useRef<string | null>(null)
     const virtuosoRef = useRef<VirtuosoHandle>(null)
     const deepLinkFetchInFlightRef = useRef(false)
     const lastScrolledSelectionRef = useRef("")
@@ -287,7 +289,7 @@ export function LogsViewer({
 
         const query = params.toString()
         const hash = window.location.hash
-        router.replace(`${pathname}${query ? `?${query}` : ""}${hash}`, { scroll: false })
+        router.replace(buildLogViewerUrl(pathname, query, hash), { scroll: false })
     }, [pathname, router, searchParams])
 
     const updateLineSelection = useCallback((selection: LogLineSelection) => {
@@ -351,6 +353,14 @@ export function LogsViewer({
     }, [jobId])
 
     useEffect(() => {
+        const pendingSearchQuery = pendingSearchQueryRef.current
+        if (pendingSearchQuery !== null) {
+            if (searchQuery === pendingSearchQuery) {
+                pendingSearchQueryRef.current = null
+            }
+            return
+        }
+
         setSearchInput(searchQuery)
     }, [searchQuery])
 
@@ -445,6 +455,7 @@ export function LogsViewer({
     useEffect(() => {
         const timer = setTimeout(() => {
             if (searchInput !== searchQuery) {
+                pendingSearchQueryRef.current = searchInput
                 startSearchTransition(() => {
                     updateSearchQuery(searchInput)
                 })
@@ -560,7 +571,7 @@ export function LogsViewer({
                                         onSelect={() => void copyLogLines(actionSelection)}
                                     >
                                         <Copy />
-                                        Copy line
+                                        {actionSelection.start === actionSelection.end ? "Copy line" : "Copy lines"}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                         disabled={!canCopyPermalink}

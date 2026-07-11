@@ -69,3 +69,11 @@ export const getSelectedLogText = (
 ) => {
     return messages.slice(selection.start - 1, selection.end).join("\n")
 }
+
+export const buildLogViewerUrl = (
+    pathname: string,
+    query: string,
+    fragment: string
+) => {
+    return `${pathname}${query ? `?${query}` : ""}${fragment}`
+}

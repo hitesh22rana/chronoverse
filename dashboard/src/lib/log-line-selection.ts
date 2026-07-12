@@ -99,8 +99,8 @@ export const getNextLogLineSelection = (
 }
 
 export const shouldIgnoreLogRowSelection = (
-    hasTextSelection: boolean,
+    wasPointerDrag: boolean,
     isLineOptionsInteraction: boolean
 ) => {
-    return hasTextSelection || isLineOptionsInteraction
+    return wasPointerDrag || isLineOptionsInteraction
 }

@@ -10,6 +10,7 @@ import {
 import type {
     KeyboardEvent as ReactKeyboardEvent,
     MouseEvent as ReactMouseEvent,
+    PointerEvent as ReactPointerEvent,
 } from "react"
 import {
     usePathname,
@@ -246,6 +247,11 @@ export function LogsViewer({
     const [downloadPopoverOpen, setDownloadPopoverOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
     const searchInputRef = useRef<HTMLInputElement>(null)
+    const rowPointerGestureRef = useRef<{
+        startX: number
+        startY: number
+        didDrag: boolean
+    } | null>(null)
     const pendingSearchQueryRef = useRef<string | null>(null)
     const virtuosoRef = useRef<VirtuosoHandle>(null)
     const deepLinkFetchInFlightRef = useRef(false)
@@ -345,15 +351,42 @@ export function LogsViewer({
     ) => {
         const target = event.target
         const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
-        const textSelection = window.getSelection()
-        const hasTextSelection = Boolean(textSelection && !textSelection.isCollapsed)
+        const wasPointerDrag = Boolean(rowPointerGestureRef.current?.didDrag)
+        rowPointerGestureRef.current = null
 
-        if (shouldIgnoreLogRowSelection(hasTextSelection, isLineOptionsInteraction)) {
+        if (shouldIgnoreLogRowSelection(wasPointerDrag, isLineOptionsInteraction)) {
             return
         }
 
         selectLogLine(lineNumber, event.shiftKey)
     }, [selectLogLine])
+
+    const handleLogRowPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+        const target = event.target
+        if (target instanceof Element && target.closest("[data-line-options]")) {
+            rowPointerGestureRef.current = null
+            return
+        }
+
+        rowPointerGestureRef.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            didDrag: false,
+        }
+    }, [])
+
+    const handleLogRowPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+        const gesture = rowPointerGestureRef.current
+        if (!gesture || gesture.didDrag) {
+            return
+        }
+
+        const deltaX = event.clientX - gesture.startX
+        const deltaY = event.clientY - gesture.startY
+        if (Math.hypot(deltaX, deltaY) >= 4) {
+            gesture.didDrag = true
+        }
+    }, [])
 
     const handleLogRowKeyDown = useCallback((
         lineNumber: number,
@@ -582,6 +615,11 @@ export function LogsViewer({
                 )}
                 data-line-number={lineNumber}
                 data-selected={isSelected || undefined}
+                onPointerDown={handleLogRowPointerDown}
+                onPointerMove={handleLogRowPointerMove}
+                onPointerCancel={() => {
+                    rowPointerGestureRef.current = null
+                }}
                 onClick={(event) => handleLogRowClick(lineNumber, event)}
             >
                 <div className="flex w-9 shrink-0 items-center justify-center" data-line-options>

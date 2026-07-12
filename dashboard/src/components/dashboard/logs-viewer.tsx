@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Virtuoso } from "react-virtuoso"
-import type { VirtuosoHandle } from "react-virtuoso"
+import type { ListRange, VirtuosoHandle } from "react-virtuoso"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -256,6 +256,7 @@ export function LogsViewer({
     const virtuosoRef = useRef<VirtuosoHandle>(null)
     const deepLinkFetchInFlightRef = useRef(false)
     const lastScrolledSelectionRef = useRef("")
+    const pendingScrollSelectionRef = useRef<{ key: string; index: number; correcting: boolean } | null>(null)
     const lastUnavailableSelectionRef = useRef("")
     const [lineSelection, setLineSelection] = useState<LogLineSelection | null>(null)
     const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null)
@@ -445,8 +446,41 @@ export function LogsViewer({
 
     useEffect(() => {
         deepLinkFetchInFlightRef.current = false
+        pendingScrollSelectionRef.current = null
+        lastScrolledSelectionRef.current = ""
         setIsSelectionUnavailable(false)
     }, [datasetKey])
+
+    const handleRenderedRangeChanged = useCallback((range: ListRange) => {
+        const pendingScroll = pendingScrollSelectionRef.current
+        if (!pendingScroll || pendingScroll.correcting || pendingScroll.index < range.startIndex || pendingScroll.index > range.endIndex) {
+            return
+        }
+
+        pendingScroll.correcting = true
+        requestAnimationFrame(() => {
+            if (pendingScrollSelectionRef.current !== pendingScroll) {
+                return
+            }
+
+            virtuosoRef.current?.scrollIntoView({
+                index: pendingScroll.index,
+                align: "start",
+                calculateViewLocation: ({ locationParams }) => ({
+                    ...locationParams,
+                    align: "start",
+                }),
+                done: () => {
+                    if (pendingScrollSelectionRef.current !== pendingScroll) {
+                        return
+                    }
+
+                    pendingScrollSelectionRef.current = null
+                    lastScrolledSelectionRef.current = pendingScroll.key
+                },
+            })
+        })
+    }, [])
 
     useEffect(() => {
         const syncSelectionFromFragment = () => {
@@ -475,10 +509,11 @@ export function LogsViewer({
             setIsSelectionUnavailable(false)
 
             if (lastScrolledSelectionRef.current !== selectionKey) {
-                lastScrolledSelectionRef.current = selectionKey
+                const targetIndex = lineSelection.start - 1
+                pendingScrollSelectionRef.current = { key: selectionKey, index: targetIndex, correcting: false }
                 requestAnimationFrame(() => {
                     virtuosoRef.current?.scrollToIndex({
-                        index: lineSelection.start - 1,
+                        index: targetIndex,
                         align: "start",
                     })
                 })
@@ -879,6 +914,7 @@ export function LogsViewer({
                         totalCount={logs.length}
                         itemContent={LogRow}
                         endReached={handleEndReached}
+                        rangeChanged={handleRenderedRangeChanged}
                         overscan={200}
                         className="flex flex-1 w-full h-full"
                     />

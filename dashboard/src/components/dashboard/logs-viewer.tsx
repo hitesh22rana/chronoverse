@@ -369,6 +369,11 @@ export function LogsViewer({
             return
         }
 
+        if (event.shiftKey && event.button === 0) {
+            event.preventDefault()
+            window.getSelection()?.removeAllRanges()
+        }
+
         rowPointerGestureRef.current = {
             startX: event.clientX,
             startY: event.clientY,

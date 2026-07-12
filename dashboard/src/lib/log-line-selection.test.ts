@@ -82,7 +82,7 @@ describe("log line selection", () => {
         expect(getNextLogLineSelection(2, 7, true)).toEqual({ start: 2, end: 7 })
     })
 
-    it("ignores text selection and line-option interactions", () => {
+    it("ignores pointer drags and line-option interactions", () => {
         expect(shouldIgnoreLogRowSelection(true, false)).toBe(true)
         expect(shouldIgnoreLogRowSelection(false, true)).toBe(true)
         expect(shouldIgnoreLogRowSelection(false, false)).toBe(false)

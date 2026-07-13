@@ -18,6 +18,12 @@ Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events
 
 When `q` is absent, the route performs retained stream filtering. When present, Meilisearch supplies matches and highlight ranges.
 
+## Shareable line selections
+
+The dashboard tracks each log's position within the current descending result set without displaying line numbers. Click a log to store its position in the URL as `#L6`, or Shift-click another log to create a range such as `#L6-L19`. The first selected log exposes actions to copy the selected log text or its permalink. Search and stream filters remain part of a shared URL, so positions resolve against the same filtered or unfiltered result set. Changing either filter clears the current selection because it changes the positioned result set.
+
+Opening a line link loads older cursor pages until the selected range is available, then scrolls to and highlights it. If a requested range extends beyond the available results, the dashboard reports that some selected log lines are unavailable. Running jobs support line selection, but the dashboard enables copying a share link only after the job reaches `COMPLETED`, `FAILED`, or `CANCELED`, because new live logs can change result positions.
+
 ## Raw downloads
 
 `GET .../logs/raw` downloads plain text. Stream and text filters are applied consistently, and search highlights are not rendered into the download.
@@ -29,4 +35,3 @@ Search highlights are handled as structured data rather than trusted HTML. Clien
 ## Error behavior
 
 Retained routes return `412` for unsupported or disabled retention. An already-open SSE response reports equivalent failures through `event: error` frames.
-

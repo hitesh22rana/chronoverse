@@ -8,6 +8,7 @@ import {
     useState,
 } from "react"
 import {
+    usePathname,
     useRouter,
     useSearchParams,
 } from "next/navigation"
@@ -21,6 +22,7 @@ import { toast } from "sonner"
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 
 import { fetchWithAuth } from "@/lib/api-client"
+import { buildLogViewerUrl } from "@/lib/log-line-selection"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
@@ -142,6 +144,7 @@ const downloadFilename = (filename: string, format: DownloadLogsFormat) => {
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
+    const pathname = usePathname()
     const router = useRouter()
     const searchParams = useSearchParams()
 
@@ -182,8 +185,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             params.delete("q")
         }
 
-        router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+        const query = params.toString()
+        router.push(buildLogViewerUrl(pathname, query, ""))
+    }, [pathname, router, searchParams])
 
     // Apply stream filter in URL params
     const applyStreamFilter = useCallback((newStreamFilter: string) => {
@@ -195,8 +199,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             params.delete("stream")
         }
 
-        router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+        const query = params.toString()
+        router.push(buildLogViewerUrl(pathname, query, ""))
+    }, [pathname, router, searchParams])
 
     // Build query parameters for the search job logs request
     const getSearchQueryParams = useMemo(() => {

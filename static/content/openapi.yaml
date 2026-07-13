@@ -414,6 +414,10 @@ components:
         max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
     BuildStatus: {type: string, enum: [QUEUED, STARTED, COMPLETED, FAILED, CANCELED]}
     JobStatus: {type: string, enum: [PENDING, QUEUED, RUNNING, COMPLETED, FAILED, CANCELED]}
+    TerminalReasonCode:
+      type: string
+      description: Normalized user-safe reason for a FAILED or CANCELED job
+      enum: [TIME_LIMIT_EXCEEDED, NON_ZERO_EXIT, IMAGE_PULL_FAILED, UNEXPECTED_STATUS_CODE, EXECUTION_FAILED, SYSTEM_ERROR, FAILURE_REASON_UNAVAILABLE, WORKFLOW_TERMINATED, WORKFLOW_UPDATED, CANCELLATION_REASON_UNAVAILABLE]
     IdentifierResponse:
       type: object
       required: [id]
@@ -454,6 +458,8 @@ components:
         completed_at: {type: string, format: date-time}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+        status_reason_code: {$ref: '#/components/schemas/TerminalReasonCode'}
+        status_reason_message: {type: string, description: Canonical safe reason message; present only for FAILED and CANCELED jobs}
     JobDetail:
       type: object
       properties:
@@ -466,6 +472,8 @@ components:
         completed_at: {type: string, format: date-time}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+        status_reason_code: {$ref: '#/components/schemas/TerminalReasonCode'}
+        status_reason_message: {type: string, description: Canonical safe reason message; present only for FAILED and CANCELED jobs}
     Log:
       type: object
       properties:

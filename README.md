@@ -24,7 +24,7 @@ analytics into one self-hosted stack.
   - `CONTAINER`: runs containerized workloads and can retain stdout/stderr logs.
 - **Replay-safe execution**: idempotency keys, workflow generations, deterministic event keys, transactional outbox delivery, durable job leases, Redis-coordinated Docker image pulls, worker retries, and stale-event guards.
 - **Runtime-aware Docker execution**: `runtime-agent` registers each Docker-capable node, `jobs-service` assigns runtime ownership during claim, and workers talk directly to the selected Docker endpoint for execution, logs, and cleanup.
-- **Job execution lifecycle**: queued, running, completed, failed, and canceled jobs with automatic retry handling for system failures.
+- **Job execution lifecycle**: queued, running, completed, failed, and canceled jobs with automatic retry handling for system failures and safe explanations for terminal failures and cancellations.
 - **Retained job logs**: ClickHouse-backed logs, Meilisearch-backed search, raw log download, stream filtering, shareable line selections, and Server-Sent Events for live output.
 - **Retention controls**: per-workflow log retention with explicit behavior for non-log-producing or retention-disabled workflows.
 - **Notifications and analytics**: user notifications, workflow/job analytics, retained log counts, and execution duration summaries.
@@ -165,6 +165,7 @@ Important API notes:
 - Retry-prone mutations require an `Idempotency-Key` header.
 - `CONTAINER` workflows can retain and search logs.
 - `HEARTBEAT` workflows do not generate execution logs.
+- Job list and detail responses include normalized, user-safe reason metadata for failed and canceled jobs.
 - Retained log read/search APIs return HTTP `412 Precondition Failed` when retention is disabled for a workflow; live SSE streams report stream-open failures as `event: error`.
 - Production Nginx exposes the API below `/api/`; development exposes the server directly.
 

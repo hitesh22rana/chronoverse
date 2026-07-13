@@ -21,9 +21,9 @@ message ScheduleJobResponse {
 
 // UpdateJobStatusRequest contains the details needed to update the status of a job.
 message UpdateJobStatusRequest {
-  string id           = 1; // ID of the job
-  string container_id = 2; // ID of the container (if applicable)
-  string status       = 3; // Status of the job
+  string id                   = 1; // ID of the job
+  string container_id         = 2; // ID of the container (if applicable)
+  string status               = 3; // Status of the job
   string terminal_reason_code = 4; // Required cancellation reason when status is CANCELED
 }
 
@@ -96,11 +96,11 @@ message CompleteJobResponse {}
 
 // FailJobRequest contains the details needed to fail a claimed job.
 message FailJobRequest {
-  string id            = 1; // ID of the job
-  string lease_token   = 2; // Current lease token
-  string failure_kind  = 3; // USER or SYSTEM
-  string error_code    = 4; // Error code
-  string error_message = 5; // Error message
+  string id                   = 1; // ID of the job
+  string lease_token          = 2; // Current lease token
+  string failure_kind         = 3; // USER or SYSTEM
+  string error_code           = 4; // Error code
+  string error_message        = 5; // Error message
   string terminal_reason_code = 6; // Normalized failure reason
 }
 
@@ -109,8 +109,8 @@ message FailJobResponse {}
 
 // CancelClaimedJobRequest contains the details needed to cancel a claimed job.
 message CancelClaimedJobRequest {
-  string id          = 1; // ID of the job
-  string lease_token = 2; // Current lease token
+  string id                   = 1; // ID of the job
+  string lease_token          = 2; // Current lease token
   string terminal_reason_code = 3; // Normalized cancellation reason
 }
 
@@ -131,16 +131,16 @@ message ReleaseJobForRetryResponse {}
 
 // ExpiredJobLease contains a running job whose lease has expired.
 message ExpiredJobLease {
-  string id            = 1; // ID of the job
-  string workflow_id   = 2; // ID of the workflow
-  string user_id       = 3; // ID of the user
-  string container_id  = 4; // Container ID, if available
-  string lease_token   = 5; // Expired lease token
-  string leased_by     = 6; // Worker that held the lease
-  string trigger       = 7; // Trigger type of the job
-  string scheduled_at  = 8; // Time the job was scheduled to run
-  int32  attempts      = 9; // Number of execution attempts
-  bool   log_retention = 10; // Whether logs should be durably retained
+  string id                  = 1; // ID of the job
+  string workflow_id         = 2; // ID of the workflow
+  string user_id             = 3; // ID of the user
+  string container_id        = 4; // Container ID, if available
+  string lease_token         = 5; // Expired lease token
+  string leased_by           = 6; // Worker that held the lease
+  string trigger             = 7; // Trigger type of the job
+  string scheduled_at        = 8; // Time the job was scheduled to run
+  int32  attempts            = 9; // Number of execution attempts
+  bool   log_retention       = 10; // Whether logs should be durably retained
   string runtime_node_id     = 11; // Runtime node that owns the container
   string runtime_endpoint    = 12; // Docker endpoint for the owning runtime node
   bool   runtime_unavailable = 13; // Whether the owning runtime is considered unavailable
@@ -167,16 +167,16 @@ message GetJobRequest {
 
 // GetJobResponse contains the result of a job retrieval attempt.
 message GetJobResponse {
-  string id           = 1; // ID of the job
-  string workflow_id  = 2; // ID of the workflow
-  string status       = 3; // Status of the job
-  string trigger      = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
-  string scheduled_at = 5; // Time the job is scheduled to run
-  string started_at   = 6; // Time the job was started
-  string completed_at = 7; // Time the job was completed
-  string created_at   = 8; // Time the job was created
-  string updated_at   = 9; // Time the job was last updated
-  string status_reason_code = 10; // Safe terminal reason code (FAILED/CANCELED only)
+  string id                    = 1; // ID of the job
+  string workflow_id           = 2; // ID of the workflow
+  string status                = 3; // Status of the job
+  string trigger               = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string scheduled_at          = 5; // Time the job is scheduled to run
+  string started_at            = 6; // Time the job was started
+  string completed_at          = 7; // Time the job was completed
+  string created_at            = 8; // Time the job was created
+  string updated_at            = 9; // Time the job was last updated
+  string status_reason_code    = 10; // Safe terminal reason code (FAILED/CANCELED only)
   string status_reason_message = 11; // Safe terminal reason message (FAILED/CANCELED only)
 }
 
@@ -288,20 +288,20 @@ message ListJobsRequest {
 
 // JobsResponse contains the result of a job listing attempt.
 message JobsResponse {
-  string id           = 1; // ID of the job
-  string workflow_id  = 2; // ID of the workflow
-  string container_id = 3; // ID of the container (if applicable)
-  string status       = 4; // Status of the job
-  string trigger      = 5; // Trigger type of the job (AUTOMATIC or MANUAL)
-  string scheduled_at = 6; // Time the job is scheduled to run
-  string started_at   = 7; // Time the job was started
-  string completed_at = 8; // Time the job was completed
-  string created_at   = 9; // Time the job was created
-  string updated_at   = 10; // Time the job was last updated
-  int32  attempts     = 11; // Number of execution attempts
-  string runtime_node_id  = 12; // Runtime node that owns the container
-  string runtime_endpoint = 13; // Docker endpoint snapshot for the owning runtime node
-  string status_reason_code = 14; // Safe terminal reason code (FAILED/CANCELED only)
+  string id                    = 1; // ID of the job
+  string workflow_id           = 2; // ID of the workflow
+  string container_id          = 3; // ID of the container (if applicable)
+  string status                = 4; // Status of the job
+  string trigger               = 5; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string scheduled_at          = 6; // Time the job is scheduled to run
+  string started_at            = 7; // Time the job was started
+  string completed_at          = 8; // Time the job was completed
+  string created_at            = 9; // Time the job was created
+  string updated_at            = 10; // Time the job was last updated
+  int32  attempts              = 11; // Number of execution attempts
+  string runtime_node_id       = 12; // Runtime node that owns the container
+  string runtime_endpoint      = 13; // Docker endpoint snapshot for the owning runtime node
+  string status_reason_code    = 14; // Safe terminal reason code (FAILED/CANCELED only)
   string status_reason_message = 15; // Safe terminal reason message (FAILED/CANCELED only)
 }
 

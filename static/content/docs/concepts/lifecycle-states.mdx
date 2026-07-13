@@ -14,6 +14,8 @@ A build may instead end as `FAILED` or `CANCELED`. Generation checks tie updates
 
 Terminal alternatives are `FAILED` and `CANCELED`. System failures may return eligible work to a retryable state before the retry limit is exhausted.
 
+Every new `FAILED` or `CANCELED` transition stores its normalized reason in the same database update as the status. Returning a job to a retryable state clears any terminal reason so stale diagnostics cannot appear as the final outcome.
+
 ## Protected transitions
 
 Once a job is claimed, mutating RPCs require the current lease token. A stale worker cannot complete a job after another worker has recovered and reclaimed it.
@@ -21,4 +23,3 @@ Once a job is claimed, mutating RPCs require the current lease token. A stale wo
 ## Terminal workflow events
 
 Job completion and failure can update workflow failure counters, rescheduling metadata, notifications, and analytics. Deterministic event identifiers make those side effects safe to replay.
-

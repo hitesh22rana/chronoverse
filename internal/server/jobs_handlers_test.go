@@ -52,6 +52,48 @@ func (f *fakeJobsServiceClient) SearchJobLogs(_ context.Context, req *jobspb.Sea
 	return &jobspb.GetJobLogsResponse{}, nil
 }
 
+func TestHandleGetJobTerminalReasonSerialization(t *testing.T) {
+	tests := []struct {
+		name       string
+		response   *jobspb.GetJobResponse
+		wantReason bool
+	}{
+		{
+			name:       "failed reason is serialized",
+			response:   &jobspb.GetJobResponse{Status: "FAILED", StatusReasonCode: "NON_ZERO_EXIT", StatusReasonMessage: "Process exited with non zero exit code"},
+			wantReason: true,
+		},
+		{
+			name:       "completed reason fields are omitted",
+			response:   &jobspb.GetJobResponse{Status: "COMPLETED"},
+			wantReason: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{jobsClient: &fakeJobsServiceClient{getJobResponse: tt.response}}
+			res := httptest.NewRecorder()
+			s.handleGetJob(res, newJobLogsHandlerRequest("/workflows/workflow_id/jobs/job_id"))
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d", res.Code)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			_, hasCode := body["status_reason_code"]
+			_, hasMessage := body["status_reason_message"]
+			if hasCode != tt.wantReason || hasMessage != tt.wantReason {
+				t.Fatalf("reason presence = %v/%v, body=%s", hasCode, hasMessage, res.Body.String())
+			}
+			if _, exposed := body["last_error_message"]; exposed {
+				t.Fatal("raw diagnostic field was exposed")
+			}
+		})
+	}
+}
+
 func TestHandleGetJobLogsCacheControl(t *testing.T) {
 	tests := []struct {
 		name           string

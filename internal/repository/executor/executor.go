@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +27,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 const (
@@ -408,8 +408,9 @@ func (r *Repository) cancelClaimedJob(ctx context.Context, claim *jobspb.ClaimJo
 	}
 
 	_, err = r.svc.Jobs.CancelClaimedJob(authCtx, &jobspb.CancelClaimedJobRequest{
-		Id:         claim.GetId(),
-		LeaseToken: claim.GetLeaseToken(),
+		Id:                 claim.GetId(),
+		LeaseToken:         claim.GetLeaseToken(),
+		TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 	})
 	return err
 }
@@ -461,11 +462,12 @@ func (r *Repository) failClaimedJob(
 	}
 
 	_, err = r.svc.Jobs.FailJob(authCtx, &jobspb.FailJobRequest{
-		Id:           claim.GetId(),
-		LeaseToken:   claim.GetLeaseToken(),
-		FailureKind:  decision.Kind,
-		ErrorCode:    status.Code(executeErr).String(),
-		ErrorMessage: executeErr.Error(),
+		Id:                 claim.GetId(),
+		LeaseToken:         claim.GetLeaseToken(),
+		FailureKind:        decision.Kind,
+		ErrorCode:          status.Code(executeErr).String(),
+		ErrorMessage:       executeErr.Error(),
+		TerminalReasonCode: decision.ReasonCode,
 	})
 	if err != nil {
 		return err
@@ -523,29 +525,26 @@ func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, co
 }
 
 type executionFailureDecision struct {
-	Retryable bool
-	Kind      string
+	Retryable  bool
+	Kind       string
+	ReasonCode string
 }
 
 func classifyExecutionFailure(err error) executionFailureDecision {
 	if err == nil {
-		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString()}
+		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString(), ReasonCode: terminalreason.ExecutionFailed.String()}
+	}
+	if reason, ok := terminalreason.FromError(err); ok {
+		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString(), ReasonCode: reason.String()}
 	}
 
 	switch status.Code(err) { //nolint:exhaustive // Only retryable infrastructure codes need special handling here.
 	case codes.Canceled, codes.Internal, codes.ResourceExhausted, codes.Unavailable:
-		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString()}
+		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString(), ReasonCode: terminalreason.SystemError.String()}
 	case codes.DeadlineExceeded:
-		message := strings.ToLower(err.Error())
-		if strings.Contains(message, "context canceled") {
-			return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString()}
-		}
-		if strings.Contains(message, "container execution timed out") {
-			return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString()}
-		}
-		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString()}
+		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString(), ReasonCode: terminalreason.SystemError.String()}
 	default:
-		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString()}
+		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString(), ReasonCode: terminalreason.ExecutionFailed.String()}
 	}
 }
 

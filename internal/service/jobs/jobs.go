@@ -27,6 +27,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 const (
@@ -40,14 +41,14 @@ const (
 // Repository provides job related operations.
 type Repository interface {
 	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error)
-	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error
+	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus, terminalReasonCode string) error
 	ClaimJob(ctx context.Context, jobID, workflowID, workerID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobsmodel.ClaimedJob, bool, string, error)
 	GetReadyRuntimeNode(ctx context.Context) (*jobsmodel.RuntimeNode, error)
 	RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) error
 	AttachJobContainer(ctx context.Context, jobID, leaseToken, containerID, runtimeNodeID string) error
 	CompleteJob(ctx context.Context, jobID, leaseToken string) error
-	FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage string) error
-	CancelClaimedJob(ctx context.Context, jobID, leaseToken string) error
+	FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode string) error
+	CancelClaimedJob(ctx context.Context, jobID, leaseToken, terminalReasonCode string) error
 	ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage string) error
 	RecoverExpiredJobLeases(ctx context.Context, batchSize int32, workerID string, leaseDuration time.Duration) ([]*jobsmodel.ExpiredJobLease, error)
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
@@ -158,9 +159,10 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 
 // UpdateJobStatusRequest holds the request parameters for updating a scheduled job status.
 type UpdateJobStatusRequest struct {
-	ID          string `validate:"required"`
-	ContainerID string `validate:"omitempty"`
-	Status      string `validate:"required"`
+	ID                 string `validate:"required"`
+	ContainerID        string `validate:"omitempty"`
+	Status             string `validate:"required"`
+	TerminalReasonCode string `validate:"omitempty"`
 }
 
 // UpdateJobStatus updates the scheduled job status.
@@ -176,9 +178,10 @@ func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStat
 
 	// Validate the request
 	err = s.validator.Struct(&UpdateJobStatusRequest{
-		ID:          req.GetId(),
-		ContainerID: req.GetContainerId(),
-		Status:      req.GetStatus(),
+		ID:                 req.GetId(),
+		ContainerID:        req.GetContainerId(),
+		Status:             req.GetStatus(),
+		TerminalReasonCode: req.GetTerminalReasonCode(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -190,6 +193,14 @@ func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStat
 	if err != nil {
 		return err
 	}
+	if req.GetStatus() == jobsmodel.JobStatusFailed.ToString() {
+		return status.Error(codes.InvalidArgument, "FAILED transitions must use FailJob")
+	}
+	if req.GetStatus() == jobsmodel.JobStatusCanceled.ToString() {
+		if validationErr := terminalreason.ValidateCancellation(req.GetTerminalReasonCode()); validationErr != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid terminal reason: %v", validationErr)
+		}
+	}
 
 	// Update the scheduled job status
 	err = s.repo.UpdateJobStatus(
@@ -197,6 +208,7 @@ func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStat
 		req.GetId(),
 		req.GetContainerId(),
 		req.GetStatus(),
+		req.GetTerminalReasonCode(),
 	)
 
 	return err
@@ -356,16 +368,15 @@ func (s *Service) CompleteJob(ctx context.Context, req *jobspb.CompleteJobReques
 
 // FailJobRequest holds the request parameters for failing a claimed job.
 type FailJobRequest struct {
-	ID           string `validate:"required"`
-	LeaseToken   string `validate:"required"`
-	FailureKind  string `validate:"required"`
-	ErrorCode    string `validate:"omitempty"`
-	ErrorMessage string `validate:"omitempty"`
+	ID                 string `validate:"required"`
+	LeaseToken         string `validate:"required"`
+	FailureKind        string `validate:"required"`
+	ErrorCode          string `validate:"omitempty"`
+	ErrorMessage       string `validate:"omitempty"`
+	TerminalReasonCode string `validate:"required"`
 }
 
 // FailJob marks a running claimed job as failed.
-//
-//nolint:dupl // Lease terminal methods intentionally share validation and tracing shape.
 func (s *Service) FailJob(ctx context.Context, req *jobspb.FailJobRequest) (err error) {
 	ctx, span := s.tp.Start(ctx, "Service.FailJob")
 	defer func() {
@@ -377,11 +388,12 @@ func (s *Service) FailJob(ctx context.Context, req *jobspb.FailJobRequest) (err 
 	}()
 
 	err = s.validator.Struct(&FailJobRequest{
-		ID:           req.GetId(),
-		LeaseToken:   req.GetLeaseToken(),
-		FailureKind:  req.GetFailureKind(),
-		ErrorCode:    req.GetErrorCode(),
-		ErrorMessage: req.GetErrorMessage(),
+		ID:                 req.GetId(),
+		LeaseToken:         req.GetLeaseToken(),
+		FailureKind:        req.GetFailureKind(),
+		ErrorCode:          req.GetErrorCode(),
+		ErrorMessage:       req.GetErrorMessage(),
+		TerminalReasonCode: req.GetTerminalReasonCode(),
 	})
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -389,8 +401,18 @@ func (s *Service) FailJob(ctx context.Context, req *jobspb.FailJobRequest) (err 
 	if err := validateFailureKind(req.GetFailureKind()); err != nil {
 		return err
 	}
+	if err := terminalreason.ValidateFailure(req.GetTerminalReasonCode()); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid terminal reason: %v", err)
+	}
 
-	return s.repo.FailJob(ctx, req.GetId(), req.GetLeaseToken(), req.GetFailureKind(), req.GetErrorCode(), req.GetErrorMessage())
+	return s.repo.FailJob(ctx, req.GetId(), req.GetLeaseToken(), req.GetFailureKind(), req.GetErrorCode(), req.GetErrorMessage(), req.GetTerminalReasonCode())
+}
+
+// CancelClaimedJobRequest holds the request parameters for canceling a claimed job.
+type CancelClaimedJobRequest struct {
+	ID                 string `validate:"required"`
+	LeaseToken         string `validate:"required"`
+	TerminalReasonCode string `validate:"required"`
 }
 
 // CancelClaimedJob cancels a running claimed job.
@@ -404,12 +426,16 @@ func (s *Service) CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaime
 		span.End()
 	}()
 
-	err = s.validator.Struct(&CompleteJobRequest{ID: req.GetId(), LeaseToken: req.GetLeaseToken()})
+	err = s.validator.Struct(&CancelClaimedJobRequest{ID: req.GetId(), LeaseToken: req.GetLeaseToken(), TerminalReasonCode: req.GetTerminalReasonCode()})
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
 
-	return s.repo.CancelClaimedJob(ctx, req.GetId(), req.GetLeaseToken())
+	if err := terminalreason.ValidateCancellation(req.GetTerminalReasonCode()); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid terminal reason: %v", err)
+	}
+
+	return s.repo.CancelClaimedJob(ctx, req.GetId(), req.GetLeaseToken(), req.GetTerminalReasonCode())
 }
 
 // ReleaseJobForRetryRequest holds the request parameters for retrying a claimed job.
@@ -422,8 +448,6 @@ type ReleaseJobForRetryRequest struct {
 }
 
 // ReleaseJobForRetry releases a running claimed job back to pending.
-//
-//nolint:dupl // Lease terminal methods intentionally share validation and tracing shape.
 func (s *Service) ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobForRetryRequest) (err error) {
 	ctx, span := s.tp.Start(ctx, "Service.ReleaseJobForRetry")
 	defer func() {

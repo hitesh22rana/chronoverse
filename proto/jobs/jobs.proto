@@ -24,6 +24,7 @@ message UpdateJobStatusRequest {
   string id           = 1; // ID of the job
   string container_id = 2; // ID of the container (if applicable)
   string status       = 3; // Status of the job
+  string terminal_reason_code = 4; // Required cancellation reason when status is CANCELED
 }
 
 // UpdateJobStatusResponse contains the result of a job status update attempt.
@@ -100,6 +101,7 @@ message FailJobRequest {
   string failure_kind  = 3; // USER or SYSTEM
   string error_code    = 4; // Error code
   string error_message = 5; // Error message
+  string terminal_reason_code = 6; // Normalized failure reason
 }
 
 // FailJobResponse contains the result of failing a job.
@@ -109,6 +111,7 @@ message FailJobResponse {}
 message CancelClaimedJobRequest {
   string id          = 1; // ID of the job
   string lease_token = 2; // Current lease token
+  string terminal_reason_code = 3; // Normalized cancellation reason
 }
 
 // CancelClaimedJobResponse contains the result of canceling a claimed job.
@@ -173,6 +176,8 @@ message GetJobResponse {
   string completed_at = 7; // Time the job was completed
   string created_at   = 8; // Time the job was created
   string updated_at   = 9; // Time the job was last updated
+  string status_reason_code = 10; // Safe terminal reason code (FAILED/CANCELED only)
+  string status_reason_message = 11; // Safe terminal reason message (FAILED/CANCELED only)
 }
 
 // GetJobByIDRequest contains the details needed to get a job by ID.
@@ -296,6 +301,8 @@ message JobsResponse {
   int32  attempts     = 11; // Number of execution attempts
   string runtime_node_id  = 12; // Runtime node that owns the container
   string runtime_endpoint = 13; // Docker endpoint snapshot for the owning runtime node
+  string status_reason_code = 14; // Safe terminal reason code (FAILED/CANCELED only)
+  string status_reason_message = 15; // Safe terminal reason message (FAILED/CANCELED only)
 }
 
 message ListJobsResponse {

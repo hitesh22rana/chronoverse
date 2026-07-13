@@ -18,6 +18,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	containerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -132,42 +133,49 @@ func TestClassifyExecutionFailure(t *testing.T) {
 		err       error
 		retryable bool
 		kind      string
+		reason    string
 	}{
 		{
 			name:      "docker unavailable is retryable system failure",
 			err:       status.Error(codes.Unavailable, "docker daemon unavailable"),
 			retryable: true,
 			kind:      jobsmodel.FailureKindSystem.ToString(),
+			reason:    terminalreason.SystemError.String(),
 		},
 		{
 			name:      "workflow timeout is user failure",
-			err:       status.Error(codes.DeadlineExceeded, "container execution timed out: context deadline exceeded"),
+			err:       terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Error(codes.DeadlineExceeded, "container execution timed out: context deadline exceeded")),
 			retryable: false,
 			kind:      jobsmodel.FailureKindUser.ToString(),
+			reason:    terminalreason.TimeLimitExceeded.String(),
 		},
 		{
 			name:      "canceled container context is retryable system failure",
 			err:       status.Error(codes.DeadlineExceeded, "container execution timed out: context canceled"),
 			retryable: true,
 			kind:      jobsmodel.FailureKindSystem.ToString(),
+			reason:    terminalreason.SystemError.String(),
 		},
 		{
 			name:      "canceled execution is retryable system failure",
 			err:       status.Error(codes.Canceled, "lease renewal failed"),
 			retryable: true,
 			kind:      jobsmodel.FailureKindSystem.ToString(),
+			reason:    terminalreason.SystemError.String(),
 		},
 		{
 			name:      "image pull lock exhaustion is retryable system failure",
 			err:       status.Error(codes.ResourceExhausted, "timed out waiting for image pull lock"),
 			retryable: true,
 			kind:      jobsmodel.FailureKindSystem.ToString(),
+			reason:    terminalreason.SystemError.String(),
 		},
 		{
 			name:      "non-zero exit is user failure",
-			err:       status.Error(codes.Aborted, "container exited with non-zero code: 1"),
+			err:       terminalreason.Wrap(terminalreason.NonZeroExit, status.Error(codes.Aborted, "container exited with non-zero code: 1")),
 			retryable: false,
 			kind:      jobsmodel.FailureKindUser.ToString(),
+			reason:    terminalreason.NonZeroExit.String(),
 		},
 	}
 
@@ -176,8 +184,8 @@ func TestClassifyExecutionFailure(t *testing.T) {
 			t.Parallel()
 
 			got := classifyExecutionFailure(tt.err)
-			if got.Retryable != tt.retryable || got.Kind != tt.kind {
-				t.Fatalf("classifyExecutionFailure() = %+v, want retryable=%v kind=%s", got, tt.retryable, tt.kind)
+			if got.Retryable != tt.retryable || got.Kind != tt.kind || got.ReasonCode != tt.reason {
+				t.Fatalf("classifyExecutionFailure() = %+v, want retryable=%v kind=%s reason=%s", got, tt.retryable, tt.kind, tt.reason)
 			}
 		})
 	}

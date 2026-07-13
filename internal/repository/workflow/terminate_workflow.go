@@ -18,6 +18,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 const (
@@ -42,7 +43,11 @@ func (r *Repository) cancelJobs(
 			continue
 		}
 
-		canceled, err := r.cancelJobRecord(parentCtx, job.GetId())
+		reason := terminalreason.WorkflowUpdated
+		if workflow.GetTerminatedAt() != "" {
+			reason = terminalreason.WorkflowTerminated
+		}
+		canceled, err := r.cancelJobRecord(parentCtx, job.GetId(), reason.String())
 		if err != nil {
 			return nil, err
 		}
@@ -59,7 +64,7 @@ func (r *Repository) cancelJobs(
 	return cleanupJobs, nil
 }
 
-func (r *Repository) cancelJobRecord(parentCtx context.Context, jobID string) (bool, error) {
+func (r *Repository) cancelJobRecord(parentCtx context.Context, jobID, terminalReasonCode string) (bool, error) {
 	// Issue necessary headers and tokens for authorization.
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
@@ -67,8 +72,9 @@ func (r *Repository) cancelJobRecord(parentCtx context.Context, jobID string) (b
 	}
 
 	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
-		Id:     jobID,
-		Status: jobsmodel.JobStatusCanceled.ToString(),
+		Id:                 jobID,
+		Status:             jobsmodel.JobStatusCanceled.ToString(),
+		TerminalReasonCode: terminalReasonCode,
 	}); err != nil {
 		if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.NotFound {
 			return false, nil

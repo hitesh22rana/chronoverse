@@ -1,0 +1,2 @@
+ALTER TABLE jobs
+    ADD COLUMN IF NOT EXISTS terminal_reason_code TEXT DEFAULT NULL;

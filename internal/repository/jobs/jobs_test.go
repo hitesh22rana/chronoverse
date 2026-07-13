@@ -36,6 +36,7 @@ func TestClaimJobQueryWaitsForRuntimeRowLock(t *testing.T) {
 	assertContains(t, query, "ORDER BY rn.running_jobs ASC, rn.last_heartbeat_at DESC, rn.id ASC")
 	assertContains(t, query, "FOR UPDATE")
 	assertNotContains(t, query, "SKIP LOCKED")
+	assertContains(t, query, "terminal_reason_code = NULL")
 }
 
 func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {
@@ -77,6 +78,7 @@ func TestReleaseJobForRetryQueryCarriesPreviousRuntimeOwner(t *testing.T) {
 	assertContains(t, query, "RETURNING target.runtime_node_id AS previous_runtime_node_id")
 	assertContains(t, query, "released.previous_runtime_node_id IS NOT NULL")
 	assertContains(t, query, "rn.id = released.previous_runtime_node_id")
+	assertContains(t, query, "terminal_reason_code = NULL")
 }
 
 func TestRecoverExpiredJobLeasesQueryPrefersStoredRuntimeEndpoint(t *testing.T) {

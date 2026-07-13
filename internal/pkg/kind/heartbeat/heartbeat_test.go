@@ -15,6 +15,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 func TestNew(t *testing.T) {
@@ -95,6 +96,7 @@ func TestHeartBeat_Execute(t *testing.T) {
 		expectedStatusCode int
 		headers            map[string][]string
 		wantErr            bool
+		wantReason         terminalreason.Code
 		setup              func() *httptest.Server
 	}{
 		{
@@ -155,6 +157,7 @@ func TestHeartBeat_Execute(t *testing.T) {
 			expectedStatusCode: http.StatusOK,
 			headers:            nil,
 			wantErr:            true,
+			wantReason:         terminalreason.UnexpectedStatusCode,
 			setup: func() *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNotFound)
@@ -168,6 +171,7 @@ func TestHeartBeat_Execute(t *testing.T) {
 			expectedStatusCode: http.StatusOK,
 			headers:            nil,
 			wantErr:            true,
+			wantReason:         terminalreason.UnexpectedStatusCode,
 			setup: func() *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusInternalServerError)
@@ -190,6 +194,7 @@ func TestHeartBeat_Execute(t *testing.T) {
 			expectedStatusCode: http.StatusOK,
 			headers:            nil,
 			wantErr:            true,
+			wantReason:         terminalreason.TimeLimitExceeded,
 			setup: func() *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					time.Sleep(10 * time.Millisecond) // Sleep longer than timeout
@@ -204,6 +209,7 @@ func TestHeartBeat_Execute(t *testing.T) {
 			expectedStatusCode: http.StatusOK,
 			headers:            nil,
 			wantErr:            true,
+			wantReason:         terminalreason.UnexpectedStatusCode,
 			setup: func() *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNotFound)
@@ -232,6 +238,11 @@ func TestHeartBeat_Execute(t *testing.T) {
 				assert.Error(t, gotErr)
 			} else {
 				assert.NoError(t, gotErr)
+			}
+			if tt.wantReason != "" {
+				reason, ok := terminalreason.FromError(gotErr)
+				assert.True(t, ok)
+				assert.Equal(t, tt.wantReason, reason)
 			}
 		})
 	}

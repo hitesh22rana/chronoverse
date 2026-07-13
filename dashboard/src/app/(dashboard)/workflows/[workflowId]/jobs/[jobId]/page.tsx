@@ -21,11 +21,11 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { LogsViewer } from "@/components/dashboard/logs-viewer"
+import { JobStatusBadge } from "@/components/dashboard/job-status-badge"
 
 import { useJobDetails } from "@/hooks/use-job-details"
 
-import { cn } from "@/lib/utils"
-import { getStatusMeta, getStatusLabel } from "@/lib/status"
+import { getTerminalReason } from "@/lib/terminal-reason"
 
 export default function JobDetailsAndLogsPage() {
     const { workflowId, jobId } = useParams() as { workflowId: string, jobId: string }
@@ -105,17 +105,10 @@ export default function JobDetailsAndLogsPage() {
                         <div className="flex items-center justify-between">
                             <CardTitle>Job Details</CardTitle>
                             {job ? (
-                                (() => {
-                                    const meta = getStatusMeta(job.status)
-                                    const Icon = meta.icon
-                                    return (
-                                        <Badge className={cn(meta.badgeClass, "flex items-center gap-1 px-2 py-1")}
-                                        >
-                                            <Icon className={cn("h-4 w-4", meta.iconClass)} />
-                                            {getStatusLabel(job.status, "job")}
-                                        </Badge>
-                                    )
-                                })()
+                                <JobStatusBadge
+                                    status={job.status}
+                                    reasonMessage={job.status_reason_message}
+                                />
                             ) : (
                                 <Badge className="bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-900/30 dark:text-gray-400 dark:border-gray-800/30 h-6.5">
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -151,6 +144,16 @@ export default function JobDetailsAndLogsPage() {
                                 <div className="space-y-3">
                                     <h3 className="font-medium text-sm">Timeline</h3>
                                     <div className="space-y-2">
+                                        {getTerminalReason(job.status, job.status_reason_message) && (
+                                            <div className="flex justify-between gap-6 text-sm">
+                                                <span className="text-muted-foreground">
+                                                    {job.status === "FAILED" ? "Failure reason:" : "Cancellation reason:"}
+                                                </span>
+                                                <span className="text-right">
+                                                    {getTerminalReason(job.status, job.status_reason_message)}
+                                                </span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between text-sm">
                                             <span className="text-muted-foreground">Created:</span>
                                             <span>{format(new Date(job.created_at), "MMM d, yyyy HH:mm:ss")}</span>

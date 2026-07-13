@@ -17,6 +17,8 @@ export type Job = {
     completed_at?: string
     created_at: string
     updated_at: string
+    status_reason_code?: string
+    status_reason_message?: string
 }
 
 const refetchableJobStatus = ['PENDING', 'QUEUED', 'RUNNING']

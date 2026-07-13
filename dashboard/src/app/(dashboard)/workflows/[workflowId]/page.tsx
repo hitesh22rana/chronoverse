@@ -68,6 +68,7 @@ import { EmptyState } from "@/components/dashboard/empty-state"
 import { UpdateWorkflowDialog } from "@/components/dashboard/update-workflow-dialog"
 import { TerminateWorkflowDialog } from "@/components/dashboard/terminate-workflow-dialog"
 import { DeleteWorkflowDialog } from "@/components/dashboard/delete-workflow-dialog"
+import { JobStatusBadge } from "@/components/dashboard/job-status-badge"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { useWorkflowJobs, Job } from "@/hooks/use-workflow-jobs"
@@ -800,14 +801,15 @@ function WorkflowDetailsSkeleton() {
 }
 
 function JobCard({ job }: { job: Job }) {
-    const statusMeta = getStatusMeta(job.status)
-    const StatusIcon = statusMeta.icon
+    const [isReasonVisible, setIsReasonVisible] = useState(false)
 
     return (
         <Link
             href={`/workflows/${job.workflow_id}/jobs/${job.id}`}
             prefetch={false}
             className="block h-full relative"
+            onFocus={() => setIsReasonVisible(true)}
+            onBlur={() => setIsReasonVisible(false)}
         >
             <Card className="overflow-hidden">
                 <div className="absolute top-0.5 right-0.5 rotate-12 border-b border-b-amber-50">
@@ -819,16 +821,12 @@ function JobCard({ job }: { job: Job }) {
                 </div>
                 <CardHeader className="flex md:items-center items-start justify-between">
                     <div className="flex md:flex-row flex-col justify-start md:items-center items-start gap-2">
-                        <Badge
-                            variant="outline"
-                            className={cn(
-                                "px-2 py-1 font-medium flex items-center gap-1",
-                                statusMeta.badgeClass
-                            )}
-                        >
-                            <StatusIcon className={cn("h-3 w-3", statusMeta.iconClass)} />
-                            <span className="text-xs">{getStatusLabel(job.status, "job")}</span>
-                        </Badge>
+                        <JobStatusBadge
+                            status={job.status}
+                            reasonMessage={job.status_reason_message}
+                            revealReason={isReasonVisible}
+                            className="font-medium"
+                        />
                         <span className="text-sm font-medium md:max-w-full max-w-44 w-full truncate">Job: {job.id}</span>
                     </div>
                     <span className="text-xs text-muted-foreground">

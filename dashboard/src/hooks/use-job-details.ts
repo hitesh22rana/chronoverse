@@ -12,6 +12,7 @@ export type Job = {
     id: string
     workflow_id: string
     status: 'PENDING' | 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED'
+    trigger: 'AUTOMATIC' | 'MANUAL'
     scheduled_at: string
     started_at?: string
     completed_at?: string

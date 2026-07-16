@@ -7,8 +7,9 @@ import { format, formatDistanceToNow } from "date-fns"
 import {
     RefreshCw,
     ArrowLeft,
-    Loader2,
-    AlertTriangle
+    AlertTriangle,
+    Bot,
+    Hand
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -24,8 +25,6 @@ import { LogsViewer } from "@/components/dashboard/logs-viewer"
 import { JobStatusBadge } from "@/components/dashboard/job-status-badge"
 
 import { useJobDetails } from "@/hooks/use-job-details"
-
-import { getTerminalReason } from "@/lib/terminal-reason"
 
 export default function JobDetailsAndLogsPage() {
     const { workflowId, jobId } = useParams() as { workflowId: string, jobId: string }
@@ -101,41 +100,52 @@ export default function JobDetailsAndLogsPage() {
             <div className="w-full h-full flex flex-col flex-1 gap-4">
                 {/* Details Panel */}
                 <Card>
-                    <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
-                            <CardTitle>Job Details</CardTitle>
+                    <CardHeader>
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 flex-col gap-2">
+                                <CardTitle className="whitespace-nowrap">Job Details</CardTitle>
+                                {job ? (
+                                    <p className="text-sm text-muted-foreground whitespace-nowrap">
+                                        Created {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
+                                    </p>
+                                ) : (
+                                    <Skeleton className="h-4.5 w-36" />
+                                )}
+                            </div>
                             {job ? (
-                                <JobStatusBadge
-                                    status={job.status}
-                                    reasonMessage={job.status_reason_message}
-                                />
+                                <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                                    <Badge variant="secondary" className="gap-1.5 px-2 py-1">
+                                        {job.trigger === "MANUAL" ? (
+                                            <Hand className="h-3.5 w-3.5" />
+                                        ) : (
+                                            <Bot className="h-3.5 w-3.5" />
+                                        )}
+                                        {job.trigger === "MANUAL" ? "Manual" : "Automatic"}
+                                    </Badge>
+                                    <JobStatusBadge
+                                        status={job.status}
+                                        reasonMessage={job.status_reason_message}
+                                    />
+                                </div>
                             ) : (
-                                <Badge className="bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-900/30 dark:text-gray-400 dark:border-gray-800/30 h-6.5">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Loading...
-                                </Badge>
+                                <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                                    <Skeleton className="h-6 w-24 rounded-md" />
+                                    <Skeleton className="h-6 w-24 rounded-md" />
+                                </div>
                             )}
                         </div>
-                        {job && (
-                            <p className="text-sm text-muted-foreground">
-                                Created {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
-                            </p>
-                        )}
                     </CardHeader>
-                    <CardContent className="space-y-6">
+                    <CardContent className="mt-2">
                         {isJobLoading ? (
                             <Fragment>
-                                <Skeleton className="h-5 w-36 -mt-8" />
-                                <Skeleton className="h-5 w-20 mt-8" />
-                                {[...Array(3)].map((_, index) => (
-                                    <div key={index} className="flex flex-row w-full items-center justify-between -mt-2">
-                                        <Skeleton className="h-5 w-24" />
-                                        <Skeleton className="h-5 w-40" />
-                                    </div>
-                                ))}
-                                <div className="flex flex-row w-full items-center justify-between -mt-2">
-                                    <Skeleton className="h-5 w-24" />
-                                    <Skeleton className="h-5 w-20" />
+                                <Skeleton className="h-4.5 w-20 mb-4 mt-1" />
+                                <div className="space-y-3 sm:mb-0 mb-0.5">
+                                    {[...Array(5)].map((_, index) => (
+                                        <div key={index} className="flex flex-row w-full items-center justify-between">
+                                            <Skeleton className="h-4 w-24" />
+                                            <Skeleton className="h-4 w-32" />
+                                        </div>
+                                    ))}
                                 </div>
                             </Fragment>
                         ) : job && (
@@ -144,16 +154,6 @@ export default function JobDetailsAndLogsPage() {
                                 <div className="space-y-3">
                                     <h3 className="font-medium text-sm">Timeline</h3>
                                     <div className="space-y-2">
-                                        {getTerminalReason(job.status, job.status_reason_message) && (
-                                            <div className="flex justify-between gap-6 text-sm">
-                                                <span className="text-muted-foreground">
-                                                    {job.status === "FAILED" ? "Failure reason:" : "Cancellation reason:"}
-                                                </span>
-                                                <span className="text-right">
-                                                    {getTerminalReason(job.status, job.status_reason_message)}
-                                                </span>
-                                            </div>
-                                        )}
                                         <div className="flex justify-between text-sm">
                                             <span className="text-muted-foreground">Created:</span>
                                             <span>{format(new Date(job.created_at), "MMM d, yyyy HH:mm:ss")}</span>

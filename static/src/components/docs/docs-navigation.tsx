@@ -2,6 +2,7 @@ import { Braces, Menu } from "lucide-react";
 import Link from "next/link";
 
 import { docsConfig } from "../../../docs.config";
+import { DocsSidebarScrollArea } from "@/components/docs/docs-sidebar-scroll-area";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -17,14 +18,24 @@ function NavigationContent({ activeSlug }: { activeSlug: string }) {
           <ul>
             {group.pages.map((page) => (
               <li key={page.slug}>
-                <Link className={cn(activeSlug === page.slug && "active")} href={`/docs/${page.slug}`}>{page.title}</Link>
+                <Link
+                  aria-current={activeSlug === page.slug ? "page" : undefined}
+                  className={cn(activeSlug === page.slug && "active")}
+                  href={`/docs/${page.slug}`}
+                >
+                  {page.title}
+                </Link>
                 {page.slug === "api/reference" && (
                   <ul className="docs-api-nav">
                     {operations.map((operation) => {
                       const slug = `api/reference/${operation.operationId}`;
                       return (
                         <li key={operation.operationId}>
-                          <Link className={cn(activeSlug === slug && "active")} href={`/docs/${slug}`}>
+                          <Link
+                            aria-current={activeSlug === slug ? "page" : undefined}
+                            className={cn(activeSlug === slug && "active")}
+                            href={`/docs/${slug}`}
+                          >
                             <Braces />
                             <span>{operation.summary}</span>
                           </Link>
@@ -43,7 +54,7 @@ function NavigationContent({ activeSlug }: { activeSlug: string }) {
 }
 
 export function DocsSidebar({ activeSlug }: { activeSlug: string }) {
-  return <aside className="docs-sidebar"><NavigationContent activeSlug={activeSlug} /></aside>;
+  return <DocsSidebarScrollArea activeSlug={activeSlug}><NavigationContent activeSlug={activeSlug} /></DocsSidebarScrollArea>;
 }
 
 export function DocsMobileNavigation({ activeSlug }: { activeSlug: string }) {

@@ -1,6 +1,5 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -71,7 +70,7 @@ export function useWorkflows() {
     }
 
     // Build query parameters for the get workflows request
-    const getWorkflowQueryParams = useMemo(() => {
+    const getWorkflowQueryParams = (() => {
         const params = new URLSearchParams()
 
         if (currentCursor) {
@@ -103,7 +102,7 @@ export function useWorkflows() {
         }
 
         return params.toString()
-    }, [currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax])
+    })()
 
     const getWorkflowQuery = useQuery<WorkflowsResponse, Error>({
         queryKey: ["workflows", currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax],
@@ -133,19 +132,19 @@ export function useWorkflows() {
         return true
     }
 
-    const goToPreviousPage = useCallback(() => {
+    const goToPreviousPage = () => {
         router.back()
         return true
-    }, [router])
+    }
 
-    const resetPagination = useCallback(() => {
+    const resetPagination = () => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor")
         router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+    }
 
     // Update search query in URL params
-    const updateSearchQuery = useCallback((newSearchQuery: string) => {
+    const updateSearchQuery = (newSearchQuery: string) => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when searching
 
@@ -156,10 +155,10 @@ export function useWorkflows() {
         }
 
         router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+    }
 
     // Apply all filters and search query
-    const applyAllFilters = useCallback((filters: unknown) => {
+    const applyAllFilters = (filters: unknown) => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
 
@@ -200,10 +199,10 @@ export function useWorkflows() {
         }
 
         router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+    }
 
     // Clear all filters
-    const clearAllFilters = useCallback(() => {
+    const clearAllFilters = () => {
         // Get the search query if it exists
         const oldParams = new URLSearchParams(searchParams.toString())
         const query = oldParams.get("query")
@@ -214,7 +213,7 @@ export function useWorkflows() {
         }
 
         router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+    }
 
     if (getWorkflowQuery.error instanceof Error) {
         toast.error(getWorkflowQuery.error.message)

@@ -1,9 +1,7 @@
 "use client"
 
 import {
-    useCallback,
     useEffect,
-    useMemo,
     useRef,
     useState,
 } from "react"
@@ -179,7 +177,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     )
 
     // Update search query in URL params
-    const updateSearchQuery = useCallback((newSearchQuery: string) => {
+    const updateSearchQuery = (newSearchQuery: string) => {
         const params = new URLSearchParams(searchParams.toString())
 
         if (newSearchQuery) {
@@ -190,10 +188,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
         const query = params.toString()
         router.push(buildLogViewerUrl(pathname, query, ""))
-    }, [pathname, router, searchParams])
+    }
 
     // Apply stream filter in URL params
-    const applyStreamFilter = useCallback((newStreamFilter: string) => {
+    const applyStreamFilter = (newStreamFilter: string) => {
         const params = new URLSearchParams(searchParams.toString())
 
         if (newStreamFilter) {
@@ -204,10 +202,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
         const query = params.toString()
         router.push(buildLogViewerUrl(pathname, query, ""))
-    }, [pathname, router, searchParams])
+    }
 
     // Build query parameters for the search job logs request
-    const getSearchQueryParams = useMemo(() => {
+    const getSearchQueryParams = (() => {
         const params = new URLSearchParams()
 
         if (searchQuery) {
@@ -219,7 +217,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
 
         return params.toString()
-    }, [searchQuery, streamFilter])
+    })()
 
     // Download raw logs from backend and trigger browser file download
     const downloadLogsMutation = useMutation({
@@ -252,10 +250,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     })
 
     // Retained logs are newest-first; fetching the next page loads older logs.
-    const jobLogsInfiniteQueryKey = useMemo(
-        () => ["job-logs", workflowId, jobId, jobStatus],
-        [workflowId, jobId, jobStatus]
-    )
+    const jobLogsInfiniteQueryKey = ["job-logs", workflowId, jobId, jobStatus]
     const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
         queryKey: jobLogsInfiniteQueryKey,
         queryFn: async ({ pageParam }) => {
@@ -381,18 +376,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error])
 
-    const retainedLogs = useMemo(
-        () => logsFromPages(jobLogsInfiniteQuery.data?.pages),
-        [jobLogsInfiniteQuery.data?.pages]
-    )
-    const runningLogs = useMemo(
-        () => mergeLiveLogs(retainedLogs, liveLogs),
-        [retainedLogs, liveLogs]
-    )
-    const searchLogs = useMemo(
-        () => logsFromPages(jobLogsSearchInfiniteQuery.data?.pages),
-        [jobLogsSearchInfiniteQuery.data?.pages]
-    )
+    const retainedLogs = logsFromPages(jobLogsInfiniteQuery.data?.pages)
+    const runningLogs = mergeLiveLogs(retainedLogs, liveLogs)
+    const searchLogs = logsFromPages(jobLogsSearchInfiniteQuery.data?.pages)
 
     if (shouldFetch && Boolean(getSearchQueryParams)) {
         return {

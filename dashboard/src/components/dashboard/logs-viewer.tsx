@@ -1,7 +1,6 @@
 "use client"
 
 import {
-    useCallback,
     useEffect,
     useRef,
     useState,
@@ -299,7 +298,7 @@ export function LogsViewer({
         logs.length < lineSelection.end
     )
 
-    const updateJsonRendering = useCallback((enabled: boolean) => {
+    const updateJsonRendering = (enabled: boolean) => {
         const params = new URLSearchParams(searchParams.toString())
 
         if (enabled) {
@@ -311,9 +310,9 @@ export function LogsViewer({
         const query = params.toString()
         const hash = window.location.hash
         router.replace(buildLogViewerUrl(pathname, query, hash), { scroll: false })
-    }, [pathname, router, searchParams])
+    }
 
-    const updateLineSelection = useCallback((selection: LogLineSelection) => {
+    const updateLineSelection = (selection: LogLineSelection) => {
         const normalized = normalizeLogLineSelection(selection.start, selection.end)
         if (!normalized) {
             return
@@ -324,9 +323,9 @@ export function LogsViewer({
         const url = new URL(window.location.href)
         url.hash = formatLogLineSelection(normalized)
         window.history.replaceState(window.history.state, "", url)
-    }, [])
+    }
 
-    const clearLineSelection = useCallback(() => {
+    const clearLineSelection = () => {
         if (!lineSelection && !window.location.hash) {
             return
         }
@@ -337,9 +336,9 @@ export function LogsViewer({
         const url = new URL(window.location.href)
         url.hash = ""
         window.history.replaceState(window.history.state, "", url)
-    }, [lineSelection])
+    }
 
-    const selectLogLine = useCallback((lineNumber: number, extendSelection: boolean) => {
+    const selectLogLine = (lineNumber: number, extendSelection: boolean) => {
         const anchor = selectionAnchor ?? lineSelection?.start ?? null
         const selection = getNextLogLineSelection(lineNumber, anchor, extendSelection)
         if (!selection) {
@@ -350,9 +349,9 @@ export function LogsViewer({
             setSelectionAnchor(lineNumber)
         }
         updateLineSelection(selection)
-    }, [lineSelection?.start, selectionAnchor, updateLineSelection])
+    }
 
-    const handleLogRowClick = useCallback((
+    const handleLogRowClick = (
         lineNumber: number,
         event: ReactMouseEvent<HTMLDivElement>
     ) => {
@@ -366,9 +365,9 @@ export function LogsViewer({
         }
 
         selectLogLine(lineNumber, event.shiftKey)
-    }, [selectLogLine])
+    }
 
-    const handleLogRowPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const handleLogRowPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
         const target = event.target
         if (target instanceof Element && target.closest("[data-line-options]")) {
             rowPointerGestureRef.current = null
@@ -385,9 +384,9 @@ export function LogsViewer({
             startY: event.clientY,
             didDrag: false,
         }
-    }, [])
+    }
 
-    const handleLogRowPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const handleLogRowPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
         const gesture = rowPointerGestureRef.current
         if (!gesture || gesture.didDrag) {
             return
@@ -398,9 +397,9 @@ export function LogsViewer({
         if (Math.hypot(deltaX, deltaY) >= 4) {
             gesture.didDrag = true
         }
-    }, [])
+    }
 
-    const handleLogRowKeyDown = useCallback((
+    const handleLogRowKeyDown = (
         lineNumber: number,
         event: ReactKeyboardEvent<HTMLSpanElement>
     ) => {
@@ -410,9 +409,9 @@ export function LogsViewer({
 
         event.preventDefault()
         selectLogLine(lineNumber, event.shiftKey)
-    }, [selectLogLine])
+    }
 
-    const copyLogLines = useCallback(async (selection: LogLineSelection) => {
+    const copyLogLines = async (selection: LogLineSelection) => {
         try {
             const text = getSelectedLogText(logs.map((log) => log.message), selection)
             await navigator.clipboard.writeText(text)
@@ -420,9 +419,9 @@ export function LogsViewer({
         } catch {
             toast.error("Failed to copy log lines")
         }
-    }, [logs])
+    }
 
-    const copyPermalink = useCallback(async (selection: LogLineSelection) => {
+    const copyPermalink = async (selection: LogLineSelection) => {
         try {
             updateLineSelection(selection)
 
@@ -433,7 +432,7 @@ export function LogsViewer({
         } catch {
             toast.error("Failed to copy log permalink")
         }
-    }, [updateLineSelection])
+    }
 
     useEffect(() => {
         const pendingSearchQuery = pendingSearchQueryRef.current
@@ -453,7 +452,7 @@ export function LogsViewer({
         lastScrolledSelectionRef.current = ""
     }, [datasetKey])
 
-    const handleRenderedRangeChanged = useCallback((range: ListRange) => {
+    const handleRenderedRangeChanged = (range: ListRange) => {
         const pendingScroll = pendingScrollSelectionRef.current
         if (!pendingScroll || pendingScroll.correcting || pendingScroll.index < range.startIndex || pendingScroll.index > range.endIndex) {
             return
@@ -482,7 +481,7 @@ export function LogsViewer({
                 },
             })
         })
-    }, [])
+    }
 
     useEffect(() => {
         const syncSelectionFromFragment = () => {
@@ -591,8 +590,7 @@ export function LogsViewer({
     }, [isSearchFocused])
 
     // Parse log message and render token-scoped Meili highlights safely.
-    const parseLog = useCallback(
-        (message: string, highlightToken?: string) => {
+    const parseLog = (message: string, highlightToken?: string) => {
             if (!parseJson) {
                 return renderHighlightedText(message, highlightToken)
             }
@@ -614,9 +612,7 @@ export function LogsViewer({
 
                 return renderHighlightedSegments(formattedMessage, highlightedSegments)
             }
-        },
-        [parseJson]
-    )
+    }
 
     // Row renderer for Virtuoso
     const LogRow = (index: number) => {

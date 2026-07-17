@@ -1,7 +1,4 @@
-import {
-    useMemo,
-    useState,
-} from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
     formatDistanceToNow,
@@ -100,7 +97,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     } = useNotifications()
 
     // Group notifications by date and flatten with headings
-    const flat = useMemo<FlatRow[]>(() => {
+    const flat: FlatRow[] = (() => {
         if (notifications.length === 0) return []
         const groups = new Map<string, Notification[]>()
 
@@ -117,7 +114,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             for (const n of arr) result.push({ type: "item", n })
         }
         return result
-    }, [notifications])
+    })()
 
     // Bulk selection
     const [selected, setSelected] = useState<Set<string>>(new Set())

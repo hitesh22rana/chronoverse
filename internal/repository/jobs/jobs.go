@@ -248,7 +248,7 @@ func automaticScheduleGuardSQL(workflowGeneration int64) string {
 }
 
 // UpdateJobStatus updates the job details.
-func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) (err error) {
+func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus, terminalReasonCode string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.UpdateJobStatus")
 	defer func() {
 		if err != nil {
@@ -259,12 +259,12 @@ func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jo
 	}()
 
 	if isRuntimeSlotReleasingStatus(jobStatus) {
-		return r.updateTerminalJobStatus(ctx, jobID, jobStatus)
+		return r.updateTerminalJobStatus(ctx, jobID, jobStatus, terminalReasonCode)
 	}
 
 	query := fmt.Sprintf(`
     UPDATE %s
-    SET status = $1`, postgres.TableJobs)
+	SET status = $1, terminal_reason_code = NULL`, postgres.TableJobs)
 	args := []any{jobStatus}
 
 	switch jobStatus {
@@ -321,7 +321,7 @@ func isRuntimeSlotReleasingStatus(jobStatus string) bool {
 		jobStatus == jobsmodel.JobStatusCanceled.ToString()
 }
 
-func (r *Repository) updateTerminalJobStatus(ctx context.Context, jobID, jobStatus string) error {
+func (r *Repository) updateTerminalJobStatus(ctx context.Context, jobID, jobStatus, terminalReasonCode string) error {
 	statusPredicate := ""
 	if jobStatus == jobsmodel.JobStatusCanceled.ToString() {
 		statusPredicate = "AND status IN ('PENDING', 'QUEUED', 'RUNNING')"
@@ -342,7 +342,8 @@ func (r *Repository) updateTerminalJobStatus(ctx context.Context, jobID, jobStat
                 lease_token = NULL,
                 leased_by = NULL,
                 lease_expires_at = NULL,
-                last_heartbeat_at = NULL
+				last_heartbeat_at = NULL,
+				terminal_reason_code = NULLIF($4, '')
             FROM target
             WHERE j.id = target.id
             RETURNING target.status AS previous_status, target.runtime_node_id
@@ -361,7 +362,7 @@ func (r *Repository) updateTerminalJobStatus(ctx context.Context, jobID, jobStat
     `, postgres.TableJobs, statusPredicate, postgres.TableJobs, postgres.TableRuntimeNodes)
 
 	var updatedCount int
-	err := r.pg.QueryRow(ctx, query, jobStatus, jobID, time.Now()).Scan(&updatedCount)
+	err := r.pg.QueryRow(ctx, query, jobStatus, jobID, time.Now(), terminalReasonCode).Scan(&updatedCount)
 	if err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
@@ -398,7 +399,8 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 	}()
 
 	query := fmt.Sprintf(`
-        SELECT id, workflow_id, status, trigger, scheduled_at, started_at, completed_at, created_at, updated_at
+	        SELECT id, workflow_id, status, trigger, scheduled_at, started_at, completed_at, created_at, updated_at,
+	               terminal_reason_code, failure_kind, last_error_code, last_error_message
         FROM %s
         WHERE id = $1 AND workflow_id = $2 AND user_id = $3
         LIMIT 1;
@@ -966,7 +968,8 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 
 	// Add the cursor to the query
 	query := fmt.Sprintf(`
-        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at, runtime_node_id, runtime_endpoint
+	        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at, runtime_node_id, runtime_endpoint,
+	               terminal_reason_code, failure_kind, last_error_code, last_error_message
         FROM %s
         WHERE workflow_id = $1 AND user_id = $2
     `, postgres.TableJobs)

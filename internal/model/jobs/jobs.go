@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -55,15 +56,19 @@ func (t JobTrigger) ToString() string {
 
 // GetJobResponse represents the response of GetJob.
 type GetJobResponse struct {
-	ID          string       `db:"id"`
-	WorkflowID  string       `db:"workflow_id"`
-	JobStatus   string       `db:"status"`
-	JobTrigger  string       `db:"trigger"`
-	ScheduledAt time.Time    `db:"scheduled_at"`
-	StartedAt   sql.NullTime `db:"started_at,omitempty"`
-	CompletedAt sql.NullTime `db:"completed_at,omitempty"`
-	CreatedAt   time.Time    `db:"created_at"`
-	UpdatedAt   time.Time    `db:"updated_at"`
+	ID                 string         `db:"id"`
+	WorkflowID         string         `db:"workflow_id"`
+	JobStatus          string         `db:"status"`
+	JobTrigger         string         `db:"trigger"`
+	ScheduledAt        time.Time      `db:"scheduled_at"`
+	StartedAt          sql.NullTime   `db:"started_at,omitempty"`
+	CompletedAt        sql.NullTime   `db:"completed_at,omitempty"`
+	CreatedAt          time.Time      `db:"created_at"`
+	UpdatedAt          time.Time      `db:"updated_at"`
+	TerminalReasonCode sql.NullString `db:"terminal_reason_code,omitempty"`
+	FailureKind        sql.NullString `db:"failure_kind,omitempty"`
+	LastErrorCode      sql.NullString `db:"last_error_code,omitempty"`
+	LastErrorMessage   sql.NullString `db:"last_error_message,omitempty"`
 }
 
 // ToProto converts the GetJobResponse to its protobuf representation.
@@ -76,7 +81,7 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 		completedAt = r.CompletedAt.Time.Format(time.RFC3339Nano)
 	}
 
-	return &jobspb.GetJobResponse{
+	res := &jobspb.GetJobResponse{
 		Id:          r.ID,
 		WorkflowId:  r.WorkflowID,
 		Status:      r.JobStatus,
@@ -87,6 +92,11 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 		CreatedAt:   r.CreatedAt.Format(time.RFC3339Nano),
 		UpdatedAt:   r.UpdatedAt.Format(time.RFC3339Nano),
 	}
+	if code, message, ok := terminalreason.Resolve(r.JobStatus, r.TerminalReasonCode.String, r.FailureKind.String, r.LastErrorCode.String, r.LastErrorMessage.String); ok {
+		res.StatusReasonCode = code.String()
+		res.StatusReasonMessage = message
+	}
+	return res
 }
 
 // GetJobByIDResponse represents the response of GetJobByID.
@@ -308,19 +318,23 @@ type SearchJobLogsOptions struct {
 
 // JobByWorkflowIDResponse represents the response of ListJobsByID.
 type JobByWorkflowIDResponse struct {
-	ID              string         `db:"id"`
-	WorkflowID      string         `db:"workflow_id"`
-	ContainerID     sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
-	JobStatus       string         `db:"status"`
-	JobTrigger      string         `db:"trigger"`
-	Attempts        int32          `db:"attempts"`
-	ScheduledAt     time.Time      `db:"scheduled_at"`
-	StartedAt       sql.NullTime   `db:"started_at,omitempty"`
-	CompletedAt     sql.NullTime   `db:"completed_at,omitempty"`
-	CreatedAt       time.Time      `db:"created_at"`
-	UpdatedAt       time.Time      `db:"updated_at"`
-	RuntimeNodeID   sql.NullString `db:"runtime_node_id,omitempty"`
-	RuntimeEndpoint sql.NullString `db:"runtime_endpoint,omitempty"`
+	ID                 string         `db:"id"`
+	WorkflowID         string         `db:"workflow_id"`
+	ContainerID        sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
+	JobStatus          string         `db:"status"`
+	JobTrigger         string         `db:"trigger"`
+	Attempts           int32          `db:"attempts"`
+	ScheduledAt        time.Time      `db:"scheduled_at"`
+	StartedAt          sql.NullTime   `db:"started_at,omitempty"`
+	CompletedAt        sql.NullTime   `db:"completed_at,omitempty"`
+	CreatedAt          time.Time      `db:"created_at"`
+	UpdatedAt          time.Time      `db:"updated_at"`
+	RuntimeNodeID      sql.NullString `db:"runtime_node_id,omitempty"`
+	RuntimeEndpoint    sql.NullString `db:"runtime_endpoint,omitempty"`
+	TerminalReasonCode sql.NullString `db:"terminal_reason_code,omitempty"`
+	FailureKind        sql.NullString `db:"failure_kind,omitempty"`
+	LastErrorCode      sql.NullString `db:"last_error_code,omitempty"`
+	LastErrorMessage   sql.NullString `db:"last_error_message,omitempty"`
 }
 
 // ListJobsFilters represents the filters for listing jobs.
@@ -361,6 +375,10 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 			CreatedAt:   j.CreatedAt.Format(time.RFC3339Nano),
 			UpdatedAt:   j.UpdatedAt.Format(time.RFC3339Nano),
 			Attempts:    j.Attempts,
+		}
+		if code, message, ok := terminalreason.Resolve(j.JobStatus, j.TerminalReasonCode.String, j.FailureKind.String, j.LastErrorCode.String, j.LastErrorMessage.String); ok {
+			jobs[i].StatusReasonCode = code.String()
+			jobs[i].StatusReasonMessage = message
 		}
 
 		if internalService {

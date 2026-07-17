@@ -19,6 +19,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 // Config represents the repository constants configuration.
@@ -345,10 +346,11 @@ func (r *Repository) UpdateWorkflow(
 			userID,
 			jobsmodel.JobStatusPending.ToString(),
 			jobsmodel.JobStatusQueued.ToString(),
+			terminalreason.WorkflowUpdated.String(),
 		}
 		triggerFilter := ""
 		if decision.rescheduleRequired && !decision.buildRequired {
-			triggerFilter = "AND trigger = $6"
+			triggerFilter = "AND trigger = $7"
 			cancelJobsArgs = append(cancelJobsArgs, jobsmodel.JobTriggerAutomatic.ToString())
 		}
 
@@ -359,7 +361,8 @@ func (r *Repository) UpdateWorkflow(
                 lease_token = NULL,
                 leased_by = NULL,
                 lease_expires_at = NULL,
-                last_heartbeat_at = NULL
+				last_heartbeat_at = NULL,
+				terminal_reason_code = $6
             WHERE workflow_id = $2
                 AND user_id = $3
                 AND status IN ($4, $5)

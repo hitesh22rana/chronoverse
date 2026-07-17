@@ -256,12 +256,13 @@ func (x *ScheduleJobResponse) GetId() string {
 
 // UpdateJobStatusRequest contains the details needed to update the status of a job.
 type UpdateJobStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                      // ID of the job
-	ContainerId   string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"` // ID of the container (if applicable)
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                              // Status of the job
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
+	ContainerId        string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`                        // ID of the container (if applicable)
+	Status             string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                                     // Status of the job
+	TerminalReasonCode string                 `protobuf:"bytes,4,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Required cancellation reason when status is CANCELED
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *UpdateJobStatusRequest) Reset() {
@@ -311,6 +312,13 @@ func (x *UpdateJobStatusRequest) GetContainerId() string {
 func (x *UpdateJobStatusRequest) GetStatus() string {
 	if x != nil {
 		return x.Status
+	}
+	return ""
+}
+
+func (x *UpdateJobStatusRequest) GetTerminalReasonCode() string {
+	if x != nil {
+		return x.TerminalReasonCode
 	}
 	return ""
 }
@@ -948,14 +956,15 @@ func (*CompleteJobResponse) Descriptor() ([]byte, []int) {
 
 // FailJobRequest contains the details needed to fail a claimed job.
 type FailJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                         // ID of the job
-	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`       // Current lease token
-	FailureKind   string                 `protobuf:"bytes,3,opt,name=failure_kind,json=failureKind,proto3" json:"failure_kind,omitempty"`    // USER or SYSTEM
-	ErrorCode     string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`          // Error code
-	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Error message
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
+	LeaseToken         string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                           // Current lease token
+	FailureKind        string                 `protobuf:"bytes,3,opt,name=failure_kind,json=failureKind,proto3" json:"failure_kind,omitempty"`                        // USER or SYSTEM
+	ErrorCode          string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`                              // Error code
+	ErrorMessage       string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`                     // Error message
+	TerminalReasonCode string                 `protobuf:"bytes,6,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Normalized failure reason
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *FailJobRequest) Reset() {
@@ -1023,6 +1032,13 @@ func (x *FailJobRequest) GetErrorMessage() string {
 	return ""
 }
 
+func (x *FailJobRequest) GetTerminalReasonCode() string {
+	if x != nil {
+		return x.TerminalReasonCode
+	}
+	return ""
+}
+
 // FailJobResponse contains the result of failing a job.
 type FailJobResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1062,11 +1078,12 @@ func (*FailJobResponse) Descriptor() ([]byte, []int) {
 
 // CancelClaimedJobRequest contains the details needed to cancel a claimed job.
 type CancelClaimedJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                   // ID of the job
-	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"` // Current lease token
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
+	LeaseToken         string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                           // Current lease token
+	TerminalReasonCode string                 `protobuf:"bytes,3,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Normalized cancellation reason
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CancelClaimedJobRequest) Reset() {
@@ -1109,6 +1126,13 @@ func (x *CancelClaimedJobRequest) GetId() string {
 func (x *CancelClaimedJobRequest) GetLeaseToken() string {
 	if x != nil {
 		return x.LeaseToken
+	}
+	return ""
+}
+
+func (x *CancelClaimedJobRequest) GetTerminalReasonCode() string {
+	if x != nil {
+		return x.TerminalReasonCode
 	}
 	return ""
 }
@@ -1574,18 +1598,20 @@ func (x *GetJobRequest) GetUserId() string {
 
 // GetJobResponse contains the result of a job retrieval attempt.
 type GetJobResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                      // ID of the job
-	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`    // ID of the workflow
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                              // Status of the job
-	Trigger       string                 `protobuf:"bytes,4,opt,name=trigger,proto3" json:"trigger,omitempty"`                            // Trigger type of the job (AUTOMATIC or MANUAL)
-	ScheduledAt   string                 `protobuf:"bytes,5,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"` // Time the job is scheduled to run
-	StartedAt     string                 `protobuf:"bytes,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`       // Time the job was started
-	CompletedAt   string                 `protobuf:"bytes,7,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"` // Time the job was completed
-	CreatedAt     string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`       // Time the job was created
-	UpdatedAt     string                 `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`       // Time the job was last updated
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                 // ID of the job
+	WorkflowId          string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                               // ID of the workflow
+	Status              string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                                         // Status of the job
+	Trigger             string                 `protobuf:"bytes,4,opt,name=trigger,proto3" json:"trigger,omitempty"`                                                       // Trigger type of the job (AUTOMATIC or MANUAL)
+	ScheduledAt         string                 `protobuf:"bytes,5,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`                            // Time the job is scheduled to run
+	StartedAt           string                 `protobuf:"bytes,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`                                  // Time the job was started
+	CompletedAt         string                 `protobuf:"bytes,7,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`                            // Time the job was completed
+	CreatedAt           string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                  // Time the job was created
+	UpdatedAt           string                 `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                  // Time the job was last updated
+	StatusReasonCode    string                 `protobuf:"bytes,10,opt,name=status_reason_code,json=statusReasonCode,proto3" json:"status_reason_code,omitempty"`          // Safe terminal reason code (FAILED/CANCELED only)
+	StatusReasonMessage string                 `protobuf:"bytes,11,opt,name=status_reason_message,json=statusReasonMessage,proto3" json:"status_reason_message,omitempty"` // Safe terminal reason message (FAILED/CANCELED only)
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GetJobResponse) Reset() {
@@ -1677,6 +1703,20 @@ func (x *GetJobResponse) GetCreatedAt() string {
 func (x *GetJobResponse) GetUpdatedAt() string {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return ""
+}
+
+func (x *GetJobResponse) GetStatusReasonCode() string {
+	if x != nil {
+		return x.StatusReasonCode
+	}
+	return ""
+}
+
+func (x *GetJobResponse) GetStatusReasonMessage() string {
+	if x != nil {
+		return x.StatusReasonMessage
 	}
 	return ""
 }
@@ -2466,22 +2506,24 @@ func (x *ListJobsRequest) GetFilters() *ListJobsFilters {
 
 // JobsResponse contains the result of a job listing attempt.
 type JobsResponse struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                   // ID of the job
-	WorkflowId      string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                 // ID of the workflow
-	ContainerId     string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`              // ID of the container (if applicable)
-	Status          string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`                                           // Status of the job
-	Trigger         string                 `protobuf:"bytes,5,opt,name=trigger,proto3" json:"trigger,omitempty"`                                         // Trigger type of the job (AUTOMATIC or MANUAL)
-	ScheduledAt     string                 `protobuf:"bytes,6,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`              // Time the job is scheduled to run
-	StartedAt       string                 `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`                    // Time the job was started
-	CompletedAt     string                 `protobuf:"bytes,8,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`              // Time the job was completed
-	CreatedAt       string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                    // Time the job was created
-	UpdatedAt       string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                   // Time the job was last updated
-	Attempts        int32                  `protobuf:"varint,11,opt,name=attempts,proto3" json:"attempts,omitempty"`                                     // Number of execution attempts
-	RuntimeNodeId   string                 `protobuf:"bytes,12,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`     // Runtime node that owns the container
-	RuntimeEndpoint string                 `protobuf:"bytes,13,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"` // Docker endpoint snapshot for the owning runtime node
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                 // ID of the job
+	WorkflowId          string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                               // ID of the workflow
+	ContainerId         string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`                            // ID of the container (if applicable)
+	Status              string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`                                                         // Status of the job
+	Trigger             string                 `protobuf:"bytes,5,opt,name=trigger,proto3" json:"trigger,omitempty"`                                                       // Trigger type of the job (AUTOMATIC or MANUAL)
+	ScheduledAt         string                 `protobuf:"bytes,6,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`                            // Time the job is scheduled to run
+	StartedAt           string                 `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`                                  // Time the job was started
+	CompletedAt         string                 `protobuf:"bytes,8,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`                            // Time the job was completed
+	CreatedAt           string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`                                  // Time the job was created
+	UpdatedAt           string                 `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`                                 // Time the job was last updated
+	Attempts            int32                  `protobuf:"varint,11,opt,name=attempts,proto3" json:"attempts,omitempty"`                                                   // Number of execution attempts
+	RuntimeNodeId       string                 `protobuf:"bytes,12,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`                   // Runtime node that owns the container
+	RuntimeEndpoint     string                 `protobuf:"bytes,13,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`               // Docker endpoint snapshot for the owning runtime node
+	StatusReasonCode    string                 `protobuf:"bytes,14,opt,name=status_reason_code,json=statusReasonCode,proto3" json:"status_reason_code,omitempty"`          // Safe terminal reason code (FAILED/CANCELED only)
+	StatusReasonMessage string                 `protobuf:"bytes,15,opt,name=status_reason_message,json=statusReasonMessage,proto3" json:"status_reason_message,omitempty"` // Safe terminal reason message (FAILED/CANCELED only)
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *JobsResponse) Reset() {
@@ -2605,6 +2647,20 @@ func (x *JobsResponse) GetRuntimeEndpoint() string {
 	return ""
 }
 
+func (x *JobsResponse) GetStatusReasonCode() string {
+	if x != nil {
+		return x.StatusReasonCode
+	}
+	return ""
+}
+
+func (x *JobsResponse) GetStatusReasonMessage() string {
+	if x != nil {
+		return x.StatusReasonMessage
+	}
+	return ""
+}
+
 type ListJobsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Jobs          []*JobsResponse        `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`     // List of jobs
@@ -2671,11 +2727,12 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x12/\n" +
 	"\x13workflow_generation\x18\x06 \x01(\x03R\x12workflowGeneration\"%\n" +
 	"\x13ScheduleJobResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x95\x01\n" +
 	"\x16UpdateJobStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\"\x19\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x120\n" +
+	"\x14terminal_reason_code\x18\x04 \x01(\tR\x12terminalReasonCode\"\x19\n" +
 	"\x17UpdateJobStatusResponse\"\xc0\x01\n" +
 	"\x0fClaimJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -2721,7 +2778,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\"\x15\n" +
-	"\x13CompleteJobResponse\"\xa8\x01\n" +
+	"\x13CompleteJobResponse\"\xda\x01\n" +
 	"\x0eFailJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
@@ -2729,12 +2786,14 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\ffailure_kind\x18\x03 \x01(\tR\vfailureKind\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x11\n" +
-	"\x0fFailJobResponse\"J\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x120\n" +
+	"\x14terminal_reason_code\x18\x06 \x01(\tR\x12terminalReasonCode\"\x11\n" +
+	"\x0fFailJobResponse\"|\n" +
 	"\x17CancelClaimedJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
-	"leaseToken\"\x1a\n" +
+	"leaseToken\x120\n" +
+	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\"\x1a\n" +
 	"\x18CancelClaimedJobResponse\"\xb8\x01\n" +
 	"\x19ReleaseJobForRetryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -2773,7 +2832,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12\x17\n" +
-	"\auser_id\x18\x03 \x01(\tR\x06userId\"\x96\x02\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\"\xf8\x02\n" +
 	"\x0eGetJobResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -2787,7 +2846,10 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\tR\tupdatedAt\"#\n" +
+	"updated_at\x18\t \x01(\tR\tupdatedAt\x12,\n" +
+	"\x12status_reason_code\x18\n" +
+	" \x01(\tR\x10statusReasonCode\x122\n" +
+	"\x15status_reason_message\x18\v \x01(\tR\x13statusReasonMessage\"#\n" +
 	"\x11GetJobByIDRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\xd6\x02\n" +
 	"\x12GetJobByIDResponse\x12\x0e\n" +
@@ -2859,7 +2921,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x124\n" +
 	"\afilters\x18\x04 \x01(\v2\x15.jobs.ListJobsFiltersH\x00R\afilters\x88\x01\x01B\n" +
 	"\n" +
-	"\b_filters\"\xa6\x03\n" +
+	"\b_filters\"\x88\x04\n" +
 	"\fJobsResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -2878,7 +2940,9 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	" \x01(\tR\tupdatedAt\x12\x1a\n" +
 	"\battempts\x18\v \x01(\x05R\battempts\x12&\n" +
 	"\x0fruntime_node_id\x18\f \x01(\tR\rruntimeNodeId\x12)\n" +
-	"\x10runtime_endpoint\x18\r \x01(\tR\x0fruntimeEndpoint\"R\n" +
+	"\x10runtime_endpoint\x18\r \x01(\tR\x0fruntimeEndpoint\x12,\n" +
+	"\x12status_reason_code\x18\x0e \x01(\tR\x10statusReasonCode\x122\n" +
+	"\x15status_reason_message\x18\x0f \x01(\tR\x13statusReasonMessage\"R\n" +
 	"\x10ListJobsResponse\x12&\n" +
 	"\x04jobs\x18\x01 \x03(\v2\x12.jobs.JobsResponseR\x04jobs\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor*i\n" +

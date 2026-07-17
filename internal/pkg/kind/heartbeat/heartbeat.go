@@ -2,6 +2,7 @@ package heartbeat
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 // HeartBeat represents the HEARTBEAT workflow.
@@ -49,13 +51,16 @@ func (h *HeartBeat) Execute(
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+			return terminalreason.Wrap(terminalreason.TimeLimitExceeded, err)
+		}
 		return status.Errorf(codes.Unavailable, "failed to execute request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	// Check for expected status code
 	if resp.StatusCode != expectedStatusCode {
-		return status.Errorf(codes.FailedPrecondition, "unexpected status code: got %d, want %d", resp.StatusCode, expectedStatusCode)
+		return terminalreason.Wrap(terminalreason.UnexpectedStatusCode, status.Errorf(codes.FailedPrecondition, "unexpected status code: got %d, want %d", resp.StatusCode, expectedStatusCode))
 	}
 
 	return nil

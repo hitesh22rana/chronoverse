@@ -245,7 +245,8 @@ Query parameters:
 - `trigger`: `AUTOMATIC` or `MANUAL`.
 
 Response includes `jobs` and `cursor`. Job entries include `attempts` in list
-responses.
+responses. Failed and canceled entries also include `status_reason_code` and
+`status_reason_message` with a normalized, user-safe explanation.
 
 ### Manual Schedule
 
@@ -270,6 +271,24 @@ Returns:
 - `completed_at`
 - `created_at`
 - `updated_at`
+- `status_reason_code` for failed and canceled jobs
+- `status_reason_message` for failed and canceled jobs
+
+For example:
+
+```json
+{
+  "id": "01900000-0000-7000-8000-000000000001",
+  "workflow_id": "01900000-0000-7000-8000-000000000002",
+  "status": "FAILED",
+  "status_reason_code": "TIME_LIMIT_EXCEEDED",
+  "status_reason_message": "Execution time limit exceeded"
+}
+```
+
+The reason fields are omitted for non-terminal and completed jobs. Older failed
+or canceled records whose cause cannot be determined safely return an
+unavailable reason. Raw diagnostic errors are never returned in these fields.
 
 Lease metadata such as lease tokens is internal to worker gRPC APIs and is not
 returned by the public HTTP job detail route.

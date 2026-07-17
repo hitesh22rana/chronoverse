@@ -147,6 +147,7 @@ func claimJobQuery() string {
             last_heartbeat_at = now() AT TIME ZONE 'utc',
             started_at = now() AT TIME ZONE 'utc',
             completed_at = NULL,
+			terminal_reason_code = NULL,
             failure_kind = NULL,
             last_error_code = NULL,
             last_error_message = NULL,
@@ -340,7 +341,7 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken string) 
 }
 
 // FailJob marks a running claimed job as failed.
-func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage string) (err error) {
+func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.FailJob")
 	defer func() {
 		if err != nil {
@@ -370,13 +371,14 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
             last_heartbeat_at = NULL,
             failure_kind = $3,
             last_error_code = $4,
-            last_error_message = $5
+            last_error_message = $5,
+			terminal_reason_code = $6
         WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
         RETURNING id, workflow_id, user_id, started_at, completed_at;
     `, postgres.TableJobs)
 
 	truncatedMessage := truncateJobError(errorMessage)
-	snapshot, err := r.scanTerminalJobSnapshot(ctx, tx, query, "fail job", jobID, leaseToken, failureKind, errorCode, truncatedMessage)
+	snapshot, err := r.scanTerminalJobSnapshot(ctx, tx, query, "fail job", jobID, leaseToken, failureKind, errorCode, truncatedMessage, terminalReasonCode)
 	if err != nil {
 		return err
 	}
@@ -396,7 +398,7 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 }
 
 // CancelClaimedJob marks a running claimed job as canceled.
-func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken string) (err error) {
+func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, terminalReasonCode string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CancelClaimedJob")
 	defer func() {
 		if err != nil {
@@ -423,10 +425,11 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken str
             lease_token = NULL,
             leased_by = NULL,
             lease_expires_at = NULL,
-            last_heartbeat_at = NULL
+            last_heartbeat_at = NULL,
+			terminal_reason_code = $3
         WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING';
     `, postgres.TableJobs)
-	ct, err := tx.Exec(ctx, query, jobID, leaseToken)
+	ct, err := tx.Exec(ctx, query, jobID, leaseToken, terminalReasonCode)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "cancel claimed job")
 	}
@@ -554,6 +557,7 @@ func releaseJobForRetryQuery() string {
                 leased_by = NULL,
                 lease_expires_at = NULL,
                 last_heartbeat_at = NULL,
+				terminal_reason_code = NULL,
                 next_attempt_at = $3,
                 failure_kind = $4,
                 last_error_code = $5,

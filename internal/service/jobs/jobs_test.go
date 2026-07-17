@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	"github.com/hitesh22rana/chronoverse/internal/service/jobs"
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/service/jobs/mock"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -294,6 +295,7 @@ func TestUpdateJobStatus(t *testing.T) {
 					req.GetId(),
 					req.GetContainerId(),
 					req.GetStatus(),
+					req.GetTerminalReasonCode(),
 				).Return(nil)
 			},
 			isErr: false,
@@ -311,9 +313,36 @@ func TestUpdateJobStatus(t *testing.T) {
 					req.GetId(),
 					req.GetContainerId(),
 					req.GetStatus(),
+					req.GetTerminalReasonCode(),
 				).Return(nil)
 			},
 			isErr: false,
+		},
+		{
+			name: "success canceled with reason",
+			req: &jobspb.UpdateJobStatusRequest{
+				Id:                 "job_id",
+				Status:             "CANCELED",
+				TerminalReasonCode: terminalreason.WorkflowUpdated.String(),
+			},
+			mock: func(req *jobspb.UpdateJobStatusRequest) {
+				repo.EXPECT().UpdateJobStatus(
+					gomock.Any(), req.GetId(), req.GetContainerId(), req.GetStatus(), req.GetTerminalReasonCode(),
+				).Return(nil)
+			},
+			isErr: false,
+		},
+		{
+			name:  "error: failed requires FailJob",
+			req:   &jobspb.UpdateJobStatusRequest{Id: "job_id", Status: "FAILED"},
+			mock:  func(_ *jobspb.UpdateJobStatusRequest) {},
+			isErr: true,
+		},
+		{
+			name:  "error: canceled requires cancellation reason",
+			req:   &jobspb.UpdateJobStatusRequest{Id: "job_id", Status: "CANCELED"},
+			mock:  func(_ *jobspb.UpdateJobStatusRequest) {},
+			isErr: true,
 		},
 		{
 			name: "error: missing job ID",
@@ -354,6 +383,7 @@ func TestUpdateJobStatus(t *testing.T) {
 					req.GetId(),
 					req.GetContainerId(),
 					req.GetStatus(),
+					req.GetTerminalReasonCode(),
 				).Return(status.Error(codes.NotFound, "job not found"))
 			},
 			isErr: true,
@@ -370,6 +400,7 @@ func TestUpdateJobStatus(t *testing.T) {
 					req.GetId(),
 					req.GetContainerId(),
 					req.GetStatus(),
+					req.GetTerminalReasonCode(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,
@@ -394,6 +425,41 @@ func TestUpdateJobStatus(t *testing.T) {
 				return
 			}
 		})
+	}
+}
+
+func TestTerminalReasonValidation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := jobsmock.NewMockRepository(ctrl)
+	s := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+
+	repo.EXPECT().FailJob(
+		gomock.Any(), "job", "lease", jobsmodel.FailureKindUser.ToString(), "Aborted", "failed",
+		terminalreason.NonZeroExit.String(),
+	).Return(nil)
+	if err := s.FailJob(t.Context(), &jobspb.FailJobRequest{
+		Id: "job", LeaseToken: "lease", FailureKind: jobsmodel.FailureKindUser.ToString(),
+		ErrorCode: "Aborted", ErrorMessage: "failed", TerminalReasonCode: terminalreason.NonZeroExit.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FailJob(t.Context(), &jobspb.FailJobRequest{
+		Id: "job", LeaseToken: "lease", FailureKind: jobsmodel.FailureKindUser.ToString(),
+		TerminalReasonCode: terminalreason.WorkflowUpdated.String(),
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("cross-family failure reason error = %v", err)
+	}
+
+	repo.EXPECT().CancelClaimedJob(gomock.Any(), "job", "lease", terminalreason.WorkflowTerminated.String()).Return(nil)
+	if err := s.CancelClaimedJob(t.Context(), &jobspb.CancelClaimedJobRequest{
+		Id: "job", LeaseToken: "lease", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CancelClaimedJob(t.Context(), &jobspb.CancelClaimedJobRequest{
+		Id: "job", LeaseToken: "lease", TerminalReasonCode: terminalreason.NonZeroExit.String(),
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("cross-family cancellation reason error = %v", err)
 	}
 }
 

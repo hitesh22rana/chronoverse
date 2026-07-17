@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 const (
@@ -184,8 +185,11 @@ func (w *DockerWorkflow) Execute(
 		// Monitor for timeouts and container completion
 		select {
 		case <-timeoutCtx.Done():
-			// Container execution timed out
-			errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", timeoutCtx.Err())
+			if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
+				errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", timeoutCtx.Err()))
+			} else {
+				errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", timeoutCtx.Err())
+			}
 
 			// Container execution timed out - try to stop the container
 			stopTimeout := int(containerStopTimeout.Seconds())
@@ -213,8 +217,10 @@ func (w *DockerWorkflow) Execute(
 			}
 
 			// Check if this is a context timeout/cancel
-			if ctx.Err() != nil && (ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled) {
-				errs <- status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", ctx.Err())
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", ctx.Err()))
+			} else if errors.Is(ctx.Err(), context.Canceled) {
+				errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", ctx.Err())
 			} else {
 				errs <- status.Errorf(codes.Aborted, "container execution error: %v", err)
 			}
@@ -224,7 +230,7 @@ func (w *DockerWorkflow) Execute(
 			<-logsDone
 
 			if containerStatus.StatusCode != 0 {
-				errs <- status.Errorf(codes.Aborted, "container exited with non-zero code: %d", containerStatus.StatusCode)
+				errs <- terminalreason.Wrap(terminalreason.NonZeroExit, status.Errorf(codes.Aborted, "container exited with non-zero code: %d", containerStatus.StatusCode))
 			}
 		}
 	}()
@@ -409,13 +415,13 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 		// Pull the image since it doesn't exist locally
 		out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
 		if err != nil {
-			return nil, status.Errorf(codes.NotFound, "failed to pull image: %v", err)
+			return nil, terminalreason.Wrap(terminalreason.ImagePullFailed, status.Errorf(codes.NotFound, "failed to pull image: %v", err))
 		}
 		defer out.Close()
 
 		// Read the output to completion so the pulled image is registered locally.
 		if _, err = io.Copy(io.Discard, out); err != nil {
-			return nil, status.Errorf(codes.Aborted, "failed to read image pull output: %v", err)
+			return nil, terminalreason.Wrap(terminalreason.ImagePullFailed, status.Errorf(codes.Aborted, "failed to read image pull output: %v", err))
 		}
 
 		return struct{}{}, nil

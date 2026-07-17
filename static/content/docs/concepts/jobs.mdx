@@ -11,15 +11,18 @@ A job is one execution attempt for a workflow. Jobs can be created by the schedu
 
 Jobs move through `PENDING`, `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELED`. State transitions are protected by workflow generation, dispatch attempt, current status, and, once claimed, a lease token.
 
+Failed and canceled jobs expose a normalized reason code and a user-safe message in list and detail responses. The reason is recorded atomically with the terminal status. Raw infrastructure diagnostics remain internal and are not copied into these fields.
+
 ## Attempts and retries
 
 Infrastructure failures may release a job for a bounded retry. The dispatch attempt identifies the expected delivery, while job attempts expose how many execution attempts have occurred.
 
 User workload failures and system failures are handled differently so an invalid command does not receive the same recovery policy as a lost worker or unavailable Docker host.
 
+Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Historical terminal records whose cause cannot be identified safely return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
+
 ## Execution ownership
 
 An execution worker must claim the job before starting a container. The jobs service returns a lease token, and that token is required to attach a container, renew ownership, complete, fail, cancel, or release the job.
 
 See [durable job leases](/docs/engineering/job-leases) for failure and recovery behavior.
-

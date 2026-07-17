@@ -58,17 +58,17 @@ func (mr *MockRepositoryMockRecorder) AttachJobContainer(ctx, jobID, leaseToken,
 }
 
 // CancelClaimedJob mocks base method.
-func (m *MockRepository) CancelClaimedJob(ctx context.Context, jobID, leaseToken string) error {
+func (m *MockRepository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, terminalReasonCode string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CancelClaimedJob", ctx, jobID, leaseToken)
+	ret := m.ctrl.Call(m, "CancelClaimedJob", ctx, jobID, leaseToken, terminalReasonCode)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CancelClaimedJob indicates an expected call of CancelClaimedJob.
-func (mr *MockRepositoryMockRecorder) CancelClaimedJob(ctx, jobID, leaseToken any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) CancelClaimedJob(ctx, jobID, leaseToken, terminalReasonCode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelClaimedJob", reflect.TypeOf((*MockRepository)(nil).CancelClaimedJob), ctx, jobID, leaseToken)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelClaimedJob", reflect.TypeOf((*MockRepository)(nil).CancelClaimedJob), ctx, jobID, leaseToken, terminalReasonCode)
 }
 
 // ClaimJob mocks base method.
@@ -103,17 +103,17 @@ func (mr *MockRepositoryMockRecorder) CompleteJob(ctx, jobID, leaseToken any) *g
 }
 
 // FailJob mocks base method.
-func (m *MockRepository) FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage string) error {
+func (m *MockRepository) FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FailJob", ctx, jobID, leaseToken, failureKind, errorCode, errorMessage)
+	ret := m.ctrl.Call(m, "FailJob", ctx, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // FailJob indicates an expected call of FailJob.
-func (mr *MockRepositoryMockRecorder) FailJob(ctx, jobID, leaseToken, failureKind, errorCode, errorMessage any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) FailJob(ctx, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailJob", reflect.TypeOf((*MockRepository)(nil).FailJob), ctx, jobID, leaseToken, failureKind, errorCode, errorMessage)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailJob", reflect.TypeOf((*MockRepository)(nil).FailJob), ctx, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode)
 }
 
 // GetJob mocks base method.
@@ -282,17 +282,17 @@ func (mr *MockRepositoryMockRecorder) StreamJobLogs(ctx, jobID, workflowID, user
 }
 
 // UpdateJobStatus mocks base method.
-func (m *MockRepository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus string) error {
+func (m *MockRepository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus, terminalReasonCode string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, jobID, containerID, jobStatus)
+	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, jobID, containerID, jobStatus, terminalReasonCode)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockRepositoryMockRecorder) UpdateJobStatus(ctx, jobID, containerID, jobStatus any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateJobStatus(ctx, jobID, containerID, jobStatus, terminalReasonCode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockRepository)(nil).UpdateJobStatus), ctx, jobID, containerID, jobStatus)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockRepository)(nil).UpdateJobStatus), ctx, jobID, containerID, jobStatus, terminalReasonCode)
 }
 
 // MockCache is a mock of Cache interface.

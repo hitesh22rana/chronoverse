@@ -4,6 +4,7 @@ import Fuse from "fuse.js";
 import { FileText, Search } from "lucide-react";
 import Link from "next/link";
 import { createContext, type ReactNode, useContext, useDeferredValue, useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,11 +15,21 @@ type SearchDocument = { title: string; description: string; headings: string; hr
 
 const SearchContext = createContext<((open: boolean) => void) | null>(null);
 
+async function fetchSearchDocuments(url: string): Promise<SearchDocument[]> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Search index request failed: ${response.status}`);
+  return response.json() as Promise<SearchDocument[]>;
+}
+
 export function SearchProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [documents, setDocuments] = useState<SearchDocument[]>([]);
   const deferredQuery = useDeferredValue(query.trim());
+  const { data: documents = [] } = useSWR<SearchDocument[]>(
+    open ? `${BASE_PATH}/docs/search-index.json` : null,
+    fetchSearchDocuments,
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
 
   useEffect(() => {
     function keydown(event: KeyboardEvent) {
@@ -30,14 +41,6 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   }, []);
-
-  useEffect(() => {
-    if (!open || documents.length > 0) return;
-    fetch(`${BASE_PATH}/docs/search-index.json`)
-      .then((response) => response.json())
-      .then((value: SearchDocument[]) => setDocuments(value))
-      .catch(() => setDocuments([]));
-  }, [documents.length, open]);
 
   const fuse = useMemo(() => new Fuse(documents, {
     keys: [
@@ -84,17 +87,19 @@ export function SearchProvider({ children }: { children: ReactNode }) {
           <label className="search-input-wrap">
             <Search aria-hidden="true" />
             <span className="sr-only">Search query</span>
-            <input autoFocus onChange={(event) => setQuery(event.target.value)} placeholder="Search Chronoverse..." value={query} />
+            <input onChange={(event) => setQuery(event.target.value)} placeholder="Search Chronoverse..." value={query} />
           </label>
-          <div className="search-results" role="list">
+          <ul className="search-results">
             {results.map((result) => (
-              <Link href={result.href} key={result.href} onClick={() => setOpen(false)} role="listitem">
-                <FileText />
-                <span><strong>{result.title}</strong><small>{result.section} · {result.description}</small></span>
-              </Link>
+              <li key={result.href}>
+                <Link href={result.href} onClick={() => setOpen(false)}>
+                  <FileText />
+                  <span><strong>{result.title}</strong><small>{result.section} · {result.description}</small></span>
+                </Link>
+              </li>
             ))}
-            {query && results.length === 0 && <p>No documentation matched “{query}”.</p>}
-          </div>
+          </ul>
+          {query && results.length === 0 && <p>No documentation matched “{query}”.</p>}
         </DialogContent>
       </Dialog>
     </SearchContext.Provider>

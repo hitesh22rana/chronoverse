@@ -16,7 +16,11 @@ import {
     useInfiniteQuery,
     useMutation,
 } from "@tanstack/react-query"
-import { EventSourcePolyfill } from "event-source-polyfill"
+import {
+    EventSourcePolyfill,
+    type Event as EventSourceEvent,
+    type MessageEvent as EventSourceMessageEvent,
+} from "event-source-polyfill"
 import { toast } from "sonner"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
@@ -152,7 +156,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const streamFilter = searchParams.get("stream") || ""
 
     const [isConnected, setIsConnected] = useState(false)
-    const [isSSEEnabled, setIsSSEEnabled] = useState(false)
     const [liveLogs, setLiveLogs] = useState<JobLog[]>([])
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
@@ -313,19 +316,11 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         enabled: shouldFetch && Boolean(getSearchQueryParams) && Boolean(workflowId) && Boolean(jobId),
     });
 
-    useEffect(() => {
-        setLiveLogs([])
-    }, [workflowId, jobId])
-
     // Handle SSE connection for running jobs
     useEffect(() => {
         if (!shouldFetch || !isRunning || Boolean(getSearchQueryParams) || !workflowId || !jobId) {
-            setIsConnected(false)
-            setIsSSEEnabled(false)
             return
         }
-
-        setIsSSEEnabled(true)
 
         const eventSource = new EventSourcePolyfill(sseURL, {
             withCredentials: true,
@@ -337,23 +332,26 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             setIsConnected(true)
         }
 
-        // Handle specific event types
-        eventSource.addEventListener('log', (event) => {
+        const handleLog = (event: EventSourceEvent) => {
             try {
-                const messageEvent = event as MessageEvent
+                const messageEvent = event as EventSourceMessageEvent
                 const logData = normalizeJobLog(JSON.parse(messageEvent.data) as JobLogWire)
 
                 setLiveLogs((existingLogs) => mergeLiveLogs(existingLogs, [logData]))
             } catch { /* ignore parsing errors */ }
-        })
+        }
 
-        eventSource.addEventListener('error', () => {
+        const handleError = () => {
             toast.error('Log streaming error occurred')
-        })
+        }
 
-        eventSource.addEventListener('end', () => {
+        const handleEnd = () => {
             setIsConnected(false)
-        })
+        }
+
+        eventSource.addEventListener('log', handleLog)
+        eventSource.addEventListener('error', handleError)
+        eventSource.addEventListener('end', handleEnd)
 
         eventSource.onerror = () => {
             setIsConnected(false)
@@ -365,10 +363,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
 
         return () => {
+            eventSource.removeEventListener('log', handleLog)
+            eventSource.removeEventListener('error', handleError)
+            eventSource.removeEventListener('end', handleEnd)
             eventSource.close()
             eventSourceRef.current = null
             setIsConnected(false)
-            setIsSSEEnabled(false)
         }
     }, [sseURL, isRunning, shouldFetch, getSearchQueryParams, workflowId, jobId])
 
@@ -445,6 +445,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }
 
     if (isRunning) {
+        const isSSEEnabled = shouldFetch && !getSearchQueryParams
+
         return {
             logs: runningLogs,
             isLoading: jobLogsInfiniteQuery.isLoading,
@@ -464,7 +466,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     eventSourceRef.current.close()
                     eventSourceRef.current = null
                     setIsConnected(false)
-                    setIsSSEEnabled(false)
                 }
             },
             downloadLogsMutation,

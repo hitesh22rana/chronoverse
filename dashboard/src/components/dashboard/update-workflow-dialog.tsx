@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, type Resolver } from "react-hook-form"
+import { useForm, useWatch, type Resolver } from "react-hook-form"
 import { z } from "zod"
 import { Duration, parseDuration } from "@alwatr/parse-duration"
 import {
@@ -283,17 +283,12 @@ export function UpdateWorkflowDialog({
     };
 
     // Get current field values based on kind
-    const headerFields = workflow?.kind === "HEARTBEAT"
-        ? form.watch("heartbeatPayload.headers") || []
-        : [];
-
-    const cmdFields = workflow?.kind === "CONTAINER"
-        ? form.watch("containerPayload.cmd") || []
-        : [];
-
-    const envFields = workflow?.kind === "CONTAINER"
-        ? form.watch("containerPayload.env") || []
-        : [];
+    const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
+    const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
+    const watchedEnv = useWatch({ control: form.control, name: "containerPayload.env" })
+    const headerFields = workflow?.kind === "HEARTBEAT" ? watchedHeaders || [] : []
+    const cmdFields = workflow?.kind === "CONTAINER" ? watchedCmd || [] : []
+    const envFields = workflow?.kind === "CONTAINER" ? watchedEnv || [] : []
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>

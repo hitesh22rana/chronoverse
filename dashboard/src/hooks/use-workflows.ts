@@ -123,7 +123,7 @@ export function useWorkflows() {
         refetchInterval: 10000, // Refetch every 10 seconds
     })
 
-    const goToNextPage = useCallback(() => {
+    const goToNextPage = () => {
         const nextCursor = getWorkflowQuery?.data?.cursor
         if (!nextCursor) return false
 
@@ -131,7 +131,7 @@ export function useWorkflows() {
         params.set("cursor", nextCursor)
         router.push(`?${params.toString()}`)
         return true
-    }, [getWorkflowQuery?.data?.cursor, router, searchParams])
+    }
 
     const goToPreviousPage = useCallback(() => {
         router.back()

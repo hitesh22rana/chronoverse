@@ -206,6 +206,7 @@ export default function JobDetailsAndLogsPage() {
 
                 {/* Logs Viewer Panel */}
                 <LogsViewer
+                    key={`${workflowId}:${jobId}`}
                     workflowId={workflowId}
                     jobId={jobId}
                     jobStatus={job?.status}

@@ -1,8 +1,8 @@
 "use client"
 
-import { Fragment, useEffect, useState } from "react"
+import { Fragment } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, type Resolver } from "react-hook-form"
+import { useForm, useWatch, type Resolver } from "react-hook-form"
 import { z } from "zod"
 import { Duration, parseDuration } from '@alwatr/parse-duration'
 import {
@@ -174,8 +174,6 @@ type KindType = keyof typeof kindType
 
 export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const { createWorkflow, isCreating } = useWorkflows()
-    const [selectedKind, setSelectedKind] = useState<KindType>("HEARTBEAT")
-
     const form = useForm<WorkflowFormValues>({
         resolver: zodResolver(workflowSchema) as Resolver<WorkflowFormValues>,
         defaultValues: {
@@ -194,55 +192,30 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         mode: "onChange",
     })
 
-    // Watch kind changes and update form structure
-    const watchedKind = form.watch("kind")
+    const watchedKind = useWatch({ control: form.control, name: "kind" })
+    const selectedKind = watchedKind || "HEARTBEAT"
 
-    useEffect(() => {
-        if (watchedKind !== selectedKind) {
-            setSelectedKind(watchedKind)
+    const handleKindChange = (nextKind: KindType) => {
+        form.setValue("kind", nextKind, { shouldDirty: true, shouldValidate: true })
 
-            // Reset the form with the appropriate structure
-            if (watchedKind === "HEARTBEAT") {
-                // For Heartbeat, clean container fields and set defaults
-                form.setValue("heartbeatPayload", {
-                    endpoint: "",
-                    expectedStatusCode: 200,
-                    headers: [],
-                    timeout: ""
-                })
-                form.unregister("containerPayload")
-            } else {
-                // For Container, clean heartbeat fields and set defaults
-                form.setValue("containerPayload", {
-                    image: "",
-                    cmd: [],
-                    env: [],
-                    timeout: ""
-                })
-                form.unregister("heartbeatPayload")
-            }
-        }
-    }, [watchedKind, selectedKind, form])
-
-    // Reset form when dialog opens
-    useEffect(() => {
-        if (open) {
-            setSelectedKind("HEARTBEAT")
-            form.reset({
-                name: "",
-                kind: "HEARTBEAT",
-                interval: 5,
-                maxConsecutiveJobFailuresAllowed: 3,
-                retainLogs: true,
-                heartbeatPayload: {
-                    endpoint: "",
-                    expectedStatusCode: 200,
-                    headers: [],
-                    timeout: ""
-                }
+        if (nextKind === "HEARTBEAT") {
+            form.setValue("heartbeatPayload", {
+                endpoint: "",
+                expectedStatusCode: 200,
+                headers: [],
+                timeout: ""
             })
+            form.unregister("containerPayload")
+        } else {
+            form.setValue("containerPayload", {
+                image: "",
+                cmd: [],
+                env: [],
+                timeout: ""
+            })
+            form.unregister("heartbeatPayload")
         }
-    }, [open, form])
+    }
 
     const handleSubmit = (data: WorkflowFormValues) => {
         let payload: string = "{}"
@@ -305,13 +278,12 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     }
 
     // Get current field values based on selected kind
-    const headerFields = selectedKind === "HEARTBEAT"
-        ? form.watch("heartbeatPayload.headers") || []
-        : []
-
-    const cmdFields = selectedKind === "CONTAINER"
-        ? form.watch("containerPayload.cmd") || []
-        : []
+    const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
+    const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
+    const watchedEnv = useWatch({ control: form.control, name: "containerPayload.env" })
+    const headerFields = selectedKind === "HEARTBEAT" ? watchedHeaders || [] : []
+    const cmdFields = selectedKind === "CONTAINER" ? watchedCmd || [] : []
+    const envFields = selectedKind === "CONTAINER" ? watchedEnv || [] : []
 
     return (
         <Dialog
@@ -361,9 +333,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                 <FormItem>
                                     <FormLabel>Workflow kind</FormLabel>
                                     <Select
-                                        onValueChange={(value) => {
-                                            field.onChange(value);
-                                        }}
+                                        onValueChange={(value) => handleKindChange(value as KindType)}
                                         value={field.value}
                                     >
                                         <FormControl>
@@ -569,9 +539,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                     size="sm"
                                                     className="ml-2"
                                                     onClick={() => {
-                                                        const currentCmds = form.watch("containerPayload.cmd") || []
                                                         form.setValue("containerPayload.cmd", [
-                                                            ...currentCmds,
+                                                            ...cmdFields,
                                                             ""
                                                         ])
                                                     }}
@@ -606,7 +575,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
-                                                            const updatedCmds = [...(form.watch("containerPayload.cmd") || [])]
+                                                            const updatedCmds = [...cmdFields]
                                                             updatedCmds.splice(index, 1)
                                                             form.setValue("containerPayload.cmd", updatedCmds)
                                                         }}
@@ -626,9 +595,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                     size="sm"
                                                     className="ml-2"
                                                     onClick={() => {
-                                                        const currentEnvs = form.watch("containerPayload.env") || []
                                                         form.setValue("containerPayload.env", [
-                                                            ...currentEnvs,
+                                                            ...envFields,
                                                             ""
                                                         ])
                                                     }}
@@ -640,7 +608,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional environment variables to set in the container
                                             </FormDescription>
 
-                                            {form.watch("containerPayload.env")?.map((_, index) => (
+                                            {envFields.map((_, index) => (
                                                 <div key={index} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
@@ -663,7 +631,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
-                                                            const updatedEnvs = [...(form.watch("containerPayload.env") || [])]
+                                                            const updatedEnvs = [...envFields]
                                                             updatedEnvs.splice(index, 1)
                                                             form.setValue("containerPayload.env", updatedEnvs)
                                                         }}

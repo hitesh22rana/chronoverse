@@ -1,7 +1,6 @@
 "use client"
 
 import {
-    useEffect,
     useState,
     useTransition,
 } from "react"
@@ -120,14 +119,6 @@ export default function WorkflowDetailsAndJobsPage() {
     const [showTerminateWorkflowDialog, setShowTerminateWorkflowDialog] = useState(false)
     const [showDeleteWorkflowDialog, setShowDeleteWorkflowDialog] = useState(false)
 
-    // Sync filter state with current URL params
-    useEffect(() => {
-        setFilterState({
-            status: statusFilter || "",
-            trigger: triggerFilter || "",
-        })
-    }, [statusFilter, triggerFilter])
-
     // Determine status
     const status = workflow?.terminated_at ? "TERMINATED" : workflow?.build_status
 
@@ -146,6 +137,16 @@ export default function WorkflowDetailsAndJobsPage() {
     const handleRefresh = () => {
         refetchWorkflow()
         refetchJobs()
+    }
+
+    const handleFiltersOpenChange = (nextOpen: boolean) => {
+        if (nextOpen) {
+            setFilterState({
+                status: statusFilter || "",
+                trigger: triggerFilter || "",
+            })
+        }
+        setIsFiltersOpen(nextOpen)
     }
 
     // Handle tab change
@@ -313,7 +314,7 @@ export default function WorkflowDetailsAndJobsPage() {
                         )}
 
                         {/* Combined filters popover (trigger + status) */}
-                        <Popover open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+                        <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" className="relative h-9">
                                     <Filter className="size-3" />

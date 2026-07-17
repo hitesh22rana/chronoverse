@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
 import {
     Bell,
@@ -67,16 +67,15 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
     const [newPreference, setNewPreference] = useState("")
 
-    const initials = useMemo(() => {
-        if (!user?.email) return "U"
-        return user.email
+    const initials = user?.email
+        ? user.email
             .split('@')[0]
             .split('.')
             .map(part => part[0])
             .join('')
             .toUpperCase()
             .slice(0, 2)
-    }, [user?.email])
+        : "U"
 
     // Handler for notification preference change
     const handlePreferenceChange = (value: string) => {

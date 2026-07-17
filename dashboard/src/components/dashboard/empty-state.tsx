@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { motion } from "motion/react"
+import { MotionConfig, motion } from "motion/react"
 import { Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -14,13 +13,6 @@ export function EmptyState({
     description: string
     className?: string
 }) {
-    const [mounted, setMounted] = useState(false)
-
-    useEffect(() => {
-        setMounted(true)
-        return () => setMounted(false)
-    }, [])
-
     return (
         <div
             className={cn(
@@ -30,7 +22,7 @@ export function EmptyState({
                 className,
             )}
         >
-            {mounted ? (
+            <MotionConfig reducedMotion="user">
                 <motion.div
                     className="flex flex-col items-center text-center max-w-md mx-auto p-8"
                     initial={{ opacity: 0, y: 20 }}
@@ -106,19 +98,7 @@ export function EmptyState({
                         }}
                     />
                 </motion.div>
-            ) : (
-                <div className="flex flex-col items-center text-center max-w-md mx-auto p-8">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-6">
-                        <Sparkles className="h-8 w-8 text-primary" />
-                    </div>
-                    <h2 className="text-2xl font-semibold tracking-tight mb-3">
-                        {title}
-                    </h2>
-                    <p className="text-muted-foreground leading-relaxed">
-                        {description}
-                    </p>
-                </div>
-            )}
+            </MotionConfig>
         </div>
     )
 }

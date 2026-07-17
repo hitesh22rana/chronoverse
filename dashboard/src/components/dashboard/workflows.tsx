@@ -73,16 +73,6 @@ export function Workflows() {
 
     const [searchInput, setSearchInput] = useState(searchQuery)
 
-    // Sync filter state with current URL params
-    useEffect(() => {
-        setFilterState({
-            status: statusFilter || "",
-            kind: kindFilter || "",
-            intervalMin: intervalMin || "",
-            intervalMax: intervalMax || "",
-        })
-    }, [statusFilter, kindFilter, intervalMin, intervalMax])
-
     // Debounced search update
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -120,6 +110,18 @@ export function Workflows() {
             applyAllFilters(filterState)
             setIsFiltersOpen(false)
         })
+    }
+
+    const handleFiltersOpenChange = (nextOpen: boolean) => {
+        if (nextOpen) {
+            setFilterState({
+                status: statusFilter || "",
+                kind: kindFilter || "",
+                intervalMin: intervalMin || "",
+                intervalMax: intervalMax || "",
+            })
+        }
+        setIsFiltersOpen(nextOpen)
     }
 
     const handleClearFilters = () => {
@@ -193,7 +195,7 @@ export function Workflows() {
 
                     <div className="flex items-center gap-2 justify-end">
                         {/* Filters popover */}
-                        <Popover open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+                        <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" className="relative h-9">
                                     <Filter className="size-3" />

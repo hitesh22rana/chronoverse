@@ -260,7 +260,6 @@ export function LogsViewer({
     const lastUnavailableSelectionRef = useRef("")
     const [lineSelection, setLineSelection] = useState<LogLineSelection | null>(null)
     const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null)
-    const [isSelectionUnavailable, setIsSelectionUnavailable] = useState(false)
 
     const {
         logs,
@@ -282,7 +281,7 @@ export function LogsViewer({
     } = useJobLogs(workflowId, jobId, jobStatus)
 
     const [searchInput, setSearchInput] = useState(searchQuery)
-    const [stream, setStream] = useState(streamFilter || "all")
+    const stream = streamFilter || "all"
     const [downloadFilename, setDownloadFilename] = useState(`${jobId}-logs`)
     const [downloadFormat, setDownloadFormat] = useState<DownloadLogsFormat>("txt")
     const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
@@ -290,6 +289,15 @@ export function LogsViewer({
     const datasetKey = `${pathname}?q=${searchQuery}&stream=${streamFilter}`
     const selectionFragment = lineSelection ? formatLogLineSelection(lineSelection) : ""
     const selectionKey = `${datasetKey}${selectionFragment}`
+    const isSelectionUnavailable = Boolean(
+        lineSelection &&
+        !isLogsLoading &&
+        !isWorkflowLoading &&
+        !logsError &&
+        !isFetchingNextPage &&
+        hasNextPage === false &&
+        logs.length < lineSelection.end
+    )
 
     const updateJsonRendering = useCallback((enabled: boolean) => {
         const params = new URLSearchParams(searchParams.toString())
@@ -312,7 +320,6 @@ export function LogsViewer({
         }
 
         setLineSelection(normalized)
-        setIsSelectionUnavailable(false)
 
         const url = new URL(window.location.href)
         url.hash = formatLogLineSelection(normalized)
@@ -326,7 +333,6 @@ export function LogsViewer({
 
         setLineSelection(null)
         setSelectionAnchor(null)
-        setIsSelectionUnavailable(false)
 
         const url = new URL(window.location.href)
         url.hash = ""
@@ -430,10 +436,6 @@ export function LogsViewer({
     }, [updateLineSelection])
 
     useEffect(() => {
-        setDownloadFilename(`${jobId}-logs`)
-    }, [jobId])
-
-    useEffect(() => {
         const pendingSearchQuery = pendingSearchQueryRef.current
         if (pendingSearchQuery !== null) {
             if (searchQuery === pendingSearchQuery) {
@@ -446,14 +448,9 @@ export function LogsViewer({
     }, [searchQuery])
 
     useEffect(() => {
-        setStream(streamFilter || "all")
-    }, [streamFilter])
-
-    useEffect(() => {
         deepLinkFetchInFlightRef.current = false
         pendingScrollSelectionRef.current = null
         lastScrolledSelectionRef.current = ""
-        setIsSelectionUnavailable(false)
     }, [datasetKey])
 
     const handleRenderedRangeChanged = useCallback((range: ListRange) => {
@@ -492,7 +489,6 @@ export function LogsViewer({
             const selection = parseLogLineSelection(window.location.hash)
             setLineSelection(selection)
             setSelectionAnchor(selection?.start ?? null)
-            setIsSelectionUnavailable(false)
         }
 
         syncSelectionFromFragment()
@@ -511,8 +507,6 @@ export function LogsViewer({
         }
 
         if (logs.length >= lineSelection.end) {
-            setIsSelectionUnavailable(false)
-
             if (lastScrolledSelectionRef.current !== selectionKey) {
                 const targetIndex = lineSelection.start - 1
                 pendingScrollSelectionRef.current = { key: selectionKey, index: targetIndex, correcting: false }
@@ -538,9 +532,6 @@ export function LogsViewer({
             return
         }
 
-        if (!isFetchingNextPage && hasNextPage === false) {
-            setIsSelectionUnavailable(true)
-        }
     }, [
         fetchNextPage,
         hasNextPage,
@@ -774,7 +765,6 @@ export function LogsViewer({
                                     <RadioGroup
                                         value={stream}
                                         onValueChange={(value) => {
-                                            setStream(value)
                                             setPopoverOpen(false)
                                             if (value !== (streamFilter || "all")) {
                                                 clearLineSelection()

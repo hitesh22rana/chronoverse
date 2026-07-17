@@ -175,11 +175,3 @@ export function getStatusLabel(input?: string | null, context?: StatusContext): 
     if (context && meta.labels[context]) return meta.labels[context] as string
     return meta.labels.default
 }
-
-export function isTerminal(input?: string | null): boolean {
-    const k = normalizeStatus(input)
-    return k === "COMPLETED" ||
-        k === "FAILED" ||
-        k === "CANCELED" ||
-        k === "TERMINATED"
-}

@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
+import { domAnimation, LazyMotion, m, MotionConfig } from "motion/react"
 import { Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -14,13 +13,6 @@ export function EmptyState({
     description: string
     className?: string
 }) {
-    const [mounted, setMounted] = useState(false)
-
-    useEffect(() => {
-        setMounted(true)
-        return () => setMounted(false)
-    }, [])
-
     return (
         <div
             className={cn(
@@ -30,14 +22,15 @@ export function EmptyState({
                 className,
             )}
         >
-            {mounted ? (
-                <motion.div
+            <MotionConfig reducedMotion="user">
+                <LazyMotion features={domAnimation}>
+                <m.div
                     className="flex flex-col items-center text-center max-w-md mx-auto p-8"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}
                 >
-                    <motion.div
+                    <m.div
                         className="relative flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-6"
                         animate={{
                             boxShadow: [
@@ -52,7 +45,7 @@ export function EmptyState({
                             ease: "easeInOut"
                         }}
                     >
-                        <motion.div
+                        <m.div
                             className="absolute inset-0 rounded-full bg-primary/5"
                             animate={{
                                 scale: [1, 1.1, 1],
@@ -64,31 +57,31 @@ export function EmptyState({
                             }}
                         />
                         <Sparkles className="h-8 w-8 text-primary" />
-                    </motion.div>
+                    </m.div>
 
-                    <motion.h2
+                    <m.h2
                         className="text-2xl font-semibold tracking-tight mb-3"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.2, duration: 0.5 }}
                     >
                         {title}
-                    </motion.h2>
+                    </m.h2>
 
-                    <motion.p
+                    <m.p
                         className="text-muted-foreground leading-relaxed"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.3, duration: 0.5 }}
                     >
                         {description}
-                    </motion.p>
+                    </m.p>
 
-                    <motion.div
+                    <m.div
                         className="absolute opacity-20"
                         style={{
                             borderRadius: "30% 70% 70% 30% / 30% 30% 70% 70%",
-                            filter: "blur(60px)",
+                            filter: "blur(8px)",
                             zIndex: -1,
                             background: "radial-gradient(circle, rgba(147,51,234,0.2) 0%, rgba(79,70,229,0.1) 50%, transparent 70%)",
                         }}
@@ -105,20 +98,9 @@ export function EmptyState({
                             ease: "easeInOut"
                         }}
                     />
-                </motion.div>
-            ) : (
-                <div className="flex flex-col items-center text-center max-w-md mx-auto p-8">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-6">
-                        <Sparkles className="h-8 w-8 text-primary" />
-                    </div>
-                    <h2 className="text-2xl font-semibold tracking-tight mb-3">
-                        {title}
-                    </h2>
-                    <p className="text-muted-foreground leading-relaxed">
-                        {description}
-                    </p>
-                </div>
-            )}
+                </m.div>
+                </LazyMotion>
+            </MotionConfig>
         </div>
     )
 }

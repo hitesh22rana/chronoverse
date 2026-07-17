@@ -1,6 +1,5 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -53,7 +52,7 @@ export function useWorkflowJobs(workflowId: string) {
     }
 
     // Build query parameters for the get jobs request
-    const getJobQueryParams = useMemo(() => {
+    const getJobQueryParams = (() => {
         const params = new URLSearchParams()
 
         if (currentCursor) {
@@ -69,7 +68,7 @@ export function useWorkflowJobs(workflowId: string) {
         }
 
         return params.toString()
-    }, [currentCursor, statusFilter, triggerFilter])
+    })()
 
     const getJobQuery = useQuery({
         queryKey: ["workflow-jobs", workflowId, currentCursor, statusFilter, triggerFilter],
@@ -90,7 +89,7 @@ export function useWorkflowJobs(workflowId: string) {
     })
 
     // Pagination functions
-    const goToNextPage = useCallback(() => {
+    const goToNextPage = () => {
         const nextCursor = getJobQuery.data?.cursor
         if (!nextCursor) return false
 
@@ -98,21 +97,21 @@ export function useWorkflowJobs(workflowId: string) {
         params.set("cursor", nextCursor)
         router.push(`?${params.toString()}`)
         return true
-    }, [getJobQuery.data?.cursor, router, searchParams])
+    }
 
-    const goToPreviousPage = useCallback(() => {
+    const goToPreviousPage = () => {
         router.back()
         return true
-    }, [router])
+    }
 
-    const resetPagination = useCallback(() => {
+    const resetPagination = () => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor")
         router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+    }
 
     // Apply all filters to the jobs
-    const applyAllFilters = useCallback((filters: unknown) => {
+    const applyAllFilters = (filters: unknown) => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
 
@@ -131,10 +130,10 @@ export function useWorkflowJobs(workflowId: string) {
         }
 
         router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+    }
 
     // Clear all filters
-    const clearAllFilters = useCallback(() => {
+    const clearAllFilters = () => {
         const oldParams = new URLSearchParams(searchParams.toString())
         const tab = oldParams.get("tab")
 
@@ -144,7 +143,7 @@ export function useWorkflowJobs(workflowId: string) {
         }
 
         router.push(`?${params.toString()}`)
-    }, [router, searchParams])
+    }
 
     if (getJobQuery.error instanceof Error) {
         toast.error(getJobQuery.error.message)

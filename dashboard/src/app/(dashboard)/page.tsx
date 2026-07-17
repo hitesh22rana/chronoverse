@@ -34,10 +34,12 @@ export default function DashboardPage() {
 
             <Workflows />
 
-            <CreateWorkflowDialog
-                open={showCreateDialog}
-                onOpenChange={setShowCreateDialog}
-            />
+            {showCreateDialog && (
+                <CreateWorkflowDialog
+                    open
+                    onOpenChange={setShowCreateDialog}
+                />
+            )}
         </div>
     )
 }

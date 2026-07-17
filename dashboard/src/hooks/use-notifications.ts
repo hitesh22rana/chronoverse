@@ -73,31 +73,30 @@ export function useNotifications() {
                 batchs.push(ids.slice(i, i + batchSize))
             }
 
-            // Send a request for each batch
-            for (const batch of batchs) {
-                const _ids = batch
+            await Promise.all(batchs.map(async (batch) => {
                 const response = await fetchWithAuth(NOTIFICATIONS_ENDPOINT, {
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/json",
                     },
-                    body: JSON.stringify({ ids: _ids }),
+                    body: JSON.stringify({ ids: batch }),
                 })
 
                 if (!response.ok) {
                     throw new Error("failed to mark notifications as read")
                 }
-            }
+            }))
 
             return ids
         },
         onSuccess: (ids) => {
+            const markedIds = new Set(ids)
             queryClient.setQueryData(["notifications"], (oldData: InfiniteData<Notifications> | undefined) => {
                 if (!oldData) return oldData
 
                 // Remove the notifications from the old data
                 const updatedPages = oldData.pages.map((page) => {
-                    const updatedNotifications = page.notifications.filter((notification) => !ids.includes(notification.id))
+                    const updatedNotifications = page.notifications.filter((notification) => !markedIds.has(notification.id))
                     return { ...page, notifications: updatedNotifications }
                 })
 

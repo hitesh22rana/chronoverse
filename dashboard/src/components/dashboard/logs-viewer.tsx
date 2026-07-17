@@ -1,16 +1,15 @@
 "use client"
 
 import {
-    useCallback,
     useEffect,
     useRef,
     useState,
     useTransition,
 } from "react"
 import type {
-    KeyboardEvent as ReactKeyboardEvent,
     MouseEvent as ReactMouseEvent,
     PointerEvent as ReactPointerEvent,
+    ReactNode,
 } from "react"
 import {
     usePathname,
@@ -61,7 +60,7 @@ import {
 } from "@/components/ui/tooltip"
 
 import { useJobLogs } from "@/hooks/use-job-logs"
-import type { DownloadLogsFormat } from "@/hooks/use-job-logs"
+import type { DownloadLogsFormat, JobLog } from "@/hooks/use-job-logs"
 
 import { cn, jsonRegex } from "@/lib/utils"
 import {
@@ -83,6 +82,226 @@ interface LogViewerProps {
     jobId: string
     jobStatus: string
     completedAt: string
+}
+
+function parseLogMessage(message: string, highlightToken: string | undefined, parseJson: boolean) {
+    if (!parseJson) {
+        return renderHighlightedText(message, highlightToken)
+    }
+
+    const { rawMessage, highlightedSegments } = parseHighlightedMessage(message, highlightToken)
+
+    try {
+        const parsed = JSON.parse(rawMessage)
+        return renderHighlightedSegments(JSON.stringify(parsed, null, 2), highlightedSegments)
+    } catch {
+        const formattedMessage = rawMessage.replace(jsonRegex, (match) => {
+            try {
+                const parsed = JSON.parse(match)
+                return JSON.stringify(parsed, null, 2)
+            } catch {
+                return match
+            }
+        })
+
+        return renderHighlightedSegments(formattedMessage, highlightedSegments)
+    }
+}
+
+function useLogSearchInteractions(model: any) {
+    const {
+        searchInput,
+        searchQuery,
+        pendingSearchQueryRef,
+        startSearchTransition,
+        updateSearchQuery,
+        searchInputRef,
+        setIsSearchFocused,
+        isSearchFocused,
+    } = model
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (searchInput !== searchQuery) {
+                pendingSearchQueryRef.current = searchInput
+                startSearchTransition(() => updateSearchQuery(searchInput))
+            }
+        }, 500)
+
+        return () => clearTimeout(timer)
+    }, [
+        pendingSearchQueryRef,
+        searchInput,
+        searchQuery,
+        startSearchTransition,
+        updateSearchQuery,
+    ])
+
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "f") {
+                event.preventDefault()
+                searchInputRef.current?.focus()
+                setIsSearchFocused(true)
+            }
+
+            if (event.key === "Escape" && isSearchFocused) {
+                setIsSearchFocused(false)
+                searchInputRef.current?.blur()
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyDown)
+        return () => window.removeEventListener("keydown", handleKeyDown)
+    }, [isSearchFocused, searchInputRef, setIsSearchFocused])
+}
+
+
+function useLogViewerActions(model: any) {
+    const {
+        searchParams,
+        router,
+        pathname,
+        setLineSelection,
+        lineSelection,
+        selectionAnchorRef,
+        rowPointerGestureRef,
+        logs,
+    } = model
+
+    const updateJsonRendering = (enabled: boolean) => {
+        const params = new URLSearchParams(searchParams.toString())
+
+        if (enabled) {
+            params.set("json", "true")
+        } else {
+            params.delete("json")
+        }
+
+        const query = params.toString()
+        const hash = window.location.hash
+        router.replace(buildLogViewerUrl(pathname, query, hash), { scroll: false })
+    }
+
+    const updateLineSelection = (selection: LogLineSelection) => {
+        const normalized = normalizeLogLineSelection(selection.start, selection.end)
+        if (!normalized) {
+            return
+        }
+
+        setLineSelection(normalized)
+
+        const url = new URL(window.location.href)
+        url.hash = formatLogLineSelection(normalized)
+        window.history.replaceState(window.history.state, "", url)
+    }
+
+    const clearLineSelection = () => {
+        if (!lineSelection && !window.location.hash) {
+            return
+        }
+
+        setLineSelection(null)
+        selectionAnchorRef.current = null
+
+        const url = new URL(window.location.href)
+        url.hash = ""
+        window.history.replaceState(window.history.state, "", url)
+    }
+
+    const selectLogLine = (lineNumber: number, extendSelection: boolean) => {
+        const anchor = selectionAnchorRef.current ?? lineSelection?.start ?? null
+        const selection = getNextLogLineSelection(lineNumber, anchor, extendSelection)
+        if (!selection) {
+            return
+        }
+
+        if (!extendSelection) {
+            selectionAnchorRef.current = lineNumber
+        }
+        updateLineSelection(selection)
+    }
+
+    const handleLogRowClick = (
+        lineNumber: number,
+        event: ReactMouseEvent<HTMLButtonElement>
+    ) => {
+        const target = event.target
+        const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
+        const wasPointerDrag = Boolean(rowPointerGestureRef.current?.didDrag)
+        rowPointerGestureRef.current = null
+
+        if (shouldIgnoreLogRowSelection(wasPointerDrag, isLineOptionsInteraction)) {
+            return
+        }
+
+        selectLogLine(lineNumber, event.shiftKey)
+    }
+
+    const handleLogRowPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+        const target = event.target
+        if (target instanceof Element && target.closest("[data-line-options]")) {
+            rowPointerGestureRef.current = null
+            return
+        }
+
+        if (event.shiftKey && event.button === 0) {
+            event.preventDefault()
+            window.getSelection()?.removeAllRanges()
+        }
+
+        rowPointerGestureRef.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            didDrag: false,
+        }
+    }
+
+    const handleLogRowPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+        const gesture = rowPointerGestureRef.current
+        if (!gesture || gesture.didDrag) {
+            return
+        }
+
+        const deltaX = event.clientX - gesture.startX
+        const deltaY = event.clientY - gesture.startY
+        if (Math.hypot(deltaX, deltaY) >= 4) {
+            gesture.didDrag = true
+        }
+    }
+
+    const copyLogLines = async (selection: LogLineSelection) => {
+        try {
+            const text = getSelectedLogText(logs.map((log: JobLog) => log.message), selection)
+            await navigator.clipboard.writeText(text)
+            toast.success(selection.start === selection.end ? "Log line copied" : "Log lines copied")
+        } catch {
+            toast.error("Failed to copy log lines")
+        }
+    }
+
+    const copyPermalink = async (selection: LogLineSelection) => {
+        try {
+            updateLineSelection(selection)
+
+            const url = new URL(window.location.href)
+            url.hash = formatLogLineSelection(selection)
+            await navigator.clipboard.writeText(url.toString())
+            toast.success("Log permalink copied")
+        } catch {
+            toast.error("Failed to copy log permalink")
+        }
+    }
+
+    return {
+        updateJsonRendering,
+        clearLineSelection,
+        handleLogRowClick,
+        handleLogRowPointerDown,
+        handleLogRowPointerMove,
+        copyLogLines,
+        copyPermalink,
+    }
 }
 
 const getLogStreamStyles = (stream: string) => {
@@ -112,34 +331,15 @@ const highlightEndPrefix = "__CV_HL_END_"
 const highlightSuffix = "__"
 const shareableJobStatuses = new Set(["COMPLETED", "FAILED", "CANCELED"])
 
-const escapeHtml = (value: string) => {
-    return value.replace(/[&<>"']/g, (char) => {
-        switch (char) {
-            case "&":
-                return "&amp;"
-            case "<":
-                return "&lt;"
-            case ">":
-                return "&gt;"
-            case "\"":
-                return "&quot;"
-            case "'":
-                return "&#39;"
-            default:
-                return char
-        }
-    })
-}
-
-const renderHighlightedText = (message: string, highlightToken?: string) => {
+const renderHighlightedText = (message: string, highlightToken?: string): ReactNode => {
     if (!highlightToken || !highlightTokenPattern.test(highlightToken)) {
-        return escapeHtml(message)
+        return message
     }
 
     const startTag = `${highlightStartPrefix}${highlightToken}${highlightSuffix}`
     const endTag = `${highlightEndPrefix}${highlightToken}${highlightSuffix}`
     let currentIndex = 0
-    let rendered = ""
+    const rendered: ReactNode[] = []
 
     while (currentIndex < message.length) {
         const startIndex = message.indexOf(startTag, currentIndex)
@@ -153,12 +353,16 @@ const renderHighlightedText = (message: string, highlightToken?: string) => {
             break
         }
 
-        rendered += escapeHtml(message.slice(currentIndex, startIndex))
-        rendered += `<mark class="${highlightClass}">${escapeHtml(message.slice(matchStartIndex, endIndex))}</mark>`
+        rendered.push(message.slice(currentIndex, startIndex))
+        rendered.push(
+            <mark key={`${startIndex}:${endIndex}`} className={highlightClass}>
+                {message.slice(matchStartIndex, endIndex)}
+            </mark>
+        )
         currentIndex = endIndex + endTag.length
     }
 
-    rendered += escapeHtml(message.slice(currentIndex))
+    rendered.push(message.slice(currentIndex))
     return rendered
 }
 
@@ -205,13 +409,13 @@ const parseHighlightedMessage = (message: string, highlightToken?: string) => {
     return { rawMessage, highlightedSegments }
 }
 
-const renderHighlightedSegments = (message: string, segments: string[]) => {
+const renderHighlightedSegments = (message: string, segments: string[]): ReactNode => {
     if (!segments.length) {
-        return escapeHtml(message)
+        return message
     }
 
     let currentIndex = 0
-    let rendered = ""
+    const rendered: ReactNode[] = []
 
     for (const segment of segments) {
         if (!segment) {
@@ -223,13 +427,126 @@ const renderHighlightedSegments = (message: string, segments: string[]) => {
             continue
         }
 
-        rendered += escapeHtml(message.slice(currentIndex, segmentIndex))
-        rendered += `<mark class="${highlightClass}">${escapeHtml(segment)}</mark>`
+        rendered.push(message.slice(currentIndex, segmentIndex))
+        rendered.push(
+            <mark key={`${segmentIndex}:${segment.length}`} className={highlightClass}>
+                {segment}
+            </mark>
+        )
         currentIndex = segmentIndex + segment.length
     }
 
-    rendered += escapeHtml(message.slice(currentIndex))
+    rendered.push(message.slice(currentIndex))
     return rendered
+}
+
+function LogRow({ index, model }: { index: number; model: any }) {
+    const {
+        logs,
+        lineSelection,
+        jobStatus,
+        disableLogInteractions,
+        parseLog,
+        handleLogRowPointerDown,
+        handleLogRowPointerMove,
+        rowPointerGestureRef,
+        handleLogRowClick,
+        copyLogLines,
+        copyPermalink,
+    } = model
+
+    const log = logs[index]
+    if (!log) return null
+    const lineNumber = index + 1
+    const isSelected = isLogLineSelected(lineNumber, lineSelection)
+    const isTopSelectedLine = isSelected && lineSelection?.start === lineNumber
+    const showLineOptions = !isSelected || isTopSelectedLine
+    const actionSelection = isTopSelectedLine && lineSelection
+        ? lineSelection
+        : { start: lineNumber, end: lineNumber }
+    const canCopyLines = actionSelection.end <= logs.length
+    const canCopyPermalink = Boolean(
+        shareableJobStatuses.has(jobStatus) &&
+        !disableLogInteractions &&
+        canCopyLines
+    )
+    const formattedMessage = parseLog(log.message, log.highlightToken)
+    return (
+        <div
+            id={`L${lineNumber}`}
+            className={cn(
+                "flex min-h-6 hover:bg-muted/50 group",
+                getLogStreamStyles(log.stream),
+                { "bg-accent hover:bg-accent": isSelected }
+            )}
+            data-line-number={lineNumber}
+            data-selected={isSelected || undefined}
+        >
+            <div className="flex w-9 shrink-0 items-center justify-center" data-line-options>
+                {showLineOptions && (
+                    <DropdownMenu>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className={cn(
+                                            "size-7 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100",
+                                            { "opacity-100": isTopSelectedLine }
+                                        )}
+                                        aria-label="Line options"
+                                    >
+                                        <Ellipsis />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">
+                                Line options
+                            </TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent align="start" className="min-w-40" data-line-options>
+                            <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                    disabled={!canCopyLines}
+                                    onSelect={() => void copyLogLines(actionSelection)}
+                                >
+                                    <Copy />
+                                    {actionSelection.start === actionSelection.end ? "Copy line" : "Copy lines"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    disabled={!canCopyPermalink}
+                                    onSelect={() => void copyPermalink(actionSelection)}
+                                >
+                                    <Link />
+                                    Copy permalink
+                                </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
+            </div>
+            <span
+                className={cn("my-1 w-1 flex-none rounded-sm", getLogStreamStripStyles(log.stream))}
+                title={log.stream}
+                aria-hidden="true"
+            />
+            <button
+                type="button"
+                className="flex-1 whitespace-pre-wrap break-all px-3 py-1 text-left"
+                aria-label="Select log entry"
+                aria-pressed={isSelected}
+                onPointerDown={handleLogRowPointerDown}
+                onPointerMove={handleLogRowPointerMove}
+                onPointerCancel={() => {
+                    rowPointerGestureRef.current = null
+                }}
+                onClick={(event) => handleLogRowClick(lineNumber, event)}
+            >
+                {formattedMessage}
+            </button>
+        </div>
+    )
 }
 
 export function LogsViewer({
@@ -259,8 +576,7 @@ export function LogsViewer({
     const pendingScrollSelectionRef = useRef<{ key: string; index: number; correcting: boolean } | null>(null)
     const lastUnavailableSelectionRef = useRef("")
     const [lineSelection, setLineSelection] = useState<LogLineSelection | null>(null)
-    const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null)
-    const [isSelectionUnavailable, setIsSelectionUnavailable] = useState(false)
+    const selectionAnchorRef = useRef<number | null>(null)
 
     const {
         logs,
@@ -282,7 +598,7 @@ export function LogsViewer({
     } = useJobLogs(workflowId, jobId, jobStatus)
 
     const [searchInput, setSearchInput] = useState(searchQuery)
-    const [stream, setStream] = useState(streamFilter || "all")
+    const stream = streamFilter || "all"
     const [downloadFilename, setDownloadFilename] = useState(`${jobId}-logs`)
     const [downloadFormat, setDownloadFormat] = useState<DownloadLogsFormat>("txt")
     const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
@@ -290,148 +606,34 @@ export function LogsViewer({
     const datasetKey = `${pathname}?q=${searchQuery}&stream=${streamFilter}`
     const selectionFragment = lineSelection ? formatLogLineSelection(lineSelection) : ""
     const selectionKey = `${datasetKey}${selectionFragment}`
+    const isSelectionUnavailable = Boolean(
+        lineSelection &&
+        !isLogsLoading &&
+        !isWorkflowLoading &&
+        !logsError &&
+        !isFetchingNextPage &&
+        hasNextPage === false &&
+        logs.length < lineSelection.end
+    )
 
-    const updateJsonRendering = useCallback((enabled: boolean) => {
-        const params = new URLSearchParams(searchParams.toString())
-
-        if (enabled) {
-            params.set("json", "true")
-        } else {
-            params.delete("json")
-        }
-
-        const query = params.toString()
-        const hash = window.location.hash
-        router.replace(buildLogViewerUrl(pathname, query, hash), { scroll: false })
-    }, [pathname, router, searchParams])
-
-    const updateLineSelection = useCallback((selection: LogLineSelection) => {
-        const normalized = normalizeLogLineSelection(selection.start, selection.end)
-        if (!normalized) {
-            return
-        }
-
-        setLineSelection(normalized)
-        setIsSelectionUnavailable(false)
-
-        const url = new URL(window.location.href)
-        url.hash = formatLogLineSelection(normalized)
-        window.history.replaceState(window.history.state, "", url)
-    }, [])
-
-    const clearLineSelection = useCallback(() => {
-        if (!lineSelection && !window.location.hash) {
-            return
-        }
-
-        setLineSelection(null)
-        setSelectionAnchor(null)
-        setIsSelectionUnavailable(false)
-
-        const url = new URL(window.location.href)
-        url.hash = ""
-        window.history.replaceState(window.history.state, "", url)
-    }, [lineSelection])
-
-    const selectLogLine = useCallback((lineNumber: number, extendSelection: boolean) => {
-        const anchor = selectionAnchor ?? lineSelection?.start ?? null
-        const selection = getNextLogLineSelection(lineNumber, anchor, extendSelection)
-        if (!selection) {
-            return
-        }
-
-        if (!extendSelection) {
-            setSelectionAnchor(lineNumber)
-        }
-        updateLineSelection(selection)
-    }, [lineSelection?.start, selectionAnchor, updateLineSelection])
-
-    const handleLogRowClick = useCallback((
-        lineNumber: number,
-        event: ReactMouseEvent<HTMLDivElement>
-    ) => {
-        const target = event.target
-        const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
-        const wasPointerDrag = Boolean(rowPointerGestureRef.current?.didDrag)
-        rowPointerGestureRef.current = null
-
-        if (shouldIgnoreLogRowSelection(wasPointerDrag, isLineOptionsInteraction)) {
-            return
-        }
-
-        selectLogLine(lineNumber, event.shiftKey)
-    }, [selectLogLine])
-
-    const handleLogRowPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-        const target = event.target
-        if (target instanceof Element && target.closest("[data-line-options]")) {
-            rowPointerGestureRef.current = null
-            return
-        }
-
-        if (event.shiftKey && event.button === 0) {
-            event.preventDefault()
-            window.getSelection()?.removeAllRanges()
-        }
-
-        rowPointerGestureRef.current = {
-            startX: event.clientX,
-            startY: event.clientY,
-            didDrag: false,
-        }
-    }, [])
-
-    const handleLogRowPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-        const gesture = rowPointerGestureRef.current
-        if (!gesture || gesture.didDrag) {
-            return
-        }
-
-        const deltaX = event.clientX - gesture.startX
-        const deltaY = event.clientY - gesture.startY
-        if (Math.hypot(deltaX, deltaY) >= 4) {
-            gesture.didDrag = true
-        }
-    }, [])
-
-    const handleLogRowKeyDown = useCallback((
-        lineNumber: number,
-        event: ReactKeyboardEvent<HTMLSpanElement>
-    ) => {
-        if (event.key !== "Enter" && event.key !== " ") {
-            return
-        }
-
-        event.preventDefault()
-        selectLogLine(lineNumber, event.shiftKey)
-    }, [selectLogLine])
-
-    const copyLogLines = useCallback(async (selection: LogLineSelection) => {
-        try {
-            const text = getSelectedLogText(logs.map((log) => log.message), selection)
-            await navigator.clipboard.writeText(text)
-            toast.success(selection.start === selection.end ? "Log line copied" : "Log lines copied")
-        } catch {
-            toast.error("Failed to copy log lines")
-        }
-    }, [logs])
-
-    const copyPermalink = useCallback(async (selection: LogLineSelection) => {
-        try {
-            updateLineSelection(selection)
-
-            const url = new URL(window.location.href)
-            url.hash = formatLogLineSelection(selection)
-            await navigator.clipboard.writeText(url.toString())
-            toast.success("Log permalink copied")
-        } catch {
-            toast.error("Failed to copy log permalink")
-        }
-    }, [updateLineSelection])
-
-    useEffect(() => {
-        setDownloadFilename(`${jobId}-logs`)
-    }, [jobId])
+    const {
+        updateJsonRendering,
+        clearLineSelection,
+        handleLogRowClick,
+        handleLogRowPointerDown,
+        handleLogRowPointerMove,
+        copyLogLines,
+        copyPermalink,
+    } = useLogViewerActions({
+        searchParams,
+        router,
+        pathname,
+        setLineSelection,
+        lineSelection,
+        selectionAnchorRef,
+        rowPointerGestureRef,
+        logs,
+    })
 
     useEffect(() => {
         const pendingSearchQuery = pendingSearchQueryRef.current
@@ -446,17 +648,12 @@ export function LogsViewer({
     }, [searchQuery])
 
     useEffect(() => {
-        setStream(streamFilter || "all")
-    }, [streamFilter])
-
-    useEffect(() => {
         deepLinkFetchInFlightRef.current = false
         pendingScrollSelectionRef.current = null
         lastScrolledSelectionRef.current = ""
-        setIsSelectionUnavailable(false)
     }, [datasetKey])
 
-    const handleRenderedRangeChanged = useCallback((range: ListRange) => {
+    const handleRenderedRangeChanged = (range: ListRange) => {
         const pendingScroll = pendingScrollSelectionRef.current
         if (!pendingScroll || pendingScroll.correcting || pendingScroll.index < range.startIndex || pendingScroll.index > range.endIndex) {
             return
@@ -485,14 +682,13 @@ export function LogsViewer({
                 },
             })
         })
-    }, [])
+    }
 
     useEffect(() => {
         const syncSelectionFromFragment = () => {
             const selection = parseLogLineSelection(window.location.hash)
             setLineSelection(selection)
-            setSelectionAnchor(selection?.start ?? null)
-            setIsSelectionUnavailable(false)
+            selectionAnchorRef.current = selection?.start ?? null
         }
 
         syncSelectionFromFragment()
@@ -511,8 +707,6 @@ export function LogsViewer({
         }
 
         if (logs.length >= lineSelection.end) {
-            setIsSelectionUnavailable(false)
-
             if (lastScrolledSelectionRef.current !== selectionKey) {
                 const targetIndex = lineSelection.start - 1
                 pendingScrollSelectionRef.current = { key: selectionKey, index: targetIndex, correcting: false }
@@ -538,9 +732,6 @@ export function LogsViewer({
             return
         }
 
-        if (!isFetchingNextPage && hasNextPage === false) {
-            setIsSelectionUnavailable(true)
-        }
     }, [
         fetchNextPage,
         hasNextPage,
@@ -566,165 +757,38 @@ export function LogsViewer({
         toast.warning(getUnavailableSelectionMessage(lineSelection))
     }, [isSelectionUnavailable, lineSelection, selectionKey])
 
-    // Debounced search update
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (searchInput !== searchQuery) {
-                pendingSearchQueryRef.current = searchInput
-                startSearchTransition(() => {
-                    updateSearchQuery(searchInput)
-                })
-            }
-        }, 500)
+    useLogSearchInteractions({
+        searchInput,
+        searchQuery,
+        pendingSearchQueryRef,
+        startSearchTransition,
+        updateSearchQuery,
+        searchInputRef,
+        setIsSearchFocused,
+        isSearchFocused,
+    })
 
-        return () => clearTimeout(timer)
-    }, [searchInput, searchQuery, updateSearchQuery])
+    const parseLog = (message: string, highlightToken?: string) =>
+        parseLogMessage(message, highlightToken, parseJson)
 
-    // Keyboard shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "f") {
-                e.preventDefault()
-                searchInputRef.current?.focus()
-                setIsSearchFocused(true)
-            }
-
-            if (e.key === "Escape" && isSearchFocused) {
-                setIsSearchFocused(false)
-                searchInputRef.current?.blur()
-            }
-        }
-
-        window.addEventListener("keydown", handleKeyDown)
-        return () => window.removeEventListener("keydown", handleKeyDown)
-    }, [isSearchFocused])
-
-    // Parse log message and render token-scoped Meili highlights safely.
-    const parseLog = useCallback(
-        (message: string, highlightToken?: string) => {
-            if (!parseJson) {
-                return renderHighlightedText(message, highlightToken)
-            }
-
-            const { rawMessage, highlightedSegments } = parseHighlightedMessage(message, highlightToken)
-
-            try {
-                const parsed = JSON.parse(rawMessage)
-                return renderHighlightedSegments(JSON.stringify(parsed, null, 2), highlightedSegments)
-            } catch {
-                const formattedMessage = rawMessage.replace(jsonRegex, (match) => {
-                    try {
-                        const parsed = JSON.parse(match)
-                        return JSON.stringify(parsed, null, 2)
-                    } catch {
-                        return match
-                    }
-                })
-
-                return renderHighlightedSegments(formattedMessage, highlightedSegments)
-            }
-        },
-        [parseJson]
+    const renderLogRow = (index: number) => (
+        <LogRow
+            index={index}
+            model={{
+                logs,
+                lineSelection,
+                jobStatus,
+                disableLogInteractions,
+                parseLog,
+                handleLogRowPointerDown,
+                handleLogRowPointerMove,
+                rowPointerGestureRef,
+                handleLogRowClick,
+                copyLogLines,
+                copyPermalink,
+            }}
+        />
     )
-
-    // Row renderer for Virtuoso
-    const LogRow = (index: number) => {
-        const log = logs[index]
-        if (!log) return null
-        const lineNumber = index + 1
-        const isSelected = isLogLineSelected(lineNumber, lineSelection)
-        const isTopSelectedLine = isSelected && lineSelection?.start === lineNumber
-        const showLineOptions = !isSelected || isTopSelectedLine
-        const actionSelection = isTopSelectedLine && lineSelection
-            ? lineSelection
-            : { start: lineNumber, end: lineNumber }
-        const canCopyLines = actionSelection.end <= logs.length
-        const canCopyPermalink = Boolean(
-            shareableJobStatuses.has(jobStatus) &&
-            !disableLogInteractions &&
-            canCopyLines
-        )
-        const formattedMessage = parseLog(log.message, log.highlightToken)
-        return (
-            <div
-                id={`L${lineNumber}`}
-                className={cn(
-                    "flex min-h-6 hover:bg-muted/50 group",
-                    getLogStreamStyles(log.stream),
-                    { "bg-accent hover:bg-accent": isSelected }
-                )}
-                data-line-number={lineNumber}
-                data-selected={isSelected || undefined}
-                onPointerDown={handleLogRowPointerDown}
-                onPointerMove={handleLogRowPointerMove}
-                onPointerCancel={() => {
-                    rowPointerGestureRef.current = null
-                }}
-                onClick={(event) => handleLogRowClick(lineNumber, event)}
-            >
-                <div className="flex w-9 shrink-0 items-center justify-center" data-line-options>
-                    {showLineOptions && (
-                        <DropdownMenu>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            className={cn(
-                                                "size-7 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100",
-                                                { "opacity-100": isTopSelectedLine }
-                                            )}
-                                            aria-label="Line options"
-                                        >
-                                            <Ellipsis />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                </TooltipTrigger>
-                                <TooltipContent side="left">
-                                    Line options
-                                </TooltipContent>
-                            </Tooltip>
-                            <DropdownMenuContent align="start" className="min-w-40" data-line-options>
-                                <DropdownMenuGroup>
-                                    <DropdownMenuItem
-                                        disabled={!canCopyLines}
-                                        onSelect={() => void copyLogLines(actionSelection)}
-                                    >
-                                        <Copy />
-                                        {actionSelection.start === actionSelection.end ? "Copy line" : "Copy lines"}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                        disabled={!canCopyPermalink}
-                                        onSelect={() => void copyPermalink(actionSelection)}
-                                    >
-                                        <Link />
-                                        Copy permalink
-                                    </DropdownMenuItem>
-                                </DropdownMenuGroup>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    )}
-                </div>
-                <span
-                    className={cn("my-1 w-1 flex-none rounded-sm", getLogStreamStripStyles(log.stream))}
-                    title={log.stream}
-                    aria-hidden="true"
-                />
-                <span
-                    className="flex-1 whitespace-pre-wrap break-all px-3 py-1"
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Select log entry"
-                    aria-pressed={isSelected}
-                    onKeyDown={(event) => handleLogRowKeyDown(lineNumber, event)}
-                    dangerouslySetInnerHTML={{
-                        __html: formattedMessage,
-                    }}
-                />
-            </div>
-        )
-    }
 
     // Trigger pagination only when user reaches bottom of the Virtuoso viewport
     const handleEndReached = () => {
@@ -732,6 +796,90 @@ export function LogsViewer({
             fetchNextPage()
         }
     }
+
+    return <LogsViewerView model={{
+        jobStatus,
+        logs,
+        isLogsLoading,
+        isWorkflowLoading,
+        logsError,
+        isLogsUnsupportedForKind,
+        workflowKind,
+        isRetentionDisabled,
+        searchQuery,
+        streamFilter,
+        isFetchingNextPage,
+        virtuosoRef,
+        renderLogRow,
+        handleEndReached,
+        handleRenderedRangeChanged,
+        parseJson,
+        updateJsonRendering,
+        completedAt,
+        popoverOpen,
+        setPopoverOpen,
+        disableLogInteractions,
+        searchInputRef,
+        searchInput,
+        setSearchInput,
+        clearLineSelection,
+        setIsSearchFocused,
+        isSearchPending,
+        stream,
+        applyStreamFilter,
+        startSearchTransition,
+        downloadPopoverOpen,
+        setDownloadPopoverOpen,
+        downloadLogsMutation,
+        isDownloadLogsMutationLoading,
+        downloadFilename,
+        setDownloadFilename,
+        downloadFormat,
+        setDownloadFormat,
+    }} />
+}
+
+function LogsViewerView({ model }: { model: any }) {
+    const {
+        jobStatus,
+        logs,
+        isLogsLoading,
+        isWorkflowLoading,
+        logsError,
+        isLogsUnsupportedForKind,
+        workflowKind,
+        isRetentionDisabled,
+        searchQuery,
+        streamFilter,
+        isFetchingNextPage,
+        virtuosoRef,
+        renderLogRow,
+        handleEndReached,
+        handleRenderedRangeChanged,
+        parseJson,
+        updateJsonRendering,
+        completedAt,
+        popoverOpen,
+        setPopoverOpen,
+        disableLogInteractions,
+        searchInputRef,
+        searchInput,
+        setSearchInput,
+        clearLineSelection,
+        setIsSearchFocused,
+        isSearchPending,
+        stream,
+        applyStreamFilter,
+        startSearchTransition,
+        downloadPopoverOpen,
+        setDownloadPopoverOpen,
+        downloadLogsMutation,
+        isDownloadLogsMutationLoading,
+        downloadFilename,
+        setDownloadFilename,
+        downloadFormat,
+        setDownloadFormat,
+    } = model
 
     return (
         <Card className="flex flex-col flex-1 w-full min-h-dvh h-full">
@@ -774,7 +922,6 @@ export function LogsViewer({
                                     <RadioGroup
                                         value={stream}
                                         onValueChange={(value) => {
-                                            setStream(value)
                                             setPopoverOpen(false)
                                             if (value !== (streamFilter || "all")) {
                                                 clearLineSelection()
@@ -917,7 +1064,7 @@ export function LogsViewer({
                     <Virtuoso
                         ref={virtuosoRef}
                         totalCount={logs.length}
-                        itemContent={LogRow}
+                        itemContent={renderLogRow}
                         endReached={handleEndReached}
                         rangeChanged={handleRenderedRangeChanged}
                         overscan={200}

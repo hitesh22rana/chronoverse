@@ -1,9 +1,7 @@
 "use client"
 
 import {
-    useCallback,
     useEffect,
-    useMemo,
     useRef,
     useState,
 } from "react"
@@ -16,7 +14,11 @@ import {
     useInfiniteQuery,
     useMutation,
 } from "@tanstack/react-query"
-import { EventSourcePolyfill } from "event-source-polyfill"
+import {
+    EventSourcePolyfill,
+    type Event as EventSourceEvent,
+    type MessageEvent as EventSourceMessageEvent,
+} from "event-source-polyfill"
 import { toast } from "sonner"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
@@ -152,7 +154,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const streamFilter = searchParams.get("stream") || ""
 
     const [isConnected, setIsConnected] = useState(false)
-    const [isSSEEnabled, setIsSSEEnabled] = useState(false)
     const [liveLogs, setLiveLogs] = useState<JobLog[]>([])
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
@@ -176,7 +177,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     )
 
     // Update search query in URL params
-    const updateSearchQuery = useCallback((newSearchQuery: string) => {
+    const updateSearchQuery = (newSearchQuery: string) => {
         const params = new URLSearchParams(searchParams.toString())
 
         if (newSearchQuery) {
@@ -187,10 +188,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
         const query = params.toString()
         router.push(buildLogViewerUrl(pathname, query, ""))
-    }, [pathname, router, searchParams])
+    }
 
     // Apply stream filter in URL params
-    const applyStreamFilter = useCallback((newStreamFilter: string) => {
+    const applyStreamFilter = (newStreamFilter: string) => {
         const params = new URLSearchParams(searchParams.toString())
 
         if (newStreamFilter) {
@@ -201,10 +202,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
         const query = params.toString()
         router.push(buildLogViewerUrl(pathname, query, ""))
-    }, [pathname, router, searchParams])
+    }
 
     // Build query parameters for the search job logs request
-    const getSearchQueryParams = useMemo(() => {
+    const getSearchQueryParams = (() => {
         const params = new URLSearchParams()
 
         if (searchQuery) {
@@ -216,7 +217,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
 
         return params.toString()
-    }, [searchQuery, streamFilter])
+    })()
 
     // Download raw logs from backend and trigger browser file download
     const downloadLogsMutation = useMutation({
@@ -249,10 +250,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     })
 
     // Retained logs are newest-first; fetching the next page loads older logs.
-    const jobLogsInfiniteQueryKey = useMemo(
-        () => ["job-logs", workflowId, jobId, jobStatus],
-        [workflowId, jobId, jobStatus]
-    )
+    const jobLogsInfiniteQueryKey = ["job-logs", workflowId, jobId, jobStatus]
     const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
         queryKey: jobLogsInfiniteQueryKey,
         queryFn: async ({ pageParam }) => {
@@ -313,19 +311,11 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         enabled: shouldFetch && Boolean(getSearchQueryParams) && Boolean(workflowId) && Boolean(jobId),
     });
 
-    useEffect(() => {
-        setLiveLogs([])
-    }, [workflowId, jobId])
-
     // Handle SSE connection for running jobs
     useEffect(() => {
         if (!shouldFetch || !isRunning || Boolean(getSearchQueryParams) || !workflowId || !jobId) {
-            setIsConnected(false)
-            setIsSSEEnabled(false)
             return
         }
-
-        setIsSSEEnabled(true)
 
         const eventSource = new EventSourcePolyfill(sseURL, {
             withCredentials: true,
@@ -337,23 +327,26 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             setIsConnected(true)
         }
 
-        // Handle specific event types
-        eventSource.addEventListener('log', (event) => {
+        const handleLog = (event: EventSourceEvent) => {
             try {
-                const messageEvent = event as MessageEvent
+                const messageEvent = event as EventSourceMessageEvent
                 const logData = normalizeJobLog(JSON.parse(messageEvent.data) as JobLogWire)
 
                 setLiveLogs((existingLogs) => mergeLiveLogs(existingLogs, [logData]))
             } catch { /* ignore parsing errors */ }
-        })
+        }
 
-        eventSource.addEventListener('error', () => {
+        const handleError = () => {
             toast.error('Log streaming error occurred')
-        })
+        }
 
-        eventSource.addEventListener('end', () => {
+        const handleEnd = () => {
             setIsConnected(false)
-        })
+        }
+
+        eventSource.addEventListener('log', handleLog)
+        eventSource.addEventListener('error', handleError)
+        eventSource.addEventListener('end', handleEnd)
 
         eventSource.onerror = () => {
             setIsConnected(false)
@@ -365,10 +358,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
 
         return () => {
+            eventSource.removeEventListener('log', handleLog)
+            eventSource.removeEventListener('error', handleError)
+            eventSource.removeEventListener('end', handleEnd)
             eventSource.close()
             eventSourceRef.current = null
             setIsConnected(false)
-            setIsSSEEnabled(false)
         }
     }, [sseURL, isRunning, shouldFetch, getSearchQueryParams, workflowId, jobId])
 
@@ -381,18 +376,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error])
 
-    const retainedLogs = useMemo(
-        () => logsFromPages(jobLogsInfiniteQuery.data?.pages),
-        [jobLogsInfiniteQuery.data?.pages]
-    )
-    const runningLogs = useMemo(
-        () => mergeLiveLogs(retainedLogs, liveLogs),
-        [retainedLogs, liveLogs]
-    )
-    const searchLogs = useMemo(
-        () => logsFromPages(jobLogsSearchInfiniteQuery.data?.pages),
-        [jobLogsSearchInfiniteQuery.data?.pages]
-    )
+    const retainedLogs = logsFromPages(jobLogsInfiniteQuery.data?.pages)
+    const runningLogs = mergeLiveLogs(retainedLogs, liveLogs)
+    const searchLogs = logsFromPages(jobLogsSearchInfiniteQuery.data?.pages)
 
     if (shouldFetch && Boolean(getSearchQueryParams)) {
         return {
@@ -445,6 +431,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }
 
     if (isRunning) {
+        const isSSEEnabled = shouldFetch && !getSearchQueryParams
+
         return {
             logs: runningLogs,
             isLoading: jobLogsInfiniteQuery.isLoading,
@@ -464,7 +452,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                     eventSourceRef.current.close()
                     eventSourceRef.current = null
                     setIsConnected(false)
-                    setIsSSEEnabled(false)
                 }
             },
             downloadLogsMutation,

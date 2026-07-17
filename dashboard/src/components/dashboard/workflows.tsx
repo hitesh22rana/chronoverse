@@ -2,7 +2,6 @@
 
 import {
     useEffect,
-    useRef,
     useState,
     useTransition,
 } from "react"
@@ -37,7 +36,7 @@ import { Separator } from "@/components/ui/separator"
 import { WorkflowCard, WorkflowCardSkeleton } from "@/components/dashboard/workflows-card"
 import { EmptyState } from "@/components/dashboard/empty-state"
 
-import { useWorkflows } from "@/hooks/use-workflows"
+import { useWorkflows, type Workflow } from "@/hooks/use-workflows"
 
 import { cn } from "@/lib/utils"
 
@@ -45,7 +44,6 @@ export function Workflows() {
     const [isSearchPending, startSearchTransition] = useTransition()
     const [isFiltersOpen, setIsFiltersOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
-    const searchInputRef = useRef<HTMLInputElement>(null)
 
     // Local state for filter inputs (to be applied when "Apply Filters" is clicked)
     const [filterState, setFilterState] = useState({
@@ -73,16 +71,6 @@ export function Workflows() {
 
     const [searchInput, setSearchInput] = useState(searchQuery)
 
-    // Sync filter state with current URL params
-    useEffect(() => {
-        setFilterState({
-            status: statusFilter || "",
-            kind: kindFilter || "",
-            intervalMin: intervalMin || "",
-            intervalMax: intervalMax || "",
-        })
-    }, [statusFilter, kindFilter, intervalMin, intervalMax])
-
     // Debounced search update
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -101,13 +89,13 @@ export function Workflows() {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === "f") {
                 e.preventDefault()
-                searchInputRef.current?.focus()
+                document.querySelector<HTMLInputElement>("#workflow-search")?.focus()
                 setIsSearchFocused(true)
             }
 
             if (e.key === "Escape" && isSearchFocused) {
                 setIsSearchFocused(false)
-                searchInputRef.current?.blur()
+                document.querySelector<HTMLInputElement>("#workflow-search")?.blur()
             }
         }
 
@@ -120,6 +108,18 @@ export function Workflows() {
             applyAllFilters(filterState)
             setIsFiltersOpen(false)
         })
+    }
+
+    const handleFiltersOpenChange = (nextOpen: boolean) => {
+        if (nextOpen) {
+            setFilterState({
+                status: statusFilter || "",
+                kind: kindFilter || "",
+                intervalMin: intervalMin || "",
+                intervalMax: intervalMax || "",
+            })
+        }
+        setIsFiltersOpen(nextOpen)
     }
 
     const handleClearFilters = () => {
@@ -148,6 +148,56 @@ export function Workflows() {
     const isMaxInvalid = !isNaN(intervalMaxNum) && intervalMaxNum < 0
     const isRangeInvalid = !isNaN(intervalMinNum) && !isNaN(intervalMaxNum) && intervalMaxNum < intervalMinNum
 
+    return renderWorkflowsView({
+        searchInput,
+        setSearchInput,
+        setIsSearchFocused,
+        isSearchPending,
+        activeFiltersCount,
+        updateSearchQuery,
+        isFiltersOpen,
+        handleFiltersOpenChange,
+        filterState,
+        setFilterState,
+        handleClearFilters,
+        isMinInvalid,
+        isMaxInvalid,
+        isRangeInvalid,
+        handleApplyFilters,
+        refetch,
+        isLoading,
+        refetchLoading,
+        pagination,
+        workflows,
+        searchQuery,
+    })
+}
+
+function renderWorkflowsView(model: any) {
+    const {
+        searchInput,
+        setSearchInput,
+        setIsSearchFocused,
+        isSearchPending,
+        activeFiltersCount,
+        updateSearchQuery,
+        isFiltersOpen,
+        handleFiltersOpenChange,
+        filterState,
+        setFilterState,
+        handleClearFilters,
+        isMinInvalid,
+        isMaxInvalid,
+        isRangeInvalid,
+        handleApplyFilters,
+        refetch,
+        isLoading,
+        refetchLoading,
+        pagination,
+        workflows,
+        searchQuery,
+    } = model
+
     return (
         <div className="flex flex-col h-full w-full mt-8">
             {/* Clean control bar */}
@@ -158,7 +208,7 @@ export function Workflows() {
                     <div className="relative flex w-full">
                         <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                         <Input
-                            ref={searchInputRef}
+                            id="workflow-search"
                             placeholder="Search workflows...(Ctrl+F)"
                             value={searchInput}
                             onChange={e => setSearchInput(e.target.value)}
@@ -193,7 +243,7 @@ export function Workflows() {
 
                     <div className="flex items-center gap-2 justify-end">
                         {/* Filters popover */}
-                        <Popover open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+                        <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" className="relative h-9">
                                     <Filter className="size-3" />
@@ -236,7 +286,7 @@ export function Workflows() {
                                             <Select
                                                 value={filterState.status || "ALL"}
                                                 onValueChange={(value) =>
-                                                    setFilterState(prev => ({ ...prev, status: value === "ALL" ? "" : value }))
+                                                    setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, status: value === "ALL" ? "" : value }))
                                                 }
                                             >
                                                 <SelectTrigger className="w-full">
@@ -260,7 +310,7 @@ export function Workflows() {
                                             <Select
                                                 value={filterState.kind || "ALL"}
                                                 onValueChange={(value) =>
-                                                    setFilterState(prev => ({ ...prev, kind: value === "ALL" ? "" : value }))
+                                                    setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, kind: value === "ALL" ? "" : value }))
                                                 }
                                             >
                                                 <SelectTrigger className="w-full">
@@ -288,7 +338,7 @@ export function Workflows() {
                                                     value={filterState.intervalMin}
                                                     min={0}
                                                     onChange={(e) =>
-                                                        setFilterState(prev => ({ ...prev, intervalMin: e.target.value }))
+                                                        setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, intervalMin: e.target.value }))
                                                     }
                                                 />
 
@@ -300,7 +350,7 @@ export function Workflows() {
                                                     value={filterState.intervalMax}
                                                     min={0}
                                                     onChange={(e) =>
-                                                        setFilterState(prev => ({ ...prev, intervalMax: e.target.value }))
+                                                        setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, intervalMax: e.target.value }))
                                                     }
                                                 />
                                             </div>
@@ -378,7 +428,7 @@ export function Workflows() {
                     />
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {workflows.map((workflow) => (
+                        {workflows.map((workflow: Workflow) => (
                             <WorkflowCard
                                 key={workflow.id}
                                 workflow={workflow}

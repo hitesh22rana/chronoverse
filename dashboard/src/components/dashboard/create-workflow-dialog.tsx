@@ -1,8 +1,8 @@
 "use client"
 
-import { Fragment, useEffect, useState } from "react"
+import { Fragment } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, type Resolver } from "react-hook-form"
+import { useForm, useWatch, type Resolver } from "react-hook-form"
 import { z } from "zod"
 import { Duration, parseDuration } from '@alwatr/parse-duration'
 import {
@@ -136,6 +136,7 @@ const workflowSchema = z.discriminatedUnion("kind", [
 ])
 
 type HeaderFormValue = {
+    id?: string
     key: string
     value: string
 }
@@ -155,7 +156,9 @@ type WorkflowFormValues = {
     containerPayload?: {
         image: string
         cmd: string[]
+        cmdIds?: string[]
         env: string[]
+        envIds?: string[]
         timeout: string
     }
 }
@@ -174,8 +177,6 @@ type KindType = keyof typeof kindType
 
 export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const { createWorkflow, isCreating } = useWorkflows()
-    const [selectedKind, setSelectedKind] = useState<KindType>("HEARTBEAT")
-
     const form = useForm<WorkflowFormValues>({
         resolver: zodResolver(workflowSchema) as Resolver<WorkflowFormValues>,
         defaultValues: {
@@ -194,55 +195,31 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         mode: "onChange",
     })
 
-    // Watch kind changes and update form structure
-    const watchedKind = form.watch("kind")
+    const watchedKind = useWatch({ control: form.control, name: "kind" })
+    const selectedKind = watchedKind || "HEARTBEAT"
 
-    useEffect(() => {
-        if (watchedKind !== selectedKind) {
-            setSelectedKind(watchedKind)
-
-            // Reset the form with the appropriate structure
-            if (watchedKind === "HEARTBEAT") {
-                // For Heartbeat, clean container fields and set defaults
-                form.setValue("heartbeatPayload", {
-                    endpoint: "",
-                    expectedStatusCode: 200,
-                    headers: [],
-                    timeout: ""
-                })
-                form.unregister("containerPayload")
-            } else {
-                // For Container, clean heartbeat fields and set defaults
-                form.setValue("containerPayload", {
-                    image: "",
-                    cmd: [],
-                    env: [],
-                    timeout: ""
-                })
-                form.unregister("heartbeatPayload")
-            }
-        }
-    }, [watchedKind, selectedKind, form])
-
-    // Reset form when dialog opens
-    useEffect(() => {
-        if (open) {
-            setSelectedKind("HEARTBEAT")
-            form.reset({
-                name: "",
-                kind: "HEARTBEAT",
-                interval: 5,
-                maxConsecutiveJobFailuresAllowed: 3,
-                retainLogs: true,
-                heartbeatPayload: {
-                    endpoint: "",
-                    expectedStatusCode: 200,
-                    headers: [],
-                    timeout: ""
-                }
+    const handleKindChange = (nextKind: KindType) => {
+        form.setValue("kind", nextKind, { shouldDirty: true, shouldValidate: true })
+        if (nextKind === "HEARTBEAT") {
+            form.setValue("heartbeatPayload", {
+                endpoint: "",
+                expectedStatusCode: 200,
+                headers: [],
+                timeout: ""
             })
+            form.unregister("containerPayload")
+        } else {
+            form.setValue("containerPayload", {
+                image: "",
+                cmd: [],
+                cmdIds: [],
+                env: [],
+                envIds: [],
+                timeout: ""
+            })
+            form.unregister("heartbeatPayload")
         }
-    }, [open, form])
+    }
 
     const handleSubmit = (data: WorkflowFormValues) => {
         let payload: string = "{}"
@@ -305,13 +282,48 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     }
 
     // Get current field values based on selected kind
-    const headerFields = selectedKind === "HEARTBEAT"
-        ? form.watch("heartbeatPayload.headers") || []
-        : []
+    const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
+    const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
+    const watchedCmdIds = useWatch({ control: form.control, name: "containerPayload.cmdIds" })
+    const watchedEnv = useWatch({ control: form.control, name: "containerPayload.env" })
+    const watchedEnvIds = useWatch({ control: form.control, name: "containerPayload.envIds" })
+    const headerFields = selectedKind === "HEARTBEAT" ? watchedHeaders || [] : []
+    const cmdFields = selectedKind === "CONTAINER" ? watchedCmd || [] : []
+    const cmdFieldIds = selectedKind === "CONTAINER" ? watchedCmdIds || [] : []
+    const envFields = selectedKind === "CONTAINER" ? watchedEnv || [] : []
+    const envFieldIds = selectedKind === "CONTAINER" ? watchedEnvIds || [] : []
 
-    const cmdFields = selectedKind === "CONTAINER"
-        ? form.watch("containerPayload.cmd") || []
-        : []
+    return renderCreateWorkflowDialogView({
+        open,
+        isCreating,
+        onOpenChange,
+        form,
+        handleSubmit,
+        selectedKind,
+        handleKindChange,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+    })
+}
+
+function renderCreateWorkflowDialogView(model: any) {
+    const {
+        open,
+        isCreating,
+        onOpenChange,
+        form,
+        handleSubmit,
+        selectedKind,
+        handleKindChange,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+    } = model
 
     return (
         <Dialog
@@ -333,7 +345,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 <Form {...form}>
                     <form onSubmit={(e) => {
                         e.preventDefault();
-                        form.handleSubmit((data) => {
+                        form.handleSubmit((data: WorkflowFormValues) => {
                             handleSubmit(data);
                         })(e);
                     }} className="space-y-6 pt-2">
@@ -361,9 +373,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                 <FormItem>
                                     <FormLabel>Workflow kind</FormLabel>
                                     <Select
-                                        onValueChange={(value) => {
-                                            field.onChange(value);
-                                        }}
+                                        onValueChange={(value) => handleKindChange(value as KindType)}
                                         value={field.value}
                                     >
                                         <FormControl>
@@ -381,7 +391,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                         </SelectContent>
                                     </Select>
                                     <FormDescription>
-                                        {kindType[selectedKind]}
+                                        {kindType[selectedKind as KindType]}
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>
@@ -453,7 +463,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                     onClick={() => {
                                                         form.setValue("heartbeatPayload.headers", [
                                                             ...headerFields,
-                                                            { key: "", value: "" }
+                                                            { id: crypto.randomUUID(), key: "", value: "" }
                                                         ])
                                                     }}
                                                 >
@@ -464,8 +474,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional HTTP headers to include with the request
                                             </FormDescription>
 
-                                            {headerFields.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
+                                            {headerFields.map((header: HeaderFormValue, index: number) => (
+                                                <div key={header.id} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
                                                         name={`heartbeatPayload.headers.${index}.key`}
@@ -569,10 +579,13 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                     size="sm"
                                                     className="ml-2"
                                                     onClick={() => {
-                                                        const currentCmds = form.watch("containerPayload.cmd") || []
                                                         form.setValue("containerPayload.cmd", [
-                                                            ...currentCmds,
+                                                            ...cmdFields,
                                                             ""
+                                                        ])
+                                                        form.setValue("containerPayload.cmdIds", [
+                                                            ...cmdFieldIds,
+                                                            crypto.randomUUID()
                                                         ])
                                                     }}
                                                 >
@@ -583,8 +596,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional command and arguments to run in the container
                                             </FormDescription>
 
-                                            {cmdFields?.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
+                                            {cmdFields?.map((_: string, index: number) => (
+                                                <div key={cmdFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
                                                         name={`containerPayload.cmd.${index}`}
@@ -606,9 +619,12 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
-                                                            const updatedCmds = [...(form.watch("containerPayload.cmd") || [])]
+                                                            const updatedCmds = [...cmdFields]
+                                                            const updatedCmdIds = [...cmdFieldIds]
                                                             updatedCmds.splice(index, 1)
+                                                            updatedCmdIds.splice(index, 1)
                                                             form.setValue("containerPayload.cmd", updatedCmds)
+                                                            form.setValue("containerPayload.cmdIds", updatedCmdIds)
                                                         }}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
@@ -626,10 +642,13 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                     size="sm"
                                                     className="ml-2"
                                                     onClick={() => {
-                                                        const currentEnvs = form.watch("containerPayload.env") || []
                                                         form.setValue("containerPayload.env", [
-                                                            ...currentEnvs,
+                                                            ...envFields,
                                                             ""
+                                                        ])
+                                                        form.setValue("containerPayload.envIds", [
+                                                            ...envFieldIds,
+                                                            crypto.randomUUID()
                                                         ])
                                                     }}
                                                 >
@@ -640,8 +659,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional environment variables to set in the container
                                             </FormDescription>
 
-                                            {form.watch("containerPayload.env")?.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
+                                            {envFields.map((_: string, index: number) => (
+                                                <div key={envFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
                                                         name={`containerPayload.env.${index}`}
@@ -663,9 +682,12 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => {
-                                                            const updatedEnvs = [...(form.watch("containerPayload.env") || [])]
+                                                            const updatedEnvs = [...envFields]
+                                                            const updatedEnvIds = [...envFieldIds]
                                                             updatedEnvs.splice(index, 1)
+                                                            updatedEnvIds.splice(index, 1)
                                                             form.setValue("containerPayload.env", updatedEnvs)
+                                                            form.setValue("containerPayload.envIds", updatedEnvIds)
                                                         }}
                                                     >
                                                         <Trash2 className="h-4 w-4" />

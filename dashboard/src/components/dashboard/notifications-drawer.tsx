@@ -1,8 +1,4 @@
-import {
-    useEffect,
-    useMemo,
-    useState,
-} from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
     formatDistanceToNow,
@@ -101,7 +97,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     } = useNotifications()
 
     // Group notifications by date and flatten with headings
-    const flat = useMemo<FlatRow[]>(() => {
+    const flat: FlatRow[] = (() => {
         if (notifications.length === 0) return []
         const groups = new Map<string, Notification[]>()
 
@@ -118,11 +114,13 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             for (const n of arr) result.push({ type: "item", n })
         }
         return result
-    }, [notifications])
+    })()
 
     // Bulk selection
     const [selected, setSelected] = useState<Set<string>>(new Set())
-    const [selectAll, setSelectAll] = useState(false)
+    const notificationIds = new Set(notifications.map((notification) => notification.id))
+    const visibleSelected = new Set([...selected].filter((id) => notificationIds.has(id)))
+    const selectAll = notifications.length > 0 && notifications.every((notification) => visibleSelected.has(notification.id))
 
     const toggleSelect = (id: string) => {
         setSelected((prev) => {
@@ -136,47 +134,26 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     const handleSelectAll = () => {
         if (selectAll) {
             setSelected(new Set())
-            setSelectAll(false)
         } else {
             const allIds = new Set(notifications.map((n) => n.id))
             setSelected(allIds)
-            setSelectAll(true)
         }
     }
 
     const clearSelection = () => {
         setSelected(new Set())
-        setSelectAll(false)
     }
 
-    useEffect(() => {
-        if (!open) {
+    const handleOpenChange = (nextOpen: boolean) => {
+        if (!nextOpen) {
             clearSelection()
+            onClose()
         }
-    }, [open])
-
-    useEffect(() => {
-        const notificationIds = new Set(notifications.map((n) => n.id))
-
-        setSelected((prev) => {
-            const next = new Set([...prev].filter((id) => notificationIds.has(id)))
-            return next.size === prev.size ? prev : next
-        })
-    }, [notifications])
-
-    useEffect(() => {
-        if (notifications.length === 0) {
-            setSelectAll(false)
-            return
-        }
-        const allSelected =
-            notifications.length > 0 && notifications.every((n) => selected.has(n.id))
-        setSelectAll(allSelected)
-    }, [selected, notifications])
+    }
 
     const bulkRead = () => {
-        if (selected.size === 0) return
-        markAsRead(Array.from(selected))
+        if (visibleSelected.size === 0) return
+        markAsRead(Array.from(visibleSelected))
         clearSelection()
     }
 
@@ -221,14 +198,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                     !n.read_at && "ring-1 ring-white/5"
                 )}
             >
-                <div
-                    onClick={(e) => {
-                        e.stopPropagation()
-                        toggleSelect(n.id)
-                    }}
-                >
-                    <Checkbox checked={selected.has(n.id)} />
-                </div>
+                <Checkbox
+                    checked={visibleSelected.has(n.id)}
+                    onCheckedChange={() => toggleSelect(n.id)}
+                    aria-label={`Select ${payload.title}`}
+                />
 
                 <Link
                     href={payload.action_url}
@@ -268,7 +242,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     }
 
     return (
-        <Sheet open={open} onOpenChange={onClose}>
+        <Sheet open={open} onOpenChange={handleOpenChange}>
             <SheetContent className="w-full sm:max-w-md p-0 gap-0 h-full flex flex-col">
                 {/* header */}
                 <SheetHeader className="px-6 py-4 border-b shrink-0">
@@ -286,14 +260,14 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                             onCheckedChange={handleSelectAll}
                             aria-label="Select all notifications"
                         />
-                        <p className="text-sm font-medium">{selected.size || 0} selected</p>
+                        <p className="text-sm font-medium">{visibleSelected.size || 0} selected</p>
                     </div>
                     <Button
                         size="sm"
                         variant="ghost"
                         className="gap-1 cursor-pointer"
                         onClick={bulkRead}
-                        disabled={!selected.size}
+                        disabled={!visibleSelected.size}
                     >
                         <Check className="h-4 w-4" /> Mark as read
                     </Button>

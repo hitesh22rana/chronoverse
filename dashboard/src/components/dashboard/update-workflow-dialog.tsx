@@ -299,6 +299,38 @@ export function UpdateWorkflowDialog({
     const envFields = workflow?.kind === "CONTAINER" ? watchedEnv || [] : []
     const envFieldIds = workflow?.kind === "CONTAINER" ? watchedEnvIds || [] : []
 
+    return renderUpdateWorkflowDialogView({
+        open,
+        onOpenChange,
+        isLoading,
+        workflow,
+        form,
+        handleSubmit,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+        isUpdating,
+    })
+}
+
+function renderUpdateWorkflowDialogView(model: any) {
+    const {
+        open,
+        onOpenChange,
+        isLoading,
+        workflow,
+        form,
+        handleSubmit,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+        isUpdating,
+    } = model
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
@@ -405,7 +437,7 @@ export function UpdateWorkflowDialog({
                                                     Optional HTTP headers to include with the request
                                                 </FormDescription>
 
-                                                {headerFields.map((header, index) => (
+                                                {headerFields.map((header: HeaderFormValue, index: number) => (
                                                     <div key={header.id} className="flex items-center gap-2 mt-2">
                                                         <FormField
                                                             control={form.control}
@@ -523,7 +555,7 @@ export function UpdateWorkflowDialog({
                                                     Optional command and arguments to run in the container
                                                 </FormDescription>
 
-                                                {cmdFields.map((_, index) => (
+                                                {cmdFields.map((_: string, index: number) => (
                                                     <div key={cmdFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                         <FormField
                                                             control={form.control}
@@ -586,7 +618,7 @@ export function UpdateWorkflowDialog({
                                                     Optional environment variables to set in the container
                                                 </FormDescription>
 
-                                                {envFields.map((_, index) => (
+                                                {envFields.map((_: string, index: number) => (
                                                     <div key={envFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                         <FormField
                                                             control={form.control}

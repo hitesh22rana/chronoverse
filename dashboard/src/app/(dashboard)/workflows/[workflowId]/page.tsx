@@ -6,14 +6,12 @@ import {
 } from "react"
 import Link from "next/link"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { formatDistanceToNow, format } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
 import {
     ArrowLeft,
     RefreshCw,
     Clock,
-    Calendar,
     AlertTriangle,
-    CheckCircle,
     XCircle,
     Shield,
     Filter,
@@ -28,8 +26,6 @@ import {
     Activity,
     Play,
     Loader2,
-    Bot,
-    Hand,
     X,
 } from "lucide-react"
 
@@ -67,10 +63,11 @@ import { EmptyState } from "@/components/dashboard/empty-state"
 import { UpdateWorkflowDialog } from "@/components/dashboard/update-workflow-dialog"
 import { TerminateWorkflowDialog } from "@/components/dashboard/terminate-workflow-dialog"
 import { DeleteWorkflowDialog } from "@/components/dashboard/delete-workflow-dialog"
-import { JobStatusBadge } from "@/components/dashboard/job-status-badge"
+import { JobCard } from "@/components/dashboard/workflow-job-card"
+import { WorkflowJobsSkeleton } from "@/components/dashboard/workflow-jobs-skeleton"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
-import { useWorkflowJobs, Job } from "@/hooks/use-workflow-jobs"
+import { useWorkflowJobs, type Job } from "@/hooks/use-workflow-jobs"
 
 import { cn, formatSeconds } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/lib/status"
@@ -185,6 +182,78 @@ export default function WorkflowDetailsAndJobsPage() {
         statusFilter,
         triggerFilter,
     ].filter(Boolean).length
+
+    return renderWorkflowDetailsAndJobsView({
+        isSearchPending,
+        isFiltersOpen,
+        filterState,
+        setFilterState,
+        urlTabFilter,
+        workflow,
+        isWorkflowLoading,
+        workflowError,
+        workflowAnalytics,
+        isAnalyticsLoading,
+        jobs,
+        isJobsLoading,
+        isRefetchingJobs,
+        jobsError,
+        pagination,
+        manualRunJob,
+        isManualRunJobPending,
+        showUpdateWorkflowDialog,
+        setShowUpdateWorkflowDialog,
+        showTerminateWorkflowDialog,
+        setShowTerminateWorkflowDialog,
+        showDeleteWorkflowDialog,
+        setShowDeleteWorkflowDialog,
+        status,
+        statusMeta,
+        interval,
+        handleRefresh,
+        handleTabsChange,
+        handleApplyFilters,
+        handleClearFilters,
+        handleFiltersOpenChange,
+        activeFiltersCount,
+    })
+}
+
+function renderWorkflowDetailsAndJobsView(model: any) {
+    const {
+        isSearchPending,
+        isFiltersOpen,
+        filterState,
+        setFilterState,
+        urlTabFilter,
+        workflow,
+        isWorkflowLoading,
+        workflowError,
+        workflowAnalytics,
+        isAnalyticsLoading,
+        jobs,
+        isJobsLoading,
+        isRefetchingJobs,
+        jobsError,
+        pagination,
+        manualRunJob,
+        isManualRunJobPending,
+        showUpdateWorkflowDialog,
+        setShowUpdateWorkflowDialog,
+        showTerminateWorkflowDialog,
+        setShowTerminateWorkflowDialog,
+        showDeleteWorkflowDialog,
+        setShowDeleteWorkflowDialog,
+        status,
+        statusMeta,
+        interval,
+        handleRefresh,
+        handleTabsChange,
+        handleApplyFilters,
+        handleClearFilters,
+        handleFiltersOpenChange,
+        activeFiltersCount,
+    } = model
 
     return (
         <div className="flex flex-1 flex-col gap-6 h-full">
@@ -356,7 +425,7 @@ export default function WorkflowDetailsAndJobsPage() {
                                             <Select
                                                 value={filterState.trigger || "ALL"}
                                                 onValueChange={(value) =>
-                                                    setFilterState(prev => ({ ...prev, trigger: value === "ALL" ? "" : value }))}
+                                                    setFilterState((prev: { status: string; trigger: string }) => ({ ...prev, trigger: value === "ALL" ? "" : value }))}
                                             >
                                                 <SelectTrigger className="w-full">
                                                     <SelectValue placeholder="All triggers" />
@@ -374,7 +443,7 @@ export default function WorkflowDetailsAndJobsPage() {
                                             <Select
                                                 value={filterState.status || "ALL"}
                                                 onValueChange={(value) =>
-                                                    setFilterState(prev => ({ ...prev, status: value === "ALL" ? "" : value }))}
+                                                    setFilterState((prev: { status: string; trigger: string }) => ({ ...prev, status: value === "ALL" ? "" : value }))}
                                             >
                                                 <SelectTrigger className="w-full">
                                                     <SelectValue placeholder="All statuses" />
@@ -692,7 +761,7 @@ export default function WorkflowDetailsAndJobsPage() {
                 ) : (urlTabFilter === "jobs" && !isJobsLoading && !jobsError && !!jobs.length) && (
                     <TabsContent value="jobs" className="h-full w-full flex-1">
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                            {jobs?.map((job) => (
+                            {jobs?.map((job: Job) => (
                                 <JobCard key={job.id} job={job} />
                             ))}
                         </div>
@@ -797,126 +866,6 @@ function WorkflowDetailsSkeleton() {
             <CardFooter className="text-xs text-muted-foreground border-t">
                 <Skeleton className="h-4 w-52 ml-auto" />
             </CardFooter>
-        </Card>
-    )
-}
-
-function JobCard({ job }: { job: Job }) {
-    const [isReasonVisible, setIsReasonVisible] = useState(false)
-
-    return (
-        <Link
-            href={`/workflows/${job.workflow_id}/jobs/${job.id}`}
-            prefetch={false}
-            className="block h-full relative"
-            onFocus={() => setIsReasonVisible(true)}
-            onBlur={() => setIsReasonVisible(false)}
-        >
-            <Card className="overflow-hidden">
-                <div className="absolute top-0.5 right-0.5 rotate-12 border-b border-b-amber-50">
-                    {job.trigger === 'MANUAL' ? (
-                        <Hand className="h-4 w-4" />
-                    ) : (
-                        <Bot className="h-4 w-4" />
-                    )}
-                </div>
-                <CardHeader className="flex md:items-center items-start justify-between">
-                    <div className="flex md:flex-row flex-col justify-start md:items-center items-start gap-2">
-                        <JobStatusBadge
-                            status={job.status}
-                            reasonMessage={job.status_reason_message}
-                            revealReason={isReasonVisible}
-                            className="font-medium"
-                        />
-                        <span className="text-sm font-medium md:max-w-full max-w-44 w-full truncate">Job: {job.id}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                        {job.created_at && formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
-                    </span>
-                </CardHeader>
-                <CardContent className="md:pt-4 pt-0 space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-1">
-                            <span className="text-xs text-muted-foreground">Scheduled</span>
-                            <div className="text-sm flex items-center gap-1.5">
-                                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                                {
-                                    job.scheduled_at ?
-                                        format(new Date(job.scheduled_at), "MMM d, yyyy HH:mm:ss") :
-                                        <span className="text-gray-400">Not scheduled</span>
-                                }
-                            </div>
-                        </div>
-
-                        <div className="space-y-1">
-                            <span className="text-xs text-muted-foreground">Started</span>
-                            <div className="text-sm flex items-center gap-1.5">
-                                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                                {
-                                    job.started_at ?
-                                        format(new Date(job.started_at), "MMM d, yyyy HH:mm:ss") :
-                                        <span className="text-gray-400">Not started</span>
-                                }
-                            </div>
-                        </div>
-
-                        <div className="space-y-1">
-                            <span className="text-xs text-muted-foreground">Completed</span>
-                            <div className="text-sm flex items-center gap-1.5">
-                                <CheckCircle className={cn(
-                                    "h-3.5 w-3.5",
-                                    job.status === "COMPLETED" ? "text-emerald-500" : "text-red-500"
-                                )} />
-                                {
-                                    job.completed_at ?
-                                        format(new Date(job.completed_at), "MMM d, yyyy HH:mm:ss") :
-                                        <span className="text-gray-400">Not completed</span>
-                                }
-                            </div>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-        </Link>
-    )
-}
-
-function WorkflowJobsSkeleton() {
-    return (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {Array(10).fill(0).map((_, i) => (
-                <JobCardSkeleton key={i} />
-            ))}
-        </div>
-    )
-}
-
-function JobCardSkeleton() {
-    return (
-        <Card className="overflow-hidden relative">
-            <div className="absolute top-0.5 right-0.5 rotate-12 border-b">
-                <Skeleton className="h-4 w-4" />
-            </div>
-            <CardHeader className="flex md:items-center items-start justify-between md:pb-3.5 pb-2.5">
-                <div className="flex md:flex-row flex-col justify-start md:items-center items-start gap-2">
-                    <Skeleton className="h-6 w-24" />
-                    <Skeleton className="h-5 md:w-80 w-44" />
-                </div>
-                <Skeleton className="h-4 w-28" />
-            </CardHeader>
-            <CardContent className="md:pt-4 pt-0 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-3 md:gap-4 gap-6">
-                    {[...Array(3)].map((_, i) => (
-                        <div key={i} className="md:space-y-1 space-y-2">
-                            <Skeleton className="h-3 w-16" />
-                            <div className="flex items-center gap-1.5">
-                                <Skeleton className="h-3.5 w-3.5" />
-                                <Skeleton className="h-4 w-28" />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </CardContent>
         </Card>
     )
 }

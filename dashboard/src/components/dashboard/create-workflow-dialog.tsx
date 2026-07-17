@@ -293,6 +293,38 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     const envFields = selectedKind === "CONTAINER" ? watchedEnv || [] : []
     const envFieldIds = selectedKind === "CONTAINER" ? watchedEnvIds || [] : []
 
+    return renderCreateWorkflowDialogView({
+        open,
+        isCreating,
+        onOpenChange,
+        form,
+        handleSubmit,
+        selectedKind,
+        handleKindChange,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+    })
+}
+
+function renderCreateWorkflowDialogView(model: any) {
+    const {
+        open,
+        isCreating,
+        onOpenChange,
+        form,
+        handleSubmit,
+        selectedKind,
+        handleKindChange,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+    } = model
+
     return (
         <Dialog
             open={open}
@@ -313,7 +345,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 <Form {...form}>
                     <form onSubmit={(e) => {
                         e.preventDefault();
-                        form.handleSubmit((data) => {
+                        form.handleSubmit((data: WorkflowFormValues) => {
                             handleSubmit(data);
                         })(e);
                     }} className="space-y-6 pt-2">
@@ -359,7 +391,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                         </SelectContent>
                                     </Select>
                                     <FormDescription>
-                                        {kindType[selectedKind]}
+                                        {kindType[selectedKind as KindType]}
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>
@@ -442,7 +474,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional HTTP headers to include with the request
                                             </FormDescription>
 
-                                            {headerFields.map((header, index) => (
+                                            {headerFields.map((header: HeaderFormValue, index: number) => (
                                                 <div key={header.id} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
@@ -564,7 +596,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional command and arguments to run in the container
                                             </FormDescription>
 
-                                            {cmdFields?.map((_, index) => (
+                                            {cmdFields?.map((_: string, index: number) => (
                                                 <div key={cmdFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
@@ -627,7 +659,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional environment variables to set in the container
                                             </FormDescription>
 
-                                            {envFields.map((_, index) => (
+                                            {envFields.map((_: string, index: number) => (
                                                 <div key={envFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}

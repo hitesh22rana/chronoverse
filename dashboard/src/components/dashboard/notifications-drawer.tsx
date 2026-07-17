@@ -198,14 +198,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                     !n.read_at && "ring-1 ring-white/5"
                 )}
             >
-                <div
-                    onClick={(e) => {
-                        e.stopPropagation()
-                        toggleSelect(n.id)
-                    }}
-                >
-                    <Checkbox checked={visibleSelected.has(n.id)} />
-                </div>
+                <Checkbox
+                    checked={visibleSelected.has(n.id)}
+                    onCheckedChange={() => toggleSelect(n.id)}
+                    aria-label={`Select ${payload.title}`}
+                />
 
                 <Link
                     href={payload.action_url}

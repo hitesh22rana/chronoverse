@@ -112,6 +112,7 @@ const updateWorkflowSchema = baseUpdateWorkflowSchema.extend({
 })
 
 type HeaderFormValue = {
+    id?: string
     key: string
     value: string
 }
@@ -129,7 +130,9 @@ type UpdateWorkflowFormValues = {
     containerPayload?: {
         image: string
         cmd: string[]
+        cmdIds?: string[]
         env: string[]
+        envIds?: string[]
         timeout: string
     }
 }
@@ -181,7 +184,7 @@ export function UpdateWorkflowDialog({
         if (workflow.kind === "HEARTBEAT") {
             // Prepare headers array from object
             const headers = parsedPayload.headers ?
-                Object.entries(parsedPayload.headers).map(([key, value]) => ({ key, value })) :
+                Object.entries(parsedPayload.headers).map(([key, value]) => ({ id: crypto.randomUUID(), key, value })) :
                 [];
 
             form.setValue("heartbeatPayload", {
@@ -202,7 +205,9 @@ export function UpdateWorkflowDialog({
             form.setValue("containerPayload", {
                 image: parsedPayload.image || "",
                 cmd: parsedPayload.cmd || [],
+                cmdIds: (parsedPayload.cmd || []).map(() => crypto.randomUUID()),
                 env: envArray,
+                envIds: envArray.map(() => crypto.randomUUID()),
                 timeout: parsedPayload.timeout || ""
             });
         }
@@ -285,10 +290,14 @@ export function UpdateWorkflowDialog({
     // Get current field values based on kind
     const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
     const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
+    const watchedCmdIds = useWatch({ control: form.control, name: "containerPayload.cmdIds" })
     const watchedEnv = useWatch({ control: form.control, name: "containerPayload.env" })
+    const watchedEnvIds = useWatch({ control: form.control, name: "containerPayload.envIds" })
     const headerFields = workflow?.kind === "HEARTBEAT" ? watchedHeaders || [] : []
     const cmdFields = workflow?.kind === "CONTAINER" ? watchedCmd || [] : []
+    const cmdFieldIds = workflow?.kind === "CONTAINER" ? watchedCmdIds || [] : []
     const envFields = workflow?.kind === "CONTAINER" ? watchedEnv || [] : []
+    const envFieldIds = workflow?.kind === "CONTAINER" ? watchedEnvIds || [] : []
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -385,7 +394,7 @@ export function UpdateWorkflowDialog({
                                                         onClick={() => {
                                                             form.setValue("heartbeatPayload.headers", [
                                                                 ...headerFields,
-                                                                { key: "", value: "" }
+                                                                { id: crypto.randomUUID(), key: "", value: "" }
                                                             ])
                                                         }}
                                                     >
@@ -396,8 +405,8 @@ export function UpdateWorkflowDialog({
                                                     Optional HTTP headers to include with the request
                                                 </FormDescription>
 
-                                                {headerFields.map((_, index) => (
-                                                    <div key={index} className="flex items-center gap-2 mt-2">
+                                                {headerFields.map((header, index) => (
+                                                    <div key={header.id} className="flex items-center gap-2 mt-2">
                                                         <FormField
                                                             control={form.control}
                                                             name={`heartbeatPayload.headers.${index}.key`}
@@ -501,6 +510,10 @@ export function UpdateWorkflowDialog({
                                                                 ...cmdFields,
                                                                 ""
                                                             ])
+                                                            form.setValue("containerPayload.cmdIds", [
+                                                                ...cmdFieldIds,
+                                                                crypto.randomUUID()
+                                                            ])
                                                         }}
                                                     >
                                                         <Plus className="mr-1 h-3 w-3" /> Add argument
@@ -511,7 +524,7 @@ export function UpdateWorkflowDialog({
                                                 </FormDescription>
 
                                                 {cmdFields.map((_, index) => (
-                                                    <div key={index} className="flex items-center gap-2 mt-2">
+                                                    <div key={cmdFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                         <FormField
                                                             control={form.control}
                                                             name={`containerPayload.cmd.${index}`}
@@ -534,8 +547,11 @@ export function UpdateWorkflowDialog({
                                                             size="sm"
                                                             onClick={() => {
                                                                 const updatedCmds = [...cmdFields]
+                                                                const updatedCmdIds = [...cmdFieldIds]
                                                                 updatedCmds.splice(index, 1)
+                                                                updatedCmdIds.splice(index, 1)
                                                                 form.setValue("containerPayload.cmd", updatedCmds)
+                                                                form.setValue("containerPayload.cmdIds", updatedCmdIds)
                                                             }}
                                                         >
                                                             <Trash2 className="h-4 w-4" />
@@ -557,6 +573,10 @@ export function UpdateWorkflowDialog({
                                                                 ...envFields,
                                                                 ""
                                                             ])
+                                                            form.setValue("containerPayload.envIds", [
+                                                                ...envFieldIds,
+                                                                crypto.randomUUID()
+                                                            ])
                                                         }}
                                                     >
                                                         <Plus className="mr-1 h-3 w-3" /> Add variable
@@ -567,7 +587,7 @@ export function UpdateWorkflowDialog({
                                                 </FormDescription>
 
                                                 {envFields.map((_, index) => (
-                                                    <div key={index} className="flex items-center gap-2 mt-2">
+                                                    <div key={envFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                         <FormField
                                                             control={form.control}
                                                             name={`containerPayload.env.${index}`}
@@ -590,8 +610,11 @@ export function UpdateWorkflowDialog({
                                                             size="sm"
                                                             onClick={() => {
                                                                 const updatedEnvs = [...envFields]
+                                                                const updatedEnvIds = [...envFieldIds]
                                                                 updatedEnvs.splice(index, 1)
+                                                                updatedEnvIds.splice(index, 1)
                                                                 form.setValue("containerPayload.env", updatedEnvs)
+                                                                form.setValue("containerPayload.envIds", updatedEnvIds)
                                                             }}
                                                         >
                                                             <Trash2 className="h-4 w-4" />

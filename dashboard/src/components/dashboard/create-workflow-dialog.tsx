@@ -136,6 +136,7 @@ const workflowSchema = z.discriminatedUnion("kind", [
 ])
 
 type HeaderFormValue = {
+    id?: string
     key: string
     value: string
 }
@@ -155,7 +156,9 @@ type WorkflowFormValues = {
     containerPayload?: {
         image: string
         cmd: string[]
+        cmdIds?: string[]
         env: string[]
+        envIds?: string[]
         timeout: string
     }
 }
@@ -197,7 +200,6 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
 
     const handleKindChange = (nextKind: KindType) => {
         form.setValue("kind", nextKind, { shouldDirty: true, shouldValidate: true })
-
         if (nextKind === "HEARTBEAT") {
             form.setValue("heartbeatPayload", {
                 endpoint: "",
@@ -210,7 +212,9 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
             form.setValue("containerPayload", {
                 image: "",
                 cmd: [],
+                cmdIds: [],
                 env: [],
+                envIds: [],
                 timeout: ""
             })
             form.unregister("heartbeatPayload")
@@ -280,10 +284,14 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
     // Get current field values based on selected kind
     const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
     const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
+    const watchedCmdIds = useWatch({ control: form.control, name: "containerPayload.cmdIds" })
     const watchedEnv = useWatch({ control: form.control, name: "containerPayload.env" })
+    const watchedEnvIds = useWatch({ control: form.control, name: "containerPayload.envIds" })
     const headerFields = selectedKind === "HEARTBEAT" ? watchedHeaders || [] : []
     const cmdFields = selectedKind === "CONTAINER" ? watchedCmd || [] : []
+    const cmdFieldIds = selectedKind === "CONTAINER" ? watchedCmdIds || [] : []
     const envFields = selectedKind === "CONTAINER" ? watchedEnv || [] : []
+    const envFieldIds = selectedKind === "CONTAINER" ? watchedEnvIds || [] : []
 
     return (
         <Dialog
@@ -423,7 +431,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                     onClick={() => {
                                                         form.setValue("heartbeatPayload.headers", [
                                                             ...headerFields,
-                                                            { key: "", value: "" }
+                                                            { id: crypto.randomUUID(), key: "", value: "" }
                                                         ])
                                                     }}
                                                 >
@@ -434,8 +442,8 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                 Optional HTTP headers to include with the request
                                             </FormDescription>
 
-                                            {headerFields.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
+                                            {headerFields.map((header, index) => (
+                                                <div key={header.id} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
                                                         name={`heartbeatPayload.headers.${index}.key`}
@@ -543,6 +551,10 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                             ...cmdFields,
                                                             ""
                                                         ])
+                                                        form.setValue("containerPayload.cmdIds", [
+                                                            ...cmdFieldIds,
+                                                            crypto.randomUUID()
+                                                        ])
                                                     }}
                                                 >
                                                     <Plus className="mr-1 h-3 w-3" /> Add argument
@@ -553,7 +565,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                             </FormDescription>
 
                                             {cmdFields?.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
+                                                <div key={cmdFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
                                                         name={`containerPayload.cmd.${index}`}
@@ -576,8 +588,11 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         size="sm"
                                                         onClick={() => {
                                                             const updatedCmds = [...cmdFields]
+                                                            const updatedCmdIds = [...cmdFieldIds]
                                                             updatedCmds.splice(index, 1)
+                                                            updatedCmdIds.splice(index, 1)
                                                             form.setValue("containerPayload.cmd", updatedCmds)
+                                                            form.setValue("containerPayload.cmdIds", updatedCmdIds)
                                                         }}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
@@ -599,6 +614,10 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                             ...envFields,
                                                             ""
                                                         ])
+                                                        form.setValue("containerPayload.envIds", [
+                                                            ...envFieldIds,
+                                                            crypto.randomUUID()
+                                                        ])
                                                     }}
                                                 >
                                                     <Plus className="mr-1 h-3 w-3" /> Add variable
@@ -609,7 +628,7 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                             </FormDescription>
 
                                             {envFields.map((_, index) => (
-                                                <div key={index} className="flex items-center gap-2 mt-2">
+                                                <div key={envFieldIds[index]} className="flex items-center gap-2 mt-2">
                                                     <FormField
                                                         control={form.control}
                                                         name={`containerPayload.env.${index}`}
@@ -632,8 +651,11 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                                                         size="sm"
                                                         onClick={() => {
                                                             const updatedEnvs = [...envFields]
+                                                            const updatedEnvIds = [...envFieldIds]
                                                             updatedEnvs.splice(index, 1)
+                                                            updatedEnvIds.splice(index, 1)
                                                             form.setValue("containerPayload.env", updatedEnvs)
+                                                            form.setValue("containerPayload.envIds", updatedEnvIds)
                                                         }}
                                                     >
                                                         <Trash2 className="h-4 w-4" />

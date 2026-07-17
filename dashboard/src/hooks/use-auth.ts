@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { fetchWithAuth } from "@/lib/api-client"
@@ -24,6 +24,7 @@ type SignupCredentials = {
 // Unified authentication hook that handles login, signup, and logout operations
 export function useAuth() {
     const router = useRouter()
+    const queryClient = useQueryClient()
 
     // Login mutation
     const loginMutation = useMutation({
@@ -42,6 +43,7 @@ export function useAuth() {
             }
         },
         onSuccess: () => {
+            queryClient.clear()
             router.push("/")
         },
         onError: (error: Error) => {
@@ -66,6 +68,7 @@ export function useAuth() {
             }
         },
         onSuccess: () => {
+            queryClient.clear()
             router.push("/")
         },
         onError: (error: Error) => {
@@ -85,6 +88,7 @@ export function useAuth() {
             }
         },
         onSuccess: () => {
+            queryClient.clear()
             router.replace("/login")
             router.refresh()
         },

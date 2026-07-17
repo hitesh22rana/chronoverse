@@ -7,9 +7,9 @@ import {
     useTransition,
 } from "react"
 import type {
-    KeyboardEvent as ReactKeyboardEvent,
     MouseEvent as ReactMouseEvent,
     PointerEvent as ReactPointerEvent,
+    ReactNode,
 } from "react"
 import {
     usePathname,
@@ -111,34 +111,15 @@ const highlightEndPrefix = "__CV_HL_END_"
 const highlightSuffix = "__"
 const shareableJobStatuses = new Set(["COMPLETED", "FAILED", "CANCELED"])
 
-const escapeHtml = (value: string) => {
-    return value.replace(/[&<>"']/g, (char) => {
-        switch (char) {
-            case "&":
-                return "&amp;"
-            case "<":
-                return "&lt;"
-            case ">":
-                return "&gt;"
-            case "\"":
-                return "&quot;"
-            case "'":
-                return "&#39;"
-            default:
-                return char
-        }
-    })
-}
-
-const renderHighlightedText = (message: string, highlightToken?: string) => {
+const renderHighlightedText = (message: string, highlightToken?: string): ReactNode => {
     if (!highlightToken || !highlightTokenPattern.test(highlightToken)) {
-        return escapeHtml(message)
+        return message
     }
 
     const startTag = `${highlightStartPrefix}${highlightToken}${highlightSuffix}`
     const endTag = `${highlightEndPrefix}${highlightToken}${highlightSuffix}`
     let currentIndex = 0
-    let rendered = ""
+    const rendered: ReactNode[] = []
 
     while (currentIndex < message.length) {
         const startIndex = message.indexOf(startTag, currentIndex)
@@ -152,12 +133,16 @@ const renderHighlightedText = (message: string, highlightToken?: string) => {
             break
         }
 
-        rendered += escapeHtml(message.slice(currentIndex, startIndex))
-        rendered += `<mark class="${highlightClass}">${escapeHtml(message.slice(matchStartIndex, endIndex))}</mark>`
+        rendered.push(message.slice(currentIndex, startIndex))
+        rendered.push(
+            <mark key={`${startIndex}:${endIndex}`} className={highlightClass}>
+                {message.slice(matchStartIndex, endIndex)}
+            </mark>
+        )
         currentIndex = endIndex + endTag.length
     }
 
-    rendered += escapeHtml(message.slice(currentIndex))
+    rendered.push(message.slice(currentIndex))
     return rendered
 }
 
@@ -204,13 +189,13 @@ const parseHighlightedMessage = (message: string, highlightToken?: string) => {
     return { rawMessage, highlightedSegments }
 }
 
-const renderHighlightedSegments = (message: string, segments: string[]) => {
+const renderHighlightedSegments = (message: string, segments: string[]): ReactNode => {
     if (!segments.length) {
-        return escapeHtml(message)
+        return message
     }
 
     let currentIndex = 0
-    let rendered = ""
+    const rendered: ReactNode[] = []
 
     for (const segment of segments) {
         if (!segment) {
@@ -222,12 +207,16 @@ const renderHighlightedSegments = (message: string, segments: string[]) => {
             continue
         }
 
-        rendered += escapeHtml(message.slice(currentIndex, segmentIndex))
-        rendered += `<mark class="${highlightClass}">${escapeHtml(segment)}</mark>`
+        rendered.push(message.slice(currentIndex, segmentIndex))
+        rendered.push(
+            <mark key={`${segmentIndex}:${segment.length}`} className={highlightClass}>
+                {segment}
+            </mark>
+        )
         currentIndex = segmentIndex + segment.length
     }
 
-    rendered += escapeHtml(message.slice(currentIndex))
+    rendered.push(message.slice(currentIndex))
     return rendered
 }
 
@@ -258,7 +247,7 @@ export function LogsViewer({
     const pendingScrollSelectionRef = useRef<{ key: string; index: number; correcting: boolean } | null>(null)
     const lastUnavailableSelectionRef = useRef("")
     const [lineSelection, setLineSelection] = useState<LogLineSelection | null>(null)
-    const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null)
+    const selectionAnchorRef = useRef<number | null>(null)
 
     const {
         logs,
@@ -331,7 +320,7 @@ export function LogsViewer({
         }
 
         setLineSelection(null)
-        setSelectionAnchor(null)
+        selectionAnchorRef.current = null
 
         const url = new URL(window.location.href)
         url.hash = ""
@@ -339,21 +328,21 @@ export function LogsViewer({
     }
 
     const selectLogLine = (lineNumber: number, extendSelection: boolean) => {
-        const anchor = selectionAnchor ?? lineSelection?.start ?? null
+        const anchor = selectionAnchorRef.current ?? lineSelection?.start ?? null
         const selection = getNextLogLineSelection(lineNumber, anchor, extendSelection)
         if (!selection) {
             return
         }
 
         if (!extendSelection) {
-            setSelectionAnchor(lineNumber)
+            selectionAnchorRef.current = lineNumber
         }
         updateLineSelection(selection)
     }
 
     const handleLogRowClick = (
         lineNumber: number,
-        event: ReactMouseEvent<HTMLDivElement>
+        event: ReactMouseEvent<HTMLButtonElement>
     ) => {
         const target = event.target
         const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
@@ -367,7 +356,7 @@ export function LogsViewer({
         selectLogLine(lineNumber, event.shiftKey)
     }
 
-    const handleLogRowPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const handleLogRowPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
         const target = event.target
         if (target instanceof Element && target.closest("[data-line-options]")) {
             rowPointerGestureRef.current = null
@@ -386,7 +375,7 @@ export function LogsViewer({
         }
     }
 
-    const handleLogRowPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const handleLogRowPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
         const gesture = rowPointerGestureRef.current
         if (!gesture || gesture.didDrag) {
             return
@@ -397,18 +386,6 @@ export function LogsViewer({
         if (Math.hypot(deltaX, deltaY) >= 4) {
             gesture.didDrag = true
         }
-    }
-
-    const handleLogRowKeyDown = (
-        lineNumber: number,
-        event: ReactKeyboardEvent<HTMLSpanElement>
-    ) => {
-        if (event.key !== "Enter" && event.key !== " ") {
-            return
-        }
-
-        event.preventDefault()
-        selectLogLine(lineNumber, event.shiftKey)
     }
 
     const copyLogLines = async (selection: LogLineSelection) => {
@@ -487,7 +464,7 @@ export function LogsViewer({
         const syncSelectionFromFragment = () => {
             const selection = parseLogLineSelection(window.location.hash)
             setLineSelection(selection)
-            setSelectionAnchor(selection?.start ?? null)
+            selectionAnchorRef.current = selection?.start ?? null
         }
 
         syncSelectionFromFragment()
@@ -642,12 +619,6 @@ export function LogsViewer({
                 )}
                 data-line-number={lineNumber}
                 data-selected={isSelected || undefined}
-                onPointerDown={handleLogRowPointerDown}
-                onPointerMove={handleLogRowPointerMove}
-                onPointerCancel={() => {
-                    rowPointerGestureRef.current = null
-                }}
-                onClick={(event) => handleLogRowClick(lineNumber, event)}
             >
                 <div className="flex w-9 shrink-0 items-center justify-center" data-line-options>
                     {showLineOptions && (
@@ -698,17 +669,20 @@ export function LogsViewer({
                     title={log.stream}
                     aria-hidden="true"
                 />
-                <span
-                    className="flex-1 whitespace-pre-wrap break-all px-3 py-1"
-                    role="button"
-                    tabIndex={0}
+                <button
+                    type="button"
+                    className="flex-1 whitespace-pre-wrap break-all px-3 py-1 text-left"
                     aria-label="Select log entry"
                     aria-pressed={isSelected}
-                    onKeyDown={(event) => handleLogRowKeyDown(lineNumber, event)}
-                    dangerouslySetInnerHTML={{
-                        __html: formattedMessage,
+                    onPointerDown={handleLogRowPointerDown}
+                    onPointerMove={handleLogRowPointerMove}
+                    onPointerCancel={() => {
+                        rowPointerGestureRef.current = null
                     }}
-                />
+                    onClick={(event) => handleLogRowClick(lineNumber, event)}
+                >
+                    {formattedMessage}
+                </button>
             </div>
         )
     }

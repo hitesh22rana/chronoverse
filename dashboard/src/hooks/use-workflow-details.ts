@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { createIdempotencyKey, fetchWithAuth } from "@/lib/api-client"
@@ -27,6 +27,7 @@ export type WorkflowAnalytics = {
 
 export function useWorkflowDetails(workflowId: string) {
     const router = useRouter()
+    const queryClient = useQueryClient()
     const [workflowNotActive, setWorkflowNotActive] = useState(false)
 
     const getWorkflowQuery = useQuery<Workflow, Error>({
@@ -112,6 +113,7 @@ export function useWorkflowDetails(workflowId: string) {
         },
         onSuccess: () => {
             toast.success("workflow deleted successfully")
+            queryClient.removeQueries({ queryKey: ["workflow", workflowId] })
             router.push("/") // Redirect to the dashboard after deletion
         },
         onError: (error) => {

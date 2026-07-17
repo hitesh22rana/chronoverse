@@ -111,7 +111,3 @@ export const docPages = docsConfig.flatMap((group) => group.pages);
 export function getDocPage(slug: string) {
   return docPages.find((page) => page.slug === slug);
 }
-
-export function getDocHref(slug: string) {
-  return `/docs/${slug}`;
-}

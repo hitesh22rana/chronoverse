@@ -72,7 +72,13 @@ function Authentication({ operation }: { operation: OpenApiOperation }) {
   return (
     <div className="security-requirements">
       {operation.security.map((requirement, index) => (
-        <section className="security-alternative" key={`${index}-${Object.keys(requirement).join("-")}`}>
+        <section
+          className="security-alternative"
+          key={Object.entries(requirement)
+            .map(([name, scopes]) => `${name}:${scopes.join(",")}`)
+            .sort()
+            .join("|")}
+        >
           {operation.security.length > 1 && <p>Authentication option {index + 1}</p>}
           {Object.entries(requirement).map(([name, scopes]) => {
             const scheme = operation.securitySchemes[name];

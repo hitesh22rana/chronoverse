@@ -35,6 +35,7 @@
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "shiki": "^3.17.0",
+    "swr": "^2.4.2",
     "tailwind-merge": "^3.3.1",
     "tw-animate-css": "^1.3.4",
     "yaml": "^2.9.0"

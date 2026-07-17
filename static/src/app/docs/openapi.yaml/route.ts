@@ -4,6 +4,8 @@ import { getOpenApiPath } from "@/lib/openapi";
 
 export const dynamic = "force-static";
 
+const openApiYaml = fs.readFileSync(getOpenApiPath(), "utf8");
+
 export function GET() {
-  return new Response(fs.readFileSync(getOpenApiPath(), "utf8"), { headers: { "Content-Type": "application/yaml; charset=utf-8" } });
+  return new Response(openApiYaml, { headers: { "Content-Type": "application/yaml; charset=utf-8" } });
 }

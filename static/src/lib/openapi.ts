@@ -143,22 +143,22 @@ export function getOpenApiOperations(): OpenApiOperation[] {
   const document = getOpenApiDocument();
 
   return Object.entries(document.paths).flatMap(([route, pathItem]) =>
-    Object.entries(pathItem)
-      .filter(([method]) => HTTP_METHODS.has(method))
-      .map(([method, value]) => {
-        const operation = value as Record<string, unknown>;
-        const pathParameters = (pathItem.parameters as unknown as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
-        const operationParameters = (operation.parameters as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
-        const security = (operation.security as OpenApiSecurityRequirement[] | undefined) ?? document.security ?? [];
-        const securitySchemeNames = new Set(security.flatMap((requirement) => Object.keys(requirement)));
-        const securitySchemes = Object.fromEntries(
-          [...securitySchemeNames].map((name) => {
-            const scheme = document.components?.securitySchemes?.[name];
-            if (!scheme) throw new Error(`Unresolved OpenAPI security scheme: ${name}`);
-            return [name, dereferenceValue(scheme, document) as OpenApiSecurityScheme];
-          }),
-        );
-        return {
+    Object.entries(pathItem).flatMap(([method, value]) => {
+      if (!HTTP_METHODS.has(method)) return [];
+      const operation = value as Record<string, unknown>;
+      const pathParameters = (pathItem.parameters as unknown as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
+      const operationParameters = (operation.parameters as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
+      const security = (operation.security as OpenApiSecurityRequirement[] | undefined) ?? document.security ?? [];
+      const securitySchemeNames = new Set(security.flatMap((requirement) => Object.keys(requirement)));
+      const securitySchemes = Object.fromEntries(
+        [...securitySchemeNames].map((name) => {
+          const scheme = document.components?.securitySchemes?.[name];
+          if (!scheme) throw new Error(`Unresolved OpenAPI security scheme: ${name}`);
+          return [name, dereferenceValue(scheme, document) as OpenApiSecurityScheme];
+        }),
+      );
+      return [
+        {
           operationId: String(operation.operationId),
           method: method.toUpperCase(),
           path: route,
@@ -178,8 +178,9 @@ export function getOpenApiOperations(): OpenApiOperation[] {
               (operation.responses as Record<string, OpenApiResponse | { $ref: string }> | undefined) ?? {},
             ).map(([status, response]) => [status, dereferenceValue(response, document) as OpenApiResponse]),
           ),
-        };
-      }),
+        },
+      ];
+    }),
   );
 }
 

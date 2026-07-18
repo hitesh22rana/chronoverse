@@ -191,11 +191,14 @@ Kubernetes changes should also pass all four `make k8s/render/*` and
 Dashboard commands live in `dashboard/`:
 
 ```sh
-npm install
+npm ci
 npm run dev:port
 npm run build
 npm run lint
 ```
+
+Both frontend workspaces exact-pin direct dependencies and commit npm lockfiles;
+use `npm ci` to reproduce the reviewed dependency graph.
 
 Static-site commands live in `static/`; `npm run check` validates MDX and
 OpenAPI, lints, type-checks, and performs the static export.

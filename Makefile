@@ -15,11 +15,11 @@ dependencies: generate
 
 .PHONY: lint
 lint: dependencies
-	@golangci-lint run
+	@${GO_BIN}/golangci-lint run
 
 .PHONY: lint/fix
 lint/fix: dependencies
-	@golangci-lint run --fix
+	@${GO_BIN}/golangci-lint run --fix
 
 .PHONY: test/short
 test/short: dependencies
@@ -52,7 +52,7 @@ k8s/dry-run/production:
 .PHONY: tools
 tools:
 	@mkdir -p ${GO_BIN}
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GO_BIN} v2.4.0
+	@GOBIN=${GO_BIN} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 	@grep _ tools.go | awk -F'"' '{print $$2}' | while read tool; do \
 		version=latest; \
 		if [ "$$tool" = "google.golang.org/grpc/cmd/protoc-gen-go-grpc" ]; then version=${PROTOC_GEN_GO_GRPC_VERSION}; fi; \

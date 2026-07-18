@@ -167,7 +167,7 @@ func (w *DockerWorkflow) Execute(
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 
 	// Stream logs and handle container completion
-	go func() {
+	go func() { //nolint:gosec // Execution must remain tied to the caller context so cancellation stops the container.
 		defer close(logs)
 		defer close(errs)
 		defer cancel()

@@ -18,6 +18,7 @@ const (
 	jobLogsDownloadFormatJSON  = "json"
 	jobLogsDownloadFormatJSONL = "jsonl"
 	jobLogsDownloadStreamAll   = "all"
+	jobLogsDownloadErrorField  = "error"
 )
 
 type jobLogsDownloadRequest struct {
@@ -623,8 +624,8 @@ func writeJobLogsDownloadError(w io.Writer, format, message string, err error) {
 	switch format {
 	case jobLogsDownloadFormatJSON:
 		encoded, jsonErr := json.Marshal(map[string]string{
-			"message": message,
-			"error":   err.Error(),
+			"message":                 message,
+			jobLogsDownloadErrorField: err.Error(),
 		})
 		if jsonErr != nil {
 			return
@@ -632,8 +633,8 @@ func writeJobLogsDownloadError(w io.Writer, format, message string, err error) {
 		fmt.Fprintf(w, `],"error":%s}`, encoded)
 	case jobLogsDownloadFormatJSONL:
 		encodeErr := json.NewEncoder(w).Encode(map[string]string{
-			"message": message,
-			"error":   err.Error(),
+			"message":                 message,
+			jobLogsDownloadErrorField: err.Error(),
 		})
 		if encodeErr != nil {
 			return

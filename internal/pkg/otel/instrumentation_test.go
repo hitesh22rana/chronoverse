@@ -271,8 +271,8 @@ func TestGRPCHandlersRecordUnaryAndStreamingMetrics(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 
-	serverDuration := collectFloatHistogram(t, serverReader, "rpc.server.duration")
-	clientDuration := collectFloatHistogram(t, clientReader, "rpc.client.duration")
+	serverDuration := collectFloatHistogram(t, serverReader, "rpc.server.call.duration")
+	clientDuration := collectFloatHistogram(t, clientReader, "rpc.client.call.duration")
 	assertRPCMethods(t, serverDuration.DataPoints, "Check", "Watch")
 	assertRPCMethods(t, clientDuration.DataPoints, "Check", "Watch")
 }
@@ -349,7 +349,11 @@ func assertRPCMethods(t *testing.T, points []metricdata.HistogramDataPoint[float
 	for _, point := range points {
 		value, ok := point.Attributes.Value(attribute.Key("rpc.method"))
 		if ok {
-			found[value.AsString()] = true
+			for _, method := range methods {
+				if strings.HasSuffix(value.AsString(), "/"+method) {
+					found[method] = true
+				}
+			}
 		}
 	}
 	for _, method := range methods {

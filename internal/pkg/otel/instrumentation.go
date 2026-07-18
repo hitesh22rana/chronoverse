@@ -18,7 +18,8 @@ import (
 // OpenTelemetry providers. Route templates from http.ServeMux are used for
 // span names and metric attributes to avoid recording high-cardinality paths.
 func HTTPHandler(handler http.Handler, operation string, opts ...otelhttp.Option) http.Handler {
-	defaultOpts := []otelhttp.Option{
+	defaultOpts := make([]otelhttp.Option, 0, 3+len(opts))
+	defaultOpts = append(defaultOpts,
 		otelhttp.WithTracerProvider(otel.GetTracerProvider()),
 		otelhttp.WithMeterProvider(otel.GetMeterProvider()),
 		otelhttp.WithSpanNameFormatter(func(operation string, request *http.Request) string {
@@ -31,7 +32,7 @@ func HTTPHandler(handler http.Handler, operation string, opts ...otelhttp.Option
 
 			return request.Method + " " + request.Pattern
 		}),
-	}
+	)
 
 	instrumented := otelhttp.NewHandler(withHTTPRouteAttributes(handler), operation, append(defaultOpts, opts...)...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,10 +82,11 @@ func HTTPTransport(transport http.RoundTripper, opts ...otelhttp.Option) http.Ro
 		transport = http.DefaultTransport
 	}
 
-	defaultOpts := []otelhttp.Option{
+	defaultOpts := make([]otelhttp.Option, 0, 2+len(opts))
+	defaultOpts = append(defaultOpts,
 		otelhttp.WithTracerProvider(otel.GetTracerProvider()),
 		otelhttp.WithMeterProvider(otel.GetMeterProvider()),
-	}
+	)
 
 	return otelhttp.NewTransport(transport, append(defaultOpts, opts...)...)
 }
@@ -92,10 +94,11 @@ func HTTPTransport(transport http.RoundTripper, opts ...otelhttp.Option) http.Ro
 // GRPCServerHandler instruments inbound gRPC calls with the configured global
 // OpenTelemetry providers.
 func GRPCServerHandler(opts ...otelgrpc.Option) stats.Handler {
-	defaultOpts := []otelgrpc.Option{
+	defaultOpts := make([]otelgrpc.Option, 0, 2+len(opts))
+	defaultOpts = append(defaultOpts,
 		otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 		otelgrpc.WithMeterProvider(otel.GetMeterProvider()),
-	}
+	)
 
 	return otelgrpc.NewServerHandler(append(defaultOpts, opts...)...)
 }
@@ -103,10 +106,11 @@ func GRPCServerHandler(opts ...otelgrpc.Option) stats.Handler {
 // GRPCClientHandler instruments outbound gRPC calls with the configured global
 // OpenTelemetry providers.
 func GRPCClientHandler(opts ...otelgrpc.Option) stats.Handler {
-	defaultOpts := []otelgrpc.Option{
+	defaultOpts := make([]otelgrpc.Option, 0, 2+len(opts))
+	defaultOpts = append(defaultOpts,
 		otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 		otelgrpc.WithMeterProvider(otel.GetMeterProvider()),
-	}
+	)
 
 	return otelgrpc.NewClientHandler(append(defaultOpts, opts...)...)
 }

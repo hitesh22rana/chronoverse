@@ -45,6 +45,7 @@ const (
 	jobLogsHighlightStart      = "__CV_HL_START_"
 	jobLogsHighlightEnd        = "__CV_HL_END_"
 	jobLogsHighlightSuffix     = "__"
+	jobLogsMessageField        = "message"
 )
 
 type jobLogsCursor struct {
@@ -877,7 +878,7 @@ func (r *Repository) SearchJobLogs(
 				log.EventID = searchHitString(source, "id")
 			}
 
-			if msg, ok := source["message"].(string); ok {
+			if msg, ok := source[jobLogsMessageField].(string); ok {
 				log.Message = msg
 			}
 
@@ -1098,15 +1099,15 @@ func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options
 
 	req := &meilisearch.SearchRequest{
 		Filter:               filter,
-		AttributesToRetrieve: []string{"id", "event_id", "message", "sequence_num", "stream", "timestamp"},
-		AttributesToSearchOn: []string{"message"},
+		AttributesToRetrieve: []string{"id", "event_id", jobLogsMessageField, "sequence_num", "stream", "timestamp"},
+		AttributesToSearchOn: []string{jobLogsMessageField},
 		Sort:                 []string{"sequence_num:" + sequenceDirection, "id:asc"},
 		Limit:                limit,
 	}
 
 	if !options.DisableHighlight {
 		highlightPreTag, highlightPostTag := jobLogsHighlightTags(highlightToken)
-		req.AttributesToHighlight = []string{"message"}
+		req.AttributesToHighlight = []string{jobLogsMessageField}
 		req.HighlightPreTag = highlightPreTag
 		req.HighlightPostTag = highlightPostTag
 	}
@@ -1168,8 +1169,8 @@ func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(formattedRaw, &formatted); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
 	}
-	if msg, ok := formatted["message"].(string); ok {
-		source["message"] = msg
+	if msg, ok := formatted[jobLogsMessageField].(string); ok {
+		source[jobLogsMessageField] = msg
 	}
 
 	return source, nil

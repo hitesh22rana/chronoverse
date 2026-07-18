@@ -17,6 +17,9 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "types": [
+      "mdx"
+    ],
     "plugins": [
       {
         "name": "next"

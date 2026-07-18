@@ -100,7 +100,7 @@ func (r *Repository) deleteWorkflowLogsFromMeiliSearch(parentCtx context.Context
 		ctx, cancel := context.WithTimeout(parentCtx, deleteWorkflowOperationTimeout)
 		defer cancel()
 
-		taskInfo, err := r.ms.Index(index.Name).DeleteDocumentsByFilterWithContext(ctx, filter)
+		taskInfo, err := r.ms.Index(index.Name).DeleteDocumentsByFilterWithContext(ctx, filter, nil)
 		if err != nil {
 			return deleteWorkflowStatusError(
 				fmt.Sprintf("failed to enqueue Meilisearch logs deletion for workflow %s", workflowID),

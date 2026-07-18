@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -19,6 +21,7 @@ const (
 	csrfCookieName        = "csrf"
 	sessionCookieName     = "session"
 	idempotencyKeyHeader  = "Idempotency-Key"
+	logStreamStdout       = "stdout"
 )
 
 var (
@@ -27,28 +30,28 @@ var (
 		"CONTAINER",
 	}
 	validBuildStatuses = []string{
-		"QUEUED",
-		"STARTED",
-		"COMPLETED",
-		"FAILED",
-		"CANCELED",
+		workflowsmodel.WorkflowBuildStatusQueued.ToString(),
+		workflowsmodel.WorkflowBuildStatusStarted.ToString(),
+		workflowsmodel.WorkflowBuildStatusCompleted.ToString(),
+		workflowsmodel.WorkflowBuildStatusFailed.ToString(),
+		workflowsmodel.WorkflowBuildStatusCanceled.ToString(),
 	}
 	validJobStatuses = []string{
-		"PENDING",
-		"QUEUED",
-		"RUNNING",
-		"COMPLETED",
-		"FAILED",
-		"CANCELED",
+		jobsmodel.JobStatusPending.ToString(),
+		jobsmodel.JobStatusQueued.ToString(),
+		jobsmodel.JobStatusRunning.ToString(),
+		jobsmodel.JobStatusCompleted.ToString(),
+		jobsmodel.JobStatusFailed.ToString(),
+		jobsmodel.JobStatusCanceled.ToString(),
 	}
 	validJobTriggers = []string{
-		"AUTOMATIC",
-		"MANUAL",
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		jobsmodel.JobTriggerManual.ToString(),
 	}
 	terminalJobStatuses = []string{
-		"COMPLETED",
-		"FAILED",
-		"CANCELED",
+		jobsmodel.JobStatusCompleted.ToString(),
+		jobsmodel.JobStatusFailed.ToString(),
+		jobsmodel.JobStatusCanceled.ToString(),
 	}
 )
 
@@ -80,7 +83,7 @@ func setCookie(w http.ResponseWriter, name, value, host string, secure bool, exp
 		maxAge = -1
 	}
 
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ //nolint:gosec // Secure is configurable so local HTTP development remains supported.
 		Name:     name,
 		Value:    value,
 		Path:     "/",
@@ -195,7 +198,7 @@ func isValidJobTrigger(trigger string) bool {
 // getJobLogsStreamType returns the joblogs stream type.
 func getJobLogsStreamType(stream string) (jobspb.LogStream, error) {
 	switch stream {
-	case "stdout":
+	case logStreamStdout:
 		return jobspb.LogStream_LOG_STREAM_STDOUT, nil
 	case "stderr":
 		return jobspb.LogStream_LOG_STREAM_STDERR, nil

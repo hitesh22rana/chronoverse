@@ -418,7 +418,7 @@ func (r *Repository) deleteLogsFromMeiliSearchByID(parentCtx context.Context, ev
 	if indexJobLogs == nil {
 		return status.Error(codes.Internal, "failed to delete skipped Meilisearch logs: job logs index is not configured")
 	}
-	taskInfo, err := r.ms.Index(indexJobLogs.Name).DeleteDocumentsWithContext(ctx, meiliLogDocumentIDs(eventIDs))
+	taskInfo, err := r.ms.Index(indexJobLogs.Name).DeleteDocumentsWithContext(ctx, meiliLogDocumentIDs(eventIDs), nil)
 	if err != nil {
 		return jobLogsStatusError("failed to delete skipped Meilisearch logs", err)
 	}
@@ -497,7 +497,9 @@ func (r *Repository) insertLogsDocumentsToMeiliSearch(ctx context.Context, docum
 		return status.Error(codes.Internal, "failed to add documents: job logs index is not configured")
 	}
 
-	taskInfo, err := r.ms.Index(indexJobLogs.Name).AddDocumentsWithContext(ctx, documents, &indexJobLogs.PrimaryKey)
+	taskInfo, err := r.ms.Index(indexJobLogs.Name).AddDocumentsWithContext(ctx, documents, &meilisearch.DocumentOptions{
+		PrimaryKey: &indexJobLogs.PrimaryKey,
+	})
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to add documents: %v", err)
 	}

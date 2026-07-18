@@ -253,7 +253,7 @@ func boundedInt32(value int) int32 {
 		return int32(maxInt32)
 	}
 
-	return int32(value) //nolint:gosec // value is bounded above by maxInt32 before conversion.
+	return int32(value)
 }
 
 func minInt32(a, b int32) int32 {

@@ -4,21 +4,21 @@ inputs:
   go-version:
     description: 'Go version to use'
     required: false
-    default: '1.25'
+    default: '1.26.5'
   buf-version:
     description: 'Buf version to install'
     required: false
-    default: 'v1.50.0'
+    default: 'v1.72.0'
 runs:
   using: "composite"
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ inputs.go-version }}
 
     - name: Cache Go modules
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cache/go-build
@@ -28,7 +28,7 @@ runs:
           ${{ runner.os }}-go-
 
     - name: Cache tools directory
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ./.bin
         key: ${{ runner.os }}-bindir-${{ hashFiles('Makefile', 'tools.go') }}-buf-${{ inputs.buf-version }}

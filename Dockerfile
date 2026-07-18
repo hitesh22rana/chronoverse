@@ -1,5 +1,5 @@
 # Base image
-FROM golang:1.25.4 AS build
+FROM golang:1.26.5 AS build
 
 # Build arguments
 ARG VERSION
@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -o /go/bin/service ./cmd/${NAME}
 
 # Final minimal stage
-FROM alpine:3.22.2
+FROM alpine:3.24.1
 
 # Create a non-root user and group
 RUN addgroup -S app && adduser -S -G app app
@@ -53,7 +53,7 @@ RUN chmod 500 /bin/service
 
 # Install necessary runtime dependencies and grpc-health-probe
 RUN apk --no-cache add ca-certificates tzdata wget && \
-    GRPC_HEALTH_PROBE_VERSION=v0.4.39 && \
+    GRPC_HEALTH_PROBE_VERSION=v0.4.53 && \
     ARCH=$(uname -m) && \
     case ${ARCH} in \
     x86_64) ARCH="amd64" ;; \

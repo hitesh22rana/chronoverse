@@ -14,8 +14,8 @@ The setup script prepares required Secrets and certificates before applying the 
 
 ## Development toolchain
 
-- Go `1.25.4`
-- Node.js 24 for the static-site CI path; the dashboard container builds with Node.js 25
+- Go `1.26.5`
+- Node.js 26 for both the static-site CI path and dashboard container builds
 - Buf for protobuf generation
 - Docker for integration tests and container execution tests
 
@@ -36,6 +36,8 @@ The application dashboard and public static site are separate Next.js applicatio
 cd dashboard && npm ci
 cd ../static && npm ci
 ```
+
+Both workspaces commit their lockfiles and pin direct dependencies exactly. Use `npm ci` so local and CI installs reproduce the reviewed dependency graph.
 
 The static site exports plain HTML into `static/out` and is deployed to GitHub Pages.
 

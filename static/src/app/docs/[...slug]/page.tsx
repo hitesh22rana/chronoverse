@@ -7,7 +7,7 @@ import { DocShell } from "@/components/docs/doc-shell";
 import { docPages, getDocPage } from "../../../../docs.config";
 import { getDocHeadings, getDocNavigation, getPageMetadata, isGeneratedApiSlug } from "@/lib/docs";
 import { getOpenApiOperation, getOpenApiOperations } from "@/lib/openapi";
-import { SOCIAL_IMAGE_ALT, SOCIAL_IMAGE_PATH, sitePageUrl, withBasePath } from "@/lib/site";
+import { SOCIAL_IMAGE_ALT, SOCIAL_IMAGE_TYPE, SOCIAL_IMAGE_URL, sitePageUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string[] }> };
 type DocModule = { default: ComponentType };
@@ -82,8 +82,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title,
     description: page.description,
     alternates: { canonical: url },
-    openGraph: { title, description: page.description, type: "article", url, images: [{ url: withBasePath(SOCIAL_IMAGE_PATH), width: 1200, height: 630, alt: SOCIAL_IMAGE_ALT }] },
-    twitter: { card: "summary_large_image", title, description: page.description, images: [{ url: withBasePath(SOCIAL_IMAGE_PATH), alt: SOCIAL_IMAGE_ALT }] },
+    openGraph: { title, description: page.description, type: "article", url, siteName: "Chronoverse", locale: "en_US", images: [{ url: SOCIAL_IMAGE_URL, type: SOCIAL_IMAGE_TYPE, width: 1200, height: 630, alt: SOCIAL_IMAGE_ALT }] },
+    twitter: { card: "summary_large_image", title, description: page.description, images: [{ url: SOCIAL_IMAGE_URL, alt: SOCIAL_IMAGE_ALT }] },
   };
 }
 

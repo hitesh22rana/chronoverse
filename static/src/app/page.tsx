@@ -23,12 +23,13 @@ import Link from "next/link";
 
 import { ArchitectureMap } from "@/components/architecture-map";
 import { GitHubMark } from "@/components/github-mark";
+import { JsonLd } from "@/components/seo/json-ld";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { getOpenApiOperations } from "@/lib/openapi";
-import { REPOSITORY_URL, withBasePath } from "@/lib/site";
+import { REPOSITORY_URL, sitePageUrl, withBasePath } from "@/lib/site";
 import { docPages } from "../../docs.config";
 
 const capabilities = [
@@ -59,11 +60,24 @@ const timeline = [
   ["05", "Observe", "Logs, notifications, analytics, traces, and terminal state converge."],
 ];
 
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  name: "Chronoverse",
+  description: "A self-hosted distributed scheduler for heartbeat checks and container workloads with replay-safe execution, searchable logs, and full observability.",
+  url: sitePageUrl(),
+  codeRepository: REPOSITORY_URL,
+  license: "https://opensource.org/license/mit",
+  programmingLanguage: ["Go", "TypeScript"],
+  runtimePlatform: ["Docker", "Kubernetes"],
+};
+
 export default function Home() {
   const operationCount = getOpenApiOperations().length;
 
   return (
     <main>
+      <JsonLd data={structuredData} />
       <section className="hero section-shell">
         <div className="hero-copy">
           <Badge className="hero-status" variant="outline"><span className="status-dot" />Self-hosted orchestration</Badge>
@@ -76,7 +90,7 @@ export default function Home() {
           <div className="hero-command"><Terminal /><code>scripts/k8s/setup.sh --mode local --create-kind</code></div>
         </div>
         <div className="hero-visual" aria-label="Chronoverse engineering status panel">
-          <Image src={withBasePath("/assets/chronoverse.png")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />
+          <Image src={withBasePath("/assets/chronoverse.webp")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />
           <div className="hero-console">
             <div><span>workflow.build</span><strong>completed</strong></div>
             <div><span>job.lease</span><strong>renewed · 30s</strong></div>

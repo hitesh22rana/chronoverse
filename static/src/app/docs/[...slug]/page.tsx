@@ -5,9 +5,9 @@ import type { ComponentType } from "react";
 import { ApiOperation } from "@/components/docs/api-operation";
 import { DocShell } from "@/components/docs/doc-shell";
 import { docPages, getDocPage } from "../../../../docs.config";
-import { getDocHeadings, getDocNavigation, getPageMetadata, isGeneratedApiSlug } from "@/lib/docs";
+import { getApiOperationDescription, getDocHeadings, getDocNavigation, getPageMetadata, isGeneratedApiSlug } from "@/lib/docs";
 import { getOpenApiOperation, getOpenApiOperations } from "@/lib/openapi";
-import { SITE_URL } from "@/lib/site";
+import { SOCIAL_IMAGE_ALT, SOCIAL_IMAGE_TYPE, SOCIAL_IMAGE_URL, sitePageUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string[] }> };
 type DocModule = { default: ComponentType };
@@ -77,13 +77,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!page) return {};
 
   const title = `${page.title} | Docs`;
-  const url = `${SITE_URL}/docs/${slug}/`;
+  const url = sitePageUrl(`/docs/${slug}`);
   return {
     title,
     description: page.description,
     alternates: { canonical: url },
-    openGraph: { title, description: page.description, type: "article", url },
-    twitter: { card: "summary", title, description: page.description },
+    openGraph: { title, description: page.description, type: "article", url, siteName: "Chronoverse", locale: "en_US", images: [{ url: SOCIAL_IMAGE_URL, type: SOCIAL_IMAGE_TYPE, width: 1200, height: 630, alt: SOCIAL_IMAGE_ALT }] },
+    twitter: { card: "summary_large_image", title, description: page.description, images: [{ url: SOCIAL_IMAGE_URL, alt: SOCIAL_IMAGE_ALT }] },
   };
 }
 
@@ -95,7 +95,7 @@ export default async function DocumentationPage({ params }: PageProps) {
     const operation = getOpenApiOperation(slug.split("/").at(-1) ?? "");
     if (!operation) notFound();
     return (
-      <DocShell activeSlug={slug} description={`${operation.method} ${operation.path}`} headings={[{ id: "authentication", title: "Authentication", level: 2 }, { id: "parameters", title: "Parameters", level: 2 }, ...(operation.requestBody ? [{ id: "request-body", title: "Request body", level: 2 } as const] : []), { id: "responses", title: "Responses", level: 2 }]} next={navigation.next} previous={navigation.previous} title={operation.summary}>
+      <DocShell activeSlug={slug} description={getApiOperationDescription(operation)} headings={[{ id: "authentication", title: "Authentication", level: 2 }, { id: "parameters", title: "Parameters", level: 2 }, ...(operation.requestBody ? [{ id: "request-body", title: "Request body", level: 2 } as const] : []), { id: "responses", title: "Responses", level: 2 }]} next={navigation.next} previous={navigation.previous} title={operation.summary}>
         <ApiOperation operation={operation} />
       </DocShell>
     );

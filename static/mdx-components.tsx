@@ -26,7 +26,7 @@ function MdxLink({ href = "", ...props }: AnchorHTMLAttributes<HTMLAnchorElement
 
 const components: MDXComponents = {
   a: MdxLink,
-  h1: ({ children }) => <h1 className="mdx-page-title">{children}</h1>,
+  h1: () => null,
   pre: CodeBlock,
   ArchitectureMap,
   Callout,

@@ -90,7 +90,7 @@ export default function Home() {
           <div className="hero-command"><Terminal /><code>scripts/k8s/setup.sh --mode local --create-kind</code></div>
         </div>
         <div className="hero-visual" aria-label="Chronoverse engineering status panel">
-          <Image src={withBasePath("/assets/chronoverse.png")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />
+          <Image src={withBasePath("/assets/chronoverse.webp")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />
           <div className="hero-console">
             <div><span>workflow.build</span><strong>completed</strong></div>
             <div><span>job.lease</span><strong>renewed · 30s</strong></div>

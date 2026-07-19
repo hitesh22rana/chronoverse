@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { docPages, docsConfig, getDocPage } from "../../docs.config";
-import { getOpenApiOperations } from "@/lib/openapi";
+import { getOpenApiOperations, type OpenApiOperation } from "@/lib/openapi";
 
 export type DocHeading = { id: string; title: string; level: 2 | 3 };
 
@@ -80,11 +80,15 @@ export function isGeneratedApiSlug(slug: string) {
   return slug.startsWith("api/reference/");
 }
 
+export function getApiOperationDescription(operation: OpenApiOperation) {
+  return `${operation.summary}. Use ${operation.method} ${operation.path} in Chronoverse, with authentication, parameters, and response details.`;
+}
+
 export function getPageMetadata(slug: string) {
   if (isGeneratedApiSlug(slug)) {
     const operationId = slug.split("/").at(-1) ?? "";
     const operation = getOpenApiOperations().find((item) => item.operationId === operationId);
-    return operation ? { title: operation.summary, description: `${operation.method} ${operation.path}` } : undefined;
+    return operation ? { title: operation.summary, description: getApiOperationDescription(operation) } : undefined;
   }
   return getDocPage(slug);
 }

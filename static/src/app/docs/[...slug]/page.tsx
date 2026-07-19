@@ -7,7 +7,7 @@ import { DocShell } from "@/components/docs/doc-shell";
 import { docPages, getDocPage } from "../../../../docs.config";
 import { getDocHeadings, getDocNavigation, getPageMetadata, isGeneratedApiSlug } from "@/lib/docs";
 import { getOpenApiOperation, getOpenApiOperations } from "@/lib/openapi";
-import { SITE_URL } from "@/lib/site";
+import { SOCIAL_IMAGE_ALT, SOCIAL_IMAGE_PATH, sitePageUrl, withBasePath } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string[] }> };
 type DocModule = { default: ComponentType };
@@ -77,13 +77,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!page) return {};
 
   const title = `${page.title} | Docs`;
-  const url = `${SITE_URL}/docs/${slug}/`;
+  const url = sitePageUrl(`/docs/${slug}`);
   return {
     title,
     description: page.description,
     alternates: { canonical: url },
-    openGraph: { title, description: page.description, type: "article", url },
-    twitter: { card: "summary", title, description: page.description },
+    openGraph: { title, description: page.description, type: "article", url, images: [{ url: withBasePath(SOCIAL_IMAGE_PATH), width: 1200, height: 630, alt: SOCIAL_IMAGE_ALT }] },
+    twitter: { card: "summary_large_image", title, description: page.description, images: [{ url: withBasePath(SOCIAL_IMAGE_PATH), alt: SOCIAL_IMAGE_ALT }] },
   };
 }
 

@@ -33,12 +33,10 @@ func (s *Server) handleGetUserAnalytics(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
-	json.NewEncoder(w).Encode(res)
+	json.NewEncoder(w).Encode(newUserAnalyticsHTTPResponse(res))
 }
 
 // handleGetWorkflowAnalytics handles the get workflow analytics request.
-//
-//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleGetWorkflowAnalytics(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
@@ -71,5 +69,5 @@ func (s *Server) handleGetWorkflowAnalytics(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
-	json.NewEncoder(w).Encode(res)
+	json.NewEncoder(w).Encode(newWorkflowAnalyticsHTTPResponse(res))
 }

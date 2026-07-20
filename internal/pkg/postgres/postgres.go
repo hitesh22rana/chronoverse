@@ -173,6 +173,15 @@ func (db *Postgres) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return db.pool.Begin(ctx)
 }
 
+// BeginTxWithOptions starts a new transaction with the provided options.
+func (db *Postgres) BeginTxWithOptions(ctx context.Context, options *pgx.TxOptions) (pgx.Tx, error) {
+	if options == nil {
+		return db.pool.Begin(ctx)
+	}
+
+	return db.pool.BeginTx(ctx, *options)
+}
+
 // QueryRow executes a query that returns a single row.
 func (db *Postgres) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
 	return db.pool.QueryRow(ctx, query, args...)

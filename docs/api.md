@@ -130,8 +130,8 @@ Query parameters:
 - `kind`: `HEARTBEAT` or `CONTAINER`.
 - `build_status`: one of the build statuses above.
 - `terminated`: boolean string.
-- `interval_min`: minimum interval in minutes.
-- `interval_max`: maximum interval in minutes.
+- `interval_min`: minimum interval in minutes; `0` is treated as unset.
+- `interval_max`: maximum interval in minutes; `0` is treated as unset.
 
 Response includes `workflows` and `cursor`.
 
@@ -402,12 +402,19 @@ Returns `204 No Content`.
 
 `GET /analytics`
 
-Returns current-user aggregate totals:
+Returns current-user lifetime aggregates:
 
 - `total_workflows`
 - `total_jobs`
 - `total_joblogs`
 - `total_job_execution_duration`
+- `workflow_kinds`: the same durable counters grouped by workflow kind
+- `top_workflows`: up to 10 workflows ranked by terminal job count; deleted
+  workflows retain their aggregate history and use the fallback name
+  `Deleted workflow`
+
+The Top 10 cap is enforced by the analytics service rather than by the
+dashboard.
 
 ### Workflow Analytics
 
@@ -419,3 +426,8 @@ Returns workflow aggregate totals:
 - `total_job_execution_duration`
 - `total_jobs`
 - `total_joblogs`
+
+These counters are lifetime aggregates. `total_joblogs` counts generated log
+events independently of whether their workflow retains log bodies. Disabling
+log retention prevents new entries from being stored and searched; it does not
+stop the generated-log counter or erase previously aggregated history.

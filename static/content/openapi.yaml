@@ -108,8 +108,8 @@ paths:
         - {name: kind, in: query, schema: {type: string, enum: [HEARTBEAT, CONTAINER]}}
         - {name: build_status, in: query, schema: {$ref: '#/components/schemas/BuildStatus'}}
         - {name: terminated, in: query, schema: {type: boolean, default: false}}
-        - {name: interval_min, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
-        - {name: interval_max, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: interval_min, in: query, description: Minimum interval in minutes; zero is treated as unset, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: interval_max, in: query, description: Maximum interval in minutes; zero is treated as unset, schema: {type: integer, minimum: 0, maximum: 2147483647}}
       responses:
         '200':
           description: Paginated workflow list
@@ -530,15 +530,38 @@ components:
         cursor: {type: string}
     UserAnalytics:
       type: object
+      required: [total_workflows, total_jobs, total_joblogs, total_job_execution_duration, workflow_kinds, top_workflows]
       properties:
         total_workflows: {type: integer, minimum: 0}
         total_jobs: {type: integer, minimum: 0}
-        total_joblogs: {type: integer, minimum: 0}
-        total_job_execution_duration: {type: integer, minimum: 0}
-    WorkflowAnalytics:
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed across the user's workflows regardless of retention}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+        workflow_kinds: {type: array, items: {$ref: '#/components/schemas/WorkflowKindAnalytics'}}
+        top_workflows: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/WorkflowAnalyticsSummary'}}
+    WorkflowKindAnalytics:
       type: object
+      required: [kind, total_workflows, total_jobs, total_joblogs, total_job_execution_duration]
+      properties:
+        kind: {type: string}
+        total_workflows: {type: integer, minimum: 0}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for this workflow kind regardless of retention}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+    WorkflowAnalyticsSummary:
+      type: object
+      required: [workflow_id, workflow_name, kind, total_jobs, total_joblogs, total_job_execution_duration]
       properties:
         workflow_id: {type: string, format: uuid}
-        total_job_execution_duration: {type: integer, minimum: 0}
+        workflow_name: {type: string, description: Current workflow name or Deleted workflow when only durable history remains}
+        kind: {type: string}
         total_jobs: {type: integer, minimum: 0}
-        total_joblogs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for the workflow regardless of retention}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+    WorkflowAnalytics:
+      type: object
+      required: [workflow_id, total_job_execution_duration, total_jobs, total_joblogs]
+      properties:
+        workflow_id: {type: string, format: uuid}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for the workflow regardless of retention}

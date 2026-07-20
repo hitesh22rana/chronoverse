@@ -1,14 +1,20 @@
 # Analytics
 
-Chronoverse maintains user and workflow aggregates from workflow, job, and retained log events.
+Chronoverse maintains user and workflow aggregates from workflow, job, and generated log events.
 
 ## User aggregates
 
-`GET /analytics` returns totals across the authenticated user's workflows, including workflow count, job count, retained log count, and total execution duration.
+`GET /analytics` returns lifetime totals across the authenticated user's workflows, including workflow count, terminal job count, generated log count, and total execution duration. It also returns workload totals grouped by workflow kind and up to 10 workflows ranked by terminal job count. The Top 10 limit is enforced by the analytics service, so response size does not grow with every workflow owned by the user.
+
+The dashboard loads this overview only when the Analytics drawer opens. The result remains fresh for five minutes and is not polled from the landing page. The overview presents the lifetime counters, workload mix, and most active workflows without querying raw job-log storage.
+
+If no ranked workflows are available, the dashboard explains that activity will appear after a workflow reaches a terminal job state.
 
 ## Workflow aggregates
 
-`GET /analytics/{workflow_id}` returns job count, retained log count, and execution duration for one workflow.
+`GET /analytics/{workflow_id}` returns job count, generated log count, total execution duration, and derived average runtime for one workflow. Workflow-level analytics load with the workflow details view and use the same five-minute freshness window.
+
+Analytics are historical counters. Generated log events are counted whether or not their workflow retains log bodies. Disabling log retention prevents new entries from being stored in ClickHouse and indexed in Meilisearch; it does not stop the generated-log counter or erase previously aggregated history. The dashboard therefore labels the metric as generated logs and separately explains when new logs are not retained.
 
 ## Processing model
 
@@ -20,5 +26,4 @@ Processed event IDs are retained for a configurable window and removed in bounde
 
 ## Storage distinction
 
-Analytics aggregates are stored in PostgreSQL. ClickHouse is used for retained job log bodies, not as the analytics source of truth.
-
+Analytics aggregates are stored in PostgreSQL as one row per user and workflow. User-level reads are scoped by the user index, workflow reads use the unique user/workflow index, and the ranked query is capped at 10 rows. ClickHouse is used for retained job log bodies, not as the analytics source of truth.

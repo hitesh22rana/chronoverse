@@ -1,0 +1,757 @@
+"use client"
+
+import { Fragment, useEffect } from "react"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm, useWatch, type Resolver } from "react-hook-form"
+import { z } from "zod"
+import { Duration, parseDuration } from "@alwatr/parse-duration"
+import {
+    Loader2,
+    Plus,
+    Trash2
+} from "lucide-react"
+
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle
+} from "@/components/ui/dialog"
+import {
+    Form,
+    FormControl,
+    FormDescription,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle
+} from "@/components/ui/card"
+
+import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
+
+// Base schema for update workflow
+const baseUpdateWorkflowSchema = z.object({
+    name: z.string().trim().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters"),
+    interval: z.union([
+        z.string().trim().refine(val => val === "" || /^\d+$/.test(val), {
+            message: "Please enter a valid number"
+        }),
+        z.number()
+    ])
+        .transform(val => val === "" ? undefined : Number(val))
+        .refine(val => val === undefined || (val >= 1 && val <= 10080), {
+            message: "Must be between 1 and 10080 minutes (1 week)"
+        }),
+    maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(3).max(100).default(3).refine(val => val >= 3, {
+        message: "Maximum consecutive job failures allowed must be at least 3"
+    })
+})
+
+// Heartbeat payload schema
+const heartbeatPayloadSchema = z.object({
+    endpoint: z.url().trim().refine(val => val !== "", {
+        message: "Please enter a valid URL"
+    }),
+    expectedStatusCode: z.coerce.number().int().min(100).max(599).refine(val => val >= 100 && val <= 599, {
+        message: "Expected status code must be between 100 and 599"
+    }),
+    headers: z.array(
+        z.object({
+            key: z.string().trim().min(1, "Header key is required"),
+            value: z.string().trim()
+        })
+    ).default([]),
+    timeout: z.string().default("")
+        .refine(val => {
+            if (!val) return true
+            try {
+                const parsed = parseDuration(val as unknown as Duration, 's')
+                return parsed > 0 && parsed <= 300
+            } catch {
+                return false
+            }
+        }, "Timeout must be a valid duration (e.g., '30s', '1m') max up to 5 minutes")
+})
+
+// Container payload schema
+const containerPayloadSchema = z.object({
+    image: z.string().trim().min(1, "Container image is required"),
+    cmd: z.array(z.string().trim())
+        .optional()
+        .default([])
+        .transform(val => val?.filter(item => item !== "") || []),
+    env: z.array(z.string().trim())
+        .optional()
+        .default([])
+        .transform(val => val?.filter(item => item !== "") || []),
+    timeout: z.string().default("")
+        .refine(val => {
+            if (!val) return true
+            try {
+                const parsed = parseDuration(val as unknown as Duration, 's')
+                return parsed > 0 && parsed <= 3600
+            } catch {
+                return false
+            }
+        }, "Timeout must be a valid duration (e.g., '30s', '5m') max up to 1 hour")
+})
+
+const updateWorkflowSchema = baseUpdateWorkflowSchema.extend({
+    heartbeatPayload: heartbeatPayloadSchema.optional(),
+    containerPayload: containerPayloadSchema.optional(),
+})
+
+type HeaderFormValue = {
+    id?: string
+    key: string
+    value: string
+}
+
+type UpdateWorkflowFormValues = {
+    name: string
+    interval: number | string
+    maxConsecutiveJobFailuresAllowed: number
+    heartbeatPayload?: {
+        endpoint: string
+        expectedStatusCode: number
+        headers: HeaderFormValue[]
+        timeout: string
+    }
+    containerPayload?: {
+        image: string
+        cmd: string[]
+        cmdIds?: string[]
+        env: string[]
+        envIds?: string[]
+        timeout: string
+    }
+}
+
+type WorkflowPayload = {
+    endpoint?: string
+    expected_status_code?: number
+    headers?: Record<string, string>
+    image?: string
+    cmd?: string[]
+    env?: Record<string, string>
+    timeout?: string
+}
+
+interface UpdateWorkflowDialogProps {
+    workflowId: string;
+    open: boolean;
+    onOpenChange: (_open: boolean) => void;
+}
+
+export function UpdateWorkflowDialog({
+    workflowId,
+    open,
+    onOpenChange
+}: UpdateWorkflowDialogProps) {
+    const {
+        workflow,
+        isLoading,
+        updateWorkflow,
+        isUpdating
+    } = useWorkflowDetails(workflowId);
+
+    const form = useForm<UpdateWorkflowFormValues>({
+        resolver: zodResolver(updateWorkflowSchema) as Resolver<UpdateWorkflowFormValues>,
+        defaultValues: {
+            name: "",
+            interval: 5,
+            maxConsecutiveJobFailuresAllowed: 3,
+        },
+        mode: "onBlur",
+    });
+
+    // Initialize payload when workflow data is loaded
+    useEffect(() => {
+        if (!workflow) return;
+
+        const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) as WorkflowPayload : {};
+
+        if (workflow.kind === "HEARTBEAT") {
+            // Prepare headers array from object
+            const headers = parsedPayload.headers ?
+                Object.entries(parsedPayload.headers).map(([key, value]) => ({ id: crypto.randomUUID(), key, value })) :
+                [];
+
+            form.setValue("heartbeatPayload", {
+                endpoint: parsedPayload.endpoint || "",
+                expectedStatusCode: parsedPayload.expected_status_code || 200,
+                headers,
+                timeout: parsedPayload.timeout || ""
+            });
+        }
+        else if (workflow.kind === "CONTAINER") {
+            let envArray: string[] = [];
+            if (parsedPayload.env && typeof parsedPayload.env === 'object') {
+                envArray = Object.entries(parsedPayload.env).map(
+                    ([key, value]) => `${key}=${value}`
+                );
+            }
+
+            form.setValue("containerPayload", {
+                image: parsedPayload.image || "",
+                cmd: parsedPayload.cmd || [],
+                cmdIds: (parsedPayload.cmd || []).map(() => crypto.randomUUID()),
+                env: envArray,
+                envIds: envArray.map(() => crypto.randomUUID()),
+                timeout: parsedPayload.timeout || ""
+            });
+        }
+
+        form.reset({
+            name: workflow.name,
+            interval: workflow.interval,
+            maxConsecutiveJobFailuresAllowed: workflow.max_consecutive_job_failures_allowed,
+            ...(workflow.kind === "HEARTBEAT" ? {
+                heartbeatPayload: form.getValues("heartbeatPayload")
+            } : {}),
+            ...(workflow.kind === "CONTAINER" ? {
+                containerPayload: form.getValues("containerPayload")
+            } : {})
+        });
+    }, [workflow, form]);
+
+    const handleSubmit = (data: UpdateWorkflowFormValues) => {
+        // Don't proceed if no workflow data
+        if (!workflow) return;
+
+        // Prepare the payload based on workflow kind
+        let payload = "{}";
+
+        if (workflow.kind === "HEARTBEAT") {
+            const { endpoint, expectedStatusCode, headers = [], timeout } = data.heartbeatPayload ?? {
+                endpoint: "",
+                expectedStatusCode: 200,
+                headers: [],
+                timeout: "",
+            };
+            const headersObject = headers.reduce((acc, header) => {
+                if (header.key) {
+                    acc[header.key] = header.value;
+                }
+                return acc;
+            }, {} as Record<string, string>);
+
+            payload = JSON.stringify({
+                endpoint,
+                expected_status_code: expectedStatusCode || 200,
+                headers: headersObject,
+                ...(timeout ? { timeout } : {})
+            });
+        } else if (workflow.kind === "CONTAINER") {
+            const { image, cmd = [], env = [], timeout } = data.containerPayload ?? {
+                image: "",
+                cmd: [],
+                env: [],
+                timeout: "",
+            };
+            // parse env in key=value format and map to object
+            const envObject = env.reduce((acc, item) => {
+                const [key, value] = item.split("=")
+                if (key) {
+                    acc[key] = value || ""
+                }
+                return acc
+            }, {} as Record<string, string>)
+
+            payload = JSON.stringify({
+                image,
+                ...(cmd && cmd.length > 0 ? { cmd } : {}),
+                ...(env && env.length > 0 ? { env: envObject } : {}),
+                ...(timeout ? { timeout } : {})
+            });
+        }
+
+        // Call update API with the constructed payload
+        updateWorkflow({
+            name: data.name,
+            payload: payload,
+            interval: Number(data.interval),
+            max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed
+        })
+        form.reset();
+        onOpenChange(false);
+    };
+
+    // Get current field values based on kind
+    const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
+    const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
+    const watchedCmdIds = useWatch({ control: form.control, name: "containerPayload.cmdIds" })
+    const watchedEnv = useWatch({ control: form.control, name: "containerPayload.env" })
+    const watchedEnvIds = useWatch({ control: form.control, name: "containerPayload.envIds" })
+    const headerFields = workflow?.kind === "HEARTBEAT" ? watchedHeaders || [] : []
+    const cmdFields = workflow?.kind === "CONTAINER" ? watchedCmd || [] : []
+    const cmdFieldIds = workflow?.kind === "CONTAINER" ? watchedCmdIds || [] : []
+    const envFields = workflow?.kind === "CONTAINER" ? watchedEnv || [] : []
+    const envFieldIds = workflow?.kind === "CONTAINER" ? watchedEnvIds || [] : []
+
+    return renderUpdateWorkflowDialogView({
+        open,
+        onOpenChange,
+        isLoading,
+        workflow,
+        form,
+        handleSubmit,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+        isUpdating,
+    })
+}
+
+function renderUpdateWorkflowDialogView(model: any) {
+    const {
+        open,
+        onOpenChange,
+        isLoading,
+        workflow,
+        form,
+        handleSubmit,
+        headerFields,
+        cmdFields,
+        cmdFieldIds,
+        envFields,
+        envFieldIds,
+        isUpdating,
+    } = model
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>Update workflow</DialogTitle>
+                    <DialogDescription>
+                        Modify your workflow configuration.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {isLoading ? (
+                    <div className="flex justify-center my-8">
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                ) : workflow && (
+                    <Form {...form}>
+                        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 pt-2">
+                            <FormField
+                                control={form.control}
+                                name="name"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Name</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="Workflow Name" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Configuration</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {workflow.kind === "HEARTBEAT" && (
+                                        <Fragment>
+                                            <FormField
+                                                control={form.control}
+                                                name="heartbeatPayload.endpoint"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Endpoint URL</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                placeholder="https://example.com/api/health"
+                                                                {...field}
+                                                            />
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            The URL to send the heartbeat request to
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name="heartbeatPayload.expectedStatusCode"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Expected Status Code</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                type="number"
+                                                                min={100}
+                                                                max={599}
+                                                                {...field}
+                                                                value={field.value === undefined ? "" : field.value}
+                                                                onChange={(e) => {
+                                                                    field.onChange(e.target.value === "" ? "" : Number(e.target.value));
+                                                                }}
+                                                            />
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            The expected HTTP status code from the endpoint
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <div className="space-y-2">
+                                                <FormLabel>
+                                                    Headers (optional)
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="ml-2"
+                                                        onClick={() => {
+                                                            form.setValue("heartbeatPayload.headers", [
+                                                                ...headerFields,
+                                                                { id: crypto.randomUUID(), key: "", value: "" }
+                                                            ])
+                                                        }}
+                                                    >
+                                                        <Plus className="mr-1 h-3 w-3" /> Add header
+                                                    </Button>
+                                                </FormLabel>
+                                                <FormDescription>
+                                                    Optional HTTP headers to include with the request
+                                                </FormDescription>
+
+                                                {headerFields.map((header: HeaderFormValue, index: number) => (
+                                                    <div key={header.id} className="flex items-center gap-2 mt-2">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`heartbeatPayload.headers.${index}.key`}
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex-1">
+                                                                    <FormControl>
+                                                                        <Input
+                                                                            placeholder="Header Name"
+                                                                            {...field}
+                                                                        />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`heartbeatPayload.headers.${index}.value`}
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex-1">
+                                                                    <FormControl>
+                                                                        <Input
+                                                                            placeholder="Value"
+                                                                            {...field}
+                                                                        />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                const updatedHeaders = [...headerFields]
+                                                                updatedHeaders.splice(index, 1)
+                                                                form.setValue("heartbeatPayload.headers", updatedHeaders)
+                                                            }}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <FormField
+                                                control={form.control}
+                                                name="heartbeatPayload.timeout"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Timeout (optional)</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                placeholder="30s"
+                                                                {...field}
+                                                            />
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            Request timeout (e.g., &apos;30s&apos;, &apos;1m&apos;), max up to 5 minutes
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                        </Fragment>
+                                    )}
+
+                                    {workflow.kind === "CONTAINER" && (
+                                        <Fragment>
+                                            <FormField
+                                                control={form.control}
+                                                name="containerPayload.image"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Image</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                placeholder="alpine:latest"
+                                                                {...field}
+                                                            />
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            Docker image to run (e.g., alpine:latest)
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <div className="space-y-2">
+                                                <FormLabel>
+                                                    Command (optional)
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="ml-2"
+                                                        onClick={() => {
+                                                            form.setValue("containerPayload.cmd", [
+                                                                ...cmdFields,
+                                                                ""
+                                                            ])
+                                                            form.setValue("containerPayload.cmdIds", [
+                                                                ...cmdFieldIds,
+                                                                crypto.randomUUID()
+                                                            ])
+                                                        }}
+                                                    >
+                                                        <Plus className="mr-1 h-3 w-3" /> Add argument
+                                                    </Button>
+                                                </FormLabel>
+                                                <FormDescription>
+                                                    Optional command and arguments to run in the container
+                                                </FormDescription>
+
+                                                {cmdFields.map((_: string, index: number) => (
+                                                    <div key={cmdFieldIds[index]} className="flex items-center gap-2 mt-2">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`containerPayload.cmd.${index}`}
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex-1">
+                                                                    <FormControl>
+                                                                        <Input
+                                                                            placeholder={"sh -c 'echo hello'"}
+                                                                            {...field}
+                                                                            value={field.value || ""}
+                                                                        />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                const updatedCmds = [...cmdFields]
+                                                                const updatedCmdIds = [...cmdFieldIds]
+                                                                updatedCmds.splice(index, 1)
+                                                                updatedCmdIds.splice(index, 1)
+                                                                form.setValue("containerPayload.cmd", updatedCmds)
+                                                                form.setValue("containerPayload.cmdIds", updatedCmdIds)
+                                                            }}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <FormLabel>
+                                                    Environment Variables (optional)
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="ml-2"
+                                                        onClick={() => {
+                                                            form.setValue("containerPayload.env", [
+                                                                ...envFields,
+                                                                ""
+                                                            ])
+                                                            form.setValue("containerPayload.envIds", [
+                                                                ...envFieldIds,
+                                                                crypto.randomUUID()
+                                                            ])
+                                                        }}
+                                                    >
+                                                        <Plus className="mr-1 h-3 w-3" /> Add variable
+                                                    </Button>
+                                                </FormLabel>
+                                                <FormDescription>
+                                                    Optional environment variables to set in the container
+                                                </FormDescription>
+
+                                                {envFields.map((_: string, index: number) => (
+                                                    <div key={envFieldIds[index]} className="flex items-center gap-2 mt-2">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`containerPayload.env.${index}`}
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex-1">
+                                                                    <FormControl>
+                                                                        <Input
+                                                                            placeholder={"MY_ENV=VALUE"}
+                                                                            {...field}
+                                                                            value={field.value || ""}
+                                                                        />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                const updatedEnvs = [...envFields]
+                                                                const updatedEnvIds = [...envFieldIds]
+                                                                updatedEnvs.splice(index, 1)
+                                                                updatedEnvIds.splice(index, 1)
+                                                                form.setValue("containerPayload.env", updatedEnvs)
+                                                                form.setValue("containerPayload.envIds", updatedEnvIds)
+                                                            }}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <FormField
+                                                control={form.control}
+                                                name="containerPayload.timeout"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Timeout (optional)</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                placeholder="30s"
+                                                                {...field}
+                                                            />
+                                                        </FormControl>
+                                                        <FormDescription>
+                                                            Maximum execution time (e.g., &quot;30s&quot;, &quot;5m&quot;), max up to 1 hour.
+                                                        </FormDescription>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                        </Fragment>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            <FormField
+                                control={form.control}
+                                name="interval"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Interval (minutes)</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                {...field}
+                                                value={field.value === undefined ? "" : field.value}
+                                                onChange={(e) => {
+                                                    field.onChange(e.target.value === "" ? "" : Number(e.target.value));
+                                                }}
+                                            />
+                                        </FormControl>
+                                        <FormDescription>
+                                            How often to run this workflow.
+                                        </FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <FormField
+                                control={form.control}
+                                name="maxConsecutiveJobFailuresAllowed"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Max consecutive failures allowed</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                type="number"
+                                                min={3}
+                                                {...field}
+                                                value={field.value === undefined ? "" : field.value}
+                                                onChange={(e) => {
+                                                    field.onChange(e.target.value === "" ? "" : Number(e.target.value));
+                                                }}
+                                            />
+                                        </FormControl>
+                                        <FormDescription>
+                                            Maximum number of consecutive failures before the workflow is auto-disabled (default: 3).
+                                        </FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => onOpenChange(false)}
+                                    disabled={isUpdating}
+                                    className="cursor-pointer w-full"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    disabled={isUpdating}
+                                    className="cursor-pointer w-full"
+                                >
+                                    {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    Update workflow
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </Form>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}

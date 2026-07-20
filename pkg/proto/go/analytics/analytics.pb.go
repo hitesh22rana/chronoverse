@@ -66,20 +66,184 @@ func (x *GetUserAnalyticsRequest) GetUserId() string {
 	return ""
 }
 
+// WorkflowKindAnalytics groups durable activity by workflow kind.
+type WorkflowKindAnalytics struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Kind                      string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                 // Workflow kind, for example CONTAINER or HEARTBEAT
+	TotalWorkflows            uint32                 `protobuf:"varint,2,opt,name=total_workflows,json=totalWorkflows,proto3" json:"total_workflows,omitempty"`                                      // Number of workflows of this kind
+	TotalJobs                 uint64                 `protobuf:"varint,3,opt,name=total_jobs,json=totalJobs,proto3" json:"total_jobs,omitempty"`                                                     // Total terminal jobs recorded for this kind
+	TotalJoblogs              uint64                 `protobuf:"varint,4,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total generated log events recorded for this kind regardless of retention
+	TotalJobExecutionDuration uint64                 `protobuf:"varint,5,opt,name=total_job_execution_duration,json=totalJobExecutionDuration,proto3" json:"total_job_execution_duration,omitempty"` // Total execution duration in seconds for this kind
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *WorkflowKindAnalytics) Reset() {
+	*x = WorkflowKindAnalytics{}
+	mi := &file_analytics_analytics_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkflowKindAnalytics) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkflowKindAnalytics) ProtoMessage() {}
+
+func (x *WorkflowKindAnalytics) ProtoReflect() protoreflect.Message {
+	mi := &file_analytics_analytics_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkflowKindAnalytics.ProtoReflect.Descriptor instead.
+func (*WorkflowKindAnalytics) Descriptor() ([]byte, []int) {
+	return file_analytics_analytics_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *WorkflowKindAnalytics) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *WorkflowKindAnalytics) GetTotalWorkflows() uint32 {
+	if x != nil {
+		return x.TotalWorkflows
+	}
+	return 0
+}
+
+func (x *WorkflowKindAnalytics) GetTotalJobs() uint64 {
+	if x != nil {
+		return x.TotalJobs
+	}
+	return 0
+}
+
+func (x *WorkflowKindAnalytics) GetTotalJoblogs() uint64 {
+	if x != nil {
+		return x.TotalJoblogs
+	}
+	return 0
+}
+
+func (x *WorkflowKindAnalytics) GetTotalJobExecutionDuration() uint64 {
+	if x != nil {
+		return x.TotalJobExecutionDuration
+	}
+	return 0
+}
+
+// WorkflowAnalyticsSummary contains the durable activity for one workflow.
+type WorkflowAnalyticsSummary struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	WorkflowId                string                 `protobuf:"bytes,1,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                                                   // ID of the workflow
+	WorkflowName              string                 `protobuf:"bytes,2,opt,name=workflow_name,json=workflowName,proto3" json:"workflow_name,omitempty"`                                             // Current workflow name, or a deleted-workflow label
+	Kind                      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                 // Workflow kind
+	TotalJobs                 uint64                 `protobuf:"varint,4,opt,name=total_jobs,json=totalJobs,proto3" json:"total_jobs,omitempty"`                                                     // Total terminal jobs recorded for the workflow
+	TotalJoblogs              uint64                 `protobuf:"varint,5,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total generated log events recorded for the workflow regardless of retention
+	TotalJobExecutionDuration uint64                 `protobuf:"varint,6,opt,name=total_job_execution_duration,json=totalJobExecutionDuration,proto3" json:"total_job_execution_duration,omitempty"` // Total execution duration in seconds for the workflow
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *WorkflowAnalyticsSummary) Reset() {
+	*x = WorkflowAnalyticsSummary{}
+	mi := &file_analytics_analytics_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkflowAnalyticsSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkflowAnalyticsSummary) ProtoMessage() {}
+
+func (x *WorkflowAnalyticsSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_analytics_analytics_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkflowAnalyticsSummary.ProtoReflect.Descriptor instead.
+func (*WorkflowAnalyticsSummary) Descriptor() ([]byte, []int) {
+	return file_analytics_analytics_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *WorkflowAnalyticsSummary) GetWorkflowId() string {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return ""
+}
+
+func (x *WorkflowAnalyticsSummary) GetWorkflowName() string {
+	if x != nil {
+		return x.WorkflowName
+	}
+	return ""
+}
+
+func (x *WorkflowAnalyticsSummary) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *WorkflowAnalyticsSummary) GetTotalJobs() uint64 {
+	if x != nil {
+		return x.TotalJobs
+	}
+	return 0
+}
+
+func (x *WorkflowAnalyticsSummary) GetTotalJoblogs() uint64 {
+	if x != nil {
+		return x.TotalJoblogs
+	}
+	return 0
+}
+
+func (x *WorkflowAnalyticsSummary) GetTotalJobExecutionDuration() uint64 {
+	if x != nil {
+		return x.TotalJobExecutionDuration
+	}
+	return 0
+}
+
 // GetUserAnalyticsResponse contains the activity details of a user.
 type GetUserAnalyticsResponse struct {
-	state                     protoimpl.MessageState `protogen:"open.v1"`
-	TotalWorkflows            uint32                 `protobuf:"varint,1,opt,name=total_workflows,json=totalWorkflows,proto3" json:"total_workflows,omitempty"`                                      // Total workflows ever created by the user (including active, terminated and deleted)
-	TotalJobs                 uint64                 `protobuf:"varint,2,opt,name=total_jobs,json=totalJobs,proto3" json:"total_jobs,omitempty"`                                                     // Total jobs ever created by the user's workflows (including active, terminated and deleted)
-	TotalJoblogs              uint64                 `protobuf:"varint,3,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total number of job logs generated by the user's workflows across all jobs
-	TotalJobExecutionDuration uint64                 `protobuf:"varint,4,opt,name=total_job_execution_duration,json=totalJobExecutionDuration,proto3" json:"total_job_execution_duration,omitempty"` // Sum of job execution durations for all jobs
+	state                     protoimpl.MessageState      `protogen:"open.v1"`
+	TotalWorkflows            uint32                      `protobuf:"varint,1,opt,name=total_workflows,json=totalWorkflows,proto3" json:"total_workflows,omitempty"`                                      // Total workflows ever created by the user (including active, terminated and deleted)
+	TotalJobs                 uint64                      `protobuf:"varint,2,opt,name=total_jobs,json=totalJobs,proto3" json:"total_jobs,omitempty"`                                                     // Total jobs ever created by the user's workflows (including active, terminated and deleted)
+	TotalJoblogs              uint64                      `protobuf:"varint,3,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total number of job logs generated by the user's workflows across all jobs
+	TotalJobExecutionDuration uint64                      `protobuf:"varint,4,opt,name=total_job_execution_duration,json=totalJobExecutionDuration,proto3" json:"total_job_execution_duration,omitempty"` // Sum of job execution durations for all jobs
+	WorkflowKinds             []*WorkflowKindAnalytics    `protobuf:"bytes,5,rep,name=workflow_kinds,json=workflowKinds,proto3" json:"workflow_kinds,omitempty"`                                          // Activity grouped by workflow kind
+	TopWorkflows              []*WorkflowAnalyticsSummary `protobuf:"bytes,6,rep,name=top_workflows,json=topWorkflows,proto3" json:"top_workflows,omitempty"`                                             // Most active workflows ranked by terminal jobs
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *GetUserAnalyticsResponse) Reset() {
 	*x = GetUserAnalyticsResponse{}
-	mi := &file_analytics_analytics_proto_msgTypes[1]
+	mi := &file_analytics_analytics_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -91,7 +255,7 @@ func (x *GetUserAnalyticsResponse) String() string {
 func (*GetUserAnalyticsResponse) ProtoMessage() {}
 
 func (x *GetUserAnalyticsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_analytics_analytics_proto_msgTypes[1]
+	mi := &file_analytics_analytics_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -104,7 +268,7 @@ func (x *GetUserAnalyticsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserAnalyticsResponse.ProtoReflect.Descriptor instead.
 func (*GetUserAnalyticsResponse) Descriptor() ([]byte, []int) {
-	return file_analytics_analytics_proto_rawDescGZIP(), []int{1}
+	return file_analytics_analytics_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetUserAnalyticsResponse) GetTotalWorkflows() uint32 {
@@ -135,6 +299,20 @@ func (x *GetUserAnalyticsResponse) GetTotalJobExecutionDuration() uint64 {
 	return 0
 }
 
+func (x *GetUserAnalyticsResponse) GetWorkflowKinds() []*WorkflowKindAnalytics {
+	if x != nil {
+		return x.WorkflowKinds
+	}
+	return nil
+}
+
+func (x *GetUserAnalyticsResponse) GetTopWorkflows() []*WorkflowAnalyticsSummary {
+	if x != nil {
+		return x.TopWorkflows
+	}
+	return nil
+}
+
 // GetWorkflowAnalyticsRequest contains the ID of the workflow whose activity is to be retrieved.
 type GetWorkflowAnalyticsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -146,7 +324,7 @@ type GetWorkflowAnalyticsRequest struct {
 
 func (x *GetWorkflowAnalyticsRequest) Reset() {
 	*x = GetWorkflowAnalyticsRequest{}
-	mi := &file_analytics_analytics_proto_msgTypes[2]
+	mi := &file_analytics_analytics_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -158,7 +336,7 @@ func (x *GetWorkflowAnalyticsRequest) String() string {
 func (*GetWorkflowAnalyticsRequest) ProtoMessage() {}
 
 func (x *GetWorkflowAnalyticsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_analytics_analytics_proto_msgTypes[2]
+	mi := &file_analytics_analytics_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -171,7 +349,7 @@ func (x *GetWorkflowAnalyticsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkflowAnalyticsRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkflowAnalyticsRequest) Descriptor() ([]byte, []int) {
-	return file_analytics_analytics_proto_rawDescGZIP(), []int{2}
+	return file_analytics_analytics_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetWorkflowAnalyticsRequest) GetUserId() string {
@@ -201,7 +379,7 @@ type GetWorkflowAnalyticsResponse struct {
 
 func (x *GetWorkflowAnalyticsResponse) Reset() {
 	*x = GetWorkflowAnalyticsResponse{}
-	mi := &file_analytics_analytics_proto_msgTypes[3]
+	mi := &file_analytics_analytics_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -213,7 +391,7 @@ func (x *GetWorkflowAnalyticsResponse) String() string {
 func (*GetWorkflowAnalyticsResponse) ProtoMessage() {}
 
 func (x *GetWorkflowAnalyticsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_analytics_analytics_proto_msgTypes[3]
+	mi := &file_analytics_analytics_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -226,7 +404,7 @@ func (x *GetWorkflowAnalyticsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkflowAnalyticsResponse.ProtoReflect.Descriptor instead.
 func (*GetWorkflowAnalyticsResponse) Descriptor() ([]byte, []int) {
-	return file_analytics_analytics_proto_rawDescGZIP(), []int{3}
+	return file_analytics_analytics_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetWorkflowAnalyticsResponse) GetWorkflowId() string {
@@ -263,13 +441,31 @@ const file_analytics_analytics_proto_rawDesc = "" +
 	"\n" +
 	"\x19analytics/analytics.proto\x12\tanalytics\"2\n" +
 	"\x17GetUserAnalyticsRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"\xc8\x01\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"\xd9\x01\n" +
+	"\x15WorkflowKindAnalytics\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12'\n" +
+	"\x0ftotal_workflows\x18\x02 \x01(\rR\x0etotalWorkflows\x12\x1d\n" +
+	"\n" +
+	"total_jobs\x18\x03 \x01(\x04R\ttotalJobs\x12#\n" +
+	"\rtotal_joblogs\x18\x04 \x01(\x04R\ftotalJoblogs\x12?\n" +
+	"\x1ctotal_job_execution_duration\x18\x05 \x01(\x04R\x19totalJobExecutionDuration\"\xf9\x01\n" +
+	"\x18WorkflowAnalyticsSummary\x12\x1f\n" +
+	"\vworkflow_id\x18\x01 \x01(\tR\n" +
+	"workflowId\x12#\n" +
+	"\rworkflow_name\x18\x02 \x01(\tR\fworkflowName\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x1d\n" +
+	"\n" +
+	"total_jobs\x18\x04 \x01(\x04R\ttotalJobs\x12#\n" +
+	"\rtotal_joblogs\x18\x05 \x01(\x04R\ftotalJoblogs\x12?\n" +
+	"\x1ctotal_job_execution_duration\x18\x06 \x01(\x04R\x19totalJobExecutionDuration\"\xdb\x02\n" +
 	"\x18GetUserAnalyticsResponse\x12'\n" +
 	"\x0ftotal_workflows\x18\x01 \x01(\rR\x0etotalWorkflows\x12\x1d\n" +
 	"\n" +
 	"total_jobs\x18\x02 \x01(\x04R\ttotalJobs\x12#\n" +
 	"\rtotal_joblogs\x18\x03 \x01(\x04R\ftotalJoblogs\x12?\n" +
-	"\x1ctotal_job_execution_duration\x18\x04 \x01(\x04R\x19totalJobExecutionDuration\"W\n" +
+	"\x1ctotal_job_execution_duration\x18\x04 \x01(\x04R\x19totalJobExecutionDuration\x12G\n" +
+	"\x0eworkflow_kinds\x18\x05 \x03(\v2 .analytics.WorkflowKindAnalyticsR\rworkflowKinds\x12H\n" +
+	"\rtop_workflows\x18\x06 \x03(\v2#.analytics.WorkflowAnalyticsSummaryR\ftopWorkflows\"W\n" +
 	"\x1bGetWorkflowAnalyticsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -297,23 +493,27 @@ func file_analytics_analytics_proto_rawDescGZIP() []byte {
 	return file_analytics_analytics_proto_rawDescData
 }
 
-var file_analytics_analytics_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_analytics_analytics_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_analytics_analytics_proto_goTypes = []any{
 	(*GetUserAnalyticsRequest)(nil),      // 0: analytics.GetUserAnalyticsRequest
-	(*GetUserAnalyticsResponse)(nil),     // 1: analytics.GetUserAnalyticsResponse
-	(*GetWorkflowAnalyticsRequest)(nil),  // 2: analytics.GetWorkflowAnalyticsRequest
-	(*GetWorkflowAnalyticsResponse)(nil), // 3: analytics.GetWorkflowAnalyticsResponse
+	(*WorkflowKindAnalytics)(nil),        // 1: analytics.WorkflowKindAnalytics
+	(*WorkflowAnalyticsSummary)(nil),     // 2: analytics.WorkflowAnalyticsSummary
+	(*GetUserAnalyticsResponse)(nil),     // 3: analytics.GetUserAnalyticsResponse
+	(*GetWorkflowAnalyticsRequest)(nil),  // 4: analytics.GetWorkflowAnalyticsRequest
+	(*GetWorkflowAnalyticsResponse)(nil), // 5: analytics.GetWorkflowAnalyticsResponse
 }
 var file_analytics_analytics_proto_depIdxs = []int32{
-	0, // 0: analytics.AnalyticsService.GetUserAnalytics:input_type -> analytics.GetUserAnalyticsRequest
-	2, // 1: analytics.AnalyticsService.GetWorkflowAnalytics:input_type -> analytics.GetWorkflowAnalyticsRequest
-	1, // 2: analytics.AnalyticsService.GetUserAnalytics:output_type -> analytics.GetUserAnalyticsResponse
-	3, // 3: analytics.AnalyticsService.GetWorkflowAnalytics:output_type -> analytics.GetWorkflowAnalyticsResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: analytics.GetUserAnalyticsResponse.workflow_kinds:type_name -> analytics.WorkflowKindAnalytics
+	2, // 1: analytics.GetUserAnalyticsResponse.top_workflows:type_name -> analytics.WorkflowAnalyticsSummary
+	0, // 2: analytics.AnalyticsService.GetUserAnalytics:input_type -> analytics.GetUserAnalyticsRequest
+	4, // 3: analytics.AnalyticsService.GetWorkflowAnalytics:input_type -> analytics.GetWorkflowAnalyticsRequest
+	3, // 4: analytics.AnalyticsService.GetUserAnalytics:output_type -> analytics.GetUserAnalyticsResponse
+	5, // 5: analytics.AnalyticsService.GetWorkflowAnalytics:output_type -> analytics.GetWorkflowAnalyticsResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_analytics_analytics_proto_init() }
@@ -327,7 +527,7 @@ func file_analytics_analytics_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_analytics_analytics_proto_rawDesc), len(file_analytics_analytics_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

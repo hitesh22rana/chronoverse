@@ -1,4 +1,4 @@
-const integerFormatter = new Intl.NumberFormat()
+const integerFormatter = new Intl.NumberFormat("en-US")
 
 export function divide(numerator = 0, denominator = 0) {
     return denominator > 0 ? numerator / denominator : 0
@@ -39,9 +39,9 @@ function formatApproximateRate(
 
 export function formatWorkflowKind(kind: string) {
     return kind
-        .toLocaleLowerCase()
+        .toLowerCase()
         .split("_")
-        .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join(" ")
 }
 

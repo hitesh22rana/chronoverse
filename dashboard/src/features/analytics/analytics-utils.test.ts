@@ -20,11 +20,13 @@ describe("analytics utilities", () => {
     it("formats omitted or invalid counters as zero", () => {
         expect(formatInteger()).toBe("0")
         expect(formatInteger(Number.NaN)).toBe("0")
+        expect(formatInteger(1000)).toBe("1,000")
     })
 
     it("turns workflow kinds into readable labels", () => {
         expect(formatWorkflowKind("CONTAINER")).toBe("Container")
         expect(formatWorkflowKind("HTTP_HEARTBEAT")).toBe("Http Heartbeat")
+        expect(formatWorkflowKind("IMAGE")).toBe("Image")
     })
 
     it("only includes workflow kinds with terminal-job activity", () => {

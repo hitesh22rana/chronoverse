@@ -258,7 +258,6 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                                         content={
                                             <ChartTooltipContent
                                                 indicator="line"
-                                                labelKey="workflow_name"
                                             />
                                         }
                                     />

@@ -27,6 +27,6 @@ export type UserAnalytics = {
     total_jobs: number
     total_joblogs: number
     total_job_execution_duration: number
-    workflow_kinds?: WorkflowKindAnalytics[]
-    top_workflows?: WorkflowAnalyticsSummary[]
+    workflow_kinds: WorkflowKindAnalytics[]
+    top_workflows: WorkflowAnalyticsSummary[]
 }

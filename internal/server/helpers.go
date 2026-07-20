@@ -22,12 +22,13 @@ const (
 	sessionCookieName     = "session"
 	idempotencyKeyHeader  = "Idempotency-Key"
 	logStreamStdout       = "stdout"
+	workflowKindContainer = "CONTAINER"
 )
 
 var (
 	validKinds = []string{
 		"HEARTBEAT",
-		"CONTAINER",
+		workflowKindContainer,
 	}
 	validBuildStatuses = []string{
 		workflowsmodel.WorkflowBuildStatusQueued.ToString(),

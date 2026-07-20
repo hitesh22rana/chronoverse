@@ -8,6 +8,10 @@ import { createIdempotencyKey, fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints } from "@/lib/api/endpoints"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { WorkflowAnalytics } from "@/features/analytics/types"
+import {
+    normalizeWorkflowAnalytics,
+    type WorkflowAnalyticsPayload,
+} from "@/features/analytics/analytics-data"
 import type { UpdateWorkflowDetails, Workflow } from "@/features/workflows/types"
 
 type UseWorkflowDetailsOptions = {
@@ -94,9 +98,12 @@ export function useWorkflowDetails(
 
     const getWorkflowAnalyticsQuery = useQuery<WorkflowAnalytics, Error>({
         queryKey: queryKeys.workflow.analytics(workflowId),
-        queryFn: () => fetchApiJson<WorkflowAnalytics>(
-            apiEndpoints.analytics.workflow(workflowId),
-            "failed to fetch workflow analytics",
+        queryFn: async () => normalizeWorkflowAnalytics(
+            await fetchApiJson<WorkflowAnalyticsPayload>(
+                apiEndpoints.analytics.workflow(workflowId),
+                "failed to fetch workflow analytics",
+            ),
+            workflowId,
         ),
         enabled: analytics && !!workflowId,
         staleTime: 5 * 60 * 1000,

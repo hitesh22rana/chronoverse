@@ -6,6 +6,7 @@ import {
     formatLogsPerJob,
     formatWorkflowKind,
     truncateWorkflowLabel,
+    formatInteger,
 } from "./analytics-utils"
 
 describe("analytics utilities", () => {
@@ -13,6 +14,11 @@ describe("analytics utilities", () => {
         expect(divide(15, 3)).toBe(5)
         expect(divide(15, 0)).toBe(0)
         expect(divide()).toBe(0)
+    })
+
+    it("formats omitted or invalid counters as zero", () => {
+        expect(formatInteger()).toBe("0")
+        expect(formatInteger(Number.NaN)).toBe("0")
     })
 
     it("turns workflow kinds into readable labels", () => {

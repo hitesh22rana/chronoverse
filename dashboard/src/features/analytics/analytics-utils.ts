@@ -4,8 +4,8 @@ export function divide(numerator = 0, denominator = 0) {
     return denominator > 0 ? numerator / denominator : 0
 }
 
-export function formatInteger(value: number) {
-    return integerFormatter.format(value)
+export function formatInteger(value = 0) {
+    return integerFormatter.format(Number.isFinite(value) ? value : 0)
 }
 
 export function formatJobsPerWorkflow(totalJobs: number, totalWorkflows: number) {

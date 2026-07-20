@@ -35,11 +35,13 @@ The full target runs Go tests with the race detector and includes Docker-backed 
 ```bash
 make lint
 make build/all
-cd dashboard && npm run lint && npm run build
+cd dashboard && npm test && npm run lint && npm run build
 cd ../static && npm run check
 ```
 
 Use `npm ci` in both frontend workspaces when reproducing CI from their committed lockfiles. `npm run check` in `static/` validates the MDX/OpenAPI registry, lints, type-checks, and performs the static Next.js export.
+
+Dashboard route modules should remain thin. Keep domain components, hooks, and API response types under `dashboard/src/features/<domain>`; reserve `dashboard/src/components/ui` for reusable shadcn primitives and `dashboard/src/lib` for infrastructure shared by multiple features.
 
 ## Kubernetes changes
 

@@ -402,12 +402,19 @@ Returns `204 No Content`.
 
 `GET /analytics`
 
-Returns current-user aggregate totals:
+Returns current-user lifetime aggregates:
 
 - `total_workflows`
 - `total_jobs`
 - `total_joblogs`
 - `total_job_execution_duration`
+- `workflow_kinds`: the same durable counters grouped by workflow kind
+- `top_workflows`: up to 10 workflows ranked by terminal job count; deleted
+  workflows retain their aggregate history and use the fallback name
+  `Deleted workflow`
+
+The Top 10 cap is enforced by the analytics service rather than by the
+dashboard.
 
 ### Workflow Analytics
 
@@ -419,3 +426,6 @@ Returns workflow aggregate totals:
 - `total_job_execution_duration`
 - `total_jobs`
 - `total_joblogs`
+
+These counters are lifetime aggregates. A disabled log-retention setting stops
+new retained log entries; it does not erase previously aggregated history.

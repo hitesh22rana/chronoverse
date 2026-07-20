@@ -193,6 +193,7 @@ Dashboard commands live in `dashboard/`:
 ```sh
 npm ci
 npm run dev:port
+npm test
 npm run build
 npm run lint
 ```

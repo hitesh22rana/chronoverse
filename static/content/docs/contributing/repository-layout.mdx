@@ -27,6 +27,8 @@
 
 Entry points compose configuration, infrastructure, repositories, and services. Business state transitions remain in domain layers; reusable transport and storage behavior belongs under `internal/pkg` only when it is truly cross-domain.
 
+The dashboard follows the same ownership rule. Route files in `dashboard/src/app` are thin entry points, domain UI and hooks live together under `dashboard/src/features/<domain>`, reusable shadcn primitives remain under `dashboard/src/components/ui`, and only cross-feature API transport, endpoint construction, query keys, and general utilities belong under `dashboard/src/lib`.
+
 Deployment ownership follows the same separation. `infra/k8s/base` owns shared application resources. `infra/k8s/overlays/local` and `infra/k8s/overlays/production` own strategy-specific infrastructure, storage, replica, and patch choices. `scripts/k8s/setup.sh` owns prerequisite and Secret bootstrap before Kustomize apply. Compose remains a separate supported topology rather than generated Kubernetes input.
 
 ## Generated files

@@ -4,11 +4,17 @@ Chronoverse maintains user and workflow aggregates from workflow, job, and retai
 
 ## User aggregates
 
-`GET /analytics` returns totals across the authenticated user's workflows, including workflow count, job count, retained log count, and total execution duration.
+`GET /analytics` returns lifetime totals across the authenticated user's workflows, including workflow count, terminal job count, retained log count, and total execution duration. It also returns workload totals grouped by workflow kind and up to 10 workflows ranked by terminal job count. The Top 10 limit is enforced by the analytics service, so response size does not grow with every workflow owned by the user.
+
+The dashboard loads this overview only when the Analytics drawer opens. The result remains fresh for five minutes and is not polled from the landing page. The overview presents the lifetime counters, workload mix, and most active workflows without querying raw job-log storage.
+
+If no ranked workflows are available, the dashboard explains that activity will appear after a workflow reaches a terminal job state.
 
 ## Workflow aggregates
 
-`GET /analytics/{workflow_id}` returns job count, retained log count, and execution duration for one workflow.
+`GET /analytics/{workflow_id}` returns job count, retained log count, total execution duration, and derived average runtime for one workflow. Workflow-level analytics load with the workflow details view and use the same five-minute freshness window.
+
+Analytics are historical counters. Disabling log retention stops new logs from being retained but does not erase previously counted retained logs, so the dashboard labels that value as historical generated logs when retention is disabled.
 
 ## Processing model
 
@@ -20,5 +26,4 @@ Processed event IDs are retained for a configurable window and removed in bounde
 
 ## Storage distinction
 
-Analytics aggregates are stored in PostgreSQL. ClickHouse is used for retained job log bodies, not as the analytics source of truth.
-
+Analytics aggregates are stored in PostgreSQL as one row per user and workflow. User-level reads are scoped by the user index, workflow reads use the unique user/workflow index, and the ranked query is capped at 10 rows. ClickHouse is used for retained job log bodies, not as the analytics source of truth.

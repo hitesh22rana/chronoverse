@@ -9,6 +9,12 @@ import { fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { NotificationsResponse } from "@/features/notifications/types"
+import {
+    batchNotificationIds,
+    flattenNotifications,
+    removeNotificationsFromPages,
+} from "@/features/notifications/notification-data"
+import { canReceiveNotifications } from "@/features/users/user-preferences"
 
 type UseNotificationsOptions = {
     poll?: boolean
@@ -35,27 +41,18 @@ export function useNotifications({ poll = false }: UseNotificationsOptions = {})
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
         refetchInterval: poll ? 60000 : false,
         refetchIntervalInBackground: false,
-        enabled: !!user && user.notification_preference !== "NONE",
+        enabled: canReceiveNotifications(user),
     })
 
     if (query.error instanceof Error) {
         toast.error(query.error.message)
     }
 
-    const allPages = query.data?.pages || []
-    const notifications = allPages.length > 0 ? allPages.flatMap((page) => page?.notifications || []) : []
+    const notifications = flattenNotifications(query.data?.pages)
 
     const markAsReadMutation = useMutation({
         mutationFn: async (ids: string[]) => {
-            // To make sure we don't send too many ids in one request, we batch the ids into smaller arrays
-            // This is a simple batching function that splits the array into small batches
-            const batchSize = 100
-            const batches: string[][] = []
-            for (let i = 0; i < ids.length; i += batchSize) {
-                batches.push(ids.slice(i, i + batchSize))
-            }
-
-            await Promise.all(batches.map(async (batch) => {
+            await Promise.all(batchNotificationIds(ids).map(async (batch) => {
                 await fetchApi(apiEndpoints.notifications, "failed to mark notifications as read", {
                     method: "PUT",
                     body: JSON.stringify({ ids: batch }),
@@ -65,23 +62,14 @@ export function useNotifications({ poll = false }: UseNotificationsOptions = {})
             return ids
         },
         onSuccess: (ids) => {
-            const markedIds = new Set(ids)
             queryClient.setQueryData(
                 queryKeys.notifications,
                 (oldData: InfiniteData<NotificationsResponse> | undefined) => {
                     if (!oldData) return oldData
 
-                    // Remove the notifications from the old data
-                    const updatedPages = oldData.pages.map((page) => {
-                        const updatedNotifications = page.notifications.filter(
-                            (notification) => !markedIds.has(notification.id),
-                        )
-                        return { ...page, notifications: updatedNotifications }
-                    })
-
                     return {
                         ...oldData,
-                        pages: updatedPages,
+                        pages: removeNotificationsFromPages(oldData.pages, ids),
                     }
                 },
             )

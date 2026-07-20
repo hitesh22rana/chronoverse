@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
@@ -26,26 +25,14 @@ import {
 } from "@/components/ui/form"
 
 import { useAuth } from "@/features/auth/use-auth"
+import { signupSchema, type SignupValues } from "@/features/auth/auth-schemas"
 import { Fragment } from "react"
-
-const SignUpSchema = z
-  .object({
-    email: z.email({ message: "Please enter a valid email" }),
-    password: z.string().min(8, { message: "Password must be at least 8 characters" }).max(100, { message: "Password must be at most 100 characters" }),
-    confirmPassword: z.string().min(1, { message: "Please confirm your password" })
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    path: ["confirmPassword"],
-    message: "Passwords do not match"
-  })
-
-type SignUpValues = z.infer<typeof SignUpSchema>
 
 export default function SignupPage() {
   const { signup, isSignupLoading: isLoading } = useAuth()
 
-  const form = useForm<SignUpValues>({
-    resolver: zodResolver(SignUpSchema),
+  const form = useForm<SignupValues>({
+    resolver: zodResolver(signupSchema),
     defaultValues: {
       email: "",
       password: "",
@@ -55,7 +42,7 @@ export default function SignupPage() {
     reValidateMode: "onChange"
   })
 
-  const onSubmit = (values: SignUpValues) => {
+  const onSubmit = (values: SignupValues) => {
     signup({ email: values.email, password: values.password })
   }
 

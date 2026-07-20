@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
@@ -26,20 +25,14 @@ import {
 } from "@/components/ui/form"
 
 import { useAuth } from "@/features/auth/use-auth"
+import { loginSchema, type LoginValues } from "@/features/auth/auth-schemas"
 import { Fragment } from "react"
-
-const LoginSchema = z.object({
-  email: z.email({ message: "Please enter a valid email" }),
-  password: z.string().min(1, { message: "Password is required" })
-})
-
-type LoginValues = z.infer<typeof LoginSchema>
 
 export default function LoginPage() {
   const { login, isLoginLoading: isLoading } = useAuth()
 
   const form = useForm<LoginValues>({
-    resolver: zodResolver(LoginSchema),
+    resolver: zodResolver(loginSchema),
     defaultValues: {
       email: "",
       password: ""

@@ -33,7 +33,7 @@ func (s *Server) handleGetUserAnalytics(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
-	json.NewEncoder(w).Encode(newUserAnalyticsHTTPResponse(res))
+	json.NewEncoder(w).Encode(toUserAnalyticsHTTPResponse(res))
 }
 
 // handleGetWorkflowAnalytics handles the get workflow analytics request.
@@ -69,5 +69,5 @@ func (s *Server) handleGetWorkflowAnalytics(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
-	json.NewEncoder(w).Encode(newWorkflowAnalyticsHTTPResponse(res))
+	json.NewEncoder(w).Encode(toWorkflowAnalyticsHTTPResponse(res))
 }

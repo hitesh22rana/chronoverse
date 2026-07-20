@@ -35,7 +35,7 @@ type workflowAnalyticsHTTPResponse struct {
 	TotalJoblogs              uint64 `json:"total_joblogs"`
 }
 
-func newUserAnalyticsHTTPResponse(res *analyticspb.GetUserAnalyticsResponse) userAnalyticsHTTPResponse {
+func toUserAnalyticsHTTPResponse(res *analyticspb.GetUserAnalyticsResponse) userAnalyticsHTTPResponse {
 	workflowKinds := make([]workflowKindAnalyticsHTTPResponse, 0, len(res.GetWorkflowKinds()))
 	for _, item := range res.GetWorkflowKinds() {
 		workflowKinds = append(workflowKinds, workflowKindAnalyticsHTTPResponse{
@@ -69,7 +69,7 @@ func newUserAnalyticsHTTPResponse(res *analyticspb.GetUserAnalyticsResponse) use
 	}
 }
 
-func newWorkflowAnalyticsHTTPResponse(res *analyticspb.GetWorkflowAnalyticsResponse) workflowAnalyticsHTTPResponse {
+func toWorkflowAnalyticsHTTPResponse(res *analyticspb.GetWorkflowAnalyticsResponse) workflowAnalyticsHTTPResponse {
 	return workflowAnalyticsHTTPResponse{
 		WorkflowID:                res.GetWorkflowId(),
 		TotalJobExecutionDuration: res.GetTotalJobExecutionDuration(),

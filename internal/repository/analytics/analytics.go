@@ -80,6 +80,72 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 		return nil, err
 	}
 
+	workflowKindsQuery := fmt.Sprintf(`
+        SELECT
+            kind,
+            COUNT(*) AS total_workflows,
+            COALESCE(SUM(jobs_count), 0) AS total_jobs,
+            COALESCE(SUM(logs_count), 0) AS total_joblogs,
+            COALESCE(SUM(total_job_execution_duration), 0) AS total_job_execution_duration
+        FROM %s
+        WHERE user_id = $1
+        GROUP BY kind
+        ORDER BY total_jobs DESC, kind ASC
+    `, postgres.TableAnalytics)
+
+	workflowKindRows, err := r.pg.Query(ctx, workflowKindsQuery, userID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, status.Error(codes.DeadlineExceeded, err.Error())
+		} else if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to get workflow kind analytics: %v", err)
+	}
+
+	res.WorkflowKinds, err = pgx.CollectRows(
+		workflowKindRows,
+		pgx.RowToAddrOfStructByName[analyticsmodel.WorkflowKindAnalytics],
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to collect workflow kind analytics: %v", err)
+	}
+
+	topWorkflowsQuery := fmt.Sprintf(`
+        SELECT
+            a.workflow_id,
+            COALESCE(w.name, 'Deleted workflow') AS workflow_name,
+            a.kind,
+            a.jobs_count AS total_jobs,
+            a.logs_count AS total_joblogs,
+            a.total_job_execution_duration
+        FROM %s a
+        LEFT JOIN %s w ON w.id = a.workflow_id AND w.user_id = a.user_id
+        WHERE a.user_id = $1
+        ORDER BY a.jobs_count DESC, a.logs_count DESC, a.workflow_id ASC
+        LIMIT 8
+    `, postgres.TableAnalytics, postgres.TableWorkflows)
+
+	topWorkflowRows, err := r.pg.Query(ctx, topWorkflowsQuery, userID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, status.Error(codes.DeadlineExceeded, err.Error())
+		} else if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to get top workflow analytics: %v", err)
+	}
+
+	res.TopWorkflows, err = pgx.CollectRows(
+		topWorkflowRows,
+		pgx.RowToAddrOfStructByName[analyticsmodel.WorkflowAnalyticsSummary],
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to collect top workflow analytics: %v", err)
+	}
+
 	return res, nil
 }
 

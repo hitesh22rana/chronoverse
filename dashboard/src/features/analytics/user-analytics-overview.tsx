@@ -2,6 +2,7 @@
 
 import {
     Activity,
+    ChartNoAxesColumnIncreasing,
     Clock3,
     ScrollText,
     Workflow,
@@ -87,7 +88,8 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
         display_kind: formatWorkflowKind(item.kind),
         fill: chartColors[index % chartColors.length],
     }))
-    const topWorkflows = (analytics.top_workflows ?? []).slice(0, topWorkflowsLimit)
+    const topWorkflows = withTerminalJobActivity(analytics.top_workflows)
+        .slice(0, topWorkflowsLimit)
     const jobsPerWorkflow = formatJobsPerWorkflow(analytics.total_jobs, analytics.total_workflows)
     const secondsPerJob = divide(analytics.total_job_execution_duration, analytics.total_jobs)
     const logsPerJob = formatLogsPerJob(analytics.total_joblogs, analytics.total_jobs)
@@ -268,9 +270,19 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                                 </BarChart>
                             </ChartContainer>
                         ) : (
-                            <p className="py-16 text-center text-sm text-muted-foreground">
-                                No terminal job activity recorded yet.
-                            </p>
+                            <Empty className="min-h-64 border-0 p-4 md:p-6">
+                                <EmptyHeader>
+                                    <EmptyMedia variant="icon">
+                                        <ChartNoAxesColumnIncreasing />
+                                    </EmptyMedia>
+                                    <EmptyTitle className="text-base">
+                                        No workflow activity yet
+                                    </EmptyTitle>
+                                    <EmptyDescription>
+                                        Complete a workflow run to see your most active workflows ranked here.
+                                    </EmptyDescription>
+                                </EmptyHeader>
+                            </Empty>
                         )}
                     </CardContent>
                 </Card>

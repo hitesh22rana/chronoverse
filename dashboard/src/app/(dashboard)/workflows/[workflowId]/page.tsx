@@ -66,7 +66,7 @@ import { WorkflowJobsSkeleton } from "@/components/dashboard/workflow-jobs-skele
 import {
     WorkflowAnalyticsCardsSkeleton,
     WorkflowAnalyticsPanel,
-} from "@/components/dashboard/workflow-analytics-panel"
+} from "@/features/analytics/workflow"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { useWorkflowJobs } from "@/hooks/use-workflow-jobs"

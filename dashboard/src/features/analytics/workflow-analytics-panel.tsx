@@ -1,6 +1,5 @@
 "use client"
 
-import type { LucideIcon } from "lucide-react"
 import {
     Activity,
     Clock3,
@@ -9,17 +8,23 @@ import {
     ScrollText,
 } from "lucide-react"
 
+import { AnalyticsMetricCard } from "@/features/analytics/analytics-metric-card"
+import { WorkflowAnalyticsCardsSkeleton } from "@/features/analytics/analytics-skeletons"
+import {
+    divide,
+    formatDecimal,
+    formatInteger,
+} from "@/features/analytics/analytics-utils"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
     Card,
     CardAction,
-    CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
 
 import type { WorkflowAnalytics } from "@/lib/api/types"
 import { cn, formatSeconds } from "@/lib/utils"
@@ -33,15 +38,6 @@ type WorkflowAnalyticsPanelProps = {
     onRetry: () => void
     workflowKind: string
 }
-
-const metricSkeletons = [
-    { id: "jobs", valueWidth: "w-20", showSecondLine: true },
-    { id: "runtime", valueWidth: "w-24", showSecondLine: false },
-    { id: "average", valueWidth: "w-16", showSecondLine: true },
-    { id: "logs", valueWidth: "w-20", showSecondLine: false },
-] as const
-
-const decimalFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
 
 export function WorkflowAnalyticsPanel({
     analytics,
@@ -94,27 +90,31 @@ export function WorkflowAnalyticsPanel({
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <AnalyticsMetricCard
                             label="Job executions"
-                            value={totalJobs.toLocaleString()}
+                            value={formatInteger(totalJobs)}
                             helper="Recorded after reaching a final state"
                             icon={Activity}
+                            variant="workflow"
                         />
                         <AnalyticsMetricCard
                             label="Total runtime"
                             value={formatSeconds(totalRuntime)}
                             helper="Combined execution time"
                             icon={Clock3}
+                            variant="workflow"
                         />
                         <AnalyticsMetricCard
                             label="Average runtime"
                             value={formatSeconds(Math.round(averageRuntime))}
                             helper="Per recorded job execution"
                             icon={Gauge}
+                            variant="workflow"
                         />
                         <AnalyticsMetricCard
                             label="Retained logs"
-                            value={totalLogs.toLocaleString()}
-                            helper={logHelper(workflowKind, logRetention, logsPerJob)}
+                            value={formatInteger(totalLogs)}
+                            helper={getLogHelper(workflowKind, logRetention, logsPerJob)}
                             icon={ScrollText}
+                            variant="workflow"
                         />
                     </div>
                     {!logRetention && (
@@ -140,61 +140,7 @@ export function WorkflowAnalyticsPanel({
     )
 }
 
-type AnalyticsMetricCardProps = {
-    helper: string
-    icon: LucideIcon
-    label: string
-    value: string
-}
-
-function AnalyticsMetricCard({ helper, icon: Icon, label, value }: AnalyticsMetricCardProps) {
-    return (
-        <Card className="min-h-39 h-full gap-4 py-4">
-            <CardHeader className="grid grid-cols-[1fr_auto] px-4">
-                <CardDescription>{label}</CardDescription>
-                <Badge variant="secondary" className="size-8 p-0">
-                    <Icon />
-                </Badge>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1 px-4">
-                <p className="text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
-                <p className="min-h-8 text-xs text-muted-foreground">{helper}</p>
-            </CardContent>
-        </Card>
-    )
-}
-
-export function WorkflowAnalyticsCardsSkeleton() {
-    return (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {metricSkeletons.map(({ id, valueWidth, showSecondLine }) => (
-                <Card key={id} className="min-h-39 h-full gap-4 py-4">
-                    <CardHeader className="grid grid-cols-[1fr_auto] px-4">
-                        <Skeleton className="h-5 w-28" />
-                        <Skeleton className="size-8 rounded-md" />
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-1 px-4">
-                        <Skeleton className={cn("h-7", valueWidth)} />
-                        <div className="flex min-h-8 flex-col gap-1">
-                            <Skeleton className="h-3 w-full max-w-44" />
-                            {showSecondLine && <Skeleton className="h-3 w-28" />}
-                        </div>
-                    </CardContent>
-                </Card>
-            ))}
-        </div>
-    )
-}
-
-function divide(numerator: number, denominator: number) {
-    return denominator > 0 ? numerator / denominator : 0
-}
-
-function formatDecimal(value: number) {
-    return decimalFormatter.format(value)
-}
-
-function logHelper(workflowKind: string, logRetention: boolean, logsPerJob: number) {
+function getLogHelper(workflowKind: string, logRetention: boolean, logsPerJob: number) {
     if (workflowKind !== "CONTAINER") {
         return "Not emitted by this workflow kind"
     }

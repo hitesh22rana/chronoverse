@@ -9,7 +9,7 @@ import { Workflows } from "@/components/dashboard/workflows"
 import { CreateWorkflowDialog } from "@/components/dashboard/create-workflow-dialog"
 
 const UserAnalyticsDrawer = dynamic(
-    () => import("@/components/dashboard/user-analytics-drawer").then((module) => module.UserAnalyticsDrawer),
+    () => import("@/features/analytics/user").then((module) => module.UserAnalyticsDrawer),
     {
         ssr: false,
         loading: () => (

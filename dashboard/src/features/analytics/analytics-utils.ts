@@ -13,6 +13,21 @@ export function formatInteger(value: number) {
     return integerFormatter.format(value)
 }
 
+export function formatRetainedLogsPerJob(totalLogs: number, totalJobs: number) {
+    if (!Number.isFinite(totalLogs) || !Number.isFinite(totalJobs) || totalLogs <= 0 || totalJobs <= 0) {
+        return null
+    }
+
+    const logsPerJob = totalLogs / totalJobs
+    if (logsPerJob < 1) {
+        return "<1 log per job"
+    }
+
+    const roundedLogs = Math.round(logsPerJob)
+    const unit = roundedLogs === 1 ? "log" : "logs"
+    return `~${formatInteger(roundedLogs)} ${unit} per job`
+}
+
 export function formatWorkflowKind(kind: string) {
     return kind
         .toLocaleLowerCase()

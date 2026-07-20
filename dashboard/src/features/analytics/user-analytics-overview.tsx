@@ -37,6 +37,7 @@ import {
     divide,
     formatDecimal,
     formatInteger,
+    formatRetainedLogsPerJob,
     formatWorkflowKind,
     truncateWorkflowLabel,
 } from "@/features/analytics/analytics-utils"
@@ -66,6 +67,8 @@ const chartColors = [
     "var(--chart-5)",
 ] as const
 
+const topWorkflowsLimit = 10
+
 type UserAnalyticsOverviewProps = {
     analytics: UserAnalytics
 }
@@ -76,10 +79,10 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
         display_kind: formatWorkflowKind(item.kind),
         fill: chartColors[index % chartColors.length],
     }))
-    const topWorkflows = analytics.top_workflows ?? []
+    const topWorkflows = (analytics.top_workflows ?? []).slice(0, topWorkflowsLimit)
     const jobsPerWorkflow = divide(analytics.total_jobs, analytics.total_workflows)
-    const logsPerJob = divide(analytics.total_joblogs, analytics.total_jobs)
     const secondsPerJob = divide(analytics.total_job_execution_duration, analytics.total_jobs)
+    const retainedLogsPerJob = formatRetainedLogsPerJob(analytics.total_joblogs, analytics.total_jobs)
 
     return (
         <div className="flex flex-col gap-4">
@@ -99,7 +102,7 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                 <AnalyticsMetricCard
                     label="Retained logs"
                     value={formatInteger(analytics.total_joblogs)}
-                    helper={`${formatDecimal(logsPerJob)} logs per job`}
+                    helper={retainedLogsPerJob ?? "No retained logs recorded"}
                     icon={ScrollText}
                 />
                 <AnalyticsMetricCard
@@ -203,7 +206,9 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                 <Card>
                     <CardHeader>
                         <CardTitle>Most active workflows</CardTitle>
-                        <CardDescription>Ranked by durable terminal-job count</CardDescription>
+                        <CardDescription>
+                            Top {topWorkflowsLimit} ranked by durable terminal-job count
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         {topWorkflows.length > 0 ? (
@@ -246,7 +251,7 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                             </ChartContainer>
                         ) : (
                             <p className="py-16 text-center text-sm text-muted-foreground">
-                                No workflow ranking is available yet.
+                                No terminal job activity recorded yet.
                             </p>
                         )}
                     </CardContent>

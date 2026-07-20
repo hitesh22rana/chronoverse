@@ -12,8 +12,8 @@ import { AnalyticsMetricCard } from "@/features/analytics/analytics-metric-card"
 import { WorkflowAnalyticsCardsSkeleton } from "@/features/analytics/analytics-skeletons"
 import {
     divide,
-    formatDecimal,
     formatInteger,
+    formatRetainedLogsPerJob,
 } from "@/features/analytics/analytics-utils"
 
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +25,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 
 import type { WorkflowAnalytics } from "@/lib/api/types"
 import { cn, formatSeconds } from "@/lib/utils"
@@ -52,7 +53,6 @@ export function WorkflowAnalyticsPanel({
     const totalLogs = analytics?.total_joblogs ?? 0
     const totalRuntime = analytics?.total_job_execution_duration ?? 0
     const averageRuntime = divide(totalRuntime, totalJobs)
-    const logsPerJob = divide(totalLogs, totalJobs)
 
     return (
         <section className="flex flex-col gap-3" aria-labelledby="workflow-analytics-title">
@@ -65,9 +65,11 @@ export function WorkflowAnalyticsPanel({
                         Lifetime execution signals from the existing workflow aggregate
                     </p>
                 </div>
-                {!isLoading && !error && analytics && (
+                {isLoading ? (
+                    <Skeleton className="h-5 w-16 shrink-0 rounded-full" />
+                ) : !error && analytics ? (
                     <Badge variant="secondary">Lifetime</Badge>
-                )}
+                ) : null}
             </div>
 
             {isLoading ? (
@@ -112,7 +114,7 @@ export function WorkflowAnalyticsPanel({
                         <AnalyticsMetricCard
                             label="Retained logs"
                             value={formatInteger(totalLogs)}
-                            helper={getLogHelper(workflowKind, logRetention, logsPerJob)}
+                            helper={getLogHelper(workflowKind, logRetention, totalLogs, totalJobs)}
                             icon={ScrollText}
                             variant="workflow"
                         />
@@ -140,7 +142,7 @@ export function WorkflowAnalyticsPanel({
     )
 }
 
-function getLogHelper(workflowKind: string, logRetention: boolean, logsPerJob: number) {
+function getLogHelper(workflowKind: string, logRetention: boolean, totalLogs: number, totalJobs: number) {
     if (workflowKind !== "CONTAINER") {
         return "Not emitted by this workflow kind"
     }
@@ -149,5 +151,5 @@ function getLogHelper(workflowKind: string, logRetention: boolean, logsPerJob: n
         return "New logs are not retained"
     }
 
-    return `${formatDecimal(logsPerJob)} entries per recorded job`
+    return formatRetainedLogsPerJob(totalLogs, totalJobs) ?? "No retained logs recorded"
 }

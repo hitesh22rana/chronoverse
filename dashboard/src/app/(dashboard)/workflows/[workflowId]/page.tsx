@@ -760,9 +760,12 @@ function WorkflowDetailsSkeleton() {
 
                 {/* Analytics Skeleton */}
                 <div className="flex flex-col gap-3 py-2">
-                    <div className="flex flex-col gap-1">
-                        <Skeleton className="h-5 w-36" />
-                        <Skeleton className="h-4 w-full max-w-80" />
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex flex-col gap-1 w-full">
+                            <Skeleton className="h-5 w-36" />
+                            <Skeleton className="h-4 w-full max-w-80" />
+                        </div>
+                        <Skeleton className="h-5 w-16 shrink-0 rounded-full" />
                     </div>
                     <WorkflowAnalyticsCardsSkeleton />
                 </div>

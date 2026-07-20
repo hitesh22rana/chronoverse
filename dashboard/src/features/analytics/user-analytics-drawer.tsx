@@ -32,14 +32,14 @@ export function UserAnalyticsDrawer() {
     const analyticsQuery = useUserAnalytics(open)
 
     return (
-        <Drawer direction="bottom" open={open} onOpenChange={setOpen}>
+        <Drawer direction="bottom" open={open} onOpenChange={setOpen} handleOnly>
             <DrawerTrigger asChild>
                 <Button variant="outline" className="w-full cursor-pointer md:w-fit">
                     <BarChart3 data-icon="inline-start" />
                     Analytics
                 </Button>
             </DrawerTrigger>
-            <DrawerContent className="overflow-hidden">
+            <DrawerContent className="overflow-hidden" style={{ userSelect: "text" }}>
                 <DrawerHeader className="flex w-full shrink-0 flex-row items-center gap-3 px-4 py-4 text-left md:px-6">
                     <Badge variant="secondary" className="size-9 p-0">
                         <BarChart3 />
@@ -61,7 +61,7 @@ export function UserAnalyticsDrawer() {
                     </Button>
                 </DrawerHeader>
 
-                <div className="min-h-0 overflow-y-auto px-4 pb-6 md:px-6">
+                <div className="min-h-0 overscroll-contain overflow-y-auto px-4 pb-6 [scrollbar-width:none] md:px-6 [&::-webkit-scrollbar]:hidden">
                     {analyticsQuery.isPending ? (
                         <UserAnalyticsOverviewSkeleton />
                     ) : analyticsQuery.isError ? (

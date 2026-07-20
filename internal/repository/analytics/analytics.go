@@ -48,6 +48,16 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 		span.End()
 	}()
 
+	tx, err := r.pg.BeginTxWithOptions(ctx, &pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	})
+	if err != nil {
+		return nil, analyticsRepositoryError(err, "failed to start user analytics snapshot")
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
+
 	// Query to get user analytics including workflow count
 	query := fmt.Sprintf(`
 		SELECT
@@ -59,13 +69,9 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 		WHERE user_id = $1
 	`, postgres.TableAnalytics)
 
-	rows, err := r.pg.Query(ctx, query, userID)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	rows, err := tx.Query(ctx, query, userID)
+	if err != nil {
+		return nil, analyticsRepositoryError(err, "failed to get user analytics")
 	}
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[analyticsmodel.GetUserAnalyticsResponse])
@@ -95,15 +101,9 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
         ORDER BY total_jobs DESC, kind ASC
     `, postgres.TableAnalytics)
 
-	workflowKindRows, err := r.pg.Query(ctx, workflowKindsQuery, userID)
+	workflowKindRows, err := tx.Query(ctx, workflowKindsQuery, userID)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, status.Error(codes.DeadlineExceeded, err.Error())
-		} else if errors.Is(err, context.Canceled) {
-			return nil, status.Error(codes.Canceled, err.Error())
-		}
-
-		return nil, status.Errorf(codes.Internal, "failed to get workflow kind analytics: %v", err)
+		return nil, analyticsRepositoryError(err, "failed to get workflow kind analytics")
 	}
 
 	res.WorkflowKinds, err = pgx.CollectRows(
@@ -129,15 +129,9 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
         LIMIT $2
     `, postgres.TableAnalytics, postgres.TableWorkflows)
 
-	topWorkflowRows, err := r.pg.Query(ctx, topWorkflowsQuery, userID, topWorkflowsLimit)
+	topWorkflowRows, err := tx.Query(ctx, topWorkflowsQuery, userID, topWorkflowsLimit)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, status.Error(codes.DeadlineExceeded, err.Error())
-		} else if errors.Is(err, context.Canceled) {
-			return nil, status.Error(codes.Canceled, err.Error())
-		}
-
-		return nil, status.Errorf(codes.Internal, "failed to get top workflow analytics: %v", err)
+		return nil, analyticsRepositoryError(err, "failed to get top workflow analytics")
 	}
 
 	res.TopWorkflows, err = pgx.CollectRows(
@@ -148,7 +142,22 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 		return nil, status.Errorf(codes.Internal, "failed to collect top workflow analytics: %v", err)
 	}
 
+	if err = tx.Commit(ctx); err != nil {
+		return nil, analyticsRepositoryError(err, "failed to commit user analytics snapshot")
+	}
+
 	return res, nil
+}
+
+func analyticsRepositoryError(err error, operation string) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	}
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, err.Error())
+	}
+
+	return status.Errorf(codes.Internal, "%s: %v", operation, err)
 }
 
 // GetWorkflowAnalytics retrieves analytics data for a specific workflow.

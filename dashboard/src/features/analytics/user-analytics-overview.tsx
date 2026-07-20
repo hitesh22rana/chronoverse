@@ -42,7 +42,7 @@ import {
     truncateWorkflowLabel,
 } from "@/features/analytics/analytics-utils"
 
-import type { UserAnalytics } from "@/lib/api/types"
+import type { UserAnalytics } from "@/features/analytics/types"
 import { formatSeconds } from "@/lib/utils"
 
 const workloadChartConfig = {

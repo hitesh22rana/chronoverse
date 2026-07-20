@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 
-import type { WorkflowAnalytics } from "@/lib/api/types"
+import type { WorkflowAnalytics } from "@/features/analytics/types"
 import { cn, formatSeconds } from "@/lib/utils"
 
 type WorkflowAnalyticsPanelProps = {

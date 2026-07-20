@@ -6,9 +6,9 @@ import {
   ViewTransition
 } from "react"
 
-import { Header } from "@/components/dashboard/header"
-import { NotificationsDrawer } from "@/components/dashboard/notifications-drawer"
-import { ProfileDrawer } from "@/components/dashboard/profile-drawer"
+import { Header } from "@/features/shell/header"
+import { NotificationsDrawer } from "@/features/notifications/notifications-drawer"
+import { ProfileDrawer } from "@/features/users/profile-drawer"
 
 export default function DashboardLayout({
   children,

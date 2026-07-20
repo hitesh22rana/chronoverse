@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import {
     Activity,
     BarChart3,
@@ -19,7 +19,7 @@ import {
     PieChart,
     XAxis,
     YAxis,
-} from "recharts"
+} from "@/components/ui/recharts"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -73,19 +73,19 @@ const chartColors = [
     "var(--chart-5)",
 ]
 
+const decimalFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
+const analyticsSkeletonCards = ["workflows", "jobs", "logs", "runtime"] as const
+
 export function UserAnalyticsDrawer() {
     const [open, setOpen] = useState(false)
     const analyticsQuery = useUserAnalytics(open)
     const analytics = analyticsQuery.data
 
-    const workloadData = useMemo(
-        () => (analytics?.workflow_kinds ?? []).map((item, index) => ({
-            ...item,
-            display_kind: formatKind(item.kind),
-            fill: chartColors[index % chartColors.length],
-        })),
-        [analytics?.workflow_kinds],
-    )
+    const workloadData = (analytics?.workflow_kinds ?? []).map((item, index) => ({
+        ...item,
+        display_kind: formatKind(item.kind),
+        fill: chartColors[index % chartColors.length],
+    }))
 
     const topWorkflows = analytics?.top_workflows ?? []
     const jobsPerWorkflow = divide(analytics?.total_jobs, analytics?.total_workflows)
@@ -344,8 +344,8 @@ function AnalyticsSkeleton() {
     return (
         <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {Array.from({ length: 4 }, (_, index) => (
-                    <Skeleton key={index} className="h-32 w-full" />
+                {analyticsSkeletonCards.map((card) => (
+                    <Skeleton key={card} className="h-32 w-full" />
                 ))}
             </div>
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -361,7 +361,7 @@ function divide(numerator = 0, denominator = 0) {
 }
 
 function formatDecimal(value: number) {
-    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)
+    return decimalFormatter.format(value)
 }
 
 function formatKind(kind: string) {

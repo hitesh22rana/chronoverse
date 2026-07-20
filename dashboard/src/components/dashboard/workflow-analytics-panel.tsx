@@ -34,7 +34,14 @@ type WorkflowAnalyticsPanelProps = {
     workflowKind: string
 }
 
-const metricSkeletonWidths = ["w-20", "w-24", "w-16", "w-20"] as const
+const metricSkeletons = [
+    { id: "jobs", valueWidth: "w-20", showSecondLine: true },
+    { id: "runtime", valueWidth: "w-24", showSecondLine: false },
+    { id: "average", valueWidth: "w-16", showSecondLine: true },
+    { id: "logs", valueWidth: "w-20", showSecondLine: false },
+] as const
+
+const decimalFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
 
 export function WorkflowAnalyticsPanel({
     analytics,
@@ -160,8 +167,8 @@ function AnalyticsMetricCard({ helper, icon: Icon, label, value }: AnalyticsMetr
 export function WorkflowAnalyticsCardsSkeleton() {
     return (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {metricSkeletonWidths.map((valueWidth, index) => (
-                <Card key={`workflow-analytics-metric-${index}`} className="min-h-39 h-full gap-4 py-4">
+            {metricSkeletons.map(({ id, valueWidth, showSecondLine }) => (
+                <Card key={id} className="min-h-39 h-full gap-4 py-4">
                     <CardHeader className="grid grid-cols-[1fr_auto] px-4">
                         <Skeleton className="h-5 w-28" />
                         <Skeleton className="size-8 rounded-md" />
@@ -170,7 +177,7 @@ export function WorkflowAnalyticsCardsSkeleton() {
                         <Skeleton className={cn("h-7", valueWidth)} />
                         <div className="flex min-h-8 flex-col gap-1">
                             <Skeleton className="h-3 w-full max-w-44" />
-                            {index % 2 === 0 && <Skeleton className="h-3 w-28" />}
+                            {showSecondLine && <Skeleton className="h-3 w-28" />}
                         </div>
                     </CardContent>
                 </Card>
@@ -184,7 +191,7 @@ function divide(numerator: number, denominator: number) {
 }
 
 function formatDecimal(value: number) {
-    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)
+    return decimalFormatter.format(value)
 }
 
 function logHelper(workflowKind: string, logRetention: boolean, logsPerJob: number) {

@@ -1,12 +1,30 @@
 "use client"
 
 import { useState } from "react"
-import { PlusCircle } from "lucide-react"
+import dynamic from "next/dynamic"
+import { BarChart3, PlusCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Workflows } from "@/components/dashboard/workflows"
-import { UserAnalyticsDrawer } from "@/components/dashboard/user-analytics-drawer"
 import { CreateWorkflowDialog } from "@/components/dashboard/create-workflow-dialog"
+
+const UserAnalyticsDrawer = dynamic(
+    () => import("@/components/dashboard/user-analytics-drawer").then((module) => module.UserAnalyticsDrawer),
+    {
+        ssr: false,
+        loading: () => (
+            <Button
+                variant="outline"
+                className="w-full cursor-pointer md:w-fit"
+                aria-hidden="true"
+                tabIndex={-1}
+            >
+                <BarChart3 data-icon="inline-start" />
+                Analytics
+            </Button>
+        ),
+    },
+)
 
 export default function DashboardPage() {
     const [showCreateDialog, setShowCreateDialog] = useState(false)

@@ -36,6 +36,14 @@ import { Separator } from "@/components/ui/separator"
 import { WorkflowCard, WorkflowCardSkeleton } from "@/components/dashboard/workflows-card"
 import { EmptyState } from "@/components/dashboard/empty-state"
 
+import {
+    isDisallowedIntervalKey,
+    isIntervalRangeInvalid,
+    maximumWorkflowIntervalMinutes,
+    minimumWorkflowIntervalMinutes,
+    normalizeIntervalFilter,
+} from "@/features/workflows/interval-filter"
+
 import { useWorkflows } from "@/hooks/use-workflows"
 import type { Workflow } from "@/lib/api/types"
 
@@ -142,12 +150,19 @@ export function Workflows() {
         intervalMax,
     ].filter(Boolean).length
 
-    const intervalMinNum = filterState.intervalMin === "" ? NaN : Number(filterState.intervalMin)
-    const intervalMaxNum = filterState.intervalMax === "" ? NaN : Number(filterState.intervalMax)
+    const isRangeInvalid = isIntervalRangeInvalid(filterState.intervalMin, filterState.intervalMax)
 
-    const isMinInvalid = !isNaN(intervalMinNum) && intervalMinNum < 0
-    const isMaxInvalid = !isNaN(intervalMaxNum) && intervalMaxNum < 0
-    const isRangeInvalid = !isNaN(intervalMinNum) && !isNaN(intervalMaxNum) && intervalMaxNum < intervalMinNum
+    const updateIntervalFilter = (field: "intervalMin" | "intervalMax", value: string) => {
+        if (value === "") {
+            setFilterState((previous) => ({ ...previous, [field]: "" }))
+            return
+        }
+
+        const normalizedValue = normalizeIntervalFilter(value)
+        if (normalizedValue) {
+            setFilterState((previous) => ({ ...previous, [field]: normalizedValue }))
+        }
+    }
 
     return renderWorkflowsView({
         searchInput,
@@ -161,9 +176,8 @@ export function Workflows() {
         filterState,
         setFilterState,
         handleClearFilters,
-        isMinInvalid,
-        isMaxInvalid,
         isRangeInvalid,
+        updateIntervalFilter,
         handleApplyFilters,
         refetch,
         isLoading,
@@ -187,9 +201,8 @@ function renderWorkflowsView(model: any) {
         filterState,
         setFilterState,
         handleClearFilters,
-        isMinInvalid,
-        isMaxInvalid,
         isRangeInvalid,
+        updateIntervalFilter,
         handleApplyFilters,
         refetch,
         isLoading,
@@ -200,7 +213,7 @@ function renderWorkflowsView(model: any) {
     } = model
 
     return (
-        <div className="flex flex-col h-full w-full mt-8">
+        <div className="mt-8 flex min-h-0 w-full flex-1 flex-col">
             {/* Clean control bar */}
             <div className="space-y-4 mb-4">
                 {/* Main controls row */}
@@ -329,39 +342,58 @@ function renderWorkflowsView(model: any) {
                                     <Separator />
 
                                     {/* Interval Range Filter */}
-                                    <div className="space-y-2">
-                                        <Label>Interval Range (minutes)</Label>
+                                    <div className="flex flex-col gap-2">
+                                        <Label htmlFor="workflow-interval-min">Interval Range (minutes)</Label>
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
                                                 <Input
+                                                    id="workflow-interval-min"
                                                     type="number"
+                                                    inputMode="numeric"
                                                     placeholder="Min"
                                                     value={filterState.intervalMin}
-                                                    min={0}
-                                                    onChange={(e) =>
-                                                        setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, intervalMin: e.target.value }))
-                                                    }
+                                                    min={minimumWorkflowIntervalMinutes}
+                                                    max={maximumWorkflowIntervalMinutes}
+                                                    step={1}
+                                                    onKeyDown={(event) => {
+                                                        if (isDisallowedIntervalKey(event.key)) event.preventDefault()
+                                                    }}
+                                                    onChange={(event) => updateIntervalFilter("intervalMin", event.target.value)}
+                                                    aria-invalid={isRangeInvalid}
+                                                    aria-describedby={isRangeInvalid ? "workflow-interval-error" : undefined}
                                                 />
 
                                             </div>
                                             <div>
                                                 <Input
+                                                    id="workflow-interval-max"
                                                     type="number"
+                                                    inputMode="numeric"
                                                     placeholder="Max"
                                                     value={filterState.intervalMax}
-                                                    min={0}
-                                                    onChange={(e) =>
-                                                        setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, intervalMax: e.target.value }))
-                                                    }
+                                                    min={minimumWorkflowIntervalMinutes}
+                                                    max={maximumWorkflowIntervalMinutes}
+                                                    step={1}
+                                                    onKeyDown={(event) => {
+                                                        if (isDisallowedIntervalKey(event.key)) event.preventDefault()
+                                                    }}
+                                                    onChange={(event) => updateIntervalFilter("intervalMax", event.target.value)}
+                                                    aria-invalid={isRangeInvalid}
+                                                    aria-describedby={isRangeInvalid ? "workflow-interval-error" : undefined}
                                                 />
                                             </div>
                                         </div>
+                                        {isRangeInvalid && (
+                                            <p id="workflow-interval-error" className="text-xs text-destructive" role="alert">
+                                                Maximum must be greater than or equal to minimum.
+                                            </p>
+                                        )}
                                     </div>
 
                                     <Separator />
 
                                     {/* Apply button */}
-                                    <Button onClick={handleApplyFilters} className="w-full" disabled={isMinInvalid || isMaxInvalid || isRangeInvalid}>
+                                    <Button onClick={handleApplyFilters} className="w-full" disabled={isRangeInvalid}>
                                         Apply Filters
                                     </Button>
                                 </div>
@@ -413,7 +445,7 @@ function renderWorkflowsView(model: any) {
                 </div>
             </div>
 
-            <div className="flex-1 flex flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
                 {(isLoading) && workflows.length === 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {[...Array(9)].map((_, i) => (

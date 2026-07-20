@@ -30,7 +30,7 @@ export default function DashboardPage() {
     const [showCreateDialog, setShowCreateDialog] = useState(false)
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0">
                 <div>
                     <h2 className="text-xl font-bold tracking-tight">Dashboard</h2>

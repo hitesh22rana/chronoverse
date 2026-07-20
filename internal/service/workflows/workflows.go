@@ -857,7 +857,7 @@ func validateFilters(filters *workflowsmodel.ListWorkflowsFilters) error {
 		return status.Errorf(codes.InvalidArgument, "invalid interval_max: %d", filters.IntervalMax)
 	}
 
-	if filters.IntervalMin > filters.IntervalMax {
+	if filters.IntervalMax > 0 && filters.IntervalMin > filters.IntervalMax {
 		return status.Errorf(codes.InvalidArgument, "invalid interval_min and interval_max: %d > %d", filters.IntervalMin, filters.IntervalMax)
 	}
 

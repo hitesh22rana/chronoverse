@@ -9,6 +9,8 @@ import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { CreateWorkflowPayload, WorkflowsResponse } from "@/lib/api/types"
 
+import { normalizeIntervalFilter } from "@/features/workflows/interval-filter"
+
 type UseWorkflowsOptions = {
     poll?: boolean
 }
@@ -40,8 +42,8 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         searchQuery = searchParams.get("query") || ""
         statusFilter = searchParams.get("status") || ""
         kindFilter = searchParams.get("kind") || ""
-        intervalMin = searchParams.get("interval_min") || ""
-        intervalMax = searchParams.get("interval_max") || ""
+        intervalMin = normalizeIntervalFilter(searchParams.get("interval_min"))
+        intervalMax = normalizeIntervalFilter(searchParams.get("interval_max"))
     }
 
     // Build query parameters for the get workflows request
@@ -68,12 +70,14 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
             params.set("kind", kindFilter)
         }
 
-        if (intervalMin) {
-            params.set("interval_min", intervalMin)
+        const normalizedIntervalMin = normalizeIntervalFilter(intervalMin)
+        if (normalizedIntervalMin) {
+            params.set("interval_min", normalizedIntervalMin)
         }
 
-        if (intervalMax) {
-            params.set("interval_max", intervalMax)
+        const normalizedIntervalMax = normalizeIntervalFilter(intervalMax)
+        if (normalizedIntervalMax) {
+            params.set("interval_max", normalizedIntervalMax)
         }
 
         return params.toString()
@@ -169,14 +173,16 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
             params.delete("kind")
         }
 
-        if (intervalMin) {
-            params.set("interval_min", intervalMin)
+        const normalizedIntervalMin = normalizeIntervalFilter(intervalMin)
+        if (normalizedIntervalMin) {
+            params.set("interval_min", normalizedIntervalMin)
         } else {
             params.delete("interval_min")
         }
 
-        if (intervalMax) {
-            params.set("interval_max", intervalMax)
+        const normalizedIntervalMax = normalizeIntervalFilter(intervalMax)
+        if (normalizedIntervalMax) {
+            params.set("interval_max", normalizedIntervalMax)
         } else {
             params.delete("interval_max")
         }

@@ -2,7 +2,7 @@ package server
 
 import (
 	"encoding/json"
-	"math"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -303,17 +303,15 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. interval_min
-	//nolint:errcheck // As we are using the default value of interval_min, we can ignore the error
-	intervalMin, _ := strconv.Atoi(r.URL.Query().Get("interval_min"))
-	if intervalMin < 0 || intervalMin > math.MaxInt32 {
+	intervalMin, err := parseOptionalPositiveInt32(r.URL.Query().Get("interval_min"))
+	if err != nil {
 		http.Error(w, "invalid interval_min", http.StatusBadRequest)
 		return
 	}
 
 	// 6. interval_max
-	//nolint:errcheck // As we are using the default value of interval_max, we can ignore the error
-	intervalMax, _ := strconv.Atoi(r.URL.Query().Get("interval_max"))
-	if intervalMax < 0 || intervalMax > math.MaxInt32 || (intervalMax != 0 && intervalMax < intervalMin) {
+	intervalMax, err := parseOptionalPositiveInt32(r.URL.Query().Get("interval_max"))
+	if err != nil || (intervalMax != 0 && intervalMax < intervalMin) {
 		http.Error(w, "invalid interval_max", http.StatusBadRequest)
 		return
 	}
@@ -327,10 +325,8 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 			Kind:         kind,
 			BuildStatus:  buildStatus,
 			IsTerminated: terminated,
-			//nolint:gosec // G109 // We are not using the value of the variable
-			IntervalMin: int32(intervalMin),
-			//nolint:gosec // G109 // We are not using the value of the variable
-			IntervalMax: int32(intervalMax),
+			IntervalMin:  intervalMin,
+			IntervalMax:  intervalMax,
 		},
 	})
 	if err != nil {
@@ -342,4 +338,17 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
+}
+
+func parseOptionalPositiveInt32(value string) (int32, error) {
+	if value == "" {
+		return 0, nil
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil || parsed <= 0 {
+		return 0, errors.New("value must be a positive 32-bit integer")
+	}
+
+	return int32(parsed), nil
 }

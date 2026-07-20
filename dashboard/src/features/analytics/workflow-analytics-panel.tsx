@@ -13,7 +13,7 @@ import { WorkflowAnalyticsCardsSkeleton } from "@/features/analytics/analytics-s
 import {
     divide,
     formatInteger,
-    formatRetainedLogsPerJob,
+    formatLogsPerJob,
 } from "@/features/analytics/analytics-utils"
 
 import { Badge } from "@/components/ui/badge"
@@ -95,36 +95,32 @@ export function WorkflowAnalyticsPanel({
                             value={formatInteger(totalJobs)}
                             helper="Recorded after reaching a final state"
                             icon={Activity}
-                            variant="workflow"
                         />
                         <AnalyticsMetricCard
                             label="Total runtime"
                             value={formatSeconds(totalRuntime)}
                             helper="Combined execution time"
                             icon={Clock3}
-                            variant="workflow"
                         />
                         <AnalyticsMetricCard
                             label="Average runtime"
                             value={formatSeconds(Math.round(averageRuntime))}
                             helper="Per recorded job execution"
                             icon={Gauge}
-                            variant="workflow"
                         />
                         <AnalyticsMetricCard
-                            label="Retained logs"
+                            label="Generated logs"
                             value={formatInteger(totalLogs)}
                             helper={getLogHelper(workflowKind, logRetention, totalLogs, totalJobs)}
                             icon={ScrollText}
-                            variant="workflow"
                         />
                     </div>
                     {!logRetention && (
                         <p className="flex items-center gap-2 text-xs text-muted-foreground">
                             <ScrollText className="size-3.5 shrink-0" />
                             {workflowKind === "CONTAINER"
-                                ? "New execution logs are not retained for this workflow."
-                                : "This workflow kind does not produce retained execution logs."}
+                                ? "Generated logs are counted for analytics but are not retained for retrieval."
+                                : "This workflow kind does not retain execution logs."}
                         </p>
                     )}
                 </>
@@ -148,8 +144,8 @@ function getLogHelper(workflowKind: string, logRetention: boolean, totalLogs: nu
     }
 
     if (!logRetention) {
-        return "New logs are not retained"
+        return "Retention disabled"
     }
 
-    return formatRetainedLogsPerJob(totalLogs, totalJobs) ?? "No retained logs recorded"
+    return formatLogsPerJob(totalLogs, totalJobs) ?? "No logs generated"
 }

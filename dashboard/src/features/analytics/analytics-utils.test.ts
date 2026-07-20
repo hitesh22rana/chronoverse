@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import {
     divide,
-    formatRetainedLogsPerJob,
+    formatJobsPerWorkflow,
+    formatLogsPerJob,
     formatWorkflowKind,
     truncateWorkflowLabel,
 } from "./analytics-utils"
@@ -19,13 +20,22 @@ describe("analytics utilities", () => {
         expect(formatWorkflowKind("HTTP_HEARTBEAT")).toBe("Http Heartbeat")
     })
 
-    it("formats retained-log rates as safe whole-number approximations", () => {
-        expect(formatRetainedLogsPerJob(26056, 286)).toBe("~91 logs per job")
-        expect(formatRetainedLogsPerJob(1, 10)).toBe("<1 log per job")
-        expect(formatRetainedLogsPerJob(1, 1)).toBe("~1 log per job")
-        expect(formatRetainedLogsPerJob(0, 10)).toBeNull()
-        expect(formatRetainedLogsPerJob(10, 0)).toBeNull()
-        expect(formatRetainedLogsPerJob(Number.NaN, 10)).toBeNull()
+    it("formats generated-log rates as safe whole-number approximations", () => {
+        expect(formatLogsPerJob(26056, 286)).toBe("~91 logs per job")
+        expect(formatLogsPerJob(1, 10)).toBe("<1 log per job")
+        expect(formatLogsPerJob(1, 1)).toBe("~1 log per job")
+        expect(formatLogsPerJob(0, 10)).toBeNull()
+        expect(formatLogsPerJob(10, 0)).toBeNull()
+        expect(formatLogsPerJob(Number.NaN, 10)).toBeNull()
+    })
+
+    it("formats jobs per workflow as a safe whole-number approximation", () => {
+        expect(formatJobsPerWorkflow(286, 19)).toBe("~15 jobs per workflow")
+        expect(formatJobsPerWorkflow(1, 10)).toBe("<1 job per workflow")
+        expect(formatJobsPerWorkflow(1, 1)).toBe("~1 job per workflow")
+        expect(formatJobsPerWorkflow(0, 10)).toBeNull()
+        expect(formatJobsPerWorkflow(10, 0)).toBeNull()
+        expect(formatJobsPerWorkflow(Number.NaN, 10)).toBeNull()
     })
 
     it("only truncates workflow labels that exceed the chart limit", () => {

@@ -35,9 +35,9 @@ import {
 import { AnalyticsMetricCard } from "@/features/analytics/analytics-metric-card"
 import {
     divide,
-    formatDecimal,
     formatInteger,
-    formatRetainedLogsPerJob,
+    formatJobsPerWorkflow,
+    formatLogsPerJob,
     formatWorkflowKind,
     truncateWorkflowLabel,
 } from "@/features/analytics/analytics-utils"
@@ -80,9 +80,9 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
         fill: chartColors[index % chartColors.length],
     }))
     const topWorkflows = (analytics.top_workflows ?? []).slice(0, topWorkflowsLimit)
-    const jobsPerWorkflow = divide(analytics.total_jobs, analytics.total_workflows)
+    const jobsPerWorkflow = formatJobsPerWorkflow(analytics.total_jobs, analytics.total_workflows)
     const secondsPerJob = divide(analytics.total_job_execution_duration, analytics.total_jobs)
-    const retainedLogsPerJob = formatRetainedLogsPerJob(analytics.total_joblogs, analytics.total_jobs)
+    const logsPerJob = formatLogsPerJob(analytics.total_joblogs, analytics.total_jobs)
 
     return (
         <div className="flex flex-col gap-4">
@@ -90,7 +90,7 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                 <AnalyticsMetricCard
                     label="Workflows"
                     value={formatInteger(analytics.total_workflows)}
-                    helper={`${formatDecimal(jobsPerWorkflow)} jobs per workflow`}
+                    helper={jobsPerWorkflow ?? "No terminal jobs recorded"}
                     icon={Workflow}
                 />
                 <AnalyticsMetricCard
@@ -100,9 +100,9 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                     icon={Activity}
                 />
                 <AnalyticsMetricCard
-                    label="Retained logs"
+                    label="Generated logs"
                     value={formatInteger(analytics.total_joblogs)}
-                    helper={retainedLogsPerJob ?? "No retained logs recorded"}
+                    helper={logsPerJob ?? "No logs generated"}
                     icon={ScrollText}
                 />
                 <AnalyticsMetricCard

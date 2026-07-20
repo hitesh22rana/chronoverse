@@ -130,8 +130,8 @@ Query parameters:
 - `kind`: `HEARTBEAT` or `CONTAINER`.
 - `build_status`: one of the build statuses above.
 - `terminated`: boolean string.
-- `interval_min`: minimum interval in minutes.
-- `interval_max`: maximum interval in minutes.
+- `interval_min`: minimum interval in minutes; `0` is treated as unset.
+- `interval_max`: maximum interval in minutes; `0` is treated as unset.
 
 Response includes `workflows` and `cursor`.
 

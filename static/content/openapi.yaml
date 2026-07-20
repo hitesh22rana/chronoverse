@@ -108,8 +108,8 @@ paths:
         - {name: kind, in: query, schema: {type: string, enum: [HEARTBEAT, CONTAINER]}}
         - {name: build_status, in: query, schema: {$ref: '#/components/schemas/BuildStatus'}}
         - {name: terminated, in: query, schema: {type: boolean, default: false}}
-        - {name: interval_min, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
-        - {name: interval_max, in: query, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: interval_min, in: query, description: Minimum interval in minutes; zero is treated as unset, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: interval_max, in: query, description: Maximum interval in minutes; zero is treated as unset, schema: {type: integer, minimum: 0, maximum: 2147483647}}
       responses:
         '200':
           description: Paginated workflow list

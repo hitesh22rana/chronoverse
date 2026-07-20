@@ -24,6 +24,10 @@ func TestValidateFiltersIntervalRange(t *testing.T) {
 			filters: &workflowsmodel.ListWorkflowsFilters{IntervalMax: 5},
 		},
 		{
+			name:    "zero bounds are unset",
+			filters: &workflowsmodel.ListWorkflowsFilters{IntervalMin: 0, IntervalMax: 0},
+		},
+		{
 			name:    "bounded range",
 			filters: &workflowsmodel.ListWorkflowsFilters{IntervalMin: 5, IntervalMax: 10},
 		},

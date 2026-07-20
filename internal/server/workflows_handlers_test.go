@@ -3,7 +3,7 @@ package server
 
 import "testing"
 
-func TestParseOptionalPositiveInt32(t *testing.T) {
+func TestParseOptionalNonNegativeInt32(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -14,7 +14,7 @@ func TestParseOptionalPositiveInt32(t *testing.T) {
 	}{
 		{name: "omitted", value: "", want: 0},
 		{name: "positive", value: "5", want: 5},
-		{name: "zero", value: "0", wantErr: true},
+		{name: "zero treated as unset", value: "0", want: 0},
 		{name: "negative", value: "-1", wantErr: true},
 		{name: "fractional", value: "1.5", wantErr: true},
 		{name: "non numeric", value: "five", wantErr: true},
@@ -25,7 +25,7 @@ func TestParseOptionalPositiveInt32(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := parseOptionalPositiveInt32(test.value)
+			got, err := parseOptionalNonNegativeInt32(test.value)
 			if test.wantErr && err == nil {
 				t.Fatal("expected parse error")
 			}

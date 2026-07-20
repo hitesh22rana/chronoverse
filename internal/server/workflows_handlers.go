@@ -133,8 +133,6 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetWorkflow handles the get workflow by ID and user ID request.
-//
-//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Get the workflow ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
@@ -303,14 +301,14 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. interval_min
-	intervalMin, err := parseOptionalPositiveInt32(r.URL.Query().Get("interval_min"))
+	intervalMin, err := parseOptionalNonNegativeInt32(r.URL.Query().Get("interval_min"))
 	if err != nil {
 		http.Error(w, "invalid interval_min", http.StatusBadRequest)
 		return
 	}
 
 	// 6. interval_max
-	intervalMax, err := parseOptionalPositiveInt32(r.URL.Query().Get("interval_max"))
+	intervalMax, err := parseOptionalNonNegativeInt32(r.URL.Query().Get("interval_max"))
 	if err != nil || (intervalMax != 0 && intervalMax < intervalMin) {
 		http.Error(w, "invalid interval_max", http.StatusBadRequest)
 		return
@@ -340,14 +338,14 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-func parseOptionalPositiveInt32(value string) (int32, error) {
+func parseOptionalNonNegativeInt32(value string) (int32, error) {
 	if value == "" {
 		return 0, nil
 	}
 
 	parsed, err := strconv.ParseInt(value, 10, 32)
-	if err != nil || parsed <= 0 {
-		return 0, errors.New("value must be a positive 32-bit integer")
+	if err != nil || parsed < 0 {
+		return 0, errors.New("value must be a non-negative 32-bit integer")
 	}
 
 	return int32(parsed), nil

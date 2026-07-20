@@ -31,6 +31,13 @@ import {
     ChartTooltipContent,
     type ChartConfig,
 } from "@/components/ui/chart"
+import {
+    Empty,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle,
+} from "@/components/ui/empty"
 
 import { AnalyticsMetricCard } from "@/features/analytics/analytics-metric-card"
 import {
@@ -40,6 +47,7 @@ import {
     formatLogsPerJob,
     formatWorkflowKind,
     truncateWorkflowLabel,
+    withTerminalJobActivity,
 } from "@/features/analytics/analytics-utils"
 
 import type { UserAnalytics } from "@/features/analytics/types"
@@ -74,7 +82,7 @@ type UserAnalyticsOverviewProps = {
 }
 
 export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps) {
-    const workloadData = (analytics.workflow_kinds ?? []).map((item, index) => ({
+    const workloadData = withTerminalJobActivity(analytics.workflow_kinds).map((item, index) => ({
         ...item,
         display_kind: formatWorkflowKind(item.kind),
         fill: chartColors[index % chartColors.length],
@@ -196,9 +204,19 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                                 </div>
                             </div>
                         ) : (
-                            <p className="py-16 text-center text-sm text-muted-foreground">
-                                No workload breakdown is available yet.
-                            </p>
+                            <Empty className="min-h-64 border-0 p-4 md:p-6">
+                                <EmptyHeader>
+                                    <EmptyMedia variant="icon">
+                                        <Activity />
+                                    </EmptyMedia>
+                                    <EmptyTitle className="text-base">
+                                        No terminal job activity yet
+                                    </EmptyTitle>
+                                    <EmptyDescription>
+                                        Run a workflow to see terminal jobs grouped by workflow kind.
+                                    </EmptyDescription>
+                                </EmptyHeader>
+                            </Empty>
                         )}
                     </CardContent>
                 </Card>

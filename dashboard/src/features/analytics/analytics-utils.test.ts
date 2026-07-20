@@ -7,6 +7,7 @@ import {
     formatWorkflowKind,
     truncateWorkflowLabel,
     formatInteger,
+    withTerminalJobActivity,
 } from "./analytics-utils"
 
 describe("analytics utilities", () => {
@@ -24,6 +25,18 @@ describe("analytics utilities", () => {
     it("turns workflow kinds into readable labels", () => {
         expect(formatWorkflowKind("CONTAINER")).toBe("Container")
         expect(formatWorkflowKind("HTTP_HEARTBEAT")).toBe("Http Heartbeat")
+    })
+
+    it("only includes workflow kinds with terminal-job activity", () => {
+        const workflowKinds = [
+            { kind: "HEARTBEAT", total_jobs: 0 },
+            { kind: "CONTAINER", total_jobs: 2 },
+        ]
+
+        expect(withTerminalJobActivity(workflowKinds)).toEqual([
+            { kind: "CONTAINER", total_jobs: 2 },
+        ])
+        expect(withTerminalJobActivity([{ kind: "HEARTBEAT", total_jobs: 0 }])).toEqual([])
     })
 
     it("formats generated-log rates as safe whole-number approximations", () => {

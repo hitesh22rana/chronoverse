@@ -45,6 +45,10 @@ export function formatWorkflowKind(kind: string) {
         .join(" ")
 }
 
+export function withTerminalJobActivity<T extends { total_jobs: number }>(items: T[] = []) {
+    return items.filter((item) => Number.isFinite(item.total_jobs) && item.total_jobs > 0)
+}
+
 export function truncateWorkflowLabel(value: string) {
     return value.length > 18 ? `${value.slice(0, 17)}…` : value
 }

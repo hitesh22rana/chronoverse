@@ -11,7 +11,7 @@ import (
 func TestUserAnalyticsHTTPResponseEmitsZeroValues(t *testing.T) {
 	t.Parallel()
 
-	encoded, err := json.Marshal(toUserAnalyticsHTTPResponse(&analyticspb.GetUserAnalyticsResponse{}))
+	encoded, err := json.Marshal(newUserAnalyticsHTTPResponse(&analyticspb.GetUserAnalyticsResponse{}))
 	if err != nil {
 		t.Fatalf("marshal response: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestUserAnalyticsHTTPResponseEmitsZeroValues(t *testing.T) {
 func TestUserAnalyticsHTTPResponseEmitsNestedZeroValues(t *testing.T) {
 	t.Parallel()
 
-	response := toUserAnalyticsHTTPResponse(&analyticspb.GetUserAnalyticsResponse{
+	response := newUserAnalyticsHTTPResponse(&analyticspb.GetUserAnalyticsResponse{
 		WorkflowKinds: []*analyticspb.WorkflowKindAnalytics{{Kind: workflowKindContainer}},
 		TopWorkflows: []*analyticspb.WorkflowAnalyticsSummary{{
 			WorkflowId:   "workflow-id",
@@ -52,7 +52,7 @@ func TestUserAnalyticsHTTPResponseEmitsNestedZeroValues(t *testing.T) {
 func TestWorkflowAnalyticsHTTPResponseEmitsZeroValues(t *testing.T) {
 	t.Parallel()
 
-	encoded, err := json.Marshal(toWorkflowAnalyticsHTTPResponse(
+	encoded, err := json.Marshal(newWorkflowAnalyticsHTTPResponse(
 		&analyticspb.GetWorkflowAnalyticsResponse{WorkflowId: "workflow-id"},
 	))
 	if err != nil {

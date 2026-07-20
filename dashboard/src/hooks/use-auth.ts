@@ -4,12 +4,8 @@ import { useRouter } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { fetchWithAuth } from "@/lib/api-client"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-const LOGIN_ENDPOINT = `${API_URL}/auth/login`
-const SIGNUP_ENDPOINT = `${API_URL}/auth/register`
-const LOGOUT_ENDPOINT = `${API_URL}/auth/logout`
+import { fetchApi } from "@/lib/api/client"
+import { apiEndpoints } from "@/lib/api/endpoints"
 
 type LoginCredentials = {
     email: string
@@ -29,18 +25,10 @@ export function useAuth() {
     // Login mutation
     const loginMutation = useMutation({
         mutationFn: async (credentials: LoginCredentials) => {
-            const response = await fetch(LOGIN_ENDPOINT, {
+            await fetchApi(apiEndpoints.auth.login, "failed to login", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                credentials: "include",
                 body: JSON.stringify(credentials),
             })
-
-            if (!response.ok) {
-                throw new Error("failed to login")
-            }
         },
         onSuccess: () => {
             queryClient.clear()
@@ -54,18 +42,10 @@ export function useAuth() {
     // Signup mutation
     const signupMutation = useMutation({
         mutationFn: async (credentials: SignupCredentials) => {
-            const response = await fetch(SIGNUP_ENDPOINT, {
+            await fetchApi(apiEndpoints.auth.signup, "failed to signup", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                credentials: "include",
                 body: JSON.stringify(credentials),
             })
-
-            if (!response.ok) {
-                throw new Error("failed to signup")
-            }
         },
         onSuccess: () => {
             queryClient.clear()
@@ -79,13 +59,9 @@ export function useAuth() {
     // Logout mutation
     const logoutMutation = useMutation({
         mutationFn: async () => {
-            const response = await fetchWithAuth(LOGOUT_ENDPOINT, {
+            await fetchApi(apiEndpoints.auth.logout, "failed to logout", {
                 method: "POST"
             })
-
-            if (!response.ok) {
-                throw new Error("failed to logout")
-            }
         },
         onSuccess: () => {
             queryClient.clear()

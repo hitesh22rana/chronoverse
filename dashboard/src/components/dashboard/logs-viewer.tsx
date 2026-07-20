@@ -60,7 +60,7 @@ import {
 } from "@/components/ui/tooltip"
 
 import { useJobLogs } from "@/hooks/use-job-logs"
-import type { DownloadLogsFormat, JobLog } from "@/hooks/use-job-logs"
+import type { DownloadLogsFormat, JobLog } from "@/lib/api/types"
 
 import { cn, jsonRegex } from "@/lib/utils"
 import {

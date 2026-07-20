@@ -67,7 +67,8 @@ import { JobCard } from "@/components/dashboard/workflow-job-card"
 import { WorkflowJobsSkeleton } from "@/components/dashboard/workflow-jobs-skeleton"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
-import { useWorkflowJobs, type Job } from "@/hooks/use-workflow-jobs"
+import { useWorkflowJobs } from "@/hooks/use-workflow-jobs"
+import type { Job } from "@/lib/api/types"
 
 import { cn, formatSeconds } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/lib/status"

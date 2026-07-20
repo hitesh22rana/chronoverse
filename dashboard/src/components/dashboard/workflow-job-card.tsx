@@ -7,7 +7,7 @@ import { Bot, Calendar, CheckCircle, Clock, Hand } from "lucide-react"
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { JobStatusBadge } from "@/components/dashboard/job-status-badge"
-import type { Job } from "@/hooks/use-workflow-jobs"
+import type { Job } from "@/lib/api/types"
 import { cn } from "@/lib/utils"
 
 export function JobCard({ job }: { job: Job }) {

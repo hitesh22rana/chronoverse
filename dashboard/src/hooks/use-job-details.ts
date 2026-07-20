@@ -1,48 +1,26 @@
 "use client"
 
-import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { fetchWithAuth } from "@/lib/api-client"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-
-export type Job = {
-    id: string
-    workflow_id: string
-    status: 'PENDING' | 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED'
-    trigger: 'AUTOMATIC' | 'MANUAL'
-    scheduled_at: string
-    started_at?: string
-    completed_at?: string
-    created_at: string
-    updated_at: string
-    status_reason_code?: string
-    status_reason_message?: string
-}
+import { fetchApiJson } from "@/lib/api/client"
+import { apiEndpoints } from "@/lib/api/endpoints"
+import { queryKeys } from "@/lib/api/query-keys"
+import type { Job } from "@/lib/api/types"
 
 const refetchableJobStatus = ['PENDING', 'QUEUED', 'RUNNING']
 
 export function useJobDetails(workflowId: string, jobId: string) {
-    const [disableRefetch, setDisableRefetch] = useState(false)
-
-    const getJobDetailsQuery = useQuery({
-        queryKey: ["job-details", workflowId, jobId],
-        queryFn: async () => {
-            const response = await fetchWithAuth(`${API_URL}/workflows/${workflowId}/jobs/${jobId}`)
-
-            if (!response.ok) {
-                throw new Error("failed to fetch job details")
-            }
-
-            const data = await (await response.json() as Promise<Job>)
-            if (!!data.status && !refetchableJobStatus.includes(data.status)) {
-                setDisableRefetch(true)
-            }
-            return data
+    const getJobDetailsQuery = useQuery<Job, Error>({
+        queryKey: queryKeys.job.detail(workflowId, jobId),
+        queryFn: () => fetchApiJson<Job>(
+            apiEndpoints.workflows.jobs.detail(workflowId, jobId),
+            "failed to fetch job details",
+        ),
+        refetchInterval: (query) => {
+            const status = query.state.data?.status
+            return status && refetchableJobStatus.includes(status) ? 5000 : false
         },
-        refetchInterval: disableRefetch ? false : 5000, // Refetch every 5 seconds if not completed
     })
 
     if (getJobDetailsQuery.error instanceof Error) {

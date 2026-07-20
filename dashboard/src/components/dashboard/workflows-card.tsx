@@ -13,7 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 
-import { Workflow } from "@/hooks/use-workflows"
+import type { Workflow } from "@/lib/api/types"
 
 import { cn } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/lib/status"

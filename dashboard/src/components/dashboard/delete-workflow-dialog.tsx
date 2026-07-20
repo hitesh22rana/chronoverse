@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
-import { Workflow } from "@/hooks/use-workflows"
+import type { Workflow } from "@/lib/api/types"
 
 interface DeleteWorkflowDialogProps {
     workflow: Workflow

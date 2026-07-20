@@ -4,29 +4,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { createIdempotencyKey, fetchWithAuth } from "@/lib/api-client"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-const WORKFLOW_JOBS_ENDPOINT = `${API_URL}/workflows`
-
-export type Job = {
-    id: string
-    workflow_id: string
-    status: string
-    trigger: 'AUTOMATIC' | 'MANUAL'
-    scheduled_at: string
-    started_at?: string
-    completed_at?: string
-    created_at: string
-    updated_at: string
-    status_reason_code?: string
-    status_reason_message?: string
-}
-
-export type JobsResponse = {
-    jobs: Job[]
-    cursor?: string
-}
+import { createIdempotencyKey, fetchApi, fetchApiJson } from "@/lib/api/client"
+import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
+import { queryKeys } from "@/lib/api/query-keys"
+import type { JobsResponse } from "@/lib/api/types"
 
 export function useWorkflowJobs(workflowId: string) {
     const router = useRouter()
@@ -71,20 +52,16 @@ export function useWorkflowJobs(workflowId: string) {
     })()
 
     const getJobQuery = useQuery({
-        queryKey: ["workflow-jobs", workflowId, currentCursor, statusFilter, triggerFilter],
-        queryFn: async () => {
-            const url = getJobQueryParams ?
-                `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs?${getJobQueryParams}` :
-                `${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs`
-
-            const response = await fetchWithAuth(url)
-
-            if (!response.ok) {
-                throw new Error("Failed to fetch workflow jobs")
-            }
-
-            return response.json() as Promise<JobsResponse>
-        },
+        queryKey: queryKeys.workflow.jobs(
+            workflowId,
+            currentCursor,
+            statusFilter,
+            triggerFilter,
+        ),
+        queryFn: () => fetchApiJson<JobsResponse>(
+            withQuery(apiEndpoints.workflows.jobs.list(workflowId), getJobQueryParams),
+            "Failed to fetch workflow jobs",
+        ),
         refetchInterval: 10000, // Refetch every 10 seconds
     })
 
@@ -151,16 +128,12 @@ export function useWorkflowJobs(workflowId: string) {
 
     const manualRunJobMutation = useMutation({
         mutationFn: async () => {
-            const response = await fetchWithAuth(`${WORKFLOW_JOBS_ENDPOINT}/${workflowId}/jobs/schedule`, {
+            await fetchApi(apiEndpoints.workflows.jobs.schedule(workflowId), "Failed to schedule job", {
                 method: "POST",
                 headers: {
                     "Idempotency-Key": createIdempotencyKey(),
                 },
             })
-
-            if (!response.ok) {
-                throw new Error("Failed to schedule job")
-            }
         },
         onSuccess: () => {
             toast.success("Job scheduled successfully")

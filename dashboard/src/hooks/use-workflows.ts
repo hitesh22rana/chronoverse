@@ -4,39 +4,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { createIdempotencyKey, fetchWithAuth } from "@/lib/api-client"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-const WORKFLOWS_ENDPOINT = `${API_URL}/workflows`
-
-export type WorkflowsResponse = {
-    workflows: Workflow[]
-    cursor?: string
-}
-
-export type Workflow = {
-    id: string
-    name: string
-    kind: string
-    payload: string
-    build_status: string
-    interval: number
-    consecutive_job_failures_count?: number
-    max_consecutive_job_failures_allowed: number
-    log_retention: boolean
-    created_at: string
-    updated_at: string
-    terminated_at?: string
-}
-
-export type CreateWorkflowPayload = {
-    name: string
-    kind: string
-    payload: string
-    interval: number
-    max_consecutive_job_failures_allowed: number
-    log_retention: boolean
-}
+import { createIdempotencyKey, fetchApi, fetchApiJson } from "@/lib/api/client"
+import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
+import { queryKeys } from "@/lib/api/query-keys"
+import type { CreateWorkflowPayload, WorkflowsResponse } from "@/lib/api/types"
 
 type UseWorkflowsOptions = {
     poll?: boolean
@@ -109,20 +80,18 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
     })()
 
     const getWorkflowQuery = useQuery<WorkflowsResponse, Error>({
-        queryKey: ["workflows", currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax],
-        queryFn: async () => {
-            const url = getWorkflowQueryParams
-                ? `${WORKFLOWS_ENDPOINT}?${getWorkflowQueryParams}`
-                : WORKFLOWS_ENDPOINT
-
-            const response = await fetchWithAuth(url)
-
-            if (!response.ok) {
-                throw new Error("failed to fetch workflows")
-            }
-
-            return response.json() as Promise<WorkflowsResponse>
-        },
+        queryKey: queryKeys.workflows.list(
+            currentCursor,
+            searchQuery,
+            statusFilter,
+            kindFilter,
+            intervalMin,
+            intervalMax,
+        ),
+        queryFn: () => fetchApiJson<WorkflowsResponse>(
+            withQuery(apiEndpoints.workflows.list, getWorkflowQueryParams),
+            "failed to fetch workflows",
+        ),
         refetchInterval: poll
             ? (query) => {
                 const workflows = query.state.data?.workflows ?? []
@@ -235,20 +204,16 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
 
     const createWorkflowMutation = useMutation({
         mutationFn: async (workflowPayload: CreateWorkflowPayload) => {
-            const response = await fetchWithAuth(WORKFLOWS_ENDPOINT, {
+            await fetchApi(apiEndpoints.workflows.list, "failed to create workflow", {
                 method: "POST",
                 headers: {
                     "Idempotency-Key": createIdempotencyKey(),
                 },
                 body: JSON.stringify(workflowPayload)
             })
-
-            if (!response.ok) {
-                throw new Error("failed to create workflow")
-            }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["workflows"] })
+            queryClient.invalidateQueries({ queryKey: queryKeys.workflows.all })
             resetPagination()
             toast.success("workflow created successfully")
         },

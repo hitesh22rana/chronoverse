@@ -4,50 +4,26 @@ import { useRouter } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { createIdempotencyKey, fetchWithAuth } from "@/lib/api-client"
-import { Workflow } from "@/hooks/use-workflows"
-import { useState } from "react"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-const WORKFLOW_DETAILS_ENDPOINT = `${API_URL}/workflows`
-
-export type UpdateWorkflowDetails = {
-    name: string
-    payload: string
-    interval: number
-    max_consecutive_job_failures_allowed: number
-}
-
-export type WorkflowAnalytics = {
-    workflow_id: string;
-    total_job_execution_duration: number;
-    total_jobs: number;
-    total_joblogs: number;
-}
+import { createIdempotencyKey, fetchApi, fetchApiJson } from "@/lib/api/client"
+import { apiEndpoints } from "@/lib/api/endpoints"
+import { queryKeys } from "@/lib/api/query-keys"
+import type { UpdateWorkflowDetails, Workflow, WorkflowAnalytics } from "@/lib/api/types"
 
 export function useWorkflowDetails(workflowId: string) {
     const router = useRouter()
     const queryClient = useQueryClient()
-    const [workflowNotActive, setWorkflowNotActive] = useState(false)
 
     const getWorkflowQuery = useQuery<Workflow, Error>({
-        queryKey: ["workflow", workflowId],
-        queryFn: async () => {
-            const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`)
-
-            if (!response.ok) {
-                throw new Error("failed to fetch workflow details")
-            }
-
-            const data = await response.json() as Workflow
-            if (data.build_status === "QUEUED" || data.build_status === "STARTED") {
-                setWorkflowNotActive(true)
-            }
-
-            return data
-        },
+        queryKey: queryKeys.workflow.detail(workflowId),
+        queryFn: () => fetchApiJson<Workflow>(
+            apiEndpoints.workflows.detail(workflowId),
+            "failed to fetch workflow details",
+        ),
         enabled: !!workflowId,
-        refetchInterval: workflowNotActive ? 5000 : false, // Refetch every 5 seconds if workflow is not active
+        refetchInterval: (query) => {
+            const buildStatus = query.state.data?.build_status
+            return buildStatus === "QUEUED" || buildStatus === "STARTED" ? 5000 : false
+        },
     })
 
     if (getWorkflowQuery.error instanceof Error) {
@@ -56,17 +32,13 @@ export function useWorkflowDetails(workflowId: string) {
 
     const updateWorkflowMutation = useMutation({
         mutationFn: async (updatedWorkflowDetails: UpdateWorkflowDetails) => {
-            const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`, {
+            await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to update workflow", {
                 method: "PUT",
                 headers: {
                     "Idempotency-Key": createIdempotencyKey(),
                 },
                 body: JSON.stringify(updatedWorkflowDetails),
             })
-
-            if (!response.ok) {
-                throw new Error("failed to update workflow")
-            }
         },
         onSuccess: () => {
             toast.success("workflow updated successfully")
@@ -79,20 +51,15 @@ export function useWorkflowDetails(workflowId: string) {
 
     const terminateWorkflowMutation = useMutation({
         mutationFn: async () => {
-            const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`, {
+            await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to terminate workflow", {
                 method: "PATCH",
             })
-
-            if (!response.ok) {
-                throw new Error("failed to terminate workflow")
-            }
 
             return workflowId
         },
         onSuccess: () => {
             toast.success("workflow terminated successfully")
             getWorkflowQuery.refetch()
-            setWorkflowNotActive(false)
         },
         onError: (error) => {
             toast.error(error.message)
@@ -101,19 +68,15 @@ export function useWorkflowDetails(workflowId: string) {
 
     const deleteWorkflowMutation = useMutation({
         mutationFn: async () => {
-            const response = await fetchWithAuth(`${WORKFLOW_DETAILS_ENDPOINT}/${workflowId}`, {
+            await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to delete workflow", {
                 method: "DELETE",
             })
-
-            if (!response.ok) {
-                throw new Error("failed to delete workflow")
-            }
 
             return workflowId
         },
         onSuccess: () => {
             toast.success("workflow deleted successfully")
-            queryClient.removeQueries({ queryKey: ["workflow", workflowId] })
+            queryClient.removeQueries({ queryKey: queryKeys.workflow.detail(workflowId) })
             router.push("/") // Redirect to the dashboard after deletion
         },
         onError: (error) => {
@@ -122,16 +85,11 @@ export function useWorkflowDetails(workflowId: string) {
     })
 
     const getWorkflowAnalyticsQuery = useQuery<WorkflowAnalytics, Error>({
-        queryKey: ["workflow-analytics", workflowId],
-        queryFn: async () => {
-            const response = await fetchWithAuth(`${API_URL}/analytics/${workflowId}`)
-
-            if (!response.ok) {
-                throw new Error("failed to fetch workflow analytics")
-            }
-
-            return response.json() as Promise<WorkflowAnalytics>
-        },
+        queryKey: queryKeys.workflow.analytics(workflowId),
+        queryFn: () => fetchApiJson<WorkflowAnalytics>(
+            apiEndpoints.analytics.workflow(workflowId),
+            "failed to fetch workflow analytics",
+        ),
         enabled: !!workflowId,
     })
 

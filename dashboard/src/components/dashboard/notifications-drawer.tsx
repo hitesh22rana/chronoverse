@@ -28,9 +28,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 import {
     useNotifications,
-    type Notification,
-    type NotificationPayload,
 } from "@/hooks/use-notifications"
+import type { Notification, NotificationPayload } from "@/lib/api/types"
 
 import { cn } from "@/lib/utils"
 

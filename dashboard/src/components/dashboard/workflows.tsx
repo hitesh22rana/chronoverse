@@ -36,7 +36,8 @@ import { Separator } from "@/components/ui/separator"
 import { WorkflowCard, WorkflowCardSkeleton } from "@/components/dashboard/workflows-card"
 import { EmptyState } from "@/components/dashboard/empty-state"
 
-import { useWorkflows, type Workflow } from "@/hooks/use-workflows"
+import { useWorkflows } from "@/hooks/use-workflows"
+import type { Workflow } from "@/lib/api/types"
 
 import { cn } from "@/lib/utils"
 

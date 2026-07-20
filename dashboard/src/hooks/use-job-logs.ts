@@ -23,19 +23,15 @@ import { toast } from "sonner"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 
-import { fetchWithAuth } from "@/lib/api-client"
+import { fetchApi, fetchApiJson } from "@/lib/api/client"
+import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
+import { queryKeys } from "@/lib/api/query-keys"
+import type {
+    DownloadLogsFormat,
+    JobLog,
+    JobLogsResponse,
+} from "@/lib/api/types"
 import { buildLogViewerUrl } from "@/lib/log-line-selection"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-
-export type JobLog = {
-    event_id?: string
-    highlightToken?: string
-    timestamp: string
-    message: string
-    sequence_num: number
-    stream: "stdout" | "stderr"
-}
 
 type JobLogWire = {
     event_id?: string
@@ -46,16 +42,6 @@ type JobLogWire = {
     sequenceNum?: number | string
     stream?: string
 }
-
-export type JobLogsResponseData = {
-    id: string
-    workflow_id: string
-    logs: JobLog[]
-    cursor?: string
-    highlight_token?: string
-}
-
-export type DownloadLogsFormat = "txt" | "json" | "jsonl"
 
 type DownloadLogsOptions = {
     filename: string
@@ -131,7 +117,7 @@ const uniqueLogsByKey = (logs: JobLog[]): JobLog[] => {
     return Array.from(uniqueLogsMap.values())
 }
 
-const logsFromPages = (pages?: JobLogsResponseData[]): JobLog[] => {
+const logsFromPages = (pages?: JobLogsResponse[]): JobLog[] => {
     if (!pages?.length) {
         return []
     }
@@ -157,12 +143,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const [liveLogs, setLiveLogs] = useState<JobLog[]>([])
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
-    const logsURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs`
-
-    const sseURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/events`
-    const logsDownloadURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/raw`
-
-    const searchURL = `${API_URL}/workflows/${workflowId}/jobs/${jobId}/logs/search`
+    const logsURL = apiEndpoints.workflows.jobs.logs(workflowId, jobId)
+    const sseURL = apiEndpoints.workflows.jobs.logEvents(workflowId, jobId)
+    const logsDownloadURL = apiEndpoints.workflows.jobs.rawLogs(workflowId, jobId)
+    const searchURL = apiEndpoints.workflows.jobs.searchLogs(workflowId, jobId)
 
     const isRunning = jobStatus === "RUNNING"
     const isCompleted = terminalJobStatus.includes(jobStatus)
@@ -225,10 +209,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             const params = new URLSearchParams(getSearchQueryParams)
             params.set("format", format)
 
-            const response = await fetchWithAuth(`${logsDownloadURL}?${params.toString()}`)
-            if (!response.ok) {
-                throw new Error("failed to download logs")
-            }
+            const response = await fetchApi(
+                withQuery(logsDownloadURL, params),
+                "failed to download logs",
+            )
 
             const blob = await response.blob()
             const objectUrl = URL.createObjectURL(blob)
@@ -250,22 +234,20 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     })
 
     // Retained logs are newest-first; fetching the next page loads older logs.
-    const jobLogsInfiniteQueryKey = ["job-logs", workflowId, jobId, jobStatus]
-    const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
-        queryKey: jobLogsInfiniteQueryKey,
+    const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
+        queryKey: queryKeys.job.logs(workflowId, jobId, jobStatus),
         queryFn: async ({ pageParam }) => {
             const isFirstPage = !pageParam
-            const url = pageParam
-                ? `${logsURL}?cursor=${pageParam}`
-                : logsURL
-
-            const response = await fetchWithAuth(url, isFirstPage ? { cache: "no-store" } : undefined)
-
-            if (!response.ok) {
-                throw new Error("failed to fetch job logs")
+            const params = new URLSearchParams()
+            if (pageParam) {
+                params.set("cursor", String(pageParam))
             }
 
-            const res = await response.json() as JobLogsResponseData
+            const res = await fetchApiJson<JobLogsResponse>(
+                withQuery(logsURL, params),
+                "failed to fetch job logs",
+                isFirstPage ? { cache: "no-store" } : {},
+            )
 
             return {
                 id: res.id,
@@ -281,21 +263,20 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     })
 
     // Search job logs query
-    const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponseData, Error>({
-        queryKey: ["job-logs/search", workflowId, jobId, searchQuery, streamFilter],
+    const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
+        queryKey: queryKeys.job.logSearch(workflowId, jobId, searchQuery, streamFilter),
         queryFn: async ({ pageParam }) => {
             const isFirstPage = !pageParam
-            const url = pageParam
-                ? `${searchURL}?${getSearchQueryParams}&cursor=${pageParam}`
-                : `${searchURL}?${getSearchQueryParams}`
-
-            const response = await fetchWithAuth(url, isFirstPage ? { cache: "no-store" } : undefined);
-
-            if (!response.ok) {
-                throw new Error("failed to fetch job logs");
+            const params = new URLSearchParams(getSearchQueryParams)
+            if (pageParam) {
+                params.set("cursor", String(pageParam))
             }
 
-            const res = await response.json() as JobLogsResponseData
+            const res = await fetchApiJson<JobLogsResponse>(
+                withQuery(searchURL, params),
+                "failed to fetch job logs",
+                isFirstPage ? { cache: "no-store" } : {},
+            )
 
             return {
                 id: jobId,

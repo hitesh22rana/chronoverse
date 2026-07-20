@@ -10,10 +10,6 @@ import { Header } from "@/components/dashboard/header"
 import { NotificationsDrawer } from "@/components/dashboard/notifications-drawer"
 import { ProfileDrawer } from "@/components/dashboard/profile-drawer"
 
-import { useWorkflows } from "@/hooks/use-workflows"
-
-import { cn } from "@/lib/utils"
-
 export default function DashboardLayout({
   children,
 }: {
@@ -38,13 +34,8 @@ function Layout({
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
 
-  const { workflows } = useWorkflows()
-
   return (
-    <div className={cn(
-      "flex flex-col w-full h-full overflow-visible",
-      workflows.length == 0 && "h-svh"
-    )}>
+    <div className="flex min-h-svh w-full flex-col overflow-visible">
       <Header
         onNotificationsClick={() => setNotificationsOpen(true)}
         onProfileClick={() => setProfileOpen(true)}

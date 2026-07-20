@@ -38,7 +38,11 @@ export type CreateWorkflowPayload = {
     log_retention: boolean
 }
 
-export function useWorkflows() {
+type UseWorkflowsOptions = {
+    poll?: boolean
+}
+
+export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
     const queryClient = useQueryClient()
     const router = useRouter()
     const path = usePathname()
@@ -119,7 +123,17 @@ export function useWorkflows() {
 
             return response.json() as Promise<WorkflowsResponse>
         },
-        refetchInterval: 10000, // Refetch every 10 seconds
+        refetchInterval: poll
+            ? (query) => {
+                const workflows = query.state.data?.workflows ?? []
+                const hasBuildInProgress = workflows.some((workflow) =>
+                    workflow.build_status === "QUEUED" || workflow.build_status === "STARTED"
+                )
+
+                return hasBuildInProgress ? 5000 : 60000
+            }
+            : false,
+        refetchIntervalInBackground: false,
     })
 
     const goToNextPage = () => {

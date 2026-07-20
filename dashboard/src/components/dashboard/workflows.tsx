@@ -67,7 +67,7 @@ export function Workflows() {
         pagination,
         refetch,
         refetchLoading
-    } = useWorkflows()
+    } = useWorkflows({ poll: true })
 
     const [searchInput, setSearchInput] = useState(searchQuery)
 

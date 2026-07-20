@@ -32,7 +32,11 @@ export type Notification = {
     updated_at: string
 }
 
-export function useNotifications() {
+type UseNotificationsOptions = {
+    poll?: boolean
+}
+
+export function useNotifications({ poll = false }: UseNotificationsOptions = {}) {
     const { user } = useUsers()
     const queryClient = useQueryClient()
 
@@ -52,7 +56,8 @@ export function useNotifications() {
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        refetchInterval: 10000, // 10 seconds
+        refetchInterval: poll ? 60000 : false,
+        refetchIntervalInBackground: false,
         enabled: !!user && user?.notification_preference !== 'NONE'
     })
 

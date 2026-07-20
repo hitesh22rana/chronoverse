@@ -14,7 +14,7 @@ interface HeaderProps {
 }
 
 export function Header({ onNotificationsClick, onProfileClick }: HeaderProps) {
-    const { notifications } = useNotifications()
+    const { notifications } = useNotifications({ poll: true })
     const count = notifications.length || 0
 
     return (

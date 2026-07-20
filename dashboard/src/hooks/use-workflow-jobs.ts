@@ -9,7 +9,14 @@ import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { JobsResponse } from "@/lib/api/types"
 
-export function useWorkflowJobs(workflowId: string) {
+type UseWorkflowJobsOptions = {
+    enabled?: boolean
+}
+
+export function useWorkflowJobs(
+    workflowId: string,
+    { enabled = true }: UseWorkflowJobsOptions = {},
+) {
     const router = useRouter()
     const path = usePathname()
     const searchParams = useSearchParams()
@@ -62,6 +69,7 @@ export function useWorkflowJobs(workflowId: string) {
             withQuery(apiEndpoints.workflows.jobs.list(workflowId), getJobQueryParams),
             "Failed to fetch workflow jobs",
         ),
+        enabled: enabled && !!workflowId,
         refetchInterval: 10000, // Refetch every 10 seconds
     })
 

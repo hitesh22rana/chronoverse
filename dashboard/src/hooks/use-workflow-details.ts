@@ -9,7 +9,14 @@ import { apiEndpoints } from "@/lib/api/endpoints"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { UpdateWorkflowDetails, Workflow, WorkflowAnalytics } from "@/lib/api/types"
 
-export function useWorkflowDetails(workflowId: string) {
+type UseWorkflowDetailsOptions = {
+    analytics?: boolean
+}
+
+export function useWorkflowDetails(
+    workflowId: string,
+    { analytics = false }: UseWorkflowDetailsOptions = {},
+) {
     const router = useRouter()
     const queryClient = useQueryClient()
 
@@ -90,7 +97,9 @@ export function useWorkflowDetails(workflowId: string) {
             apiEndpoints.analytics.workflow(workflowId),
             "failed to fetch workflow analytics",
         ),
-        enabled: !!workflowId,
+        enabled: analytics && !!workflowId,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
     })
 
     return {
@@ -109,6 +118,7 @@ export function useWorkflowDetails(workflowId: string) {
         deleteError: deleteWorkflowMutation.error,
         workflowAnalytics: getWorkflowAnalyticsQuery.data,
         isAnalyticsLoading: getWorkflowAnalyticsQuery.isLoading,
+        isAnalyticsFetching: getWorkflowAnalyticsQuery.isFetching,
         analyticsError: getWorkflowAnalyticsQuery.error,
         refetchAnalytics: getWorkflowAnalyticsQuery.refetch,
     }

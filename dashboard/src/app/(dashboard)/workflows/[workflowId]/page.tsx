@@ -43,8 +43,6 @@ import {
     Card,
     CardContent,
     CardFooter,
-    CardHeader,
-    CardTitle
 } from "@/components/ui/card"
 import {
     Select,
@@ -65,12 +63,16 @@ import { TerminateWorkflowDialog } from "@/components/dashboard/terminate-workfl
 import { DeleteWorkflowDialog } from "@/components/dashboard/delete-workflow-dialog"
 import { JobCard } from "@/components/dashboard/workflow-job-card"
 import { WorkflowJobsSkeleton } from "@/components/dashboard/workflow-jobs-skeleton"
+import {
+    WorkflowAnalyticsCardsSkeleton,
+    WorkflowAnalyticsPanel,
+} from "@/components/dashboard/workflow-analytics-panel"
 
 import { useWorkflowDetails } from "@/hooks/use-workflow-details"
 import { useWorkflowJobs } from "@/hooks/use-workflow-jobs"
 import type { Job } from "@/lib/api/types"
 
-import { cn, formatSeconds } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/lib/status"
 
 export default function WorkflowDetailsAndJobsPage() {
@@ -96,7 +98,10 @@ export default function WorkflowDetailsAndJobsPage() {
         refetch: refetchWorkflow,
         workflowAnalytics,
         isAnalyticsLoading,
-    } = useWorkflowDetails(workflowId)
+        isAnalyticsFetching,
+        analyticsError,
+        refetchAnalytics,
+    } = useWorkflowDetails(workflowId, { analytics: urlTabFilter === "details" })
 
     const {
         jobs,
@@ -111,7 +116,7 @@ export default function WorkflowDetailsAndJobsPage() {
         pagination,
         manualRunJob,
         isManualRunJobPending,
-    } = useWorkflowJobs(workflowId)
+    } = useWorkflowJobs(workflowId, { enabled: urlTabFilter === "jobs" })
 
     const [showUpdateWorkflowDialog, setShowUpdateWorkflowDialog] = useState(false)
     const [showTerminateWorkflowDialog, setShowTerminateWorkflowDialog] = useState(false)
@@ -134,7 +139,11 @@ export default function WorkflowDetailsAndJobsPage() {
 
     const handleRefresh = () => {
         refetchWorkflow()
-        refetchJobs()
+        if (urlTabFilter === "details") {
+            refetchAnalytics()
+        } else {
+            refetchJobs()
+        }
     }
 
     const handleFiltersOpenChange = (nextOpen: boolean) => {
@@ -195,6 +204,9 @@ export default function WorkflowDetailsAndJobsPage() {
         workflowError,
         workflowAnalytics,
         isAnalyticsLoading,
+        isAnalyticsFetching,
+        analyticsError,
+        refetchAnalytics,
         jobs,
         isJobsLoading,
         isRefetchingJobs,
@@ -232,6 +244,9 @@ function renderWorkflowDetailsAndJobsView(model: any) {
         workflowError,
         workflowAnalytics,
         isAnalyticsLoading,
+        isAnalyticsFetching,
+        analyticsError,
+        refetchAnalytics,
         jobs,
         isJobsLoading,
         isRefetchingJobs,
@@ -632,97 +647,15 @@ function renderWorkflowDetailsAndJobsView(model: any) {
 
                                 <Separator />
 
-                                {/* Workflow Analytics */}
-                                {!!workflowAnalytics && !isAnalyticsLoading ? (
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium">Workflow Analytics</span>
-                                        <div className="h-full w-full grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                            {/* Total Jobs Card */}
-                                            <Card className="relative overflow-hidden">
-                                                <div className="absolute inset-0 bg-linear-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20" />
-                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                        Total Jobs Executed
-                                                    </CardTitle>
-                                                    <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                                                        <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                                    </div>
-                                                </CardHeader>
-                                                <CardContent className="relative">
-                                                    <div className="text-3xl font-bold text-blue-700 dark:text-blue-300">
-                                                        {workflowAnalytics?.total_jobs ? workflowAnalytics.total_jobs.toLocaleString() : "0"}
-                                                    </div>
-                                                    <p className="text-xs text-muted-foreground mt-1">
-                                                        Jobs processed by this workflow
-                                                    </p>
-                                                </CardContent>
-                                            </Card>
-
-                                            {/* Total Logs Card */}
-                                            <Card className="relative overflow-hidden">
-                                                <div className="absolute inset-0 bg-linear-to-br from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20" />
-                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                        Total Log Entries Generated
-                                                    </CardTitle>
-                                                    <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                                                        <ScrollText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                                                    </div>
-                                                </CardHeader>
-                                                <CardContent className="relative">
-                                                    <div className="text-3xl font-bold text-emerald-700 dark:text-emerald-300">
-                                                        {workflowAnalytics?.total_joblogs ? workflowAnalytics.total_joblogs.toLocaleString() : "0"}
-                                                    </div>
-                                                    <p className="text-xs text-muted-foreground mt-1">
-                                                        Log entries across all jobs
-                                                    </p>
-                                                </CardContent>
-                                            </Card>
-
-                                            {/* Total Execution Time Card */}
-                                            <Card className="relative overflow-hidden">
-                                                <div className="absolute inset-0 bg-linear-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20" />
-                                                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                                                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                        Total Execution Time
-                                                    </CardTitle>
-                                                    <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                                                        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                                                    </div>
-                                                </CardHeader>
-                                                <CardContent className="relative">
-                                                    <div className="text-3xl font-bold text-amber-700 dark:text-amber-500">
-                                                        {formatSeconds(workflowAnalytics?.total_job_execution_duration ?? 0)}
-                                                    </div>
-                                                    <p className="text-xs text-muted-foreground mt-1">
-                                                        Total per job execution
-                                                    </p>
-                                                </CardContent>
-                                            </Card>
-                                        </div>
-                                        {!workflow?.log_retention && (
-                                            <div
-                                                className={cn(
-                                                    "mt-2 rounded-md border px-3 py-2 text-xs font-semibold",
-                                                    workflow?.kind === "CONTAINER"
-                                                        ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200"
-                                                        : "border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-800/50 dark:bg-blue-950/30 dark:text-blue-200"
-                                                )}
-                                            >
-                                                {workflow?.kind === "CONTAINER"
-                                                    ? "Logs are generated but not persisted."
-                                                    : workflow?.kind
-                                                        ? `${workflow?.kind.charAt(0) + workflow?.kind.substring(1).toLowerCase()} workflows do not generate execution logs.`
-                                                        : "This workflow kind does not generate execution logs."}
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <EmptyState
-                                        title="No analytics available"
-                                        description="This workflow has no analytics data yet."
-                                    />
-                                )}
+                                <WorkflowAnalyticsPanel
+                                    analytics={workflowAnalytics}
+                                    error={analyticsError}
+                                    isLoading={isAnalyticsLoading}
+                                    isFetching={isAnalyticsFetching}
+                                    logRetention={workflow.log_retention}
+                                    onRetry={() => refetchAnalytics()}
+                                    workflowKind={workflow.kind}
+                                />
 
                                 <Separator />
 
@@ -825,29 +758,13 @@ function WorkflowDetailsSkeleton() {
 
                 <Separator />
 
-                {/* Analytics Cards Skeleton */}
-                <div className="space-y-1 py-2">
-                    <Skeleton className="h-5 w-36" />
-                    <div className="h-full w-full grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        {/* Analytics Card Skeletons */}
-                        {[...Array(3)].map((_, i) => (
-                            <Card key={i} className="relative overflow-hidden">
-                                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                    <Skeleton className="h-4 w-32" />
-                                    <div className="h-8 w-8 rounded-full bg-muted">
-                                        <Skeleton className="h-4 w-4 m-2" />
-                                    </div>
-                                </CardHeader>
-                                <CardContent>
-                                    <Skeleton className="h-8 w-16 mb-2" />
-                                    <Skeleton className="h-4 w-36" />
-                                </CardContent>
-                            </Card>
-                        ))}
+                {/* Analytics Skeleton */}
+                <div className="flex flex-col gap-3 py-2">
+                    <div className="flex flex-col gap-1">
+                        <Skeleton className="h-5 w-36" />
+                        <Skeleton className="h-4 w-full max-w-80" />
                     </div>
-                    <div className="mt-2 rounded-md border p-2">
-                        <Skeleton className="h-4 w-80" />
-                    </div>
+                    <WorkflowAnalyticsCardsSkeleton />
                 </div>
 
                 <Separator />

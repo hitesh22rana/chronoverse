@@ -19,6 +19,8 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
+const topWorkflowsLimit = 10
+
 // Repository provides analytics repository.
 type Repository struct {
 	tp   trace.Tracer
@@ -122,12 +124,12 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
             a.total_job_execution_duration
         FROM %s a
         LEFT JOIN %s w ON w.id = a.workflow_id AND w.user_id = a.user_id
-        WHERE a.user_id = $1
+        WHERE a.user_id = $1 AND a.jobs_count > 0
         ORDER BY a.jobs_count DESC, a.logs_count DESC, a.workflow_id ASC
-        LIMIT 8
+        LIMIT $2
     `, postgres.TableAnalytics, postgres.TableWorkflows)
 
-	topWorkflowRows, err := r.pg.Query(ctx, topWorkflowsQuery, userID)
+	topWorkflowRows, err := r.pg.Query(ctx, topWorkflowsQuery, userID, topWorkflowsLimit)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, status.Error(codes.DeadlineExceeded, err.Error())

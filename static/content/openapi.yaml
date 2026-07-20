@@ -534,7 +534,7 @@ components:
       properties:
         total_workflows: {type: integer, minimum: 0}
         total_jobs: {type: integer, minimum: 0}
-        total_joblogs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed across the user's workflows regardless of retention}
         total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
         workflow_kinds: {type: array, items: {$ref: '#/components/schemas/WorkflowKindAnalytics'}}
         top_workflows: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/WorkflowAnalyticsSummary'}}
@@ -545,7 +545,7 @@ components:
         kind: {type: string}
         total_workflows: {type: integer, minimum: 0}
         total_jobs: {type: integer, minimum: 0}
-        total_joblogs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for this workflow kind regardless of retention}
         total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
     WorkflowAnalyticsSummary:
       type: object
@@ -555,7 +555,7 @@ components:
         workflow_name: {type: string, description: Current workflow name or Deleted workflow when only durable history remains}
         kind: {type: string}
         total_jobs: {type: integer, minimum: 0}
-        total_joblogs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for the workflow regardless of retention}
         total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
     WorkflowAnalytics:
       type: object
@@ -564,4 +564,4 @@ components:
         workflow_id: {type: string, format: uuid}
         total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
         total_jobs: {type: integer, minimum: 0}
-        total_joblogs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for the workflow regardless of retention}

@@ -14,7 +14,7 @@ message WorkflowKindAnalytics {
   string kind                         = 1; // Workflow kind, for example CONTAINER or HEARTBEAT
   uint32 total_workflows              = 2; // Number of workflows of this kind
   uint64 total_jobs                   = 3; // Total terminal jobs recorded for this kind
-  uint64 total_joblogs                = 4; // Total retained log entries recorded for this kind
+  uint64 total_joblogs                = 4; // Total generated log events recorded for this kind regardless of retention
   uint64 total_job_execution_duration = 5; // Total execution duration in seconds for this kind
 }
 
@@ -24,7 +24,7 @@ message WorkflowAnalyticsSummary {
   string workflow_name                = 2; // Current workflow name, or a deleted-workflow label
   string kind                         = 3; // Workflow kind
   uint64 total_jobs                   = 4; // Total terminal jobs recorded for the workflow
-  uint64 total_joblogs                = 5; // Total retained log entries recorded for the workflow
+  uint64 total_joblogs                = 5; // Total generated log events recorded for the workflow regardless of retention
   uint64 total_job_execution_duration = 6; // Total execution duration in seconds for the workflow
 }
 

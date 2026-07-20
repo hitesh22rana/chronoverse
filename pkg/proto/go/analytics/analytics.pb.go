@@ -72,7 +72,7 @@ type WorkflowKindAnalytics struct {
 	Kind                      string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                 // Workflow kind, for example CONTAINER or HEARTBEAT
 	TotalWorkflows            uint32                 `protobuf:"varint,2,opt,name=total_workflows,json=totalWorkflows,proto3" json:"total_workflows,omitempty"`                                      // Number of workflows of this kind
 	TotalJobs                 uint64                 `protobuf:"varint,3,opt,name=total_jobs,json=totalJobs,proto3" json:"total_jobs,omitempty"`                                                     // Total terminal jobs recorded for this kind
-	TotalJoblogs              uint64                 `protobuf:"varint,4,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total retained log entries recorded for this kind
+	TotalJoblogs              uint64                 `protobuf:"varint,4,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total generated log events recorded for this kind regardless of retention
 	TotalJobExecutionDuration uint64                 `protobuf:"varint,5,opt,name=total_job_execution_duration,json=totalJobExecutionDuration,proto3" json:"total_job_execution_duration,omitempty"` // Total execution duration in seconds for this kind
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
@@ -150,7 +150,7 @@ type WorkflowAnalyticsSummary struct {
 	WorkflowName              string                 `protobuf:"bytes,2,opt,name=workflow_name,json=workflowName,proto3" json:"workflow_name,omitempty"`                                             // Current workflow name, or a deleted-workflow label
 	Kind                      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                 // Workflow kind
 	TotalJobs                 uint64                 `protobuf:"varint,4,opt,name=total_jobs,json=totalJobs,proto3" json:"total_jobs,omitempty"`                                                     // Total terminal jobs recorded for the workflow
-	TotalJoblogs              uint64                 `protobuf:"varint,5,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total retained log entries recorded for the workflow
+	TotalJoblogs              uint64                 `protobuf:"varint,5,opt,name=total_joblogs,json=totalJoblogs,proto3" json:"total_joblogs,omitempty"`                                            // Total generated log events recorded for the workflow regardless of retention
 	TotalJobExecutionDuration uint64                 `protobuf:"varint,6,opt,name=total_job_execution_duration,json=totalJobExecutionDuration,proto3" json:"total_job_execution_duration,omitempty"` // Total execution duration in seconds for the workflow
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache

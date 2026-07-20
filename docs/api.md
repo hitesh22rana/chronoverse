@@ -427,5 +427,7 @@ Returns workflow aggregate totals:
 - `total_jobs`
 - `total_joblogs`
 
-These counters are lifetime aggregates. A disabled log-retention setting stops
-new retained log entries; it does not erase previously aggregated history.
+These counters are lifetime aggregates. `total_joblogs` counts generated log
+events independently of whether their workflow retains log bodies. Disabling
+log retention prevents new entries from being stored and searched; it does not
+stop the generated-log counter or erase previously aggregated history.

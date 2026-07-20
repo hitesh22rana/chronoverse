@@ -27,7 +27,7 @@ analytics into one self-hosted stack.
 - **Job execution lifecycle**: queued, running, completed, failed, and canceled jobs with automatic retry handling for system failures and safe explanations for terminal failures and cancellations.
 - **Retained job logs**: ClickHouse-backed logs, Meilisearch-backed search, raw log download, stream filtering, shareable line selections, and Server-Sent Events for live output.
 - **Retention controls**: per-workflow log retention with explicit behavior for non-log-producing or retention-disabled workflows.
-- **Notifications and analytics**: user notifications, workflow/job analytics, retained log counts, and execution duration summaries.
+- **Notifications and analytics**: user notifications, workflow/job analytics, generated log counts, and execution duration summaries.
 - **Security by default in compose**: generated certificates, TLS/mTLS across infrastructure and gRPC services, CSRF-protected session cookies, and Ed25519 JWTs for service authorization.
 - **Observability**: OpenTelemetry traces, metrics, and logs exported to the bundled Grafana OTEL LGTM stack.
 

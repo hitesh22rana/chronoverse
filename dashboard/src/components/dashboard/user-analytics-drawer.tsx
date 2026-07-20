@@ -1,13 +1,42 @@
 "use client"
 
+import { useMemo, useState } from "react"
 import {
     Activity,
     BarChart3,
-    Clock,
+    Clock3,
+    RefreshCw,
     ScrollText,
     Workflow,
 } from "lucide-react"
+import {
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Cell,
+    Label,
+    Pie,
+    PieChart,
+    XAxis,
+    YAxis,
+} from "recharts"
 
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+    Card,
+    CardAction,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card"
+import {
+    ChartContainer,
+    ChartTooltip,
+    ChartTooltipContent,
+    type ChartConfig,
+} from "@/components/ui/chart"
 import {
     Drawer,
     DrawerContent,
@@ -16,76 +45,271 @@ import {
     DrawerTitle,
     DrawerTrigger,
 } from "@/components/ui/drawer"
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle
-} from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 
-import { useUsers } from "@/hooks/use-users"
+import { useUserAnalytics } from "@/hooks/use-user-analytics"
 
-import { formatSeconds } from "@/lib/utils"
+import { cn, formatSeconds } from "@/lib/utils"
+
+const workloadChartConfig = {
+    jobs: {
+        label: "Terminal jobs",
+        color: "var(--chart-1)",
+    },
+} satisfies ChartConfig
+
+const rankingChartConfig = {
+    total_jobs: {
+        label: "Terminal jobs",
+        color: "var(--chart-2)",
+    },
+} satisfies ChartConfig
+
+const chartColors = [
+    "var(--chart-1)",
+    "var(--chart-2)",
+    "var(--chart-3)",
+    "var(--chart-4)",
+    "var(--chart-5)",
+]
 
 export function UserAnalyticsDrawer() {
-    const { userAnalytics, isAnalyticsLoading } = useUsers()
+    const [open, setOpen] = useState(false)
+    const analyticsQuery = useUserAnalytics(open)
+    const analytics = analyticsQuery.data
+
+    const workloadData = useMemo(
+        () => (analytics?.workflow_kinds ?? []).map((item, index) => ({
+            ...item,
+            display_kind: formatKind(item.kind),
+            fill: chartColors[index % chartColors.length],
+        })),
+        [analytics?.workflow_kinds],
+    )
+
+    const topWorkflows = analytics?.top_workflows ?? []
+    const jobsPerWorkflow = divide(analytics?.total_jobs, analytics?.total_workflows)
+    const logsPerJob = divide(analytics?.total_joblogs, analytics?.total_jobs)
+    const secondsPerJob = divide(analytics?.total_job_execution_duration, analytics?.total_jobs)
 
     return (
-        <Drawer direction="bottom">
+        <Drawer direction="bottom" open={open} onOpenChange={setOpen}>
             <DrawerTrigger asChild>
-                <Button variant="outline" className="w-full md:w-fit cursor-pointer">
-                    <BarChart3 className="mr-2 h-4 w-4" />
+                <Button variant="outline" className="w-full cursor-pointer md:w-fit">
+                    <BarChart3 data-icon="inline-start" />
                     Analytics
                 </Button>
             </DrawerTrigger>
-            <DrawerContent>
-                <DrawerHeader className="flex flex-row items-center justify-start py-3 gap-2 w-full">
-                    <BarChart3 className="size-5 text-muted-foreground" />
-                    <div className="flex flex-col items-start justify-start">
-                        <DrawerTitle className="text-base text-left">Analytics overview</DrawerTitle>
-                        <DrawerDescription className="text-left text-xs">Aggregated metrics across all your workflows</DrawerDescription>
+            <DrawerContent className="overflow-hidden">
+                <DrawerHeader className="flex w-full shrink-0 flex-row items-center gap-3 px-4 py-4 text-left md:px-6">
+                    <Badge variant="secondary" className="size-9 p-0">
+                        <BarChart3 />
+                    </Badge>
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <DrawerTitle>Analytics overview</DrawerTitle>
+                        <DrawerDescription>
+                            Durable activity across all workflows, including deleted history
+                        </DrawerDescription>
                     </div>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => analyticsQuery.refetch()}
+                        disabled={analyticsQuery.isFetching}
+                        aria-label="Refresh analytics"
+                    >
+                        <RefreshCw className={cn(analyticsQuery.isFetching && "animate-spin")} />
+                    </Button>
                 </DrawerHeader>
-                <div className="px-4 pb-4 h-full w-full">
-                    <div className="max-h-[calc(80vh-100px)] overflow-y-auto pr-1">
-                        {isAnalyticsLoading ? (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                <Skeleton className="h-24 w-full" />
-                                <Skeleton className="h-24 w-full" />
-                                <Skeleton className="h-24 w-full" />
-                                <Skeleton className="h-24 w-full" />
+
+                <div className="min-h-0 overflow-y-auto px-4 pb-6 md:px-6">
+                    {analyticsQuery.isPending ? (
+                        <AnalyticsSkeleton />
+                    ) : analyticsQuery.isError ? (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Analytics unavailable</CardTitle>
+                                <CardDescription>{analyticsQuery.error.message}</CardDescription>
+                                <CardAction>
+                                    <Button variant="outline" size="sm" onClick={() => analyticsQuery.refetch()}>
+                                        Try again
+                                    </Button>
+                                </CardAction>
+                            </CardHeader>
+                        </Card>
+                    ) : (
+                        <div className="flex flex-col gap-4">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <StatCard
+                                    label="Workflows"
+                                    value={(analytics?.total_workflows ?? 0).toLocaleString()}
+                                    helper={`${formatDecimal(jobsPerWorkflow)} jobs per workflow`}
+                                    icon={<Workflow />}
+                                />
+                                <StatCard
+                                    label="Terminal jobs"
+                                    value={(analytics?.total_jobs ?? 0).toLocaleString()}
+                                    helper={`${formatSeconds(Math.round(secondsPerJob))} average runtime`}
+                                    icon={<Activity />}
+                                />
+                                <StatCard
+                                    label="Retained logs"
+                                    value={(analytics?.total_joblogs ?? 0).toLocaleString()}
+                                    helper={`${formatDecimal(logsPerJob)} logs per job`}
+                                    icon={<ScrollText />}
+                                />
+                                <StatCard
+                                    label="Execution time"
+                                    value={formatSeconds(analytics?.total_job_execution_duration ?? 0)}
+                                    helper={`Across ${(analytics?.total_jobs ?? 0).toLocaleString()} terminal jobs`}
+                                    icon={<Clock3 />}
+                                />
                             </div>
-                        ) : (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                <StatCard
-                                    label="Total Workflows"
-                                    value={(userAnalytics?.total_workflows ?? 0).toLocaleString()}
-                                    icon={<Workflow className="h-3.5 w-3.5" />}
-                                    tone="blue"
-                                />
-                                <StatCard
-                                    label="Total Jobs Executed"
-                                    value={(userAnalytics?.total_jobs ?? 0).toLocaleString()}
-                                    icon={<Activity className="h-3.5 w-3.5" />}
-                                    tone="emerald"
-                                />
-                                <StatCard
-                                    label="Total Log Entries"
-                                    value={(userAnalytics?.total_joblogs ?? 0).toLocaleString()}
-                                    icon={<ScrollText className="h-3.5 w-3.5" />}
-                                    tone="amber"
-                                />
-                                <StatCard
-                                    label="Total Exec. Time"
-                                    value={formatSeconds(userAnalytics?.total_job_execution_duration ?? 0)}
-                                    icon={<Clock className="h-3.5 w-3.5" />}
-                                    tone="indigo"
-                                />
+
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>Workload mix</CardTitle>
+                                        <CardDescription>Terminal jobs grouped by workflow kind</CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                        {workloadData.length > 0 ? (
+                                            <div className="grid items-center gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,0.7fr)] xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(10rem,0.7fr)]">
+                                                <ChartContainer
+                                                    config={workloadChartConfig}
+                                                    className="mx-auto aspect-square max-h-64 w-full"
+                                                >
+                                                    <PieChart accessibilityLayer>
+                                                        <ChartTooltip
+                                                            cursor={false}
+                                                            content={<ChartTooltipContent hideLabel />}
+                                                        />
+                                                        <Pie
+                                                            data={workloadData}
+                                                            dataKey="total_jobs"
+                                                            nameKey="display_kind"
+                                                            innerRadius={62}
+                                                            outerRadius={88}
+                                                            strokeWidth={4}
+                                                        >
+                                                            {workloadData.map((item) => (
+                                                                <Cell key={item.kind} fill={item.fill} />
+                                                            ))}
+                                                            <Label
+                                                                content={({ viewBox }) => {
+                                                                    if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) {
+                                                                        return null
+                                                                    }
+
+                                                                    return (
+                                                                        <text
+                                                                            x={viewBox.cx}
+                                                                            y={viewBox.cy}
+                                                                            textAnchor="middle"
+                                                                            dominantBaseline="middle"
+                                                                        >
+                                                                            <tspan
+                                                                                x={viewBox.cx}
+                                                                                y={viewBox.cy}
+                                                                                className="fill-foreground text-2xl font-semibold"
+                                                                            >
+                                                                                {(analytics?.total_jobs ?? 0).toLocaleString()}
+                                                                            </tspan>
+                                                                            <tspan
+                                                                                x={viewBox.cx}
+                                                                                y={(viewBox.cy ?? 0) + 22}
+                                                                                className="fill-muted-foreground"
+                                                                            >
+                                                                                terminal jobs
+                                                                            </tspan>
+                                                                        </text>
+                                                                    )
+                                                                }}
+                                                            />
+                                                        </Pie>
+                                                    </PieChart>
+                                                </ChartContainer>
+                                                <div className="flex flex-col gap-3">
+                                                    {workloadData.map((item) => (
+                                                        <div key={item.kind} className="flex items-center gap-3">
+                                                            <span
+                                                                className="size-2.5 shrink-0 rounded-sm"
+                                                                style={{ backgroundColor: item.fill }}
+                                                            />
+                                                            <div className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                                                                <span className="truncate text-sm text-muted-foreground">
+                                                                    {item.display_kind}
+                                                                </span>
+                                                                <span className="font-mono text-sm font-medium tabular-nums">
+                                                                    {item.total_jobs.toLocaleString()}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="py-16 text-center text-sm text-muted-foreground">
+                                                No workload breakdown is available yet.
+                                            </p>
+                                        )}
+                                    </CardContent>
+                                </Card>
+
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>Most active workflows</CardTitle>
+                                        <CardDescription>Ranked by durable terminal-job count</CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                        {topWorkflows.length > 0 ? (
+                                            <ChartContainer
+                                                config={rankingChartConfig}
+                                                className="h-72 w-full"
+                                                initialDimension={{ width: 560, height: 288 }}
+                                            >
+                                                <BarChart
+                                                    accessibilityLayer
+                                                    data={topWorkflows}
+                                                    layout="vertical"
+                                                    margin={{ left: 4, right: 24 }}
+                                                >
+                                                    <CartesianGrid horizontal={false} />
+                                                    <YAxis
+                                                        dataKey="workflow_name"
+                                                        type="category"
+                                                        tickLine={false}
+                                                        axisLine={false}
+                                                        width={132}
+                                                        tickFormatter={truncateLabel}
+                                                    />
+                                                    <XAxis dataKey="total_jobs" type="number" hide />
+                                                    <ChartTooltip
+                                                        cursor={false}
+                                                        content={
+                                                            <ChartTooltipContent
+                                                                indicator="line"
+                                                                labelKey="workflow_name"
+                                                            />
+                                                        }
+                                                    />
+                                                    <Bar
+                                                        dataKey="total_jobs"
+                                                        fill="var(--color-total_jobs)"
+                                                        radius={5}
+                                                    />
+                                                </BarChart>
+                                            </ChartContainer>
+                                        ) : (
+                                            <p className="py-16 text-center text-sm text-muted-foreground">
+                                                No workflow ranking is available yet.
+                                            </p>
+                                        )}
+                                    </CardContent>
+                                </Card>
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             </DrawerContent>
         </Drawer>
@@ -95,48 +319,61 @@ export function UserAnalyticsDrawer() {
 type StatCardProps = {
     label: string
     value: string
+    helper: string
     icon: React.ReactNode
-    tone?: "blue" | "emerald" | "amber" | "indigo"
 }
 
-function StatCard({ label, value, icon, tone = "blue" }: StatCardProps) {
-    const bgMap = {
-        blue: "from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20",
-        emerald: "from-emerald-50 to-green-50 dark:from-emerald-950/20 dark:to-green-950/20",
-        amber: "from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20",
-        indigo: "from-indigo-50 to-violet-50 dark:from-indigo-950/20 dark:to-violet-950/20",
-    } as const
-
-    const iconBgMap = {
-        blue: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400",
-        emerald: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400",
-        amber: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400",
-        indigo: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400",
-    } as const
-
-    const valueColorMap = {
-        blue: "text-blue-700 dark:text-blue-300",
-        emerald: "text-emerald-700 dark:text-emerald-300",
-        amber: "text-amber-700 dark:text-amber-300",
-        indigo: "text-indigo-700 dark:text-indigo-300",
-    } as const
-
+function StatCard({ label, value, helper, icon }: StatCardProps) {
     return (
-        <Card className="relative overflow-hidden border">
-            <div className={`absolute inset-0 bg-linear-to-br ${bgMap[tone]}`} />
-            <CardHeader className="relative pb-1 flex flex-row items-center justify-between">
-                <CardTitle className="text-[11px] tracking-wide text-muted-foreground font-medium">
-                    {label}
-                </CardTitle>
-                <div className={`h-7 w-7 rounded-md flex items-center justify-center ${iconBgMap[tone]}`}>
+        <Card className="gap-4 py-4">
+            <CardHeader className="grid grid-cols-[1fr_auto] px-4">
+                <CardDescription>{label}</CardDescription>
+                <Badge variant="secondary" className="size-8 p-0">
                     {icon}
-                </div>
+                </Badge>
             </CardHeader>
-            <CardContent className="relative">
-                <div className={`text-2xl font-semibold leading-tight ${valueColorMap[tone]}`}>{value}</div>
+            <CardContent className="flex flex-col gap-1 px-4">
+                <p className="text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
+                <p className="text-xs text-muted-foreground">{helper}</p>
             </CardContent>
         </Card>
     )
+}
+
+function AnalyticsSkeleton() {
+    return (
+        <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }, (_, index) => (
+                    <Skeleton key={index} className="h-32 w-full" />
+                ))}
+            </div>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <Skeleton className="h-96 w-full" />
+                <Skeleton className="h-96 w-full" />
+            </div>
+        </div>
+    )
+}
+
+function divide(numerator = 0, denominator = 0) {
+    return denominator > 0 ? numerator / denominator : 0
+}
+
+function formatDecimal(value: number) {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)
+}
+
+function formatKind(kind: string) {
+    return kind
+        .toLocaleLowerCase()
+        .split("_")
+        .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
+        .join(" ")
+}
+
+function truncateLabel(value: string) {
+    return value.length > 18 ? `${value.slice(0, 17)}…` : value
 }
 
 export default UserAnalyticsDrawer

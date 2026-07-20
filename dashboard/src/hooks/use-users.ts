@@ -5,8 +5,7 @@ import { toast } from "sonner"
 
 import { fetchWithAuth } from "@/lib/api-client"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-const USER_ENDPOINT = `${API_URL}/users`
+const USER_ENDPOINT = `${process.env.NEXT_PUBLIC_API_URL}/users`
 
 type User = {
     email: string
@@ -17,13 +16,6 @@ type User = {
 
 export type UpdateUserDetails = {
     notification_preference: string
-}
-
-export type UserAnalytics = {
-    total_workflows: number;
-    total_jobs: number;
-    total_joblogs: number;
-    total_job_execution_duration: number;
 }
 
 export function useUsers() {
@@ -66,24 +58,6 @@ export function useUsers() {
         toast.error(getUserQuery.error.message)
     }
 
-    const getUserAnalyticsQuery = useQuery<UserAnalytics, Error>({
-        queryKey: ["user-analytics"],
-        queryFn: async () => {
-            const response = await fetchWithAuth(`${API_URL}/analytics`)
-
-            if (!response.ok) {
-                throw new Error("failed to fetch user analytics")
-            }
-
-            return response.json() as Promise<UserAnalytics>
-        },
-        refetchInterval: 60000, // Refetch every minute
-    })
-
-    if (getUserAnalyticsQuery.error instanceof Error) {
-        toast.error(getUserAnalyticsQuery.error.message)
-    }
-
     return {
         user: getUserQuery.data as User,
         isLoading: getUserQuery.isLoading,
@@ -92,10 +66,5 @@ export function useUsers() {
         updateUser: updateUser.mutate,
         isUpdating: updateUser.isPending,
         updateError: updateUser.error,
-        userAnalytics: getUserAnalyticsQuery.data,
-        isAnalyticsLoading: getUserAnalyticsQuery.isLoading,
-        analyticsError: getUserAnalyticsQuery.error,
-        refetchAnalytics: getUserAnalyticsQuery.refetch,
-        isAnalyticsRefetching: getUserAnalyticsQuery.isRefetching,
     }
 }

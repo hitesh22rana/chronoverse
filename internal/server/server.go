@@ -140,8 +140,10 @@ func New(
 	// Common middlewares
 	srv.httpServer.Handler = otelpkg.HTTPHandler(
 		srv.withRequestLoggingMiddleware(
-			srv.withCORSMiddleware(
-				srv.withCompressionMiddleware(router),
+			srv.withSecurityHeadersMiddleware(
+				srv.withCORSMiddleware(
+					srv.withCompressionMiddleware(router),
+				),
 			),
 		),
 		svcpkg.Info().GetName(),

@@ -13,7 +13,7 @@ scripts/k8s/setup.sh --mode production
 
 `production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services and workers, runtime-agent, Docker proxy, migrations, and topic initialization.
 
-The script keeps complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error.
+The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes.
 
 Useful non-interactive options include:
 
@@ -49,7 +49,7 @@ scripts/k8s/setup.sh --mode local
 
 ## Secrets and storage
 
-Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. You can pre-create those Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites complete existing Secrets. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
+Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. You can pre-create those Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites valid, complete existing Secrets. Invalid local server-security Secrets are replaced with safe local values; invalid production server-security Secrets stop setup so the operator can correct them. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
 
 The local strategy uses hostPath PVs for single-node validation. Those PVs use retained node-local paths; delete the kind cluster or clear those paths when you intentionally want an empty local data set. Production uses dynamic PVCs by default; provide `--storage-class <name>` to the setup script or rely on the cluster default StorageClass. Production requires dynamic storage; use the local strategy for single-node hostPath validation.
 

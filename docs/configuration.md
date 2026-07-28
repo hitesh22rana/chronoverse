@@ -83,7 +83,7 @@ scripts/k8s/setup.sh --mode local
 scripts/k8s/setup.sh --mode production
 ```
 
-The setup script preserves complete pre-created Secrets and generates missing
+The setup script preserves valid, complete pre-created Secrets and generates missing
 bootstrap material. Patch public URLs and allowed origins for your deployment
 before exposing the HTTP entrypoint.
 
@@ -399,7 +399,7 @@ deployments that reuse one value for `CRYPTO_SECRET` and
 manager. The production Compose profile requires both variables explicitly.
 
 Kubernetes production deployments may pre-create these Secrets to own their
-credentials and trust material. `scripts/k8s/setup.sh` preserves complete
+credentials and trust material. `scripts/k8s/setup.sh` preserves valid, complete
 operator-provided Secrets and generates missing bootstrap material; it rejects
 partial Secrets, insecure server secret placeholders, reused server secrets,
 and partial internal TLS trust chains:

@@ -186,11 +186,14 @@ expected operating conditions.
 - The Kubernetes local overlay generates development certificates into a local
   certificate PVC. Production mounts Kubernetes Secrets for auth keys, CA
   material, client TLS, service TLS, infrastructure TLS, Kafka stores, and
-  datastore credentials. The setup script preserves complete operator-provided
+  datastore credentials. The setup script preserves valid, complete operator-provided
   Secrets and can generate a missing fallback set; partial internal TLS trust
   chains are rejected.
 - PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC services run with
   TLS or mTLS in compose.
-- The HTTP server uses encrypted session cookies, CSRF cookies, and service JWT
-  metadata for downstream gRPC calls.
+- The HTTP server uses encrypted session cookies, constant-time CSRF HMAC
+  verification, browser security response headers, and service JWT metadata for
+  downstream gRPC calls.
+- Production startup rejects the known development secret placeholder and
+  rejects reuse of one value for encryption and CSRF signing.
 - Services and workers export OpenTelemetry data to `lgtm:4317`.

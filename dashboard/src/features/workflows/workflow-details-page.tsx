@@ -327,14 +327,14 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                 >
                     <TabsTrigger
                         value="details"
-                        className="cursor-pointer flex items-center justify-center gap-2 p-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all"
+                        className="cursor-pointer flex items-center justify-center gap-2 p-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-[color,background-color,border-color,box-shadow]"
                     >
                         <ScrollText className="h-4 w-4" />
                         <span>Details</span>
                     </TabsTrigger>
                     <TabsTrigger
                         value="jobs"
-                        className="cursor-pointer flex items-center justify-center gap-2 p-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all"
+                        className="cursor-pointer flex items-center justify-center gap-2 p-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-[color,background-color,border-color,box-shadow]"
                     >
                         <Activity className="h-4 w-4" />
                         <span>Jobs</span>

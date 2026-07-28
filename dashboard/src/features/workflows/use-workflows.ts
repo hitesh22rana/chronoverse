@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { createIdempotencyKey, fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
+import { queryRefetchIntervals, queryStaleTimes } from "@/lib/api/query-policy"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { CreateWorkflowPayload, WorkflowsResponse } from "@/features/workflows/types"
 
@@ -103,10 +104,13 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
                     workflow.build_status === "QUEUED" || workflow.build_status === "STARTED"
                 )
 
-                return hasBuildInProgress ? 5000 : 60000
+                return hasBuildInProgress
+                    ? queryRefetchIntervals.activeWorkflowBuild
+                    : queryRefetchIntervals.idleWorkflowList
             }
             : false,
         refetchIntervalInBackground: false,
+        staleTime: queryStaleTimes.workflowList,
     })
 
     const goToNextPage = () => {

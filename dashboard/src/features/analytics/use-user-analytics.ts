@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints } from "@/lib/api/endpoints"
+import { queryStaleTimes } from "@/lib/api/query-policy"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { UserAnalytics } from "@/features/analytics/types"
 import {
@@ -21,7 +22,7 @@ export function useUserAnalytics(enabled: boolean) {
             ),
         ),
         enabled,
-        staleTime: 5 * 60 * 1000,
+        staleTime: queryStaleTimes.analytics,
         refetchOnWindowFocus: false,
     })
 }

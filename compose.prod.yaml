@@ -1480,6 +1480,8 @@ services:
     image: ghcr.io/hitesh22rana/chronoverse/server:latest
     container_name: server
     environment:
+      CRYPTO_SECRET: "${CRYPTO_SECRET:?set CRYPTO_SECRET to a persistent random 32-byte value}"
+      SERVER_CSRF_HMAC_SECRET: "${SERVER_CSRF_HMAC_SECRET:?set SERVER_CSRF_HMAC_SECRET to a different persistent random value}"
       SERVER_HOST: 0.0.0.0
       SERVER_ALLOWED_ORIGINS: "http://0.0.0.0:80,"
       REDIS_HOST: redis

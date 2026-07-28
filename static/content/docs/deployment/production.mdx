@@ -3,8 +3,12 @@
 ## Start
 
 ```bash
+export CRYPTO_SECRET="$(openssl rand -hex 16)"
+export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 docker compose -f compose.prod.yaml up -d
 ```
+
+Persist these two distinct values in your secret manager and reuse them across server restarts. Production startup rejects the known development placeholder and reused server secrets.
 
 For Kubernetes, use the setup script. It preserves complete pre-created Secrets and generates missing bootstrap material:
 

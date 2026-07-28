@@ -9,9 +9,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// bytes are random bytes.
-var bytes = []byte{35, 46, 57, 24, 85, 35, 24, 74, 87, 35, 88, 98, 66, 32, 14, 0o5}
-
 // Crypto is responsible for encrypting and decrypting data.
 type Crypto struct {
 	secret string
@@ -36,7 +33,7 @@ func (c *Crypto) encode(data []byte) string {
 func (c *Crypto) decode(s string) ([]byte, error) {
 	data, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to decode data: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "failed to decode data: %v", err)
 	}
 
 	return data, nil
@@ -49,10 +46,13 @@ func (c *Crypto) Encrypt(data string) (string, error) {
 		return "", status.Errorf(codes.Internal, "failed to create new cipher: %v", err)
 	}
 
-	plainText := []byte(data)
-	stream := cipher.NewCTR(block, bytes)
-	cipherText := make([]byte, len(plainText))
-	stream.XORKeyStream(cipherText, plainText)
+	aead, err := cipher.NewGCMWithRandomNonce(block)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)
+	}
+
+	// Seal authenticates the ciphertext and prepends a random nonce.
+	cipherText := aead.Seal(nil, nil, []byte(data), nil)
 	return c.encode(cipherText), nil
 }
 
@@ -63,13 +63,24 @@ func (c *Crypto) Decrypt(data string) (string, error) {
 		return "", status.Errorf(codes.Internal, "failed to create new cipher: %v", err)
 	}
 
-	cipherText, err := c.decode(data)
+	aead, err := cipher.NewGCMWithRandomNonce(block)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)
+	}
+
+	decodedBytes, err := c.decode(data)
 	if err != nil {
 		return "", err
 	}
 
-	plainText := make([]byte, len(cipherText))
-	cfb := cipher.NewCTR(block, bytes)
-	cfb.XORKeyStream(plainText, cipherText)
+	if len(decodedBytes) < aead.Overhead() {
+		return "", status.Error(codes.InvalidArgument, "ciphertext is too short")
+	}
+
+	plainText, err := aead.Open(nil, nil, decodedBytes, nil)
+	if err != nil {
+		return "", status.Error(codes.InvalidArgument, "failed to authenticate ciphertext")
+	}
+
 	return string(plainText), nil
 }

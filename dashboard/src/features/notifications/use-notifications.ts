@@ -7,6 +7,7 @@ import { useUsers } from "@/features/users/use-users"
 
 import { fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
+import { queryRefetchIntervals } from "@/lib/api/query-policy"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { NotificationsResponse } from "@/features/notifications/types"
 import {
@@ -39,7 +40,7 @@ export function useNotifications({ poll = false }: UseNotificationsOptions = {})
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
-        refetchInterval: poll ? 60000 : false,
+        refetchInterval: poll ? queryRefetchIntervals.notifications : false,
         refetchIntervalInBackground: false,
         enabled: canReceiveNotifications(user),
     })

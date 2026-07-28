@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { createIdempotencyKey, fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
+import { queryRefetchIntervals, queryStaleTimes } from "@/lib/api/query-policy"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { JobsResponse } from "@/features/jobs/types"
 
@@ -70,7 +71,8 @@ export function useWorkflowJobs(
             "Failed to fetch workflow jobs",
         ),
         enabled: enabled && !!workflowId,
-        refetchInterval: 10000, // Refetch every 10 seconds
+        refetchInterval: queryRefetchIntervals.workflowJobs,
+        staleTime: queryStaleTimes.workflowJobs,
     })
 
     // Pagination functions

@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints } from "@/lib/api/endpoints"
+import { queryStaleTimes } from "@/lib/api/query-policy"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { UpdateUserDetails, User } from "@/features/users/types"
 
@@ -12,6 +13,7 @@ export function useUsers() {
     const getUserQuery = useQuery<User, Error>({
         queryKey: queryKeys.user,
         queryFn: () => fetchApiJson<User>(apiEndpoints.users, "failed to fetch user"),
+        staleTime: queryStaleTimes.user,
     })
 
     const updateUser = useMutation({

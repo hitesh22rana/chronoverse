@@ -67,7 +67,7 @@ export function TableOfContents({ headings }: { headings: DocHeading[] }) {
       { rootMargin: "-96px 0px -68% 0px", threshold: [0, 1] },
     );
 
-    elements.forEach((element) => observer.observe(element));
+    for (const element of elements) observer.observe(element);
     window.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
     window.addEventListener("hashchange", syncFromHash);

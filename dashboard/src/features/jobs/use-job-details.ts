@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints } from "@/lib/api/endpoints"
+import { queryRefetchIntervals, queryStaleTimes } from "@/lib/api/query-policy"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { Job } from "@/features/jobs/types"
 
@@ -19,8 +20,11 @@ export function useJobDetails(workflowId: string, jobId: string) {
         ),
         refetchInterval: (query) => {
             const status = query.state.data?.status
-            return status && refetchableJobStatus.includes(status) ? 5000 : false
+            return status && refetchableJobStatus.includes(status)
+                ? queryRefetchIntervals.activeJob
+                : false
         },
+        staleTime: queryStaleTimes.jobDetails,
     })
 
     if (getJobDetailsQuery.error instanceof Error) {

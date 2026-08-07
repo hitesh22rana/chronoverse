@@ -59,6 +59,9 @@ func validateServerSecrets(cfg *ServerConfig) error {
 	if cfg.Secret == insecureDefaultSecret {
 		return errors.New("CRYPTO_SECRET must not use the insecure development default in production")
 	}
+	if cfg.CSRFHMACSecret == "" {
+		return errors.New("SERVER_CSRF_HMAC_SECRET must not be empty in production")
+	}
 	if cfg.CSRFHMACSecret == insecureDefaultSecret {
 		return errors.New("SERVER_CSRF_HMAC_SECRET must not use the insecure development default in production")
 	}

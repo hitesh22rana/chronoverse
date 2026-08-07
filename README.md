@@ -122,8 +122,8 @@ docker compose -f compose.prod.yaml up -d
 ```
 
 Persist these two distinct values in your secret manager and reuse them across
-server restarts. Production startup rejects the known development placeholder
-and rejects reuse of one value for both purposes.
+server restarts. Production startup rejects empty values, the known development
+placeholder, and reuse of one value for both purposes.
 
 Production uses published images, internal service networking, resource limits,
 replicated workers, and a single Nginx entry point:

@@ -40,6 +40,13 @@ func TestValidateServerSecrets(t *testing.T) {
 			wantErr:     true,
 		},
 		{
+			name:        "production csrf secret is empty",
+			environment: productionEnvironment,
+			crypto:      "0123456789abcdef0123456789abcdef",
+			csrf:        "",
+			wantErr:     true,
+		},
+		{
 			name:        "production secrets are reused",
 			environment: productionEnvironment,
 			crypto:      "0123456789abcdef0123456789abcdef",

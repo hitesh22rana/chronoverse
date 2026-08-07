@@ -4,7 +4,7 @@
 
 `init-certs` generates a local CA, server certificates, client certificates, Kafka keystore and truststore material, and Ed25519 authentication keys in the shared certificate volume.
 
-The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves complete operator-provided Secrets.
+The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves valid, complete operator-provided Secrets.
 
 ## Encrypted infrastructure
 
@@ -16,7 +16,9 @@ The HTTP gateway signs downstream authorization metadata. gRPC services validate
 
 ## Browser security
 
-Sessions are stored in encrypted cookies. Mutating browser requests require CSRF validation. CORS origins and same-site behavior are configurable.
+Sessions are stored in encrypted cookies. Mutating browser requests require CSRF validation, and token HMACs are compared in constant time. CORS origins and same-site behavior are configurable.
+
+The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and an API-only Content Security Policy that disables resource loading and framing.
 
 ## Docker access
 
@@ -24,9 +26,9 @@ Execution components use a socket proxy with a narrow API surface instead of bro
 
 ## Production secrets
 
-Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation.
+Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be persistent, distinct values; production startup rejects the known development placeholder and reuse of one value for both purposes.
 
-For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, `postgres-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. Internal TLS trust-chain Secrets are treated as one atomic set; partial internal TLS material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
+For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, `postgres-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. The setup script validates complete pre-created server-security Secrets before preserving them. Internal TLS trust-chain Secrets are treated as one atomic set; partial internal TLS material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
 
 <Callout title="Do not expose development ports" type="warning">
 The development profile publishes databases and gRPC services for debugging. That topology is not the production security boundary.

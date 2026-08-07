@@ -2,7 +2,11 @@ package config
 
 import "time"
 
-const envPrefix = ""
+const (
+	envPrefix             = ""
+	productionEnvironment = "production"
+	insecureDefaultSecret = "a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?" //nolint:gosec // This known placeholder is explicitly rejected in production.
+)
 
 // Environment holds the environment configuration.
 type Environment struct {

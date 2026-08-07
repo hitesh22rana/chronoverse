@@ -2,7 +2,7 @@
 
 ## HTTP gateway
 
-The `server` process owns public HTTP concerns: method routing, request limits, CORS, compression, session validation, CSRF validation, idempotency headers, error mapping, and propagation of authorization metadata to gRPC.
+The `server` process owns public HTTP concerns: method routing, request limits, CORS, compression, browser security response headers, session validation, constant-time CSRF HMAC verification, idempotency headers, error mapping, and propagation of authorization metadata to gRPC.
 
 ## Users service
 
@@ -27,4 +27,3 @@ Reads user and workflow aggregates maintained by the analytics processor.
 ## Authorization boundary
 
 The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Internal services validate the authorization context rather than trusting arbitrary callers on the network.
-

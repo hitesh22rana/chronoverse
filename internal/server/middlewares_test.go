@@ -47,6 +47,37 @@ func TestCORSMiddlewareAllowsIdempotencyKeyHeader(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersMiddleware(t *testing.T) {
+	s := &Server{}
+	handlerCalled := false
+	handler := s.withSecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		handlerCalled = true
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/health", http.NoBody))
+
+	if !handlerCalled {
+		t.Fatal("expected security headers middleware to call the next handler")
+	}
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, res.Code)
+	}
+
+	expectedHeaders := map[string]string{
+		"Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+		"Referrer-Policy":         "no-referrer",
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
+	}
+	for name, expected := range expectedHeaders {
+		if actual := res.Header().Get(name); actual != expected {
+			t.Errorf("expected %s header %q, got %q", name, expected, actual)
+		}
+	}
+}
+
 func TestOtelMiddlewareLogsTraceIdentifiers(t *testing.T) {
 	core, logs := observer.New(zapcore.InfoLevel)
 	tracerProvider := sdktrace.NewTracerProvider(

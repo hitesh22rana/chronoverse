@@ -90,13 +90,20 @@ scripts/k8s/setup.sh --mode local
 
 ## Secrets
 
-The setup script checks required Secrets before applying manifests. Complete
+The setup script checks required Secrets before applying manifests. Valid, complete
 operator-provided Secrets are preserved and never overwritten. Missing Secrets
 are generated and created. Partial Secrets fail with a clear missing-key error.
 Local generated data-store credentials are deterministic development defaults
 so retained hostPath data can survive a resource delete/recreate without
 drifting away from regenerated Secrets. Production generated fallback
 credentials remain random.
+
+For `chronoverse-server-security`, the setup script additionally rejects the
+known development placeholder, rejects reuse of one value for
+`CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires
+`CRYPTO_SECRET` to be exactly 32 bytes. An invalid local Secret is replaced with
+the safe local values; an invalid production Secret stops setup so the operator
+can correct it.
 
 Production Secrets include:
 

@@ -9,6 +9,7 @@ DRY_RUN=false
 SKIP_APPLY=false
 CREATE_KIND=false
 STORAGE_CLASS=""
+INSECURE_DEFAULT_SECRET='a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?'
 
 usage() {
   cat <<'EOF'
@@ -225,6 +226,15 @@ secret_decoded_length() {
   printf '%s' "$encoded" | openssl base64 -d -A | wc -c | tr -d ' '
 }
 
+secret_decoded_value() {
+  local name="$1"
+  local key="$2"
+  local encoded
+  encoded="$(kubectl_cmd -n "$NAMESPACE" get secret "$name" -o "go-template={{ index .data \"$key\" }}" 2>/dev/null || true)"
+  [ -n "$encoded" ] || return
+  printf '%s' "$encoded" | openssl base64 -d -A
+}
+
 apply_secret_yaml() {
   local yaml="$1"
   if [ "$DRY_RUN" = true ]; then
@@ -305,18 +315,30 @@ create_server_security_secret() {
   if secret_exists "$secret_name"; then
     validate_secret_complete "$secret_name"
 
-    local crypto_len
+    local crypto_len existing_crypto_secret existing_csrf_secret invalid_reason
     crypto_len="$(secret_decoded_length "$secret_name" CRYPTO_SECRET)"
-    if [ "$crypto_len" = "32" ]; then
+    existing_crypto_secret="$(secret_decoded_value "$secret_name" CRYPTO_SECRET)"
+    existing_csrf_secret="$(secret_decoded_value "$secret_name" SERVER_CSRF_HMAC_SECRET)"
+    invalid_reason=""
+
+    if [ "$existing_crypto_secret" = "$INSECURE_DEFAULT_SECRET" ] || [ "$existing_csrf_secret" = "$INSECURE_DEFAULT_SECRET" ]; then
+      invalid_reason="it contains the known insecure development placeholder"
+    elif [ "$existing_crypto_secret" = "$existing_csrf_secret" ]; then
+      invalid_reason="CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET must be different"
+    elif [ "$crypto_len" != "32" ]; then
+      invalid_reason="CRYPTO_SECRET is $crypto_len bytes; expected 32"
+    fi
+
+    if [ -z "$invalid_reason" ]; then
       info "Keeping existing complete secret $secret_name"
       return
     fi
 
     if [ "$MODE" != "local" ]; then
-      die "secret $secret_name has CRYPTO_SECRET length $crypto_len bytes; it must be exactly 32 bytes"
+      die "secret $secret_name is invalid: $invalid_reason"
     fi
 
-    info "Replacing invalid local secret $secret_name because CRYPTO_SECRET is $crypto_len bytes; expected 32"
+    info "Replacing invalid local secret $secret_name because $invalid_reason"
     if [ "$DRY_RUN" = true ]; then
       local yaml
       yaml="$(kubectl_cmd -n "$NAMESPACE" create secret generic "$secret_name" \

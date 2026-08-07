@@ -83,7 +83,7 @@ scripts/k8s/setup.sh --mode local
 scripts/k8s/setup.sh --mode production
 ```
 
-The setup script preserves complete pre-created Secrets and generates missing
+The setup script preserves valid, complete pre-created Secrets and generates missing
 bootstrap material. Patch public URLs and allowed origins for your deployment
 before exposing the HTTP entrypoint.
 
@@ -393,10 +393,16 @@ production environments should manage:
 - Database passwords and `MEILISEARCH_MASTER_KEY`.
 - Public hostnames, allowed origins, and same-site cookie policy.
 
+Production startup rejects an empty CSRF HMAC secret, the known development
+placeholder, and deployments that reuse one value for `CRYPTO_SECRET` and
+`SERVER_CSRF_HMAC_SECRET`. Persist distinct random values in your secret
+manager. The production Compose profile requires both variables explicitly.
+
 Kubernetes production deployments may pre-create these Secrets to own their
-credentials and trust material. `scripts/k8s/setup.sh` preserves complete
+credentials and trust material. `scripts/k8s/setup.sh` preserves valid, complete
 operator-provided Secrets and generates missing bootstrap material; it rejects
-partial Secrets and partial internal TLS trust chains:
+partial Secrets, insecure server secret placeholders, reused server secrets,
+and partial internal TLS trust chains:
 
 - `postgres-secret`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 - `clickhouse-secret`: `CLICKHOUSE_PASSWORD`

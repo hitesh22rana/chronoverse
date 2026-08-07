@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
@@ -44,5 +45,29 @@ func InitServerConfig() (*ServerConfig, error) {
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
 		return nil, err
 	}
+	if err := validateServerSecrets(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+func validateServerSecrets(cfg *ServerConfig) error {
+	if cfg.Env != productionEnvironment {
+		return nil
+	}
+
+	if cfg.Secret == insecureDefaultSecret {
+		return errors.New("CRYPTO_SECRET must not use the insecure development default in production")
+	}
+	if cfg.CSRFHMACSecret == "" {
+		return errors.New("SERVER_CSRF_HMAC_SECRET must not be empty in production")
+	}
+	if cfg.CSRFHMACSecret == insecureDefaultSecret {
+		return errors.New("SERVER_CSRF_HMAC_SECRET must not use the insecure development default in production")
+	}
+	if cfg.Secret == cfg.CSRFHMACSecret {
+		return errors.New("CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET must be different in production")
+	}
+
+	return nil
 }

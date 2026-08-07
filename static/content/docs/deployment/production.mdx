@@ -3,10 +3,14 @@
 ## Start
 
 ```bash
+export CRYPTO_SECRET="$(openssl rand -hex 16)"
+export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 docker compose -f compose.prod.yaml up -d
 ```
 
-For Kubernetes, use the setup script. It preserves complete pre-created Secrets and generates missing bootstrap material:
+Persist these two distinct values in your secret manager and reuse them across server restarts. Production startup rejects empty values, the known development placeholder, and reused server secrets.
+
+For Kubernetes, use the setup script. It preserves valid, complete pre-created Secrets and generates missing bootstrap material:
 
 ```bash
 scripts/k8s/setup.sh --mode production
@@ -45,7 +49,7 @@ The production profile declares replicated workers and resource reservations. Ef
 
 - Replace database and Meilisearch credentials.
 - Manage certificates and private keys with environment-specific controls.
-- Pre-create Kubernetes Secrets when you need operator-owned credentials or certificates; otherwise the setup script generates missing bootstrap material and never overwrites complete existing Secrets.
+- Pre-create Kubernetes Secrets when you need operator-owned credentials or certificates; otherwise the setup script generates missing bootstrap material and never overwrites valid, complete existing Secrets.
 - Configure the public host URL, allowed origins, secure cookies, and same-site policy.
 - Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
 - Restrict access to the LGTM dashboard.

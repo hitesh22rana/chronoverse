@@ -116,8 +116,14 @@ Development defaults expose internal ports for debugging:
 ### Production Stack
 
 ```sh
+export CRYPTO_SECRET="$(openssl rand -hex 16)"
+export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 docker compose -f compose.prod.yaml up -d
 ```
+
+Persist these two distinct values in your secret manager and reuse them across
+server restarts. Production startup rejects empty values, the known development
+placeholder, and reuse of one value for both purposes.
 
 Production uses published images, internal service networking, resource limits,
 replicated workers, and a single Nginx entry point:
@@ -148,9 +154,9 @@ The local strategy is a single-node, self-contained Kubernetes setup for
 validation with kind/minikube-style clusters. The production strategy is the
 self-hosted Chronoverse stack on your Kubernetes infrastructure: services,
 workers, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, and
-storage all run under your cluster. The setup script preserves complete
-operator-provided Secrets, rejects partial production TLS trust chains, and
-generates missing bootstrap material. See
+storage all run under your cluster. The setup script preserves valid, complete
+operator-provided Secrets, rejects partial production TLS trust chains and
+insecure or reused server secrets, and generates missing bootstrap material. See
 [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md),
 and [operations](./docs/operations.md).
 

@@ -48,7 +48,7 @@ func verifyCSRFToken(csrfToken, session, secret string, maxAge time.Duration) er
 		return err
 	}
 
-	if sha != expectedSHA {
+	if !hmac.Equal([]byte(sha), []byte(expectedSHA)) {
 		return status.Error(codes.InvalidArgument, "invalid csrf token")
 	}
 

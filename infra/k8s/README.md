@@ -62,6 +62,19 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
+## gRPC Service Discovery
+
+The users, workflows, jobs, notifications, and analytics Services are headless.
+Kubernetes DNS publishes their ready Pod IPs instead of one virtual ClusterIP,
+allowing the gRPC clients' `round_robin` policy to balance calls across the
+resolved replicas. The public HTTP server and dashboard continue to use normal
+ClusterIP Services.
+
+Headless discovery makes the current replicas visible to gRPC. A healthy,
+long-lived gRPC-Go channel may not immediately re-resolve DNS solely because an
+HPA added a replica, so proactive endpoint refresh remains a separate scaling
+improvement.
+
 ## Cluster Prerequisites
 
 Kubernetes does not include a generic `kubectl` command to create a cluster.

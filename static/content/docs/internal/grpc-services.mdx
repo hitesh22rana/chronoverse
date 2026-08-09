@@ -27,3 +27,8 @@ User and workflow aggregate reads.
 ## Transport security
 
 Compose configures service certificates, client certificates, CA trust, and signed authorization metadata. Direct host exposure of development ports is for debugging, not a substitute for authenticated service calls.
+
+In Kubernetes, these five services use headless Service discovery. DNS returns
+ready Pod IPs to the gRPC clients, whose `round_robin` policy distributes calls
+across the resolved replicas instead of multiplexing every call through one
+ClusterIP connection.

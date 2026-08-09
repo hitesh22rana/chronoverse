@@ -57,6 +57,27 @@ The local strategy uses hostPath PVs for single-node validation. Those PVs use r
 
 The local strategy runs one replica per app deployment. The production strategy includes CPU/memory HorizontalPodAutoscalers for app services and background workers. Install metrics-server or provide equivalent `autoscaling/v2` resource metrics before relying on HPAs.
 
+The five domain gRPC Services are headless. Their DNS records publish ready Pod
+IPs so the gRPC clients' `round_robin` policy can balance calls across resolved
+replicas; the HTTP server and dashboard retain normal ClusterIP Services. A
+healthy, long-lived gRPC-Go channel may not immediately re-resolve DNS solely
+because an HPA added a replica, so proactive endpoint refresh is a separate
+scaling concern.
+
+`clusterIP` is immutable. Before applying this version to a cluster created
+from older manifests, recreate only the five gRPC Service objects and then
+reapply the selected overlay:
+
+```bash
+kubectl -n chronoverse delete service \
+  users-service workflows-service jobs-service \
+  notifications-service analytics-service
+scripts/k8s/setup.sh --mode production
+```
+
+The Deployments and Pods are not deleted, but gRPC service discovery is briefly
+unavailable while the Service objects are recreated.
+
 Kafka-lag-driven worker scaling is not built into the Kustomize overlay. Use KEDA or a custom metrics adapter when worker count should follow topic lag.
 
 ## Startup behavior

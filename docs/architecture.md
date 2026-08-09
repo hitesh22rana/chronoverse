@@ -41,8 +41,10 @@ backups, and production sizing.
 
 These services expose gRPC ports `50051` through `50055` inside the stack. The
 development compose file also exposes those ports on the host for direct
-debugging. Kubernetes services expose the same ports inside the `chronoverse`
-namespace.
+debugging. Kubernetes exposes the five domain services through headless Services
+inside the `chronoverse` namespace. Their DNS records return ready Pod IPs so
+the gRPC clients' `round_robin` policy can balance calls across resolved
+replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 
 ### Workers
 

@@ -62,6 +62,34 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
+## gRPC Service Discovery
+
+The users, workflows, jobs, notifications, and analytics Services are headless.
+Kubernetes DNS publishes their ready Pod IPs instead of one virtual ClusterIP,
+allowing the gRPC clients' `round_robin` policy to balance calls across the
+resolved replicas. The public HTTP server and dashboard continue to use normal
+ClusterIP Services.
+
+Changing an existing Service from an allocated ClusterIP to `clusterIP: None`
+updates an immutable field. When upgrading a cluster created from an older
+manifest, schedule a short discovery interruption, delete only the five gRPC
+Service objects, and reapply the overlay:
+
+```sh
+kubectl -n chronoverse delete service \
+  users-service workflows-service jobs-service \
+  notifications-service analytics-service
+scripts/k8s/setup.sh --mode production
+```
+
+Deleting these Service objects does not delete their Deployments or Pods. Do
+not delete the `server`, `dashboard`, or data-store Services for this migration.
+
+Headless discovery makes the current replicas visible to gRPC. A healthy,
+long-lived gRPC-Go channel may not immediately re-resolve DNS solely because an
+HPA added a replica, so proactive endpoint refresh remains a separate scaling
+improvement.
+
 ## Cluster Prerequisites
 
 Kubernetes does not include a generic `kubectl` command to create a cluster.

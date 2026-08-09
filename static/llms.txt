@@ -1,0 +1,49 @@
+# Chronoverse
+
+> Chronoverse is a self-hosted distributed scheduler and orchestrator for teams running interval-triggered or manual HEARTBEAT and Docker CONTAINER workflows, built with Go HTTP/gRPC services, Kafka workers, PostgreSQL, Redis, ClickHouse, Meilisearch, Docker, React/Next.js, and OpenTelemetry.
+
+Chronoverse expects at-least-once delivery and partial failures. It relies on idempotency keys, transactional outbox publication, workflow generations, deterministic event IDs, stale-event guards, durable leases, and partition-aware Kafka commits rather than globally exactly-once execution.
+
+The HTTP API uses cookie sessions and CSRF validation; retry-prone workflow mutations require an `Idempotency-Key`. HEARTBEAT workflows have no logs. Retention-disabled reads return `412 Precondition Failed`, while SSE uses error frames after streaming starts.
+
+Container ownership pairs the container ID with its assigned runtime node and persisted Docker endpoint; workers preserve this locality for execution, logs, cleanup, and recovery.
+
+Canonical documentation sources are MDX files in `static/content/docs` and the OpenAPI document in `static/content/openapi.yaml`. They are published at https://hitesh22rana.github.io/chronoverse/ from https://github.com/hitesh22rana/chronoverse.
+
+## Onboarding
+
+- [Introduction](./content/docs/introduction.mdx): Supported HEARTBEAT and CONTAINER workloads, platform capabilities, runtime shape, and failure-recovery guarantees.
+- [Quickstart](./content/docs/quickstart.mdx): Docker Compose prerequisites, startup commands, readiness checks, local endpoints, and shutdown.
+- [Installation](./content/docs/installation.mdx): Docker runtime requirements, Go and Node developer toolchains, generated dependencies, and production preparation.
+- [Your first workflow](./content/docs/getting-started/first-workflow.mdx): Session authentication, container workflow creation, build polling, manual execution, and log inspection.
+
+## Architecture
+
+- [Workflows](./content/docs/concepts/workflows.mdx): Definitions, generations, builds, and lifecycle rules.
+- [Jobs](./content/docs/concepts/jobs.mdx): Scheduled execution attempts and state transitions.
+- [Architecture](./content/docs/engineering/architecture.mdx): HTTP and gRPC domain boundaries, Kafka workers, persistence systems, runtime-node ownership, and Docker execution locality.
+- [Replay safety](./content/docs/engineering/replay-safety.mdx): Idempotency, outbox publication, stale-event rejection, deterministic side effects, durable leases, and ordered Kafka commits.
+- [Transactional outbox](./content/docs/engineering/transactional-outbox.mdx): Atomic state changes and durable event publication.
+- [Durable job leases](./content/docs/engineering/job-leases.mdx): Execution ownership, renewal, and recovery.
+- [Kafka processing](./content/docs/engineering/kafka-processing.mdx): Partition ordering, retries, and commit policy.
+- [Logging and search pipeline](./content/docs/engineering/logging-search-pipeline.mdx): Live Redis/SSE output and replay-safe retained-log ingestion through Kafka, ClickHouse, and Meilisearch.
+
+## Getting Started
+
+- [Log streaming and search](./content/docs/features/log-streaming.mdx): SSE, retained logs, highlights, filters, and downloads.
+- [API overview](./content/docs/api/overview.mdx): Public API base paths, cookie sessions, JSON behavior, idempotent mutations, and the OpenAPI reference.
+- [CSRF and idempotency](./content/docs/api/request-safety.mdx): CSRF checks, Idempotency-Key rules, atomic mutation records, and conflict behavior for retrying clients.
+- [Endpoint reference](./content/docs/api/reference.mdx): OpenAPI-generated public HTTP endpoint reference.
+- [Kubernetes](./content/docs/deployment/kubernetes.mdx): Local and production Kustomize overlays, prerequisites, secrets, storage, scaling, runtime agents, and validation commands.
+- [Configuration reference](./content/docs/deployment/configuration.mdx): Environment variables by service and worker.
+- [Certificates and security](./content/docs/deployment/security.mdx): Certificate bootstrap, infrastructure TLS, gRPC authorization, browser protections, Docker access, and production secrets.
+
+## Deep Dive
+
+- [Observability](./content/docs/operations/observability.mdx): OpenTelemetry traces, metrics, and structured logs, including PromQL examples and an investigation sequence.
+- [Retries and recovery](./content/docs/operations/recovery.mdx): Outbox retries, lease recovery, and stale event handling.
+
+## Optional
+
+- [Repository layout](./content/docs/contributing/repository-layout.mdx): Where runtime, deployment, contracts, frontends, and documentation live.
+- [Development workflow](./content/docs/contributing/development.mdx): Generate, lint, test, build, validate deployment, and release changes.

@@ -125,6 +125,31 @@ jobs:
       - name: Build
         run: npm run build
 
+  static-site:
+    name: Static site checks
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: static
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26.x"
+          cache: npm
+          cache-dependency-path: static/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run checks
+        run: npm run check
+
   release-users-service:
     name: Release Users Service
     needs: [lint, build, proto-generated, test]

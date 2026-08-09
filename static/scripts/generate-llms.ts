@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
 import { docsConfig, type DocPage } from "../docs.config";
+import { OPENAPI_HTTP_METHODS } from "../src/lib/openapi";
 
 type Section = {
   title: string;
@@ -134,7 +135,7 @@ type OpenApiDocument = {
 function readOpenApi() {
   const source = fs.readFileSync(path.join(staticRoot, "content/openapi.yaml"), "utf8").trim();
   const document = parse(source) as OpenApiDocument;
-  const methods = new Set(["get", "post", "put", "patch", "delete"]);
+  const methods = new Set<string>(OPENAPI_HTTP_METHODS);
   const operationIds = Object.values(document.paths ?? {}).flatMap((pathItem) =>
     Object.entries(pathItem)
       .filter(([method]) => methods.has(method))

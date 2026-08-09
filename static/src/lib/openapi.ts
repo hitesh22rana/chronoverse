@@ -85,7 +85,8 @@ type OpenApiDocument = {
   };
 };
 
-const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
+export const OPENAPI_HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"] as const;
+const HTTP_METHODS = new Set<string>(OPENAPI_HTTP_METHODS);
 
 export function getOpenApiPath() {
   return path.join(process.cwd(), "content/openapi.yaml");

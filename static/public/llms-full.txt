@@ -40,7 +40,17 @@ Duplicate events, worker restarts, partial publication, stale workflow builds, a
 
 ## System shape
 
-<ArchitectureMap />
+**Architecture flow:** HTTP gateway → gRPC domains → Kafka workers → Runtime data plane → infrastructure
+
+| Stage | Components and responsibilities |
+| --- | --- |
+| HTTP gateway | `Sessions`, `CSRF`, `REST`, `SSE` |
+| gRPC domains | `users`, `workflows`, `jobs`, `notifications`, `analytics` |
+| Kafka workers | `scheduler`, `workflow`, `execution`, `job logs`, `analytics`, `outbox` |
+| Runtime data plane | `runtime-agent`, `Docker proxy`, `runtime_nodes` |
+| infrastructure | `PostgreSQL`, `ClickHouse`, `Redis`, `Kafka`, `Meilisearch`, `LGTM` |
+
+*Synchronous domain ownership with asynchronous, replay-safe orchestration.*
 
 ## Where to go next
 
@@ -387,7 +397,17 @@ Chronoverse separates synchronous domain ownership from asynchronous orchestrati
 
 ## Runtime topology
 
-<ArchitectureMap />
+**Architecture flow:** HTTP gateway → gRPC domains → Kafka workers → Runtime data plane → infrastructure
+
+| Stage | Components and responsibilities |
+| --- | --- |
+| HTTP gateway | `Sessions`, `CSRF`, `REST`, `SSE` |
+| gRPC domains | `users`, `workflows`, `jobs`, `notifications`, `analytics` |
+| Kafka workers | `scheduler`, `workflow`, `execution`, `job logs`, `analytics`, `outbox` |
+| Runtime data plane | `runtime-agent`, `Docker proxy`, `runtime_nodes` |
+| infrastructure | `PostgreSQL`, `ClickHouse`, `Redis`, `Kafka`, `Meilisearch`, `LGTM` |
+
+*Synchronous domain ownership with asynchronous, replay-safe orchestration.*
 
 The production entry point is Nginx. It serves the dashboard, proxies `/api/...` to the HTTP server, and disables response buffering for live job log routes.
 

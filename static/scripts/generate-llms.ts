@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
 import { docsConfig, type DocPage } from "../docs.config";
+import { architectureMapContent } from "../src/lib/architecture";
 import { OPENAPI_HTTP_METHODS } from "../src/lib/openapi";
 
 type Section = {
@@ -114,6 +115,26 @@ function rewritePublishedLinks(markdown: string) {
     .replace(/href=(["'])\/docs(?=\/|["'])/g, "href=$1./docs");
 }
 
+function renderArchitectureMap() {
+  const flow = architectureMapContent.stages.map((stage) => stage.label).join(" → ");
+  const rows = architectureMapContent.stages.map(
+    (stage) => `| ${stage.label} | ${stage.items.map((item) => `\`${item}\``).join(", ")} |`,
+  );
+  return [
+    `**Architecture flow:** ${flow}`,
+    "",
+    "| Stage | Components and responsibilities |",
+    "| --- | --- |",
+    ...rows,
+    "",
+    `*${architectureMapContent.caption}*`,
+  ].join("\n");
+}
+
+function expandPublishedComponents(markdown: string) {
+  return markdown.replace(/<ArchitectureMap\s*\/>/g, renderArchitectureMap());
+}
+
 function renderCompact(linkForPage: (page: DocPage) => string) {
   const output = ["# Chronoverse", "", summary, "", context];
   for (const section of sections) {
@@ -157,8 +178,14 @@ function renderFull() {
     output.push("", `## ${section.title}`);
     for (const page of section.pages) {
       const sourcePath = path.join(staticRoot, "content/docs", `${page.source}.mdx`);
-      const content = rewritePublishedLinks(stripFrontmatter(fs.readFileSync(sourcePath, "utf8")));
+      const content = expandPublishedComponents(
+        rewritePublishedLinks(stripFrontmatter(fs.readFileSync(sourcePath, "utf8"))),
+      );
       if (!content) throw new Error(`Empty documentation page: ${page.slug}`);
+      const unsupportedComponents = content.match(/<[A-Z][A-Za-z0-9]*(?:\s+[^>]*)?\s*\/>/g) ?? [];
+      if (unsupportedComponents.length > 0) {
+        throw new Error(`Unsupported self-closing MDX components in ${page.slug}: ${unsupportedComponents.join(", ")}`);
+      }
       output.push("", `<doc title="${page.title}" path="./docs/${page.slug}/">`, content, "</doc>");
     }
     if (section.title === "Getting Started") {

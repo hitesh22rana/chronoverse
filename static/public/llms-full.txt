@@ -1,0 +1,2383 @@
+# Chronoverse
+
+> Chronoverse is a self-hosted distributed scheduler and orchestrator for teams running interval-triggered or manual HEARTBEAT and Docker CONTAINER workflows, built with Go HTTP/gRPC services, Kafka workers, PostgreSQL, Redis, ClickHouse, Meilisearch, Docker, React/Next.js, and OpenTelemetry.
+
+Chronoverse expects at-least-once delivery and partial failures. It relies on idempotency keys, transactional outbox publication, workflow generations, deterministic event IDs, stale-event guards, durable leases, and partition-aware Kafka commits rather than globally exactly-once execution.
+
+The HTTP API uses cookie sessions and CSRF validation; retry-prone workflow mutations require an `Idempotency-Key`. HEARTBEAT workflows have no logs. Retention-disabled reads return `412 Precondition Failed`, while SSE uses error frames after streaming starts.
+
+Container ownership pairs the container ID with its assigned runtime node and persisted Docker endpoint; workers preserve this locality for execution, logs, cleanup, and recovery.
+
+Canonical documentation sources are MDX files in `static/content/docs` and the OpenAPI document in `static/content/openapi.yaml`. They are published at https://hitesh22rana.github.io/chronoverse/ from https://github.com/hitesh22rana/chronoverse.
+
+## Onboarding
+
+<doc title="Introduction" path="./docs/introduction/">
+# Chronoverse
+
+Chronoverse is a self-hosted distributed scheduler and orchestrator for running heartbeat checks and containerized workloads on your own infrastructure.
+
+It combines a public HTTP API and dashboard with gRPC domain services, Kafka-driven workers, durable PostgreSQL state, live and retained logs, notifications, analytics, and OpenTelemetry observability.
+
+<Callout title="Designed for failure">
+Duplicate events, worker restarts, partial publication, stale workflow builds, and abandoned container executions are expected operating conditions. Chronoverse uses idempotency keys, transactional outbox delivery, workflow generations, deterministic event identifiers, and durable job leases to recover safely.
+</Callout>
+
+## What you can run
+
+- `HEARTBEAT` workflows for lightweight health checks without execution logs.
+- `CONTAINER` workflows for arbitrary Docker-backed commands with optional retained stdout and stderr.
+- Automatic interval-based jobs and immediate manual runs.
+
+## What the platform provides
+
+<CardGrid>
+  <DocCard title="Reliable dispatch" href="./docs/engineering/replay-safety">State changes and matching events survive retries and restarts.</DocCard>
+  <DocCard title="Execution ownership" href="./docs/engineering/job-leases">Only one execution worker owns a running job lease.</DocCard>
+  <DocCard title="Live and retained logs" href="./docs/features/log-streaming">Stream output over SSE, retain it in ClickHouse, and search it through Meilisearch.</DocCard>
+  <DocCard title="Observable by default" href="./docs/operations/observability">Traces, metrics, and structured logs flow into the bundled LGTM stack.</DocCard>
+</CardGrid>
+
+## System shape
+
+**Architecture flow:** HTTP gateway → gRPC domains → Kafka workers → Runtime data plane → infrastructure
+
+| Stage | Components and responsibilities |
+| --- | --- |
+| HTTP gateway | `Sessions`, `CSRF`, `REST`, `SSE` |
+| gRPC domains | `users`, `workflows`, `jobs`, `notifications`, `analytics` |
+| Kafka workers | `scheduler`, `workflow`, `execution`, `job logs`, `analytics`, `outbox` |
+| Runtime data plane | `runtime-agent`, `Docker proxy`, `runtime_nodes` |
+| infrastructure | `PostgreSQL`, `ClickHouse`, `Redis`, `Kafka`, `Meilisearch`, `LGTM` |
+
+*Synchronous domain ownership with asynchronous, replay-safe orchestration.*
+
+## Where to go next
+
+Start with the [quickstart](./docs/quickstart), then create [your first workflow](./docs/getting-started/first-workflow). For implementation detail, read the [architecture](./docs/engineering/architecture) and [replay-safety model](./docs/engineering/replay-safety).
+</doc>
+
+<doc title="Quickstart" path="./docs/quickstart/">
+# Quickstart
+
+Run the complete development stack with Docker Compose. Docker builds the Go services, workers, database migration job, and dashboard locally.
+
+## Prerequisites
+
+- Docker Engine with Compose support.
+- Enough memory for PostgreSQL, ClickHouse, Kafka, Redis, Meilisearch, LGTM, the application services, and workers.
+
+## Start the stack
+
+```bash
+git clone https://github.com/hitesh22rana/chronoverse.git
+cd chronoverse
+docker compose -f compose.dev.yaml up -d
+```
+
+## Verify readiness
+
+```bash
+docker compose -f compose.dev.yaml ps
+docker compose -f compose.dev.yaml logs -f init-database-migration
+```
+
+The development endpoints are:
+
+| Surface | URL |
+| --- | --- |
+| Dashboard | `http://localhost:3001` |
+| HTTP API | `http://localhost:8080` |
+| LGTM | `http://localhost:3000` |
+| gRPC services | `localhost:50051` through `localhost:50055` |
+
+<Callout title="Startup is dependency ordered" type="note">
+Certificates, infrastructure health, Kafka topics, and database migrations must complete before domain services and workers become ready.
+</Callout>
+
+## Stop the stack
+
+```bash
+docker compose -f compose.dev.yaml down
+```
+
+Use `down -v` only when you intentionally want to delete local data and certificate volumes.
+</doc>
+
+<doc title="Installation" path="./docs/installation/">
+# Installation
+
+Docker Compose is the quickest way to run the full platform. Kubernetes deployment support is available through Kustomize overlays under `infra/k8s`.
+
+## Runtime installation
+
+Clone the repository and use either `compose.dev.yaml`, `compose.prod.yaml`, or the Kubernetes setup workflow. The development Compose profile builds local images and exposes debugging ports. The production Compose profile uses GHCR images, internal networking, resource constraints, worker replicas, and Nginx as the public entry point.
+
+```bash
+scripts/k8s/setup.sh --mode local --create-kind
+```
+
+The setup script prepares required Secrets and certificates before applying the local Kustomize overlay. Direct `kubectl apply -k` is supported only after those prerequisites exist; see [Kubernetes deployment](./docs/deployment/kubernetes).
+
+## Development toolchain
+
+- Go `1.26.5`
+- Node.js 26 for both the static-site CI path and dashboard container builds
+- Buf for protobuf generation
+- Docker for integration tests and container execution tests
+
+```bash
+make tools
+make dependencies
+make mockgen # after changing generated-mock interfaces
+make test/short
+make lint
+make build/all
+```
+
+## Frontend workspaces
+
+The application dashboard and public static site are separate Next.js applications:
+
+```bash
+cd dashboard && npm ci
+cd ../static && npm ci
+```
+
+Both workspaces commit their lockfiles and pin direct dependencies exactly. Use `npm ci` so local and CI installs reproduce the reviewed dependency graph.
+
+The static site exports plain HTML into `static/out` and is deployed to GitHub Pages.
+
+## Production preparation
+
+Replace development credentials, generated local certificate assumptions, public hostnames, allowed origins, and cookie policy before exposing the stack. Continue with [production deployment](./docs/deployment/production) and [certificates and security](./docs/deployment/security).
+</doc>
+
+<doc title="Your first workflow" path="./docs/getting-started/first-workflow/">
+# Your first workflow
+
+This walkthrough creates a container workflow and triggers an immediate manual job through the HTTP API.
+
+## Authenticate
+
+Register through the API and tell curl to store the returned session and CSRF cookies in `cookies.txt`:
+
+```bash
+curl -c cookies.txt -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "operator@example.com",
+    "password": "password12345"
+  }'
+```
+
+If the user already exists, use the same command with `/auth/login`. Authentication through the dashboard stores cookies in the browser and does not populate `cookies.txt`. The remaining curl commands read both cookies from this file with `-b cookies.txt`.
+
+## Create a container workflow
+
+Every retry-prone mutation requires an `Idempotency-Key`.
+
+```bash
+curl -X POST http://localhost:8080/workflows \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: first-workflow-v1' \
+  -b cookies.txt \
+  -d '{
+    "name": "hello-chronoverse",
+    "payload": "{\"image\":\"alpine:3.22.2\",\"cmd\":[\"echo\",\"hello from chronoverse\"]}",
+    "kind": "CONTAINER",
+    "interval": 60,
+    "max_consecutive_job_failures_allowed": 3,
+    "log_retention": true
+  }'
+```
+
+## Wait for the build
+
+The workflow starts in a queued build state. The outbox relay publishes its event, the workflow worker validates and prepares execution metadata, and the workflows service records the terminal build state.
+
+## Trigger a manual run
+
+```bash
+curl -X POST http://localhost:8080/workflows/WORKFLOW_ID/jobs/schedule \
+  -H 'Idempotency-Key: first-manual-run-v1' \
+  -b cookies.txt
+```
+
+The returned job uses the `MANUAL` trigger. Reusing the same idempotency key for the same request returns the original result instead of creating another job.
+
+## Inspect output
+
+Open the job in the dashboard while it is running to use the SSE stream. After completion, retained logs are available through the logs, search, and raw download endpoints because `log_retention` is enabled.
+</doc>
+
+## Architecture
+
+<doc title="Workflows" path="./docs/concepts/workflows/">
+# Workflows
+
+A workflow is the persistent definition of work that Chronoverse schedules. It contains a kind, a kind-specific payload, a minute interval, a failure threshold, and log-retention policy.
+
+## Workflow kinds
+
+- `HEARTBEAT` performs a lightweight health check and never produces execution logs.
+- `CONTAINER` runs a Docker image and command and may retain stdout and stderr.
+
+## Build lifecycle
+
+Workflow execution inputs are prepared asynchronously by the workflow worker. Build states are `QUEUED`, `STARTED`, `COMPLETED`, `FAILED`, and `CANCELED`.
+
+For `CONTAINER` workflows, build validates the user-authored payload and resolves the image reference/digest as workflow-level derived metadata. `HEARTBEAT` workflows leave resolved image fields empty. Jobs read the workflow metadata at execution time and never store image metadata themselves.
+
+## Generations and build hashes
+
+Each relevant update advances the workflow generation. Events carry the generation they belong to, allowing workers and services to reject stale build, reschedule, termination, and deletion work.
+
+Build hashes prevent repeated image and execution preparation when the effective user-authored execution inputs have not changed. Resolved image references and digests are outputs of build, not inputs to the build hash.
+
+## Termination and deletion
+
+Termination stops future scheduling and coordinates active state changes. Deletion requires a terminated workflow with no incompatible active work. These checks are deliberate preconditions, not best-effort cleanup.
+
+## Mutation safety
+
+Create and update requests require `Idempotency-Key`. Workflow state and its publication intent are committed together through the transactional outbox.
+
+<SourceLink path="proto/workflows/workflows.proto">Workflow gRPC contract</SourceLink>
+</doc>
+
+<doc title="Jobs" path="./docs/concepts/jobs/">
+# Jobs
+
+A job is one execution attempt for a workflow. Jobs can be created by the scheduling worker or by an authenticated manual scheduling request.
+
+## Triggers
+
+- `AUTOMATIC` jobs are created when the scheduler finds a due workflow.
+- `MANUAL` jobs are created immediately through the public API.
+
+## Statuses
+
+Jobs move through `PENDING`, `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELED`. State transitions are protected by workflow generation, dispatch attempt, current status, and, once claimed, a lease token.
+
+Failed and canceled jobs expose a normalized reason code and a user-safe message in list and detail responses. The reason is recorded atomically with the terminal status. Raw infrastructure diagnostics remain internal and are not copied into these fields.
+
+## Attempts and retries
+
+Infrastructure failures may release a job for a bounded retry. The dispatch attempt identifies the expected delivery, while job attempts expose how many execution attempts have occurred.
+
+User workload failures and system failures are handled differently so an invalid command does not receive the same recovery policy as a lost worker or unavailable Docker host.
+
+Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Historical terminal records whose cause cannot be identified safely return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
+
+## Execution ownership
+
+An execution worker must claim the job before starting a container. The jobs service returns a lease token, and that token is required to attach a container, renew ownership, complete, fail, cancel, or release the job.
+
+See [durable job leases](./docs/engineering/job-leases) for failure and recovery behavior.
+</doc>
+
+<doc title="Scheduling" path="./docs/concepts/scheduling/">
+# Scheduling
+
+Chronoverse supports periodic automatic scheduling and authenticated manual scheduling.
+
+## Automatic scheduling
+
+The scheduling worker polls PostgreSQL for due workflows in bounded batches. It checks that each workflow is active, has a valid build, and still matches the generation being scheduled.
+
+The resulting job state and Kafka publication intent use replay-safe persistence. Reprocessing a scheduling decision does not create unbounded duplicate jobs.
+
+## Manual scheduling
+
+`POST /workflows/{workflow_id}/jobs/schedule` creates an immediate job with trigger `MANUAL`. The request requires session authentication, CSRF validation, and an `Idempotency-Key` header.
+
+## Timing model
+
+Intervals are expressed in minutes. `SCHEDULING_WORKER_POLL_INTERVAL` determines scan frequency, while `SCHEDULING_WORKER_BATCH_SIZE` bounds work per pass.
+
+Lower polling intervals improve responsiveness but increase database pressure. Horizontal scheduler scaling must still respect the repository's locking and replay-safety rules.
+
+## Stale work
+
+Workflow generation checks prevent a delayed scheduling event from dispatching work for an older workflow definition.
+</doc>
+
+<doc title="Workers" path="./docs/concepts/workers/">
+# Workers
+
+Workers own asynchronous background processing. Kafka partitions provide distribution, while domain services remain responsible for authoritative state changes.
+
+## Worker inventory
+
+| Worker | Responsibility |
+| --- | --- |
+| Scheduling worker | Finds due workflows and creates dispatch work |
+| Workflow worker | Validates container payloads, resolves image digests, and updates build state |
+| Execution worker | Claims jobs, routes containers to the assigned runtime endpoint, renews leases, and recovers abandoned work |
+| Runtime agent | Registers a Docker-capable runtime node and heartbeats endpoint capacity |
+| Job logs processor | Writes retained logs to ClickHouse and Meilisearch |
+| Analytics processor | Applies workflow, job, and log events to aggregates |
+| Outbox relay | Publishes committed outbox rows to Kafka |
+| Database migration | Applies PostgreSQL and ClickHouse migrations and Meilisearch setup |
+
+## Processing contract
+
+Workers process records per Kafka partition. Commit policy distinguishes successful work, retryable failures, and terminal handling so offsets are not advanced before the selected policy permits it.
+
+## Scaling
+
+Replica count cannot create useful parallelism beyond the relevant Kafka topic partition count. Execution capacity is also bounded by registered runtime nodes, Docker hosts, job lease settings, downstream service latency, and log pipeline capacity.
+
+## State ownership
+
+Workers call gRPC services to mutate domain state. They do not become an alternate source of truth for workflows or jobs.
+
+For `CONTAINER` jobs, `jobs-service` is also the runtime ownership boundary. It chooses a fresh `READY` runtime node while claiming the job, stores the runtime owner on the job, and returns the Docker endpoint that the execution worker should use.
+</doc>
+
+<doc title="Lifecycle states" path="./docs/concepts/lifecycle-states/">
+# Lifecycle states
+
+Chronoverse uses explicit state machines for workflow preparation and job execution. Preconditions reject transitions that arrive late, conflict with another owner, or target a terminal resource.
+
+## Workflow build states
+
+`QUEUED` → `STARTED` → `COMPLETED`
+
+A build may instead end as `FAILED` or `CANCELED`. Generation checks tie updates to the workflow revision that produced them.
+
+## Job states
+
+`PENDING` → `QUEUED` → `RUNNING` → `COMPLETED`
+
+Terminal alternatives are `FAILED` and `CANCELED`. System failures may return eligible work to a retryable state before the retry limit is exhausted.
+
+Every new `FAILED` or `CANCELED` transition stores its normalized reason in the same database update as the status. Returning a job to a retryable state clears any terminal reason so stale diagnostics cannot appear as the final outcome.
+
+## Protected transitions
+
+Once a job is claimed, mutating RPCs require the current lease token. A stale worker cannot complete a job after another worker has recovered and reclaimed it.
+
+## Terminal workflow events
+
+Job completion and failure can update workflow failure counters, rescheduling metadata, notifications, and analytics. Deterministic event identifiers make those side effects safe to replay.
+</doc>
+
+<doc title="Log retention" path="./docs/concepts/log-retention/">
+# Log retention
+
+Log behavior depends on workflow kind, retention policy, and job state.
+
+## Supported workflows
+
+`HEARTBEAT` workflows never produce execution logs and persist with retention disabled. `CONTAINER` workflows can publish live output and optionally retain it.
+
+## Live logs
+
+While a container job is running, the execution worker publishes output for Redis-backed live delivery. The HTTP gateway exposes that stream as Server-Sent Events.
+
+## Retained logs
+
+When retention is enabled, deterministic log events are published to Kafka. The job logs processor batches them into ClickHouse and indexes searchable content in Meilisearch.
+
+## Disabled retention
+
+Retained read, search, and download routes return `412 Precondition Failed` when the workflow does not support retained logs. If SSE headers have already been written, stream-open failures use an `event: error` frame instead of changing the HTTP status.
+
+## Ordering
+
+Paginated retained results are returned in descending sequence order: newest entries first, with older entries on later cursor pages.
+</doc>
+
+<doc title="Architecture" path="./docs/engineering/architecture/">
+# Architecture
+
+Chronoverse separates synchronous domain ownership from asynchronous orchestration. The HTTP gateway serves browser and external clients, gRPC services own domain state, and Kafka workers perform delayed or distributed work.
+
+## Runtime topology
+
+**Architecture flow:** HTTP gateway → gRPC domains → Kafka workers → Runtime data plane → infrastructure
+
+| Stage | Components and responsibilities |
+| --- | --- |
+| HTTP gateway | `Sessions`, `CSRF`, `REST`, `SSE` |
+| gRPC domains | `users`, `workflows`, `jobs`, `notifications`, `analytics` |
+| Kafka workers | `scheduler`, `workflow`, `execution`, `job logs`, `analytics`, `outbox` |
+| Runtime data plane | `runtime-agent`, `Docker proxy`, `runtime_nodes` |
+| infrastructure | `PostgreSQL`, `ClickHouse`, `Redis`, `Kafka`, `Meilisearch`, `LGTM` |
+
+*Synchronous domain ownership with asynchronous, replay-safe orchestration.*
+
+The production entry point is Nginx. It serves the dashboard, proxies `/api/...` to the HTTP server, and disables response buffering for live job log routes.
+
+## Domain services
+
+Five gRPC services own users, workflows, jobs, notifications, and analytics. They expose ports `50051` through `50055` inside Compose.
+
+## Asynchronous plane
+
+Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Scheduling, workflow preparation, container execution, retained log processing, analytics, and outbox publication scale independently within topic and infrastructure constraints.
+
+## Persistence plane
+
+- PostgreSQL: transactional state, runtime nodes, leases, idempotency, outbox rows, and analytics.
+- ClickHouse: retained high-volume job logs.
+- Redis: sessions, cached reads, live log pub/sub, and image-pull locks.
+- Meilisearch: retained log search.
+- Runtime agent: Docker-capable node registration, heartbeat, and capacity metadata.
+- Docker proxy: constrained node-local container lifecycle access.
+- LGTM: OpenTelemetry collection and dashboards.
+
+## Design invariant
+
+Workers request state transitions from domain services rather than directly inventing workflow or job state. This keeps replay and ownership rules concentrated at the domain boundary.
+
+Container execution has an additional locality invariant: a `container_id` is never enough on its own. `jobs-service` assigns a fresh `READY` runtime node during claim, persists `runtime_node_id` and a Docker endpoint snapshot on the job, and workers use that endpoint directly for execution, live logs, cleanup, and expired-lease recovery.
+
+<SourceLink path="docs/architecture.md">Repository architecture notes</SourceLink>
+</doc>
+
+<doc title="Service boundaries" path="./docs/engineering/service-boundaries/">
+# Service boundaries
+
+## HTTP gateway
+
+The `server` process owns public HTTP concerns: method routing, request limits, CORS, compression, browser security response headers, session validation, constant-time CSRF HMAC verification, idempotency headers, error mapping, and propagation of authorization metadata to gRPC.
+
+## Users service
+
+Owns registration, login, user reads, notification preference updates, password verification, and service authorization claims.
+
+## Workflows service
+
+Owns definitions, generations, build status, list filters, cleanup, termination, deletion, and workflow-side effects of terminal jobs.
+
+## Jobs service
+
+Owns scheduling, job reads, status transitions, durable leases, recovery, retained log reads, search, downloads, and live log streams.
+
+## Notifications service
+
+Owns notification creation, cursor-based listing, and read state.
+
+## Analytics service
+
+Reads user and workflow aggregates maintained by the analytics processor.
+
+## Authorization boundary
+
+The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Internal services validate the authorization context rather than trusting arbitrary callers on the network.
+</doc>
+
+<doc title="Event flows" path="./docs/engineering/event-flows/">
+# Event flows
+
+## Workflow creation
+
+<Steps>
+  <Step title="Accept the command">The HTTP gateway validates session, CSRF state, input, and the idempotency key before calling the workflows service.</Step>
+  <Step title="Commit state and intent">PostgreSQL stores workflow state, idempotency output, and an outbox event in one transaction.</Step>
+  <Step title="Publish durably">The outbox relay claims the row and publishes the workflow event to Kafka.</Step>
+  <Step title="Prepare execution">The workflow worker validates payload, resolves the image digest, and updates build state through gRPC.</Step>
+</Steps>
+
+## Automatic scheduling
+
+The scheduling worker scans due workflows, validates generation and build state, then creates replay-safe job dispatch work. Manual scheduling enters the same job lifecycle with trigger `MANUAL`.
+
+## Job execution
+
+The execution worker consumes the job event, claims a lease, receives the runtime endpoint registered by `runtime-agent`, ensures the resolved image on that runtime, starts the container through the Docker proxy, attaches its container ID, renews ownership, and publishes output. Terminal state changes require the lease token.
+
+## Logs and analytics
+
+Live output uses Redis pub/sub. Retained output flows through Kafka to ClickHouse and Meilisearch. Workflow, job, and log events feed replay-safe analytics updates in PostgreSQL.
+
+## Failure path
+
+If a worker disappears, lease recovery evaluates expired running jobs. Eligible system failures are retried; exhausted or invalid work becomes terminal and container cleanup is attempted.
+</doc>
+
+<doc title="Replay safety" path="./docs/engineering/replay-safety/">
+# Replay safety
+
+Kafka delivery, process crashes, and network timeouts can repeat work. Chronoverse treats at-least-once delivery as a normal condition.
+
+## Command idempotency
+
+Workflow create, workflow update, and manual scheduling require an `Idempotency-Key`. A repeated command with the same key returns the recorded result instead of creating another mutation.
+
+## Atomic publication intent
+
+Domain transactions write state and outbox rows together. The relay can retry publication without losing the relationship between committed state and its event.
+
+## Stale-event rejection
+
+Workflow generations and build hashes reject old or redundant preparation. Dispatch-attempt metadata rejects an execution event that no longer represents the current job attempt.
+
+## Deterministic side effects
+
+Notifications, analytics, and retained logs use stable event identifiers. Processors can observe the same event more than once without double-counting or duplicating stored logs.
+
+## Exclusive execution
+
+Durable job leases ensure one worker owns a running job. Lease tokens protect every claimed-job mutation from stale workers.
+
+## Ordered commits
+
+Partition-aware Kafka processing advances offsets only after the configured success, retry, or terminal policy permits it.
+
+<Callout title="Replay-safe does not mean exactly once">
+The system accepts duplicate delivery and makes the resulting operations idempotent or preconditioned. This is more explicit and recoverable than assuming the transport provides global exactly-once execution.
+</Callout>
+</doc>
+
+<doc title="Transactional outbox" path="./docs/engineering/transactional-outbox/">
+# Transactional outbox
+
+The outbox closes the gap between committing PostgreSQL state and publishing the corresponding Kafka event.
+
+## Write path
+
+The domain transaction writes the resource change and an outbox row atomically. If the transaction fails, neither is visible. If it commits, publication intent remains durable even when Kafka is unavailable.
+
+## Claiming
+
+Relay replicas claim pending rows with a processing lease and worker identity. A row cannot be actively published by every replica at once, and an abandoned claim becomes eligible after its lease expires.
+
+## Publication outcomes
+
+- Successful rows are marked published.
+- Retryable failures increment attempt state and apply backoff.
+- Rows that exhaust `OUTBOX_RELAY_MAX_ATTEMPTS` are marked dead for inspection.
+
+## Cleanup
+
+Published rows remain available for a configurable retention period, then cleanup removes them in bounded batches. Dead rows are not equivalent to published rows and require operational attention.
+
+## Scaling guidance
+
+Tune batch size, poll interval, processing lease, Kafka latency, and PostgreSQL query latency together. A shorter poll interval cannot compensate for saturated Kafka or database connections.
+
+<SourceLink path="internal/repository/outboxrelay/outboxrelay.go">Outbox relay repository</SourceLink>
+</doc>
+
+<doc title="Durable job leases" path="./docs/engineering/job-leases/">
+# Durable job leases
+
+Job leases provide exclusive, time-bounded execution ownership.
+
+## Claim
+
+An execution worker presents the expected workflow generation and dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible. For `CONTAINER` jobs, claim also selects a fresh `READY` runtime node and returns its Docker endpoint. `HEARTBEAT` jobs do not receive runtime ownership.
+
+## Protected mutations
+
+The token is required to:
+
+- renew the lease;
+- attach a container ID with the expected runtime node;
+- complete or fail the job;
+- cancel a claimed job;
+- release it for retry.
+
+## Renewal
+
+Workers renew while the workload runs. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
+
+## Recovery
+
+Execution workers periodically request expired-lease recovery in bounded batches. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
+
+## Split-brain prevention
+
+After expiration and recovery, the old token is invalid. A delayed worker cannot report success for work that another worker now owns.
+
+<SourceLink path="internal/repository/jobs/lease.go">Lease state transitions</SourceLink>
+</doc>
+
+<doc title="Kafka processing" path="./docs/engineering/kafka-processing/">
+# Kafka processing
+
+Chronoverse uses Kafka for durable asynchronous workflows and preserves ordering within each partition.
+
+## Topics
+
+| Topic | Primary traffic |
+| --- | --- |
+| `workflows` | Workflow build and lifecycle events |
+| `jobs` | Dispatch and execution work |
+| `job_logs` | Retained stdout and stderr events |
+| `analytics` | Workflow, job, and log analytics events |
+
+Topic auto-creation is disabled. The Compose initialization job creates or expands the required partition counts.
+
+## Partition runner
+
+Each assigned partition is processed independently. This avoids a slow record in one partition blocking unrelated partitions while retaining per-partition order.
+
+## Commit policy
+
+Handlers classify outcomes so the runner can decide whether to commit, retry with backoff, or treat an error as terminal. Offsets are not advanced simply because a handler returned.
+
+## Rebalances and cancellation
+
+Partition work is tied to assignment lifetime. Cancellation stops processing cleanly so records are not acknowledged after ownership changes.
+
+## Capacity
+
+Useful consumer parallelism is bounded by topic partitions. Increasing replicas beyond partitions adds standby capacity, not additional throughput.
+</doc>
+
+<doc title="Image pull coordination" path="./docs/engineering/image-pull-coordination/">
+# Image pull coordination
+
+Replicated workflow and execution workers can share a runtime daemon. Without coordination, a cold image can trigger simultaneous pulls that waste bandwidth and amplify registry throttling.
+
+## Lock scope
+
+The Redis lock key includes the runtime node scope and exact image string. Workers sharing a runtime node coordinate; workers on different runtime nodes may pull in parallel. Docker host is used only as a fallback for legacy/local clients that do not pass an explicit runtime scope.
+
+## Acquisition flow
+
+The first worker acquires the lock and pulls or inspects the image. Other workers poll until the lock is released, the image becomes available, or the configured wait timeout expires. Workflow workers use this while resolving image digests. Execution workers use it before container creation so cold runtime nodes can pull the resolved digest safely.
+
+## Configuration
+
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL`
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
+- `EXECUTION_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+
+Set the TTL and wait timeout above normal large-image pull time. Aggressive polling increases Redis pressure.
+
+## Failure behavior
+
+A timeout is retryable Kafka work rather than permission to start another same-runtime pull. TTL expiry prevents a crashed owner from holding the lock forever.
+
+<Callout title="Runtime-scoped, not registry-scoped" type="note">
+Separate runtime nodes can still pull the same image concurrently. Registry-wide rate limits need capacity planning outside this lock.
+</Callout>
+</doc>
+
+<doc title="Logging and search pipeline" path="./docs/engineering/logging-search-pipeline/">
+# Logging and search pipeline
+
+Container output has a low-latency live path and a durable retained path.
+
+## Live path
+
+The execution worker publishes buffered stdout and stderr to Redis-backed channels. The jobs service exposes a gRPC stream, and the HTTP gateway translates it into Server-Sent Events.
+
+## Retained path
+
+When workflow retention is enabled, the worker also publishes deterministic log events to Kafka. The job logs processor batches records and writes them to ClickHouse, then indexes searchable fields in Meilisearch.
+
+## Replay handling
+
+Log event IDs remain stable across retries. ClickHouse storage and analytics processing use those identifiers to avoid duplicate retained output and counts.
+
+## Query behavior
+
+- Plain log listing reads ClickHouse.
+- Stream-only filtering reads retained data without a text query.
+- Text search uses Meilisearch and returns safe highlight fragments.
+- Raw downloads apply the same stream and text filters without rendering markup.
+
+## Ordering and pagination
+
+Results use descending sequence order. Cursor pagination moves toward older output and preserves filter context.
+
+## Security
+
+Meilisearch uses HTTPS and client certificate configuration in Compose. Search highlights are treated as data and rendered without unsafe HTML injection.
+</doc>
+
+<doc title="Trace propagation" path="./docs/engineering/trace-propagation/">
+# Trace propagation
+
+Chronoverse propagates distributed trace context across synchronous and asynchronous boundaries.
+
+## HTTP entry
+
+The server middleware extracts incoming context, starts the request span, and keeps trace identity available for downstream calls and structured logging.
+
+## gRPC boundaries
+
+Client interceptors inject trace metadata and server middleware extracts it before handling the RPC. Domain spans therefore remain connected to the original HTTP request or worker operation.
+
+## Kafka boundaries
+
+Producers inject trace context into record headers. Consumers extract that context before creating processing spans, connecting an asynchronous event back to the transaction or worker that published it.
+
+## Worker-created work
+
+When a worker emits a follow-up event, the current processing context is injected so the trace continues through multi-stage workflow, execution, logging, and analytics paths.
+
+## Export
+
+Services and workers export OpenTelemetry traces, metrics, and logs to the bundled LGTM collector over OTLP gRPC.
+
+<Callout title="Propagation is correlation, not delivery">
+Trace context helps explain a distributed operation. Replay safety, outbox state, and leases remain the authoritative mechanisms for correctness.
+</Callout>
+</doc>
+
+## Getting Started
+
+<doc title="Workflow types" path="./docs/features/workflow-types/">
+# Workflow types
+
+## Heartbeat
+
+`HEARTBEAT` workflows perform lightweight health checks. They do not start general-purpose workload containers and never generate retained execution logs. `log_retention` is persisted as disabled.
+
+Use heartbeat workflows for endpoint availability and infrastructure checks where a full container command is unnecessary.
+
+## Container
+
+`CONTAINER` workflows describe a Docker image and command in the payload. The workflow worker resolves execution metadata, `jobs-service` assigns a fresh runtime node during claim, and the execution worker runs the workload through the runtime endpoint registered by `runtime-agent`.
+
+Container workflows can retain stdout and stderr, stream output while running, and participate in text search and raw downloads after completion.
+
+## Shared controls
+
+Both kinds support interval scheduling, manual runs, failure thresholds, termination, notifications, and analytics. Their execution and logging behavior differs, but they share replay-safe scheduling and lifecycle state.
+
+## Choosing a kind
+
+Prefer heartbeat when the result is a health signal. Prefer container when the workload needs an image, command, environment, or output capture.
+</doc>
+
+<doc title="Job scheduling" path="./docs/features/job-scheduling/">
+# Job scheduling
+
+Chronoverse creates jobs automatically from workflow intervals or immediately through a manual API command.
+
+## Automatic runs
+
+The scheduling worker polls for due workflows, validates generation and build state, and creates a job with trigger `AUTOMATIC`.
+
+## Manual runs
+
+An authenticated client calls `POST /workflows/{workflow_id}/jobs/schedule` with an `Idempotency-Key`. The created job uses trigger `MANUAL` but follows the same claim, lease, execution, logging, notification, and analytics path.
+
+## Duplicate prevention
+
+Manual requests use command idempotency. Automatic scheduling uses persisted dispatch metadata and generation guards. Kafka redelivery does not imply a new logical run.
+
+## Failure threshold
+
+Workflows track consecutive job failures against their configured limit. Terminal job events update that state and can affect subsequent workflow behavior.
+
+## Filtering
+
+The jobs list supports cursor pagination plus status and trigger filters, making automatic and manual history distinguishable without separate storage paths.
+</doc>
+
+<doc title="Log streaming and search" path="./docs/features/log-streaming/">
+# Log streaming and search
+
+## Live SSE
+
+Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events`. Events arrive as `text/event-stream`; production Nginx disables buffering for the `/api/.../events` route.
+
+## Retained listing
+
+`GET .../logs` reads ClickHouse in descending sequence order. It is available only when the workflow supports retained logs.
+
+## Search and filtering
+
+`GET .../logs/search` accepts:
+
+- `stream=stdout|stderr`
+- `q=<text>`
+- `cursor=<opaque cursor>`
+
+When `q` is absent, the route performs retained stream filtering. When present, Meilisearch supplies matches and highlight ranges.
+
+## Shareable line selections
+
+The dashboard tracks each log's position within the current descending result set without displaying line numbers. Click a log to store its position in the URL as `#L6`, or Shift-click another log to create a range such as `#L6-L19`. The first selected log exposes actions to copy the selected log text or its permalink. Search and stream filters remain part of a shared URL, so positions resolve against the same filtered or unfiltered result set. Changing either filter clears the current selection because it changes the positioned result set.
+
+Opening a line link loads older cursor pages until the selected range is available, then scrolls to and highlights it. If a requested range extends beyond the available results, the dashboard reports that some selected log lines are unavailable. Running jobs support line selection, but the dashboard enables copying a share link only after the job reaches `COMPLETED`, `FAILED`, or `CANCELED`, because new live logs can change result positions.
+
+## Raw downloads
+
+`GET .../logs/raw` downloads plain text. Stream and text filters are applied consistently, and search highlights are not rendered into the download.
+
+## Safe rendering
+
+Search highlights are handled as structured data rather than trusted HTML. Client rendering must not pass Meilisearch fragments to an unsafe HTML sink.
+
+## Error behavior
+
+Retained routes return `412` for unsupported or disabled retention. An already-open SSE response reports equivalent failures through `event: error` frames.
+</doc>
+
+<doc title="Notifications" path="./docs/features/notifications/">
+# Notifications
+
+Notifications surface workflow and job state changes to authenticated users.
+
+## Creation
+
+Internal event processing creates notifications with deterministic event identity so replayed workflow or job events do not create repeated user-visible records.
+
+## Listing
+
+`GET /notifications` returns a cursor-paginated list for the current user.
+
+## Read state
+
+`PUT /notifications` accepts a list of notification IDs and marks them read. The request requires the normal authenticated mutation protections.
+
+## Preferences
+
+User notification preference is stored in the users domain and updated through `PUT /users`.
+
+## Delivery model
+
+The current product exposes notifications in the dashboard. The notifications service is the ownership boundary; external email or webhook delivery is not part of the documented runtime.
+</doc>
+
+<doc title="Analytics" path="./docs/features/analytics/">
+# Analytics
+
+Chronoverse maintains user and workflow aggregates from workflow, job, and generated log events.
+
+## User aggregates
+
+`GET /analytics` returns lifetime totals across the authenticated user's workflows, including workflow count, terminal job count, generated log count, and total execution duration. It also returns workload totals grouped by workflow kind and up to 10 workflows ranked by terminal job count. The Top 10 limit is enforced by the analytics service, so response size does not grow with every workflow owned by the user.
+
+The dashboard loads this overview only when the Analytics drawer opens. The result remains fresh for five minutes and is not polled from the landing page. The overview presents the lifetime counters, workload mix, and most active workflows without querying raw job-log storage.
+
+If no ranked workflows are available, the dashboard explains that activity will appear after a workflow reaches a terminal job state.
+
+## Workflow aggregates
+
+`GET /analytics/{workflow_id}` returns job count, generated log count, total execution duration, and derived average runtime for one workflow. Workflow-level analytics load with the workflow details view and use the same five-minute freshness window.
+
+Analytics are historical counters. Generated log events are counted whether or not their workflow retains log bodies. Disabling log retention prevents new entries from being stored in ClickHouse and indexed in Meilisearch; it does not stop the generated-log counter or erase previously aggregated history. The dashboard therefore labels the metric as generated logs and separately explains when new logs are not retained.
+
+## Processing model
+
+The analytics processor consumes Kafka events and updates PostgreSQL aggregates. Processed-event records deduplicate replayed events.
+
+## Cleanup
+
+Processed event IDs are retained for a configurable window and removed in bounded cleanup batches. The retention period should exceed the longest replay window operators expect to tolerate.
+
+## Storage distinction
+
+Analytics aggregates are stored in PostgreSQL as one row per user and workflow. User-level reads are scoped by the user index, workflow reads use the unique user/workflow index, and the ranked query is capped at 10 rows. ClickHouse is used for retained job log bodies, not as the analytics source of truth.
+</doc>
+
+<doc title="API overview" path="./docs/api/overview/">
+# API overview
+
+The public HTTP API is served directly at `http://localhost:8080` in development. Production Nginx exposes the same routes below `/api`.
+
+## Authentication model
+
+Application routes use an encrypted session cookie. Mutating routes additionally validate CSRF state. The gateway exchanges browser identity for signed service metadata on internal gRPC calls.
+
+## Content type
+
+Send `Content-Type: application/json` for JSON request bodies. SSE log streams use `text/event-stream`, and raw log downloads use `text/plain`.
+
+## Safe retries
+
+The following commands require `Idempotency-Key`:
+
+- `POST /workflows`
+- `PUT /workflows/{workflow_id}`
+- `POST /workflows/{workflow_id}/jobs/schedule`
+
+Reuse a key only when retrying the same logical command.
+
+## Reference
+
+The [endpoint reference](./docs/api/reference) is generated from the repository's OpenAPI document. It covers paths, parameters, request bodies, and response status codes.
+
+<Callout title="No documented rate limiter" type="warning">
+The current gateway maps `ResourceExhausted` to HTTP `429`, but the repository does not define a general public request-rate policy. Clients should not assume limits that are not configured by the deployment.
+</Callout>
+</doc>
+
+<doc title="Authentication" path="./docs/api/authentication/">
+# Authentication
+
+Chronoverse uses browser-oriented session authentication rather than exposing service JWTs to public clients.
+
+## Register
+
+`POST /auth/register` accepts email and password, creates the user, and issues session and CSRF cookies.
+
+## Login
+
+`POST /auth/login` validates credentials and issues fresh cookies.
+
+Invalid credentials return the same `401 Unauthorized` response whether or not the email is registered.
+
+## Validate
+
+`POST /auth/validate` verifies the current session and CSRF state. It is useful for dashboard session bootstrap.
+
+## Logout
+
+`POST /auth/logout` removes both cookies and returns `204 No Content`.
+
+## Internal authorization
+
+The HTTP gateway signs authorization metadata for downstream gRPC services using Ed25519 keys. Service clients also use mTLS in the Compose topology.
+
+## Cookie deployment settings
+
+`SERVER_HOST_URL`, `SERVER_ALLOWED_ORIGINS`, `SERVER_SAME_SITE_MODE`, session expiry, CSRF expiry, and the CSRF HMAC secret must match the public deployment origin.
+</doc>
+
+<doc title="CSRF and idempotency" path="./docs/api/request-safety/">
+# CSRF and idempotency
+
+Chronoverse uses separate mechanisms for browser request authenticity and retry safety.
+
+## CSRF validation
+
+Authenticated mutations require CSRF validation in addition to the session cookie. Login and registration establish the browser cookie state used by later requests.
+
+## Idempotency keys
+
+Retry-prone workflow and manual scheduling commands require `Idempotency-Key`. The service stores the command result with the mutation so a retry returns the original outcome.
+
+## Key rules
+
+- Use a cryptographically random or otherwise globally unique key for a new user action.
+- Reuse the same key for retries of that exact action.
+- Do not reuse a key for changed request content or a different workflow.
+
+## Transaction boundary
+
+Idempotency records, domain state, and outbox events are committed together where the command emits asynchronous work.
+
+## Conflict behavior
+
+Invalid or missing keys are rejected as bad requests. State conflicts and failed preconditions remain distinct from idempotent replay.
+</doc>
+
+<doc title="Pagination and errors" path="./docs/api/pagination-errors/">
+# Pagination and errors
+
+## Cursor pagination
+
+Workflow, job, notification, and retained log lists use opaque cursors. Clients should return the cursor unchanged and must not infer database offsets or identifiers from its contents.
+
+Filters must remain stable while traversing a result set. A cursor created for one search or stream filter should not be reused with another.
+
+## Status mapping
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid input, filter, or required idempotency header |
+| `401` | Missing or invalid session |
+| `403` | Permission denied |
+| `404` | Resource not found |
+| `409` | Already exists or aborted conflict |
+| `412` | Resource state does not permit the operation |
+| `429` | Downstream resource exhausted |
+| `503` | Required downstream service unavailable |
+
+## Stream exceptions
+
+After SSE headers are written, the gateway cannot replace the response status. Stream-open and receive failures are serialized as `event: error` frames.
+
+## Error stability
+
+Clients should branch on HTTP status and documented structured fields, not exact human-readable error strings.
+</doc>
+
+<doc title="Server-Sent Events" path="./docs/api/server-sent-events/">
+# Server-Sent Events
+
+The job events route streams live stdout and stderr while a container job is running.
+
+## Connect
+
+```http
+GET /workflows/{workflow_id}/jobs/{job_id}/events
+Accept: text/event-stream
+```
+
+The browser must include the authenticated session cookie. In production, connect through `/api/workflows/.../events` so the bundled Nginx configuration disables buffering.
+
+## Data events
+
+Log events identify stream, sequence, timestamp, and message. Consumers should preserve sequence ordering rather than relying only on arrival time.
+
+## Error events
+
+If the response is already open, failures are emitted as:
+
+```text
+event: error
+data: rpc error: code = FailedPrecondition desc = job is not running
+```
+
+The `data` value for an error event is plain text from the downstream error, not JSON. Clients should branch on the SSE event name and must not JSON-decode `error` event data. This includes non-running jobs, disabled retention policy checks at stream open, serialization failures, and downstream stream failures.
+
+## Reconnection
+
+SSE reconnects can overlap with job completion. Clients should switch to retained logs after the job becomes terminal instead of assuming the live stream is a permanent log archive.
+</doc>
+
+<doc title="Endpoint reference" path="./docs/api/reference/">
+# Endpoint reference
+
+This reference is generated from `static/content/openapi.yaml` during the static build. Each operation has a dedicated HTML page with its method, path, parameters, request body, and responses.
+
+## Authentication
+
+Public application endpoints use the Chronoverse session cookie. Mutating routes also require CSRF state, and selected retry-prone commands require `Idempotency-Key`.
+
+## Source of truth
+
+The OpenAPI document describes the public HTTP surface registered in `internal/server/server.go`. Internal lease and worker RPCs are intentionally documented separately under [gRPC services](./docs/internal/grpc-services).
+
+## Raw specification
+
+The generated site exposes the canonical file at `/docs/openapi.yaml` for client generation and inspection.
+</doc>
+
+<doc title="Deployment overview" path="./docs/deployment/overview/">
+# Deployment overview
+
+Chronoverse ships Docker Compose topologies and Kubernetes Kustomize overlays.
+
+## Development
+
+`compose.dev.yaml` builds local images and exposes infrastructure, API, dashboard, gRPC, and observability ports for debugging.
+
+## Production
+
+`compose.prod.yaml` uses GHCR application images, keeps services on internal networks, applies resource constraints, runs replicated worker groups, and publishes Nginx plus the LGTM dashboard.
+
+`infra/k8s/overlays/local` provides a self-contained single-node Kubernetes profile for validation. `infra/k8s/overlays/production` provides the self-hosted Kubernetes deployment shape with in-cluster PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, services, workers, dynamic PVCs, and HPAs.
+
+## Startup phases
+
+<Steps>
+  <Step title="Bootstrap trust">Generate the local CA, service certificates, client certificates, Kafka stores, and Ed25519 keys.</Step>
+  <Step title="Start infrastructure">Bring PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, LGTM, Docker proxy, and runtime-agent to healthy state.</Step>
+  <Step title="Prepare schemas">Create Kafka topics and run PostgreSQL, ClickHouse, and Meilisearch migrations.</Step>
+  <Step title="Start application">Bring up gRPC services, workers, the HTTP server, dashboard, and production Nginx.</Step>
+</Steps>
+
+## Deployment boundary
+
+Compose remains the quickest full-stack path. Kubernetes support is provided through Kustomize and `scripts/k8s/setup.sh`; production operators own storage class selection, secret lifecycle, ingress hostnames, and Docker-capable runtime nodes.
+</doc>
+
+<doc title="Development environment" path="./docs/deployment/development/">
+# Development environment
+
+## Start
+
+```bash
+docker compose -f compose.dev.yaml up -d
+```
+
+The development stack starts one `runtime-agent` named `local-docker` beside `docker-proxy`. Container job claims use that registered runtime endpoint, so the same runtime ownership path is exercised locally even though there is only one Docker daemon.
+
+## Exposed ports
+
+| Component | Port |
+| --- | ---: |
+| Dashboard | `3001` |
+| API | `8080` |
+| LGTM | `3000` |
+| OTLP gRPC | `4317` |
+| PostgreSQL | `5432` |
+| ClickHouse TLS | `9440` |
+| Redis TLS | `6379` |
+| Meilisearch HTTPS | `7700` |
+| Kafka SSL | `9094` |
+| gRPC services | `50051`–`50055` |
+
+## Inspect
+
+```bash
+docker compose -f compose.dev.yaml ps
+docker compose -f compose.dev.yaml logs -f server
+docker compose -f compose.dev.yaml logs -f execution-worker
+docker compose -f compose.dev.yaml logs -f runtime-agent
+```
+
+## Rebuild one service
+
+```bash
+docker compose -f compose.dev.yaml up -d --build jobs-service
+```
+
+## Reset local state
+
+```bash
+docker compose -f compose.dev.yaml down -v
+```
+
+This removes databases, Kafka data, and generated certificate volumes. Use it only for an intentional clean reset.
+</doc>
+
+<doc title="Production deployment" path="./docs/deployment/production/">
+# Production deployment
+
+## Start
+
+```bash
+export CRYPTO_SECRET="$(openssl rand -hex 16)"
+export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+docker compose -f compose.prod.yaml up -d
+```
+
+Persist these two distinct values in your secret manager and reuse them across server restarts. Production startup rejects empty values, the known development placeholder, and reused server secrets.
+
+For Kubernetes, use the setup script. It preserves valid, complete pre-created Secrets and generates missing bootstrap material:
+
+```bash
+scripts/k8s/setup.sh --mode production
+```
+
+Production publishes:
+
+- Dashboard and proxied API through Nginx on port `80`.
+- LGTM on port `3000`.
+
+Kubernetes production is expected to be accessed through the configured Ingress
+host over HTTPS. Authentication cookies are scoped from `SERVER_HOST_URL`, so a
+plain `http://localhost` port-forward will not preserve login cookies when the
+server is configured for `https://chronoverse.example.com`.
+The production Ingress references `chronoverse-ingress-tls`; replace the
+generated self-signed fallback with a trusted certificate before exposing real
+traffic.
+
+Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry.
+
+## Images
+
+Application images are pulled from `ghcr.io/hitesh22rana/chronoverse/*:latest`. Tagged releases are built for supported architectures by GitHub Actions.
+
+## Worker replicas
+
+The production profile declares replicated workers and resource reservations. Effective parallelism still depends on Kafka partitions, registered runtime capacity, Docker host capacity, database pools, and lease configuration.
+
+| Worker group | Services | Limit | Reservation |
+| --- | --- | --- | --- |
+| Low | `scheduling-worker`, `analytics-processor`, `outbox-relay` | `0.25` CPU, `512M` memory | `0.1` CPU, `256M` memory |
+| Mid | `workflow-worker`, `joblogs-processor` | `0.5` CPU, `2G` memory | `0.25` CPU, `1G` memory |
+| High | `execution-worker` | `2` CPU, `2G` memory | `1` CPU, `1G` memory |
+
+## Required hardening
+
+- Replace database and Meilisearch credentials.
+- Manage certificates and private keys with environment-specific controls.
+- Pre-create Kubernetes Secrets when you need operator-owned credentials or certificates; otherwise the setup script generates missing bootstrap material and never overwrites valid, complete existing Secrets.
+- Configure the public host URL, allowed origins, secure cookies, and same-site policy.
+- Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
+- Restrict access to the LGTM dashboard.
+- Restrict Docker proxy TCP `2375` to trusted Chronoverse traffic with private networking, node firewall rules or security groups, and the Docker socket proxy allowlist. NetworkPolicy support for node-IP hostPort traffic depends on the CNI.
+- Define backup, restore, and retention procedures for PostgreSQL and ClickHouse.
+
+## Upgrade order
+
+Apply compatible migrations before new services depend on them. Event and protobuf changes should remain compatible with records and replicas from the previous version during rolling replacement.
+</doc>
+
+<doc title="Kubernetes" path="./docs/deployment/kubernetes/">
+# Kubernetes deployment
+
+Chronoverse ships Kustomize overlays and an interactive setup script under `infra/k8s`.
+
+## Deployment strategies
+
+```bash
+scripts/k8s/setup.sh --mode local
+scripts/k8s/setup.sh --mode production
+```
+
+`local` is a single-node, self-contained validation strategy. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, generated local certificate bootstrap jobs, Kafka topic initialization, one replica per application deployment, Nginx, and the Docker socket proxy with a runtime-agent sidecar.
+
+`production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services and workers, runtime-agent, Docker proxy, migrations, and topic initialization.
+
+The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes.
+
+Useful non-interactive options include:
+
+```bash
+scripts/k8s/setup.sh --mode local --create-kind
+scripts/k8s/setup.sh --mode production --context <context> --storage-class <name>
+scripts/k8s/setup.sh --mode production --skip-apply
+```
+
+`--skip-apply` prepares prerequisites without applying the overlay. `--context` keeps every kubectl operation on the named context. Run `scripts/k8s/setup.sh --help` for the current option list.
+
+## Cluster prerequisites
+
+Kubernetes does not include a generic `kubectl` command to create a cluster. Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or managed Kubernetes provisioning.
+
+The setup workflow requires `kubectl` and OpenSSL. Production Secret generation also requires Java `keytool`; `--create-kind` additionally requires kind. The production overlay needs a default dynamic StorageClass or an explicit `--storage-class`, and its HPAs need metrics-server or an equivalent `autoscaling/v2` resource-metrics provider.
+
+Container workflows require Docker-capable runtime nodes. Label every node that should own Docker containers:
+
+```bash
+kubectl label node <node-name> chronoverse.io/docker-workloads=true
+```
+
+Those nodes must expose Docker Engine at `/var/run/docker.sock`. Docker Desktop's built-in `docker-desktop` Kubernetes context is not sufficient for Docker-backed workers because it does not expose Docker Engine to pods.
+
+For local kind validation:
+
+```bash
+kind create cluster --name chronoverse --config infra/k8s/overlays/local/kind-cluster.yaml
+kubectl config use-context kind-chronoverse
+scripts/k8s/setup.sh --mode local
+```
+
+## Secrets and storage
+
+Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. You can pre-create those Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites valid, complete existing Secrets. Invalid local server-security Secrets are replaced with safe local values; invalid production server-security Secrets stop setup so the operator can correct them. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
+
+The local strategy uses hostPath PVs for single-node validation. Those PVs use retained node-local paths; delete the kind cluster or clear those paths when you intentionally want an empty local data set. Production uses dynamic PVCs by default; provide `--storage-class <name>` to the setup script or rely on the cluster default StorageClass. Production requires dynamic storage; use the local strategy for single-node hostPath validation.
+
+## Scaling
+
+The local strategy runs one replica per app deployment. The production strategy includes CPU/memory HorizontalPodAutoscalers for app services and background workers. Install metrics-server or provide equivalent `autoscaling/v2` resource metrics before relying on HPAs.
+
+Kafka-lag-driven worker scaling is not built into the Kustomize overlay. Use KEDA or a custom metrics adapter when worker count should follow topic lag.
+
+## Startup behavior
+
+Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with application retry behavior, readiness/liveness probes, and bootstrap Jobs for migrations, Kafka topics, and local certificate material.
+
+## Docker execution model
+
+Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register a node-stable endpoint, `tcp://$(NODE_IP):2375`, exposed by the Docker proxy `hostPort`; `tcp://docker-proxy:2375` must not be persisted as a runtime endpoint.
+
+`workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
+
+Workers must be able to reach runtime node IPs on TCP `2375`. The base NetworkPolicy allows that egress port, but production clusters should also restrict the host port with private networking, node firewall rules or security groups, and the Docker socket proxy API allowlist. Docker API port `2375` must never be publicly exposed.
+
+Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's hostPort from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.
+
+## Validation
+
+```bash
+make k8s/render/local
+make k8s/render/production
+make k8s/dry-run/local
+make k8s/dry-run/production
+scripts/k8s/setup.sh --mode local --dry-run
+scripts/k8s/setup.sh --mode production --dry-run
+```
+
+The render targets work offline. Both `kubectl apply --dry-run=client` and the setup-script dry runs still use API discovery and therefore require a reachable selected cluster. Full OpenAPI schema validation requires that live cluster or an external validator such as `kubeconform`.
+
+Direct Kustomize apply remains available after required Secrets, certificates, node labels, storage, public URLs, and ingress values have been prepared:
+
+```bash
+kubectl apply -k infra/k8s/overlays/local
+kubectl apply -k infra/k8s/overlays/production
+```
+
+## Local production smoke access
+
+The production overlay is configured for the Ingress host in `SERVER_HOST_URL`.
+If that value is `https://chronoverse.example.com`, browser cookies are scoped to
+that host and marked secure. A plain port-forward to `http://localhost:8080`
+will load the UI, but signup/login cookies will be rejected by the browser.
+
+For normal local browser validation, use the `local` strategy. For a temporary
+production-overlay smoke test in kind, you may override the server origin to
+localhost and restart only the server deployment:
+
+```bash
+kubectl --context kind-chronoverse -n chronoverse patch configmap server-config \
+  --type merge \
+  -p '{"data":{"SERVER_HOST_URL":"http://localhost:8080","SERVER_FRONTEND_URL":"http://localhost:8080","SERVER_ALLOWED_ORIGINS":"http://localhost:8080,"}}'
+kubectl --context kind-chronoverse -n chronoverse rollout restart deployment/server
+kubectl --context kind-chronoverse -n chronoverse rollout status deployment/server
+kubectl --context kind-chronoverse -n chronoverse port-forward svc/nginx 8080:80
+```
+
+This is a local-only smoke-test override. Reapply the production overlay, or set
+the production values to your real HTTPS domain, before using the cluster as a
+production environment.
+</doc>
+
+<doc title="Configuration reference" path="./docs/deployment/configuration/">
+# Configuration reference
+
+Configuration is environment-variable driven. The Compose files provide runnable defaults; production values must be reviewed explicitly.
+
+Kubernetes manifests keep the same environment-variable contract. Kustomize overlays merge the ConfigMaps and Secrets that provide those values.
+
+All Go processes accept `ENV` as the runtime mode label. It defaults to `development`, but credentials, TLS, origins, storage, and public URLs still require their own explicit production values.
+
+## HTTP server
+
+Host and timeouts use `SERVER_HOST`, `SERVER_PORT`, request/read/header/idle timeout values, request body limit, session and CSRF expiry, host URL, allowed origins, same-site mode, `SERVER_CSRF_HMAC_SECRET`, and `CRYPTO_SECRET`.
+
+Production requires persistent, distinct values for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`. Startup rejects empty values, the known development placeholder, and reuse of one value for both purposes. The production Compose profile requires both variables explicitly; the Kubernetes setup workflow validates `chronoverse-server-security`.
+
+## gRPC
+
+Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients use per-service host, port, TLS enablement, CA path, plus shared client certificate and key paths.
+
+## Infrastructure
+
+- PostgreSQL: connection pool, dial timeout, credentials, database, and TLS paths.
+- ClickHouse: hosts, credentials, pool limits, dial timeout, and TLS paths.
+- Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths. Production compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` for every Redis client process so startup order cannot reset the server to the lower code default.
+- Meilisearch: URI, master key, and TLS client settings.
+- Kafka: brokers, consumer group, topic partitions, replication factor, and TLS paths.
+
+## Workers
+
+Scheduler settings control poll interval, context timeout, and batch size. Jobs service settings include runtime heartbeat windows for claim and recovery. Runtime agent settings control runtime identity, Docker endpoint, heartbeat interval, and max concurrency; `RUNTIME_AGENT_ID` must remain stable for the same runtime node across restarts. Workflow worker settings control digest resolution and image-pull locks. Execution worker settings control concurrency, runtime-local image-pull locks, per-workload Docker container memory/CPU/PID limits, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention.
+
+Domain-service-specific limits include workflow and job list fetch limits, workflow cleanup settings, and `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT` for notification listing.
+
+## Detailed source
+
+The complete current variable inventory remains in `docs/configuration.md` and the typed files under `internal/config`.
+
+<SourceLink path="docs/configuration.md">Full environment variable inventory</SourceLink>
+
+<SourceLink path="infra/k8s/README.md">Kubernetes manifest configuration</SourceLink>
+</doc>
+
+<doc title="Certificates and security" path="./docs/deployment/security/">
+# Certificates and security
+
+## Local certificate bootstrap
+
+`init-certs` generates a local CA, server certificates, client certificates, Kafka keystore and truststore material, and Ed25519 authentication keys in the shared certificate volume.
+
+The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves valid, complete operator-provided Secrets.
+
+## Encrypted infrastructure
+
+Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC service connections. Kubernetes uses the same posture: data-store clients mount the generated or operator-provided client certificate, and PostgreSQL host connections require TLS plus a CA-verified client certificate.
+
+## Service authorization
+
+The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
+
+## Browser security
+
+Sessions are stored in encrypted cookies. Mutating browser requests require CSRF validation, and token HMACs are compared in constant time. CORS origins and same-site behavior are configurable.
+
+The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and an API-only Content Security Policy that disables resource loading and framing.
+
+## Docker access
+
+Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access.
+
+## Production secrets
+
+Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be persistent, distinct values; production startup rejects the known development placeholder and reuse of one value for both purposes.
+
+For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, `postgres-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. The setup script validates complete pre-created server-security Secrets before preserving them. Internal TLS trust-chain Secrets are treated as one atomic set; partial internal TLS material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
+
+<Callout title="Do not expose development ports" type="warning">
+The development profile publishes databases and gRPC services for debugging. That topology is not the production security boundary.
+</Callout>
+</doc>
+
+<doc title="OpenAPI specification" path="./docs/openapi.yaml">
+# OpenAPI specification
+
+This canonical OpenAPI 3.1 document defines all 23 generated HTTP operations, including authentication requirements, parameters, request bodies, responses, and shared schemas.
+
+```yaml
+openapi: 3.1.0
+info:
+  title: Chronoverse HTTP API
+  version: 1.0.0
+  description: Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+servers:
+  - url: http://localhost:8080
+    description: Development
+  - url: /api
+    description: Production Nginx proxy
+tags:
+  - name: Authentication
+  - name: Users
+  - name: Workflows
+  - name: Jobs
+  - name: Logs
+  - name: Notifications
+  - name: Analytics
+paths:
+  /auth/register:
+    post:
+      operationId: registerUser
+      summary: Register a user
+      tags: [Authentication]
+      description: Creates a user and issues session and CSRF cookies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthRequest'}
+      responses:
+        '201': {description: User registered and session created}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/login:
+    post:
+      operationId: loginUser
+      summary: Log in
+      tags: [Authentication]
+      description: Validates credentials and issues session and CSRF cookies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthRequest'}
+      responses:
+        '201': {description: Session created}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {description: Invalid email or password}
+  /auth/logout:
+    post:
+      operationId: logoutUser
+      summary: Log out
+      tags: [Authentication]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '204': {description: Session and CSRF cookies deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/validate:
+    post:
+      operationId: validateSession
+      summary: Validate a session
+      tags: [Authentication]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '200': {description: Session and CSRF state are valid}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /users:
+    get:
+      operationId: getCurrentUser
+      summary: Get current user
+      tags: [Users]
+      security: [{cookieSession: []}]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: updateCurrentUser
+      summary: Update current user
+      tags: [Users]
+      security: [{cookieSession: [], csrfToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notification_preference:
+                  type: string
+                  enum: [ALL, NONE]
+              required: [notification_preference]
+      responses:
+        '204': {description: User preferences updated}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /workflows:
+    get:
+      operationId: listWorkflows
+      summary: List workflows
+      tags: [Workflows]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: query, in: query, schema: {type: string}, description: Workflow name search}
+        - {name: kind, in: query, schema: {type: string, enum: [HEARTBEAT, CONTAINER]}}
+        - {name: build_status, in: query, schema: {$ref: '#/components/schemas/BuildStatus'}}
+        - {name: terminated, in: query, schema: {type: boolean, default: false}}
+        - {name: interval_min, in: query, description: Minimum interval in minutes; zero is treated as unset, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+        - {name: interval_max, in: query, description: Maximum interval in minutes; zero is treated as unset, schema: {type: integer, minimum: 0, maximum: 2147483647}}
+      responses:
+        '200':
+          description: Paginated workflow list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflows: {type: array, items: {$ref: '#/components/schemas/WorkflowListItem'}}
+                  cursor: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createWorkflow
+      summary: Create a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WorkflowInput'}
+      responses:
+        '201':
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                {$ref: '#/components/schemas/IdentifierResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /workflows/{workflow_id}:
+    parameters: [{$ref: '#/components/parameters/WorkflowId'}]
+    get:
+      operationId: getWorkflow
+      summary: Get a workflow
+      tags: [Workflows]
+      security: [{cookieSession: []}]
+      responses:
+        '200':
+          description: Workflow details
+          content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowDetail'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      operationId: updateWorkflow
+      summary: Update a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowUpdateInput'}}}
+      responses:
+        '204': {description: Workflow updated}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: terminateWorkflow
+      summary: Terminate a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '204': {description: Workflow terminated}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+    delete:
+      operationId: deleteWorkflow
+      summary: Delete a workflow
+      tags: [Workflows]
+      security: [{cookieSession: [], csrfToken: []}]
+      responses:
+        '204': {description: Terminated workflow deleted}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs:
+    get:
+      operationId: listJobs
+      summary: List workflow jobs
+      tags: [Jobs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/JobStatus'}}
+        - {name: trigger, in: query, schema: {type: string, enum: [AUTOMATIC, MANUAL]}}
+      responses:
+        '200':
+          description: Paginated job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: {type: array, items: {$ref: '#/components/schemas/JobListItem'}}
+                  cursor: {type: string}
+  /workflows/{workflow_id}/jobs/schedule:
+    post:
+      operationId: scheduleJob
+      summary: Schedule a job immediately
+      tags: [Jobs]
+      security: [{cookieSession: [], csrfToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201':
+          description: Manual job created
+          content:
+            application/json:
+              schema:
+                {$ref: '#/components/schemas/IdentifierResponse'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs/{job_id}:
+    get:
+      operationId: getJob
+      summary: Get a job
+      tags: [Jobs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+      responses:
+        '200':
+          description: Job details
+          content: {application/json: {schema: {$ref: '#/components/schemas/JobDetail'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /workflows/{workflow_id}/jobs/{job_id}/logs:
+    get:
+      operationId: getJobLogs
+      summary: Get retained job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200': {$ref: '#/components/responses/LogPage'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs/{job_id}/logs/search:
+    get:
+      operationId: searchJobLogs
+      summary: Search retained job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
+        - {name: q, in: query, schema: {type: string}, description: Search query. Omit for stream-only filtering.}
+      responses:
+        '200': {$ref: '#/components/responses/LogPage'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+  /workflows/{workflow_id}/jobs/{job_id}/logs/raw:
+    get:
+      operationId: downloadJobLogs
+      summary: Download raw job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+        - name: format
+          in: query
+          description: Download encoding. Defaults to plain text.
+          schema: {type: string, enum: [txt, json, jsonl], default: txt}
+        - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
+        - {name: q, in: query, schema: {type: string}, description: Optional safe text filter}
+      responses:
+        '200':
+          description: Log download matching the requested filters, streamed in ascending sequence order
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Raw log messages separated by newlines
+            application/json:
+              schema: {$ref: '#/components/schemas/JobLogDownload'}
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON where each line conforms to JobLogDownloadEntry
+        '400':
+          description: Invalid filter or format, or the job has not reached a terminal state
+  /workflows/{workflow_id}/jobs/{job_id}/events:
+    get:
+      operationId: streamJobLogs
+      summary: Stream live job logs
+      tags: [Logs]
+      security: [{cookieSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/JobId'}
+      responses:
+        '200':
+          description: "Server-Sent Events stream. Errors after headers are written use event:error frames."
+          content: {text/event-stream: {schema: {type: string}}}
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: List notifications
+      tags: [Notifications]
+      security: [{cookieSession: []}]
+      parameters: [{$ref: '#/components/parameters/Cursor'}]
+      responses:
+        '200':
+          description: Paginated notifications
+          content: {application/json: {schema: {$ref: '#/components/schemas/NotificationPage'}}}
+    put:
+      operationId: markNotificationsRead
+      summary: Mark notifications read
+      tags: [Notifications]
+      security: [{cookieSession: [], csrfToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties: {ids: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}}
+      responses:
+        '204': {description: Notifications marked read}
+  /analytics:
+    get:
+      operationId: getUserAnalytics
+      summary: Get user analytics
+      tags: [Analytics]
+      security: [{cookieSession: []}]
+      responses:
+        '200':
+          description: Aggregate totals for the authenticated user
+          content: {application/json: {schema: {$ref: '#/components/schemas/UserAnalytics'}}}
+  /analytics/{workflow_id}:
+    get:
+      operationId: getWorkflowAnalytics
+      summary: Get workflow analytics
+      tags: [Analytics]
+      security: [{cookieSession: []}]
+      parameters: [{$ref: '#/components/parameters/WorkflowId'}]
+      responses:
+        '200':
+          description: Aggregate totals for one workflow
+          content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
+components:
+  securitySchemes:
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Encrypted session cookie issued after registration or login.
+    csrfToken:
+      type: apiKey
+      in: cookie
+      name: csrf
+      description: CSRF cookie issued with the session and required for state-changing requests.
+  parameters:
+    WorkflowId: {name: workflow_id, in: path, required: true, schema: {type: string, format: uuid}}
+    JobId: {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
+    Cursor: {name: cursor, in: query, required: false, schema: {type: string}, description: Opaque pagination cursor}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string}, description: Stable key reused only when retrying the same mutation}
+  responses:
+    BadRequest: {description: Invalid input or missing required idempotency key}
+    Unauthorized: {description: Missing or invalid session}
+    NotFound: {description: Resource not found}
+    PreconditionFailed: {description: Current workflow or job state does not allow the operation}
+    LogPage:
+      description: Retained logs in descending sequence order
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/JobLogPage'}
+  schemas:
+    AuthRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, format: password, minLength: 8, maxLength: 72}
+    User:
+      type: object
+      required: [email, notification_preference, created_at, updated_at]
+      properties:
+        email: {type: string, format: email}
+        notification_preference: {type: string, enum: [ALL, NONE]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    WorkflowInput:
+      type: object
+      required: [name, payload, kind, interval, max_consecutive_job_failures_allowed]
+      properties:
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        kind: {type: string, enum: [HEARTBEAT, CONTAINER]}
+        interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
+        log_retention: {type: boolean, description: Supported for CONTAINER workflows; forced off for HEARTBEAT}
+    WorkflowUpdateInput:
+      type: object
+      required: [name, payload, interval, max_consecutive_job_failures_allowed]
+      properties:
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
+    BuildStatus: {type: string, enum: [QUEUED, STARTED, COMPLETED, FAILED, CANCELED]}
+    JobStatus: {type: string, enum: [PENDING, QUEUED, RUNNING, COMPLETED, FAILED, CANCELED]}
+    TerminalReasonCode:
+      type: string
+      description: Normalized user-safe reason for a FAILED or CANCELED job
+      enum: [TIME_LIMIT_EXCEEDED, NON_ZERO_EXIT, IMAGE_PULL_FAILED, UNEXPECTED_STATUS_CODE, EXECUTION_FAILED, SYSTEM_ERROR, FAILURE_REASON_UNAVAILABLE, WORKFLOW_TERMINATED, WORKFLOW_UPDATED, CANCELLATION_REASON_UNAVAILABLE]
+    IdentifierResponse:
+      type: object
+      required: [id]
+      properties:
+        id: {type: string, format: uuid}
+    WorkflowListItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
+        kind: {type: string, enum: [HEARTBEAT, CONTAINER]}
+        build_status: {$ref: '#/components/schemas/BuildStatus'}
+        interval: {type: integer, description: Schedule interval in minutes}
+        consecutive_job_failures_count: {type: integer, minimum: 0}
+        max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        terminated_at: {type: string, format: date-time}
+        log_retention: {type: boolean}
+    WorkflowDetail:
+      allOf:
+        - {$ref: '#/components/schemas/WorkflowListItem'}
+        - type: object
+          properties:
+            generation: {type: integer, minimum: 0}
+    JobListItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        workflow_id: {type: string, format: uuid}
+        container_id: {type: string}
+        status: {$ref: '#/components/schemas/JobStatus'}
+        trigger: {type: string, enum: [AUTOMATIC, MANUAL]}
+        attempts: {type: integer, minimum: 0}
+        scheduled_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        status_reason_code: {$ref: '#/components/schemas/TerminalReasonCode'}
+        status_reason_message: {type: string, description: Canonical safe reason message; present only for FAILED and CANCELED jobs}
+    JobDetail:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        workflow_id: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/JobStatus'}
+        trigger: {type: string, enum: [AUTOMATIC, MANUAL]}
+        scheduled_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        status_reason_code: {$ref: '#/components/schemas/TerminalReasonCode'}
+        status_reason_message: {type: string, description: Canonical safe reason message; present only for FAILED and CANCELED jobs}
+    Log:
+      type: object
+      properties:
+        timestamp: {type: string, format: date-time}
+        message: {type: string}
+        sequence_num: {type: integer, minimum: 0}
+        stream: {type: string, enum: [stdout, stderr]}
+        event_id: {type: string}
+    JobLogPage:
+      type: object
+      properties:
+        id: {type: string, format: uuid, description: Job ID}
+        workflow_id: {type: string, format: uuid}
+        logs: {type: array, items: {$ref: '#/components/schemas/Log'}}
+        cursor: {type: string}
+        highlight_token: {type: string, description: Marker inserted around search matches in log messages}
+    JobLogDownloadFilter:
+      type: object
+      required: [q, stream]
+      properties:
+        q: {type: string}
+        stream: {type: string, enum: [all, stdout, stderr]}
+    JobLogDownloadEntry:
+      type: object
+      required: [timestamp, sequence_num, stream, event_id, message_raw]
+      properties:
+        timestamp: {type: string, format: date-time}
+        sequence_num: {type: integer, minimum: 0}
+        stream: {type: string, enum: [stdout, stderr]}
+        event_id: {type: string}
+        message_raw: {type: string}
+        message_json: {description: Parsed JSON value when message_raw contains valid JSON}
+    JobLogDownload:
+      type: object
+      required: [id, workflow_id, filters, logs]
+      properties:
+        id: {type: string, format: uuid, description: Job ID}
+        workflow_id: {type: string, format: uuid}
+        filters: {$ref: '#/components/schemas/JobLogDownloadFilter'}
+        logs: {type: array, items: {$ref: '#/components/schemas/JobLogDownloadEntry'}}
+    Notification:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        payload: {type: string, description: Notification-kind-specific JSON encoded as a string}
+        read_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    NotificationPage:
+      type: object
+      properties:
+        notifications: {type: array, items: {$ref: '#/components/schemas/Notification'}}
+        cursor: {type: string}
+    UserAnalytics:
+      type: object
+      required: [total_workflows, total_jobs, total_joblogs, total_job_execution_duration, workflow_kinds, top_workflows]
+      properties:
+        total_workflows: {type: integer, minimum: 0}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed across the user's workflows regardless of retention}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+        workflow_kinds: {type: array, items: {$ref: '#/components/schemas/WorkflowKindAnalytics'}}
+        top_workflows: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/WorkflowAnalyticsSummary'}}
+    WorkflowKindAnalytics:
+      type: object
+      required: [kind, total_workflows, total_jobs, total_joblogs, total_job_execution_duration]
+      properties:
+        kind: {type: string}
+        total_workflows: {type: integer, minimum: 0}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for this workflow kind regardless of retention}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+    WorkflowAnalyticsSummary:
+      type: object
+      required: [workflow_id, workflow_name, kind, total_jobs, total_joblogs, total_job_execution_duration]
+      properties:
+        workflow_id: {type: string, format: uuid}
+        workflow_name: {type: string, description: Current workflow name or Deleted workflow when only durable history remains}
+        kind: {type: string}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for the workflow regardless of retention}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+    WorkflowAnalytics:
+      type: object
+      required: [workflow_id, total_job_execution_duration, total_jobs, total_joblogs]
+      properties:
+        workflow_id: {type: string, format: uuid}
+        total_job_execution_duration: {type: integer, minimum: 0, description: Combined terminal-job execution duration in seconds}
+        total_jobs: {type: integer, minimum: 0}
+        total_joblogs: {type: integer, minimum: 0, description: Generated log events observed for the workflow regardless of retention}
+```
+</doc>
+
+## Deep Dive
+
+<doc title="gRPC services" path="./docs/internal/grpc-services/">
+# gRPC services
+
+Five internal gRPC services expose domain operations over mTLS-protected connections.
+
+## Users service
+
+Registration, login, user lookup, and preference updates.
+
+## Workflows service
+
+Workflow CRUD, build status, list filters, failure counters, termination, deletion, and internal lookup by ID.
+
+## Jobs service
+
+Scheduling, reads, status updates, lease claim and renewal, container attachment, completion, failure, cancellation, retry release, expired-lease recovery, logs, search, live streaming, and job listing.
+
+`FailJob` requires a failure-family terminal reason code, while `CancelClaimedJob` and canceled `UpdateJobStatus` calls require a cancellation-family code. Generic status updates cannot set `FAILED`; workers must use `FailJob` so failure kind, diagnostics, status, and reason are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
+
+## Notifications service
+
+Notification creation, listing, and marking records read.
+
+## Analytics service
+
+User and workflow aggregate reads.
+
+## Transport security
+
+Compose configures service certificates, client certificates, CA trust, and signed authorization metadata. Direct host exposure of development ports is for debugging, not a substitute for authenticated service calls.
+</doc>
+
+<doc title="Kafka events" path="./docs/internal/kafka-events/">
+# Kafka events
+
+Kafka events connect the durable state owned by services with the asynchronous work owned by workers.
+
+## Topic contracts
+
+- `workflows`: build, reschedule, termination, deletion, and workflow terminal effects.
+- `jobs`: dispatch and container execution work.
+- `job_logs`: deterministic retained stdout and stderr events.
+- `analytics`: workflow, job, and log aggregate inputs.
+
+## Event identity
+
+Events carry stable identifiers or deterministic keys for replay-sensitive side effects. Workflow generation and job dispatch attempt fields provide additional stale-work protection.
+
+## Trace headers
+
+OpenTelemetry propagation fields are injected into Kafka headers and extracted by consumers.
+
+## Compatibility
+
+Event schema changes must account for records already present in Kafka. Additive changes are preferred, and consumers must not assume a producer and every consumer deploy simultaneously.
+
+## Delivery expectation
+
+Events are delivered at least once. Consumers must remain idempotent, preconditioned, or deduplicated.
+</doc>
+
+<doc title="Data stores" path="./docs/internal/data-stores/">
+# Data stores
+
+## PostgreSQL
+
+Stores users, workflows, jobs, runtime nodes, notification state, analytics aggregates, idempotency records, outbox rows, job leases, retry metadata, and processed-event identity.
+
+## ClickHouse
+
+Stores retained job logs optimized for high-volume ordered reads. It is not the authoritative workflow or job state store.
+
+## Redis
+
+Stores HTTP sessions, cached service reads, live log pub/sub state, and runtime-node-scoped image-pull locks.
+
+## Meilisearch
+
+Indexes retained log messages for text search and highlights. ClickHouse remains the retained log body store.
+
+## Kafka
+
+Carries durable asynchronous events. It is a transport log, not the only record of command completion or job ownership.
+
+## Runtime registry and Docker proxy
+
+`runtime-agent` registers Docker-capable nodes in PostgreSQL and heartbeats Docker endpoint health, capacity, and status. The Docker proxy exposes a narrow subset of Docker APIs to workers instead of mounting the daemon socket directly into every process.
+
+`runtime-agent` owns rows in `runtime_nodes`. Jobs store `runtime_node_id` and an endpoint snapshot while they are running so execution, logs, termination, deletion, and expired-lease recovery use the Docker daemon that owns the container.
+
+## Ownership rule
+
+Do not add a second writable source for a domain entity without defining reconciliation. Each store has a distinct operational role.
+</doc>
+
+<doc title="Monitoring" path="./docs/operations/monitoring/">
+# Monitoring
+
+## Compose health
+
+Start with `docker compose ps` and identify the first unhealthy dependency. Application failures often originate in certificate generation, infrastructure readiness, topic initialization, or migrations.
+
+## Health checks
+
+Compose checks PostgreSQL with TLS `psql`, ClickHouse with the secure client, Redis with TLS, Meilisearch over HTTPS, and gRPC services with authenticated TLS probes.
+
+## Service signals
+
+Monitor request and RPC latency, Kafka consumer progress, outbox pending and dead rows, expired job leases, execution retries, log processor batch failures, ClickHouse insert latency, Meilisearch health, and database pool saturation.
+
+For endpoint traffic, use histogram counts for request rate, status-code attributes for error ratios, and histogram buckets for latency percentiles. Group REST traffic by `http.route` rather than raw URL paths, and group gRPC traffic by `rpc.service` and `rpc.method`.
+
+## User-visible checks
+
+Track scheduling delay, workflow build failures, jobs stuck outside terminal states, SSE connection failures, missing retained logs, and analytics lag.
+
+## First response
+
+```bash
+docker compose -f compose.prod.yaml ps
+docker compose -f compose.prod.yaml logs --since=15m server
+docker compose -f compose.prod.yaml logs --since=15m outbox-relay
+docker compose -f compose.prod.yaml logs --since=15m execution-worker
+```
+</doc>
+
+<doc title="Observability" path="./docs/operations/observability/">
+# Observability
+
+Chronoverse emits OpenTelemetry traces, metrics, and structured logs to the bundled Grafana OTEL LGTM stack.
+
+## Collection
+
+Services and workers export over OTLP gRPC to `lgtm:4317`. The local Grafana UI is published on port `3000`.
+
+## Traces
+
+Trace context crosses HTTP, gRPC, and Kafka. Use a single trace to follow an API mutation into outbox publication, worker processing, domain RPCs, and follow-up events.
+
+## Metrics
+
+Runtime and host metrics complement application spans. HTTP, gRPC, and Redis instrumentation uses the same global OpenTelemetry meter provider and exports through the configured OTLP endpoint.
+
+### Endpoint metrics
+
+The HTTP server emits the standard OpenTelemetry histograms:
+
+- `http.server.request.duration`
+- `http.server.request.body.size`
+- `http.server.response.body.size`
+
+Outbound heartbeat requests emit the corresponding `http.client.*` metrics. HTTP server metrics use route templates such as `/workflows/{workflow_id}`; workflow IDs, job IDs, users, URLs, and authentication data are not metric attributes.
+
+All gRPC servers and clients emit:
+
+- `rpc.server.duration` and `rpc.client.duration`
+- `rpc.server.request.size` and `rpc.client.request.size`
+- `rpc.server.response.size` and `rpc.client.response.size`
+- per-RPC request and response message counts
+
+Useful dimensions include HTTP method, route, and response status, plus gRPC service, method, and status code. Unary and streaming RPCs are both recorded.
+
+Request volume is derived from histogram sample counts rather than a separate request counter. In Grafana's Prometheus data source, the OTEL metrics are normalized to Prometheus names. Example queries include:
+
+```promql
+# REST requests per second by route and method
+sum by (http_route, http_request_method) (
+  rate(http_server_request_duration_seconds_count[5m])
+)
+
+# REST 5xx ratio
+sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+/
+sum(rate(http_server_request_duration_seconds_count[5m]))
+
+# REST p95 latency by route
+histogram_quantile(
+  0.95,
+  sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[5m]))
+)
+
+# gRPC requests per second by service and method
+sum by (rpc_service, rpc_method) (
+  rate(rpc_server_duration_milliseconds_count[5m])
+)
+```
+
+Watch latency distributions, error ratios, and saturation rather than relying only on process uptime.
+
+## Logs
+
+Structured application logs include service context and trace correlation where available. Container job stdout and stderr are a separate product data stream and follow the live/retained log pipeline.
+
+## Investigation order
+
+Start from the user-visible request or job ID, locate its trace, inspect failed spans and correlated logs, then confirm durable state in PostgreSQL and transport progress in Kafka.
+</doc>
+
+<doc title="Scaling" path="./docs/operations/scaling/">
+# Scaling
+
+## Kafka partitions
+
+Consumer throughput is bounded by partition count. Production defaults use more partitions for `jobs` and `job_logs` than for lower-volume workflow and analytics traffic.
+
+## Execution workers
+
+Scale concurrency only when registered runtime capacity, Docker CPU, memory, image bandwidth, Kafka partitions, jobs-service latency, and lease-renewal headroom support it.
+
+Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker, and do not apply to image pulls.
+
+Execution workers do not need to run on the same node as the Docker daemon. They receive `runtime_endpoint` from `jobs-service` and use the direct Docker data plane for image ensure, container start, logs, and cleanup.
+
+## Runtime agents
+
+Run one runtime agent beside each Docker-capable daemon. New container claims only use fresh `READY` runtime rows. Missing heartbeats pause new claims for that runtime, while expired-lease recovery uses the stored job owner to decide whether to clean up or retry.
+
+## Workflow workers
+
+Replicas that share a runtime node coordinate identical image pulls through Redis. Different runtime nodes still pull independently. Docker host is used only as a fallback for legacy/local clients without an explicit runtime scope. Build completion records the resolved workflow image digest; execution workers ensure that digest on the assigned runtime node before creating the container.
+
+## Outbox relay
+
+Multiple replicas use processing leases. Tune batch size and polling against PostgreSQL and Kafka latency, not in isolation.
+
+## Logs
+
+High log volume requires sufficient `job_logs` partitions, processor replicas, ClickHouse insertion capacity, Meilisearch indexing capacity, and network throughput.
+
+## Databases
+
+Review every service's connection pool when increasing replicas. Replica multiplication can exhaust PostgreSQL, ClickHouse, Redis, or Meilisearch before CPU becomes the limiting resource.
+
+## Safe sequence
+
+Measure backlog and latency, increase the constraining partition or store capacity, adjust worker replicas and concurrency, then confirm lease and retry behavior under failure.
+</doc>
+
+<doc title="Retries and recovery" path="./docs/operations/recovery/">
+# Retries and recovery
+
+## Outbox publication
+
+Failed Kafka publication is retried with backoff under a processing lease. Exhausted rows become dead and remain visible for operational handling.
+
+## Kafka handlers
+
+Partition processing distinguishes retryable from terminal outcomes. Records are committed only when policy permits.
+
+## Job execution
+
+System failures can release eligible jobs for bounded retry. User workload failures are recorded without treating every failure as infrastructure instability.
+
+## Expired leases
+
+Recovery scans for expired running jobs, invalidates old ownership, attempts container cleanup, and either retries or terminates the job according to current state and retry limits.
+
+## Stale events
+
+Generation, dispatch attempt, deterministic ID, and lease-token checks intentionally reject delayed work. A precondition failure can therefore indicate successful protection rather than a platform outage.
+
+## Cleanup loops
+
+Workflow state, outbox rows, and analytics processed-event IDs use bounded cleanup. Retention windows must remain long enough for expected replay and investigation periods.
+</doc>
+
+<doc title="Troubleshooting" path="./docs/operations/troubleshooting/">
+# Troubleshooting
+
+## TLS or certificate failures
+
+Confirm `init-certs` completed and the failing service mounts the expected CA, certificate, and key. For a disposable local reset, use `down -v` and restart.
+
+## Compose readiness
+
+Find the first unhealthy dependency, not only the final service that failed to start. Check Kafka topic initialization and database migration output before worker logs.
+
+## Missing logs
+
+Confirm the workflow is `CONTAINER`, retention is enabled, the job logs processor is healthy, and ClickHouse plus Meilisearch are available. Heartbeat workflows and disabled retention intentionally have no retained logs.
+
+## SSE does not stream
+
+Confirm the job is running and use the production `/api/.../events` proxy path. Verify Nginx buffering is disabled and inspect `event: error` frames.
+
+## Duplicate or stale events
+
+Check idempotency-key reuse, outbox relay health, workflow generation mismatches, job lease ownership, and processor deduplication before treating a repeated Kafka record as corruption.
+
+## Dashboard cannot reach the API
+
+Verify `NEXT_PUBLIC_API_URL`, CORS origins, session cookie host and same-site policy, CSRF state, and the production Nginx path.
+
+<SourceLink path="docs/operations.md">Expanded operational runbook</SourceLink>
+</doc>
+
+## Optional
+
+<doc title="Repository layout" path="./docs/contributing/repository-layout/">
+# Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `cmd/` | Executable entry points for five domain services, the HTTP server, workers, processors, runtime agent, relay, and migrations |
+| `internal/app/` | Interfaces between entry points and domain implementations; source for generated mocks |
+| `internal/config/` | Typed environment-variable contracts for every Go process |
+| `internal/model/` | Shared domain models and asynchronous event envelopes |
+| `internal/server/` | Public HTTP gateway and middleware |
+| `internal/service/` | Domain service logic |
+| `internal/repository/` | Persistence and worker implementations |
+| `internal/pkg/` | Shared infrastructure clients and reliability primitives |
+| `proto/` | Source protobuf contracts |
+| `pkg/proto/go/` | Generated Go protobuf code |
+| `dashboard/` | Authenticated product dashboard |
+| `static/` | Public landing page and static MDX documentation |
+| `docs/` | Concise repository-level engineering references |
+| `infra/k8s/` | Kustomize base plus local and production overlays; includes the operator runbook |
+| `scripts/k8s/` | Kubernetes prerequisite, Secret bootstrap, render, validation, and apply workflow |
+| `certs/` | Git-ignored local workspace populated and mounted by Compose certificate/bootstrap jobs |
+| `compose.dev.yaml` | Locally built, debug-friendly full-stack topology |
+| `compose.prod.yaml` | Published-image topology with Nginx, resource limits, and replicated workers |
+| `Makefile` and `tools.go` | Generation, test, lint, build, run, and Kubernetes validation entry points |
+| `.github/` | CI, release-image, and GitHub Pages deployment automation |
+
+## Ownership pattern
+
+Entry points compose configuration, infrastructure, repositories, and services. Business state transitions remain in domain layers; reusable transport and storage behavior belongs under `internal/pkg` only when it is truly cross-domain.
+
+The dashboard follows the same ownership rule. Route files in `dashboard/src/app` are thin entry points, domain UI and hooks live together under `dashboard/src/features/<domain>`, reusable shadcn primitives remain under `dashboard/src/components/ui`, and only cross-feature API transport, endpoint construction, query keys, and general utilities belong under `dashboard/src/lib`.
+
+Deployment ownership follows the same separation. `infra/k8s/base` owns shared application resources. `infra/k8s/overlays/local` and `infra/k8s/overlays/production` own strategy-specific infrastructure, storage, replica, and patch choices. `scripts/k8s/setup.sh` owns prerequisite and Secret bootstrap before Kustomize apply. Compose remains a separate supported topology rather than generated Kubernetes input.
+
+## Generated files
+
+Do not edit generated protobuf Go files by hand. Change the source files below `proto/` and run `make generate`; commit changes under `pkg/proto/go/` and `buf.lock` with the contract change.
+
+Mocks below `internal/**/mock/` come from `//go:generate` directives. After changing an interface, run `make mockgen` and commit the resulting mock changes. Build artifacts under `.bin/`, `dashboard/.next/`, `static/.next/`, and `static/out/` are local output and are not source documentation.
+</doc>
+
+<doc title="Development workflow" path="./docs/contributing/development/">
+# Development workflow
+
+## Install tools and synchronize dependencies
+
+```bash
+make tools
+make dependencies
+```
+
+`make tools` installs the repository's Go generators and linter into `.bin`; Buf itself must also be installed and available on `PATH`. `make dependencies` runs `make generate` and then `go mod tidy -v`. Generation removes and recreates `pkg/proto`, updates `buf.lock`, and compiles the protobuf contracts. Keep `proto/`, `pkg/proto/go/`, `buf.lock`, `go.mod`, and `go.sum` changes together when applicable.
+
+Run the narrower target when only protobuf output needs verification:
+
+```bash
+make generate
+```
+
+After changing a Go interface with a `//go:generate` directive, regenerate mocks:
+
+```bash
+make mockgen
+```
+
+## Test
+
+```bash
+make test/short
+make test
+```
+
+The full target runs Go tests with the race detector and includes Docker-backed coverage where required.
+
+## Lint and build
+
+```bash
+make lint
+make build/all
+cd dashboard && npm test && npm run lint && npm run build
+cd ../static && npm run check
+```
+
+Use `npm ci` in both frontend workspaces when reproducing CI from their committed lockfiles. `npm run check` in `static/` validates the MDX/OpenAPI registry, lints, type-checks, and performs the static Next.js export.
+
+Dashboard route modules should remain thin. Keep domain components, hooks, and API response types under `dashboard/src/features/<domain>`; reserve `dashboard/src/components/ui` for reusable shadcn primitives and `dashboard/src/lib` for infrastructure shared by multiple features.
+
+## Kubernetes changes
+
+Render and client-dry-run both overlays after changing `infra/k8s`, `scripts/k8s`, deployment configuration, image arguments, ports, probes, or Secrets:
+
+```bash
+make k8s/render/local
+make k8s/render/production
+make k8s/dry-run/local
+make k8s/dry-run/production
+scripts/k8s/setup.sh --mode local --dry-run
+scripts/k8s/setup.sh --mode production --dry-run
+```
+
+The render targets work offline. The kubectl client dry runs still use API discovery and therefore need a reachable selected cluster; full OpenAPI schema validation likewise needs a live target cluster or a separate validator such as `kubeconform`. The setup-script dry runs additionally exercise prerequisite, existing-Secret inspection, and Secret preparation logic against the selected kubectl context.
+
+## Documentation changes
+
+Add or edit MDX under `static/content/docs`, update `static/docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. Run `npm run generate:llms` after changing any of those canonical sources; `npm run validate:llms` rejects stale `llms.txt` or `llms-full.txt` artifacts, and the static build runs this drift check automatically. Keep the concise repository references under `docs/`, `README.md`, `infra/k8s/README.md`, and landing-page copy aligned when the same behavior is described there. From `static/`, `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
+
+## Releases
+
+Git tags matching `v*` trigger service image release jobs after lint, build, generated-protobuf verification, and tests complete. The static site validates and deploys from `main` through GitHub Pages.
+</doc>

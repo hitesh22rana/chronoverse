@@ -8,11 +8,13 @@
   },
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "npm run validate:docs && npm run lint && npm run typecheck && next build",
+    "build": "npm run validate:docs && npm run validate:llms && npm run lint && npm run typecheck && next build",
+    "generate:llms": "tsx scripts/generate-llms.ts",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "validate:docs": "tsx scripts/validate-docs.ts",
+    "validate:llms": "tsx scripts/generate-llms.ts --check",
     "check": "npm run build"
   },
   "dependencies": {

@@ -60,7 +60,7 @@ The render targets work offline. The kubectl client dry runs still use API disco
 
 ## Documentation changes
 
-Add or edit MDX under `static/content/docs`, update `static/docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. Keep the concise repository references under `docs/`, `README.md`, `infra/k8s/README.md`, and landing-page copy aligned when the same behavior is described there. From `static/`, `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
+Add or edit MDX under `static/content/docs`, update `static/docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. Run `npm run generate:llms` after changing any of those canonical sources; `npm run validate:llms` rejects stale `llms.txt` or `llms-full.txt` artifacts, and the static build runs this drift check automatically. Keep the concise repository references under `docs/`, `README.md`, `infra/k8s/README.md`, and landing-page copy aligned when the same behavior is described there. From `static/`, `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
 
 ## Releases
 

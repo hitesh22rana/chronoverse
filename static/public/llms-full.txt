@@ -32,10 +32,10 @@ Duplicate events, worker restarts, partial publication, stale workflow builds, a
 ## What the platform provides
 
 <CardGrid>
-  <DocCard title="Reliable dispatch" href="/docs/engineering/replay-safety">State changes and matching events survive retries and restarts.</DocCard>
-  <DocCard title="Execution ownership" href="/docs/engineering/job-leases">Only one execution worker owns a running job lease.</DocCard>
-  <DocCard title="Live and retained logs" href="/docs/features/log-streaming">Stream output over SSE, retain it in ClickHouse, and search it through Meilisearch.</DocCard>
-  <DocCard title="Observable by default" href="/docs/operations/observability">Traces, metrics, and structured logs flow into the bundled LGTM stack.</DocCard>
+  <DocCard title="Reliable dispatch" href="./docs/engineering/replay-safety">State changes and matching events survive retries and restarts.</DocCard>
+  <DocCard title="Execution ownership" href="./docs/engineering/job-leases">Only one execution worker owns a running job lease.</DocCard>
+  <DocCard title="Live and retained logs" href="./docs/features/log-streaming">Stream output over SSE, retain it in ClickHouse, and search it through Meilisearch.</DocCard>
+  <DocCard title="Observable by default" href="./docs/operations/observability">Traces, metrics, and structured logs flow into the bundled LGTM stack.</DocCard>
 </CardGrid>
 
 ## System shape
@@ -44,7 +44,7 @@ Duplicate events, worker restarts, partial publication, stale workflow builds, a
 
 ## Where to go next
 
-Start with the [quickstart](/docs/quickstart), then create [your first workflow](/docs/getting-started/first-workflow). For implementation detail, read the [architecture](/docs/engineering/architecture) and [replay-safety model](/docs/engineering/replay-safety).
+Start with the [quickstart](./docs/quickstart), then create [your first workflow](./docs/getting-started/first-workflow). For implementation detail, read the [architecture](./docs/engineering/architecture) and [replay-safety model](./docs/engineering/replay-safety).
 </doc>
 
 <doc title="Quickstart" path="./docs/quickstart/">
@@ -107,7 +107,7 @@ Clone the repository and use either `compose.dev.yaml`, `compose.prod.yaml`, or 
 scripts/k8s/setup.sh --mode local --create-kind
 ```
 
-The setup script prepares required Secrets and certificates before applying the local Kustomize overlay. Direct `kubectl apply -k` is supported only after those prerequisites exist; see [Kubernetes deployment](/docs/deployment/kubernetes).
+The setup script prepares required Secrets and certificates before applying the local Kustomize overlay. Direct `kubectl apply -k` is supported only after those prerequisites exist; see [Kubernetes deployment](./docs/deployment/kubernetes).
 
 ## Development toolchain
 
@@ -140,7 +140,7 @@ The static site exports plain HTML into `static/out` and is deployed to GitHub P
 
 ## Production preparation
 
-Replace development credentials, generated local certificate assumptions, public hostnames, allowed origins, and cookie policy before exposing the stack. Continue with [production deployment](/docs/deployment/production) and [certificates and security](/docs/deployment/security).
+Replace development credentials, generated local certificate assumptions, public hostnames, allowed origins, and cookie policy before exposing the stack. Continue with [production deployment](./docs/deployment/production) and [certificates and security](./docs/deployment/security).
 </doc>
 
 <doc title="Your first workflow" path="./docs/getting-started/first-workflow/">
@@ -264,7 +264,7 @@ Configured container execution timeouts and heartbeat request timeouts use `TIME
 
 An execution worker must claim the job before starting a container. The jobs service returns a lease token, and that token is required to attach a container, renew ownership, complete, fail, cancel, or release the job.
 
-See [durable job leases](/docs/engineering/job-leases) for failure and recovery behavior.
+See [durable job leases](./docs/engineering/job-leases) for failure and recovery behavior.
 </doc>
 
 <doc title="Scheduling" path="./docs/concepts/scheduling/">
@@ -881,7 +881,7 @@ Reuse a key only when retrying the same logical command.
 
 ## Reference
 
-The [endpoint reference](/docs/api/reference) is generated from the repository's OpenAPI document. It covers paths, parameters, request bodies, and response status codes.
+The [endpoint reference](./docs/api/reference) is generated from the repository's OpenAPI document. It covers paths, parameters, request bodies, and response status codes.
 
 <Callout title="No documented rate limiter" type="warning">
 The current gateway maps `ResourceExhausted` to HTTP `429`, but the repository does not define a general public request-rate policy. Clients should not assume limits that are not configured by the deployment.
@@ -1024,7 +1024,7 @@ Public application endpoints use the Chronoverse session cookie. Mutating routes
 
 ## Source of truth
 
-The OpenAPI document describes the public HTTP surface registered in `internal/server/server.go`. Internal lease and worker RPCs are intentionally documented separately under [gRPC services](/docs/internal/grpc-services).
+The OpenAPI document describes the public HTTP surface registered in `internal/server/server.go`. Internal lease and worker RPCs are intentionally documented separately under [gRPC services](./docs/internal/grpc-services).
 
 ## Raw specification
 
@@ -2355,7 +2355,7 @@ The render targets work offline. The kubectl client dry runs still use API disco
 
 ## Documentation changes
 
-Add or edit MDX under `static/content/docs`, update `static/docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. Keep the concise repository references under `docs/`, `README.md`, `infra/k8s/README.md`, and landing-page copy aligned when the same behavior is described there. From `static/`, `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
+Add or edit MDX under `static/content/docs`, update `static/docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. Run `npm run generate:llms` after changing any of those canonical sources; `npm run validate:llms` rejects stale `llms.txt` or `llms-full.txt` artifacts, and the static build runs this drift check automatically. Keep the concise repository references under `docs/`, `README.md`, `infra/k8s/README.md`, and landing-page copy aligned when the same behavior is described there. From `static/`, `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
 
 ## Releases
 

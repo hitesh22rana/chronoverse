@@ -4,7 +4,7 @@ Replicated workflow and execution workers can share a runtime daemon. Without co
 
 ## Lock scope
 
-The Redis lock key includes the runtime node scope and exact image string. Workers sharing a runtime node coordinate; workers on different runtime nodes may pull in parallel. Docker host is used only as a fallback for legacy/local clients that do not pass an explicit runtime scope.
+The Redis lock key includes the runtime node scope and exact image string. Workers sharing a runtime node coordinate; workers on different runtime nodes may pull in parallel. Docker host is used as a fallback when a request omits an explicit runtime scope.
 
 ## Acquisition flow
 

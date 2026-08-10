@@ -55,7 +55,3 @@ The production profile declares replicated workers and resource reservations. Ef
 - Restrict access to the LGTM dashboard.
 - Restrict Docker proxy TCP `2375` to trusted Chronoverse traffic with private networking, node firewall rules or security groups, and the Docker socket proxy allowlist. NetworkPolicy support for node-IP hostPort traffic depends on the CNI.
 - Define backup, restore, and retention procedures for PostgreSQL and ClickHouse.
-
-## Upgrade order
-
-Apply compatible migrations before new services depend on them. Event and protobuf changes should remain compatible with records and replicas from the previous version during rolling replacement.

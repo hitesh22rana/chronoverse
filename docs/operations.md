@@ -133,7 +133,7 @@ and liveness probes decide when pods receive traffic or are restarted. The local
 overlay uses init containers only for prerequisites that must exist before the
 process starts, such as generated certificate files and hostPath permissions.
 Operators should still inspect bootstrap Jobs before scaling application
-workloads during rollout.
+workloads.
 
 ## Health Checks
 
@@ -204,25 +204,6 @@ npm run check
 `npm run check` includes documentation validation, lint, type checking, and the
 static Next.js export.
 
-## Idempotency Rollout
-
-Mixed application versions are unsupported for the ledger migration. Pause
-public mutations, workers, and outbox publication; run migration preflight and
-legacy threshold reconciliation; then deploy all affected services together.
-Resume outbox and workers first, run an approved heartbeat canary with approved
-credentials, remove its fixtures, and only then resume public mutations.
-
-Rollback also requires paused traffic. The legacy schema cannot represent
-completed terminal-effect identities or non-workflow command records, so that
-identity loss must be accepted before applying the down migration.
-
-The reusable repository-level Testcontainers work remains explicitly deferred
-as **Add Testcontainers repository idempotency concurrency suite**. Its
-acceptance coverage is expired-key replacement under contention, commit followed
-by response loss, exactly-once runtime-slot/outbox effects, concurrent claim and
-recovery races, rollback leaving no ledger row, cleanup racing expiry replacement,
-and transaction-isolation behavior.
-
 ## Operational Tuning
 
 ### Kafka Topic Partitions
@@ -259,8 +240,8 @@ Lower intervals increase scheduling responsiveness and database load.
 
 Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are
-scoped to runtime node plus exact image string; Docker host is used only as a
-fallback for legacy/local clients without an explicit runtime scope. Different
+scoped to runtime node plus exact image string; Docker host is used as a fallback
+when a request omits an explicit runtime scope. Different
 runtime nodes may still pull the same image in parallel, so registry-wide rate
 limits need separate capacity planning. Workflow workers do not launch workload
 containers, so execution-worker workload container limits do not apply to image

@@ -163,7 +163,6 @@ make generate
 make mockgen
 make test/short
 make test
-make test/idempotency-stack
 make lint
 make lint/fix
 make build/all
@@ -177,9 +176,6 @@ Important notes:
   directive.
 - `make tools` installs Go tooling into `./.bin`.
 - `make test` runs Go tests with the race detector.
-- `make test/idempotency-stack` runs the build-tagged development protocol suite
-  against Compose HTTP `8080`, gRPC `50051`–`50054`, and PostgreSQL. It creates
-  and removes fixtures and must never run during a production cutover.
 - `make build/all` builds all Go services and workers, including `outbox-relay`.
 
 Dashboard commands:

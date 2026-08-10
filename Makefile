@@ -29,10 +29,6 @@ test/short: dependencies
 test: dependencies
 	@go test -race -v ./...
 
-.PHONY: test/idempotency-stack
-test/idempotency-stack:
-	@go test -count=1 -v -tags=idempotency_stack ./integration/protocol
-
 .PHONY: k8s/setup
 k8s/setup:
 	@./scripts/k8s/setup.sh

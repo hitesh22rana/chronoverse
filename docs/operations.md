@@ -163,6 +163,7 @@ make generate
 make mockgen
 make test/short
 make test
+make test/idempotency-stack
 make lint
 make lint/fix
 make build/all
@@ -176,6 +177,9 @@ Important notes:
   directive.
 - `make tools` installs Go tooling into `./.bin`.
 - `make test` runs Go tests with the race detector.
+- `make test/idempotency-stack` runs the build-tagged development protocol suite
+  against Compose HTTP `8080`, gRPC `50051`–`50054`, and PostgreSQL. It creates
+  and removes fixtures and must never run during a production cutover.
 - `make build/all` builds all Go services and workers, including `outbox-relay`.
 
 Dashboard commands:
@@ -203,6 +207,25 @@ npm run check
 
 `npm run check` includes documentation validation, lint, type checking, and the
 static Next.js export.
+
+## Idempotency Rollout
+
+Mixed application versions are unsupported for the ledger migration. Pause
+public mutations, workers, and outbox publication; run migration preflight and
+legacy threshold reconciliation; then deploy all affected services together.
+Resume outbox and workers first, run an approved heartbeat canary with approved
+credentials, remove its fixtures, and only then resume public mutations.
+
+Rollback also requires paused traffic. The legacy schema cannot represent
+completed terminal-effect identities or non-workflow command records, so that
+identity loss must be accepted before applying the down migration.
+
+The reusable repository-level Testcontainers work remains explicitly deferred
+as **Add Testcontainers repository idempotency concurrency suite**. Its
+acceptance coverage is expired-key replacement under contention, commit followed
+by response loss, exactly-once runtime-slot/outbox effects, concurrent claim and
+recovery races, rollback leaving no ledger row, cleanup racing expiry replacement,
+and transaction-isolation behavior.
 
 ## Operational Tuning
 

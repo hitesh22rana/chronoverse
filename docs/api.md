@@ -15,12 +15,35 @@ from login or registration.
 
 - `Content-Type: application/json` for JSON request bodies.
 - `Idempotency-Key: <unique-key>` is required for retry-prone mutations:
+  - `POST /auth/register`
   - `POST /workflows`
   - `PUT /workflows/{workflow_id}`
   - `POST /workflows/{workflow_id}/jobs/schedule`
 
 Use a stable idempotency key when retrying the same user action. Use a new key
-for a new action.
+for a new action. Keys are valid UTF-8, contain 1–255 bytes after trimming only
+outer ASCII spaces, and cannot contain Unicode control characters. The same key
+and normalized request replays the successful result; changed input returns
+`409 Conflict`. A different key always represents a distinct command.
+
+Durable protocol operations are stable values:
+
+| Scope | Operation | Identity | Retention |
+|---|---|---|---|
+| `public` | `user.register` | HTTP header | 24 hours |
+| `user:<id>` | `workflow.create` | HTTP header | 24 hours |
+| `user:<id>` | `workflow.update:<workflow-id>` | HTTP header | 24 hours |
+| `user:<id>` | `job.schedule.manual:<workflow-id>` | HTTP header | 24 hours |
+| `workflow:<id>` | `job.schedule.automatic` | Event identity | Permanent |
+| `user:<id>` | `notification.create` | Event identity | Permanent |
+| `job:<id>` | `job.cancel` | Job termination identity | Permanent |
+| `worker:<process-id>` | `job.claim` | Derived command | 24 hours |
+| `job:<id>` | `job.attach_container` | Random command | 24 hours |
+| `job:<id>` | `job.complete` | Random command | 24 hours |
+| `job:<id>` | `job.fail` | Random command | 24 hours |
+| `job:<id>` | `job.cancel_claimed` | Random command | 24 hours |
+| `job:<id>` | `job.release_for_retry` | Random command | 24 hours |
+| `worker:<process-id>` | `job.recover_expired_leases` | Random recovery wave | 24 hours |
 
 ### Status Mapping
 
@@ -52,7 +75,8 @@ Body:
 }
 ```
 
-Creates the user, issues a session cookie, and returns `201 Created`.
+Creates the user, issues a session cookie, and returns `201 Created`. A replay
+returns the same account but always issues fresh authentication material.
 
 ### Login
 

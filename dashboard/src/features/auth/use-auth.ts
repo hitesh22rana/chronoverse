@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { fetchApi } from "@/lib/api/client"
+import { createIdempotencyKey, fetchApi } from "@/lib/api/client"
 import { apiEndpoints } from "@/lib/api/endpoints"
 
 type LoginCredentials = {
@@ -15,6 +15,7 @@ type LoginCredentials = {
 type SignupCredentials = {
     email: string
     password: string
+	 idempotencyKey?: string
 }
 
 export function useAuth() {
@@ -26,7 +27,7 @@ export function useAuth() {
         mutationFn: async (credentials: LoginCredentials) => {
             await fetchApi(apiEndpoints.auth.login, "failed to login", {
                 method: "POST",
-                body: JSON.stringify(credentials),
+				body: JSON.stringify({ email: credentials.email, password: credentials.password }),
             })
         },
         onSuccess: () => {
@@ -43,6 +44,7 @@ export function useAuth() {
         mutationFn: async (credentials: SignupCredentials) => {
             await fetchApi(apiEndpoints.auth.signup, "failed to signup", {
                 method: "POST",
+				headers: { "Idempotency-Key": credentials.idempotencyKey ?? createIdempotencyKey() },
                 body: JSON.stringify(credentials),
             })
         },
@@ -77,7 +79,10 @@ export function useAuth() {
     return {
         login: loginMutation.mutate,
         isLoginLoading: loginMutation.isPending,
-        signup: signupMutation.mutate,
+		signup: (credentials: SignupCredentials) => signupMutation.mutate({
+			...credentials,
+			idempotencyKey: createIdempotencyKey(),
+		}),
         isSignupLoading: signupMutation.isPending,
         logout: logoutMutation.mutate,
         isLogoutLoading: logoutMutation.isPending,

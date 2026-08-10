@@ -219,12 +219,9 @@ The Kubernetes overlays include the same topic initializer.
 ### Workflows Service
 
 - `WORKFLOWS_SERVICE_CONFIG_FETCH_LIMIT`
-- `WORKFLOWS_CLEANUP_ENABLED`
-- `WORKFLOWS_CLEANUP_INTERVAL`
-- `WORKFLOWS_CLEANUP_BATCH_SIZE`
-
-Cleanup removes old workflow-related idempotency/outbox state according to the
-service implementation.
+Shared command-ledger cleanup is owned by the outbox relay and is independent
+from published-outbox cleanup; logically expired keys can be replaced even if
+cleanup is delayed.
 
 ### Jobs Service
 
@@ -243,6 +240,15 @@ lease should be treated as owned by an unavailable runtime.
 - `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT`
 
 This caps the fetch size used by the notification list operation.
+
+### Execution Worker Replay Safety
+
+- `EXECUTION_WORKER_AWAITING_RECONCILIATION_LIMIT`
+
+`0` uses normalized executor concurrency. A positive value smaller than
+concurrency is normalized up to concurrency. The bound applies to claiming,
+active, and ambiguous handoffs; when full, Kafka receives retryable
+backpressure instead of starting another workload.
 
 ### Runtime Agent
 

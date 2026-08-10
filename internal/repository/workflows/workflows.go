@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -96,16 +98,24 @@ func (r *Repository) CreateWorkflow(
 		return nil, err
 	}
 
-	var workflowID string
-	workflowID, replay, err := reserveWorkflowIdempotencyKey(ctx, tx, userID, operationCreateWorkflow, idempotencyKey, requestHash)
+	scope := commandidempotency.UserScope(userID)
+	operation := commandidempotency.OperationWorkflowCreate
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
 	if err != nil {
 		return nil, err
 	}
-	if replay {
+	if reservation.Replay {
 		if err = tx.Commit(ctx); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to commit idempotency replay: %v", err)
 		}
-		return r.GetWorkflow(ctx, workflowID, userID)
+		res = &workflowsmodel.GetWorkflowResponse{ID: reservation.ResourceID}
+		if len(reservation.Response) > 0 {
+			if decodeErr := json.Unmarshal(reservation.Response, res); decodeErr != nil {
+				return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", decodeErr)
+			}
+		}
+		res.IdempotencyReplay = true
+		return res, nil
 	}
 
 	buildHash, err := idempotency.WorkflowBuildHash(kind, payload)
@@ -148,14 +158,16 @@ func (r *Repository) CreateWorkflow(
 		return nil, insertErr
 	}
 
-	completeErr := completeWorkflowIdempotencyKey(
+	completeErr := commandidempotency.Complete(
 		ctx,
 		tx,
-		userID,
-		operationCreateWorkflow,
+		scope,
+		operation,
 		idempotencyKey,
+		requestHash,
 		res.ID,
-		map[string]string{"id": res.ID},
+		res,
+		false,
 	)
 	if completeErr != nil {
 		return nil, completeErr
@@ -229,12 +241,14 @@ func (r *Repository) UpdateWorkflow(
 		return err
 	}
 
-	replayWorkflowID, replay, err := reserveWorkflowIdempotencyKey(ctx, tx, userID, operationUpdateWorkflow(workflowID), idempotencyKey, requestHash)
+	scope := commandidempotency.UserScope(userID)
+	operation := commandidempotency.WorkflowUpdateOperation(workflowID)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
 	if err != nil {
 		return err
 	}
-	if replay {
-		if replayWorkflowID != workflowID {
+	if reservation.Replay {
+		if reservation.ResourceID != workflowID {
 			return status.Error(codes.AlreadyExists, "idempotency key resolved to a different workflow")
 		}
 		return tx.Commit(ctx)
@@ -358,9 +372,10 @@ func (r *Repository) UpdateWorkflow(
             UPDATE %s
             SET status = $1,
                 completed_at = now() AT TIME ZONE 'utc',
-                lease_token = NULL,
-                leased_by = NULL,
-                lease_expires_at = NULL,
+				lease_token = NULL,
+				leased_by = NULL,
+				lease_process_instance_id = NULL,
+				lease_expires_at = NULL,
 				last_heartbeat_at = NULL,
 				terminal_reason_code = $6
             WHERE workflow_id = $2
@@ -389,14 +404,16 @@ func (r *Repository) UpdateWorkflow(
 		}
 	}
 
-	completeErr := completeWorkflowIdempotencyKey(
+	completeErr := commandidempotency.Complete(
 		ctx,
 		tx,
-		userID,
-		operationUpdateWorkflow(workflowID),
+		scope,
+		operation,
 		idempotencyKey,
+		requestHash,
 		workflowID,
 		map[string]string{"id": workflowID},
+		false,
 	)
 	if completeErr != nil {
 		return completeErr
@@ -420,6 +437,8 @@ func (r *Repository) UpdateWorkflow(
 }
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
+//
+//nolint:gocyclo // The explicit transition matrix keeps state-machine invariants auditable.
 func (r *Repository) UpdateWorkflowBuildStatus(
 	ctx context.Context,
 	workflowID,
@@ -438,17 +457,77 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 		span.End()
 	}()
 
-	query := fmt.Sprintf(`
-        UPDATE %s
-        SET build_status = $1::workflow_build_status,
-            resolved_image_ref = CASE WHEN $1::workflow_build_status = 'COMPLETED' THEN NULLIF($5, '') ELSE resolved_image_ref END,
-            resolved_image_digest = CASE WHEN $1::workflow_build_status = 'COMPLETED' THEN NULLIF($6, '') ELSE resolved_image_digest END
-        WHERE id = $2 AND user_id = $3
-            AND ($4::BIGINT = 0 OR generation = $4);
-    `, postgres.TableWorkflows)
+	if generation < 1 {
+		return status.Error(codes.InvalidArgument, "workflow generation must be at least 1")
+	}
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to start build-status transaction: %v", err)
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
 
-	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, buildStatus, workflowID, userID, generation, resolvedImageRef, resolvedImageDigest)
+	var kind, currentStatus string
+	var currentGeneration int64
+	var currentRef, currentDigest sql.NullString
+	query := fmt.Sprintf(`
+		SELECT kind, build_status, generation, resolved_image_ref, resolved_image_digest
+		FROM %s
+		WHERE id = $1 AND user_id = $2
+		FOR UPDATE;
+	`, postgres.TableWorkflows)
+	if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&kind, &currentStatus, &currentGeneration, &currentRef, &currentDigest); err != nil {
+		if r.pg.IsNoRows(err) {
+			return status.Error(codes.NotFound, "workflow not found")
+		}
+		return status.Errorf(codes.Internal, "failed to read workflow build state: %v", err)
+	}
+	if currentGeneration != generation {
+		return status.Error(codes.FailedPrecondition, "workflow generation mismatch")
+	}
+	if buildStatus != workflowsmodel.WorkflowBuildStatusCompleted.ToString() && (resolvedImageRef != "" || resolvedImageDigest != "") {
+		return status.Error(codes.InvalidArgument, "resolved image identity is only valid for completed builds")
+	}
+	if buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
+		if kind == workflowsmodel.KindContainer.ToString() && (resolvedImageRef == "" || resolvedImageDigest == "") {
+			return status.Error(codes.InvalidArgument, "completed container builds require image reference and digest")
+		}
+		if kind == workflowsmodel.KindHeartbeat.ToString() && (resolvedImageRef != "" || resolvedImageDigest != "") {
+			return status.Error(codes.InvalidArgument, "heartbeat builds must not contain resolved image identity")
+		}
+	}
+	if currentStatus == buildStatus {
+		if currentRef.String != resolvedImageRef || currentDigest.String != resolvedImageDigest {
+			return status.Error(codes.FailedPrecondition, "build result differs from the recorded result")
+		}
+		return tx.Commit(ctx)
+	}
+
+	allowed := false
+	switch currentStatus {
+	case workflowsmodel.WorkflowBuildStatusQueued.ToString():
+		allowed = buildStatus == workflowsmodel.WorkflowBuildStatusFailed.ToString() ||
+			buildStatus == workflowsmodel.WorkflowBuildStatusCanceled.ToString() ||
+			(kind == workflowsmodel.KindContainer.ToString() && buildStatus == workflowsmodel.WorkflowBuildStatusStarted.ToString()) ||
+			(kind == workflowsmodel.KindHeartbeat.ToString() && buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString())
+	case workflowsmodel.WorkflowBuildStatusStarted.ToString():
+		allowed = kind == workflowsmodel.KindContainer.ToString() &&
+			(buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString() ||
+				buildStatus == workflowsmodel.WorkflowBuildStatusFailed.ToString() ||
+				buildStatus == workflowsmodel.WorkflowBuildStatusCanceled.ToString())
+	}
+	if !allowed {
+		return status.Errorf(codes.FailedPrecondition, "invalid workflow build transition %s -> %s", currentStatus, buildStatus)
+	}
+
+	query = fmt.Sprintf(`
+		UPDATE %s
+		SET build_status = $1::workflow_build_status,
+			resolved_image_ref = CASE WHEN $1::workflow_build_status = 'COMPLETED' THEN NULLIF($4, '') ELSE NULL END,
+			resolved_image_digest = CASE WHEN $1::workflow_build_status = 'COMPLETED' THEN NULLIF($5, '') ELSE NULL END
+		WHERE id = $2 AND user_id = $3 AND generation = $6;
+	`, postgres.TableWorkflows)
+	ct, err := tx.Exec(ctx, query, buildStatus, workflowID, userID, resolvedImageRef, resolvedImageDigest, generation)
 	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -466,17 +545,10 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 		return err
 	}
 
-	if ct.RowsAffected() == 0 {
-		if generation != 0 {
-			err = status.Errorf(codes.FailedPrecondition, "workflow generation mismatch")
-			return err
-		}
-
-		err = status.Errorf(codes.NotFound, "workflow not found")
-		return err
+	if ct.RowsAffected() != 1 {
+		return status.Error(codes.Internal, "workflow build transition invariant violated")
 	}
-
-	return nil
+	return tx.Commit(ctx)
 }
 
 // GetWorkflow returns the workflow details by ID and user ID.
@@ -575,6 +647,8 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive failures counter.
 // Returns whether threshold was reached or not.
+//
+//nolint:gocyclo,nestif // Failure identity, threshold mutation, termination, and outbox insertion are one transaction.
 func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (thresholdReached bool, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.IncrementWorkflowConsecutiveJobFailuresCount")
 	defer func() {
@@ -593,10 +667,10 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	defer tx.Rollback(ctx)
 
 	query := fmt.Sprintf(`
-        INSERT INTO %s (job_id, workflow_id, user_id)
-        VALUES ($1, $2, $3)
-        ON CONFLICT DO NOTHING;
-    `, postgres.TableWorkflowFailureEvents)
+		INSERT INTO %s (job_id, workflow_id, user_id, effect, threshold_reached)
+		VALUES ($1, $2, $3, 'FAILED', FALSE)
+		ON CONFLICT DO NOTHING;
+	`, postgres.TableWorkflowTerminalEffects)
 	ct, err := tx.Exec(ctx, query, jobID, workflowID, userID)
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
@@ -607,31 +681,36 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 
 	if ct.RowsAffected() == 0 {
 		query = fmt.Sprintf(`
-            SELECT consecutive_job_failures_count, max_consecutive_job_failures_allowed
-            FROM %s
-            WHERE id = $1 AND user_id = $2
-            LIMIT 1;
-        `, postgres.TableWorkflows)
+			SELECT workflow_id::text, user_id::text, effect, threshold_reached
+			FROM %s
+			WHERE job_id = $1
+			LIMIT 1;
+		`, postgres.TableWorkflowTerminalEffects)
 
-		var count, maxAllowed int32
-		if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&count, &maxAllowed); err != nil {
-			return false, status.Errorf(codes.Internal, "failed to fetch workflow failure count: %v", err)
+		var storedWorkflowID, storedUserID, effect string
+		var storedThreshold bool
+		if err = tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect, &storedThreshold); err != nil {
+			return false, status.Errorf(codes.Internal, "failed to fetch workflow terminal effect: %v", err)
+		}
+		if storedWorkflowID != workflowID || storedUserID != userID || effect != "FAILED" {
+			return false, status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
 		}
 		if err = tx.Commit(ctx); err != nil {
-			return false, status.Errorf(codes.Internal, "failed to commit failure dedupe: %v", err)
+			return false, status.Errorf(codes.Internal, "failed to commit terminal-effect replay: %v", err)
 		}
-		return count >= maxAllowed, nil
+		return storedThreshold, nil
 	}
 
 	query = fmt.Sprintf(`
-        UPDATE %s
-        SET consecutive_job_failures_count = consecutive_job_failures_count + 1
-        WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL
-        RETURNING consecutive_job_failures_count, max_consecutive_job_failures_allowed;
-    `, postgres.TableWorkflows)
+		UPDATE %s
+		SET consecutive_job_failures_count = consecutive_job_failures_count + 1
+		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL
+		RETURNING consecutive_job_failures_count, max_consecutive_job_failures_allowed, generation;
+	`, postgres.TableWorkflows)
 
 	var consecutiveJobFailuresCount, maxConsecutiveJobFailuresAllowed int32
-	err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed)
+	var generation int64
+	err = tx.QueryRow(ctx, query, workflowID, userID).Scan(&consecutiveJobFailuresCount, &maxConsecutiveJobFailuresAllowed, &generation)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -642,8 +721,17 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		}
 
 		if r.pg.IsNoRows(err) {
-			err = status.Errorf(codes.NotFound, "workflow not found: %v", err)
-			return false, err
+			var exists bool
+			if lookupErr := tx.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1 AND user_id = $2)`, postgres.TableWorkflows), workflowID, userID).Scan(&exists); lookupErr != nil {
+				return false, status.Errorf(codes.Internal, "failed to check terminal workflow: %v", lookupErr)
+			}
+			if !exists {
+				return false, status.Error(codes.NotFound, "workflow not found")
+			}
+			if err = tx.Commit(ctx); err != nil {
+				return false, status.Errorf(codes.Internal, "failed to commit late failure effect: %v", err)
+			}
+			return false, nil
 		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
 			return false, err
@@ -655,6 +743,30 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 
 	// Check if the threshold was reached
 	thresholdReached = consecutiveJobFailuresCount >= maxConsecutiveJobFailuresAllowed
+	if thresholdReached {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET terminated_at = clock_timestamp() AT TIME ZONE 'utc'
+			WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
+		`, postgres.TableWorkflows)
+		if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
+			return false, status.Errorf(codes.Internal, "failed to terminate threshold workflow: %v", err)
+		}
+		if outboxErr := insertWorkflowOutboxEvent(ctx, tx, workflowEventPayload(workflowID, userID, workflowsmodel.ActionTerminate, generation)); outboxErr != nil {
+			return false, outboxErr
+		}
+	}
+	query = fmt.Sprintf(`
+		UPDATE %s
+		SET threshold_reached = $2
+		WHERE job_id = $1 AND effect = 'FAILED';
+	`, postgres.TableWorkflowTerminalEffects)
+	if tag, updateErr := tx.Exec(ctx, query, jobID, thresholdReached); updateErr != nil || tag.RowsAffected() != 1 {
+		if updateErr != nil {
+			return false, status.Errorf(codes.Internal, "failed to persist terminal threshold result: %v", updateErr)
+		}
+		return false, status.Error(codes.Internal, "terminal threshold completion invariant violated")
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return false, status.Errorf(codes.Internal, "failed to commit workflow failure count: %v", err)
 	}
@@ -662,7 +774,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the consecutive failures counter.
-func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) (err error) {
+func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ResetWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -672,14 +784,19 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		span.End()
 	}()
 
-	query := fmt.Sprintf(`
-        UPDATE %s
-        SET consecutive_job_failures_count = 0
-        WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
-    `, postgres.TableWorkflows)
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to start completed terminal-effect transaction: %v", err)
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
 
-	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, workflowID, userID)
+	query := fmt.Sprintf(`
+		INSERT INTO %s (job_id, workflow_id, user_id, effect, threshold_reached)
+		VALUES ($1, $2, $3, 'COMPLETED', NULL)
+		ON CONFLICT DO NOTHING;
+	`, postgres.TableWorkflowTerminalEffects)
+	ct, err := tx.Exec(ctx, query, jobID, workflowID, userID)
 	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -698,11 +815,25 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 	}
 
 	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "workflow not found or already terminated")
-		return err
+		var storedWorkflowID, storedUserID, effect string
+		query = fmt.Sprintf(`SELECT workflow_id::text, user_id::text, effect FROM %s WHERE job_id = $1`, postgres.TableWorkflowTerminalEffects)
+		if err = tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect); err != nil {
+			return status.Errorf(codes.Internal, "failed to load completed terminal-effect replay: %v", err)
+		}
+		if storedWorkflowID != workflowID || storedUserID != userID || effect != "COMPLETED" {
+			return status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
+		}
+		return tx.Commit(ctx)
 	}
-
-	return nil
+	query = fmt.Sprintf(`
+		UPDATE %s
+		SET consecutive_job_failures_count = 0
+		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
+	`, postgres.TableWorkflows)
+	if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
+		return status.Errorf(codes.Internal, "failed to reset workflow failures: %v", err)
+	}
+	return tx.Commit(ctx)
 }
 
 // TerminateWorkflow terminates a workflow.

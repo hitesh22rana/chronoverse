@@ -44,14 +44,16 @@ func TestRegisterUser(t *testing.T) {
 		{
 			name: "success",
 			req: &userspb.RegisterUserRequest{
-				Email:    "test@gmail.com",
-				Password: "password12345",
+				Email:          "test@gmail.com",
+				Password:       "password12345",
+				IdempotencyKey: "register-key",
 			},
 			mock: func(req *userspb.RegisterUserRequest) {
 				repo.EXPECT().RegisterUser(
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
+					req.GetIdempotencyKey(),
 				).Return(&usersmodel.GetUserResponse{
 					ID:                     "userID",
 					Email:                  "user@example.com",
@@ -77,8 +79,9 @@ func TestRegisterUser(t *testing.T) {
 		{
 			name: "error: invalid email",
 			req: &userspb.RegisterUserRequest{
-				Email:    "test",
-				Password: "password12345",
+				Email:          "test",
+				Password:       "password12345",
+				IdempotencyKey: "register-key",
 			},
 			mock:  func(_ *userspb.RegisterUserRequest) {},
 			want:  want{},
@@ -87,8 +90,9 @@ func TestRegisterUser(t *testing.T) {
 		{
 			name: "error: password too short",
 			req: &userspb.RegisterUserRequest{
-				Email:    "test@gmail.com",
-				Password: "pass",
+				Email:          "test@gmail.com",
+				Password:       "pass",
+				IdempotencyKey: "register-key",
 			},
 			mock:  func(_ *userspb.RegisterUserRequest) {},
 			want:  want{},
@@ -97,8 +101,9 @@ func TestRegisterUser(t *testing.T) {
 		{
 			name: "error: password too long",
 			req: &userspb.RegisterUserRequest{
-				Email:    "test@gmail.com",
-				Password: "password1234567890123456789012345678901234567890123456789012345678901234567890",
+				Email:          "test@gmail.com",
+				Password:       "password1234567890123456789012345678901234567890123456789012345678901234567890",
+				IdempotencyKey: "register-key",
 			},
 			mock:  func(_ *userspb.RegisterUserRequest) {},
 			want:  want{},
@@ -107,14 +112,16 @@ func TestRegisterUser(t *testing.T) {
 		{
 			name: "error: already exists",
 			req: &userspb.RegisterUserRequest{
-				Email:    "test@gmail.com",
-				Password: "password12345",
+				Email:          "test@gmail.com",
+				Password:       "password12345",
+				IdempotencyKey: "register-key",
 			},
 			mock: func(req *userspb.RegisterUserRequest) {
 				repo.EXPECT().RegisterUser(
 					gomock.Any(),
 					req.GetEmail(),
 					req.GetPassword(),
+					req.GetIdempotencyKey(),
 				).Return(nil, "", status.Errorf(codes.AlreadyExists, "user already exists"))
 			},
 			want:  want{},

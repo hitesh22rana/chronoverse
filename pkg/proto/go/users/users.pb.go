@@ -23,11 +23,12 @@ const (
 
 // RegisterUserRequest contains the details needed to register a new user.
 type RegisterUserRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`       // User's email address
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"` // User's password
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Email          string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`                                         // User's email address
+	Password       string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`                                   // User's password
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"` // Retry-safe registration command key
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RegisterUserRequest) Reset() {
@@ -70,6 +71,13 @@ func (x *RegisterUserRequest) GetEmail() string {
 func (x *RegisterUserRequest) GetPassword() string {
 	if x != nil {
 		return x.Password
+	}
+	return ""
+}
+
+func (x *RegisterUserRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
 	}
 	return ""
 }
@@ -425,10 +433,11 @@ var File_users_users_proto protoreflect.FileDescriptor
 
 const file_users_users_proto_rawDesc = "" +
 	"\n" +
-	"\x11users/users.proto\x12\x05users\"G\n" +
+	"\x11users/users.proto\x12\x05users\"p\n" +
 	"\x13RegisterUserRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\"/\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"/\n" +
 	"\x14RegisterUserResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\"D\n" +
 	"\x10LoginUserRequest\x12\x14\n" +

@@ -5,7 +5,6 @@ package notifications
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -18,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
@@ -78,8 +78,7 @@ func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.C
 	}
 
 	// Validate the JSON payload
-	var _payload map[string]any
-	if err = json.Unmarshal([]byte(req.GetPayload()), &_payload); err != nil {
+	if _, err = idempotency.CanonicalJSON(req.GetPayload()); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
 		return "", err
 	}

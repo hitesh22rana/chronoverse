@@ -74,9 +74,9 @@ func (mr *MockRepositoryMockRecorder) LoginUser(ctx, email, password any) *gomoc
 }
 
 // RegisterUser mocks base method.
-func (m *MockRepository) RegisterUser(ctx context.Context, email, password string) (*users.GetUserResponse, string, error) {
+func (m *MockRepository) RegisterUser(ctx context.Context, email, password, idempotencyKey string) (*users.GetUserResponse, string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RegisterUser", ctx, email, password)
+	ret := m.ctrl.Call(m, "RegisterUser", ctx, email, password, idempotencyKey)
 	ret0, _ := ret[0].(*users.GetUserResponse)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(error)
@@ -84,9 +84,9 @@ func (m *MockRepository) RegisterUser(ctx context.Context, email, password strin
 }
 
 // RegisterUser indicates an expected call of RegisterUser.
-func (mr *MockRepositoryMockRecorder) RegisterUser(ctx, email, password any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) RegisterUser(ctx, email, password, idempotencyKey any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterUser", reflect.TypeOf((*MockRepository)(nil).RegisterUser), ctx, email, password)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterUser", reflect.TypeOf((*MockRepository)(nil).RegisterUser), ctx, email, password, idempotencyKey)
 }
 
 // UpdateUser mocks base method.

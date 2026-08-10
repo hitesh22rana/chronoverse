@@ -114,6 +114,7 @@ message IncrementWorkflowConsecutiveJobFailuresCountResponse {
 message ResetWorkflowConsecutiveJobFailuresCountRequest {
   string id      = 1; // ID of the workflow
   string user_id = 2; // ID of the user
+  string job_id  = 3; // ID of the completed job
 }
 
 // ResetWorkflowConsecutiveJobFailuresCountResponse contains the result of a workflow consecutive job failures count reset attempt.

@@ -33,7 +33,7 @@ const (
 
 // Repository provides user related operations.
 type Repository interface {
-	RegisterUser(ctx context.Context, email, password string) (*usersmodel.GetUserResponse, string, error)
+	RegisterUser(ctx context.Context, email, password, idempotencyKey string) (*usersmodel.GetUserResponse, string, error)
 	LoginUser(ctx context.Context, email, password string) (*usersmodel.GetUserResponse, string, error)
 	GetUser(ctx context.Context, id string) (*usersmodel.GetUserResponse, error)
 	UpdateUser(ctx context.Context, id, notificationPreference string) error
@@ -67,8 +67,9 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 
 // RegisterUserRequest holds the request parameters for registering a new user.
 type RegisterUserRequest struct {
-	Email    string `validate:"required,email"`
-	Password string `validate:"required,min=8,max=72"`
+	Email          string `validate:"required,email"`
+	Password       string `validate:"required,min=8,max=72"`
+	IdempotencyKey string `validate:"required"`
 }
 
 // RegisterUser a new user.
@@ -87,15 +88,16 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 
 	// Validate the request
 	err = s.validator.Struct(&RegisterUserRequest{
-		Email:    req.GetEmail(),
-		Password: req.GetPassword(),
+		Email:          req.GetEmail(),
+		Password:       req.GetPassword(),
+		IdempotencyKey: req.GetIdempotencyKey(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		return "", "", err
 	}
 
-	res, authToken, err := s.repo.RegisterUser(ctx, req.GetEmail(), req.GetPassword())
+	res, authToken, err := s.repo.RegisterUser(ctx, req.GetEmail(), req.GetPassword(), req.GetIdempotencyKey())
 	if err != nil {
 		return "", "", err
 	}

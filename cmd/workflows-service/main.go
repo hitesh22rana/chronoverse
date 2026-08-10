@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"os"
 	"runtime"
 	"runtime/debug"
-	"time"
 
 	_ "github.com/KimMachineGun/automemlimit"
 	"github.com/go-playground/validator/v10"
@@ -116,16 +114,6 @@ func run() int {
 
 	// Initialize the workflows service
 	svc := workflowssvc.New(validator, repo, rdb)
-	if cfg.WorkflowsServiceConfig.CleanupEnabled {
-		go runWorkflowCleanup(
-			ctx,
-			svc,
-			cfg.WorkflowsServiceConfig.CleanupInterval,
-			cfg.WorkflowsServiceConfig.CleanupBatchSize,
-			cfg.Grpc.RequestTimeout,
-		)
-	}
-
 	// Initialize the workflows application
 	app := workflows.New(ctx, &workflows.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
@@ -173,45 +161,4 @@ func run() int {
 	}
 
 	return ExitOk
-}
-
-type workflowCleanupService interface {
-	CleanupWorkflowIdempotencyKeys(ctx context.Context, batchSize int) (int64, error)
-}
-
-func runWorkflowCleanup(ctx context.Context, svc workflowCleanupService, interval time.Duration, batchSize int, timeout time.Duration) {
-	if interval <= 0 || batchSize <= 0 {
-		return
-	}
-
-	cleanupOnce := func() {
-		ctxCleanup := ctx
-		cancel := func() {}
-		if timeout > 0 {
-			ctxCleanup, cancel = context.WithTimeout(ctx, timeout)
-		}
-		defer cancel()
-
-		total, err := svc.CleanupWorkflowIdempotencyKeys(ctxCleanup, batchSize)
-		if err != nil {
-			loggerpkg.FromContext(ctx).Error("failed to cleanup workflow idempotency keys", zap.Error(err))
-			return
-		}
-		if total > 0 {
-			loggerpkg.FromContext(ctx).Info("cleaned up workflow idempotency keys", zap.Int64("total", total))
-		}
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	cleanupOnce()
-	for {
-		select {
-		case <-ticker.C:
-			cleanupOnce()
-		case <-ctx.Done():
-			return
-		}
-	}
 }

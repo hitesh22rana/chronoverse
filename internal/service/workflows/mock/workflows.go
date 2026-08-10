@@ -42,21 +42,6 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
 }
 
-// CleanupWorkflowIdempotencyKeys mocks base method.
-func (m *MockRepository) CleanupWorkflowIdempotencyKeys(ctx context.Context, batchSize int) (int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CleanupWorkflowIdempotencyKeys", ctx, batchSize)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CleanupWorkflowIdempotencyKeys indicates an expected call of CleanupWorkflowIdempotencyKeys.
-func (mr *MockRepositoryMockRecorder) CleanupWorkflowIdempotencyKeys(ctx, batchSize any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupWorkflowIdempotencyKeys", reflect.TypeOf((*MockRepository)(nil).CleanupWorkflowIdempotencyKeys), ctx, batchSize)
-}
-
 // CreateWorkflow mocks base method.
 func (m *MockRepository) CreateWorkflow(ctx context.Context, userID, name, payload, kind string, interval, maxConsecutiveJobFailuresAllowed int32, logRetention bool, idempotencyKey string) (*workflows.GetWorkflowResponse, error) {
 	m.ctrl.T.Helper()
@@ -147,17 +132,17 @@ func (mr *MockRepositoryMockRecorder) ListWorkflows(ctx, userID, cursor, filters
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount mocks base method.
-func (m *MockRepository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) error {
+func (m *MockRepository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ResetWorkflowConsecutiveJobFailuresCount", ctx, workflowID, userID)
+	ret := m.ctrl.Call(m, "ResetWorkflowConsecutiveJobFailuresCount", ctx, workflowID, userID, jobID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount indicates an expected call of ResetWorkflowConsecutiveJobFailuresCount.
-func (mr *MockRepositoryMockRecorder) ResetWorkflowConsecutiveJobFailuresCount(ctx, workflowID, userID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) ResetWorkflowConsecutiveJobFailuresCount(ctx, workflowID, userID, jobID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockRepository)(nil).ResetWorkflowConsecutiveJobFailuresCount), ctx, workflowID, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetWorkflowConsecutiveJobFailuresCount", reflect.TypeOf((*MockRepository)(nil).ResetWorkflowConsecutiveJobFailuresCount), ctx, workflowID, userID, jobID)
 }
 
 // TerminateWorkflow mocks base method.

@@ -707,9 +707,12 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 		{
 			name: "error: workflow not found",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-				Id:          "invalid_workflow_id",
-				UserId:      "user_id",
-				BuildStatus: "COMPLETED",
+				Id:                  "invalid_workflow_id",
+				UserId:              "user_id",
+				BuildStatus:         "COMPLETED",
+				Generation:          1,
+				ResolvedImageRef:    "alpine:3.22",
+				ResolvedImageDigest: "alpine@sha256:test",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
@@ -727,9 +730,12 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &workflowspb.UpdateWorkflowBuildStatusRequest{
-				Id:          "workflow_id",
-				UserId:      "user_id",
-				BuildStatus: "COMPLETED",
+				Id:                  "workflow_id",
+				UserId:              "user_id",
+				BuildStatus:         "COMPLETED",
+				Generation:          1,
+				ResolvedImageRef:    "alpine:3.22",
+				ResolvedImageDigest: "alpine@sha256:test",
 			},
 			mock: func(req *workflowspb.UpdateWorkflowBuildStatusRequest) {
 				repo.EXPECT().UpdateWorkflowBuildStatus(
@@ -1426,12 +1432,14 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "workflow_id",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
+					req.GetJobId(),
 				).Return(nil)
 
 				// Simulate a cache delete
@@ -1453,6 +1461,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock:  func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {},
 			isErr: true,
@@ -1462,12 +1471,14 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "invalid_workflow_id",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
+					req.GetJobId(),
 				).Return(status.Error(codes.NotFound, "workflow not found"))
 			},
 			isErr: true,
@@ -1477,12 +1488,14 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			req: &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
 				Id:     "workflow_id",
 				UserId: "user_id",
+				JobId:  "job_id",
 			},
 			mock: func(req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
 				repo.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
+					req.GetJobId(),
 				).Return(status.Error(codes.Internal, "internal server error"))
 			},
 			isErr: true,

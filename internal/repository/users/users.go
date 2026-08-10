@@ -16,6 +16,8 @@ import (
 
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -41,8 +43,8 @@ func New(auth auth.IAuth, pg *postgres.Postgres) *Repository {
 
 // RegisterUser a new user.
 //
-//nolint:gocritic // ID and authToken are returned.
-func (r *Repository) RegisterUser(ctx context.Context, email, password string) (res *usersmodel.GetUserResponse, authToken string, err error) {
+//nolint:gocritic,gocyclo,nestif // Registration keeps hashing, replay verification, insertion, and commit ordering explicit.
+func (r *Repository) RegisterUser(ctx context.Context, email, password, idempotencyKey string) (res *usersmodel.GetUserResponse, authToken string, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.RegisterUser")
 	defer func() {
 		if err != nil {
@@ -64,7 +66,61 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 		return nil, "", err
 	}
 
-	// Insert user into database
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return nil, "", status.Errorf(codes.Internal, "failed to start registration transaction: %v", err)
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
+
+	requestHash, err := idempotency.HashCanonical(map[string]string{"email": email})
+	if err != nil {
+		return nil, "", status.Errorf(codes.Internal, "failed to hash registration request: %v", err)
+	}
+	reservation, err := commandidempotency.Reserve(
+		ctx,
+		tx,
+		"public",
+		commandidempotency.OperationUserRegister,
+		idempotencyKey,
+		requestHash,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	if reservation.Replay {
+		var storedPassword string
+		query := fmt.Sprintf(`
+			SELECT id, email, password, notification_preference, created_at, updated_at
+			FROM %s
+			WHERE id = $1
+			LIMIT 1;
+		`, postgres.TableUsers)
+		res = &usersmodel.GetUserResponse{}
+		if err = tx.QueryRow(ctx, query, reservation.ResourceID).Scan(
+			&res.ID,
+			&res.Email,
+			&storedPassword,
+			&res.NotificationPreference,
+			&res.CreatedAt,
+			&res.UpdatedAt,
+		); err != nil {
+			return nil, "", status.Errorf(codes.Internal, "failed to load registration replay: %v", err)
+		}
+		if err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password)); err != nil {
+			if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+				return nil, "", status.Error(codes.AlreadyExists, "idempotency key was used with different credentials")
+			}
+			return nil, "", status.Errorf(codes.Internal, "failed to verify registration replay: %v", err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return nil, "", status.Errorf(codes.Internal, "failed to commit registration replay: %v", err)
+		}
+		authToken, err = r.auth.IssueToken(ctx, res.ID)
+		return res, authToken, err
+	}
+
+	// Insert user into database.
 	query := fmt.Sprintf(`
 		INSERT INTO %s (email, password) 
 		VALUES ($1, $2)
@@ -72,7 +128,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 	`, postgres.TableUsers)
 	args := []any{email, string(hashedPassword)}
 
-	rows, err := r.pg.Query(ctx, query, args...)
+	rows, err := tx.Query(ctx, query, args...)
 	if errors.Is(err, context.DeadlineExceeded) {
 		err = status.Error(codes.DeadlineExceeded, err.Error())
 		return nil, "", err
@@ -99,7 +155,24 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password string) (
 		return nil, "", err
 	}
 
-	// Issue authToken
+	if err = commandidempotency.Complete(
+		ctx,
+		tx,
+		"public",
+		commandidempotency.OperationUserRegister,
+		idempotencyKey,
+		requestHash,
+		res.ID,
+		res,
+		false,
+	); err != nil {
+		return nil, "", err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, "", status.Errorf(codes.Internal, "failed to commit registration transaction: %v", err)
+	}
+
+	// Authentication material is issued only after the account and ledger commit.
 	authToken, err = r.auth.IssueToken(ctx, res.ID)
 	if err != nil {
 		return nil, "", err
@@ -244,7 +317,7 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET notification_preference = $1
-		WHERE id = $2;
+		WHERE id = $2 AND notification_preference IS DISTINCT FROM $1;
 	`, postgres.TableUsers)
 	args := []any{notificationPreference, id}
 
@@ -272,8 +345,13 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 	}
 
 	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "user not found: %v", err)
-		return err
+		var exists bool
+		if lookupErr := r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); lookupErr != nil {
+			return status.Errorf(codes.Internal, "failed to check user preference state: %v", lookupErr)
+		}
+		if !exists {
+			return status.Error(codes.NotFound, "user not found")
+		}
 	}
 
 	return nil

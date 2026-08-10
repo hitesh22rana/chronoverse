@@ -646,6 +646,25 @@ type testJobsClient struct {
 	getReadyRuntimeNode func(context.Context, *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
 }
 
+func (c *testJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest, _ ...grpc.CallOption) (*jobspb.CancelJobResponse, error) {
+	if c.updateJobStatus != nil {
+		_, err := c.updateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+			Id:                 req.GetId(),
+			Status:             jobsmodel.JobStatusCanceled.ToString(),
+			TerminalReasonCode: req.GetTerminalReasonCode(),
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &jobspb.CancelJobResponse{
+		Id:              req.GetId(),
+		PreviousStatus:  jobsmodel.JobStatusRunning.ToString(),
+		ContainerId:     "container-" + strings.TrimPrefix(req.GetId(), "job-"),
+		RuntimeEndpoint: "tcp://docker-proxy:2375",
+	}, nil
+}
+
 func (c *testJobsClient) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest, _ ...grpc.CallOption) (*jobspb.UpdateJobStatusResponse, error) {
 	if c.updateJobStatus == nil {
 		return &jobspb.UpdateJobStatusResponse{}, nil

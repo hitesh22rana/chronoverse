@@ -19,8 +19,6 @@ const (
 	TableProcessedEvents = "processed_events"
 	// TableWorkflowTerminalEffects is the name of the workflow terminal effects table.
 	TableWorkflowTerminalEffects = "workflow_terminal_effects"
-	// TableWorkflowFailureEvents is retained while terminal callers migrate to effect identities.
-	TableWorkflowFailureEvents = TableWorkflowTerminalEffects
 	// TableRuntimeNodes is the name of the runtime nodes table.
 	TableRuntimeNodes = "runtime_nodes"
 )

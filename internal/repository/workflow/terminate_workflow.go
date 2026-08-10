@@ -47,42 +47,53 @@ func (r *Repository) cancelJobs(
 		if workflow.GetTerminatedAt() != "" {
 			reason = terminalreason.WorkflowTerminated
 		}
-		canceled, err := r.cancelJobRecord(parentCtx, job.GetId(), reason.String())
+		cancelSnapshot, err := r.cancelJobRecord(parentCtx, job.GetId(), reason.String())
 		if err != nil {
 			return nil, err
 		}
-		if !canceled {
+		if cancelSnapshot == nil || (cancelSnapshot.GetPreviousStatus() != jobsmodel.JobStatusPending.ToString() &&
+			cancelSnapshot.GetPreviousStatus() != jobsmodel.JobStatusQueued.ToString() &&
+			cancelSnapshot.GetPreviousStatus() != jobsmodel.JobStatusRunning.ToString()) {
 			continue
 		}
 
 		r.sendJobCanceledNotification(parentCtx, userID, workflow, job)
-		if shouldCleanupJobContainer(workflow, job) {
-			cleanupJobs = append(cleanupJobs, job)
+		if workflow.GetKind() == workflowsmodel.KindContainer.ToString() && cancelSnapshot.GetContainerId() != "" {
+			cleanupJobs = append(cleanupJobs, &jobspb.JobsResponse{
+				Id:              cancelSnapshot.GetId(),
+				WorkflowId:      workflow.GetId(),
+				ContainerId:     cancelSnapshot.GetContainerId(),
+				Status:          jobsmodel.JobStatusCanceled.ToString(),
+				Attempts:        cancelSnapshot.GetAttempt(),
+				RuntimeNodeId:   cancelSnapshot.GetRuntimeNodeId(),
+				RuntimeEndpoint: cancelSnapshot.GetRuntimeEndpoint(),
+			})
 		}
 	}
 
 	return cleanupJobs, nil
 }
 
-func (r *Repository) cancelJobRecord(parentCtx context.Context, jobID, terminalReasonCode string) (bool, error) {
+//nolint:nilnil // A stale/missing cancellation is an effect-idempotent no-op.
+func (r *Repository) cancelJobRecord(parentCtx context.Context, jobID, terminalReasonCode string) (*jobspb.CancelJobResponse, error) {
 	// Issue necessary headers and tokens for authorization.
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	if _, err = r.svc.Jobs.UpdateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
+	res, err := r.svc.Jobs.CancelJob(ctx, &jobspb.CancelJobRequest{
 		Id:                 jobID,
-		Status:             jobsmodel.JobStatusCanceled.ToString(),
+		CommandId:          idempotency.JobCancelCommandID(jobID),
 		TerminalReasonCode: terminalReasonCode,
-	}); err != nil {
+	})
+	if err != nil {
 		if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.NotFound {
-			return false, nil
+			return nil, nil
 		}
-		return false, err
+		return nil, err
 	}
-
-	return true, nil
+	return res, nil
 }
 
 func (r *Repository) sendJobCanceledNotification(

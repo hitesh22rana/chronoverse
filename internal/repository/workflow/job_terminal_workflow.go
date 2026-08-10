@@ -23,6 +23,7 @@ func (r *Repository) handleJobCompleted(ctx context.Context, workflowEvent *work
 	if _, err = r.svc.Workflows.ResetWorkflowConsecutiveJobFailuresCount(authCtx, &workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest{
 		Id:     workflow.GetId(),
 		UserId: workflow.GetUserId(),
+		JobId:  workflowEvent.JobID,
 	}); err != nil {
 		if status.Code(err) != codes.NotFound {
 			return err
@@ -60,18 +61,6 @@ func (r *Repository) handleJobFailed(ctx context.Context, workflowEvent *workflo
 		}
 	} else {
 		thresholdReached = res.GetThresholdReached()
-	}
-
-	if thresholdReached {
-		if _, err = r.svc.Workflows.TerminateWorkflow(authCtx, &workflowspb.TerminateWorkflowRequest{
-			Id:     workflow.GetId(),
-			UserId: workflow.GetUserId(),
-		}); err != nil {
-			if status.Code(err) == codes.NotFound {
-				return nil
-			}
-			return err
-		}
 	}
 
 	if notifyErr := r.sendNotification(

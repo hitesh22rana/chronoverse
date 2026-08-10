@@ -8,11 +8,13 @@ import (
 	"runtime"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	_ "github.com/KimMachineGun/automemlimit"
 	"github.com/docker/go-units"
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -145,7 +147,12 @@ func run() int {
 			},
 		},
 		grpcclient.DefaultCircuitBreakerConfig(),
-		grpcclient.DefaultRetryConfig(),
+		&grpcclient.RetryConfig{
+			MaxRetries:         2,
+			BackoffExponential: 100 * time.Millisecond,
+			RetryableCodes:     []codes.Code{codes.Unavailable, codes.DeadlineExceeded},
+			PerRetryTimeout:    5 * time.Second,
+		},
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -176,21 +183,22 @@ func run() int {
 
 	// Initialize the execution job components
 	repo := executorrepo.New(&executorrepo.Config{
-		WorkerID:             cfg.ExecutionWorkerConfig.WorkerID,
-		Concurrency:          cfg.ExecutionWorkerConfig.Concurrency,
-		LeaseDuration:        cfg.ExecutionWorkerConfig.LeaseDuration,
-		LeaseRenewInterval:   cfg.ExecutionWorkerConfig.LeaseRenewInterval,
-		SystemRetryLimit:     cfg.ExecutionWorkerConfig.SystemRetryLimit,
-		SystemRetryBackoff:   cfg.ExecutionWorkerConfig.SystemRetryBackoff,
-		RecoveryInterval:     cfg.ExecutionWorkerConfig.RecoveryInterval,
-		RecoveryBatchSize:    cfg.ExecutionWorkerConfig.RecoveryBatchSize,
-		JobLogBatchSize:      cfg.ExecutionWorkerConfig.JobLogBatchSize,
-		JobLogBatchInterval:  cfg.ExecutionWorkerConfig.JobLogBatchInterval,
-		JobLogPublishTimeout: cfg.ExecutionWorkerConfig.JobLogPublishTimeout,
-		JobLogPublishRetries: cfg.ExecutionWorkerConfig.JobLogPublishRetries,
-		JobLogPublishBackoff: cfg.ExecutionWorkerConfig.JobLogPublishBackoff,
-		JobLogLiveTimeout:    cfg.ExecutionWorkerConfig.JobLogLiveTimeout,
-		JobLogLiveBufferSize: cfg.ExecutionWorkerConfig.JobLogLiveBufferSize,
+		WorkerID:                    cfg.ExecutionWorkerConfig.WorkerID,
+		Concurrency:                 cfg.ExecutionWorkerConfig.Concurrency,
+		AwaitingReconciliationLimit: cfg.ExecutionWorkerConfig.AwaitingReconciliationLimit,
+		LeaseDuration:               cfg.ExecutionWorkerConfig.LeaseDuration,
+		LeaseRenewInterval:          cfg.ExecutionWorkerConfig.LeaseRenewInterval,
+		SystemRetryLimit:            cfg.ExecutionWorkerConfig.SystemRetryLimit,
+		SystemRetryBackoff:          cfg.ExecutionWorkerConfig.SystemRetryBackoff,
+		RecoveryInterval:            cfg.ExecutionWorkerConfig.RecoveryInterval,
+		RecoveryBatchSize:           cfg.ExecutionWorkerConfig.RecoveryBatchSize,
+		JobLogBatchSize:             cfg.ExecutionWorkerConfig.JobLogBatchSize,
+		JobLogBatchInterval:         cfg.ExecutionWorkerConfig.JobLogBatchInterval,
+		JobLogPublishTimeout:        cfg.ExecutionWorkerConfig.JobLogPublishTimeout,
+		JobLogPublishRetries:        cfg.ExecutionWorkerConfig.JobLogPublishRetries,
+		JobLogPublishBackoff:        cfg.ExecutionWorkerConfig.JobLogPublishBackoff,
+		JobLogLiveTimeout:           cfg.ExecutionWorkerConfig.JobLogLiveTimeout,
+		JobLogLiveBufferSize:        cfg.ExecutionWorkerConfig.JobLogLiveBufferSize,
 	}, auth, kfk, rdb, kafkaLifecycle, &executorrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),

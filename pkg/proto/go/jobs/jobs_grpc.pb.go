@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	JobsService_ScheduleJob_FullMethodName             = "/jobs.JobsService/ScheduleJob"
+	JobsService_CancelJob_FullMethodName               = "/jobs.JobsService/CancelJob"
 	JobsService_UpdateJobStatus_FullMethodName         = "/jobs.JobsService/UpdateJobStatus"
 	JobsService_ClaimJob_FullMethodName                = "/jobs.JobsService/ClaimJob"
 	JobsService_GetReadyRuntimeNode_FullMethodName     = "/jobs.JobsService/GetReadyRuntimeNode"
@@ -48,6 +49,7 @@ type JobsServiceClient interface {
 	ScheduleJob(ctx context.Context, in *ScheduleJobRequest, opts ...grpc.CallOption) (*ScheduleJobResponse, error)
 	// UpdateJobStatus updates the status of a job.
 	// This is an internal API and should not be exposed to the public.
+	CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*CancelJobResponse, error)
 	UpdateJobStatus(ctx context.Context, in *UpdateJobStatusRequest, opts ...grpc.CallOption) (*UpdateJobStatusResponse, error)
 	// ClaimJob atomically claims a queued job for execution.
 	// This is an internal API and should not be exposed to the public.
@@ -103,6 +105,16 @@ func (c *jobsServiceClient) ScheduleJob(ctx context.Context, in *ScheduleJobRequ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ScheduleJobResponse)
 	err := c.cc.Invoke(ctx, JobsService_ScheduleJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*CancelJobResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelJobResponse)
+	err := c.cc.Invoke(ctx, JobsService_CancelJob_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +300,7 @@ type JobsServiceServer interface {
 	ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error)
 	// UpdateJobStatus updates the status of a job.
 	// This is an internal API and should not be exposed to the public.
+	CancelJob(context.Context, *CancelJobRequest) (*CancelJobResponse, error)
 	UpdateJobStatus(context.Context, *UpdateJobStatusRequest) (*UpdateJobStatusResponse, error)
 	// ClaimJob atomically claims a queued job for execution.
 	// This is an internal API and should not be exposed to the public.
@@ -340,6 +353,9 @@ type UnimplementedJobsServiceServer struct{}
 
 func (UnimplementedJobsServiceServer) ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ScheduleJob not implemented")
+}
+func (UnimplementedJobsServiceServer) CancelJob(context.Context, *CancelJobRequest) (*CancelJobResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelJob not implemented")
 }
 func (UnimplementedJobsServiceServer) UpdateJobStatus(context.Context, *UpdateJobStatusRequest) (*UpdateJobStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateJobStatus not implemented")
@@ -423,6 +439,24 @@ func _JobsService_ScheduleJob_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(JobsServiceServer).ScheduleJob(ctx, req.(*ScheduleJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_CancelJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).CancelJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_CancelJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).CancelJob(ctx, req.(*CancelJobRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -718,6 +752,10 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ScheduleJob",
 			Handler:    _JobsService_ScheduleJob_Handler,
+		},
+		{
+			MethodName: "CancelJob",
+			Handler:    _JobsService_CancelJob_Handler,
 		},
 		{
 			MethodName: "UpdateJobStatus",

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -21,6 +22,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
@@ -66,21 +68,22 @@ type Services struct {
 
 // Config represents the execution worker configuration.
 type Config struct {
-	WorkerID             string
-	Concurrency          int
-	LeaseDuration        time.Duration
-	LeaseRenewInterval   time.Duration
-	SystemRetryLimit     int
-	SystemRetryBackoff   time.Duration
-	RecoveryInterval     time.Duration
-	RecoveryBatchSize    int32
-	JobLogBatchSize      int
-	JobLogBatchInterval  time.Duration
-	JobLogPublishTimeout time.Duration
-	JobLogPublishRetries int
-	JobLogPublishBackoff time.Duration
-	JobLogLiveTimeout    time.Duration
-	JobLogLiveBufferSize int
+	WorkerID                    string
+	Concurrency                 int
+	LeaseDuration               time.Duration
+	LeaseRenewInterval          time.Duration
+	SystemRetryLimit            int
+	SystemRetryBackoff          time.Duration
+	RecoveryInterval            time.Duration
+	RecoveryBatchSize           int32
+	JobLogBatchSize             int
+	JobLogBatchInterval         time.Duration
+	JobLogPublishTimeout        time.Duration
+	JobLogPublishRetries        int
+	JobLogPublishBackoff        time.Duration
+	JobLogLiveTimeout           time.Duration
+	JobLogLiveBufferSize        int
+	AwaitingReconciliationLimit int
 }
 
 // Repository provides executor repository.
@@ -90,9 +93,12 @@ type Repository struct {
 	kfk           *kgo.Client
 	auth          auth.IAuth
 	slots         chan struct{}
+	processID     string
+	handoffs      *handoffRegistry
 	livePublisher *joblogevents.LivePublisher
 
-	execWG sync.WaitGroup
+	execWG  sync.WaitGroup
+	stateMu sync.Mutex
 
 	runner *kafka.PartitionRunner
 	svc    *Services
@@ -109,12 +115,14 @@ func New(
 ) *Repository {
 	normalizedCfg := normalizeConfig(cfg)
 	r := &Repository{
-		tp:    otel.Tracer(svcpkg.Info().GetName()),
-		cfg:   normalizedCfg,
-		auth:  auth,
-		kfk:   kfk,
-		svc:   svc,
-		slots: make(chan struct{}, normalizedCfg.Concurrency),
+		tp:        otel.Tracer(svcpkg.Info().GetName()),
+		cfg:       normalizedCfg,
+		auth:      auth,
+		kfk:       kfk,
+		svc:       svc,
+		slots:     make(chan struct{}, normalizedCfg.Concurrency),
+		processID: uuid.NewString(),
+		handoffs:  newHandoffRegistry(normalizedCfg.AwaitingReconciliationLimit),
 		livePublisher: joblogevents.NewLivePublisher(rdb, joblogevents.LivePublisherConfig{
 			BufferSize:     normalizedCfg.JobLogLiveBufferSize,
 			PublishTimeout: normalizedCfg.JobLogLiveTimeout,
@@ -158,6 +166,7 @@ func (r *Repository) Run(ctx context.Context) error {
 }
 
 func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) error {
+	r.ensureHandoffState()
 	ctxWithTrace, span := r.tp.Start(
 		ctx,
 		"executor.worker.processRecord",
@@ -166,7 +175,6 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 			attribute.Int64("offset", record.Offset),
 			attribute.Int64("partition", int64(record.Partition)),
 			attribute.String("key", string(record.Key)),
-			attribute.String("value", string(record.Value)),
 		),
 	)
 	defer span.End()
@@ -188,18 +196,34 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 		return err
 	}
 
-	claim, err := r.svc.Jobs.ClaimJob(authCtx, &jobspb.ClaimJobRequest{
+	commandID := idempotency.ClaimCommandID(r.processID, scheduledJob.jobID, scheduledJob.dispatchAttempt)
+	claimRequest := &jobspb.ClaimJobRequest{
 		Id:                   scheduledJob.jobID,
 		WorkflowId:           scheduledJob.workflowID,
 		WorkerId:             r.cfg.WorkerID,
 		LeaseDurationSeconds: int32(r.cfg.LeaseDuration.Seconds()),
 		DispatchAttempt:      scheduledJob.dispatchAttempt,
-	})
+		CommandId:            commandID,
+		ProcessInstanceId:    r.processID,
+	}
+	entry, owner, reserveErr := r.handoffs.getOrReserve(commandID, claimRequest)
+	if reserveErr != nil {
+		r.releaseExecutionSlot()
+		return reserveErr
+	}
+	if !owner {
+		r.releaseExecutionSlot()
+		return r.handoffs.wait(ctxWithTrace, entry)
+	}
+
+	claim, err := r.svc.Jobs.ClaimJob(authCtx, claimRequest)
 	if err != nil {
+		r.handoffs.resolveRemoved(entry, err)
 		r.releaseExecutionSlot()
 		return err
 	}
 	if !claim.GetClaimed() {
+		r.handoffs.resolveRemoved(entry, nil)
 		r.releaseExecutionSlot()
 		logger.Info("job dispatch skipped",
 			zap.String("topic", record.Topic),
@@ -211,6 +235,10 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 		)
 		return nil
 	}
+	if !r.handoffs.activate(entry, claim) {
+		r.releaseExecutionSlot()
+		return status.Error(codes.Internal, "claim handoff placeholder ownership was lost")
+	}
 
 	r.execWG.Go(func() {
 		defer r.releaseExecutionSlot()
@@ -220,10 +248,10 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 			logger.Warn("claimed job execution finished with error",
 				zap.String("job_id", claim.GetId()),
 				zap.String("workflow_id", claim.GetWorkflowId()),
-				zap.String("lease_token", claim.GetLeaseToken()),
 				zap.Error(runErr),
 			)
 		}
+		r.handoffs.markAwaiting(commandID)
 	})
 
 	logger.Info("job claimed and handed off",
@@ -235,6 +263,21 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 	)
 
 	return nil
+}
+
+func (r *Repository) ensureHandoffState() {
+	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
+	if r.processID == "" {
+		r.processID = uuid.NewString()
+	}
+	if r.handoffs == nil {
+		limit := r.cfg.AwaitingReconciliationLimit
+		if limit <= 0 {
+			limit = max(1, r.cfg.Concurrency)
+		}
+		r.handoffs = newHandoffRegistry(limit)
+	}
 }
 
 type scheduledJobRecord struct {
@@ -411,7 +454,11 @@ func (r *Repository) cancelClaimedJob(ctx context.Context, claim *jobspb.ClaimJo
 		Id:                 claim.GetId(),
 		LeaseToken:         claim.GetLeaseToken(),
 		TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+		CommandId:          uuid.NewString(),
 	})
+	if err == nil {
+		r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
+	}
 	return err
 }
 
@@ -432,7 +479,11 @@ func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobs
 		NextAttemptAt: nextAttemptAt,
 		ErrorCode:     status.Code(cause).String(),
 		ErrorMessage:  cause.Error(),
+		CommandId:     uuid.NewString(),
 	})
+	if err == nil {
+		r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
+	}
 	return err
 }
 
@@ -468,10 +519,12 @@ func (r *Repository) failClaimedJob(
 		ErrorCode:          status.Code(executeErr).String(),
 		ErrorMessage:       executeErr.Error(),
 		TerminalReasonCode: decision.ReasonCode,
+		CommandId:          uuid.NewString(),
 	})
 	if err != nil {
 		return err
 	}
+	r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
 
 	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, containerID); cleanupErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job failure",
@@ -498,9 +551,11 @@ func (r *Repository) completeClaimedJob(
 	if _, err = r.svc.Jobs.CompleteJob(authCtx, &jobspb.CompleteJobRequest{
 		Id:         claim.GetId(),
 		LeaseToken: claim.GetLeaseToken(),
+		CommandId:  uuid.NewString(),
 	}); err != nil {
 		return err
 	}
+	r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
 
 	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, containerID); cleanupErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job completion",

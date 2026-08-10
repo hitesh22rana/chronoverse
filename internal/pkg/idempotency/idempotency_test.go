@@ -68,6 +68,21 @@ func TestJobDispatchEventKeyIncludesDispatchAttempt(t *testing.T) {
 	}
 }
 
+func TestClaimCommandID(t *testing.T) {
+	t.Parallel()
+
+	first := idempotency.ClaimCommandID("process-1", "job-1", 2)
+	if len(first) != 64 {
+		t.Fatalf("ClaimCommandID() length = %d", len(first))
+	}
+	if replay := idempotency.ClaimCommandID("process-1", "job-1", 2); replay != first {
+		t.Fatalf("ClaimCommandID() is not deterministic")
+	}
+	if restarted := idempotency.ClaimCommandID("process-2", "job-1", 2); restarted == first {
+		t.Fatalf("ClaimCommandID() must bind process identity")
+	}
+}
+
 func TestJobWorkflowEventKeyIncludesAction(t *testing.T) {
 	t.Parallel()
 

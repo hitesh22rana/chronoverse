@@ -210,6 +210,8 @@ func TestClaimJobPropagatesRuntimeUnavailable(t *testing.T) {
 		WorkerId:             "execution-worker",
 		LeaseDurationSeconds: 30,
 		DispatchAttempt:      1,
+		ProcessInstanceId:    "f51e1bde-c3fd-447a-b914-45a66a4719ad",
+		CommandId:            "claim-command",
 	}
 
 	repo.EXPECT().ClaimJob(
@@ -217,6 +219,8 @@ func TestClaimJobPropagatesRuntimeUnavailable(t *testing.T) {
 		req.GetId(),
 		req.GetWorkflowId(),
 		req.GetWorkerId(),
+		req.GetProcessInstanceId(),
+		req.GetCommandId(),
 		30*time.Second,
 		req.GetDispatchAttempt(),
 	).Return(nil, false, "", status.Error(codes.Unavailable, "no healthy runtime node is available"))
@@ -243,6 +247,8 @@ func TestClaimJobReturnsDurableUnclaimedResponse(t *testing.T) {
 		WorkerId:             "execution-worker",
 		LeaseDurationSeconds: 30,
 		DispatchAttempt:      1,
+		ProcessInstanceId:    "f51e1bde-c3fd-447a-b914-45a66a4719ad",
+		CommandId:            "claim-command",
 	}
 
 	repo.EXPECT().ClaimJob(
@@ -250,6 +256,8 @@ func TestClaimJobReturnsDurableUnclaimedResponse(t *testing.T) {
 		req.GetId(),
 		req.GetWorkflowId(),
 		req.GetWorkerId(),
+		req.GetProcessInstanceId(),
+		req.GetCommandId(),
 		30*time.Second,
 		req.GetDispatchAttempt(),
 	).Return(nil, false, "job status is COMPLETED with dispatch attempts 1", nil)
@@ -435,11 +443,11 @@ func TestTerminalReasonValidation(t *testing.T) {
 
 	repo.EXPECT().FailJob(
 		gomock.Any(), "job", "lease", jobsmodel.FailureKindUser.ToString(), "Aborted", "failed",
-		terminalreason.NonZeroExit.String(),
+		terminalreason.NonZeroExit.String(), "fail-command",
 	).Return(nil)
 	if err := s.FailJob(t.Context(), &jobspb.FailJobRequest{
 		Id: "job", LeaseToken: "lease", FailureKind: jobsmodel.FailureKindUser.ToString(),
-		ErrorCode: "Aborted", ErrorMessage: "failed", TerminalReasonCode: terminalreason.NonZeroExit.String(),
+		ErrorCode: "Aborted", ErrorMessage: "failed", TerminalReasonCode: terminalreason.NonZeroExit.String(), CommandId: "fail-command",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -450,9 +458,9 @@ func TestTerminalReasonValidation(t *testing.T) {
 		t.Fatalf("cross-family failure reason error = %v", err)
 	}
 
-	repo.EXPECT().CancelClaimedJob(gomock.Any(), "job", "lease", terminalreason.WorkflowTerminated.String()).Return(nil)
+	repo.EXPECT().CancelClaimedJob(gomock.Any(), "job", "lease", terminalreason.WorkflowTerminated.String(), "cancel-command").Return(nil)
 	if err := s.CancelClaimedJob(t.Context(), &jobspb.CancelClaimedJobRequest{
-		Id: "job", LeaseToken: "lease", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+		Id: "job", LeaseToken: "lease", TerminalReasonCode: terminalreason.WorkflowTerminated.String(), CommandId: "cancel-command",
 	}); err != nil {
 		t.Fatal(err)
 	}

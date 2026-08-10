@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,11 +16,13 @@ import (
 )
 
 func (r *Repository) recoverExpiredLeases(ctx context.Context) {
+	r.ensureHandoffState()
 	ticker := time.NewTicker(r.cfg.RecoveryInterval)
 	defer ticker.Stop()
 
 	for {
 		r.recoverExpiredLeaseBatch(ctx)
+		r.reconcileHandoffs(ctx)
 
 		select {
 		case <-ctx.Done():
@@ -50,6 +53,8 @@ func (r *Repository) recoverExpiredLeaseBatch(ctx context.Context) {
 			BatchSize:            waveSize,
 			WorkerId:             r.cfg.WorkerID,
 			LeaseDurationSeconds: int32(r.cfg.LeaseDuration.Seconds()),
+			ProcessInstanceId:    r.processID,
+			CommandId:            uuid.NewString(),
 		})
 		if err != nil {
 			logger.Warn("failed to fetch expired job leases", zap.Error(err))
@@ -128,7 +133,6 @@ func (r *Repository) withRecoveredLeaseRenewal(
 			loggerpkg.FromContext(parentCtx).Warn("recovered job lease renewal failed",
 				zap.String("job_id", claim.GetId()),
 				zap.String("workflow_id", claim.GetWorkflowId()),
-				zap.String("lease_token", claim.GetLeaseToken()),
 				zap.Error(renewErr),
 			)
 			cancel()
@@ -139,6 +143,31 @@ func (r *Repository) withRecoveredLeaseRenewal(
 	cancel()
 	<-renewStopped
 	return err
+}
+
+// reconcileHandoffs retains ambiguous executions until PostgreSQL-backed claim
+// replay proves that the original lease is inactive or changed. It deliberately
+// has no local-time eviction path.
+func (r *Repository) reconcileHandoffs(ctx context.Context) {
+	for _, entry := range r.handoffs.awaiting() {
+		if ctx.Err() != nil {
+			return
+		}
+		authCtx, err := r.withAuthorization(ctx)
+		if err != nil {
+			return
+		}
+		claim, err := r.svc.Jobs.ClaimJob(authCtx, entry.request)
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				r.handoffs.removeAwaiting(entry)
+			}
+			continue
+		}
+		if !claim.GetClaimed() {
+			r.handoffs.removeAwaiting(entry)
+		}
+	}
 }
 
 func (r *Repository) recoverExpiredLeaseWithClaim(

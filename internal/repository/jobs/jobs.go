@@ -29,6 +29,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -46,6 +47,10 @@ const (
 	jobLogsHighlightEnd        = "__CV_HL_END_"
 	jobLogsHighlightSuffix     = "__"
 	jobLogsMessageField        = "message"
+	terminalReasonCodeField    = "terminal_reason_code"
+	leaseTokenField            = "lease_token"
+	claimResultField           = "claimed"
+	claimReasonField           = "reason"
 )
 
 type jobLogsCursor struct {
@@ -103,6 +108,8 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 }
 
 // ScheduleJob schedules a job.
+//
+//nolint:gocyclo // Scheduling combines validation, ledger reservation, and one atomic insert.
 func (r *Repository) ScheduleJob(
 	ctx context.Context,
 	workflowID,
@@ -133,6 +140,43 @@ func (r *Repository) ScheduleJob(
 		trigger,
 		idempotencyKey,
 	)
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to start schedule transaction: %v", err)
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
+
+	hashFields := map[string]any{
+		"workflow_id": workflowID,
+		"user_id":     userID,
+		"trigger":     trigger,
+	}
+	var scope, operation string
+	permanent := trigger == jobsmodel.JobTriggerAutomatic.ToString()
+	if permanent {
+		hashFields["scheduled_at"] = scheduledAtTime.Format(time.RFC3339Nano)
+		hashFields["workflow_generation"] = workflowGeneration
+		scope = commandidempotency.WorkflowScope(workflowID)
+		operation = commandidempotency.OperationJobScheduleAutomatic
+	} else {
+		scope = commandidempotency.UserScope(userID)
+		operation = commandidempotency.ManualScheduleOperation(workflowID)
+	}
+	requestHash, err := idempotency.HashCanonical(hashFields)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to hash schedule command: %v", err)
+	}
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
+	if err != nil {
+		return "", err
+	}
+	if reservation.Replay {
+		if err = tx.Commit(ctx); err != nil {
+			return "", status.Errorf(codes.Internal, "failed to commit schedule replay: %v", err)
+		}
+		return reservation.ResourceID, nil
+	}
 	query, args, err := scheduleJobInsertStatement(
 		workflowID,
 		userID,
@@ -146,7 +190,7 @@ func (r *Repository) ScheduleJob(
 		return "", err
 	}
 
-	row := r.pg.QueryRow(ctx, query, args...)
+	row := tx.QueryRow(ctx, query, args...)
 	if err = row.Scan(&jobID); err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
@@ -164,6 +208,12 @@ func (r *Repository) ScheduleJob(
 		return "", err
 	}
 
+	if completeErr := commandidempotency.Complete(ctx, tx, scope, operation, idempotencyKey, requestHash, jobID, map[string]string{"id": jobID}, permanent); completeErr != nil {
+		return "", completeErr
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return "", status.Errorf(codes.Internal, "failed to commit schedule command: %v", err)
+	}
 	return jobID, nil
 }
 
@@ -246,6 +296,105 @@ func automaticScheduleGuardSQL(workflowGeneration int64) string {
                 AND w.build_status = 'COMPLETED'
             FOR SHARE
     `, postgres.TableWorkflows)
+}
+
+// CancelJob applies a deterministic workflow-driven cancellation and persists
+// the pre-cancellation cleanup snapshot for response-loss replay.
+//
+//nolint:gocyclo // Cancellation persists and replays a complete cleanup snapshot atomically.
+func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalReasonCode string) (snapshot *jobsmodel.CancelJobSnapshot, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.CancelJob")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to start cancel-job transaction: %v", err)
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
+
+	requestHash, err := idempotency.HashCanonical(map[string]string{
+		"job_id":                jobID,
+		terminalReasonCodeField: terminalReasonCode,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to hash cancel command: %v", err)
+	}
+	scope := commandidempotency.JobScope(jobID)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationJobCancel, commandID, requestHash)
+	if err != nil {
+		return nil, err
+	}
+	if reservation.Replay {
+		snapshot = &jobsmodel.CancelJobSnapshot{}
+		if err = json.Unmarshal(reservation.Response, snapshot); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to decode cancel replay: %v", err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to commit cancel replay: %v", err)
+		}
+		return snapshot, nil
+	}
+
+	snapshot = &jobsmodel.CancelJobSnapshot{}
+	query := fmt.Sprintf(`
+		SELECT id, status, container_id, runtime_node_id, runtime_endpoint, attempts
+		FROM %s
+		WHERE id = $1
+		FOR UPDATE;
+	`, postgres.TableJobs)
+	if err = tx.QueryRow(ctx, query, jobID).Scan(
+		&snapshot.ID,
+		&snapshot.PreviousStatus,
+		&snapshot.ContainerID,
+		&snapshot.RuntimeNodeID,
+		&snapshot.RuntimeEndpoint,
+		&snapshot.Attempt,
+	); err != nil {
+		if r.pg.IsNoRows(err) {
+			return nil, status.Error(codes.NotFound, "job not found")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to read cancellation snapshot: %v", err)
+	}
+
+	if snapshot.PreviousStatus == jobsmodel.JobStatusPending.ToString() ||
+		snapshot.PreviousStatus == jobsmodel.JobStatusQueued.ToString() ||
+		snapshot.PreviousStatus == jobsmodel.JobStatusRunning.ToString() {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET status = 'CANCELED',
+				completed_at = clock_timestamp() AT TIME ZONE 'utc',
+				lease_token = NULL,
+				leased_by = NULL,
+				lease_process_instance_id = NULL,
+				lease_expires_at = NULL,
+				last_heartbeat_at = NULL,
+				terminal_reason_code = $2
+			WHERE id = $1;
+		`, postgres.TableJobs)
+		if _, err = tx.Exec(ctx, query, jobID, terminalReasonCode); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to cancel job: %v", err)
+		}
+		if snapshot.PreviousStatus == jobsmodel.JobStatusRunning.ToString() {
+			if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
+				return nil, decrementErr
+			}
+		}
+	}
+
+	if completeErr := commandidempotency.Complete(ctx, tx, scope, commandidempotency.OperationJobCancel, commandID, requestHash, jobID, snapshot, true); completeErr != nil {
+		return nil, completeErr
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to commit cancel command: %v", err)
+	}
+	return snapshot, nil
 }
 
 // UpdateJobStatus updates the job details.
@@ -340,9 +489,10 @@ func (r *Repository) updateTerminalJobStatus(ctx context.Context, jobID, jobStat
             UPDATE %s AS j
             SET status = $1,
                 completed_at = $3,
-                lease_token = NULL,
-                leased_by = NULL,
-                lease_expires_at = NULL,
+				lease_token = NULL,
+				leased_by = NULL,
+				lease_process_instance_id = NULL,
+				lease_expires_at = NULL,
 				last_heartbeat_at = NULL,
 				terminal_reason_code = NULLIF($4, '')
             FROM target

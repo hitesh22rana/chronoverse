@@ -254,20 +254,166 @@ func (x *ScheduleJobResponse) GetId() string {
 	return ""
 }
 
-// UpdateJobStatusRequest contains the details needed to update the status of a job.
+// CancelJobRequest contains a deterministic workflow-driven cancellation command.
+type CancelJobRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	CommandId          string                 `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	TerminalReasonCode string                 `protobuf:"bytes,3,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *CancelJobRequest) Reset() {
+	*x = CancelJobRequest{}
+	mi := &file_jobs_jobs_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelJobRequest) ProtoMessage() {}
+
+func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
+func (*CancelJobRequest) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CancelJobRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CancelJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *CancelJobRequest) GetTerminalReasonCode() string {
+	if x != nil {
+		return x.TerminalReasonCode
+	}
+	return ""
+}
+
+// CancelJobResponse is the persisted pre-cancellation cleanup snapshot.
+type CancelJobResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	PreviousStatus  string                 `protobuf:"bytes,2,opt,name=previous_status,json=previousStatus,proto3" json:"previous_status,omitempty"`
+	ContainerId     string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	RuntimeNodeId   string                 `protobuf:"bytes,4,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`
+	RuntimeEndpoint string                 `protobuf:"bytes,5,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`
+	Attempt         int32                  `protobuf:"varint,6,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CancelJobResponse) Reset() {
+	*x = CancelJobResponse{}
+	mi := &file_jobs_jobs_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelJobResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelJobResponse) ProtoMessage() {}
+
+func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
+func (*CancelJobResponse) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CancelJobResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetPreviousStatus() string {
+	if x != nil {
+		return x.PreviousStatus
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetRuntimeNodeId() string {
+	if x != nil {
+		return x.RuntimeNodeId
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetRuntimeEndpoint() string {
+	if x != nil {
+		return x.RuntimeEndpoint
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+// Deprecated compatibility request. New callers must use CancelJob.
 type UpdateJobStatusRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
-	ContainerId        string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`                        // ID of the container (if applicable)
-	Status             string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                                     // Status of the job
-	TerminalReasonCode string                 `protobuf:"bytes,4,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Required cancellation reason when status is CANCELED
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ContainerId        string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Status             string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	TerminalReasonCode string                 `protobuf:"bytes,4,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *UpdateJobStatusRequest) Reset() {
 	*x = UpdateJobStatusRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[2]
+	mi := &file_jobs_jobs_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -279,7 +425,7 @@ func (x *UpdateJobStatusRequest) String() string {
 func (*UpdateJobStatusRequest) ProtoMessage() {}
 
 func (x *UpdateJobStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[2]
+	mi := &file_jobs_jobs_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -292,7 +438,7 @@ func (x *UpdateJobStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateJobStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateJobStatusRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{2}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UpdateJobStatusRequest) GetId() string {
@@ -323,7 +469,6 @@ func (x *UpdateJobStatusRequest) GetTerminalReasonCode() string {
 	return ""
 }
 
-// UpdateJobStatusResponse contains the result of a job status update attempt.
 type UpdateJobStatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -332,7 +477,7 @@ type UpdateJobStatusResponse struct {
 
 func (x *UpdateJobStatusResponse) Reset() {
 	*x = UpdateJobStatusResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[3]
+	mi := &file_jobs_jobs_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -344,7 +489,7 @@ func (x *UpdateJobStatusResponse) String() string {
 func (*UpdateJobStatusResponse) ProtoMessage() {}
 
 func (x *UpdateJobStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[3]
+	mi := &file_jobs_jobs_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -357,7 +502,7 @@ func (x *UpdateJobStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateJobStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateJobStatusResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{3}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{5}
 }
 
 // ClaimJobRequest contains the details needed to claim a queued job for execution.
@@ -368,13 +513,15 @@ type ClaimJobRequest struct {
 	WorkerId             string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`                                        // ID of the execution worker
 	LeaseDurationSeconds int32                  `protobuf:"varint,4,opt,name=lease_duration_seconds,json=leaseDurationSeconds,proto3" json:"lease_duration_seconds,omitempty"` // Lease duration in seconds
 	DispatchAttempt      int32                  `protobuf:"varint,5,opt,name=dispatch_attempt,json=dispatchAttempt,proto3" json:"dispatch_attempt,omitempty"`                  // Dispatch attempt from the Kafka event
+	CommandId            string                 `protobuf:"bytes,6,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                                     // Deterministic process-local claim command
+	ProcessInstanceId    string                 `protobuf:"bytes,7,opt,name=process_instance_id,json=processInstanceId,proto3" json:"process_instance_id,omitempty"`           // Exact executor process identity
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ClaimJobRequest) Reset() {
 	*x = ClaimJobRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[4]
+	mi := &file_jobs_jobs_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +533,7 @@ func (x *ClaimJobRequest) String() string {
 func (*ClaimJobRequest) ProtoMessage() {}
 
 func (x *ClaimJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[4]
+	mi := &file_jobs_jobs_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +546,7 @@ func (x *ClaimJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimJobRequest.ProtoReflect.Descriptor instead.
 func (*ClaimJobRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{4}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ClaimJobRequest) GetId() string {
@@ -437,6 +584,20 @@ func (x *ClaimJobRequest) GetDispatchAttempt() int32 {
 	return 0
 }
 
+func (x *ClaimJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ClaimJobRequest) GetProcessInstanceId() string {
+	if x != nil {
+		return x.ProcessInstanceId
+	}
+	return ""
+}
+
 // ClaimJobResponse contains the result of a job claim attempt.
 type ClaimJobResponse struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
@@ -452,13 +613,14 @@ type ClaimJobResponse struct {
 	LeaseToken       string                 `protobuf:"bytes,10,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                   // Lease token required for updates
 	RuntimeNodeId    string                 `protobuf:"bytes,11,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`        // Runtime node selected for Docker-backed execution
 	RuntimeEndpoint  string                 `protobuf:"bytes,12,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`    // Docker endpoint selected for Docker-backed execution
+	LeaseExpiresAt   string                 `protobuf:"bytes,13,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"`     // Authoritative committed lease expiry
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ClaimJobResponse) Reset() {
 	*x = ClaimJobResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[5]
+	mi := &file_jobs_jobs_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +632,7 @@ func (x *ClaimJobResponse) String() string {
 func (*ClaimJobResponse) ProtoMessage() {}
 
 func (x *ClaimJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[5]
+	mi := &file_jobs_jobs_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +645,7 @@ func (x *ClaimJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimJobResponse.ProtoReflect.Descriptor instead.
 func (*ClaimJobResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{5}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ClaimJobResponse) GetClaimed() bool {
@@ -570,6 +732,13 @@ func (x *ClaimJobResponse) GetRuntimeEndpoint() string {
 	return ""
 }
 
+func (x *ClaimJobResponse) GetLeaseExpiresAt() string {
+	if x != nil {
+		return x.LeaseExpiresAt
+	}
+	return ""
+}
+
 // GetReadyRuntimeNodeRequest contains the details needed to select a runtime node.
 type GetReadyRuntimeNodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -579,7 +748,7 @@ type GetReadyRuntimeNodeRequest struct {
 
 func (x *GetReadyRuntimeNodeRequest) Reset() {
 	*x = GetReadyRuntimeNodeRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[6]
+	mi := &file_jobs_jobs_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +760,7 @@ func (x *GetReadyRuntimeNodeRequest) String() string {
 func (*GetReadyRuntimeNodeRequest) ProtoMessage() {}
 
 func (x *GetReadyRuntimeNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[6]
+	mi := &file_jobs_jobs_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +773,7 @@ func (x *GetReadyRuntimeNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetReadyRuntimeNodeRequest.ProtoReflect.Descriptor instead.
 func (*GetReadyRuntimeNodeRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{6}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{8}
 }
 
 // GetReadyRuntimeNodeResponse contains a fresh READY runtime node.
@@ -618,7 +787,7 @@ type GetReadyRuntimeNodeResponse struct {
 
 func (x *GetReadyRuntimeNodeResponse) Reset() {
 	*x = GetReadyRuntimeNodeResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[7]
+	mi := &file_jobs_jobs_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +799,7 @@ func (x *GetReadyRuntimeNodeResponse) String() string {
 func (*GetReadyRuntimeNodeResponse) ProtoMessage() {}
 
 func (x *GetReadyRuntimeNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[7]
+	mi := &file_jobs_jobs_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +812,7 @@ func (x *GetReadyRuntimeNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetReadyRuntimeNodeResponse.ProtoReflect.Descriptor instead.
 func (*GetReadyRuntimeNodeResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{7}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetReadyRuntimeNodeResponse) GetRuntimeNodeId() string {
@@ -672,7 +841,7 @@ type RenewJobLeaseRequest struct {
 
 func (x *RenewJobLeaseRequest) Reset() {
 	*x = RenewJobLeaseRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[8]
+	mi := &file_jobs_jobs_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -684,7 +853,7 @@ func (x *RenewJobLeaseRequest) String() string {
 func (*RenewJobLeaseRequest) ProtoMessage() {}
 
 func (x *RenewJobLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[8]
+	mi := &file_jobs_jobs_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -697,7 +866,7 @@ func (x *RenewJobLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewJobLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RenewJobLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{8}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RenewJobLeaseRequest) GetId() string {
@@ -723,14 +892,15 @@ func (x *RenewJobLeaseRequest) GetLeaseDurationSeconds() int32 {
 
 // RenewJobLeaseResponse contains the result of a lease renewal.
 type RenewJobLeaseResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LeaseExpiresAt string                 `protobuf:"bytes,1,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"` // Authoritative committed lease expiry
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RenewJobLeaseResponse) Reset() {
 	*x = RenewJobLeaseResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[9]
+	mi := &file_jobs_jobs_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -742,7 +912,7 @@ func (x *RenewJobLeaseResponse) String() string {
 func (*RenewJobLeaseResponse) ProtoMessage() {}
 
 func (x *RenewJobLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[9]
+	mi := &file_jobs_jobs_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -755,7 +925,14 @@ func (x *RenewJobLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewJobLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RenewJobLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{9}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RenewJobLeaseResponse) GetLeaseExpiresAt() string {
+	if x != nil {
+		return x.LeaseExpiresAt
+	}
+	return ""
 }
 
 // AttachJobContainerRequest contains the details needed to attach a container ID to a running job.
@@ -765,13 +942,14 @@ type AttachJobContainerRequest struct {
 	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`            // Current lease token
 	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`         // Container ID
 	RuntimeNodeId string                 `protobuf:"bytes,4,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"` // Runtime node that owns the container
+	CommandId     string                 `protobuf:"bytes,5,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`               // Logical attach command
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AttachJobContainerRequest) Reset() {
 	*x = AttachJobContainerRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[10]
+	mi := &file_jobs_jobs_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +961,7 @@ func (x *AttachJobContainerRequest) String() string {
 func (*AttachJobContainerRequest) ProtoMessage() {}
 
 func (x *AttachJobContainerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[10]
+	mi := &file_jobs_jobs_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +974,7 @@ func (x *AttachJobContainerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachJobContainerRequest.ProtoReflect.Descriptor instead.
 func (*AttachJobContainerRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{10}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AttachJobContainerRequest) GetId() string {
@@ -827,6 +1005,13 @@ func (x *AttachJobContainerRequest) GetRuntimeNodeId() string {
 	return ""
 }
 
+func (x *AttachJobContainerRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // AttachJobContainerResponse contains the result of attaching a container ID.
 type AttachJobContainerResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -836,7 +1021,7 @@ type AttachJobContainerResponse struct {
 
 func (x *AttachJobContainerResponse) Reset() {
 	*x = AttachJobContainerResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[11]
+	mi := &file_jobs_jobs_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -848,7 +1033,7 @@ func (x *AttachJobContainerResponse) String() string {
 func (*AttachJobContainerResponse) ProtoMessage() {}
 
 func (x *AttachJobContainerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[11]
+	mi := &file_jobs_jobs_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -861,7 +1046,7 @@ func (x *AttachJobContainerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachJobContainerResponse.ProtoReflect.Descriptor instead.
 func (*AttachJobContainerResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{11}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{13}
 }
 
 // CompleteJobRequest contains the details needed to complete a claimed job.
@@ -869,13 +1054,14 @@ type CompleteJobRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                   // ID of the job
 	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"` // Current lease token
+	CommandId     string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`    // Logical completion command
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CompleteJobRequest) Reset() {
 	*x = CompleteJobRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[12]
+	mi := &file_jobs_jobs_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -887,7 +1073,7 @@ func (x *CompleteJobRequest) String() string {
 func (*CompleteJobRequest) ProtoMessage() {}
 
 func (x *CompleteJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[12]
+	mi := &file_jobs_jobs_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -900,7 +1086,7 @@ func (x *CompleteJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteJobRequest.ProtoReflect.Descriptor instead.
 func (*CompleteJobRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{12}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CompleteJobRequest) GetId() string {
@@ -917,6 +1103,13 @@ func (x *CompleteJobRequest) GetLeaseToken() string {
 	return ""
 }
 
+func (x *CompleteJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // CompleteJobResponse contains the result of completing a job.
 type CompleteJobResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -926,7 +1119,7 @@ type CompleteJobResponse struct {
 
 func (x *CompleteJobResponse) Reset() {
 	*x = CompleteJobResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[13]
+	mi := &file_jobs_jobs_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1131,7 @@ func (x *CompleteJobResponse) String() string {
 func (*CompleteJobResponse) ProtoMessage() {}
 
 func (x *CompleteJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[13]
+	mi := &file_jobs_jobs_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1144,7 @@ func (x *CompleteJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteJobResponse.ProtoReflect.Descriptor instead.
 func (*CompleteJobResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{13}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{15}
 }
 
 // FailJobRequest contains the details needed to fail a claimed job.
@@ -963,13 +1156,14 @@ type FailJobRequest struct {
 	ErrorCode          string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`                              // Error code
 	ErrorMessage       string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`                     // Error message
 	TerminalReasonCode string                 `protobuf:"bytes,6,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Normalized failure reason
+	CommandId          string                 `protobuf:"bytes,7,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                              // Logical failure command
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *FailJobRequest) Reset() {
 	*x = FailJobRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[14]
+	mi := &file_jobs_jobs_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -981,7 +1175,7 @@ func (x *FailJobRequest) String() string {
 func (*FailJobRequest) ProtoMessage() {}
 
 func (x *FailJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[14]
+	mi := &file_jobs_jobs_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -994,7 +1188,7 @@ func (x *FailJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FailJobRequest.ProtoReflect.Descriptor instead.
 func (*FailJobRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{14}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FailJobRequest) GetId() string {
@@ -1039,6 +1233,13 @@ func (x *FailJobRequest) GetTerminalReasonCode() string {
 	return ""
 }
 
+func (x *FailJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // FailJobResponse contains the result of failing a job.
 type FailJobResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1048,7 +1249,7 @@ type FailJobResponse struct {
 
 func (x *FailJobResponse) Reset() {
 	*x = FailJobResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[15]
+	mi := &file_jobs_jobs_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1261,7 @@ func (x *FailJobResponse) String() string {
 func (*FailJobResponse) ProtoMessage() {}
 
 func (x *FailJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[15]
+	mi := &file_jobs_jobs_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1274,7 @@ func (x *FailJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FailJobResponse.ProtoReflect.Descriptor instead.
 func (*FailJobResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{15}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{17}
 }
 
 // CancelClaimedJobRequest contains the details needed to cancel a claimed job.
@@ -1082,13 +1283,14 @@ type CancelClaimedJobRequest struct {
 	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
 	LeaseToken         string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                           // Current lease token
 	TerminalReasonCode string                 `protobuf:"bytes,3,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Normalized cancellation reason
+	CommandId          string                 `protobuf:"bytes,4,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                              // Logical cancellation command
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CancelClaimedJobRequest) Reset() {
 	*x = CancelClaimedJobRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[16]
+	mi := &file_jobs_jobs_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1100,7 +1302,7 @@ func (x *CancelClaimedJobRequest) String() string {
 func (*CancelClaimedJobRequest) ProtoMessage() {}
 
 func (x *CancelClaimedJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[16]
+	mi := &file_jobs_jobs_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1113,7 +1315,7 @@ func (x *CancelClaimedJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelClaimedJobRequest.ProtoReflect.Descriptor instead.
 func (*CancelClaimedJobRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{16}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CancelClaimedJobRequest) GetId() string {
@@ -1137,6 +1339,13 @@ func (x *CancelClaimedJobRequest) GetTerminalReasonCode() string {
 	return ""
 }
 
+func (x *CancelClaimedJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // CancelClaimedJobResponse contains the result of canceling a claimed job.
 type CancelClaimedJobResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1146,7 +1355,7 @@ type CancelClaimedJobResponse struct {
 
 func (x *CancelClaimedJobResponse) Reset() {
 	*x = CancelClaimedJobResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[17]
+	mi := &file_jobs_jobs_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1158,7 +1367,7 @@ func (x *CancelClaimedJobResponse) String() string {
 func (*CancelClaimedJobResponse) ProtoMessage() {}
 
 func (x *CancelClaimedJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[17]
+	mi := &file_jobs_jobs_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1171,7 +1380,7 @@ func (x *CancelClaimedJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelClaimedJobResponse.ProtoReflect.Descriptor instead.
 func (*CancelClaimedJobResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{17}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{19}
 }
 
 // ReleaseJobForRetryRequest contains the details needed to release a claimed job for retry.
@@ -1182,13 +1391,14 @@ type ReleaseJobForRetryRequest struct {
 	NextAttemptAt string                 `protobuf:"bytes,3,opt,name=next_attempt_at,json=nextAttemptAt,proto3" json:"next_attempt_at,omitempty"` // Time the job should be retried
 	ErrorCode     string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`               // Error code
 	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`      // Error message
+	CommandId     string                 `protobuf:"bytes,6,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`               // Logical release command
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReleaseJobForRetryRequest) Reset() {
 	*x = ReleaseJobForRetryRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[18]
+	mi := &file_jobs_jobs_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1200,7 +1410,7 @@ func (x *ReleaseJobForRetryRequest) String() string {
 func (*ReleaseJobForRetryRequest) ProtoMessage() {}
 
 func (x *ReleaseJobForRetryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[18]
+	mi := &file_jobs_jobs_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1213,7 +1423,7 @@ func (x *ReleaseJobForRetryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseJobForRetryRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseJobForRetryRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{18}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReleaseJobForRetryRequest) GetId() string {
@@ -1251,6 +1461,13 @@ func (x *ReleaseJobForRetryRequest) GetErrorMessage() string {
 	return ""
 }
 
+func (x *ReleaseJobForRetryRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // ReleaseJobForRetryResponse contains the result of releasing a job for retry.
 type ReleaseJobForRetryResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1260,7 +1477,7 @@ type ReleaseJobForRetryResponse struct {
 
 func (x *ReleaseJobForRetryResponse) Reset() {
 	*x = ReleaseJobForRetryResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[19]
+	mi := &file_jobs_jobs_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1272,7 +1489,7 @@ func (x *ReleaseJobForRetryResponse) String() string {
 func (*ReleaseJobForRetryResponse) ProtoMessage() {}
 
 func (x *ReleaseJobForRetryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[19]
+	mi := &file_jobs_jobs_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1285,7 +1502,7 @@ func (x *ReleaseJobForRetryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseJobForRetryResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseJobForRetryResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{19}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{21}
 }
 
 // ExpiredJobLease contains a running job whose lease has expired.
@@ -1310,7 +1527,7 @@ type ExpiredJobLease struct {
 
 func (x *ExpiredJobLease) Reset() {
 	*x = ExpiredJobLease{}
-	mi := &file_jobs_jobs_proto_msgTypes[20]
+	mi := &file_jobs_jobs_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1322,7 +1539,7 @@ func (x *ExpiredJobLease) String() string {
 func (*ExpiredJobLease) ProtoMessage() {}
 
 func (x *ExpiredJobLease) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[20]
+	mi := &file_jobs_jobs_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1335,7 +1552,7 @@ func (x *ExpiredJobLease) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpiredJobLease.ProtoReflect.Descriptor instead.
 func (*ExpiredJobLease) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{20}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ExpiredJobLease) GetId() string {
@@ -1435,13 +1652,15 @@ type RecoverExpiredJobLeasesRequest struct {
 	BatchSize            int32                  `protobuf:"varint,1,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`                                    // Maximum number of expired leases to claim
 	WorkerId             string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`                                        // Worker claiming the expired leases for recovery
 	LeaseDurationSeconds int32                  `protobuf:"varint,3,opt,name=lease_duration_seconds,json=leaseDurationSeconds,proto3" json:"lease_duration_seconds,omitempty"` // Lease duration in seconds for recovered claims
+	CommandId            string                 `protobuf:"bytes,4,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                                     // Logical recovery-wave command
+	ProcessInstanceId    string                 `protobuf:"bytes,5,opt,name=process_instance_id,json=processInstanceId,proto3" json:"process_instance_id,omitempty"`           // Recovering executor process
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
 
 func (x *RecoverExpiredJobLeasesRequest) Reset() {
 	*x = RecoverExpiredJobLeasesRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[21]
+	mi := &file_jobs_jobs_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1453,7 +1672,7 @@ func (x *RecoverExpiredJobLeasesRequest) String() string {
 func (*RecoverExpiredJobLeasesRequest) ProtoMessage() {}
 
 func (x *RecoverExpiredJobLeasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[21]
+	mi := &file_jobs_jobs_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1466,7 +1685,7 @@ func (x *RecoverExpiredJobLeasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverExpiredJobLeasesRequest.ProtoReflect.Descriptor instead.
 func (*RecoverExpiredJobLeasesRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{21}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RecoverExpiredJobLeasesRequest) GetBatchSize() int32 {
@@ -1490,6 +1709,20 @@ func (x *RecoverExpiredJobLeasesRequest) GetLeaseDurationSeconds() int32 {
 	return 0
 }
 
+func (x *RecoverExpiredJobLeasesRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *RecoverExpiredJobLeasesRequest) GetProcessInstanceId() string {
+	if x != nil {
+		return x.ProcessInstanceId
+	}
+	return ""
+}
+
 // RecoverExpiredJobLeasesResponse contains expired leases to recover.
 type RecoverExpiredJobLeasesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1500,7 +1733,7 @@ type RecoverExpiredJobLeasesResponse struct {
 
 func (x *RecoverExpiredJobLeasesResponse) Reset() {
 	*x = RecoverExpiredJobLeasesResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[22]
+	mi := &file_jobs_jobs_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1512,7 +1745,7 @@ func (x *RecoverExpiredJobLeasesResponse) String() string {
 func (*RecoverExpiredJobLeasesResponse) ProtoMessage() {}
 
 func (x *RecoverExpiredJobLeasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[22]
+	mi := &file_jobs_jobs_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1525,7 +1758,7 @@ func (x *RecoverExpiredJobLeasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverExpiredJobLeasesResponse.ProtoReflect.Descriptor instead.
 func (*RecoverExpiredJobLeasesResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{22}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RecoverExpiredJobLeasesResponse) GetJobs() []*ExpiredJobLease {
@@ -1547,7 +1780,7 @@ type GetJobRequest struct {
 
 func (x *GetJobRequest) Reset() {
 	*x = GetJobRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[23]
+	mi := &file_jobs_jobs_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1559,7 +1792,7 @@ func (x *GetJobRequest) String() string {
 func (*GetJobRequest) ProtoMessage() {}
 
 func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[23]
+	mi := &file_jobs_jobs_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1572,7 +1805,7 @@ func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobRequest.ProtoReflect.Descriptor instead.
 func (*GetJobRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{23}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetJobRequest) GetId() string {
@@ -1616,7 +1849,7 @@ type GetJobResponse struct {
 
 func (x *GetJobResponse) Reset() {
 	*x = GetJobResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[24]
+	mi := &file_jobs_jobs_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1628,7 +1861,7 @@ func (x *GetJobResponse) String() string {
 func (*GetJobResponse) ProtoMessage() {}
 
 func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[24]
+	mi := &file_jobs_jobs_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1641,7 +1874,7 @@ func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobResponse.ProtoReflect.Descriptor instead.
 func (*GetJobResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{24}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetJobResponse) GetId() string {
@@ -1731,7 +1964,7 @@ type GetJobByIDRequest struct {
 
 func (x *GetJobByIDRequest) Reset() {
 	*x = GetJobByIDRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[25]
+	mi := &file_jobs_jobs_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1743,7 +1976,7 @@ func (x *GetJobByIDRequest) String() string {
 func (*GetJobByIDRequest) ProtoMessage() {}
 
 func (x *GetJobByIDRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[25]
+	mi := &file_jobs_jobs_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1756,7 +1989,7 @@ func (x *GetJobByIDRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobByIDRequest.ProtoReflect.Descriptor instead.
 func (*GetJobByIDRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{25}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetJobByIDRequest) GetId() string {
@@ -1786,7 +2019,7 @@ type GetJobByIDResponse struct {
 
 func (x *GetJobByIDResponse) Reset() {
 	*x = GetJobByIDResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[26]
+	mi := &file_jobs_jobs_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1798,7 +2031,7 @@ func (x *GetJobByIDResponse) String() string {
 func (*GetJobByIDResponse) ProtoMessage() {}
 
 func (x *GetJobByIDResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[26]
+	mi := &file_jobs_jobs_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1811,7 +2044,7 @@ func (x *GetJobByIDResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobByIDResponse.ProtoReflect.Descriptor instead.
 func (*GetJobByIDResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{26}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetJobByIDResponse) GetId() string {
@@ -1901,7 +2134,7 @@ type GetJobLogsFilters struct {
 
 func (x *GetJobLogsFilters) Reset() {
 	*x = GetJobLogsFilters{}
-	mi := &file_jobs_jobs_proto_msgTypes[27]
+	mi := &file_jobs_jobs_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1913,7 +2146,7 @@ func (x *GetJobLogsFilters) String() string {
 func (*GetJobLogsFilters) ProtoMessage() {}
 
 func (x *GetJobLogsFilters) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[27]
+	mi := &file_jobs_jobs_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1926,7 +2159,7 @@ func (x *GetJobLogsFilters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobLogsFilters.ProtoReflect.Descriptor instead.
 func (*GetJobLogsFilters) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{27}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GetJobLogsFilters) GetStream() LogStream {
@@ -1951,7 +2184,7 @@ type GetJobLogsRequest struct {
 
 func (x *GetJobLogsRequest) Reset() {
 	*x = GetJobLogsRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[28]
+	mi := &file_jobs_jobs_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1963,7 +2196,7 @@ func (x *GetJobLogsRequest) String() string {
 func (*GetJobLogsRequest) ProtoMessage() {}
 
 func (x *GetJobLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[28]
+	mi := &file_jobs_jobs_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1976,7 +2209,7 @@ func (x *GetJobLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobLogsRequest.ProtoReflect.Descriptor instead.
 func (*GetJobLogsRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{28}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GetJobLogsRequest) GetId() string {
@@ -2035,7 +2268,7 @@ type Log struct {
 
 func (x *Log) Reset() {
 	*x = Log{}
-	mi := &file_jobs_jobs_proto_msgTypes[29]
+	mi := &file_jobs_jobs_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2047,7 +2280,7 @@ func (x *Log) String() string {
 func (*Log) ProtoMessage() {}
 
 func (x *Log) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[29]
+	mi := &file_jobs_jobs_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2060,7 +2293,7 @@ func (x *Log) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Log.ProtoReflect.Descriptor instead.
 func (*Log) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{29}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Log) GetTimestamp() string {
@@ -2112,7 +2345,7 @@ type GetJobLogsResponse struct {
 
 func (x *GetJobLogsResponse) Reset() {
 	*x = GetJobLogsResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[30]
+	mi := &file_jobs_jobs_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2124,7 +2357,7 @@ func (x *GetJobLogsResponse) String() string {
 func (*GetJobLogsResponse) ProtoMessage() {}
 
 func (x *GetJobLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[30]
+	mi := &file_jobs_jobs_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2137,7 +2370,7 @@ func (x *GetJobLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobLogsResponse.ProtoReflect.Descriptor instead.
 func (*GetJobLogsResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{30}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetJobLogsResponse) GetId() string {
@@ -2187,7 +2420,7 @@ type StreamJobLogsRequest struct {
 
 func (x *StreamJobLogsRequest) Reset() {
 	*x = StreamJobLogsRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[31]
+	mi := &file_jobs_jobs_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2199,7 +2432,7 @@ func (x *StreamJobLogsRequest) String() string {
 func (*StreamJobLogsRequest) ProtoMessage() {}
 
 func (x *StreamJobLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[31]
+	mi := &file_jobs_jobs_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2212,7 +2445,7 @@ func (x *StreamJobLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamJobLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamJobLogsRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{31}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *StreamJobLogsRequest) GetId() string {
@@ -2247,7 +2480,7 @@ type SearchJobLogsFilters struct {
 
 func (x *SearchJobLogsFilters) Reset() {
 	*x = SearchJobLogsFilters{}
-	mi := &file_jobs_jobs_proto_msgTypes[32]
+	mi := &file_jobs_jobs_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2259,7 +2492,7 @@ func (x *SearchJobLogsFilters) String() string {
 func (*SearchJobLogsFilters) ProtoMessage() {}
 
 func (x *SearchJobLogsFilters) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[32]
+	mi := &file_jobs_jobs_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2272,7 +2505,7 @@ func (x *SearchJobLogsFilters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchJobLogsFilters.ProtoReflect.Descriptor instead.
 func (*SearchJobLogsFilters) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{32}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *SearchJobLogsFilters) GetStream() LogStream {
@@ -2305,7 +2538,7 @@ type SearchJobLogsRequest struct {
 
 func (x *SearchJobLogsRequest) Reset() {
 	*x = SearchJobLogsRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[33]
+	mi := &file_jobs_jobs_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2317,7 +2550,7 @@ func (x *SearchJobLogsRequest) String() string {
 func (*SearchJobLogsRequest) ProtoMessage() {}
 
 func (x *SearchJobLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[33]
+	mi := &file_jobs_jobs_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2330,7 +2563,7 @@ func (x *SearchJobLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchJobLogsRequest.ProtoReflect.Descriptor instead.
 func (*SearchJobLogsRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{33}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SearchJobLogsRequest) GetId() string {
@@ -2393,7 +2626,7 @@ type ListJobsFilters struct {
 
 func (x *ListJobsFilters) Reset() {
 	*x = ListJobsFilters{}
-	mi := &file_jobs_jobs_proto_msgTypes[34]
+	mi := &file_jobs_jobs_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2405,7 +2638,7 @@ func (x *ListJobsFilters) String() string {
 func (*ListJobsFilters) ProtoMessage() {}
 
 func (x *ListJobsFilters) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[34]
+	mi := &file_jobs_jobs_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2418,7 +2651,7 @@ func (x *ListJobsFilters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsFilters.ProtoReflect.Descriptor instead.
 func (*ListJobsFilters) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{34}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListJobsFilters) GetStatus() string {
@@ -2448,7 +2681,7 @@ type ListJobsRequest struct {
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_jobs_jobs_proto_msgTypes[35]
+	mi := &file_jobs_jobs_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2460,7 +2693,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[35]
+	mi := &file_jobs_jobs_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2473,7 +2706,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{35}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ListJobsRequest) GetWorkflowId() string {
@@ -2528,7 +2761,7 @@ type JobsResponse struct {
 
 func (x *JobsResponse) Reset() {
 	*x = JobsResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[36]
+	mi := &file_jobs_jobs_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2540,7 +2773,7 @@ func (x *JobsResponse) String() string {
 func (*JobsResponse) ProtoMessage() {}
 
 func (x *JobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[36]
+	mi := &file_jobs_jobs_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2553,7 +2786,7 @@ func (x *JobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobsResponse.ProtoReflect.Descriptor instead.
 func (*JobsResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{36}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *JobsResponse) GetId() string {
@@ -2671,7 +2904,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_jobs_jobs_proto_msgTypes[37]
+	mi := &file_jobs_jobs_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2683,7 +2916,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_jobs_proto_msgTypes[37]
+	mi := &file_jobs_jobs_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2696,7 +2929,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_jobs_proto_rawDescGZIP(), []int{37}
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListJobsResponse) GetJobs() []*JobsResponse {
@@ -2727,20 +2960,35 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x12/\n" +
 	"\x13workflow_generation\x18\x06 \x01(\x03R\x12workflowGeneration\"%\n" +
 	"\x13ScheduleJobResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x95\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"s\n" +
+	"\x10CancelJobRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x02 \x01(\tR\tcommandId\x120\n" +
+	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\"\xdc\x01\n" +
+	"\x11CancelJobResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
+	"\x0fprevious_status\x18\x02 \x01(\tR\x0epreviousStatus\x12!\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12&\n" +
+	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\x12)\n" +
+	"\x10runtime_endpoint\x18\x05 \x01(\tR\x0fruntimeEndpoint\x12\x18\n" +
+	"\aattempt\x18\x06 \x01(\x05R\aattempt\"\x95\x01\n" +
 	"\x16UpdateJobStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x120\n" +
 	"\x14terminal_reason_code\x18\x04 \x01(\tR\x12terminalReasonCode\"\x19\n" +
-	"\x17UpdateJobStatusResponse\"\xc0\x01\n" +
+	"\x17UpdateJobStatusResponse\"\x8f\x02\n" +
 	"\x0fClaimJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12\x1b\n" +
 	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x124\n" +
 	"\x16lease_duration_seconds\x18\x04 \x01(\x05R\x14leaseDurationSeconds\x12)\n" +
-	"\x10dispatch_attempt\x18\x05 \x01(\x05R\x0fdispatchAttempt\"\x88\x03\n" +
+	"\x10dispatch_attempt\x18\x05 \x01(\x05R\x0fdispatchAttempt\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x06 \x01(\tR\tcommandId\x12.\n" +
+	"\x13process_instance_id\x18\a \x01(\tR\x11processInstanceId\"\xb2\x03\n" +
 	"\x10ClaimJobResponse\x12\x18\n" +
 	"\aclaimed\x18\x01 \x01(\bR\aclaimed\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x0e\n" +
@@ -2756,7 +3004,8 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	" \x01(\tR\n" +
 	"leaseToken\x12&\n" +
 	"\x0fruntime_node_id\x18\v \x01(\tR\rruntimeNodeId\x12)\n" +
-	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\"\x1c\n" +
+	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\x12(\n" +
+	"\x10lease_expires_at\x18\r \x01(\tR\x0eleaseExpiresAt\"\x1c\n" +
 	"\x1aGetReadyRuntimeNodeRequest\"p\n" +
 	"\x1bGetReadyRuntimeNodeResponse\x12&\n" +
 	"\x0fruntime_node_id\x18\x01 \x01(\tR\rruntimeNodeId\x12)\n" +
@@ -2765,20 +3014,25 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x124\n" +
-	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\"\x17\n" +
-	"\x15RenewJobLeaseResponse\"\x97\x01\n" +
+	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\"A\n" +
+	"\x15RenewJobLeaseResponse\x12(\n" +
+	"\x10lease_expires_at\x18\x01 \x01(\tR\x0eleaseExpiresAt\"\xb6\x01\n" +
 	"\x19AttachJobContainerRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x12!\n" +
 	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12&\n" +
-	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\"\x1c\n" +
-	"\x1aAttachJobContainerResponse\"E\n" +
+	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x05 \x01(\tR\tcommandId\"\x1c\n" +
+	"\x1aAttachJobContainerResponse\"d\n" +
 	"\x12CompleteJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
-	"leaseToken\"\x15\n" +
-	"\x13CompleteJobResponse\"\xda\x01\n" +
+	"leaseToken\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\"\x15\n" +
+	"\x13CompleteJobResponse\"\xf9\x01\n" +
 	"\x0eFailJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
@@ -2787,14 +3041,18 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x120\n" +
-	"\x14terminal_reason_code\x18\x06 \x01(\tR\x12terminalReasonCode\"\x11\n" +
-	"\x0fFailJobResponse\"|\n" +
+	"\x14terminal_reason_code\x18\x06 \x01(\tR\x12terminalReasonCode\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\a \x01(\tR\tcommandId\"\x11\n" +
+	"\x0fFailJobResponse\"\x9b\x01\n" +
 	"\x17CancelClaimedJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x120\n" +
-	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\"\x1a\n" +
-	"\x18CancelClaimedJobResponse\"\xb8\x01\n" +
+	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x04 \x01(\tR\tcommandId\"\x1a\n" +
+	"\x18CancelClaimedJobResponse\"\xd7\x01\n" +
 	"\x19ReleaseJobForRetryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
@@ -2802,7 +3060,9 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x0fnext_attempt_at\x18\x03 \x01(\tR\rnextAttemptAt\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x1c\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x06 \x01(\tR\tcommandId\"\x1c\n" +
 	"\x1aReleaseJobForRetryResponse\"\xbe\x03\n" +
 	"\x0fExpiredJobLease\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -2820,12 +3080,15 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	" \x01(\bR\flogRetention\x12&\n" +
 	"\x0fruntime_node_id\x18\v \x01(\tR\rruntimeNodeId\x12)\n" +
 	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\x12/\n" +
-	"\x13runtime_unavailable\x18\r \x01(\bR\x12runtimeUnavailable\"\x92\x01\n" +
+	"\x13runtime_unavailable\x18\r \x01(\bR\x12runtimeUnavailable\"\xe1\x01\n" +
 	"\x1eRecoverExpiredJobLeasesRequest\x12\x1d\n" +
 	"\n" +
 	"batch_size\x18\x01 \x01(\x05R\tbatchSize\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x124\n" +
-	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\"L\n" +
+	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x04 \x01(\tR\tcommandId\x12.\n" +
+	"\x13process_instance_id\x18\x05 \x01(\tR\x11processInstanceId\"L\n" +
 	"\x1fRecoverExpiredJobLeasesResponse\x12)\n" +
 	"\x04jobs\x18\x01 \x03(\v2\x15.jobs.ExpiredJobLeaseR\x04jobs\"Y\n" +
 	"\rGetJobRequest\x12\x0e\n" +
@@ -2954,10 +3217,11 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\fLogSortOrder\x12\x1e\n" +
 	"\x1aLOG_SORT_ORDER_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13LOG_SORT_ORDER_DESC\x10\x01\x12\x16\n" +
-	"\x12LOG_SORT_ORDER_ASC\x10\x022\x80\n" +
+	"\x12LOG_SORT_ORDER_ASC\x10\x022\xc0\n" +
 	"\n" +
 	"\vJobsService\x12D\n" +
-	"\vScheduleJob\x12\x18.jobs.ScheduleJobRequest\x1a\x19.jobs.ScheduleJobResponse\"\x00\x12P\n" +
+	"\vScheduleJob\x12\x18.jobs.ScheduleJobRequest\x1a\x19.jobs.ScheduleJobResponse\"\x00\x12>\n" +
+	"\tCancelJob\x12\x16.jobs.CancelJobRequest\x1a\x17.jobs.CancelJobResponse\"\x00\x12P\n" +
 	"\x0fUpdateJobStatus\x12\x1c.jobs.UpdateJobStatusRequest\x1a\x1d.jobs.UpdateJobStatusResponse\"\x00\x12;\n" +
 	"\bClaimJob\x12\x15.jobs.ClaimJobRequest\x1a\x16.jobs.ClaimJobResponse\"\x00\x12\\\n" +
 	"\x13GetReadyRuntimeNode\x12 .jobs.GetReadyRuntimeNodeRequest\x1a!.jobs.GetReadyRuntimeNodeResponse\"\x00\x12J\n" +
@@ -2990,96 +3254,100 @@ func file_jobs_jobs_proto_rawDescGZIP() []byte {
 }
 
 var file_jobs_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_jobs_jobs_proto_goTypes = []any{
 	(LogStream)(0),                          // 0: jobs.LogStream
 	(LogSortOrder)(0),                       // 1: jobs.LogSortOrder
 	(*ScheduleJobRequest)(nil),              // 2: jobs.ScheduleJobRequest
 	(*ScheduleJobResponse)(nil),             // 3: jobs.ScheduleJobResponse
-	(*UpdateJobStatusRequest)(nil),          // 4: jobs.UpdateJobStatusRequest
-	(*UpdateJobStatusResponse)(nil),         // 5: jobs.UpdateJobStatusResponse
-	(*ClaimJobRequest)(nil),                 // 6: jobs.ClaimJobRequest
-	(*ClaimJobResponse)(nil),                // 7: jobs.ClaimJobResponse
-	(*GetReadyRuntimeNodeRequest)(nil),      // 8: jobs.GetReadyRuntimeNodeRequest
-	(*GetReadyRuntimeNodeResponse)(nil),     // 9: jobs.GetReadyRuntimeNodeResponse
-	(*RenewJobLeaseRequest)(nil),            // 10: jobs.RenewJobLeaseRequest
-	(*RenewJobLeaseResponse)(nil),           // 11: jobs.RenewJobLeaseResponse
-	(*AttachJobContainerRequest)(nil),       // 12: jobs.AttachJobContainerRequest
-	(*AttachJobContainerResponse)(nil),      // 13: jobs.AttachJobContainerResponse
-	(*CompleteJobRequest)(nil),              // 14: jobs.CompleteJobRequest
-	(*CompleteJobResponse)(nil),             // 15: jobs.CompleteJobResponse
-	(*FailJobRequest)(nil),                  // 16: jobs.FailJobRequest
-	(*FailJobResponse)(nil),                 // 17: jobs.FailJobResponse
-	(*CancelClaimedJobRequest)(nil),         // 18: jobs.CancelClaimedJobRequest
-	(*CancelClaimedJobResponse)(nil),        // 19: jobs.CancelClaimedJobResponse
-	(*ReleaseJobForRetryRequest)(nil),       // 20: jobs.ReleaseJobForRetryRequest
-	(*ReleaseJobForRetryResponse)(nil),      // 21: jobs.ReleaseJobForRetryResponse
-	(*ExpiredJobLease)(nil),                 // 22: jobs.ExpiredJobLease
-	(*RecoverExpiredJobLeasesRequest)(nil),  // 23: jobs.RecoverExpiredJobLeasesRequest
-	(*RecoverExpiredJobLeasesResponse)(nil), // 24: jobs.RecoverExpiredJobLeasesResponse
-	(*GetJobRequest)(nil),                   // 25: jobs.GetJobRequest
-	(*GetJobResponse)(nil),                  // 26: jobs.GetJobResponse
-	(*GetJobByIDRequest)(nil),               // 27: jobs.GetJobByIDRequest
-	(*GetJobByIDResponse)(nil),              // 28: jobs.GetJobByIDResponse
-	(*GetJobLogsFilters)(nil),               // 29: jobs.GetJobLogsFilters
-	(*GetJobLogsRequest)(nil),               // 30: jobs.GetJobLogsRequest
-	(*Log)(nil),                             // 31: jobs.Log
-	(*GetJobLogsResponse)(nil),              // 32: jobs.GetJobLogsResponse
-	(*StreamJobLogsRequest)(nil),            // 33: jobs.StreamJobLogsRequest
-	(*SearchJobLogsFilters)(nil),            // 34: jobs.SearchJobLogsFilters
-	(*SearchJobLogsRequest)(nil),            // 35: jobs.SearchJobLogsRequest
-	(*ListJobsFilters)(nil),                 // 36: jobs.ListJobsFilters
-	(*ListJobsRequest)(nil),                 // 37: jobs.ListJobsRequest
-	(*JobsResponse)(nil),                    // 38: jobs.JobsResponse
-	(*ListJobsResponse)(nil),                // 39: jobs.ListJobsResponse
+	(*CancelJobRequest)(nil),                // 4: jobs.CancelJobRequest
+	(*CancelJobResponse)(nil),               // 5: jobs.CancelJobResponse
+	(*UpdateJobStatusRequest)(nil),          // 6: jobs.UpdateJobStatusRequest
+	(*UpdateJobStatusResponse)(nil),         // 7: jobs.UpdateJobStatusResponse
+	(*ClaimJobRequest)(nil),                 // 8: jobs.ClaimJobRequest
+	(*ClaimJobResponse)(nil),                // 9: jobs.ClaimJobResponse
+	(*GetReadyRuntimeNodeRequest)(nil),      // 10: jobs.GetReadyRuntimeNodeRequest
+	(*GetReadyRuntimeNodeResponse)(nil),     // 11: jobs.GetReadyRuntimeNodeResponse
+	(*RenewJobLeaseRequest)(nil),            // 12: jobs.RenewJobLeaseRequest
+	(*RenewJobLeaseResponse)(nil),           // 13: jobs.RenewJobLeaseResponse
+	(*AttachJobContainerRequest)(nil),       // 14: jobs.AttachJobContainerRequest
+	(*AttachJobContainerResponse)(nil),      // 15: jobs.AttachJobContainerResponse
+	(*CompleteJobRequest)(nil),              // 16: jobs.CompleteJobRequest
+	(*CompleteJobResponse)(nil),             // 17: jobs.CompleteJobResponse
+	(*FailJobRequest)(nil),                  // 18: jobs.FailJobRequest
+	(*FailJobResponse)(nil),                 // 19: jobs.FailJobResponse
+	(*CancelClaimedJobRequest)(nil),         // 20: jobs.CancelClaimedJobRequest
+	(*CancelClaimedJobResponse)(nil),        // 21: jobs.CancelClaimedJobResponse
+	(*ReleaseJobForRetryRequest)(nil),       // 22: jobs.ReleaseJobForRetryRequest
+	(*ReleaseJobForRetryResponse)(nil),      // 23: jobs.ReleaseJobForRetryResponse
+	(*ExpiredJobLease)(nil),                 // 24: jobs.ExpiredJobLease
+	(*RecoverExpiredJobLeasesRequest)(nil),  // 25: jobs.RecoverExpiredJobLeasesRequest
+	(*RecoverExpiredJobLeasesResponse)(nil), // 26: jobs.RecoverExpiredJobLeasesResponse
+	(*GetJobRequest)(nil),                   // 27: jobs.GetJobRequest
+	(*GetJobResponse)(nil),                  // 28: jobs.GetJobResponse
+	(*GetJobByIDRequest)(nil),               // 29: jobs.GetJobByIDRequest
+	(*GetJobByIDResponse)(nil),              // 30: jobs.GetJobByIDResponse
+	(*GetJobLogsFilters)(nil),               // 31: jobs.GetJobLogsFilters
+	(*GetJobLogsRequest)(nil),               // 32: jobs.GetJobLogsRequest
+	(*Log)(nil),                             // 33: jobs.Log
+	(*GetJobLogsResponse)(nil),              // 34: jobs.GetJobLogsResponse
+	(*StreamJobLogsRequest)(nil),            // 35: jobs.StreamJobLogsRequest
+	(*SearchJobLogsFilters)(nil),            // 36: jobs.SearchJobLogsFilters
+	(*SearchJobLogsRequest)(nil),            // 37: jobs.SearchJobLogsRequest
+	(*ListJobsFilters)(nil),                 // 38: jobs.ListJobsFilters
+	(*ListJobsRequest)(nil),                 // 39: jobs.ListJobsRequest
+	(*JobsResponse)(nil),                    // 40: jobs.JobsResponse
+	(*ListJobsResponse)(nil),                // 41: jobs.ListJobsResponse
 }
 var file_jobs_jobs_proto_depIdxs = []int32{
-	22, // 0: jobs.RecoverExpiredJobLeasesResponse.jobs:type_name -> jobs.ExpiredJobLease
+	24, // 0: jobs.RecoverExpiredJobLeasesResponse.jobs:type_name -> jobs.ExpiredJobLease
 	0,  // 1: jobs.GetJobLogsFilters.stream:type_name -> jobs.LogStream
-	29, // 2: jobs.GetJobLogsRequest.filters:type_name -> jobs.GetJobLogsFilters
+	31, // 2: jobs.GetJobLogsRequest.filters:type_name -> jobs.GetJobLogsFilters
 	1,  // 3: jobs.GetJobLogsRequest.sort_order:type_name -> jobs.LogSortOrder
-	31, // 4: jobs.GetJobLogsResponse.logs:type_name -> jobs.Log
+	33, // 4: jobs.GetJobLogsResponse.logs:type_name -> jobs.Log
 	0,  // 5: jobs.SearchJobLogsFilters.stream:type_name -> jobs.LogStream
-	34, // 6: jobs.SearchJobLogsRequest.filters:type_name -> jobs.SearchJobLogsFilters
+	36, // 6: jobs.SearchJobLogsRequest.filters:type_name -> jobs.SearchJobLogsFilters
 	1,  // 7: jobs.SearchJobLogsRequest.sort_order:type_name -> jobs.LogSortOrder
-	36, // 8: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
-	38, // 9: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
+	38, // 8: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
+	40, // 9: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
 	2,  // 10: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
-	4,  // 11: jobs.JobsService.UpdateJobStatus:input_type -> jobs.UpdateJobStatusRequest
-	6,  // 12: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
-	8,  // 13: jobs.JobsService.GetReadyRuntimeNode:input_type -> jobs.GetReadyRuntimeNodeRequest
-	10, // 14: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
-	12, // 15: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
-	14, // 16: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
-	16, // 17: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
-	18, // 18: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
-	20, // 19: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
-	23, // 20: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
-	25, // 21: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
-	27, // 22: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
-	30, // 23: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
-	33, // 24: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
-	35, // 25: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
-	37, // 26: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
-	3,  // 27: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
-	5,  // 28: jobs.JobsService.UpdateJobStatus:output_type -> jobs.UpdateJobStatusResponse
-	7,  // 29: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
-	9,  // 30: jobs.JobsService.GetReadyRuntimeNode:output_type -> jobs.GetReadyRuntimeNodeResponse
-	11, // 31: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
-	13, // 32: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
-	15, // 33: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
-	17, // 34: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
-	19, // 35: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
-	21, // 36: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
-	24, // 37: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
-	26, // 38: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
-	28, // 39: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
-	32, // 40: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
-	31, // 41: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
-	32, // 42: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
-	39, // 43: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
-	27, // [27:44] is the sub-list for method output_type
-	10, // [10:27] is the sub-list for method input_type
+	4,  // 11: jobs.JobsService.CancelJob:input_type -> jobs.CancelJobRequest
+	6,  // 12: jobs.JobsService.UpdateJobStatus:input_type -> jobs.UpdateJobStatusRequest
+	8,  // 13: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
+	10, // 14: jobs.JobsService.GetReadyRuntimeNode:input_type -> jobs.GetReadyRuntimeNodeRequest
+	12, // 15: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
+	14, // 16: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
+	16, // 17: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
+	18, // 18: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
+	20, // 19: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
+	22, // 20: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
+	25, // 21: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
+	27, // 22: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
+	29, // 23: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
+	32, // 24: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
+	35, // 25: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
+	37, // 26: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
+	39, // 27: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
+	3,  // 28: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
+	5,  // 29: jobs.JobsService.CancelJob:output_type -> jobs.CancelJobResponse
+	7,  // 30: jobs.JobsService.UpdateJobStatus:output_type -> jobs.UpdateJobStatusResponse
+	9,  // 31: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
+	11, // 32: jobs.JobsService.GetReadyRuntimeNode:output_type -> jobs.GetReadyRuntimeNodeResponse
+	13, // 33: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
+	15, // 34: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
+	17, // 35: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
+	19, // 36: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
+	21, // 37: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
+	23, // 38: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
+	26, // 39: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
+	28, // 40: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
+	30, // 41: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
+	34, // 42: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
+	33, // 43: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
+	34, // 44: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
+	41, // 45: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
+	28, // [28:46] is the sub-list for method output_type
+	10, // [10:28] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -3090,14 +3358,14 @@ func file_jobs_jobs_proto_init() {
 	if File_jobs_jobs_proto != nil {
 		return
 	}
-	file_jobs_jobs_proto_msgTypes[35].OneofWrappers = []any{}
+	file_jobs_jobs_proto_msgTypes[37].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jobs_jobs_proto_rawDesc), len(file_jobs_jobs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   38,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

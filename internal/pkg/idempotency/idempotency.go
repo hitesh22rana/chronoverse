@@ -12,6 +12,21 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 )
 
+// ClaimCommandID returns the deterministic command ID for one process-local
+// Kafka dispatch occurrence. NUL framing prevents concatenation ambiguity.
+func ClaimCommandID(processInstanceID, jobID string, dispatchAttempt int32) string {
+	value := fmt.Sprintf("job.claim\x00%s\x00%s\x00%d", processInstanceID, jobID, dispatchAttempt)
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+// JobCancelCommandID returns a permanent deterministic cancellation command ID.
+func JobCancelCommandID(jobID string) string {
+	value := fmt.Sprintf("job.cancel\x00%s", jobID)
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
 // HashCanonical returns a SHA-256 hash for a JSON-canonical value.
 func HashCanonical(value any) (string, error) {
 	data, err := json.Marshal(value)

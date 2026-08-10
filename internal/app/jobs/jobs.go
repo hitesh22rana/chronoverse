@@ -37,6 +37,7 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
+	"CancelJob":               true,
 	"UpdateJobStatus":         true,
 	"ClaimJob":                true,
 	"GetReadyRuntimeNode":     true,
@@ -54,9 +55,10 @@ var internalAPIs = map[string]bool{
 type Service interface {
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
 	UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest) error
+	CancelJob(ctx context.Context, req *jobspb.CancelJobRequest) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (*jobspb.ClaimJobResponse, error)
 	GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
-	RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) error
+	RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) (time.Time, error)
 	AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest) error
 	CompleteJob(ctx context.Context, req *jobspb.CompleteJobRequest) error
 	FailJob(ctx context.Context, req *jobspb.FailJobRequest) error
@@ -323,6 +325,17 @@ func (j *Jobs) UpdateJobStatus(
 	return &jobspb.UpdateJobStatusResponse{}, nil
 }
 
+// CancelJob applies a deterministic cancellation and returns its cleanup snapshot.
+func (j *Jobs) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest) (*jobspb.CancelJobResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+	snapshot, err := j.svc.CancelJob(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.ToProto(), nil
+}
+
 // ClaimJob atomically claims a queued job for execution.
 func (j *Jobs) ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (res *jobspb.ClaimJobResponse, err error) {
 	ctx, span := j.tp.Start(
@@ -379,11 +392,12 @@ func (j *Jobs) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseReque
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	if err := j.svc.RenewJobLease(ctx, req); err != nil {
+	expiresAt, err := j.svc.RenewJobLease(ctx, req)
+	if err != nil {
 		return nil, err
 	}
 
-	return &jobspb.RenewJobLeaseResponse{}, nil
+	return &jobspb.RenewJobLeaseResponse{LeaseExpiresAt: expiresAt.UTC().Format(time.RFC3339Nano)}, nil
 }
 
 // AttachJobContainer attaches a container ID to a running claimed job.

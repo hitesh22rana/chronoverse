@@ -1,4 +1,5 @@
 GO_BIN?=$(shell pwd)/.bin
+PROTOC_GEN_GO_VERSION?=$(shell go list -m -f '{{.Version}}' google.golang.org/protobuf)
 PROTOC_GEN_GO_GRPC_VERSION?=v1.6.2
 export PATH := $(GO_BIN):$(PATH)
 PKG_PATH=github.com/hitesh22rana/chronoverse/internal/pkg/svc
@@ -55,6 +56,7 @@ tools:
 	@GOBIN=${GO_BIN} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 	@grep _ tools.go | awk -F'"' '{print $$2}' | while read tool; do \
 		version=latest; \
+		if [ "$$tool" = "google.golang.org/protobuf/cmd/protoc-gen-go" ]; then version=${PROTOC_GEN_GO_VERSION}; fi; \
 		if [ "$$tool" = "google.golang.org/grpc/cmd/protoc-gen-go-grpc" ]; then version=${PROTOC_GEN_GO_GRPC_VERSION}; fi; \
 		GOBIN=${GO_BIN} go install "$$tool@$$version"; \
 	done

@@ -108,14 +108,15 @@ func Reserve(
 			SELECT clock_timestamp() AT TIME ZONE 'utc' AS reserved_at
 		)
 		INSERT INTO %s AS keys (
-			scope, operation, idempotency_key, request_hash, status,
+			scope, operation, idempotency_key, request_hash, request_hash_aliases, status,
 			resource_id, response, created_at, updated_at, completed_at, expires_at
 		)
-		SELECT $1, $2, $3, $4, 'PROCESSING', NULL, NULL,
+		SELECT $1, $2, $3, $4, $5, 'PROCESSING', NULL, NULL,
 			reservation.reserved_at, reservation.reserved_at, NULL, NULL
 		FROM reservation
 		ON CONFLICT (scope, operation, idempotency_key) DO UPDATE
 		SET request_hash = EXCLUDED.request_hash,
+			request_hash_aliases = EXCLUDED.request_hash_aliases,
 			status = 'PROCESSING',
 			resource_id = NULL,
 			response = NULL,
@@ -127,7 +128,7 @@ func Reserve(
 		  AND keys.expires_at <= clock_timestamp() AT TIME ZONE 'utc';
 	`, postgres.TableCommandIdempotencyKeys)
 
-	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash)
+	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash, compatibleRequestHashes)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to reserve command idempotency key: %v", err)
 	}
@@ -137,23 +138,25 @@ func Reserve(
 	}
 
 	var storedHash, storedStatus string
+	var storedHashAliases []string
 	var resourceID sql.NullString
 	var response []byte
 	query = fmt.Sprintf(`
-		SELECT request_hash, status, resource_id, response
+		SELECT request_hash, request_hash_aliases, status, resource_id, response
 		FROM %s
 		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
 		LIMIT 1;
 	`, postgres.TableCommandIdempotencyKeys)
 	if err = tx.QueryRow(ctx, query, scope, operation, key).Scan(
 		&storedHash,
+		&storedHashAliases,
 		&storedStatus,
 		&resourceID,
 		&response,
 	); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read command idempotency key: %v", err)
 	}
-	if !requestHashMatches(storedHash, requestHash, compatibleRequestHashes) {
+	if !requestHashMatches(storedHash, storedHashAliases, requestHash, compatibleRequestHashes) {
 		recordOutcome(ctx, operation, "conflict")
 		return nil, status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
 	}
@@ -165,13 +168,14 @@ func Reserve(
 	return &Reservation{Replay: true, ResourceID: resourceID.String, Response: response}, nil
 }
 
-func requestHashMatches(storedHash, requestHash string, compatibleRequestHashes []string) bool {
-	if storedHash == requestHash {
-		return true
-	}
-	for _, compatibleHash := range compatibleRequestHashes {
-		if storedHash == compatibleHash {
-			return true
+func requestHashMatches(storedHash string, storedAliases []string, requestHash string, requestAliases []string) bool {
+	stored := append([]string{storedHash}, storedAliases...)
+	requested := append([]string{requestHash}, requestAliases...)
+	for _, storedCandidate := range stored {
+		for _, requestedCandidate := range requested {
+			if storedCandidate == requestedCandidate {
+				return true
+			}
 		}
 	}
 	return false

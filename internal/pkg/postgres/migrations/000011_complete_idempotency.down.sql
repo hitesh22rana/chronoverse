@@ -70,7 +70,7 @@ SELECT
         ELSE operation
     END,
     idempotency_key,
-    request_hash,
+    COALESCE(request_hash_aliases[1], request_hash),
     resource_id::uuid,
     response,
     status,
@@ -103,7 +103,8 @@ EXECUTE FUNCTION update_workflow_idempotency_keys_updated_at();
 DROP TABLE command_idempotency_keys;
 
 ALTER TABLE jobs
-    DROP COLUMN lease_process_instance_id;
+    DROP COLUMN lease_process_instance_id,
+    DROP COLUMN workflow_generation;
 
 -- Completed terminal identities and non-workflow command ledger records cannot
 -- be represented by the legacy schema. Superseded reused manual keys are also

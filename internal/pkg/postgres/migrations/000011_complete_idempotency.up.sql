@@ -85,6 +85,52 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'legacy manual job idempotency keys collide after ASCII-space normalization';
     END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jobs
+        WHERE trigger = 'AUTOMATIC'
+          AND idempotency_key IS NOT NULL
+          AND (
+              idempotency_key ~ '[[:cntrl:]]'
+              OR octet_length(btrim(idempotency_key, ' ')) NOT BETWEEN 1 AND 255
+          )
+    ) THEN
+        RAISE EXCEPTION 'legacy automatic job idempotency data violates command ledger constraints';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jobs
+        WHERE trigger = 'AUTOMATIC'
+          AND idempotency_key IS NOT NULL
+        GROUP BY workflow_id, btrim(idempotency_key, ' ')
+        HAVING count(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'legacy automatic job idempotency keys collide after ASCII-space normalization';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM notifications
+        WHERE idempotency_key IS NOT NULL
+          AND (
+              idempotency_key ~ '[[:cntrl:]]'
+              OR octet_length(btrim(idempotency_key, ' ')) NOT BETWEEN 1 AND 255
+          )
+    ) THEN
+        RAISE EXCEPTION 'legacy notification idempotency data violates command ledger constraints';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM notifications
+        WHERE idempotency_key IS NOT NULL
+        GROUP BY user_id, btrim(idempotency_key, ' ')
+        HAVING count(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'legacy notification idempotency keys collide after ASCII-space normalization';
+    END IF;
 END;
 $$;
 
@@ -96,6 +142,7 @@ CREATE TABLE command_idempotency_keys (
     operation TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
     request_hash TEXT NOT NULL,
+    request_hash_aliases TEXT[] NOT NULL DEFAULT '{}',
     status IDEMPOTENCY_STATUS NOT NULL DEFAULT 'PROCESSING',
     resource_id TEXT DEFAULT NULL,
     response JSONB DEFAULT NULL,
@@ -106,6 +153,13 @@ CREATE TABLE command_idempotency_keys (
     PRIMARY KEY (scope, operation, idempotency_key),
     CHECK (octet_length(idempotency_key) BETWEEN 1 AND 255),
     CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+    CHECK (
+        array_position(request_hash_aliases, NULL) IS NULL
+        AND (
+            cardinality(request_hash_aliases) = 0
+            OR array_to_string(request_hash_aliases, ',') ~ '^[0-9a-f]{64}(,[0-9a-f]{64})*$'
+        )
+    ),
     CHECK (
         (status = 'PROCESSING' AND completed_at IS NULL AND expires_at IS NULL)
         OR status <> 'PROCESSING'
@@ -198,7 +252,32 @@ WHERE expires_at IS NOT NULL;
 DROP TABLE workflow_idempotency_keys;
 
 ALTER TABLE jobs
-    ADD COLUMN lease_process_instance_id UUID DEFAULT NULL;
+    ADD COLUMN lease_process_instance_id UUID DEFAULT NULL,
+    ADD COLUMN workflow_generation BIGINT DEFAULT NULL
+        CHECK (workflow_generation IS NULL OR workflow_generation >= 0);
+
+-- Normal event identities end in :<generation>:automatic-job, which lets the
+-- upgrade retain their complete logical input. Leave nonstandard legacy keys
+-- unknown; the repository will reject rather than incorrectly adopt them.
+-- Preserve job.updated_at: this is schema backfill, not a domain mutation.
+ALTER TABLE jobs DISABLE TRIGGER trigger_update_jobs;
+WITH automatic_generations AS (
+    SELECT
+        id,
+        substring(btrim(idempotency_key, ' ') FROM ':([0-9]+):automatic-job$') AS generation_text
+    FROM jobs
+    WHERE trigger = 'AUTOMATIC'
+      AND idempotency_key IS NOT NULL
+)
+UPDATE jobs AS job
+SET workflow_generation = CASE
+    WHEN length(generation.generation_text) BETWEEN 1 AND 18
+        THEN generation.generation_text::bigint
+    ELSE NULL
+END
+FROM automatic_generations AS generation
+WHERE job.id = generation.id;
+ALTER TABLE jobs ENABLE TRIGGER trigger_update_jobs;
 
 CREATE TABLE workflow_terminal_effects (
     job_id UUID PRIMARY KEY,

@@ -135,6 +135,54 @@ process starts, such as generated certificate files and hostPath permissions.
 Operators should still inspect bootstrap Jobs before scaling application
 workloads.
 
+## Maintenance-Window Upgrades
+
+Schema-changing releases must be deployed as an offline cutover. Chronoverse
+does not support mixed application versions across an idempotency-ledger
+migration.
+
+1. Take and verify PostgreSQL and ClickHouse backups.
+2. Stop public traffic, then stop the server, scheduling and execution workers,
+   workflow workers, processors, and the outbox relay. Allow in-flight requests
+   and database transactions to finish before continuing.
+3. Run the new release's `database-migration` image while PostgreSQL remains
+   available. Migration preflight checks run before destructive schema changes;
+   an unexpired in-progress command, malformed legacy identity, or normalized-key
+   collision aborts the migration for operator reconciliation.
+4. Verify the schema version and migration logs before starting any application
+   process from the new release.
+5. Start domain services, then the outbox relay and workers while public traffic
+   remains stopped. Confirm health, consumer progress, outbox publication, and
+   runtime registration.
+6. Run an approved canary that exercises workflow create replay, changed-input
+   conflict, update, scheduling, termination, deletion, and deterministic outbox
+   keys. Remove its fixtures.
+7. Start the server and restore public traffic.
+
+For Compose, stop the mutation paths before replacing images:
+
+```sh
+docker compose -f compose.prod.yaml stop \
+  nginx server scheduling-worker workflow-worker execution-worker \
+  joblogs-processor analytics-processor outbox-relay
+docker compose -f compose.prod.yaml run --rm init-database-migration
+```
+
+The normal migration executable applies upgrades only. A rollback requires an
+operator-reviewed migration invocation or a verified database restore; do not
+assume that restarting old images reverses the schema.
+
+### Rollback
+
+Keep traffic, workers, processors, and outbox publication stopped. Roll back the
+database schema before starting old binaries, verify the restored schema and
+data, then start the old release as one version. The legacy schema cannot
+represent completed terminal identities, non-workflow command-ledger records,
+or every reused manual command key. Migration 11 preserves the legacy raw
+workflow request hash for post-upgrade commands, but the remaining documented
+identity loss still requires explicit operator acceptance. Prefer restoring the
+pre-upgrade backup when that loss is unacceptable.
+
 ## Health Checks
 
 Compose includes health checks for infrastructure and gRPC services:

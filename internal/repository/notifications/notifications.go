@@ -78,17 +78,13 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	canonicalPayload, err := idempotency.CanonicalJSON(payload)
+	requestHash, err := notificationRequestHash(userID, kind, payload)
 	if err != nil {
-		return "", status.Errorf(codes.InvalidArgument, "invalid notification payload: %v", err)
+		return "", err
 	}
-	requestHash, err := idempotency.HashCanonical(map[string]string{
-		"user_id": userID,
-		"kind":    kind,
-		"payload": string(canonicalPayload),
-	})
+	idempotencyKey, err = commandidempotency.NormalizeKey(idempotencyKey)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to hash notification command: %v", err)
+		return "", err
 	}
 	scope := commandidempotency.UserScope(userID)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationNotificationCreate, idempotencyKey, requestHash)
@@ -101,27 +97,21 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 		}
 		return reservation.ResourceID, nil
 	}
-
-	query := fmt.Sprintf(`
-        INSERT INTO %s (user_id, kind, payload, idempotency_key)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (user_id, idempotency_key)
-        WHERE idempotency_key IS NOT NULL
-        DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
-        RETURNING id;
-    `, postgres.TableNotifications)
-
-	err = tx.QueryRow(ctx, query, userID, kind, payload, idempotencyKey).Scan(&notificationID)
+	notificationID, legacyReplay, err := r.adoptLegacyNotificationCommand(
+		ctx, tx, userID, idempotencyKey, requestHash,
+	)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return "", err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return "", err
+		return "", err
+	}
+	if legacyReplay {
+		if err = tx.Commit(ctx); err != nil {
+			return "", status.Errorf(codes.Internal, "failed to commit legacy notification replay: %v", err)
 		}
+		return notificationID, nil
+	}
 
-		err = status.Errorf(codes.Internal, "failed to create notification: %v", err)
+	notificationID, err = r.insertNotification(ctx, tx, userID, kind, payload, idempotencyKey, requestHash)
+	if err != nil {
 		return "", err
 	}
 
@@ -135,6 +125,119 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 		return "", status.Errorf(codes.Internal, "failed to commit notification command: %v", err)
 	}
 	return notificationID, nil
+}
+
+func (r *Repository) insertNotification(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID,
+	kind,
+	payload,
+	idempotencyKey,
+	requestHash string,
+) (notificationID string, err error) {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (user_id, kind, payload, idempotency_key)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, idempotency_key)
+		WHERE idempotency_key IS NOT NULL
+		DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
+		RETURNING id, kind, payload;
+	`, postgres.TableNotifications)
+	var storedKind, storedPayload string
+	err = tx.QueryRow(ctx, query, userID, kind, payload, idempotencyKey).Scan(
+		&notificationID,
+		&storedKind,
+		&storedPayload,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			return "", status.Error(codes.DeadlineExceeded, err.Error())
+		case errors.Is(err, context.Canceled):
+			return "", status.Error(codes.Canceled, err.Error())
+		default:
+			return "", status.Errorf(codes.Internal, "failed to create notification: %v", err)
+		}
+	}
+	if err := validateStoredNotificationCommand(requestHash, userID, storedKind, storedPayload); err != nil {
+		return "", err
+	}
+	return notificationID, nil
+}
+
+func (r *Repository) adoptLegacyNotificationCommand(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID,
+	idempotencyKey,
+	requestHash string,
+) (notificationID string, found bool, err error) {
+	query := fmt.Sprintf(`
+		SELECT id, kind, payload
+		FROM %s
+		WHERE user_id = $1
+		  AND idempotency_key IS NOT NULL
+		  AND btrim(idempotency_key, ' ') = $2
+		FOR UPDATE
+		LIMIT 1;
+	`, postgres.TableNotifications)
+	var storedKind, storedPayload string
+	err = tx.QueryRow(ctx, query, userID, idempotencyKey).Scan(
+		&notificationID,
+		&storedKind,
+		&storedPayload,
+	)
+	if r.pg.IsNoRows(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, status.Errorf(codes.Internal, "failed to read legacy notification command: %v", err)
+	}
+	if validationErr := validateStoredNotificationCommand(requestHash, userID, storedKind, storedPayload); validationErr != nil {
+		return "", false, validationErr
+	}
+	if completeErr := commandidempotency.Complete(
+		ctx,
+		tx,
+		commandidempotency.UserScope(userID),
+		commandidempotency.OperationNotificationCreate,
+		idempotencyKey,
+		requestHash,
+		notificationID,
+		map[string]string{"id": notificationID},
+		true,
+	); completeErr != nil {
+		return "", false, completeErr
+	}
+	return notificationID, true, nil
+}
+
+func validateStoredNotificationCommand(requestHash, userID, kind, payload string) error {
+	storedRequestHash, err := notificationRequestHash(userID, kind, payload)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to hash stored notification command: %v", err)
+	}
+	if storedRequestHash != requestHash {
+		return status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
+	}
+	return nil
+}
+
+func notificationRequestHash(userID, kind, payload string) (string, error) {
+	canonicalPayload, err := idempotency.CanonicalJSON(payload)
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "invalid notification payload: %v", err)
+	}
+	hash, err := idempotency.HashCanonical(map[string]string{
+		"user_id": userID,
+		"kind":    kind,
+		"payload": string(canonicalPayload),
+	})
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to hash notification command: %v", err)
+	}
+	return hash, nil
 }
 
 // MarkNotificationsRead marks all notifications as read.

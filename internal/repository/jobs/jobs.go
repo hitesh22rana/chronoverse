@@ -140,6 +140,10 @@ func (r *Repository) ScheduleJob(
 		trigger,
 		idempotencyKey,
 	)
+	idempotencyKey, err = commandidempotency.NormalizeKey(idempotencyKey)
+	if err != nil {
+		return "", err
+	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "failed to start schedule transaction: %v", err)
@@ -173,6 +177,55 @@ func (r *Repository) ScheduleJob(
 		}
 		return reservation.ResourceID, nil
 	}
+	var (
+		storedWorkflowID         string
+		storedUserID             string
+		storedTrigger            string
+		storedWorkflowGeneration sql.NullInt64
+	)
+	if permanent {
+		legacyQuery := fmt.Sprintf(`
+			SELECT id, workflow_id, user_id, trigger, workflow_generation
+			FROM %s
+			WHERE workflow_id = $1
+			  AND trigger = 'AUTOMATIC'
+			  AND idempotency_key IS NOT NULL
+			  AND btrim(idempotency_key, ' ') = $2
+			FOR UPDATE
+			LIMIT 1;
+		`, postgres.TableJobs)
+		legacyErr := tx.QueryRow(ctx, legacyQuery, workflowID, idempotencyKey).Scan(
+			&jobID,
+			&storedWorkflowID,
+			&storedUserID,
+			&storedTrigger,
+			&storedWorkflowGeneration,
+		)
+		switch {
+		case legacyErr == nil:
+			if validateErr := validateStoredScheduleCommand(
+				requestHash,
+				storedWorkflowID,
+				storedUserID,
+				storedTrigger,
+				storedWorkflowGeneration,
+			); validateErr != nil {
+				return "", validateErr
+			}
+			if completeErr := commandidempotency.Complete(
+				ctx, tx, scope, operation, idempotencyKey, requestHash,
+				jobID, map[string]string{"id": jobID}, true,
+			); completeErr != nil {
+				return "", completeErr
+			}
+			if err = tx.Commit(ctx); err != nil {
+				return "", status.Errorf(codes.Internal, "failed to commit legacy schedule replay: %v", err)
+			}
+			return jobID, nil
+		case !r.pg.IsNoRows(legacyErr):
+			return "", status.Errorf(codes.Internal, "failed to read legacy schedule command: %v", legacyErr)
+		}
+	}
 	query, args, err := scheduleJobInsertStatement(
 		workflowID,
 		userID,
@@ -187,7 +240,13 @@ func (r *Repository) ScheduleJob(
 	}
 
 	row := tx.QueryRow(ctx, query, args...)
-	if err = row.Scan(&jobID); err != nil {
+	if err = row.Scan(
+		&jobID,
+		&storedWorkflowID,
+		&storedUserID,
+		&storedTrigger,
+		&storedWorkflowGeneration,
+	); err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -203,6 +262,15 @@ func (r *Repository) ScheduleJob(
 		err = status.Errorf(codes.Internal, "failed to insert job: %v", err)
 		return "", err
 	}
+	if validateErr := validateStoredScheduleCommand(
+		requestHash,
+		storedWorkflowID,
+		storedUserID,
+		storedTrigger,
+		storedWorkflowGeneration,
+	); validateErr != nil {
+		return "", validateErr
+	}
 
 	if completeErr := commandidempotency.Complete(ctx, tx, scope, operation, idempotencyKey, requestHash, jobID, map[string]string{"id": jobID}, permanent); completeErr != nil {
 		return "", completeErr
@@ -211,6 +279,32 @@ func (r *Repository) ScheduleJob(
 		return "", status.Errorf(codes.Internal, "failed to commit schedule command: %v", err)
 	}
 	return jobID, nil
+}
+
+func validateStoredScheduleCommand(
+	requestHash,
+	workflowID,
+	userID,
+	trigger string,
+	workflowGeneration sql.NullInt64,
+) error {
+	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !workflowGeneration.Valid {
+		return status.Error(codes.AlreadyExists, "legacy automatic job input cannot be verified")
+	}
+	storedGeneration := int64(0)
+	if workflowGeneration.Valid {
+		storedGeneration = workflowGeneration.Int64
+	}
+	storedRequestHash, err := idempotency.HashCanonical(
+		scheduleJobHashFields(workflowID, userID, trigger, storedGeneration),
+	)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to hash stored schedule command: %v", err)
+	}
+	if storedRequestHash != requestHash {
+		return status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
+	}
+	return nil
 }
 
 func scheduleJobHashFields(workflowID, userID, trigger string, workflowGeneration int64) map[string]any {
@@ -249,38 +343,38 @@ func scheduleJobInsertStatement(
 	automaticIdempotencyKeyProvided bool,
 ) (query string, args []any, err error) {
 	args = []any{workflowID, userID, scheduledAt, trigger, idempotencyKey}
-	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && workflowGeneration > 0 {
+	if trigger == jobsmodel.JobTriggerAutomatic.ToString() {
 		args = append(args, workflowGeneration)
 	}
 
 	switch {
 	case trigger == jobsmodel.JobTriggerManual.ToString():
 		return fmt.Sprintf(`
-            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id;
+            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
+            VALUES ($1, $2, $3, $4, $5, NULL)
+            RETURNING id, workflow_id, user_id, trigger, workflow_generation;
         `, postgres.TableJobs), args, nil
 	case automaticIdempotencyKeyProvided:
 		guard := automaticScheduleGuardSQL(workflowGeneration)
 		return fmt.Sprintf(`
-            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key)
-            SELECT $1, $2, $3, $4, $5
+            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
+            SELECT $1, $2, $3, $4, $5, $6
             %s
             ON CONFLICT (workflow_id, idempotency_key)
             WHERE trigger = 'AUTOMATIC' AND idempotency_key IS NOT NULL
             DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
-            RETURNING id;
+            RETURNING id, workflow_id, user_id, trigger, workflow_generation;
         `, postgres.TableJobs, guard), args, nil
 	case trigger == jobsmodel.JobTriggerAutomatic.ToString():
 		guard := automaticScheduleGuardSQL(workflowGeneration)
 		return fmt.Sprintf(`
-            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key)
-            SELECT $1, $2, $3, $4, $5
+            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
+            SELECT $1, $2, $3, $4, $5, $6
             %s
             ON CONFLICT (workflow_id, scheduled_at, trigger)
             WHERE trigger = 'AUTOMATIC'
             DO UPDATE SET workflow_id = EXCLUDED.workflow_id
-            RETURNING id;
+            RETURNING id, workflow_id, user_id, trigger, workflow_generation;
         `, postgres.TableJobs, guard), args, nil
 	default:
 		return "", nil, status.Errorf(codes.InvalidArgument, "invalid job trigger: %s", trigger)

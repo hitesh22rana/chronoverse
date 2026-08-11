@@ -2,10 +2,14 @@
 package jobs
 
 import (
+	"database/sql"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
@@ -88,6 +92,67 @@ func TestManualScheduleInsertDoesNotPermanentlyDeduplicateJobRow(t *testing.T) {
 		t.Fatalf("scheduleJobInsertStatement() error = %v", err)
 	}
 	assertNotContains(t, query, "ON CONFLICT")
+	assertContains(t, query, "workflow_generation")
+}
+
+func TestAutomaticScheduleInsertPersistsGenerationForConflictValidation(t *testing.T) {
+	t.Parallel()
+
+	query, args, err := scheduleJobInsertStatement(
+		"workflow-1",
+		"user-1",
+		time.Now(),
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		"workflow:workflow-1:BUILD:3:automatic-job",
+		3,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("scheduleJobInsertStatement() error = %v", err)
+	}
+	if len(args) != 6 || args[5] != int64(3) {
+		t.Fatalf("automatic schedule args = %#v, want workflow generation 3", args)
+	}
+	assertContains(t, query, "workflow_generation")
+	assertContains(t, query, "RETURNING id, workflow_id, user_id, trigger, workflow_generation")
+}
+
+func TestValidateStoredAutomaticScheduleCommand(t *testing.T) {
+	t.Parallel()
+
+	requestHash, err := idempotency.HashCanonical(scheduleJobHashFields(
+		"workflow-1", "user-1", jobsmodel.JobTriggerAutomatic.ToString(), 3,
+	))
+	if err != nil {
+		t.Fatalf("HashCanonical() error = %v", err)
+	}
+	if err = validateStoredScheduleCommand(
+		requestHash,
+		"workflow-1",
+		"user-1",
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		sql.NullInt64{Int64: 3, Valid: true},
+	); err != nil {
+		t.Fatalf("validateStoredScheduleCommand() error = %v", err)
+	}
+	if code := status.Code(validateStoredScheduleCommand(
+		requestHash,
+		"workflow-1",
+		"user-1",
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		sql.NullInt64{},
+	)); code != codes.AlreadyExists {
+		t.Fatalf("unknown legacy generation code = %s, want %s", code, codes.AlreadyExists)
+	}
+	if code := status.Code(validateStoredScheduleCommand(
+		requestHash,
+		"workflow-1",
+		"user-1",
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		sql.NullInt64{Int64: 4, Valid: true},
+	)); code != codes.AlreadyExists {
+		t.Fatalf("changed generation code = %s, want %s", code, codes.AlreadyExists)
+	}
 }
 
 func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {

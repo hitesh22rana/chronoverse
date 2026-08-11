@@ -237,7 +237,7 @@ func run() int {
 
 func executionWorkerRetryConfig() *grpcclient.RetryConfig {
 	return &grpcclient.RetryConfig{
-		MaxRetries:         2,
+		MaxAttempts:        3,
 		BackoffExponential: 100 * time.Millisecond,
 		RetryableCodes:     []codes.Code{codes.Unavailable, codes.DeadlineExceeded},
 		PerRetryTimeout:    5 * time.Second,

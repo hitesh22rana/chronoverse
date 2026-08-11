@@ -34,9 +34,9 @@ export async function fetchApiJson<T>(
 }
 
 export function createIdempotencyKey() {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-        return crypto.randomUUID()
+    if (typeof globalThis.crypto?.randomUUID !== "function") {
+        throw new Error("secure idempotency key generation is unavailable")
     }
 
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    return globalThis.crypto.randomUUID()
 }

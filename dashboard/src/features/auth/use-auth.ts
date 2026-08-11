@@ -15,8 +15,9 @@ type LoginCredentials = {
 type SignupCredentials = {
     email: string
     password: string
-	 idempotencyKey?: string
 }
+
+type SignupCommand = SignupCredentials & { idempotencyKey: string }
 
 export function useAuth() {
     const router = useRouter()
@@ -41,11 +42,11 @@ export function useAuth() {
 
     // Signup mutation
     const signupMutation = useMutation({
-        mutationFn: async (credentials: SignupCredentials) => {
+        mutationFn: async (command: SignupCommand) => {
             await fetchApi(apiEndpoints.auth.signup, "failed to signup", {
                 method: "POST",
-				headers: { "Idempotency-Key": credentials.idempotencyKey ?? createIdempotencyKey() },
-                body: JSON.stringify(credentials),
+				headers: { "Idempotency-Key": command.idempotencyKey },
+                body: JSON.stringify({ email: command.email, password: command.password }),
             })
         },
         onSuccess: () => {

@@ -14,7 +14,7 @@ Workflow CRUD, build status, list filters, failure counters, termination, deleti
 
 Scheduling, reads, status updates, lease claim and renewal, container attachment, completion, failure, cancellation, retry release, expired-lease recovery, logs, search, live streaming, and job listing.
 
-`FailJob` requires a failure-family terminal reason code, while `CancelClaimedJob` and canceled `UpdateJobStatus` calls require a cancellation-family code. Generic status updates cannot set `FAILED`; workers must use `FailJob` so failure kind, diagnostics, status, and reason are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
+`FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
 
 ## Notifications service
 

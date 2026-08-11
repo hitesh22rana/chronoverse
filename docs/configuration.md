@@ -245,9 +245,9 @@ This caps the fetch size used by the notification list operation.
 
 - `EXECUTION_WORKER_AWAITING_RECONCILIATION_LIMIT`
 
-`0` uses normalized executor concurrency. A positive value smaller than
-concurrency is normalized up to concurrency. The bound applies to claiming,
-active, and ambiguous handoffs; when full, Kafka receives retryable
+`0` uses normalized executor concurrency. A positive value must be at least
+executor concurrency or the worker fails during startup. The bound applies to
+claiming, active, and ambiguous handoffs; when full, Kafka receives retryable
 backpressure instead of starting another workload.
 
 ### Runtime Agent

@@ -213,13 +213,13 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
     }
 
     const createWorkflowMutation = useMutation({
-        mutationFn: async (workflowPayload: CreateWorkflowPayload) => {
+        mutationFn: async (command: { payload: CreateWorkflowPayload; idempotencyKey: string }) => {
             await fetchApi(apiEndpoints.workflows.list, "failed to create workflow", {
                 method: "POST",
                 headers: {
-                    "Idempotency-Key": createIdempotencyKey(),
+                    "Idempotency-Key": command.idempotencyKey,
                 },
-                body: JSON.stringify(workflowPayload)
+                body: JSON.stringify(command.payload)
             })
         },
         onSuccess: () => {
@@ -236,7 +236,10 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         workflows: getWorkflowQuery?.data?.workflows || [],
         isLoading: getWorkflowQuery.isLoading,
         error: getWorkflowQuery.error,
-        createWorkflow: createWorkflowMutation.mutate,
+        createWorkflow: (payload: CreateWorkflowPayload) => createWorkflowMutation.mutate({
+            payload,
+            idempotencyKey: createIdempotencyKey(),
+        }),
         isCreating: createWorkflowMutation.isPending,
         refetch: getWorkflowQuery.refetch,
         refetchLoading: getWorkflowQuery.isRefetching,

@@ -225,7 +225,7 @@ func validateStoredNotificationCommand(requestHash, userID, kind, payload string
 }
 
 func notificationRequestHash(userID, kind, payload string) (string, error) {
-	canonicalPayload, err := idempotency.CanonicalJSON(payload)
+	canonicalPayload, err := idempotency.CanonicalJSONObject(payload)
 	if err != nil {
 		return "", status.Errorf(codes.InvalidArgument, "invalid notification payload: %v", err)
 	}

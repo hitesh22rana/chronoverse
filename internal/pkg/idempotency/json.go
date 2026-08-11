@@ -48,6 +48,19 @@ func CanonicalJSON(raw string) ([]byte, error) {
 	return json.Marshal(value)
 }
 
+// CanonicalJSONObject returns canonical JSON while requiring the top-level
+// value to be an object. Nested arrays and scalar values remain valid.
+func CanonicalJSONObject(raw string) ([]byte, error) {
+	value, err := parseUniqueJSON(strings.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return nil, errors.New("top-level JSON value must be an object")
+	}
+	return json.Marshal(value)
+}
+
 func decodeUniqueValue(decoder *json.Decoder) (any, error) {
 	token, err := decoder.Token()
 	if err != nil {

@@ -40,3 +40,14 @@ func TestNotificationRequestHashCanonicalizesStoredPayload(t *testing.T) {
 		t.Fatalf("changed notification code = %s, want %s", code, codes.AlreadyExists)
 	}
 }
+
+func TestNotificationRequestHashRejectsNonObjectPayload(t *testing.T) {
+	t.Parallel()
+
+	for _, payload := range []string{`[]`, `"text"`, `null`, `1`, `true`} {
+		_, err := notificationRequestHash("user-1", "WEB_INFO", payload)
+		if code := status.Code(err); code != codes.InvalidArgument {
+			t.Fatalf("notificationRequestHash(%s) code = %s, want %s", payload, code, codes.InvalidArgument)
+		}
+	}
+}

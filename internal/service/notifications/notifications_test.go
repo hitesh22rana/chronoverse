@@ -151,6 +151,25 @@ func TestService_CreateNotification(t *testing.T) {
 	}
 }
 
+func TestService_CreateNotificationRejectsNonObjectPayload(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	s := notifications.New(validator.New(), notificationsmock.NewMockRepository(ctrl))
+
+	for _, payload := range []string{`[]`, `"text"`, `null`, `1`, `true`} {
+		_, err := s.CreateNotification(t.Context(), &notificationspb.CreateNotificationRequest{
+			UserId:         "user1",
+			Kind:           "kind1",
+			Payload:        payload,
+			IdempotencyKey: "notification-key",
+		})
+		if code := status.Code(err); code != codes.InvalidArgument {
+			t.Fatalf("CreateNotification(payload=%s) code = %s, want %s", payload, code, codes.InvalidArgument)
+		}
+	}
+}
+
 func TestService_MarkNotificationsRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 

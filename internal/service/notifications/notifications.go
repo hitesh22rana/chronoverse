@@ -78,7 +78,7 @@ func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.C
 	}
 
 	// Validate the JSON payload
-	if _, err = idempotency.CanonicalJSON(req.GetPayload()); err != nil {
+	if _, err = idempotency.CanonicalJSONObject(req.GetPayload()); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
 		return "", err
 	}

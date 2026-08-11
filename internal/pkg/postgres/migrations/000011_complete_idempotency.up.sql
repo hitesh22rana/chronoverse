@@ -1,3 +1,15 @@
+-- This release is the fresh-platform cutover. Legacy command/result semantics
+-- are intentionally not translated because there must be no user data yet.
+-- Fail before dropping constraints or changing tables if that invariant is
+-- violated, rather than silently weakening an existing idempotency contract.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM users) THEN
+        RAISE EXCEPTION 'complete idempotency migration requires an empty platform';
+    END IF;
+END;
+$$;
+
 -- Manual command keys expire in the shared ledger and may then be reused.
 -- The legacy jobs-table uniqueness constraint would retain them forever.
 DROP INDEX IF EXISTS idx_jobs_manual_idempotency_key;

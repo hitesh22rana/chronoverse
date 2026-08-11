@@ -79,6 +79,17 @@ func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {
 	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
 }
 
+func TestClaimJobAndDeferralUseTheSameWorkflowBlockerPredicate(t *testing.T) {
+	t.Parallel()
+
+	blockedExpression := workflowClaimBlockedExpression("j")
+	assertContains(t, claimJobQuery(), "AND NOT "+blockedExpression)
+	assertContains(t, deferBlockedJobQuery(), "AND "+blockedExpression)
+	assertContains(t, blockedExpression, "active.status = 'RUNNING'")
+	assertContains(t, blockedExpression, "blocker.created_at < j.created_at")
+	assertContains(t, blockedExpression, "blocker.created_at = j.created_at")
+}
+
 func TestGetReadyRuntimeNodeQueryIgnoresExecutionCapacity(t *testing.T) {
 	query := getReadyRuntimeNodeQuery()
 

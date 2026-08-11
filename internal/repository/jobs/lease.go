@@ -171,18 +171,7 @@ func (r *Repository) ClaimJob(
 		}
 	}
 
-	deferredQuery := fmt.Sprintf(`
-		UPDATE %s AS j
-		SET status = 'PENDING', queued_at = NULL
-		WHERE j.id = $1 AND j.status = 'QUEUED'
-		  AND EXISTS (
-			SELECT 1 FROM %s AS blocker
-			WHERE blocker.workflow_id = j.workflow_id
-			  AND blocker.id <> j.id
-			  AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
-			  AND (blocker.scheduled_at < j.scheduled_at OR (blocker.scheduled_at = j.scheduled_at AND blocker.id < j.id))
-		  );
-	`, postgres.TableJobs, postgres.TableJobs)
+	deferredQuery := deferBlockedJobQuery()
 	deferredTag, err := tx.Exec(ctx, deferredQuery, jobID)
 	if err != nil {
 		return nil, false, "", err
@@ -239,6 +228,8 @@ func (r *Repository) ClaimJob(
 }
 
 func claimJobQuery() string {
+	blockedExpression := workflowClaimBlockedExpression("j")
+
 	return fmt.Sprintf(`
         WITH workflow AS (
             SELECT kind
@@ -288,25 +279,7 @@ func claimJobQuery() string {
                 (SELECT kind FROM workflow) <> 'CONTAINER'
                 OR EXISTS (SELECT 1 FROM selected_runtime)
             )
-            AND NOT EXISTS (
-                SELECT 1
-                FROM %s AS active
-                WHERE active.workflow_id = j.workflow_id
-                    AND active.id <> j.id
-                    AND active.status = 'RUNNING'
-            )
-            AND NOT EXISTS (
-                SELECT 1
-                FROM %s AS blocker
-                WHERE blocker.workflow_id = j.workflow_id
-                    AND blocker.id <> j.id
-                    AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
-                    AND (
-                        blocker.scheduled_at < j.scheduled_at
-                        OR (blocker.scheduled_at = j.scheduled_at AND blocker.created_at < j.created_at)
-                        OR (blocker.scheduled_at = j.scheduled_at AND blocker.created_at = j.created_at AND blocker.id < j.id)
-                    )
-            )
+			AND NOT %s
 		RETURNING id, workflow_id, user_id, trigger, scheduled_at, dispatch_attempts, attempts, lease_token, runtime_node_id, runtime_endpoint, lease_expires_at
         ),
         increment_runtime AS (
@@ -318,7 +291,45 @@ func claimJobQuery() string {
         )
 		SELECT id, workflow_id, user_id, trigger, scheduled_at, dispatch_attempts, attempts, lease_token, runtime_node_id, runtime_endpoint, lease_expires_at
         FROM claimed;
-    `, postgres.TableWorkflows, postgres.TableRuntimeNodes, postgres.TableJobs, postgres.TableJobs, postgres.TableJobs, postgres.TableRuntimeNodes)
+	`, postgres.TableWorkflows, postgres.TableRuntimeNodes, postgres.TableJobs, blockedExpression, postgres.TableRuntimeNodes)
+}
+
+func deferBlockedJobQuery() string {
+	return fmt.Sprintf(`
+		UPDATE %s AS j
+		SET status = 'PENDING', queued_at = NULL
+		WHERE j.id = $1
+		  AND j.status = 'QUEUED'
+		  AND %s;
+	`, postgres.TableJobs, workflowClaimBlockedExpression("j"))
+}
+
+func workflowClaimBlockedExpression(jobAlias string) string {
+	return fmt.Sprintf(`(
+		EXISTS (
+			SELECT 1
+			FROM %[1]s AS active
+			WHERE active.workflow_id = %[3]s.workflow_id
+			  AND active.id <> %[3]s.id
+			  AND active.status = 'RUNNING'
+		)
+		OR EXISTS (
+			SELECT 1
+			FROM %[2]s AS blocker
+			WHERE blocker.workflow_id = %[3]s.workflow_id
+			  AND blocker.id <> %[3]s.id
+			  AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
+			  AND (
+				blocker.scheduled_at < %[3]s.scheduled_at
+				OR (blocker.scheduled_at = %[3]s.scheduled_at AND blocker.created_at < %[3]s.created_at)
+				OR (
+					blocker.scheduled_at = %[3]s.scheduled_at
+					AND blocker.created_at = %[3]s.created_at
+					AND blocker.id < %[3]s.id
+				)
+			  )
+		)
+	)`, postgres.TableJobs, postgres.TableJobs, jobAlias)
 }
 
 // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.

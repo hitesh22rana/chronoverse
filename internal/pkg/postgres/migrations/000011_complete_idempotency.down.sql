@@ -1,3 +1,23 @@
+-- A manual command key can be reused after its 24-hour ledger retention.
+-- The legacy schema can represent only one such job, so retain the newest
+-- identity and clear superseded keys before restoring its permanent index.
+WITH ranked_manual_keys AS (
+    SELECT
+        id,
+        row_number() OVER (
+            PARTITION BY user_id, workflow_id, idempotency_key
+            ORDER BY created_at DESC, id DESC
+        ) AS key_rank
+    FROM jobs
+    WHERE trigger = 'MANUAL'
+      AND idempotency_key IS NOT NULL
+)
+UPDATE jobs AS j
+SET idempotency_key = NULL
+FROM ranked_manual_keys AS ranked
+WHERE j.id = ranked.id
+  AND ranked.key_rank > 1;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_manual_idempotency_key
 ON jobs (user_id, workflow_id, idempotency_key)
 WHERE trigger = 'MANUAL' AND idempotency_key IS NOT NULL;
@@ -86,4 +106,5 @@ ALTER TABLE jobs
     DROP COLUMN lease_process_instance_id;
 
 -- Completed terminal identities and non-workflow command ledger records cannot
--- be represented by the legacy schema. Roll back only with traffic and workers paused.
+-- be represented by the legacy schema. Superseded reused manual keys are also
+-- cleared above. Roll back only with traffic and workers paused.

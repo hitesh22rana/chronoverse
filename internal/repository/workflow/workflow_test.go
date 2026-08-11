@@ -266,15 +266,12 @@ func TestCancelJobsMarksAllJobsCanceledBeforeContainerCleanup(t *testing.T) {
 		auth: testAuth{},
 		svc: &Services{
 			Jobs: &testJobsClient{
-				updateJobStatus: func(_ context.Context, req *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error) {
+				cancelJob: func(_ context.Context, req *jobspb.CancelJobRequest) error {
 					if req.GetId() != "job-1" && req.GetId() != "job-2" {
-						t.Fatalf("UpdateJobStatus job id = %q, want job-1 or job-2", req.GetId())
-					}
-					if req.GetStatus() != jobsmodel.JobStatusCanceled.ToString() {
-						t.Fatalf("UpdateJobStatus status = %q, want CANCELED", req.GetStatus())
+						t.Fatalf("CancelJob job id = %q, want job-1 or job-2", req.GetId())
 					}
 					events.add("cancel-" + req.GetId())
-					return &jobspb.UpdateJobStatusResponse{}, nil
+					return nil
 				},
 			},
 			Notifications: testNotificationsClient{},
@@ -332,9 +329,9 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 		auth: testAuth{},
 		svc: &Services{
 			Jobs: &testJobsClient{
-				updateJobStatus: func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error) {
+				cancelJob: func(context.Context, *jobspb.CancelJobRequest) error {
 					events.add("cancel")
-					return nil, status.Error(codes.FailedPrecondition, "job not cancellable")
+					return status.Error(codes.FailedPrecondition, "job not cancellable")
 				},
 			},
 			Notifications: testNotificationsClient{},
@@ -459,8 +456,8 @@ func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 		},
 		svc: &Services{
 			Jobs: &testJobsClient{
-				updateJobStatus: func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error) {
-					return &jobspb.UpdateJobStatusResponse{}, nil
+				cancelJob: func(context.Context, *jobspb.CancelJobRequest) error {
+					return nil
 				},
 			},
 			Notifications: testNotificationsClient{},
@@ -640,20 +637,15 @@ func (testAuth) ValidateToken(context.Context) (*jwt.Token, error) {
 
 type testJobsClient struct {
 	jobspb.JobsServiceClient
-	updateJobStatus     func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error)
+	cancelJob           func(context.Context, *jobspb.CancelJobRequest) error
 	scheduleJob         func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
 	listJobs            func(context.Context, *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error)
 	getReadyRuntimeNode func(context.Context, *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
 }
 
 func (c *testJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest, _ ...grpc.CallOption) (*jobspb.CancelJobResponse, error) {
-	if c.updateJobStatus != nil {
-		_, err := c.updateJobStatus(ctx, &jobspb.UpdateJobStatusRequest{
-			Id:                 req.GetId(),
-			Status:             jobsmodel.JobStatusCanceled.ToString(),
-			TerminalReasonCode: req.GetTerminalReasonCode(),
-		})
-		if err != nil {
+	if c.cancelJob != nil {
+		if err := c.cancelJob(ctx, req); err != nil {
 			return nil, err
 		}
 	}
@@ -663,13 +655,6 @@ func (c *testJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobReq
 		ContainerId:     "container-" + strings.TrimPrefix(req.GetId(), "job-"),
 		RuntimeEndpoint: "tcp://docker-proxy:2375",
 	}, nil
-}
-
-func (c *testJobsClient) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest, _ ...grpc.CallOption) (*jobspb.UpdateJobStatusResponse, error) {
-	if c.updateJobStatus == nil {
-		return &jobspb.UpdateJobStatusResponse{}, nil
-	}
-	return c.updateJobStatus(ctx, req)
 }
 
 func (c *testJobsClient) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest, _ ...grpc.CallOption) (*jobspb.ScheduleJobResponse, error) {

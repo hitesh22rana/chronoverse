@@ -36,17 +36,6 @@ message CancelJobResponse {
   int32  attempt           = 6;
 }
 
-// Deprecated compatibility request. New callers must use CancelJob.
-message UpdateJobStatusRequest {
-  string id                   = 1;
-  string container_id         = 2;
-  string status               = 3;
-  string terminal_reason_code = 4;
-}
-
-message UpdateJobStatusResponse {
-}
-
 // ClaimJobRequest contains the details needed to claim a queued job for execution.
 message ClaimJobRequest {
   string id                     = 1; // ID of the job
@@ -344,10 +333,9 @@ service JobsService {
     // ScheduleJob schedules a job to run at a specific time.
   rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
 
-    // UpdateJobStatus updates the status of a job.
+    // CancelJob applies a deterministic workflow-driven cancellation.
     // This is an internal API and should not be exposed to the public.
   rpc CancelJob(CancelJobRequest) returns (CancelJobResponse) {}
-  rpc UpdateJobStatus(UpdateJobStatusRequest) returns (UpdateJobStatusResponse) {}
 
     // ClaimJob atomically claims a queued job for execution.
     // This is an internal API and should not be exposed to the public.

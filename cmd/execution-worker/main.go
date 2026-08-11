@@ -147,12 +147,7 @@ func run() int {
 			},
 		},
 		grpcclient.DefaultCircuitBreakerConfig(),
-		&grpcclient.RetryConfig{
-			MaxRetries:         2,
-			BackoffExponential: 100 * time.Millisecond,
-			RetryableCodes:     []codes.Code{codes.Unavailable, codes.DeadlineExceeded},
-			PerRetryTimeout:    5 * time.Second,
-		},
+		executionWorkerRetryConfig(),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -173,7 +168,7 @@ func run() int {
 			},
 		},
 		grpcclient.DefaultCircuitBreakerConfig(),
-		grpcclient.DefaultRetryConfig(),
+		executionWorkerRetryConfig(),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -182,7 +177,7 @@ func run() int {
 	defer jobsConn.Close()
 
 	// Initialize the execution job components
-	repo := executorrepo.New(&executorrepo.Config{
+	repo, err := executorrepo.New(&executorrepo.Config{
 		WorkerID:                    cfg.ExecutionWorkerConfig.WorkerID,
 		Concurrency:                 cfg.ExecutionWorkerConfig.Concurrency,
 		AwaitingReconciliationLimit: cfg.ExecutionWorkerConfig.AwaitingReconciliationLimit,
@@ -213,6 +208,10 @@ func run() int {
 		},
 		Hsvc: heartbeat.New(),
 	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)
 
@@ -234,6 +233,15 @@ func run() int {
 	}
 
 	return ExitOk
+}
+
+func executionWorkerRetryConfig() *grpcclient.RetryConfig {
+	return &grpcclient.RetryConfig{
+		MaxRetries:         2,
+		BackoffExponential: 100 * time.Millisecond,
+		RetryableCodes:     []codes.Code{codes.Unavailable, codes.DeadlineExceeded},
+		PerRetryTimeout:    5 * time.Second,
+	}
 }
 
 func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.ResourceLimits, error) {

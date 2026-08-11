@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
@@ -37,6 +38,36 @@ func TestClaimJobQueryWaitsForRuntimeRowLock(t *testing.T) {
 	assertContains(t, query, "FOR UPDATE")
 	assertNotContains(t, query, "SKIP LOCKED")
 	assertContains(t, query, "terminal_reason_code = NULL")
+}
+
+func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
+	t.Parallel()
+
+	fields := scheduleJobHashFields("workflow-1", "user-1", jobsmodel.JobTriggerAutomatic.ToString(), 3)
+	if _, ok := fields["scheduled_at"]; ok {
+		t.Fatal("automatic schedule hash includes server-generated scheduled_at")
+	}
+	if got := fields["workflow_generation"]; got != int64(3) {
+		t.Fatalf("automatic schedule hash generation = %v, want 3", got)
+	}
+}
+
+func TestManualScheduleInsertDoesNotPermanentlyDeduplicateJobRow(t *testing.T) {
+	t.Parallel()
+
+	query, _, err := scheduleJobInsertStatement(
+		"workflow-1",
+		"user-1",
+		time.Now(),
+		jobsmodel.JobTriggerManual.ToString(),
+		"command-key",
+		0,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("scheduleJobInsertStatement() error = %v", err)
+	}
+	assertNotContains(t, query, "ON CONFLICT")
 }
 
 func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {

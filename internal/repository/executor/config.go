@@ -1,19 +1,27 @@
 package executor
 
 import (
+	"fmt"
 	"runtime"
 	"time"
 )
 
-func normalizeConfig(cfg *Config) Config {
+func normalizeConfig(cfg *Config) (Config, error) {
 	normalized := defaultConfig()
 	if cfg != nil {
 		applyConfigOverrides(&normalized, cfg)
 	}
 	normalizeConcurrency(&normalized)
+	if normalized.AwaitingReconciliationLimit < normalized.Concurrency {
+		return Config{}, fmt.Errorf(
+			"awaiting reconciliation limit (%d) must be at least executor concurrency (%d)",
+			normalized.AwaitingReconciliationLimit,
+			normalized.Concurrency,
+		)
+	}
 	normalizeLeaseIntervals(&normalized)
 
-	return normalized
+	return normalized, nil
 }
 
 func defaultConfig() Config {
@@ -33,7 +41,7 @@ func defaultConfig() Config {
 		JobLogPublishBackoff:        250 * time.Millisecond,
 		JobLogLiveTimeout:           100 * time.Millisecond,
 		JobLogLiveBufferSize:        4096,
-		AwaitingReconciliationLimit: runtime.GOMAXPROCS(0),
+		AwaitingReconciliationLimit: 0,
 	}
 }
 
@@ -105,9 +113,6 @@ func normalizeConcurrency(cfg *Config) {
 		cfg.Concurrency = max(1, runtime.GOMAXPROCS(0))
 	}
 	if cfg.AwaitingReconciliationLimit <= 0 {
-		cfg.AwaitingReconciliationLimit = cfg.Concurrency
-	}
-	if cfg.AwaitingReconciliationLimit < cfg.Concurrency {
 		cfg.AwaitingReconciliationLimit = cfg.Concurrency
 	}
 }

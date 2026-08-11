@@ -41,7 +41,6 @@ const (
 // Repository provides job related operations.
 type Repository interface {
 	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error)
-	UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus, terminalReasonCode string) error
 	CancelJob(ctx context.Context, jobID, commandID, terminalReasonCode string) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, jobID, workflowID, workerID, processInstanceID, commandID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobsmodel.ClaimedJob, bool, string, error)
 	GetReadyRuntimeNode(ctx context.Context) (*jobsmodel.RuntimeNode, error)
@@ -176,63 +175,6 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 	}
 
 	return res, nil
-}
-
-// UpdateJobStatusRequest holds the request parameters for updating a scheduled job status.
-type UpdateJobStatusRequest struct {
-	ID                 string `validate:"required"`
-	ContainerID        string `validate:"omitempty"`
-	Status             string `validate:"required"`
-	TerminalReasonCode string `validate:"omitempty"`
-}
-
-// UpdateJobStatus updates the scheduled job status.
-func (s *Service) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest) (err error) {
-	ctx, span := s.tp.Start(ctx, "Service.UpdateJobStatus")
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
-	// Validate the request
-	err = s.validator.Struct(&UpdateJobStatusRequest{
-		ID:                 req.GetId(),
-		ContainerID:        req.GetContainerId(),
-		Status:             req.GetStatus(),
-		TerminalReasonCode: req.GetTerminalReasonCode(),
-	})
-	if err != nil {
-		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
-		return err
-	}
-
-	// Validate the job status
-	err = validateJobStatus(req.GetStatus())
-	if err != nil {
-		return err
-	}
-	if req.GetStatus() == jobsmodel.JobStatusFailed.ToString() {
-		return status.Error(codes.InvalidArgument, "FAILED transitions must use FailJob")
-	}
-	if req.GetStatus() == jobsmodel.JobStatusCanceled.ToString() {
-		if validationErr := terminalreason.ValidateCancellation(req.GetTerminalReasonCode()); validationErr != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid terminal reason: %v", validationErr)
-		}
-	}
-
-	// Update the scheduled job status
-	err = s.repo.UpdateJobStatus(
-		ctx,
-		req.GetId(),
-		req.GetContainerId(),
-		req.GetStatus(),
-		req.GetTerminalReasonCode(),
-	)
-
-	return err
 }
 
 // ClaimJobRequest holds the request parameters for claiming a job.

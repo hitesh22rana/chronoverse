@@ -147,16 +147,12 @@ func (r *Repository) ScheduleJob(
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	hashFields := map[string]any{
-		"workflow_id": workflowID,
-		"user_id":     userID,
-		"trigger":     trigger,
-	}
+	// scheduled_at is server-generated output for automatic occurrences, so the
+	// permanent event identity—not wall-clock retry timing—defines the command.
+	hashFields := scheduleJobHashFields(workflowID, userID, trigger, workflowGeneration)
 	var scope, operation string
 	permanent := trigger == jobsmodel.JobTriggerAutomatic.ToString()
 	if permanent {
-		hashFields["scheduled_at"] = scheduledAtTime.Format(time.RFC3339Nano)
-		hashFields["workflow_generation"] = workflowGeneration
 		scope = commandidempotency.WorkflowScope(workflowID)
 		operation = commandidempotency.OperationJobScheduleAutomatic
 	} else {
@@ -217,6 +213,18 @@ func (r *Repository) ScheduleJob(
 	return jobID, nil
 }
 
+func scheduleJobHashFields(workflowID, userID, trigger string, workflowGeneration int64) map[string]any {
+	fields := map[string]any{
+		"workflow_id": workflowID,
+		"user_id":     userID,
+		"trigger":     trigger,
+	}
+	if trigger == jobsmodel.JobTriggerAutomatic.ToString() {
+		fields["workflow_generation"] = workflowGeneration
+	}
+	return fields
+}
+
 func normalizeScheduleJobIdempotencyKey(
 	workflowID string,
 	scheduledAt time.Time,
@@ -250,9 +258,6 @@ func scheduleJobInsertStatement(
 		return fmt.Sprintf(`
             INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (user_id, workflow_id, idempotency_key)
-            WHERE trigger = 'MANUAL' AND idempotency_key IS NOT NULL
-            DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
             RETURNING id;
         `, postgres.TableJobs), args, nil
 	case automaticIdempotencyKeyProvided:
@@ -395,147 +400,6 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		return nil, status.Errorf(codes.Internal, "failed to commit cancel command: %v", err)
 	}
 	return snapshot, nil
-}
-
-// UpdateJobStatus updates the job details.
-func (r *Repository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus, terminalReasonCode string) (err error) {
-	ctx, span := r.tp.Start(ctx, "Repository.UpdateJobStatus")
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
-	if isRuntimeSlotReleasingStatus(jobStatus) {
-		return r.updateTerminalJobStatus(ctx, jobID, jobStatus, terminalReasonCode)
-	}
-
-	query := fmt.Sprintf(`
-    UPDATE %s
-	SET status = $1, terminal_reason_code = NULL`, postgres.TableJobs)
-	args := []any{jobStatus}
-
-	switch jobStatus {
-	case jobsmodel.JobStatusRunning.ToString():
-		if containerID == "" {
-			query += `, started_at = $2
-            WHERE id = $3;`
-			args = append(args, time.Now(), jobID)
-		} else {
-			query += `, started_at = $2, container_id = $3
-            WHERE id = $4;`
-			args = append(args, time.Now(), containerID, jobID)
-		}
-	default:
-		query += ` WHERE id = $2;`
-		args = append(args, jobID)
-	}
-
-	// Execute the query
-	ct, err := r.pg.Exec(ctx, query, args...)
-	//nolint:gocritic // Ifelse is used to handle different error types
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to update job: %v", err)
-		return err
-	}
-
-	if ct.RowsAffected() == 0 {
-		if jobStatus == jobsmodel.JobStatusCanceled.ToString() {
-			err = status.Errorf(codes.FailedPrecondition, "job not found or not cancellable")
-			return err
-		}
-
-		err = status.Errorf(codes.NotFound, "job not found")
-		return err
-	}
-
-	return nil
-}
-
-func isRuntimeSlotReleasingStatus(jobStatus string) bool {
-	return jobStatus == jobsmodel.JobStatusCompleted.ToString() ||
-		jobStatus == jobsmodel.JobStatusFailed.ToString() ||
-		jobStatus == jobsmodel.JobStatusCanceled.ToString()
-}
-
-func (r *Repository) updateTerminalJobStatus(ctx context.Context, jobID, jobStatus, terminalReasonCode string) error {
-	statusPredicate := ""
-	if jobStatus == jobsmodel.JobStatusCanceled.ToString() {
-		statusPredicate = "AND status IN ('PENDING', 'QUEUED', 'RUNNING')"
-	}
-
-	query := fmt.Sprintf(`
-        WITH target AS (
-            SELECT id, status, runtime_node_id
-            FROM %s
-            WHERE id = $2
-                %s
-            FOR UPDATE
-        ),
-        updated AS (
-            UPDATE %s AS j
-            SET status = $1,
-                completed_at = $3,
-				lease_token = NULL,
-				leased_by = NULL,
-				lease_process_instance_id = NULL,
-				lease_expires_at = NULL,
-				last_heartbeat_at = NULL,
-				terminal_reason_code = NULLIF($4, '')
-            FROM target
-            WHERE j.id = target.id
-            RETURNING target.status AS previous_status, target.runtime_node_id
-        ),
-        decrement_runtime AS (
-            UPDATE %s AS rn
-            SET running_jobs = GREATEST(0, running_jobs - 1),
-                updated_at = now() AT TIME ZONE 'utc'
-            FROM updated
-            WHERE updated.previous_status = 'RUNNING'
-                AND updated.runtime_node_id IS NOT NULL
-                AND rn.id = updated.runtime_node_id
-            RETURNING rn.id
-        )
-        SELECT COUNT(*) FROM updated;
-    `, postgres.TableJobs, statusPredicate, postgres.TableJobs, postgres.TableRuntimeNodes)
-
-	var updatedCount int
-	err := r.pg.QueryRow(ctx, query, jobStatus, jobID, time.Now(), terminalReasonCode).Scan(&updatedCount)
-	if err != nil {
-		switch {
-		case errors.Is(err, context.DeadlineExceeded):
-			return status.Error(codes.DeadlineExceeded, err.Error())
-		case errors.Is(err, context.Canceled):
-			return status.Error(codes.Canceled, err.Error())
-		case r.pg.IsInvalidTextRepresentation(err):
-			return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
-		}
-
-		return status.Errorf(codes.Internal, "failed to update job: %v", err)
-	}
-
-	if updatedCount == 0 {
-		if jobStatus == jobsmodel.JobStatusCanceled.ToString() {
-			return status.Errorf(codes.FailedPrecondition, "job not found or not cancellable")
-		}
-
-		return status.Errorf(codes.NotFound, "job not found")
-	}
-
-	return nil
 }
 
 // GetJob returns the job details by ID and Job ID and user ID.

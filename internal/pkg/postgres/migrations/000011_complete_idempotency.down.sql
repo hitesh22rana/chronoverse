@@ -1,3 +1,7 @@
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_manual_idempotency_key
+ON jobs (user_id, workflow_id, idempotency_key)
+WHERE trigger = 'MANUAL' AND idempotency_key IS NOT NULL;
+
 CREATE TABLE workflow_failure_events (
     job_id UUID PRIMARY KEY,
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,

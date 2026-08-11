@@ -1,3 +1,7 @@
+-- Manual command keys expire in the shared ledger and may then be reused.
+-- The legacy jobs-table uniqueness constraint would retain them forever.
+DROP INDEX IF EXISTS idx_jobs_manual_idempotency_key;
+
 DO $$
 BEGIN
     IF EXISTS (

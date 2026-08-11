@@ -292,17 +292,3 @@ func (mr *MockServiceMockRecorder) StreamJobLogs(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamJobLogs", reflect.TypeOf((*MockService)(nil).StreamJobLogs), ctx, req)
 }
-
-// UpdateJobStatus mocks base method.
-func (m *MockService) UpdateJobStatus(ctx context.Context, req *jobs0.UpdateJobStatusRequest) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockServiceMockRecorder) UpdateJobStatus(ctx, req any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockService)(nil).UpdateJobStatus), ctx, req)
-}

@@ -297,20 +297,6 @@ func (mr *MockRepositoryMockRecorder) StreamJobLogs(ctx, jobID, workflowID, user
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamJobLogs", reflect.TypeOf((*MockRepository)(nil).StreamJobLogs), ctx, jobID, workflowID, userID)
 }
 
-// UpdateJobStatus mocks base method.
-func (m *MockRepository) UpdateJobStatus(ctx context.Context, jobID, containerID, jobStatus, terminalReasonCode string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, jobID, containerID, jobStatus, terminalReasonCode)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockRepositoryMockRecorder) UpdateJobStatus(ctx, jobID, containerID, jobStatus, terminalReasonCode any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockRepository)(nil).UpdateJobStatus), ctx, jobID, containerID, jobStatus, terminalReasonCode)
-}
-
 // MockCache is a mock of Cache interface.
 type MockCache struct {
 	ctrl     *gomock.Controller

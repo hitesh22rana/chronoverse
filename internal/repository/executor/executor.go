@@ -112,8 +112,11 @@ func New(
 	rdb *redis.Store,
 	lifecycle *kafka.PartitionLifecycle,
 	svc *Services,
-) *Repository {
-	normalizedCfg := normalizeConfig(cfg)
+) (*Repository, error) {
+	normalizedCfg, err := normalizeConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
 	r := &Repository{
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		cfg:       normalizedCfg,
@@ -134,7 +137,7 @@ func New(
 		Tracer:       r.tp,
 	}, lifecycle)
 
-	return r
+	return r, nil
 }
 
 // Run starts the executor.

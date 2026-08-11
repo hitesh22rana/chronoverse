@@ -10,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -127,6 +129,7 @@ func Reserve(
 		return nil, status.Errorf(codes.Internal, "failed to reserve command idempotency key: %v", err)
 	}
 	if tag.RowsAffected() == 1 {
+		recordOutcome(ctx, operation, "fresh")
 		return &Reservation{}, nil
 	}
 
@@ -148,12 +151,22 @@ func Reserve(
 		return nil, status.Errorf(codes.Internal, "failed to read command idempotency key: %v", err)
 	}
 	if storedHash != requestHash {
+		recordOutcome(ctx, operation, "conflict")
 		return nil, status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
 	}
 	if storedStatus != "COMPLETED" {
+		recordOutcome(ctx, operation, "in_progress")
 		return nil, status.Error(codes.Aborted, "idempotency command is still processing")
 	}
+	recordOutcome(ctx, operation, "replay")
 	return &Reservation{Replay: true, ResourceID: resourceID.String, Response: response}, nil
+}
+
+func recordOutcome(ctx context.Context, operation, outcome string) {
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String("chronoverse.idempotency.operation", operation),
+		attribute.String("chronoverse.idempotency.outcome", outcome),
+	)
 }
 
 // Complete compare-and-set completes exactly one owned PROCESSING reservation.

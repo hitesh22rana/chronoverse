@@ -2,6 +2,15 @@ package commandidempotency
 
 import "testing"
 
+func TestEmptyRequestHashAliasesUseNonNilArray(t *testing.T) {
+	t.Parallel()
+
+	aliases := normalizeRequestHashAliases(nil)
+	if aliases == nil || len(aliases) != 0 {
+		t.Fatalf("empty aliases = %#v, want non-nil empty slice", aliases)
+	}
+}
+
 func TestRequestHashMatchesCompatibleLegacyHash(t *testing.T) {
 	t.Parallel()
 

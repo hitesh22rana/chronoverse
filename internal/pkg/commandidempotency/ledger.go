@@ -102,6 +102,7 @@ func Reserve(
 	if err != nil {
 		return nil, err
 	}
+	requestHashAliases := normalizeRequestHashAliases(compatibleRequestHashes)
 
 	query := fmt.Sprintf(`
 		WITH reservation AS (
@@ -128,7 +129,7 @@ func Reserve(
 		  AND keys.expires_at <= clock_timestamp() AT TIME ZONE 'utc';
 	`, postgres.TableCommandIdempotencyKeys)
 
-	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash, compatibleRequestHashes)
+	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash, requestHashAliases)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to reserve command idempotency key: %v", err)
 	}
@@ -179,6 +180,13 @@ func requestHashMatches(storedHash string, storedAliases []string, requestHash s
 		}
 	}
 	return false
+}
+
+func normalizeRequestHashAliases(aliases []string) []string {
+	if aliases == nil {
+		return []string{}
+	}
+	return aliases
 }
 
 func recordOutcome(ctx context.Context, operation, outcome string) {

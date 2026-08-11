@@ -26,7 +26,7 @@ BEGIN
               OR octet_length(btrim(idempotency_key, ' ')) NOT BETWEEN 1 AND 255
               OR request_hash !~ '^[0-9a-f]{64}$'
               OR workflow_id IS NULL
-              OR response->>'id' IS DISTINCT FROM workflow_id::text
+              OR COALESCE(response->>'id', response->>'ID') IS DISTINCT FROM workflow_id::text
           )
     ) THEN
         RAISE EXCEPTION 'legacy workflow idempotency data violates command ledger constraints';

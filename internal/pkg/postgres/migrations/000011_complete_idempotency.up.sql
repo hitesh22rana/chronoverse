@@ -1,28 +1,89 @@
--- This release is the fresh-platform cutover. Legacy command/result semantics
--- are intentionally not translated because there must be no user data yet.
--- Fail before dropping constraints or changing tables if that invariant is
--- violated, rather than silently weakening an existing idempotency contract.
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM users) THEN
-        RAISE EXCEPTION 'complete idempotency migration requires an empty platform';
-    END IF;
-END;
-$$;
+CREATE TEMP TABLE idempotency_migration_clock AS
+SELECT clock_timestamp() AT TIME ZONE 'utc' AS cutover_at;
 
--- Manual command keys expire in the shared ledger and may then be reused.
--- The legacy jobs-table uniqueness constraint would retain them forever.
-DROP INDEX IF EXISTS idx_jobs_manual_idempotency_key;
-
+-- Run during a maintenance window with public mutations, workers, and outbox
+-- publication paused. Existing committed data is migrated in place; only
+-- ambiguous or invalid legacy command state aborts the preflight below.
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
         FROM workflow_idempotency_keys
-        WHERE octet_length(idempotency_key) NOT BETWEEN 1 AND 255
-           OR request_hash !~ '^[0-9a-f]{64}$'
+        WHERE status <> 'COMPLETED'
+          AND expires_at > (SELECT cutover_at FROM idempotency_migration_clock)
+    ) THEN
+        RAISE EXCEPTION 'unexpired non-completed workflow commands cannot be migrated safely';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM workflow_idempotency_keys
+        WHERE status = 'COMPLETED'
+          AND expires_at > (SELECT cutover_at FROM idempotency_migration_clock)
+          AND (
+              (operation <> 'create_workflow' AND operation NOT LIKE 'update_workflow:%')
+              OR idempotency_key ~ '[[:cntrl:]]'
+              OR octet_length(btrim(idempotency_key, ' ')) NOT BETWEEN 1 AND 255
+              OR request_hash !~ '^[0-9a-f]{64}$'
+              OR workflow_id IS NULL
+              OR response->>'id' IS DISTINCT FROM workflow_id::text
+          )
     ) THEN
         RAISE EXCEPTION 'legacy workflow idempotency data violates command ledger constraints';
+    END IF;
+
+    IF EXISTS (
+        WITH normalized_workflow_keys AS (
+            SELECT
+                user_id,
+                CASE
+                    WHEN operation = 'create_workflow' THEN 'workflow.create'
+                    ELSE 'workflow.update:' || substring(operation FROM length('update_workflow:') + 1)
+                END AS mapped_operation,
+                btrim(idempotency_key, ' ') AS normalized_key
+            FROM workflow_idempotency_keys
+            WHERE status = 'COMPLETED'
+              AND expires_at > (SELECT cutover_at FROM idempotency_migration_clock)
+        )
+        SELECT 1
+        FROM normalized_workflow_keys
+        GROUP BY user_id, mapped_operation, normalized_key
+        HAVING count(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'legacy workflow idempotency keys collide after ASCII-space normalization';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jobs
+        WHERE trigger = 'MANUAL'
+          AND idempotency_key IS NOT NULL
+          AND created_at + interval '24 hours' > (SELECT cutover_at FROM idempotency_migration_clock)
+          AND (
+              idempotency_key ~ '[[:cntrl:]]'
+              OR octet_length(btrim(idempotency_key, ' ')) NOT BETWEEN 1 AND 255
+          )
+    ) THEN
+        RAISE EXCEPTION 'legacy manual job idempotency data violates command ledger constraints';
+    END IF;
+
+    IF EXISTS (
+        WITH normalized_manual_keys AS (
+            SELECT
+                user_id,
+                workflow_id,
+                btrim(idempotency_key, ' ') AS normalized_key
+            FROM jobs
+            WHERE trigger = 'MANUAL'
+              AND idempotency_key IS NOT NULL
+              AND created_at + interval '24 hours' > (SELECT cutover_at FROM idempotency_migration_clock)
+        )
+        SELECT 1
+        FROM normalized_manual_keys
+        GROUP BY user_id, workflow_id, normalized_key
+        HAVING count(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'legacy manual job idempotency keys collide after ASCII-space normalization';
     END IF;
 END;
 $$;
@@ -71,16 +132,64 @@ SELECT
         WHEN operation LIKE 'update_workflow:%' THEN 'workflow.update:' || substring(operation FROM length('update_workflow:') + 1)
         ELSE operation
     END,
-    idempotency_key,
+    btrim(idempotency_key, ' '),
     request_hash,
-    status,
+    'COMPLETED',
     workflow_id::text,
     response,
     created_at,
     updated_at,
-    CASE WHEN status = 'COMPLETED' THEN updated_at ELSE NULL END,
-    CASE WHEN status = 'PROCESSING' THEN NULL ELSE expires_at END
-FROM workflow_idempotency_keys;
+    updated_at,
+    expires_at
+FROM workflow_idempotency_keys
+WHERE status = 'COMPLETED'
+  AND expires_at > (SELECT cutover_at FROM idempotency_migration_clock);
+
+-- A committed MANUAL job proves its legacy schedule command succeeded. Rebuild
+-- the exact new request hash and response for commands still inside their
+-- 24-hour replay window before removing permanent row-level uniqueness.
+INSERT INTO command_idempotency_keys (
+    scope,
+    operation,
+    idempotency_key,
+    request_hash,
+    status,
+    resource_id,
+    response,
+    created_at,
+    updated_at,
+    completed_at,
+    expires_at
+)
+SELECT
+    'user:' || user_id::text,
+    'job.schedule.manual:' || workflow_id::text,
+    btrim(idempotency_key, ' '),
+    encode(
+        sha256(
+            convert_to(
+                '{"trigger":"MANUAL","user_id":' || to_json(user_id::text)::text
+                || ',"workflow_id":' || to_json(workflow_id::text)::text || '}',
+                'UTF8'
+            )
+        ),
+        'hex'
+    ),
+    'COMPLETED',
+    id::text,
+    jsonb_build_object('id', id::text),
+    created_at,
+    created_at,
+    created_at,
+    created_at + interval '24 hours'
+FROM jobs
+WHERE trigger = 'MANUAL'
+  AND idempotency_key IS NOT NULL
+  AND created_at + interval '24 hours' > (SELECT cutover_at FROM idempotency_migration_clock);
+
+-- Manual command keys now expire in the shared ledger and may then be reused.
+-- The legacy jobs-table uniqueness constraint would retain them forever.
+DROP INDEX IF EXISTS idx_jobs_manual_idempotency_key;
 
 CREATE INDEX idx_command_idempotency_expires_at
 ON command_idempotency_keys (expires_at)
@@ -171,9 +280,18 @@ INSERT INTO workflow_terminal_effects (
     threshold_reached,
     created_at
 )
-SELECT job_id, workflow_id, user_id, 'FAILED', FALSE, created_at
-FROM workflow_failure_events;
+SELECT
+    failure.job_id,
+    failure.workflow_id,
+    failure.user_id,
+    'FAILED',
+    workflow.consecutive_job_failures_count >= workflow.max_consecutive_job_failures_allowed,
+    failure.created_at
+FROM workflow_failure_events AS failure
+JOIN workflows AS workflow ON workflow.id = failure.workflow_id;
 
 DROP TABLE workflow_failure_events;
 
 DROP TABLE reconciled_workflow_terminations;
+
+DROP TABLE idempotency_migration_clock;

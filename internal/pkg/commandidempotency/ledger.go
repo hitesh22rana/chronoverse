@@ -90,10 +90,13 @@ func NormalizeKey(raw string) (string, error) {
 }
 
 // Reserve creates a PROCESSING reservation or returns an unexpired completed replay.
+// Compatible request hashes are accepted only when matching an existing row;
+// fresh reservations always persist the primary request hash.
 func Reserve(
 	ctx context.Context,
 	tx pgx.Tx,
 	scope, operation, rawKey, requestHash string,
+	compatibleRequestHashes ...string,
 ) (*Reservation, error) {
 	key, err := NormalizeKey(rawKey)
 	if err != nil {
@@ -150,7 +153,7 @@ func Reserve(
 	); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read command idempotency key: %v", err)
 	}
-	if storedHash != requestHash {
+	if !requestHashMatches(storedHash, requestHash, compatibleRequestHashes) {
 		recordOutcome(ctx, operation, "conflict")
 		return nil, status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
 	}
@@ -160,6 +163,18 @@ func Reserve(
 	}
 	recordOutcome(ctx, operation, "replay")
 	return &Reservation{Replay: true, ResourceID: resourceID.String, Response: response}, nil
+}
+
+func requestHashMatches(storedHash, requestHash string, compatibleRequestHashes []string) bool {
+	if storedHash == requestHash {
+		return true
+	}
+	for _, compatibleHash := range compatibleRequestHashes {
+		if storedHash == compatibleHash {
+			return true
+		}
+	}
+	return false
 }
 
 func recordOutcome(ctx context.Context, operation, outcome string) {

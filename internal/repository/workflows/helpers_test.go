@@ -8,6 +8,36 @@ import (
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
 
+func TestWorkflowRequestHashesPreserveLegacyPayloadCompatibility(t *testing.T) {
+	t.Parallel()
+
+	canonicalA, legacyA, err := workflowRequestHashes(map[string]any{"payload": `{ "image": "alpine" }`, "name": "workflow"})
+	if err != nil {
+		t.Fatalf("workflowRequestHashes() error = %v", err)
+	}
+	canonicalB, legacyB, err := workflowRequestHashes(map[string]any{"payload": `{"image":"alpine"}`, "name": "workflow"})
+	if err != nil {
+		t.Fatalf("workflowRequestHashes() canonical input error = %v", err)
+	}
+	if canonicalA != canonicalB {
+		t.Fatalf("canonical hashes differ: %q != %q", canonicalA, canonicalB)
+	}
+	if legacyA == legacyB {
+		t.Fatalf("legacy hashes unexpectedly match: %q", legacyA)
+	}
+}
+
+func TestIsLegacyWorkflowCreateResponse(t *testing.T) {
+	t.Parallel()
+
+	if !isLegacyWorkflowCreateResponse([]byte(`{"id":"workflow-id"}`)) {
+		t.Fatal("expected ID-only response to be classified as legacy")
+	}
+	if isLegacyWorkflowCreateResponse([]byte(`{"ID":"workflow-id","Name":"workflow"}`)) {
+		t.Fatal("expected complete response not to be classified as legacy")
+	}
+}
+
 func TestDecideWorkflowUpdateAction(t *testing.T) {
 	t.Parallel()
 

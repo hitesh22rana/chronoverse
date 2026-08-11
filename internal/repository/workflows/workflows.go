@@ -85,10 +85,10 @@ func (r *Repository) CreateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	requestHash, err := workflowRequestHash(map[string]any{
+	requestHash, legacyRequestHash, err := workflowRequestHashes(map[string]any{
 		"user_id":                              userID,
-		"name":                                 name,
-		"payload":                              payload,
+		workflowRequestNameField:               name,
+		workflowRequestPayloadField:            payload,
 		"kind":                                 kind,
 		"interval":                             interval,
 		"max_consecutive_job_failures_allowed": maxConsecutiveJobFailuresAllowed,
@@ -100,22 +100,12 @@ func (r *Repository) CreateWorkflow(
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.OperationWorkflowCreate
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, legacyRequestHash)
 	if err != nil {
 		return nil, err
 	}
 	if reservation.Replay {
-		if err = tx.Commit(ctx); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to commit idempotency replay: %v", err)
-		}
-		res = &workflowsmodel.GetWorkflowResponse{ID: reservation.ResourceID}
-		if len(reservation.Response) > 0 {
-			if decodeErr := json.Unmarshal(reservation.Response, res); decodeErr != nil {
-				return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", decodeErr)
-			}
-		}
-		res.IdempotencyReplay = true
-		return res, nil
+		return r.replayCreatedWorkflow(ctx, tx, userID, reservation)
 	}
 
 	buildHash, err := idempotency.WorkflowBuildHash(kind, payload)
@@ -190,6 +180,34 @@ func (r *Repository) CreateWorkflow(
 	return res, nil
 }
 
+func (r *Repository) replayCreatedWorkflow(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID string,
+	reservation *commandidempotency.Reservation,
+) (*workflowsmodel.GetWorkflowResponse, error) {
+	if err := tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to commit idempotency replay: %v", err)
+	}
+	if isLegacyWorkflowCreateResponse(reservation.Response) {
+		res, err := r.GetWorkflow(ctx, reservation.ResourceID, userID)
+		if err != nil {
+			return nil, err
+		}
+		res.IdempotencyReplay = true
+		return res, nil
+	}
+
+	res := &workflowsmodel.GetWorkflowResponse{ID: reservation.ResourceID}
+	if len(reservation.Response) > 0 {
+		if err := json.Unmarshal(reservation.Response, res); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", err)
+		}
+	}
+	res.IdempotencyReplay = true
+	return res, nil
+}
+
 // UpdateWorkflow updates the workflow details.
 //
 //nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
@@ -229,11 +247,11 @@ func (r *Repository) UpdateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	requestHash, err := workflowRequestHash(map[string]any{
+	requestHash, legacyRequestHash, err := workflowRequestHashes(map[string]any{
 		"workflow_id":                          workflowID,
 		"user_id":                              userID,
-		"name":                                 name,
-		"payload":                              payload,
+		workflowRequestNameField:               name,
+		workflowRequestPayloadField:            payload,
 		"interval":                             interval,
 		"max_consecutive_job_failures_allowed": maxConsecutiveJobFailuresAllowed,
 	})
@@ -243,7 +261,7 @@ func (r *Repository) UpdateWorkflow(
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.WorkflowUpdateOperation(workflowID)
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, legacyRequestHash)
 	if err != nil {
 		return err
 	}

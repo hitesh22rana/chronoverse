@@ -8,6 +8,7 @@ import (
 	"time"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 )
 
 func TestJobLogsCursorRoundTrip(t *testing.T) {
@@ -49,6 +50,25 @@ func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	}
 	if got := fields["workflow_generation"]; got != int64(3) {
 		t.Fatalf("automatic schedule hash generation = %v, want 3", got)
+	}
+}
+
+func TestManualScheduleHashMatchesMigrationContract(t *testing.T) {
+	t.Parallel()
+
+	fields := scheduleJobHashFields(
+		"22222222-2222-4222-8222-222222222222",
+		"11111111-1111-4111-8111-111111111111",
+		jobsmodel.JobTriggerManual.ToString(),
+		0,
+	)
+	hash, err := idempotency.HashCanonical(fields)
+	if err != nil {
+		t.Fatalf("HashCanonical() error = %v", err)
+	}
+	const migrationHash = "17fdb0dc876aca70a2bca5498d2df43622b843bb9f34448913ef5e31ce913a3f"
+	if hash != migrationHash {
+		t.Fatalf("manual schedule hash = %q, want migration contract %q", hash, migrationHash)
 	}
 }
 

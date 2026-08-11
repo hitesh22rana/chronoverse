@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,7 +19,9 @@ import (
 )
 
 const (
-	delimiter = '$'
+	delimiter                   = '$'
+	workflowRequestNameField    = "name"
+	workflowRequestPayloadField = "payload"
 )
 
 type updateWorkflowActionDecision struct {
@@ -62,19 +65,43 @@ func decideWorkflowUpdateAction(
 	return decision
 }
 
-func workflowRequestHash(fields map[string]any) (string, error) {
-	if payload, ok := fields["payload"].(string); ok {
+func workflowRequestHashes(fields map[string]any) (canonicalHash, legacyHash string, err error) {
+	legacyFields := make(map[string]any, len(fields))
+	canonicalFields := make(map[string]any, len(fields))
+	for key, value := range fields {
+		legacyFields[key] = value
+		canonicalFields[key] = value
+	}
+
+	legacyHash, err = idempotency.HashCanonical(legacyFields)
+	if err != nil {
+		return "", "", status.Errorf(codes.Internal, "failed to hash legacy idempotency request: %v", err)
+	}
+	if payload, ok := canonicalFields[workflowRequestPayloadField].(string); ok {
 		canonicalPayload, canonicalErr := idempotency.CanonicalJSON(payload)
 		if canonicalErr != nil {
-			return "", status.Errorf(codes.InvalidArgument, "invalid workflow payload JSON: %v", canonicalErr)
+			return "", "", status.Errorf(codes.InvalidArgument, "invalid workflow payload JSON: %v", canonicalErr)
 		}
-		fields["payload"] = string(canonicalPayload)
+		canonicalFields[workflowRequestPayloadField] = string(canonicalPayload)
 	}
-	hash, err := idempotency.HashCanonical(fields)
+	canonicalHash, err = idempotency.HashCanonical(canonicalFields)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to hash idempotency request: %v", err)
+		return "", "", status.Errorf(codes.Internal, "failed to hash idempotency request: %v", err)
 	}
-	return hash, nil
+	return canonicalHash, legacyHash, nil
+}
+
+func isLegacyWorkflowCreateResponse(response json.RawMessage) bool {
+	if len(response) == 0 {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(response, &fields); err != nil || len(fields) != 1 {
+		return false
+	}
+	_, lowerID := fields["id"]
+	_, upperID := fields["ID"]
+	return lowerID || upperID
 }
 
 func workflowEventPayload(workflowID, userID string, action workflowsmodel.Action, generation int64) *workflowsmodel.WorkflowEvent {

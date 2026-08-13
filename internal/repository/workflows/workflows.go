@@ -811,9 +811,11 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 
 	query := fmt.Sprintf(`
 		INSERT INTO %s (job_id, workflow_id, user_id, effect, threshold_reached)
-		VALUES ($1, $2, $3, 'COMPLETED', NULL)
+		SELECT $1, id, user_id, 'COMPLETED', NULL
+		FROM %s
+		WHERE id = $2 AND user_id = $3
 		ON CONFLICT DO NOTHING;
-	`, postgres.TableWorkflowTerminalEffects)
+	`, postgres.TableWorkflowTerminalEffects, postgres.TableWorkflows)
 	ct, err := tx.Exec(ctx, query, jobID, workflowID, userID)
 	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
@@ -836,6 +838,9 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		var storedWorkflowID, storedUserID, effect string
 		query = fmt.Sprintf(`SELECT workflow_id::text, user_id::text, effect FROM %s WHERE job_id = $1`, postgres.TableWorkflowTerminalEffects)
 		if err = tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return status.Error(codes.NotFound, "workflow not found or not owned by user")
+			}
 			return status.Errorf(codes.Internal, "failed to load completed terminal-effect replay: %v", err)
 		}
 		if storedWorkflowID != workflowID || storedUserID != userID || effect != "COMPLETED" {
@@ -848,34 +853,10 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		SET consecutive_job_failures_count = 0
 		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
 	`, postgres.TableWorkflows)
-	ct, err = tx.Exec(ctx, query, workflowID, userID)
-	if err != nil {
+	if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
 		return status.Errorf(codes.Internal, "failed to reset workflow failures: %v", err)
 	}
-	if ct.RowsAffected() == 0 {
-		if verifyErr := r.requireOwnedTerminatedWorkflow(ctx, tx, workflowID, userID); verifyErr != nil {
-			return verifyErr
-		}
-	}
 	return tx.Commit(ctx)
-}
-
-func (r *Repository) requireOwnedTerminatedWorkflow(ctx context.Context, tx pgx.Tx, workflowID, userID string) error {
-	query := fmt.Sprintf(`
-		SELECT EXISTS (
-			SELECT 1
-			FROM %s
-			WHERE id = $1 AND user_id = $2 AND terminated_at IS NOT NULL
-		);
-	`, postgres.TableWorkflows)
-	var exists bool
-	if err := tx.QueryRow(ctx, query, workflowID, userID).Scan(&exists); err != nil {
-		return status.Errorf(codes.Internal, "failed to verify completed terminal workflow ownership: %v", err)
-	}
-	if !exists {
-		return status.Error(codes.NotFound, "workflow not found or not owned by user")
-	}
-	return nil
 }
 
 // TerminateWorkflow terminates a workflow.

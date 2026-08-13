@@ -67,6 +67,10 @@ func (r *Repository) CreateWorkflow(
 		}
 		span.End()
 	}()
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return nil, err
+	}
 
 	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
@@ -229,6 +233,14 @@ func (r *Repository) UpdateWorkflow(
 		}
 		span.End()
 	}()
+	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return err
+	}
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return err
+	}
 
 	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
@@ -676,6 +688,18 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		}
 		span.End()
 	}()
+	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return false, err
+	}
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return false, err
+	}
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return false, err
+	}
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
@@ -792,6 +816,8 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the consecutive failures counter.
+//
+//nolint:gocyclo // Terminal completion validates identities and classifies transactional replay outcomes.
 func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ResetWorkflowConsecutiveJobFailuresCount")
 	defer func() {
@@ -801,6 +827,18 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		}
 		span.End()
 	}()
+	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return err
+	}
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return err
+	}
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return err
+	}
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {

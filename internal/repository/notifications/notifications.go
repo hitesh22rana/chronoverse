@@ -70,6 +70,10 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 		}
 		span.End()
 	}()
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return "", err
+	}
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {

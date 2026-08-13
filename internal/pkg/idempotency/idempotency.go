@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -15,6 +16,8 @@ import (
 // ClaimCommandID returns the deterministic command ID for one process-local
 // Kafka dispatch occurrence. NUL framing prevents concatenation ambiguity.
 func ClaimCommandID(processInstanceID, jobID string, dispatchAttempt int32) string {
+	processInstanceID = canonicalUUIDText(processInstanceID)
+	jobID = canonicalUUIDText(jobID)
 	value := fmt.Sprintf("job.claim\x00%s\x00%s\x00%d", processInstanceID, jobID, dispatchAttempt)
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
@@ -22,6 +25,7 @@ func ClaimCommandID(processInstanceID, jobID string, dispatchAttempt int32) stri
 
 // JobCancelCommandID returns a permanent deterministic cancellation command ID.
 func JobCancelCommandID(jobID string) string {
+	jobID = canonicalUUIDText(jobID)
 	value := fmt.Sprintf("job.cancel\x00%s", jobID)
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
@@ -64,6 +68,7 @@ func WorkflowBuildHash(kind, payload string) (string, error) {
 
 // WorkflowEventKey returns the deterministic idempotency key for a workflow event.
 func WorkflowEventKey(workflowID, action string, generation int64) string {
+	workflowID = canonicalUUIDText(workflowID)
 	if generation > 0 {
 		return fmt.Sprintf("workflow:%s:%s:%d", workflowID, action, generation)
 	}
@@ -72,11 +77,20 @@ func WorkflowEventKey(workflowID, action string, generation int64) string {
 
 // JobDispatchEventKey returns the deterministic idempotency key for dispatching a job.
 func JobDispatchEventKey(jobID string, dispatchAttempt ...int32) string {
+	jobID = canonicalUUIDText(jobID)
 	if len(dispatchAttempt) > 0 && dispatchAttempt[0] > 0 {
 		return fmt.Sprintf("job:%s:dispatch:%d", jobID, dispatchAttempt[0])
 	}
 
 	return fmt.Sprintf("job:%s:dispatch", jobID)
+}
+
+func canonicalUUIDText(raw string) string {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return id.String()
 }
 
 // AutomaticScheduleEventKey returns the deterministic idempotency key for scheduling a workflow event's automatic job.
@@ -90,21 +104,25 @@ func AutomaticScheduleEventKey(workflowEventKey string) string {
 
 // JobWorkflowEventKey returns the deterministic event key for workflow-side job terminal effects.
 func JobWorkflowEventKey(jobID, action string) string {
+	jobID = canonicalUUIDText(jobID)
 	return fmt.Sprintf("workflow:job:%s:%s", jobID, action)
 }
 
 // JobCompletedAnalyticsEventKey returns the deterministic analytics event key for a completed job.
 func JobCompletedAnalyticsEventKey(jobID string) string {
+	jobID = canonicalUUIDText(jobID)
 	return fmt.Sprintf("analytics:job:%s:completed", jobID)
 }
 
 // WorkflowAnalyticsEventKey returns the deterministic analytics event key for a workflow.
 func WorkflowAnalyticsEventKey(workflowID string) string {
+	workflowID = canonicalUUIDText(workflowID)
 	return fmt.Sprintf("analytics:workflow:%s", workflowID)
 }
 
 // LogEventKey returns the deterministic event key for a single job log line.
 func LogEventKey(jobID, stream string, sequenceNum uint32, attempts ...int32) string {
+	jobID = canonicalUUIDText(jobID)
 	if len(attempts) > 0 && attempts[0] > 1 {
 		return fmt.Sprintf("log:%s:attempt:%d:%s:%d", jobID, attempts[0], stream, sequenceNum)
 	}
@@ -114,11 +132,13 @@ func LogEventKey(jobID, stream string, sequenceNum uint32, attempts ...int32) st
 
 // NotificationEventKey returns the deterministic idempotency key for a notification.
 func NotificationEventKey(entity, entityID, eventType string) string {
+	entityID = canonicalUUIDText(entityID)
 	return fmt.Sprintf("notification:%s:%s:%s", entity, entityID, eventType)
 }
 
 // NotificationOccurrenceEventKey returns the deterministic idempotency key for a notification occurrence.
 func NotificationOccurrenceEventKey(entity, entityID, eventType, occurrenceKey string) string {
+	entityID = canonicalUUIDText(entityID)
 	if occurrenceKey == "" {
 		return NotificationEventKey(entity, entityID, eventType)
 	}

@@ -78,3 +78,43 @@ func TestPublishedOperationMapping(t *testing.T) {
 		t.Fatalf("published operations = %v, want %v", got, want)
 	}
 }
+
+func TestUUIDDerivedIdentitiesUseCanonicalText(t *testing.T) {
+	t.Parallel()
+
+	const (
+		upper     = "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"
+		canonical = "a0b1c2d3-e4f5-4678-9abc-def012345678"
+	)
+	got := []string{
+		commandidempotency.WorkflowUpdateOperation(upper),
+		commandidempotency.ManualScheduleOperation(upper),
+		commandidempotency.UserScope(upper),
+		commandidempotency.WorkflowScope(upper),
+		commandidempotency.JobScope(upper),
+		commandidempotency.WorkerScope(upper),
+	}
+	want := []string{
+		"workflow.update:" + canonical,
+		"job.schedule.manual:" + canonical,
+		"user:" + canonical,
+		"workflow:" + canonical,
+		"job:" + canonical,
+		"worker:" + canonical,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("UUID-derived identities = %v, want %v", got, want)
+	}
+
+	canonicalID, err := commandidempotency.CanonicalUUID("{"+upper+"}", "workflow ID")
+	if err != nil {
+		t.Fatalf("CanonicalUUID() error = %v", err)
+	}
+	if canonicalID != canonical {
+		t.Fatalf("CanonicalUUID() = %q, want %q", canonicalID, canonical)
+	}
+	_, err = commandidempotency.CanonicalUUID("not-a-uuid", "workflow ID")
+	if code := status.Code(err); code != codes.InvalidArgument {
+		t.Fatalf("CanonicalUUID() invalid code = %s, want %s", code, codes.InvalidArgument)
+	}
+}

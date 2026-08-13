@@ -127,6 +127,14 @@ func (r *Repository) ScheduleJob(
 		}
 		span.End()
 	}()
+	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return "", err
+	}
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return "", err
+	}
 
 	scheduledAtTime, err := parseTime(scheduledAt)
 	if err != nil {
@@ -410,6 +418,10 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		}
 		span.End()
 	}()
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {

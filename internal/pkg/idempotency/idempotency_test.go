@@ -83,6 +83,27 @@ func TestClaimCommandID(t *testing.T) {
 	}
 }
 
+func TestDeterministicIdentitiesCanonicalizeUUIDText(t *testing.T) {
+	t.Parallel()
+
+	const (
+		upper     = "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"
+		canonical = "a0b1c2d3-e4f5-4678-9abc-def012345678"
+	)
+	if got, want := idempotency.ClaimCommandID(upper, upper, 2), idempotency.ClaimCommandID(canonical, canonical, 2); got != want {
+		t.Fatalf("ClaimCommandID() differs by UUID spelling: %q != %q", got, want)
+	}
+	if got, want := idempotency.JobCancelCommandID(upper), idempotency.JobCancelCommandID(canonical); got != want {
+		t.Fatalf("JobCancelCommandID() differs by UUID spelling: %q != %q", got, want)
+	}
+	if got := idempotency.WorkflowEventKey(upper, "BUILD", 1); got != "workflow:"+canonical+":BUILD:1" {
+		t.Fatalf("WorkflowEventKey() = %q", got)
+	}
+	if got := idempotency.JobDispatchEventKey(upper, 2); got != "job:"+canonical+":dispatch:2" {
+		t.Fatalf("JobDispatchEventKey() = %q", got)
+	}
+}
+
 func TestJobWorkflowEventKeyIncludesAction(t *testing.T) {
 	t.Parallel()
 

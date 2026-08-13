@@ -9,6 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -37,25 +38,44 @@ const (
 
 // WorkflowUpdateOperation returns the stable workflow-update operation name.
 func WorkflowUpdateOperation(workflowID string) string {
-	return "workflow.update:" + workflowID
+	return "workflow.update:" + canonicalUUIDText(workflowID)
 }
 
 // ManualScheduleOperation returns the stable manual-schedule operation name.
 func ManualScheduleOperation(workflowID string) string {
-	return "job.schedule.manual:" + workflowID
+	return "job.schedule.manual:" + canonicalUUIDText(workflowID)
 }
 
 // UserScope returns a user command scope.
-func UserScope(userID string) string { return "user:" + userID }
+func UserScope(userID string) string { return "user:" + canonicalUUIDText(userID) }
 
 // WorkflowScope returns a workflow command scope.
-func WorkflowScope(workflowID string) string { return "workflow:" + workflowID }
+func WorkflowScope(workflowID string) string { return "workflow:" + canonicalUUIDText(workflowID) }
 
 // JobScope returns a job command scope.
-func JobScope(jobID string) string { return "job:" + jobID }
+func JobScope(jobID string) string { return "job:" + canonicalUUIDText(jobID) }
 
 // WorkerScope returns a process-specific worker command scope.
-func WorkerScope(processID string) string { return "worker:" + processID }
+func WorkerScope(processID string) string { return "worker:" + canonicalUUIDText(processID) }
+
+// CanonicalUUID validates a UUID identity and returns PostgreSQL's canonical
+// lowercase, hyphenated spelling. Ledger callers must use the returned value
+// for scopes, operations, request hashes, mutations, and replay comparisons.
+func CanonicalUUID(raw, field string) (string, error) {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "%s must be a valid UUID: %v", field, err)
+	}
+	return id.String(), nil
+}
+
+func canonicalUUIDText(raw string) string {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return id.String()
+}
 
 // Reservation is a fresh command reservation or a completed replay.
 type Reservation struct {

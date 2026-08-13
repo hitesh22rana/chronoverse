@@ -38,7 +38,7 @@ BEGIN
                 user_id,
                 CASE
                     WHEN operation = 'create_workflow' THEN 'workflow.create'
-                    ELSE 'workflow.update:' || substring(operation FROM length('update_workflow:') + 1)
+                    ELSE 'workflow.update:' || workflow_id::text
                 END AS mapped_operation,
                 btrim(idempotency_key, ' ') AS normalized_key
             FROM workflow_idempotency_keys
@@ -183,7 +183,7 @@ SELECT
     'user:' || user_id::text,
     CASE
         WHEN operation = 'create_workflow' THEN 'workflow.create'
-        WHEN operation LIKE 'update_workflow:%' THEN 'workflow.update:' || substring(operation FROM length('update_workflow:') + 1)
+        WHEN operation LIKE 'update_workflow:%' THEN 'workflow.update:' || workflow_id::text
         ELSE operation
     END,
     btrim(idempotency_key, ' '),

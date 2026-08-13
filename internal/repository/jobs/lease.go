@@ -59,6 +59,18 @@ func (r *Repository) ClaimJob(
 		}
 		span.End()
 	}()
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return nil, false, "", err
+	}
+	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return nil, false, "", err
+	}
+	processInstanceID, err = commandidempotency.CanonicalUUID(processInstanceID, "process instance ID")
+	if err != nil {
+		return nil, false, "", err
+	}
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
@@ -412,6 +424,14 @@ func (r *Repository) AttachJobContainer(ctx context.Context, jobID, leaseToken, 
 		}
 		span.End()
 	}()
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return err
+	}
+	runtimeNodeID, err = commandidempotency.CanonicalUUID(runtimeNodeID, "runtime node ID")
+	if err != nil {
+		return err
+	}
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
@@ -461,6 +481,10 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 		}
 		span.End()
 	}()
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return err
+	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start complete job transaction")
@@ -523,6 +547,10 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 		}
 		span.End()
 	}()
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return err
+	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start fail job transaction")
@@ -593,6 +621,10 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 		}
 		span.End()
 	}()
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return err
+	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start cancel claimed job transaction")
@@ -653,6 +685,10 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 		}
 		span.End()
 	}()
+	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return err
+	}
 	nextAttemptAtTime, err := parseTime(nextAttemptAt)
 	if err != nil {
 		return status.Errorf(grpccodes.InvalidArgument, "invalid next_attempt_at time format: %v", err)
@@ -705,6 +741,8 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 }
 
 // RecoverExpiredJobLeases atomically claims running jobs with expired leases for recovery.
+//
+//nolint:gocyclo // Recovery combines UUID validation, ledger replay, and transactional lease selection.
 func (r *Repository) RecoverExpiredJobLeases(
 	ctx context.Context,
 	batchSize int32,
@@ -721,6 +759,10 @@ func (r *Repository) RecoverExpiredJobLeases(
 		}
 		span.End()
 	}()
+	processInstanceID, err = commandidempotency.CanonicalUUID(processInstanceID, "process instance ID")
+	if err != nil {
+		return nil, err
+	}
 
 	if batchSize <= 0 {
 		batchSize = 100

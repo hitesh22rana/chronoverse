@@ -3,10 +3,62 @@ package workflows
 
 import (
 	"database/sql"
+	"slices"
 	"testing"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
+
+func TestWorkflowRequestHashSetPreservesLegacyUUIDSpelling(t *testing.T) {
+	t.Parallel()
+
+	const (
+		canonicalWorkflowID = "550e8400-e29b-41d4-a716-446655440000"
+		rawWorkflowID       = "550E8400-E29B-41D4-A716-446655440000"
+		userID              = "11111111-1111-4111-8111-111111111111"
+	)
+	canonicalFields := map[string]any{
+		workflowRequestWorkflowIDField:                canonicalWorkflowID,
+		workflowRequestUserIDField:                    userID,
+		workflowRequestNameField:                      "workflow",
+		workflowRequestPayloadField:                   `{"endpoint":"https://example.com"}`,
+		workflowRequestIntervalField:                  int32(60),
+		workflowRequestMaxConsecutiveJobFailuresField: int32(3),
+	}
+	rawFields := map[string]any{
+		workflowRequestWorkflowIDField:                rawWorkflowID,
+		workflowRequestUserIDField:                    userID,
+		workflowRequestNameField:                      "workflow",
+		workflowRequestPayloadField:                   `{"endpoint":"https://example.com"}`,
+		workflowRequestIntervalField:                  int32(60),
+		workflowRequestMaxConsecutiveJobFailuresField: int32(3),
+	}
+
+	requestHash, compatibleHashes, err := workflowRequestHashSet(canonicalFields, map[string]string{
+		workflowRequestWorkflowIDField: rawWorkflowID,
+		workflowRequestUserIDField:     userID,
+	})
+	if err != nil {
+		t.Fatalf("workflowRequestHashSet() error = %v", err)
+	}
+	canonicalHash, _, err := workflowRequestHashes(canonicalFields)
+	if err != nil {
+		t.Fatalf("workflowRequestHashes() canonical error = %v", err)
+	}
+	_, rawLegacyHash, err := workflowRequestHashes(rawFields)
+	if err != nil {
+		t.Fatalf("workflowRequestHashes() raw error = %v", err)
+	}
+	if requestHash != canonicalHash {
+		t.Fatalf("primary hash = %q, want canonical %q", requestHash, canonicalHash)
+	}
+	if !slices.Contains(compatibleHashes, rawLegacyHash) {
+		t.Fatalf("compatible hashes %v do not contain legacy uppercase hash %q", compatibleHashes, rawLegacyHash)
+	}
+	if len(compatibleHashes) == 0 || compatibleHashes[0] != rawLegacyHash {
+		t.Fatalf("first compatible hash = %v, want legacy uppercase hash %q", compatibleHashes, rawLegacyHash)
+	}
+}
 
 func TestWorkflowRequestHashesPreserveLegacyPayloadCompatibility(t *testing.T) {
 	t.Parallel()

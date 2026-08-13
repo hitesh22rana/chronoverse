@@ -67,6 +67,7 @@ func (r *Repository) CreateWorkflow(
 		}
 		span.End()
 	}()
+	rawUserID := userID
 	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
 	if err != nil {
 		return nil, err
@@ -89,14 +90,16 @@ func (r *Repository) CreateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	requestHash, legacyRequestHash, err := workflowRequestHashes(map[string]any{
-		"user_id":                              userID,
-		workflowRequestNameField:               name,
-		workflowRequestPayloadField:            payload,
-		"kind":                                 kind,
-		"interval":                             interval,
-		"max_consecutive_job_failures_allowed": maxConsecutiveJobFailuresAllowed,
-		"log_retention":                        logRetention,
+	requestHash, compatibleRequestHashes, err := workflowRequestHashSet(map[string]any{
+		workflowRequestUserIDField:                    userID,
+		workflowRequestNameField:                      name,
+		workflowRequestPayloadField:                   payload,
+		"kind":                                        kind,
+		workflowRequestIntervalField:                  interval,
+		workflowRequestMaxConsecutiveJobFailuresField: maxConsecutiveJobFailuresAllowed,
+		"log_retention":                               logRetention,
+	}, map[string]string{
+		workflowRequestUserIDField: rawUserID,
 	})
 	if err != nil {
 		return nil, err
@@ -104,7 +107,7 @@ func (r *Repository) CreateWorkflow(
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.OperationWorkflowCreate
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, legacyRequestHash)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, compatibleRequestHashes...)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +236,7 @@ func (r *Repository) UpdateWorkflow(
 		}
 		span.End()
 	}()
+	rawWorkflowID, rawUserID := workflowID, userID
 	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
 	if err != nil {
 		return err
@@ -259,13 +263,16 @@ func (r *Repository) UpdateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	requestHash, legacyRequestHash, err := workflowRequestHashes(map[string]any{
-		"workflow_id":                          workflowID,
-		"user_id":                              userID,
-		workflowRequestNameField:               name,
-		workflowRequestPayloadField:            payload,
-		"interval":                             interval,
-		"max_consecutive_job_failures_allowed": maxConsecutiveJobFailuresAllowed,
+	requestHash, compatibleRequestHashes, err := workflowRequestHashSet(map[string]any{
+		workflowRequestWorkflowIDField:                workflowID,
+		workflowRequestUserIDField:                    userID,
+		workflowRequestNameField:                      name,
+		workflowRequestPayloadField:                   payload,
+		workflowRequestIntervalField:                  interval,
+		workflowRequestMaxConsecutiveJobFailuresField: maxConsecutiveJobFailuresAllowed,
+	}, map[string]string{
+		workflowRequestWorkflowIDField: rawWorkflowID,
+		workflowRequestUserIDField:     rawUserID,
 	})
 	if err != nil {
 		return err
@@ -273,7 +280,7 @@ func (r *Repository) UpdateWorkflow(
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.WorkflowUpdateOperation(workflowID)
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, legacyRequestHash)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, compatibleRequestHashes...)
 	if err != nil {
 		return err
 	}

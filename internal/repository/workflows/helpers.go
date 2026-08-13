@@ -19,9 +19,13 @@ import (
 )
 
 const (
-	delimiter                   = '$'
-	workflowRequestNameField    = "name"
-	workflowRequestPayloadField = "payload"
+	delimiter                                     = '$'
+	workflowRequestWorkflowIDField                = "workflow_id"
+	workflowRequestUserIDField                    = "user_id"
+	workflowRequestNameField                      = "name"
+	workflowRequestPayloadField                   = "payload"
+	workflowRequestIntervalField                  = "interval"
+	workflowRequestMaxConsecutiveJobFailuresField = "max_consecutive_job_failures_allowed"
 )
 
 type updateWorkflowActionDecision struct {
@@ -89,6 +93,54 @@ func workflowRequestHashes(fields map[string]any) (canonicalHash, legacyHash str
 		return "", "", status.Errorf(codes.Internal, "failed to hash idempotency request: %v", err)
 	}
 	return canonicalHash, legacyHash, nil
+}
+
+func workflowRequestHashSet(
+	canonicalFields map[string]any,
+	rawUUIDFields map[string]string,
+) (requestHash string, compatibleHashes []string, err error) {
+	requestHash, legacyHash, err := workflowRequestHashes(canonicalFields)
+	if err != nil {
+		return "", nil, err
+	}
+
+	rawFields := make(map[string]any, len(canonicalFields))
+	for key, value := range canonicalFields {
+		rawFields[key] = value
+	}
+	identityChanged := false
+	for key, rawValue := range rawUUIDFields {
+		if canonicalValue, ok := canonicalFields[key].(string); ok && rawValue != canonicalValue {
+			rawFields[key] = rawValue
+			identityChanged = true
+		}
+	}
+
+	compatibleHashes = []string{legacyHash}
+	if identityChanged {
+		_, rawLegacyHash, hashErr := workflowRequestHashes(rawFields)
+		if hashErr != nil {
+			return "", nil, hashErr
+		}
+		// Keep the exact pre-canonicalization legacy hash first so migration
+		// replays and the representable down-migration identity use the same
+		// spelling that the old binary hashed.
+		compatibleHashes = []string{rawLegacyHash, legacyHash}
+	}
+	return requestHash, uniqueRequestHashes(requestHash, compatibleHashes), nil
+}
+
+func uniqueRequestHashes(primary string, hashes []string) []string {
+	unique := make([]string, 0, len(hashes))
+	seen := map[string]struct{}{primary: {}}
+	for _, hash := range hashes {
+		if _, exists := seen[hash]; exists {
+			continue
+		}
+		seen[hash] = struct{}{}
+		unique = append(unique, hash)
+	}
+	return unique
 }
 
 func isLegacyWorkflowCreateResponse(response json.RawMessage) bool {

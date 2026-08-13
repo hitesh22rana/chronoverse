@@ -70,6 +70,8 @@ SELECT
         ELSE operation
     END,
     idempotency_key,
+    -- Alias position 1 is the canonical-ID legacy hash. The restored
+    -- operation also uses canonical UUID text, so these must remain paired.
     COALESCE(request_hash_aliases[1], request_hash),
     resource_id::uuid,
     response,

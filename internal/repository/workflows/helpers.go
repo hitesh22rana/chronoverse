@@ -116,23 +116,27 @@ func workflowRequestHashSet(
 		}
 	}
 
+	// PostgreSQL alias position 1 (Go index 0) is a persistence contract with
+	// migration 11's down migration: it must always contain the legacy hash
+	// built from canonical UUID text because the restored legacy operation also
+	// uses canonical text. Keep it even when it equals the primary
+	// canonical-payload hash.
 	compatibleHashes = []string{legacyHash}
 	if identityChanged {
 		_, rawLegacyHash, hashErr := workflowRequestHashes(rawFields)
 		if hashErr != nil {
 			return "", nil, hashErr
 		}
-		// Keep the exact pre-canonicalization legacy hash first so migration
-		// replays and the representable down-migration identity use the same
-		// spelling that the old binary hashed.
-		compatibleHashes = []string{rawLegacyHash, legacyHash}
+		// Raw UUID spelling remains an additional forward-upgrade matching
+		// alias; it must not displace the rollback-compatible hash above.
+		compatibleHashes = append(compatibleHashes, rawLegacyHash)
 	}
-	return requestHash, uniqueRequestHashes(requestHash, compatibleHashes), nil
+	return requestHash, uniqueRequestHashes(compatibleHashes), nil
 }
 
-func uniqueRequestHashes(primary string, hashes []string) []string {
+func uniqueRequestHashes(hashes []string) []string {
 	unique := make([]string, 0, len(hashes))
-	seen := map[string]struct{}{primary: {}}
+	seen := make(map[string]struct{}, len(hashes))
 	for _, hash := range hashes {
 		if _, exists := seen[hash]; exists {
 			continue

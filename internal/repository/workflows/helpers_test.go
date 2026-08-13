@@ -41,7 +41,7 @@ func TestWorkflowRequestHashSetPreservesLegacyUUIDSpelling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workflowRequestHashSet() error = %v", err)
 	}
-	canonicalHash, _, err := workflowRequestHashes(canonicalFields)
+	canonicalHash, canonicalLegacyHash, err := workflowRequestHashes(canonicalFields)
 	if err != nil {
 		t.Fatalf("workflowRequestHashes() canonical error = %v", err)
 	}
@@ -52,11 +52,17 @@ func TestWorkflowRequestHashSetPreservesLegacyUUIDSpelling(t *testing.T) {
 	if requestHash != canonicalHash {
 		t.Fatalf("primary hash = %q, want canonical %q", requestHash, canonicalHash)
 	}
+	if canonicalLegacyHash != requestHash {
+		t.Fatalf("test requires canonical legacy hash to equal primary: %q != %q", canonicalLegacyHash, requestHash)
+	}
 	if !slices.Contains(compatibleHashes, rawLegacyHash) {
 		t.Fatalf("compatible hashes %v do not contain legacy uppercase hash %q", compatibleHashes, rawLegacyHash)
 	}
-	if len(compatibleHashes) == 0 || compatibleHashes[0] != rawLegacyHash {
-		t.Fatalf("first compatible hash = %v, want legacy uppercase hash %q", compatibleHashes, rawLegacyHash)
+	if len(compatibleHashes) == 0 || compatibleHashes[0] != canonicalLegacyHash {
+		t.Fatalf("first compatible hash = %v, want rollback-compatible canonical-ID hash %q", compatibleHashes, canonicalLegacyHash)
+	}
+	if len(compatibleHashes) != 2 || compatibleHashes[1] != rawLegacyHash {
+		t.Fatalf("additional compatible hashes = %v, want raw UUID hash %q second", compatibleHashes, rawLegacyHash)
 	}
 }
 

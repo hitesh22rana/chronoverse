@@ -527,6 +527,70 @@ func TestSendWorkflowTerminatedNotificationIgnoresAuthorizationFailure(t *testin
 	)
 }
 
+func TestHandleJobFailedContinuesAfterExistingNotificationDrift(t *testing.T) {
+	t.Parallel()
+
+	notificationCalls := &orderedEvents{}
+	repo := &Repository{
+		auth: testAuth{},
+		svc: &Services{
+			Workflows: &testWorkflowsClient{
+				workflow: &workflowspb.GetWorkflowByIDResponse{
+					Id:                               "workflow-1",
+					UserId:                           "user-1",
+					Name:                             "renamed workflow",
+					MaxConsecutiveJobFailuresAllowed: 3,
+				},
+				incrementFailures: func(context.Context, *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error) {
+					return &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{ThresholdReached: true}, nil
+				},
+			},
+			Notifications: testNotificationsClient{
+				createNotification: func(_ context.Context, req *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
+					notificationCalls.add(notificationTitle(req.GetPayload()))
+					if notificationTitle(req.GetPayload()) == "Job Execution Failed" {
+						return nil, status.Error(codes.AlreadyExists, "notification payload changed after replay")
+					}
+					return &notificationspb.CreateNotificationResponse{Id: "termination-notification"}, nil
+				},
+			},
+		},
+	}
+
+	err := repo.handleJobFailed(t.Context(), &workflowsmodel.WorkflowEvent{
+		ID:     "workflow-1",
+		UserID: "user-1",
+		Action: workflowsmodel.ActionJobFailed,
+		JobID:  "job-1",
+	})
+	if err != nil {
+		t.Fatalf("handleJobFailed() error = %v", err)
+	}
+	assertEvents(t, notificationCalls.items(), []string{"Job Execution Failed", "Workflow Terminated"})
+}
+
+func TestSendNotificationReturnsTransientFailure(t *testing.T) {
+	t.Parallel()
+
+	repo := &Repository{
+		svc: &Services{
+			Notifications: testNotificationsClient{
+				createNotification: func(context.Context, *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
+					return nil, status.Error(codes.Unavailable, "notification service unavailable")
+				},
+			},
+		},
+	}
+
+	err := repo.sendNotification(
+		t.Context(), "user-1", "workflow-1", "job-1", "Job Execution Failed", "message",
+		"WEB_ERROR", "JOB", "",
+	)
+	if code := status.Code(err); code != codes.Unavailable {
+		t.Fatalf("sendNotification() code = %s, want %s", code, codes.Unavailable)
+	}
+}
+
 type orderedEvents struct {
 	mu     sync.Mutex
 	events []string
@@ -683,8 +747,9 @@ func (c *testJobsClient) GetReadyRuntimeNode(ctx context.Context, req *jobspb.Ge
 
 type testWorkflowsClient struct {
 	workflowspb.WorkflowsServiceClient
-	workflow      *workflowspb.GetWorkflowByIDResponse
-	statusUpdates *orderedEvents
+	workflow          *workflowspb.GetWorkflowByIDResponse
+	statusUpdates     *orderedEvents
+	incrementFailures func(context.Context, *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error)
 }
 
 func (c *testWorkflowsClient) GetWorkflowByID(context.Context, *workflowspb.GetWorkflowByIDRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
@@ -706,6 +771,17 @@ func (c *testWorkflowsClient) UpdateWorkflowBuildStatus(
 		c.workflow.BuildStatus = req.GetBuildStatus()
 	}
 	return &workflowspb.UpdateWorkflowBuildStatusResponse{}, nil
+}
+
+func (c *testWorkflowsClient) IncrementWorkflowConsecutiveJobFailuresCount(
+	ctx context.Context,
+	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
+	_ ...grpc.CallOption,
+) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error) {
+	if c.incrementFailures != nil {
+		return c.incrementFailures(ctx, req)
+	}
+	return &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{}, nil
 }
 
 type testNotificationsClient struct {

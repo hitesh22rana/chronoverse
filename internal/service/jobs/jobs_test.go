@@ -197,6 +197,100 @@ func TestScheduleJob(t *testing.T) {
 	}
 }
 
+func TestCancelJob(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		request  *jobspb.CancelJobRequest
+		setup    func(*jobsmock.MockRepository)
+		want     *jobsmodel.CancelJobSnapshot
+		wantCode codes.Code
+	}{
+		{
+			name: "success",
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup: func(repo *jobsmock.MockRepository) {
+				repo.EXPECT().CancelJob(
+					gomock.Any(), "job-1", "cancel-command", terminalreason.WorkflowTerminated.String(),
+				).Return(&jobsmodel.CancelJobSnapshot{
+					ID:              "job-1",
+					PreviousStatus:  jobsmodel.JobStatusRunning.ToString(),
+					ContainerID:     sql.NullString{String: "container-1", Valid: true},
+					RuntimeNodeID:   sql.NullString{String: "runtime-1", Valid: true},
+					RuntimeEndpoint: sql.NullString{String: "tcp://runtime:2375", Valid: true},
+					Attempt:         2,
+				}, nil)
+			},
+			want: &jobsmodel.CancelJobSnapshot{
+				ID:              "job-1",
+				PreviousStatus:  jobsmodel.JobStatusRunning.ToString(),
+				ContainerID:     sql.NullString{String: "container-1", Valid: true},
+				RuntimeNodeID:   sql.NullString{String: "runtime-1", Valid: true},
+				RuntimeEndpoint: sql.NullString{String: "tcp://runtime:2375", Valid: true},
+				Attempt:         2,
+			},
+			wantCode: codes.OK,
+		},
+		{
+			name: "missing job ID",
+			request: &jobspb.CancelJobRequest{
+				CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup:    func(*jobsmock.MockRepository) {},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "missing command ID",
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup:    func(*jobsmock.MockRepository) {},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "invalid terminal reason",
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.NonZeroExit.String(),
+			},
+			setup:    func(*jobsmock.MockRepository) {},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "repository failure",
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup: func(repo *jobsmock.MockRepository) {
+				repo.EXPECT().CancelJob(
+					gomock.Any(), "job-1", "cancel-command", terminalreason.WorkflowTerminated.String(),
+				).Return(nil, status.Error(codes.Internal, "cancel failed"))
+			},
+			wantCode: codes.Internal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+			repo := jobsmock.NewMockRepository(ctrl)
+			tt.setup(repo)
+			service := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+
+			snapshot, err := service.CancelJob(t.Context(), tt.request)
+			if code := status.Code(err); code != tt.wantCode {
+				t.Fatalf("CancelJob() code = %s, want %s: %v", code, tt.wantCode, err)
+			}
+			if tt.want != nil {
+				assert.Equal(t, tt.want, snapshot)
+			}
+		})
+	}
+}
+
 func TestClaimJobPropagatesRuntimeUnavailable(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

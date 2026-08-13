@@ -26,6 +26,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 func TestMain(t *testing.T) {
@@ -257,6 +258,130 @@ func TestScheduleJob(t *testing.T) {
 					t.Error("ScheduleJob() error = nil, want error")
 				}
 				return
+			}
+		})
+	}
+}
+
+func TestCancelJob(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		context  func(context.Context) context.Context
+		request  *jobspb.CancelJobRequest
+		setup    func(*authmock.MockIAuth, *jobsmock.MockService)
+		want     *jobspb.CancelJobResponse
+		wantCode codes.Code
+	}{
+		{
+			name: "success",
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					"token",
+				)
+			},
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup: func(authService *authmock.MockIAuth, service *jobsmock.MockService) {
+				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				service.EXPECT().CancelJob(gomock.Any(), gomock.Any()).Return(&jobsmodel.CancelJobSnapshot{
+					ID:              "job-1",
+					PreviousStatus:  jobsmodel.JobStatusRunning.ToString(),
+					ContainerID:     sql.NullString{String: "container-1", Valid: true},
+					RuntimeNodeID:   sql.NullString{String: "runtime-1", Valid: true},
+					RuntimeEndpoint: sql.NullString{String: "tcp://runtime:2375", Valid: true},
+					Attempt:         2,
+				}, nil)
+			},
+			want: &jobspb.CancelJobResponse{
+				Id: "job-1", PreviousStatus: jobsmodel.JobStatusRunning.ToString(), ContainerId: "container-1",
+				RuntimeNodeId: "runtime-1", RuntimeEndpoint: "tcp://runtime:2375", Attempt: 2,
+			},
+			wantCode: codes.OK,
+		},
+		{
+			name: "invalid role",
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "server"), auth.RoleUser),
+					"token",
+				)
+			},
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup:    func(*authmock.MockIAuth, *jobsmock.MockService) {},
+			wantCode: codes.PermissionDenied,
+		},
+		{
+			name: "invalid token",
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					"invalid-token",
+				)
+			},
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup: func(authService *authmock.MockIAuth, _ *jobsmock.MockService) {
+				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			name:    "missing metadata",
+			context: func(ctx context.Context) context.Context { return ctx },
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup:    func(*authmock.MockIAuth, *jobsmock.MockService) {},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name: "service failure",
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					"token",
+				)
+			},
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup: func(authService *authmock.MockIAuth, service *jobsmock.MockService) {
+				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				service.EXPECT().CancelJob(gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.Internal, "cancel failed"))
+			},
+			wantCode: codes.Internal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+			service := jobsmock.NewMockService(ctrl)
+			authService := authmock.NewMockIAuth(ctrl)
+			tt.setup(authService, service)
+
+			client, closeClient := initClient(jobs.New(t.Context(), &jobs.Config{Deadline: 500 * time.Millisecond}, authService, service))
+			defer closeClient()
+
+			response, err := client.CancelJob(tt.context(t.Context()), tt.request)
+			if code := status.Code(err); code != tt.wantCode {
+				t.Fatalf("CancelJob() code = %s, want %s: %v", code, tt.wantCode, err)
+			}
+			if tt.want != nil && (response.GetId() != tt.want.GetId() ||
+				response.GetPreviousStatus() != tt.want.GetPreviousStatus() ||
+				response.GetContainerId() != tt.want.GetContainerId() ||
+				response.GetRuntimeNodeId() != tt.want.GetRuntimeNodeId() ||
+				response.GetRuntimeEndpoint() != tt.want.GetRuntimeEndpoint() ||
+				response.GetAttempt() != tt.want.GetAttempt()) {
+				t.Fatalf("CancelJob() response = %+v, want %+v", response, tt.want)
 			}
 		})
 	}

@@ -219,6 +219,7 @@ The Kubernetes overlays include the same topic initializer.
 ### Workflows Service
 
 - `WORKFLOWS_SERVICE_CONFIG_FETCH_LIMIT`
+
 Shared command-ledger cleanup is owned by the outbox relay and is independent
 from published-outbox cleanup; logically expired keys can be replaced even if
 cleanup is delayed.
@@ -229,6 +230,7 @@ cleanup is delayed.
 - `JOBS_SERVICE_CONFIG_LOGS_FETCH_LIMIT`
 - `JOBS_SERVICE_RUNTIME_HEARTBEAT_TTL`
 - `JOBS_SERVICE_RUNTIME_LOST_AFTER`
+- `COMMAND_IDEMPOTENCY_EVENT_RETENTION`
 
 The jobs service also needs workflows-service client settings so log endpoints
 can enforce workflow retention policy. Runtime heartbeat settings control which
@@ -238,8 +240,15 @@ lease should be treated as owned by an unavailable runtime.
 ### Notifications Service
 
 - `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT`
+- `COMMAND_IDEMPOTENCY_EVENT_RETENTION`
 
 This caps the fetch size used by the notification list operation.
+
+Client and random commands remain replayable for 24 hours. Automatic scheduling,
+notification creation, and deterministic job cancellation use
+`COMMAND_IDEMPOTENCY_EVENT_RETENTION`, which defaults to `336h` and must be at
+least `168h`. Set it to at least the longest Kafka retention, published-outbox
+redrive window, or supported manual event-redrive window, whichever is greater.
 
 ### Execution Worker Replay Safety
 
@@ -374,9 +383,12 @@ metadata growth.
 - `OUTBOX_RELAY_CLEANUP_INTERVAL`
 - `OUTBOX_RELAY_CLEANUP_BATCH_SIZE`
 - `OUTBOX_RELAY_PUBLISHED_RETENTION`
+- `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES`
 
 Compose sets `OUTBOX_RELAY_WORKER_ID` from the hostname when not provided. Keep
-the processing lease longer than normal Kafka publish latency.
+the processing lease longer than normal Kafka publish latency. Idempotency
+cleanup deletes up to the configured number of batches per cleanup cycle and
+stops early after a partial batch. The default is ten batches of 1,000 rows.
 
 ## Dashboard Settings
 

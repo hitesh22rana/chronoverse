@@ -34,9 +34,9 @@ Durable protocol operations are stable values:
 | `user:<id>` | `workflow.create` | HTTP header | 24 hours |
 | `user:<id>` | `workflow.update:<workflow-id>` | HTTP header | 24 hours |
 | `user:<id>` | `job.schedule.manual:<workflow-id>` | HTTP header | 24 hours |
-| `workflow:<id>` | `job.schedule.automatic` | Event identity | Permanent |
-| `user:<id>` | `notification.create` | Event identity | Permanent |
-| `job:<id>` | `job.cancel` | Job termination identity | Permanent |
+| `workflow:<id>` | `job.schedule.automatic` | Event identity | Configurable, 14 days by default |
+| `user:<id>` | `notification.create` | Event identity | Configurable, 14 days by default |
+| `job:<id>` | `job.cancel` | Job termination identity | Configurable, 14 days by default |
 | `worker:<process-id>` | `job.claim` | Derived command | 24 hours |
 | `job:<id>` | `job.attach_container` | Random command | 24 hours |
 | `job:<id>` | `job.complete` | Random command | 24 hours |

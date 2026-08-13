@@ -178,10 +178,11 @@ Keep traffic, workers, processors, and outbox publication stopped. Roll back the
 database schema before starting old binaries, verify the restored schema and
 data, then start the old release as one version. The legacy schema cannot
 represent completed terminal identities, non-workflow command-ledger records,
-or every reused manual command key. Migration 11 preserves the legacy raw
-workflow request hash for post-upgrade commands, but the remaining documented
-identity loss still requires explicit operator acceptance. Prefer restoring the
-pre-upgrade backup when that loss is unacceptable.
+or every reused manual command key. Migration 11 restores one legacy workflow
+row for every accepted canonical or raw workflow-ID operation/hash pair, so
+supported workflow-update retries remain idempotent after rollback. The
+remaining documented identity loss still requires explicit operator acceptance.
+Prefer restoring the pre-upgrade backup when that loss is unacceptable.
 
 ## Health Checks
 
@@ -337,11 +338,27 @@ pull, while different runtime nodes may pull independently.
   dead-event behavior.
 - `OUTBOX_RELAY_CLEANUP_*` and `OUTBOX_RELAY_PUBLISHED_RETENTION` control cleanup
   of published events.
+- `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES` bounds shared-ledger cleanup per
+  cycle. The default ten batches of 1,000 rows can drain about 960,000 expired
+  records per day at the default 15-minute interval while keeping each cycle
+  bounded.
 - `OUTBOX_RELAY_WORKFLOW_ENABLED`, `OUTBOX_RELAY_JOBS_ENABLED`, and
   `OUTBOX_RELAY_ANALYTICS_ENABLED` can disable topic groups when needed.
 
 If relay throughput is low, inspect Kafka publish latency and PostgreSQL query
 latency before reducing the poll interval.
+
+Client and random command results expire after 24 hours. Automatic scheduling,
+notification creation, and deterministic cancellation use
+`COMMAND_IDEMPOTENCY_EVENT_RETENTION`, defaulting to `336h` with a hard minimum
+of `168h`. Configure it no shorter than the longest Kafka retention,
+published-outbox redrive window, or supported manual event-redrive window.
+Automatic jobs and notifications retain their deterministic keys in domain
+rows, so an exact replay after ledger expiry reconstructs the ledger without a
+duplicate resource; changed payloads still conflict. Cancellation remains
+effect-idempotent after expiry, but its original cleanup snapshot is replayable
+only during this configured window. Workflow terminal-effect identities are
+removed with their owning workflow rather than by time-based ledger cleanup.
 
 ### Logs and Search
 

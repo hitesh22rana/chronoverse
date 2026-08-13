@@ -508,6 +508,12 @@ Kafka delivery, process crashes, and network timeouts can repeat work. Chronover
 
 Workflow create, workflow update, and manual scheduling require an `Idempotency-Key`. A repeated command with the same key returns the recorded result instead of creating another mutation.
 
+Client and random command results remain replayable for 24 hours. Deterministic automatic-scheduling, notification, and cancellation commands default to a 14-day retention and cannot be configured below seven days. The event retention must cover the longest Kafka retention, published-outbox redrive window, or supported manual event-redrive window.
+
+Automatic jobs and notifications also retain their deterministic identity in their domain rows. After the shared-ledger record expires, exact replay can reconstruct it without creating a duplicate resource, while changed input still conflicts. Cancellation remains effect-idempotent after expiry, but its original cleanup snapshot is guaranteed only during the configured event window. Workflow terminal effects follow the owning workflow lifecycle instead of a time-based ledger policy.
+
+Workflow commands keep canonical identities for current execution and exact legacy operation/hash pairs for every accepted raw UUID spelling. Migration rollback restores each pair, preventing a spelling-only retry from repeating a workflow update.
+
 ## Atomic publication intent
 
 Domain transactions write state and outbox rows together. The relay can retry publication without losing the relationship between committed state and its event.
@@ -527,6 +533,10 @@ Durable job leases ensure one worker owns a running job. Lease tokens protect ev
 ## Ordered commits
 
 Partition-aware Kafka processing advances offsets only after the configured success, retry, or terminal policy permits it.
+
+## Bounded cleanup
+
+The outbox relay removes expired ledger rows through the indexed expiry path with `FOR UPDATE SKIP LOCKED`. Each cycle is bounded by a configurable batch count and stops after a partial batch, so cleanup can drain backlog without monopolizing PostgreSQL.
 
 <Callout title="Replay-safe does not mean exactly once">
 The system accepts duplicate delivery and makes the resulting operations idempotent or preconditioned. This is more explicit and recoverable than assuming the transport provides global exactly-once execution.
@@ -1368,7 +1378,7 @@ Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients
 
 ## Workers
 
-Scheduler settings control poll interval, context timeout, and batch size. Jobs service settings include runtime heartbeat windows for claim and recovery. Runtime agent settings control runtime identity, Docker endpoint, heartbeat interval, and max concurrency; `RUNTIME_AGENT_ID` must remain stable for the same runtime node across restarts. Workflow worker settings control digest resolution and image-pull locks. Execution worker settings control concurrency, runtime-local image-pull locks, per-workload Docker container memory/CPU/PID limits, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention.
+Scheduler settings control poll interval, context timeout, and batch size. Jobs service settings include runtime heartbeat windows for claim and recovery. Jobs and notifications services use `COMMAND_IDEMPOTENCY_EVENT_RETENTION`, which defaults to `336h`, cannot be below `168h`, and must cover the longest Kafka, published-outbox, or manual redrive window. Runtime agent settings control runtime identity, Docker endpoint, heartbeat interval, and max concurrency; `RUNTIME_AGENT_ID` must remain stable for the same runtime node across restarts. Workflow worker settings control digest resolution and image-pull locks. Execution worker settings control concurrency, runtime-local image-pull locks, per-workload Docker container memory/CPU/PID limits, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention; `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES` bounds the number of expired-ledger batches removed per cycle.
 
 Domain-service-specific limits include workflow and job list fetch limits, workflow cleanup settings, and `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT` for notification listing.
 

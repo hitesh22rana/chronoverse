@@ -6,6 +6,12 @@ Kafka delivery, process crashes, and network timeouts can repeat work. Chronover
 
 Workflow create, workflow update, and manual scheduling require an `Idempotency-Key`. A repeated command with the same key returns the recorded result instead of creating another mutation.
 
+Client and random command results remain replayable for 24 hours. Deterministic automatic-scheduling, notification, and cancellation commands default to a 14-day retention and cannot be configured below seven days. The event retention must cover the longest Kafka retention, published-outbox redrive window, or supported manual event-redrive window.
+
+Automatic jobs and notifications also retain their deterministic identity in their domain rows. After the shared-ledger record expires, exact replay can reconstruct it without creating a duplicate resource, while changed input still conflicts. Cancellation remains effect-idempotent after expiry, but its original cleanup snapshot is guaranteed only during the configured event window. Workflow terminal effects follow the owning workflow lifecycle instead of a time-based ledger policy.
+
+Workflow commands keep canonical identities for current execution and exact legacy operation/hash pairs for every accepted raw UUID spelling. Migration rollback restores each pair, preventing a spelling-only retry from repeating a workflow update.
+
 ## Atomic publication intent
 
 Domain transactions write state and outbox rows together. The relay can retry publication without losing the relationship between committed state and its event.
@@ -26,7 +32,10 @@ Durable job leases ensure one worker owns a running job. Lease tokens protect ev
 
 Partition-aware Kafka processing advances offsets only after the configured success, retry, or terminal policy permits it.
 
+## Bounded cleanup
+
+The outbox relay removes expired ledger rows through the indexed expiry path with `FOR UPDATE SKIP LOCKED`. Each cycle is bounded by a configurable batch count and stops after a partial batch, so cleanup can drain backlog without monopolizing PostgreSQL.
+
 <Callout title="Replay-safe does not mean exactly once">
 The system accepts duplicate delivery and makes the resulting operations idempotent or preconditioned. This is more explicit and recoverable than assuming the transport provides global exactly-once execution.
 </Callout>
-

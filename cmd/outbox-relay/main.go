@@ -89,15 +89,16 @@ func run() int {
 		WorkerID:        cfg.OutboxRelayConfig.WorkerID,
 	}, pdb, kfk)
 	app := outboxrelay.New(ctx, &outboxrelay.Config{
-		WorkflowEnabled:    cfg.OutboxRelayConfig.WorkflowEnabled,
-		JobsEnabled:        cfg.OutboxRelayConfig.JobsEnabled,
-		AnalyticsEnabled:   cfg.OutboxRelayConfig.AnalyticsEnabled,
-		PollInterval:       cfg.OutboxRelayConfig.PollInterval,
-		ContextTimeout:     cfg.OutboxRelayConfig.ContextTimeout,
-		CleanupEnabled:     cfg.OutboxRelayConfig.CleanupEnabled,
-		CleanupInterval:    cfg.OutboxRelayConfig.CleanupInterval,
-		CleanupBatchSize:   cfg.OutboxRelayConfig.CleanupBatchSize,
-		PublishedRetention: cfg.OutboxRelayConfig.PublishedRetention,
+		WorkflowEnabled:              cfg.OutboxRelayConfig.WorkflowEnabled,
+		JobsEnabled:                  cfg.OutboxRelayConfig.JobsEnabled,
+		AnalyticsEnabled:             cfg.OutboxRelayConfig.AnalyticsEnabled,
+		PollInterval:                 cfg.OutboxRelayConfig.PollInterval,
+		ContextTimeout:               cfg.OutboxRelayConfig.ContextTimeout,
+		CleanupEnabled:               cfg.OutboxRelayConfig.CleanupEnabled,
+		CleanupInterval:              cfg.OutboxRelayConfig.CleanupInterval,
+		CleanupBatchSize:             cfg.OutboxRelayConfig.CleanupBatchSize,
+		IdempotencyCleanupMaxBatches: cfg.OutboxRelayConfig.IdempotencyCleanupMaxBatches,
+		PublishedRetention:           cfg.OutboxRelayConfig.PublishedRetention,
 	}, repo)
 
 	loggerpkg.FromContext(ctx).Info(

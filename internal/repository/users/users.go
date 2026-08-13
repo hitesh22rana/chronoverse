@@ -164,7 +164,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 		requestHash,
 		res.ID,
 		res,
-		false,
+		commandidempotency.ClientCommandRetention,
 	); err != nil {
 		return nil, "", err
 	}

@@ -168,10 +168,11 @@ func run() int {
 
 	// Initialize the jobs repository
 	repo := jobsrepo.New(&jobsrepo.Config{
-		FetchLimit:          cfg.JobsServiceConfig.FetchLimit,
-		LogsFetchLimit:      cfg.JobsServiceConfig.LogsFetchLimit,
-		RuntimeHeartbeatTTL: cfg.JobsServiceConfig.RuntimeHeartbeatTTL,
-		RuntimeLostAfter:    cfg.JobsServiceConfig.RuntimeLostAfter,
+		FetchLimit:            cfg.JobsServiceConfig.FetchLimit,
+		LogsFetchLimit:        cfg.JobsServiceConfig.LogsFetchLimit,
+		RuntimeHeartbeatTTL:   cfg.JobsServiceConfig.RuntimeHeartbeatTTL,
+		RuntimeLostAfter:      cfg.JobsServiceConfig.RuntimeLostAfter,
+		EventCommandRetention: cfg.CommandIdempotency.EventRetention,
 	}, auth, pdb, rdb, cdb, msdb, &jobsrepo.Services{
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 	})

@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -18,6 +20,17 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
+
+const (
+	// ClientCommandRetention is the replay window for client and random command identities.
+	ClientCommandRetention = 24 * time.Hour
+	// DefaultEventCommandRetention is the default replay window for deterministic event commands.
+	DefaultEventCommandRetention = 14 * 24 * time.Hour
+	// MinimumEventCommandRetention matches the supported Kafka and outbox redrive window.
+	MinimumEventCommandRetention = 7 * 24 * time.Hour
+)
+
+var requestHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // Stable command-ledger operation names. These are protocol values and must
 // not be renamed without an explicit data migration.
@@ -34,29 +47,50 @@ const (
 	OperationJobCancelClaimed        = "job.cancel_claimed"
 	OperationJobReleaseForRetry      = "job.release_for_retry"
 	OperationJobRecoverExpiredLeases = "job.recover_expired_leases"
+
+	// LegacyOperationWorkflowCreate is the workflow-create operation restored
+	// for binaries using the pre-shared-ledger workflow table.
+	LegacyOperationWorkflowCreate = "create_workflow"
+
+	workflowUpdateOperationPrefix       = "workflow.update:"
+	manualScheduleOperationPrefix       = "job.schedule.manual:"
+	legacyWorkflowUpdateOperationPrefix = "update_workflow:"
+	userScopePrefix                     = "user:"
+	workflowScopePrefix                 = "workflow:"
+	jobScopePrefix                      = "job:"
+	workerScopePrefix                   = "worker:"
 )
 
 // WorkflowUpdateOperation returns the stable workflow-update operation name.
 func WorkflowUpdateOperation(workflowID string) string {
-	return "workflow.update:" + canonicalUUIDText(workflowID)
+	return workflowUpdateOperationPrefix + canonicalUUIDText(workflowID)
 }
 
 // ManualScheduleOperation returns the stable manual-schedule operation name.
 func ManualScheduleOperation(workflowID string) string {
-	return "job.schedule.manual:" + canonicalUUIDText(workflowID)
+	return manualScheduleOperationPrefix + canonicalUUIDText(workflowID)
+}
+
+// LegacyWorkflowUpdateOperation returns the exact pre-shared-ledger operation
+// for one accepted workflow-ID spelling. It deliberately does not canonicalize
+// the input because rollback must preserve the client's original path identity.
+func LegacyWorkflowUpdateOperation(rawWorkflowID string) string {
+	return legacyWorkflowUpdateOperationPrefix + rawWorkflowID
 }
 
 // UserScope returns a user command scope.
-func UserScope(userID string) string { return "user:" + canonicalUUIDText(userID) }
+func UserScope(userID string) string { return userScopePrefix + canonicalUUIDText(userID) }
 
 // WorkflowScope returns a workflow command scope.
-func WorkflowScope(workflowID string) string { return "workflow:" + canonicalUUIDText(workflowID) }
+func WorkflowScope(workflowID string) string {
+	return workflowScopePrefix + canonicalUUIDText(workflowID)
+}
 
 // JobScope returns a job command scope.
-func JobScope(jobID string) string { return "job:" + canonicalUUIDText(jobID) }
+func JobScope(jobID string) string { return jobScopePrefix + canonicalUUIDText(jobID) }
 
 // WorkerScope returns a process-specific worker command scope.
-func WorkerScope(processID string) string { return "worker:" + canonicalUUIDText(processID) }
+func WorkerScope(processID string) string { return workerScopePrefix + canonicalUUIDText(processID) }
 
 // CanonicalUUID validates a UUID identity and returns PostgreSQL's canonical
 // lowercase, hyphenated spelling. Ledger callers must use the returned value
@@ -82,6 +116,13 @@ type Reservation struct {
 	Replay     bool
 	ResourceID string
 	Response   json.RawMessage
+}
+
+// LegacyIdentity is one exact operation/hash pair understood by the workflow
+// idempotency implementation restored by migration 11's down migration.
+type LegacyIdentity struct {
+	Operation   string
+	RequestHash string
 }
 
 // NormalizeKey validates and applies the published ASCII-space normalization.
@@ -216,14 +257,79 @@ func recordOutcome(ctx context.Context, operation, outcome string) {
 	)
 }
 
+// SyncLegacyIdentities records rollback-compatible identities for an accepted
+// workflow command. Fresh reservations replace identities left by an expired
+// key; completed replays append newly accepted UUID spellings without touching
+// the parent ledger timestamps.
+func SyncLegacyIdentities(
+	ctx context.Context,
+	tx pgx.Tx,
+	scope, operation, rawKey string,
+	fresh bool,
+	identities ...LegacyIdentity,
+) error {
+	key, err := NormalizeKey(rawKey)
+	if err != nil {
+		return err
+	}
+	if len(identities) == 0 {
+		return status.Error(codes.Internal, "workflow command has no rollback-compatible identity")
+	}
+
+	if fresh {
+		query := fmt.Sprintf(`
+			DELETE FROM %s
+			WHERE scope = $1 AND operation = $2 AND idempotency_key = $3;
+		`, postgres.TableCommandIdempotencyLegacyIdentities)
+		if _, err = tx.Exec(ctx, query, scope, operation, key); err != nil {
+			return status.Errorf(codes.Internal, "failed to reset command legacy identities: %v", err)
+		}
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO %s AS identities (
+			scope, operation, idempotency_key, legacy_operation, legacy_request_hash
+		)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (scope, operation, idempotency_key, legacy_operation) DO UPDATE
+		SET legacy_request_hash = EXCLUDED.legacy_request_hash
+		WHERE identities.legacy_request_hash = EXCLUDED.legacy_request_hash;
+	`, postgres.TableCommandIdempotencyLegacyIdentities)
+	seen := make(map[string]string, len(identities))
+	for _, identity := range identities {
+		if identity.Operation == "" || !requestHashPattern.MatchString(identity.RequestHash) {
+			return status.Error(codes.Internal, "invalid rollback-compatible command identity")
+		}
+		if existingHash, exists := seen[identity.Operation]; exists {
+			if existingHash != identity.RequestHash {
+				return status.Error(codes.Internal, "legacy operation resolved to multiple request hashes")
+			}
+			continue
+		}
+		seen[identity.Operation] = identity.RequestHash
+
+		tag, execErr := tx.Exec(ctx, query, scope, operation, key, identity.Operation, identity.RequestHash)
+		if execErr != nil {
+			return status.Errorf(codes.Internal, "failed to store command legacy identity: %v", execErr)
+		}
+		if tag.RowsAffected() != 1 {
+			return status.Error(codes.Internal, "legacy operation was already associated with a different request hash")
+		}
+	}
+	return nil
+}
+
 // Complete compare-and-set completes exactly one owned PROCESSING reservation.
 func Complete(
 	ctx context.Context,
 	tx pgx.Tx,
 	scope, operation, rawKey, requestHash, resourceID string,
 	response any,
-	permanent bool,
+	retention time.Duration,
 ) error {
+	if retention <= 0 || retention.Microseconds() <= 0 {
+		return status.Error(codes.Internal, "command idempotency retention must be positive")
+	}
 	key, err := NormalizeKey(rawKey)
 	if err != nil {
 		return err
@@ -243,7 +349,7 @@ func Complete(
 			response = $6::jsonb,
 			completed_at = completion.completed_at,
 			updated_at = completion.completed_at,
-			expires_at = CASE WHEN $7 THEN NULL ELSE completion.completed_at + interval '24 hours' END
+			expires_at = completion.completed_at + ($7::bigint * interval '1 microsecond')
 		FROM completion
 		WHERE scope = $1
 		  AND operation = $2
@@ -251,7 +357,7 @@ func Complete(
 		  AND request_hash = $4
 		  AND status = 'PROCESSING';
 	`, postgres.TableCommandIdempotencyKeys)
-	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash, resourceID, encoded, permanent)
+	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash, resourceID, encoded, retention.Microseconds())
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to complete command idempotency key: %v", err)
 	}

@@ -40,17 +40,63 @@ BEGIN
                     WHEN operation = 'create_workflow' THEN 'workflow.create'
                     ELSE 'workflow.update:' || workflow_id::text
                 END AS mapped_operation,
-                btrim(idempotency_key, ' ') AS normalized_key
+                btrim(idempotency_key, ' ') AS normalized_key,
+                operation,
+                request_hash,
+                workflow_id,
+                response,
+                status,
+                created_at,
+                updated_at,
+                expires_at
             FROM workflow_idempotency_keys
             WHERE status = 'COMPLETED'
               AND expires_at > (SELECT cutover_at FROM idempotency_migration_clock)
+        ), grouped AS (
+            SELECT
+                user_id,
+                mapped_operation,
+                normalized_key,
+                count(*) AS identity_count,
+                count(*) FILTER (
+                    WHERE operation = 'update_workflow:' || workflow_id::text
+                ) AS canonical_identity_count,
+                count(DISTINCT workflow_id) AS workflow_count,
+                count(DISTINCT response) AS response_count,
+                count(DISTINCT status) AS status_count,
+                count(DISTINCT created_at) AS created_count,
+                count(DISTINCT updated_at) AS updated_count,
+                count(DISTINCT expires_at) AS expiry_count,
+                bool_and(
+                    CASE
+                        WHEN operation = 'create_workflow' THEN true
+                        WHEN operation LIKE 'update_workflow:%'
+                         AND pg_input_is_valid(
+                             substring(operation FROM length('update_workflow:') + 1),
+                             'uuid'
+                         ) THEN substring(operation FROM length('update_workflow:') + 1)::uuid = workflow_id
+                        ELSE false
+                    END
+                ) AS operations_match_resource
+            FROM normalized_workflow_keys
+            GROUP BY user_id, mapped_operation, normalized_key
         )
         SELECT 1
-        FROM normalized_workflow_keys
-        GROUP BY user_id, mapped_operation, normalized_key
-        HAVING count(*) > 1
+        FROM grouped
+        WHERE identity_count > 1
+          AND (
+              mapped_operation NOT LIKE 'workflow.update:%'
+              OR canonical_identity_count <> 1
+              OR workflow_count <> 1
+              OR response_count <> 1
+              OR status_count <> 1
+              OR created_count <> 1
+              OR updated_count <> 1
+              OR expiry_count <> 1
+              OR NOT operations_match_resource
+          )
     ) THEN
-        RAISE EXCEPTION 'legacy workflow idempotency keys collide after ASCII-space normalization';
+        RAISE EXCEPTION 'legacy workflow idempotency aliases are ambiguous after normalization';
     END IF;
 
     IF EXISTS (
@@ -162,7 +208,41 @@ CREATE TABLE command_idempotency_keys (
     ),
     CHECK (
         (status = 'PROCESSING' AND completed_at IS NULL AND expires_at IS NULL)
-        OR status <> 'PROCESSING'
+        OR (status <> 'PROCESSING' AND completed_at IS NOT NULL AND expires_at IS NOT NULL)
+    )
+);
+
+CREATE TABLE command_idempotency_legacy_identities (
+    scope TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    legacy_operation TEXT NOT NULL,
+    legacy_request_hash TEXT NOT NULL,
+    PRIMARY KEY (scope, operation, idempotency_key, legacy_operation),
+    FOREIGN KEY (scope, operation, idempotency_key)
+        REFERENCES command_idempotency_keys (scope, operation, idempotency_key)
+        ON DELETE CASCADE,
+    CHECK (legacy_request_hash ~ '^[0-9a-f]{64}$'),
+    CHECK (
+        scope LIKE 'user:%'
+        AND pg_input_is_valid(substring(scope FROM length('user:') + 1), 'uuid')
+    ),
+    CHECK (
+        CASE
+            WHEN operation = 'workflow.create' THEN legacy_operation = 'create_workflow'
+            WHEN operation LIKE 'workflow.update:%'
+             AND legacy_operation LIKE 'update_workflow:%'
+             AND pg_input_is_valid(
+                 substring(operation FROM length('workflow.update:') + 1),
+                 'uuid'
+             )
+             AND pg_input_is_valid(
+                 substring(legacy_operation FROM length('update_workflow:') + 1),
+                 'uuid'
+             ) THEN substring(operation FROM length('workflow.update:') + 1)::uuid
+                  = substring(legacy_operation FROM length('update_workflow:') + 1)::uuid
+            ELSE false
+        END
     )
 );
 
@@ -171,6 +251,7 @@ INSERT INTO command_idempotency_keys (
     operation,
     idempotency_key,
     request_hash,
+    request_hash_aliases,
     status,
     resource_id,
     response,
@@ -179,22 +260,81 @@ INSERT INTO command_idempotency_keys (
     completed_at,
     expires_at
 )
+WITH mapped AS (
+    SELECT
+        'user:' || user_id::text AS scope,
+        CASE
+            WHEN operation = 'create_workflow' THEN 'workflow.create'
+            ELSE 'workflow.update:' || workflow_id::text
+        END AS mapped_operation,
+        btrim(idempotency_key, ' ') AS normalized_key,
+        operation AS legacy_operation,
+        request_hash,
+        workflow_id,
+        response,
+        created_at,
+        updated_at,
+        expires_at
+    FROM workflow_idempotency_keys
+    WHERE status = 'COMPLETED'
+      AND expires_at > (SELECT cutover_at FROM idempotency_migration_clock)
+), grouped AS (
+    SELECT
+        scope,
+        mapped_operation,
+        normalized_key,
+        COALESCE(
+            max(request_hash) FILTER (
+                WHERE legacy_operation = 'update_workflow:' || workflow_id::text
+                   OR legacy_operation = 'create_workflow'
+            ),
+            min(request_hash)
+        ) AS canonical_legacy_hash,
+        array_agg(DISTINCT request_hash ORDER BY request_hash) AS accepted_hashes,
+        min(workflow_id::text) AS resource_id,
+        (array_agg(response))[1] AS response,
+        min(created_at) AS created_at,
+        min(updated_at) AS updated_at,
+        min(expires_at) AS expires_at
+    FROM mapped
+    GROUP BY scope, mapped_operation, normalized_key
+)
 SELECT
-    'user:' || user_id::text,
-    CASE
-        WHEN operation = 'create_workflow' THEN 'workflow.create'
-        WHEN operation LIKE 'update_workflow:%' THEN 'workflow.update:' || workflow_id::text
-        ELSE operation
-    END,
-    btrim(idempotency_key, ' '),
-    request_hash,
+    scope,
+    mapped_operation,
+    normalized_key,
+    canonical_legacy_hash,
+    ARRAY[canonical_legacy_hash] || ARRAY(
+        SELECT hash
+        FROM unnest(accepted_hashes) AS hash
+        WHERE hash <> canonical_legacy_hash
+        ORDER BY hash
+    ),
     'COMPLETED',
-    workflow_id::text,
+    resource_id,
     response,
     created_at,
     updated_at,
     updated_at,
     expires_at
+FROM grouped;
+
+INSERT INTO command_idempotency_legacy_identities (
+    scope,
+    operation,
+    idempotency_key,
+    legacy_operation,
+    legacy_request_hash
+)
+SELECT
+    'user:' || user_id::text,
+    CASE
+        WHEN operation = 'create_workflow' THEN 'workflow.create'
+        ELSE 'workflow.update:' || workflow_id::text
+    END,
+    btrim(idempotency_key, ' '),
+    operation,
+    request_hash
 FROM workflow_idempotency_keys
 WHERE status = 'COMPLETED'
   AND expires_at > (SELECT cutover_at FROM idempotency_migration_clock);

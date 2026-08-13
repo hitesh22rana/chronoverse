@@ -50,6 +50,29 @@ CREATE TABLE workflow_idempotency_keys (
     PRIMARY KEY (user_id, operation, idempotency_key)
 );
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM command_idempotency_keys AS command
+        WHERE command.scope LIKE 'user:%'
+          AND (
+              command.operation = 'workflow.create'
+              OR command.operation LIKE 'workflow.update:%'
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM command_idempotency_legacy_identities AS identity
+              WHERE identity.scope = command.scope
+                AND identity.operation = command.operation
+                AND identity.idempotency_key = command.idempotency_key
+          )
+    ) THEN
+        RAISE EXCEPTION 'workflow command is missing rollback-compatible identity metadata';
+    END IF;
+END;
+$$;
+
 INSERT INTO workflow_idempotency_keys (
     user_id,
     operation,
@@ -63,27 +86,25 @@ INSERT INTO workflow_idempotency_keys (
     expires_at
 )
 SELECT
-    substring(scope FROM length('user:') + 1)::uuid,
-    CASE
-        WHEN operation = 'workflow.create' THEN 'create_workflow'
-        WHEN operation LIKE 'workflow.update:%' THEN 'update_workflow:' || substring(operation FROM length('workflow.update:') + 1)
-        ELSE operation
-    END,
-    idempotency_key,
-    -- Alias position 1 is the canonical-ID legacy hash. The restored
-    -- operation also uses canonical UUID text, so these must remain paired.
-    COALESCE(request_hash_aliases[1], request_hash),
-    resource_id::uuid,
-    response,
-    status,
-    created_at,
-    updated_at,
-    COALESCE(expires_at, updated_at + interval '24 hours')
-FROM command_idempotency_keys
-WHERE scope LIKE 'user:%'
+    substring(command.scope FROM length('user:') + 1)::uuid,
+    identity.legacy_operation,
+    command.idempotency_key,
+    identity.legacy_request_hash,
+    command.resource_id::uuid,
+    command.response,
+    command.status,
+    command.created_at,
+    command.updated_at,
+    COALESCE(command.expires_at, command.updated_at + interval '24 hours')
+FROM command_idempotency_keys AS command
+JOIN command_idempotency_legacy_identities AS identity
+  ON identity.scope = command.scope
+ AND identity.operation = command.operation
+ AND identity.idempotency_key = command.idempotency_key
+WHERE command.scope LIKE 'user:%'
   AND (
-      operation = 'workflow.create'
-      OR operation LIKE 'workflow.update:%'
+      command.operation = 'workflow.create'
+      OR command.operation LIKE 'workflow.update:%'
   );
 
 CREATE INDEX idx_workflow_idempotency_expires_at
@@ -102,6 +123,7 @@ BEFORE UPDATE ON workflow_idempotency_keys
 FOR EACH ROW
 EXECUTE FUNCTION update_workflow_idempotency_keys_updated_at();
 
+DROP TABLE command_idempotency_legacy_identities;
 DROP TABLE command_idempotency_keys;
 
 ALTER TABLE jobs

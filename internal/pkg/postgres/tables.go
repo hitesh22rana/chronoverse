@@ -13,6 +13,8 @@ const (
 	TableAnalytics = "analytics"
 	// TableCommandIdempotencyKeys is the name of the shared command idempotency ledger.
 	TableCommandIdempotencyKeys = "command_idempotency_keys"
+	// TableCommandIdempotencyLegacyIdentities stores rollback-compatible workflow command identities.
+	TableCommandIdempotencyLegacyIdentities = "command_idempotency_legacy_identities"
 	// TableOutboxEvents is the name of the outbox events table.
 	TableOutboxEvents = "outbox_events"
 	// TableProcessedEvents is the name of the processed events table.

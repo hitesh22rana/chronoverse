@@ -90,7 +90,7 @@ func (r *Repository) CreateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	requestHash, compatibleRequestHashes, err := workflowRequestHashSet(map[string]any{
+	identitySet, err := workflowRequestHashSet(map[string]any{
 		workflowRequestUserIDField:                    userID,
 		workflowRequestNameField:                      name,
 		workflowRequestPayloadField:                   payload,
@@ -104,12 +104,19 @@ func (r *Repository) CreateWorkflow(
 	if err != nil {
 		return nil, err
 	}
+	requestHash := identitySet.requestHash
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.OperationWorkflowCreate
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, compatibleRequestHashes...)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, identitySet.compatibleHashes...)
 	if err != nil {
 		return nil, err
+	}
+	if syncErr := commandidempotency.SyncLegacyIdentities(
+		ctx, tx, scope, operation, idempotencyKey, !reservation.Replay,
+		workflowCreateLegacyIdentities(identitySet)...,
+	); syncErr != nil {
+		return nil, syncErr
 	}
 	if reservation.Replay {
 		return r.replayCreatedWorkflow(ctx, tx, userID, reservation)
@@ -164,7 +171,7 @@ func (r *Repository) CreateWorkflow(
 		requestHash,
 		res.ID,
 		res,
-		false,
+		commandidempotency.ClientCommandRetention,
 	)
 	if completeErr != nil {
 		return nil, completeErr
@@ -263,7 +270,7 @@ func (r *Repository) UpdateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	requestHash, compatibleRequestHashes, err := workflowRequestHashSet(map[string]any{
+	identitySet, err := workflowRequestHashSet(map[string]any{
 		workflowRequestWorkflowIDField:                workflowID,
 		workflowRequestUserIDField:                    userID,
 		workflowRequestNameField:                      name,
@@ -277,12 +284,19 @@ func (r *Repository) UpdateWorkflow(
 	if err != nil {
 		return err
 	}
+	requestHash := identitySet.requestHash
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.WorkflowUpdateOperation(workflowID)
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, compatibleRequestHashes...)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, identitySet.compatibleHashes...)
 	if err != nil {
 		return err
+	}
+	if syncErr := commandidempotency.SyncLegacyIdentities(
+		ctx, tx, scope, operation, idempotencyKey, !reservation.Replay,
+		workflowUpdateLegacyIdentities(workflowID, rawWorkflowID, identitySet)...,
+	); syncErr != nil {
+		return syncErr
 	}
 	if reservation.Replay {
 		if reservation.ResourceID != workflowID {
@@ -450,7 +464,7 @@ func (r *Repository) UpdateWorkflow(
 		requestHash,
 		workflowID,
 		map[string]string{"id": workflowID},
-		false,
+		commandidempotency.ClientCommandRetention,
 	)
 	if completeErr != nil {
 		return completeErr

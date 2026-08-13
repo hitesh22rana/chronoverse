@@ -1,15 +1,32 @@
 package commandidempotency_test
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 )
+
+func TestCommandRetentionContract(t *testing.T) {
+	t.Parallel()
+
+	if commandidempotency.ClientCommandRetention != 24*time.Hour {
+		t.Fatalf("client retention = %s", commandidempotency.ClientCommandRetention)
+	}
+	if commandidempotency.DefaultEventCommandRetention != 336*time.Hour {
+		t.Fatalf("event retention = %s", commandidempotency.DefaultEventCommandRetention)
+	}
+	err := commandidempotency.Complete(context.Background(), nil, "scope", "operation", "key", strings.Repeat("a", 64), "", struct{}{}, 0)
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("zero retention code = %s, want Internal", status.Code(err))
+	}
+}
 
 func TestNormalizeKey(t *testing.T) {
 	t.Parallel()
@@ -116,5 +133,17 @@ func TestUUIDDerivedIdentitiesUseCanonicalText(t *testing.T) {
 	_, err = commandidempotency.CanonicalUUID("not-a-uuid", "workflow ID")
 	if code := status.Code(err); code != codes.InvalidArgument {
 		t.Fatalf("CanonicalUUID() invalid code = %s, want %s", code, codes.InvalidArgument)
+	}
+}
+
+func TestLegacyWorkflowOperationsPreserveRawIdentity(t *testing.T) {
+	t.Parallel()
+
+	const upper = "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"
+	if commandidempotency.LegacyOperationWorkflowCreate != "create_workflow" {
+		t.Fatalf("legacy create operation = %q", commandidempotency.LegacyOperationWorkflowCreate)
+	}
+	if got := commandidempotency.LegacyWorkflowUpdateOperation(upper); got != "update_workflow:"+upper {
+		t.Fatalf("legacy update operation = %q", got)
 	}
 }

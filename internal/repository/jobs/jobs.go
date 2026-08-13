@@ -66,10 +66,11 @@ type Services struct {
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit          int
-	LogsFetchLimit      int
-	RuntimeHeartbeatTTL time.Duration
-	RuntimeLostAfter    time.Duration
+	FetchLimit            int
+	LogsFetchLimit        int
+	RuntimeHeartbeatTTL   time.Duration
+	RuntimeLostAfter      time.Duration
+	EventCommandRetention time.Duration
 }
 
 // Repository provides jobs repository.
@@ -94,6 +95,9 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 	}
 	if cfg.RuntimeLostAfter <= 0 {
 		cfg.RuntimeLostAfter = 5 * time.Minute
+	}
+	if cfg.EventCommandRetention <= 0 {
+		cfg.EventCommandRetention = commandidempotency.DefaultEventCommandRetention
 	}
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
@@ -160,11 +164,11 @@ func (r *Repository) ScheduleJob(
 	defer tx.Rollback(ctx)
 
 	// scheduled_at is server-generated output for automatic occurrences, so the
-	// permanent event identity—not wall-clock retry timing—defines the command.
+	// deterministic event identity—not wall-clock retry timing—defines the command.
 	hashFields := scheduleJobHashFields(workflowID, userID, trigger, workflowGeneration)
 	var scope, operation string
-	permanent := trigger == jobsmodel.JobTriggerAutomatic.ToString()
-	if permanent {
+	automatic := trigger == jobsmodel.JobTriggerAutomatic.ToString()
+	if automatic {
 		scope = commandidempotency.WorkflowScope(workflowID)
 		operation = commandidempotency.OperationJobScheduleAutomatic
 	} else {
@@ -191,7 +195,7 @@ func (r *Repository) ScheduleJob(
 		storedTrigger            string
 		storedWorkflowGeneration sql.NullInt64
 	)
-	if permanent {
+	if automatic {
 		legacyQuery := fmt.Sprintf(`
 			SELECT id, workflow_id, user_id, trigger, workflow_generation
 			FROM %s
@@ -222,7 +226,7 @@ func (r *Repository) ScheduleJob(
 			}
 			if completeErr := commandidempotency.Complete(
 				ctx, tx, scope, operation, idempotencyKey, requestHash,
-				jobID, map[string]string{"id": jobID}, true,
+				jobID, map[string]string{"id": jobID}, r.cfg.EventCommandRetention,
 			); completeErr != nil {
 				return "", completeErr
 			}
@@ -280,7 +284,11 @@ func (r *Repository) ScheduleJob(
 		return "", validateErr
 	}
 
-	if completeErr := commandidempotency.Complete(ctx, tx, scope, operation, idempotencyKey, requestHash, jobID, map[string]string{"id": jobID}, permanent); completeErr != nil {
+	retention := commandidempotency.ClientCommandRetention
+	if automatic {
+		retention = r.cfg.EventCommandRetention
+	}
+	if completeErr := commandidempotency.Complete(ctx, tx, scope, operation, idempotencyKey, requestHash, jobID, map[string]string{"id": jobID}, retention); completeErr != nil {
 		return "", completeErr
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -499,7 +507,7 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		}
 	}
 
-	if completeErr := commandidempotency.Complete(ctx, tx, scope, commandidempotency.OperationJobCancel, commandID, requestHash, jobID, snapshot, true); completeErr != nil {
+	if completeErr := commandidempotency.Complete(ctx, tx, scope, commandidempotency.OperationJobCancel, commandID, requestHash, jobID, snapshot, r.cfg.EventCommandRetention); completeErr != nil {
 		return nil, completeErr
 	}
 	if err = tx.Commit(ctx); err != nil {

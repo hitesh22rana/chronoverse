@@ -103,7 +103,8 @@ func run() int {
 
 	// Initialize the notifications repository
 	repo := notificationsrepo.New(&notificationsrepo.Config{
-		FetchLimit: cfg.NotificationsServiceConfig.FetchLimit,
+		FetchLimit:            cfg.NotificationsServiceConfig.FetchLimit,
+		EventCommandRetention: cfg.CommandIdempotency.EventRetention,
 	}, auth, pdb, &notificationsrepo.Services{
 		UsersService: userspb.NewUsersServiceClient(usersConn),
 	})

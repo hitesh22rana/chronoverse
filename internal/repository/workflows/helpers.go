@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/outbox"
@@ -33,6 +34,13 @@ type updateWorkflowActionDecision struct {
 	rescheduleRequired bool
 	nextGeneration     int64
 	buildStatus        string
+}
+
+type workflowRequestIdentitySet struct {
+	requestHash         string
+	compatibleHashes    []string
+	canonicalLegacyHash string
+	rawLegacyHash       string
 }
 
 func decideWorkflowUpdateAction(
@@ -98,10 +106,10 @@ func workflowRequestHashes(fields map[string]any) (canonicalHash, legacyHash str
 func workflowRequestHashSet(
 	canonicalFields map[string]any,
 	rawUUIDFields map[string]string,
-) (requestHash string, compatibleHashes []string, err error) {
+) (workflowRequestIdentitySet, error) {
 	requestHash, legacyHash, err := workflowRequestHashes(canonicalFields)
 	if err != nil {
-		return "", nil, err
+		return workflowRequestIdentitySet{}, err
 	}
 
 	rawFields := make(map[string]any, len(canonicalFields))
@@ -121,17 +129,49 @@ func workflowRequestHashSet(
 	// built from canonical UUID text because the restored legacy operation also
 	// uses canonical text. Keep it even when it equals the primary
 	// canonical-payload hash.
-	compatibleHashes = []string{legacyHash}
+	compatibleHashes := []string{legacyHash}
+	var rawLegacyHash string
 	if identityChanged {
-		_, rawLegacyHash, hashErr := workflowRequestHashes(rawFields)
+		_, computedRawLegacyHash, hashErr := workflowRequestHashes(rawFields)
 		if hashErr != nil {
-			return "", nil, hashErr
+			return workflowRequestIdentitySet{}, hashErr
 		}
+		rawLegacyHash = computedRawLegacyHash
 		// Raw UUID spelling remains an additional forward-upgrade matching
 		// alias; it must not displace the rollback-compatible hash above.
 		compatibleHashes = append(compatibleHashes, rawLegacyHash)
 	}
-	return requestHash, uniqueRequestHashes(compatibleHashes), nil
+	return workflowRequestIdentitySet{
+		requestHash:         requestHash,
+		compatibleHashes:    uniqueRequestHashes(compatibleHashes),
+		canonicalLegacyHash: legacyHash,
+		rawLegacyHash:       rawLegacyHash,
+	}, nil
+}
+
+func workflowCreateLegacyIdentities(set workflowRequestIdentitySet) []commandidempotency.LegacyIdentity {
+	return []commandidempotency.LegacyIdentity{{
+		Operation:   commandidempotency.LegacyOperationWorkflowCreate,
+		RequestHash: set.canonicalLegacyHash,
+	}}
+}
+
+func workflowUpdateLegacyIdentities(
+	canonicalWorkflowID,
+	rawWorkflowID string,
+	set workflowRequestIdentitySet,
+) []commandidempotency.LegacyIdentity {
+	identities := []commandidempotency.LegacyIdentity{{
+		Operation:   commandidempotency.LegacyWorkflowUpdateOperation(canonicalWorkflowID),
+		RequestHash: set.canonicalLegacyHash,
+	}}
+	if rawWorkflowID != canonicalWorkflowID {
+		identities = append(identities, commandidempotency.LegacyIdentity{
+			Operation:   commandidempotency.LegacyWorkflowUpdateOperation(rawWorkflowID),
+			RequestHash: set.rawLegacyHash,
+		})
+	}
+	return identities
 }
 
 func uniqueRequestHashes(hashes []string) []string {

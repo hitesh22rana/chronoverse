@@ -37,7 +37,8 @@ type Services struct {
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit int
+	FetchLimit            int
+	EventCommandRetention time.Duration
 }
 
 // Repository provides notifications repository.
@@ -51,6 +52,12 @@ type Repository struct {
 
 // New creates a new notifications repository.
 func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, svc *Services) *Repository {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	if cfg.EventCommandRetention <= 0 {
+		cfg.EventCommandRetention = commandidempotency.DefaultEventCommandRetention
+	}
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
@@ -121,7 +128,7 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 
 	if completeErr := commandidempotency.Complete(
 		ctx, tx, scope, commandidempotency.OperationNotificationCreate,
-		idempotencyKey, requestHash, notificationID, map[string]string{"id": notificationID}, true,
+		idempotencyKey, requestHash, notificationID, map[string]string{"id": notificationID}, r.cfg.EventCommandRetention,
 	); completeErr != nil {
 		return "", completeErr
 	}
@@ -210,7 +217,7 @@ func (r *Repository) adoptLegacyNotificationCommand(
 		requestHash,
 		notificationID,
 		map[string]string{"id": notificationID},
-		true,
+		r.cfg.EventCommandRetention,
 	); completeErr != nil {
 		return "", false, completeErr
 	}

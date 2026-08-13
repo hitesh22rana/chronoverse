@@ -10,6 +10,7 @@ type NotificationsConfig struct {
 	UsersService
 	Grpc
 	Postgres
+	CommandIdempotency
 	NotificationsServiceConfig
 }
 
@@ -22,6 +23,9 @@ type NotificationsServiceConfig struct {
 func InitNotificationsServiceConfig() (*NotificationsConfig, error) {
 	var cfg NotificationsConfig
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.CommandIdempotency.validate(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil

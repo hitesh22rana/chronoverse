@@ -9,6 +9,7 @@ import (
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
 
+//nolint:gocyclo // The assertions intentionally verify the complete hash/alias pairing contract together.
 func TestWorkflowRequestHashSetPreservesLegacyUUIDSpelling(t *testing.T) {
 	t.Parallel()
 
@@ -34,7 +35,7 @@ func TestWorkflowRequestHashSetPreservesLegacyUUIDSpelling(t *testing.T) {
 		workflowRequestMaxConsecutiveJobFailuresField: int32(3),
 	}
 
-	requestHash, compatibleHashes, err := workflowRequestHashSet(canonicalFields, map[string]string{
+	identitySet, err := workflowRequestHashSet(canonicalFields, map[string]string{
 		workflowRequestWorkflowIDField: rawWorkflowID,
 		workflowRequestUserIDField:     userID,
 	})
@@ -49,20 +50,64 @@ func TestWorkflowRequestHashSetPreservesLegacyUUIDSpelling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workflowRequestHashes() raw error = %v", err)
 	}
-	if requestHash != canonicalHash {
-		t.Fatalf("primary hash = %q, want canonical %q", requestHash, canonicalHash)
+	if identitySet.requestHash != canonicalHash {
+		t.Fatalf("primary hash = %q, want canonical %q", identitySet.requestHash, canonicalHash)
 	}
-	if canonicalLegacyHash != requestHash {
-		t.Fatalf("test requires canonical legacy hash to equal primary: %q != %q", canonicalLegacyHash, requestHash)
+	if canonicalLegacyHash != identitySet.requestHash {
+		t.Fatalf("test requires canonical legacy hash to equal primary: %q != %q", canonicalLegacyHash, identitySet.requestHash)
 	}
-	if !slices.Contains(compatibleHashes, rawLegacyHash) {
-		t.Fatalf("compatible hashes %v do not contain legacy uppercase hash %q", compatibleHashes, rawLegacyHash)
+	if !slices.Contains(identitySet.compatibleHashes, rawLegacyHash) {
+		t.Fatalf("compatible hashes %v do not contain legacy uppercase hash %q", identitySet.compatibleHashes, rawLegacyHash)
 	}
-	if len(compatibleHashes) == 0 || compatibleHashes[0] != canonicalLegacyHash {
-		t.Fatalf("first compatible hash = %v, want rollback-compatible canonical-ID hash %q", compatibleHashes, canonicalLegacyHash)
+	if len(identitySet.compatibleHashes) == 0 || identitySet.compatibleHashes[0] != canonicalLegacyHash {
+		t.Fatalf("first compatible hash = %v, want rollback-compatible canonical-ID hash %q", identitySet.compatibleHashes, canonicalLegacyHash)
 	}
-	if len(compatibleHashes) != 2 || compatibleHashes[1] != rawLegacyHash {
-		t.Fatalf("additional compatible hashes = %v, want raw UUID hash %q second", compatibleHashes, rawLegacyHash)
+	if len(identitySet.compatibleHashes) != 2 || identitySet.compatibleHashes[1] != rawLegacyHash {
+		t.Fatalf("additional compatible hashes = %v, want raw UUID hash %q second", identitySet.compatibleHashes, rawLegacyHash)
+	}
+
+	legacyIdentities := workflowUpdateLegacyIdentities(canonicalWorkflowID, rawWorkflowID, identitySet)
+	if len(legacyIdentities) != 2 {
+		t.Fatalf("legacy identities = %v, want canonical and raw", legacyIdentities)
+	}
+	if legacyIdentities[0].Operation != "update_workflow:"+canonicalWorkflowID || legacyIdentities[0].RequestHash != canonicalLegacyHash {
+		t.Fatalf("canonical legacy identity = %+v", legacyIdentities[0])
+	}
+	if legacyIdentities[1].Operation != "update_workflow:"+rawWorkflowID || legacyIdentities[1].RequestHash != rawLegacyHash {
+		t.Fatalf("raw legacy identity = %+v", legacyIdentities[1])
+	}
+}
+
+func TestWorkflowUpdateLegacyIdentitiesPreserveAcceptedUUIDForms(t *testing.T) {
+	t.Parallel()
+
+	const (
+		canonicalWorkflowID = "550e8400-e29b-41d4-a716-446655440000"
+		userID              = "11111111-1111-4111-8111-111111111111"
+	)
+	for _, rawWorkflowID := range []string{
+		"550E8400-E29B-41D4-A716-446655440000",
+		"{550e8400-e29b-41d4-a716-446655440000}",
+		"550e8400e29b41d4a716446655440000",
+	} {
+		t.Run(rawWorkflowID, func(t *testing.T) {
+			t.Parallel()
+			identitySet, err := workflowRequestHashSet(map[string]any{
+				workflowRequestWorkflowIDField:                canonicalWorkflowID,
+				workflowRequestUserIDField:                    userID,
+				workflowRequestNameField:                      "workflow",
+				workflowRequestPayloadField:                   `{"endpoint":"https://example.com"}`,
+				workflowRequestIntervalField:                  int32(60),
+				workflowRequestMaxConsecutiveJobFailuresField: int32(3),
+			}, map[string]string{workflowRequestWorkflowIDField: rawWorkflowID})
+			if err != nil {
+				t.Fatalf("workflowRequestHashSet() error = %v", err)
+			}
+			identities := workflowUpdateLegacyIdentities(canonicalWorkflowID, rawWorkflowID, identitySet)
+			if len(identities) != 2 || identities[1].Operation != "update_workflow:"+rawWorkflowID {
+				t.Fatalf("legacy identities = %+v", identities)
+			}
+		})
 	}
 }
 

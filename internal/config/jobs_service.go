@@ -17,6 +17,7 @@ type JobsConfig struct {
 	MeiliSearch
 	ClientTLS
 	WorkflowsService
+	CommandIdempotency
 	JobsServiceConfig
 }
 
@@ -32,6 +33,9 @@ type JobsServiceConfig struct {
 func InitJobsServiceConfig() (*JobsConfig, error) {
 	var cfg JobsConfig
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.CommandIdempotency.validate(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil

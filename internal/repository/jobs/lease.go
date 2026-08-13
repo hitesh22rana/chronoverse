@@ -169,7 +169,10 @@ func (r *Repository) ClaimJob(
 			attribute.Int("attempts", int(claimed.Attempts)),
 		)
 		response := map[string]any{claimResultField: true, claimReasonField: "", "job": claimed}
-		if completeErr := commandidempotency.Complete(ctx, tx, scope, commandidempotency.OperationJobClaim, commandID, requestHash, jobID, response, false); completeErr != nil {
+		if completeErr := commandidempotency.Complete(
+			ctx, tx, scope, commandidempotency.OperationJobClaim,
+			commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
+		); completeErr != nil {
 			return nil, false, "", completeErr
 		}
 		if err = tx.Commit(ctx); err != nil {
@@ -193,7 +196,7 @@ func (r *Repository) ClaimJob(
 		response := map[string]any{claimResultField: false, claimReasonField: reason}
 		if completeErr := commandidempotency.Complete(
 			ctx, tx, scope, commandidempotency.OperationJobClaim,
-			commandID, requestHash, jobID, response, false,
+			commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
 		); completeErr != nil {
 			return nil, false, "", completeErr
 		}
@@ -229,7 +232,7 @@ func (r *Repository) ClaimJob(
 	response := map[string]any{claimResultField: false, claimReasonField: reason}
 	if completeErr := commandidempotency.Complete(
 		ctx, tx, scope, commandidempotency.OperationJobClaim,
-		commandID, requestHash, jobID, response, false,
+		commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
 	); completeErr != nil {
 		return nil, false, "", completeErr
 	}
@@ -812,7 +815,10 @@ func (r *Repository) RecoverExpiredJobLeases(
 	if err != nil {
 		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
 	}
-	if completeErr := commandidempotency.Complete(ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases, commandID, requestHash, "", jobs, false); completeErr != nil {
+	if completeErr := commandidempotency.Complete(
+		ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases,
+		commandID, requestHash, "", jobs, commandidempotency.ClientCommandRetention,
+	); completeErr != nil {
 		return nil, completeErr
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -895,7 +901,7 @@ func completeJobCommand(ctx context.Context, tx pgx.Tx, jobID, operation, comman
 		requestHash,
 		jobID,
 		struct{}{},
-		false,
+		commandidempotency.ClientCommandRetention,
 	)
 }
 

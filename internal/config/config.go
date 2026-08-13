@@ -1,6 +1,11 @@
 package config
 
-import "time"
+import (
+	"fmt"
+	"time"
+
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
+)
 
 const (
 	envPrefix             = ""
@@ -11,6 +16,22 @@ const (
 // Environment holds the environment configuration.
 type Environment struct {
 	Env string `envconfig:"ENV" default:"development"`
+}
+
+// CommandIdempotency holds the deterministic event replay window shared by
+// services that materialize event identities into the command ledger.
+type CommandIdempotency struct {
+	EventRetention time.Duration `envconfig:"COMMAND_IDEMPOTENCY_EVENT_RETENTION" default:"336h"`
+}
+
+func (c CommandIdempotency) validate() error {
+	if c.EventRetention < commandidempotency.MinimumEventCommandRetention {
+		return fmt.Errorf(
+			"COMMAND_IDEMPOTENCY_EVENT_RETENTION must be at least %s",
+			commandidempotency.MinimumEventCommandRetention,
+		)
+	}
+	return nil
 }
 
 // Crypto holds the configuration for the crypto service.

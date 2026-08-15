@@ -2,16 +2,10 @@ package databasemigration
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
-	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/meilisearch/meilisearch-go"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -19,9 +13,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 
 	clickhousepkg "github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
@@ -31,9 +22,6 @@ import (
 )
 
 const (
-	meiliSearchTaskTimeout     = 1 * time.Minute
-	meiliSearchPollingDuration = 2 * time.Second
-
 	// Database operation retry configuration.
 	defaultMaxRetries    = 5
 	defaultInitialDelay  = 1 * time.Second
@@ -133,44 +121,12 @@ func (r *Repository) MigratePostgres(ctx context.Context) (err error) {
 		span.End()
 	}()
 
-	// Execute migration with retry logic
+	// Execute migration with retry logic.
 	if err = r.withRetry(ctx, "PostgreSQL", defaultRetryConfig(), func() error {
-		return r.runPostgresMigration(ctx)
+		return postgrespkg.Migrate(r.cfg.PostgresDSN)
 	}); err != nil {
 		err = status.Errorf(codes.Internal, "postgres migration failed after retries: %v", err)
 		return err
-	}
-
-	return nil
-}
-
-// runPostgresMigration executes PostgreSQL migrations using the migrate library.
-func (r *Repository) runPostgresMigration(ctx context.Context) error {
-	// IOFS source instance for embedded migrations
-	sourceInstance, err := iofs.New(postgrespkg.MigrationsFS, "migrations")
-	if err != nil {
-		return fmt.Errorf("failed to create IOFS source instance: %w", err)
-	}
-
-	// Migrate instance for postgres
-	m, err := migrate.NewWithSourceInstance("iofs", sourceInstance, r.cfg.PostgresDSN)
-	if err != nil {
-		return fmt.Errorf("failed to create migrate instance: %w", err)
-	}
-
-	// Ensure we close the migrate instance
-	defer func() {
-		if sourceErr, dbErr := m.Close(); sourceErr != nil || dbErr != nil {
-			logger := loggerpkg.FromContext(ctx)
-			logger.Error("failed to close PostgreSQL migrate instance",
-				zap.Error(sourceErr),
-				zap.Error(dbErr))
-		}
-	}()
-
-	// Execute migration
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("failed to run postgres migration: %w", err)
 	}
 
 	return nil
@@ -187,9 +143,12 @@ func (r *Repository) MigrateClickHouse(ctx context.Context) (err error) {
 		span.End()
 	}()
 
-	// Execute migration using native ClickHouse client with proper TLS support
+	// Execute migration using native ClickHouse client with proper TLS support.
 	if err = r.withRetry(ctx, "ClickHouse", defaultRetryConfig(), func() error {
-		return r.runNativeClickHouseMigration(ctx)
+		if r.cfg.ClickHouseClient == nil {
+			return fmt.Errorf("clickhouse client is not configured")
+		}
+		return clickhousepkg.Migrate(ctx, r.cfg.ClickHouseClient)
 	}); err != nil {
 		err = status.Errorf(codes.Internal, "clickhouse migration failed after retries: %v", err)
 		return err
@@ -209,181 +168,11 @@ func (r *Repository) SetupMeiliSearch(ctx context.Context) (err error) {
 		span.End()
 	}()
 
-	createIndexTaskIds := make([]int64, 0, len(meilisearchpkg.Indexes))
-	for _, index := range meilisearchpkg.Indexes {
-		createIndexTask, _err := r.cfg.MeiliSearchClient.CreateIndexWithContext(
-			ctx,
-			&meilisearch.IndexConfig{
-				Uid:        index.Name,
-				PrimaryKey: index.PrimaryKey,
-			},
-		)
-		if _err != nil {
-			err = status.Errorf(codes.Internal, "failed to create meilisearch index %v", _err)
-			return err
-		}
-
-		createIndexTaskIds = append(createIndexTaskIds, createIndexTask.TaskUID)
-	}
-
-	if _err := r.waitForTaskCompletion(ctx, createIndexTaskIds); _err != nil {
-		err = _err
+	if err = meilisearchpkg.SetupIndexes(ctx, r.cfg.MeiliSearchClient); err != nil {
+		err = status.Errorf(codes.Internal, "meilisearch setup failed: %v", err)
 		return err
 	}
 
-	updateSearchableTaskIds := make([]int64, 0, len(meilisearchpkg.Indexes))
-	for _, index := range meilisearchpkg.Indexes {
-		meiliSearchIndex := r.cfg.MeiliSearchClient.Index(index.Name)
-		updateSearchableTask, _err := meiliSearchIndex.UpdateSearchableAttributesWithContext(
-			ctx,
-			&index.Searchable,
-		)
-		if _err != nil {
-			err = status.Errorf(codes.Internal, "failed to update searchable index %v", _err)
-			return err
-		}
-
-		updateSearchableTaskIds = append(updateSearchableTaskIds, updateSearchableTask.TaskUID)
-	}
-
-	if _err := r.waitForTaskCompletion(ctx, updateSearchableTaskIds); _err != nil {
-		err = _err
-		return err
-	}
-
-	updateFilterableTaskIds := make([]int64, 0, len(meilisearchpkg.Indexes))
-	for _, index := range meilisearchpkg.Indexes {
-		meiliSearchIndex := r.cfg.MeiliSearchClient.Index(index.Name)
-		updateFilterableTask, _err := meiliSearchIndex.UpdateFilterableAttributesWithContext(
-			ctx,
-			&index.Filterable,
-		)
-		if _err != nil {
-			err = status.Errorf(codes.Internal, "failed to update searchable index %v", _err)
-			return err
-		}
-
-		updateFilterableTaskIds = append(updateFilterableTaskIds, updateFilterableTask.TaskUID)
-	}
-
-	if _err := r.waitForTaskCompletion(ctx, updateFilterableTaskIds); _err != nil {
-		err = _err
-		return err
-	}
-
-	updateSortableTaskIds := make([]int64, 0, len(meilisearchpkg.Indexes))
-	for _, index := range meilisearchpkg.Indexes {
-		meiliSearchIndex := r.cfg.MeiliSearchClient.Index(index.Name)
-		updateSortableTask, _err := meiliSearchIndex.UpdateSortableAttributesWithContext(
-			ctx,
-			&index.Sortable,
-		)
-		if _err != nil {
-			err = status.Errorf(codes.Internal, "failed to update searchable index %v", _err)
-			return err
-		}
-
-		updateSortableTaskIds = append(updateSortableTaskIds, updateSortableTask.TaskUID)
-	}
-
-	err = r.waitForTaskCompletion(ctx, updateSortableTaskIds)
-	return err
-}
-
-func (r *Repository) waitForTaskCompletion(ctx context.Context, taskIds []int64) error {
-	if len(taskIds) == 0 {
-		return nil
-	}
-
-	ticker := time.NewTicker(meiliSearchPollingDuration)
-	defer ticker.Stop()
-
-	timeout := time.After(meiliSearchTaskTimeout)
-	for {
-		select {
-		case <-timeout:
-			return status.Errorf(codes.DeadlineExceeded, "timeout waiting for Meilisearch tasks: %v", taskIds)
-		case <-ticker.C:
-			tasks, err := r.cfg.MeiliSearchClient.GetTasksWithContext(
-				ctx,
-				&meilisearch.TasksQuery{
-					UIDS:  taskIds,
-					Limit: int64(len(taskIds)),
-				},
-			)
-			if err != nil {
-				return status.Errorf(codes.Internal, "failed to get create meilisearch index info %v", err)
-			}
-
-			allDone := true
-			//nolint:gocritic,exhaustive // It's how implemented in the library.
-			for _, task := range tasks.Results {
-				switch task.Status {
-				case "succeeded":
-				case "failed":
-					if strings.Contains(task.Error.Code, "index_already_exists") {
-						return nil
-					}
-
-					return status.Errorf(codes.Internal, "meilisearch task %d failed: %v", task.UID, task.Error)
-				case "canceled":
-					return status.Errorf(codes.Internal, "meilisearch task %d was canceled", task.UID)
-				default:
-					allDone = false
-				}
-			}
-
-			if allDone {
-				return nil
-			}
-		}
-	}
-}
-
-// runNativeClickHouseMigration executes ClickHouse migrations using the native client.
-func (r *Repository) runNativeClickHouseMigration(ctx context.Context) error {
-	logger := loggerpkg.FromContext(ctx)
-
-	// Use the pre-configured ClickHouse client
-	client := r.cfg.ClickHouseClient
-	if client == nil {
-		return fmt.Errorf("ClickHouse client is not configured")
-	}
-
-	// Create schema_migrations table if it doesn't exist
-	if err := r.createSchemaMigrationsTable(ctx, client); err != nil {
-		return fmt.Errorf("failed to create schema_migrations table: %w", err)
-	}
-
-	// Get applied migrations
-	appliedMigrations, err := r.getAppliedMigrations(ctx, client)
-	if err != nil {
-		return fmt.Errorf("failed to get applied migrations: %w", err)
-	}
-
-	// Get pending migrations
-	pendingMigrations, err := r.getPendingMigrations(appliedMigrations)
-	if err != nil {
-		return fmt.Errorf("failed to get pending migrations: %w", err)
-	}
-
-	if len(pendingMigrations) == 0 {
-		logger.Info("No pending ClickHouse migrations")
-		return nil
-	}
-
-	// Apply pending migrations
-	for _, migration := range pendingMigrations {
-		logger.Info("Applying ClickHouse migration", zap.String("file", migration.Name))
-
-		if err := r.applyMigration(ctx, client, migration); err != nil {
-			return fmt.Errorf("failed to apply migration %s: %w", migration.Name, err)
-		}
-
-		logger.Info("Successfully applied ClickHouse migration", zap.String("file", migration.Name))
-	}
-
-	logger.Info("ClickHouse migration completed successfully using native approach")
 	return nil
 }
 
@@ -412,7 +201,7 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 
 		lastErr = err
 
-		// Check if error is retryable
+		// Check if error is retryable.
 		if !r.isDatabaseErrorRetryable(err) {
 			logger.Error("database operation failed with non-retryable error",
 				zap.String("database_type", dbType),
@@ -421,7 +210,7 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 			return err
 		}
 
-		// Don't sleep on the last attempt
+		// Don't sleep on the last attempt.
 		if attempt < config.MaxRetries {
 			logger.Warn("database operation failed, retrying",
 				zap.String("database_type", dbType),
@@ -433,7 +222,7 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(delay):
-				// Calculate next delay with exponential backoff
+				// Calculate next delay with exponential backoff.
 				delay = time.Duration(float64(delay) * config.BackoffFactor)
 				delay = min(delay, config.MaxDelay)
 			}
@@ -446,140 +235,6 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 		zap.Int("max_attempts", config.MaxRetries))
 
 	return lastErr
-}
-
-// Migration represents a database migration.
-type Migration struct {
-	Version int
-	Name    string
-	Content string
-}
-
-// createSchemaMigrationsTable creates the schema_migrations table.
-func (r *Repository) createSchemaMigrationsTable(ctx context.Context, client *clickhousepkg.Client) error {
-	query := `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
-			version UInt32 NOT NULL,
-			dirty UInt8 NOT NULL DEFAULT 0,
-			applied_at DateTime DEFAULT now()
-		) ENGINE = MergeTree()
-		ORDER BY version
-	`
-	return client.Exec(ctx, query)
-}
-
-// getAppliedMigrations returns a map of applied migration versions.
-func (r *Repository) getAppliedMigrations(ctx context.Context, client *clickhousepkg.Client) (map[int]bool, error) {
-	applied := make(map[int]bool)
-
-	rows, err := client.Query(ctx, "SELECT version FROM schema_migrations WHERE dirty = 0")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var version uint32
-		if err := rows.Scan(&version); err != nil {
-			return nil, err
-		}
-		applied[int(version)] = true
-	}
-
-	return applied, rows.Err()
-}
-
-// getPendingMigrations returns migrations that haven't been applied yet.
-func (r *Repository) getPendingMigrations(applied map[int]bool) ([]Migration, error) {
-	var migrations []Migration
-
-	// Read migration files from embedded filesystem
-	err := fs.WalkDir(clickhousepkg.MigrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() || !strings.HasSuffix(path, ".up.sql") {
-			return nil
-		}
-
-		// Extract version from filename (e.g., "000001_table_job_logs_create.up.sql")
-		filename := filepath.Base(path)
-		parts := strings.Split(filename, "_")
-		if len(parts) < 2 {
-			return fmt.Errorf("invalid migration filename format: %s", filename)
-		}
-
-		version, err := strconv.Atoi(parts[0])
-		if err != nil {
-			return fmt.Errorf("invalid version in filename %s: %w", filename, err)
-		}
-
-		// Skip if already applied
-		if applied[version] {
-			return nil
-		}
-
-		// Read migration content
-		content, err := fs.ReadFile(clickhousepkg.MigrationsFS, path)
-		if err != nil {
-			return fmt.Errorf("failed to read migration file %s: %w", path, err)
-		}
-
-		migrations = append(migrations, Migration{
-			Version: version,
-			Name:    filename,
-			Content: string(content),
-		})
-
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Sort migrations by version
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version < migrations[j].Version
-	})
-
-	return migrations, nil
-}
-
-// applyMigration applies a single migration.
-func (r *Repository) applyMigration(ctx context.Context, client *clickhousepkg.Client, migration Migration) error {
-	// Mark migration as dirty (in progress)
-	if err := client.Exec(ctx, "INSERT INTO schema_migrations (version, dirty) VALUES (?, 1)", migration.Version); err != nil {
-		return fmt.Errorf("failed to mark migration as dirty: %w", err)
-	}
-
-	// Execute migration SQL statements one by one. The native ClickHouse driver
-	// rejects multi-statement query strings.
-	for _, statement := range splitClickHouseMigrationStatements(migration.Content) {
-		if err := client.Exec(ctx, statement); err != nil {
-			return fmt.Errorf("failed to execute migration SQL: %w", err)
-		}
-	}
-
-	// Mark migration as clean (completed)
-	if err := client.Exec(ctx, "ALTER TABLE schema_migrations UPDATE dirty = 0 WHERE version = ?", migration.Version); err != nil {
-		return fmt.Errorf("failed to mark migration as clean: %w", err)
-	}
-
-	return nil
-}
-
-func splitClickHouseMigrationStatements(content string) []string {
-	parts := strings.Split(content, ";")
-	statements := make([]string, 0, len(parts))
-	for _, part := range parts {
-		statement := strings.TrimSpace(part)
-		if statement == "" {
-			continue
-		}
-		statements = append(statements, statement)
-	}
-	return statements
 }
 
 // isDatabaseErrorRetryable determines if a database error is retryable.
@@ -602,6 +257,6 @@ func (r *Repository) isDatabaseErrorRetryable(err error) bool {
 		}
 	}
 
-	// Default to retryable for unknown errors
+	// Default to retryable for unknown errors.
 	return true
 }

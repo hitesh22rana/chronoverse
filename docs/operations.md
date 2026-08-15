@@ -221,6 +221,7 @@ make generate
 make mockgen
 make test/short
 make test
+make test/integration
 make lint
 make lint/fix
 make build/all
@@ -235,6 +236,35 @@ Important notes:
 - `make tools` installs Go tooling into `./.bin`.
 - `make test` runs Go tests with the race detector.
 - `make build/all` builds all Go services and workers, including `outbox-relay`.
+
+### Integration Tests
+
+Repository integration tests live in each package under `internal/repository` as
+`*_integration_test.go` files. They run against real infrastructure
+(PostgreSQL, ClickHouse, Redis, Meilisearch, and Kafka) provisioned with
+Testcontainers, rather than mocks.
+
+```sh
+make test/integration   # race detector + real containers; needs a Docker daemon
+```
+
+Key facts:
+
+- **Bootstrap**: the shared `internal/pkg/testkit` package starts one container
+  per service on first use, applies migrations and index setup, and terminates
+  everything after the package test binary finishes. Each repository package
+  declares which services it needs in its `TestMain`, for example
+  `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`.
+- **Single source of truth**: testkit reuses the production client constructors
+  and migration runners from the sibling packages under `internal/pkg` —
+  `postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes`, and
+  `kafka.EnsureTopics` — so integration tests exercise the exact code paths the
+  running services use, and the embedded migrations under
+  `internal/pkg/postgres/migrations` and `internal/pkg/clickhouse/migrations`
+  are never re-implemented in tests.
+- **Gating**: integration tests self-skip under `-short` (so `make test/short`
+  and plain `go test ./...` stay fast) and when Docker is unavailable.
+  `make test/integration` runs the full suite with the race detector.
 
 Dashboard commands:
 

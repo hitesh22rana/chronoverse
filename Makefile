@@ -30,6 +30,12 @@ test/short: dependencies
 test: dependencies
 	@go test -race -v ./...
 
+# Runs only the Testcontainers-backed integration tests under
+# internal/repository. Requires a running Docker daemon.
+.PHONY: test/integration
+test/integration: dependencies
+	@go test -race -v -count=1 -run 'TestIntegration' ./internal/repository/...
+
 .PHONY: k8s/setup
 k8s/setup:
 	@./scripts/k8s/setup.sh

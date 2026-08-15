@@ -8,8 +8,8 @@
 | `internal/model/` | Shared domain models and asynchronous event envelopes |
 | `internal/server/` | Public HTTP gateway and middleware |
 | `internal/service/` | Domain service logic |
-| `internal/repository/` | Persistence and worker implementations |
-| `internal/pkg/` | Shared infrastructure clients and reliability primitives |
+| `internal/repository/` | Persistence and worker implementations; hosts the Testcontainers-backed integration tests as `*_integration_test.go` files |
+| `internal/pkg/` | Shared infrastructure clients and reliability primitives; includes `testkit`, the shared Testcontainers bootstrap for repository integration tests, and the migration runners (`postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes`, `kafka.EnsureTopics`) |
 | `proto/` | Source protobuf contracts |
 | `pkg/proto/go/` | Generated Go protobuf code |
 | `dashboard/` | Authenticated product dashboard |

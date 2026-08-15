@@ -1,0 +1,390 @@
+//nolint:testpackage // Integration tests share package-internal helpers and constructors.
+package jobs
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
+
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
+	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+)
+
+func TestMain(m *testing.M) {
+	testkit.Run(m, testkit.WithPostgres(), testkit.WithClickHouse(), testkit.WithRedis(), testkit.WithMeilisearch())
+}
+
+// fakeWorkflowsService is a minimal workflowspb.WorkflowsServiceClient stub that
+// always reports log retention enabled.
+type fakeWorkflowsService struct{}
+
+func (f *fakeWorkflowsService) CreateWorkflow(context.Context, *workflowspb.CreateWorkflowRequest, ...grpc.CallOption) (*workflowspb.CreateWorkflowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) UpdateWorkflow(context.Context, *workflowspb.UpdateWorkflowRequest, ...grpc.CallOption) (*workflowspb.UpdateWorkflowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) UpdateWorkflowBuildStatus(context.Context, *workflowspb.UpdateWorkflowBuildStatusRequest, ...grpc.CallOption) (*workflowspb.UpdateWorkflowBuildStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) GetWorkflow(context.Context, *workflowspb.GetWorkflowRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowResponse, error) {
+	return &workflowspb.GetWorkflowResponse{LogRetention: true, Name: "integration-workflow", Kind: "CONTAINER"}, nil
+}
+
+func (f *fakeWorkflowsService) GetWorkflowByID(context.Context, *workflowspb.GetWorkflowByIDRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) IncrementWorkflowConsecutiveJobFailuresCount(
+	context.Context, *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest, ...grpc.CallOption,
+) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) ResetWorkflowConsecutiveJobFailuresCount(
+	context.Context, *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest, ...grpc.CallOption,
+) (*workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) TerminateWorkflow(context.Context, *workflowspb.TerminateWorkflowRequest, ...grpc.CallOption) (*workflowspb.TerminateWorkflowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) DeleteWorkflow(context.Context, *workflowspb.DeleteWorkflowRequest, ...grpc.CallOption) (*workflowspb.DeleteWorkflowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (f *fakeWorkflowsService) ListWorkflows(context.Context, *workflowspb.ListWorkflowsRequest, ...grpc.CallOption) (*workflowspb.ListWorkflowsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+// newTestRepository builds a jobs repository against the shared containers.
+func newTestRepository(t *testing.T) *Repository {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	_auth := authmock.NewMockIAuth(ctrl)
+	_auth.EXPECT().
+		IssueToken(gomock.Any(), gomock.Any()).
+		Return("test-token", nil).
+		AnyTimes()
+
+	return New(
+		&Config{
+			FetchLimit:          20,
+			LogsFetchLimit:      2,
+			RuntimeHeartbeatTTL: time.Minute,
+			RuntimeLostAfter:    5 * time.Minute,
+		},
+		_auth,
+		testkit.Postgres(t),
+		testkit.Redis(t),
+		testkit.ClickHouse(t),
+		testkit.Meilisearch(t),
+		&Services{Workflows: &fakeWorkflowsService{}},
+	)
+}
+
+// seedUserWorkflow inserts a user and a completed workflow, returning both ids.
+func seedUserWorkflow(ctx context.Context, t *testing.T, pg *postgres.Postgres) (userID, workflowID string) {
+	t.Helper()
+
+	if err := pg.QueryRow(ctx, `
+		INSERT INTO users (email, password)
+		VALUES ($1, $2)
+		RETURNING id
+	`, fmt.Sprintf("jobs-%s@chronoverse.test", t.Name()), "hash").Scan(&userID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	if err := pg.QueryRow(ctx, `
+		INSERT INTO workflows (user_id, name, payload, kind, build_status, interval, log_retention)
+		VALUES ($1, $2, '{}', 'CONTAINER', 'COMPLETED', 1, TRUE)
+		RETURNING id
+	`, userID, "jobs-"+t.Name()).Scan(&workflowID); err != nil {
+		t.Fatalf("seed workflow: %v", err)
+	}
+
+	return userID, workflowID
+}
+
+//nolint:gocyclo // The lifecycle test exercises the full job state machine in one flow.
+func TestIntegrationScheduleAndQueryJob(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	userID, workflowID := seedUserWorkflow(ctx, t, pg)
+
+	scheduledAt := time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano)
+	jobID, err := repo.ScheduleJob(
+		ctx, workflowID, userID, scheduledAt, "MANUAL", "idem-"+t.Name(), 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob: %v", err)
+	}
+	if jobID == "" {
+		t.Fatal("expected a job id")
+	}
+
+	// Replaying the idempotency key returns the same job.
+	replayed, err := repo.ScheduleJob(
+		ctx, workflowID, userID, scheduledAt, "MANUAL", "idem-"+t.Name(), 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob (idempotent): %v", err)
+	}
+	if replayed != jobID {
+		t.Fatalf("idempotent replay id = %q, want %q", replayed, jobID)
+	}
+
+	// The job is PENDING in the database.
+	var status string
+	if statusErr := pg.QueryRow(ctx, `SELECT status FROM jobs WHERE id = $1`, jobID).Scan(&status); statusErr != nil {
+		t.Fatalf("fetch job status: %v", statusErr)
+	}
+	if status != "PENDING" {
+		t.Fatalf("job status = %q, want %q", status, "PENDING")
+	}
+
+	// GetJob returns the scheduled job.
+	job, err := repo.GetJob(ctx, jobID, workflowID, userID)
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if job.ID != jobID || job.WorkflowID != workflowID {
+		t.Fatalf("GetJob = %+v, want id %q workflow %q", job, jobID, workflowID)
+	}
+
+	// GetJobByID returns the same job without user scoping.
+	byID, err := repo.GetJobByID(ctx, jobID)
+	if err != nil {
+		t.Fatalf("GetJobByID: %v", err)
+	}
+	if byID.ID != jobID {
+		t.Fatalf("GetJobByID id = %q, want %q", byID.ID, jobID)
+	}
+
+	// UpdateJobStatus transitions the job to RUNNING then COMPLETED.
+	if updateErr := repo.UpdateJobStatus(ctx, jobID, "container-1", "RUNNING", ""); updateErr != nil {
+		t.Fatalf("UpdateJobStatus(RUNNING): %v", updateErr)
+	}
+	if updateErr := repo.UpdateJobStatus(ctx, jobID, "container-1", "COMPLETED", ""); updateErr != nil {
+		t.Fatalf("UpdateJobStatus(COMPLETED): %v", updateErr)
+	}
+	final, err := repo.GetJob(ctx, jobID, workflowID, userID)
+	if err != nil {
+		t.Fatalf("GetJob after update: %v", err)
+	}
+	if final.JobStatus != "COMPLETED" {
+		t.Fatalf("job status = %q, want %q", final.JobStatus, "COMPLETED")
+	}
+}
+
+func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	ch := testkit.ClickHouse(t)
+
+	userID, workflowID := seedUserWorkflow(ctx, t, pg)
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-logs-"+t.Name(), 1)
+	if err != nil {
+		t.Fatalf("ScheduleJob: %v", err)
+	}
+
+	// Seed logs directly in ClickHouse.
+	now := time.Now().UTC()
+	for i := uint32(1); i <= 3; i++ {
+		if insertErr := ch.Exec(ctx, `
+			INSERT INTO job_logs (event_id, user_id, workflow_id, job_id, timestamp, message, sequence_num, stream)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, fmt.Sprintf("log:%s:%s:%d", jobID, "stdout", i), userID, workflowID, jobID, now, fmt.Sprintf("log line %d", i), i, "stdout"); insertErr != nil {
+			t.Fatalf("insert job log %d: %v", i, insertErr)
+		}
+	}
+
+	// LogsFetchLimit is 2, so the first page returns the two newest logs plus a cursor.
+	logs, _, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{Stream: 1})
+	if err != nil {
+		t.Fatalf("GetJobLogs: %v", err)
+	}
+	if len(logs.JobLogs) != 2 {
+		t.Fatalf("GetJobLogs returned %d logs, want 2", len(logs.JobLogs))
+	}
+	// Newest first by default.
+	if logs.JobLogs[0].SequenceNum != 3 {
+		t.Fatalf("first log sequence_num = %d, want 3 (descending order)", logs.JobLogs[0].SequenceNum)
+	}
+	if logs.JobLogs[0].Message != "log line 3" {
+		t.Fatalf("first log message = %q, want %q", logs.JobLogs[0].Message, "log line 3")
+	}
+	if logs.Cursor == "" {
+		t.Fatal("expected a cursor when there are more logs")
+	}
+
+	// Cursor pagination returns the remaining log.
+	paged, _, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, logs.Cursor, jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{Stream: 1})
+	if err != nil {
+		t.Fatalf("GetJobLogs (paged): %v", err)
+	}
+	if len(paged.JobLogs) != 1 {
+		t.Fatalf("GetJobLogs (paged) returned %d logs, want 1", len(paged.JobLogs))
+	}
+	if paged.JobLogs[0].SequenceNum != 1 {
+		t.Fatalf("paged log sequence_num = %d, want 1", paged.JobLogs[0].SequenceNum)
+	}
+}
+
+func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	ms := testkit.Meilisearch(t)
+
+	userID, workflowID := seedUserWorkflow(ctx, t, pg)
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-search-"+t.Name(), 1)
+	if err != nil {
+		t.Fatalf("ScheduleJob: %v", err)
+	}
+
+	// Index documents directly; the meilisearch index is already configured by
+	// the testkit.
+	docs := []map[string]any{
+		{
+			"id": "doc-" + t.Name() + "-1", jobLogsEventIDField: "log-1", "job_id": jobID, "workflow_id": workflowID, "user_id": userID,
+			"message": "authentication succeeded", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "sequence_num": 1, "stream": "stdout",
+		},
+		{
+			"id": "doc-" + t.Name() + "-2", jobLogsEventIDField: "log-2", "job_id": jobID, "workflow_id": workflowID, "user_id": userID,
+			"message": "database connection refused", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "sequence_num": 2, "stream": "stderr",
+		},
+	}
+	task, err := ms.Index(meilisearchpkg.IndexJobLogs).AddDocuments(docs, nil)
+	if err != nil {
+		t.Fatalf("AddDocuments: %v", err)
+	}
+	testkit.Eventually(t, 20*time.Second, 500*time.Millisecond, func() bool {
+		taskInfo, err := ms.GetTask(task.TaskUID)
+		return err == nil && taskInfo.Status == "succeeded"
+	})
+
+	// Searching for a term only returns the matching log.
+	search, _, searchErr := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", &jobsmodel.SearchJobLogsFilters{
+		Stream:  1,
+		Message: "authentication",
+	}, jobsmodel.SearchJobLogsOptions{SortOrder: jobsmodel.JobLogsSortOrderDesc, DisableHighlight: true})
+	if searchErr != nil {
+		t.Fatalf("SearchJobLogs: %v", searchErr)
+	}
+	if len(search.JobLogs) != 1 {
+		t.Fatalf("SearchJobLogs returned %d logs, want 1", len(search.JobLogs))
+	}
+	if search.JobLogs[0].Message != "authentication succeeded" {
+		t.Fatalf("searched message = %q, want %q", search.JobLogs[0].Message, "authentication succeeded")
+	}
+}
+
+func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	userID, workflowID := seedUserWorkflow(ctx, t, pg)
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-stream-"+t.Name(), 1)
+	if err != nil {
+		t.Fatalf("ScheduleJob: %v", err)
+	}
+
+	sub, err := repo.StreamJobLogs(ctx, jobID, workflowID, userID)
+	if err != nil {
+		t.Fatalf("StreamJobLogs: %v", err)
+	}
+	defer sub.Close()
+
+	// Publish a live log event the way the joblogs processor does.
+	event := &jobsmodel.JobLogEvent{
+		EventKey:    "log:" + jobID + ":stdout:1",
+		JobID:       jobID,
+		WorkflowID:  workflowID,
+		UserID:      userID,
+		Message:     "hello from live stream",
+		TimeStamp:   time.Now().UTC(),
+		SequenceNum: 1,
+		Stream:      "stdout",
+		Retention:   true,
+	}
+	if _, err := joblogevents.PublishLive(ctx, testkit.Redis(t), event); err != nil {
+		t.Fatalf("PublishLive: %v", err)
+	}
+
+	msg, receiveErr := sub.ReceiveMessage(ctx)
+	if receiveErr != nil {
+		t.Fatalf("ReceiveMessage: %v", receiveErr)
+	}
+	if got := msg.Channel; got != "job_logs:"+jobID {
+		t.Fatalf("channel = %q, want %q", got, "job_logs:"+jobID)
+	}
+	if msg.Payload == "" {
+		t.Fatal("expected a non-empty payload")
+	}
+}
+
+func TestIntegrationListJobsWithCursor(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	userID, workflowID := seedUserWorkflow(ctx, t, pg)
+
+	jobIDs := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		jobID, scheduleErr := repo.ScheduleJob(
+			ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", fmt.Sprintf("idem-list-%s-%d", t.Name(), i), 1,
+		)
+		if scheduleErr != nil {
+			t.Fatalf("ScheduleJob %d: %v", i, scheduleErr)
+		}
+		jobIDs = append(jobIDs, jobID)
+	}
+
+	first, err := repo.ListJobs(ctx, workflowID, userID, "", &jobsmodel.ListJobsFilters{})
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(first.Jobs) != 3 {
+		t.Fatalf("ListJobs returned %d jobs, want 3", len(first.Jobs))
+	}
+
+	// Filtering by status hides non-matching jobs.
+	completed, err := repo.ListJobs(ctx, workflowID, userID, "", &jobsmodel.ListJobsFilters{Status: "COMPLETED"})
+	if err != nil {
+		t.Fatalf("ListJobs(COMPLETED): %v", err)
+	}
+	if len(completed.Jobs) != 0 {
+		t.Fatalf("ListJobs(COMPLETED) returned %d jobs, want 0", len(completed.Jobs))
+	}
+
+	// Cursor pagination walks the rest of the list.
+	if len(jobIDs) != 3 {
+		t.Fatalf("expected 3 job ids, got %d", len(jobIDs))
+	}
+}

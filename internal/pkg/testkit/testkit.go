@@ -19,7 +19,9 @@ package testkit
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -281,6 +283,25 @@ func recordsFromFetches(fetches kgo.Fetches) []*kgo.Record {
 		records = append(records, rec)
 	})
 	return records
+}
+
+// hostPort returns the host and numeric port the given container port maps to.
+func hostPort(ctx context.Context, ctr testcontainers.Container, containerPort string) (host string, portNum int, err error) {
+	host, err = ctr.Host(ctx)
+	if err != nil {
+		return "", 0, fmt.Errorf("container host: %w", err)
+	}
+
+	port, err := ctr.MappedPort(ctx, containerPort)
+	if err != nil {
+		return "", 0, fmt.Errorf("container port %s: %w", containerPort, err)
+	}
+
+	portNum, err = strconv.Atoi(port.Port())
+	if err != nil {
+		return "", 0, fmt.Errorf("container port %q: %w", port.Port(), err)
+	}
+	return host, portNum, nil
 }
 
 // terminate stops every started container and closes clients.

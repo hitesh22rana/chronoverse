@@ -3,7 +3,6 @@ package testkit
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -31,17 +30,9 @@ func startPostgres(ctx context.Context, s *suite) (*postgrespkg.Postgres, string
 	}
 	s.containers = append(s.containers, ctr)
 
-	host, err := ctr.Host(ctx)
+	host, portNum, err := hostPort(ctx, ctr, "5432/tcp")
 	if err != nil {
-		return nil, "", fmt.Errorf("postgres host: %w", err)
-	}
-	port, err := ctr.MappedPort(ctx, "5432/tcp")
-	if err != nil {
-		return nil, "", fmt.Errorf("postgres port: %w", err)
-	}
-	portNum, err := strconv.Atoi(port.Port())
-	if err != nil {
-		return nil, "", fmt.Errorf("postgres port %q: %w", port.Port(), err)
+		return nil, "", fmt.Errorf("postgres: %w", err)
 	}
 
 	dsn := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable",

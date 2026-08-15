@@ -11,12 +11,23 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
+const (
+	// TopicWorkflows is the name of the Kafka topic for workflow events.
+	TopicWorkflows = "workflows"
+	// TopicJobs is the name of the Kafka topic for job events.
+	TopicJobs = "jobs"
+	// TopicJobLogs is the name of the Kafka topic for job log events.
+	TopicJobLogs = "job_logs"
+	// TopicAnalytics is the name of the Kafka topic for analytics events.
+	TopicAnalytics = "analytics"
+)
+
 // EnsureTopics creates the given topics with a single partition, retrying until
 // the broker is ready to serve admin requests. It is safe to call repeatedly;
 // topics that already exist are left untouched.
 func EnsureTopics(ctx context.Context, client *kgo.Client, topics ...string) error {
 	var lastErr error
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		lastErr = createTopicsOnce(ctx, client, topics...)
 		if lastErr == nil {
 			return nil

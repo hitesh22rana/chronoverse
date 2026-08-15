@@ -109,7 +109,7 @@ func TestIntegrationDeduplicatesEventsByKey(t *testing.T) {
 
 	// The same event (same key) is produced twice; it must be processed once.
 	event := mustAnalyticEvent(t, "dedup-"+t.Name(), userID, workflowID, analyticsmodel.EventTypeLogs, analyticsmodel.EventTypeLogsData{Count: 3})
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := producer.ProduceSync(ctx, &kgo.Record{Topic: kafkapkg.TopicAnalytics, Value: event}).FirstErr(); err != nil {
 			t.Fatalf("produce analytics event: %v", err)
 		}

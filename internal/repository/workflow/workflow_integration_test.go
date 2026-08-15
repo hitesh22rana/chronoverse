@@ -86,7 +86,7 @@ func TestIntegrationImagePullLockSerializesBuilds(t *testing.T) {
 	// Three concurrent pulls of the same image must be serialized by the
 	// Redis-backed lock.
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

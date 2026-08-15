@@ -111,7 +111,7 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 
 	// IncrementWorkflowConsecutiveJobFailuresCount reaches the failure threshold.
 	thresholdReached := false
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		reached, incErr := repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, created.ID, userID, fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1))
 		if incErr != nil {
 			t.Fatalf("IncrementWorkflowConsecutiveJobFailuresCount: %v", incErr)

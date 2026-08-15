@@ -342,7 +342,7 @@ func TestIntegrationListJobsWithCursor(t *testing.T) {
 	userID, workflowID := seedUserWorkflow(ctx, t, pg)
 
 	jobIDs := make([]string, 0, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		jobID, scheduleErr := repo.ScheduleJob(
 			ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", fmt.Sprintf("idem-list-%s-%d", t.Name(), i), 1,
 		)

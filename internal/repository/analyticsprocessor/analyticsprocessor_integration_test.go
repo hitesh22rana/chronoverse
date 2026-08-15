@@ -49,14 +49,7 @@ func TestIntegrationProcessesAnalyticsEvents(t *testing.T) {
 	producer := testkit.Kafka(t)
 
 	// Seed a user because analytics.user_id is a foreign key.
-	var userID string
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO users (email, password)
-		VALUES ($1, $2)
-		RETURNING id
-	`, fmt.Sprintf("analytics-%s@chronoverse.test", t.Name()), "hash").Scan(&userID); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
+	userID := testkit.SeedUser(ctx, t, pg, fmt.Sprintf("analytics-%s@chronoverse.test", t.Name()))
 	workflowID := "00000000-0000-0000-0000-0000000000c1"
 
 	// Start the consumer pipeline.
@@ -104,14 +97,7 @@ func TestIntegrationDeduplicatesEventsByKey(t *testing.T) {
 	repo := newTestRepository(t)
 	producer := testkit.Kafka(t)
 
-	var userID string
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO users (email, password)
-		VALUES ($1, $2)
-		RETURNING id
-	`, fmt.Sprintf("analytics-%s@chronoverse.test", t.Name()), "hash").Scan(&userID); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
+	userID := testkit.SeedUser(ctx, t, pg, fmt.Sprintf("analytics-%s@chronoverse.test", t.Name()))
 	workflowID := "00000000-0000-0000-0000-0000000000c2"
 
 	runDone := make(chan struct{})

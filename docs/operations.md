@@ -254,7 +254,9 @@ Key facts:
   per service on first use, applies migrations and index setup, and terminates
   everything after the package test binary finishes. Each repository package
   declares which services it needs in its `TestMain`, for example
-  `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`.
+  `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`. Fixture helpers
+  such as `testkit.SeedUser` and `testkit.SeedWorkflow` insert the rows most
+  schemas depend on, so tests never repeat the same SQL.
 - **Single source of truth**: testkit reuses the production client constructors
   and migration runners from the sibling packages under `internal/pkg` —
   `postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes`, and

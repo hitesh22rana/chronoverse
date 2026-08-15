@@ -26,24 +26,8 @@ func seedUserWorkflowJob(ctx context.Context, t *testing.T, pg *postgres.Postgre
 	t.Helper()
 
 	seedCounter++
-	email := fmt.Sprintf("%s-%d@chronoverse.test", t.Name(), seedCounter)
-
-	var userID string
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO users (email, password)
-		VALUES ($1, $2)
-		RETURNING id
-	`, email, "hash").Scan(&userID); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO workflows (user_id, name, payload, kind, build_status, interval)
-		VALUES ($1, $2, '{}', 'CONTAINER', 'COMPLETED', 1)
-		RETURNING id
-	`, userID, t.Name()+"-workflow").Scan(&workflowID); err != nil {
-		t.Fatalf("seed workflow: %v", err)
-	}
+	userID := testkit.SeedUser(ctx, t, pg, fmt.Sprintf("%s-%d@chronoverse.test", t.Name(), seedCounter))
+	workflowID = testkit.SeedWorkflow(ctx, t, pg, userID, t.Name()+"-workflow")
 
 	if err := pg.QueryRow(ctx, `
 		INSERT INTO jobs (workflow_id, user_id, status, scheduled_at)

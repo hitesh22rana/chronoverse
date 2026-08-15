@@ -22,24 +22,9 @@ func TestMain(m *testing.M) {
 func seedAnalytics(ctx context.Context, t *testing.T, pg *postgres.Postgres) (userID, workflowID string) {
 	t.Helper()
 
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO users (email, password)
-		VALUES ($1, $2)
-		RETURNING id
-	`, fmt.Sprintf("analytics-%s@chronoverse.test", t.Name()), "hash").Scan(&userID); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-
-	var workflowA, workflowB string
-	for i, wf := range []*string{&workflowA, &workflowB} {
-		if err := pg.QueryRow(ctx, `
-			INSERT INTO workflows (user_id, name, payload, kind, build_status, interval)
-			VALUES ($1, $2, '{}', 'CONTAINER', 'COMPLETED', 1)
-			RETURNING id
-		`, userID, fmt.Sprintf("wf-%s-%d", t.Name(), i)).Scan(wf); err != nil {
-			t.Fatalf("seed workflow %d: %v", i, err)
-		}
-	}
+	userID = testkit.SeedUser(ctx, t, pg, fmt.Sprintf("analytics-%s@chronoverse.test", t.Name()))
+	workflowA := testkit.SeedWorkflow(ctx, t, pg, userID, fmt.Sprintf("wf-%s-0", t.Name()))
+	workflowB := testkit.SeedWorkflow(ctx, t, pg, userID, fmt.Sprintf("wf-%s-1", t.Name()))
 
 	// workflowA: 3 jobs, 10 logs, 60s duration.
 	if _, err := pg.Exec(ctx, `

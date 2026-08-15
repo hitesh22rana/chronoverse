@@ -32,22 +32,8 @@ func TestMain(m *testing.M) {
 func seedUserWorkflow(ctx context.Context, t *testing.T, pg *postgres.Postgres) (userID, workflowID string) {
 	t.Helper()
 
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO users (email, password)
-		VALUES ($1, $2)
-		RETURNING id
-	`, fmt.Sprintf("joblogs-%s@chronoverse.test", t.Name()), "hash").Scan(&userID); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO workflows (user_id, name, payload, kind, build_status, interval, log_retention)
-		VALUES ($1, $2, '{}', 'CONTAINER', 'COMPLETED', 1, TRUE)
-		RETURNING id
-	`, userID, "joblogs-"+t.Name()).Scan(&workflowID); err != nil {
-		t.Fatalf("seed workflow: %v", err)
-	}
-
+	userID = testkit.SeedUser(ctx, t, pg, fmt.Sprintf("joblogs-%s@chronoverse.test", t.Name()))
+	workflowID = testkit.SeedWorkflow(ctx, t, pg, userID, "joblogs-"+t.Name())
 	return userID, workflowID
 }
 

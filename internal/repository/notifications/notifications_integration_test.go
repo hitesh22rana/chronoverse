@@ -140,13 +140,5 @@ func TestIntegrationListNotificationsHonorsNonePreference(t *testing.T) {
 func seedUser(ctx context.Context, t *testing.T, pg *postgres.Postgres) string {
 	t.Helper()
 
-	var userID string
-	if err := pg.QueryRow(ctx, `
-		INSERT INTO users (email, password)
-		VALUES ($1, 'hashed')
-		RETURNING id
-	`, fmt.Sprintf("notifications-%s@chronoverse.test", t.Name())).Scan(&userID); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-	return userID
+	return testkit.SeedUser(ctx, t, pg, fmt.Sprintf("notifications-%s@chronoverse.test", t.Name()))
 }

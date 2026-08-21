@@ -38,7 +38,7 @@ versions are not supported across an idempotency-ledger migration.
 
 <Steps>
   <Step title="Quiesce mutations">Back up the databases, stop public traffic, and stop the server, workers, processors, and outbox relay. Drain in-flight requests and transactions.</Step>
-  <Step title="Apply the new schema">Run the new release's database-migration image. Resolve any preflight failure before changing application versions.</Step>
+  <Step title="Apply the new schema">Run the new release's database-migration image. Resolve any preflight failure before changing application versions. Then use an approved Redis `SCAN` plus `UNLINK` procedure to delete keys matching `workflow:*` and `workflows:*`, and verify both scans are empty while application processes remain stopped. Migration-time threshold reconciliation updates PostgreSQL directly and cannot invalidate Redis atomically. Do not use `FLUSHDB`, because Redis also stores sessions and coordination state.</Step>
   <Step title="Start internal processing">Start one version of the domain services, then the relay and workers. Keep public traffic stopped while checking health, consumer progress, outbox publication, and runtime registration.</Step>
   <Step title="Canary and resume">Exercise replay, changed-input conflict, scheduling, termination, deletion, and deterministic outbox keys with approved fixtures. Clean them up before restoring public traffic.</Step>
 </Steps>

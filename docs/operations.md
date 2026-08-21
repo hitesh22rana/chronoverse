@@ -149,8 +149,13 @@ migration.
    available. Migration preflight checks run before destructive schema changes;
    an unexpired in-progress command, malformed legacy identity, or normalized-key
    collision aborts the migration for operator reconciliation.
-4. Verify the schema version and migration logs before starting any application
-   process from the new release.
+4. Verify the schema version and migration logs, then delete Redis keys matching
+   `workflow:*` and `workflows:*` before starting any application process from
+   the new release. Migration-time failure-threshold reconciliation updates
+   PostgreSQL directly and cannot invalidate Redis atomically. Do not use
+   `FLUSHDB`: Redis also contains sessions and coordination state. Use an
+   approved `SCAN` plus `UNLINK` procedure for both patterns and verify both
+   scans are empty before continuing.
 5. Start domain services, then the outbox relay and workers while public traffic
    remains stopped. Confirm health, consumer progress, outbox publication, and
    runtime registration.

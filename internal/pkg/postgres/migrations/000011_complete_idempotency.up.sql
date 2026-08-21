@@ -443,6 +443,11 @@ SET terminated_at = clock_timestamp() AT TIME ZONE 'utc'
 FROM reconciled_workflow_terminations AS reconciled
 WHERE w.id = reconciled.id;
 
+-- This migration cannot atomically invalidate Redis. Before public traffic is
+-- restored, the maintenance-window runbook requires deleting workflow detail
+-- and list cache keys. This is a no-op on an empty cache and avoids coupling a
+-- historical PostgreSQL migration to an external service.
+
 INSERT INTO outbox_events (topic, kafka_key, event_key, payload)
 SELECT
     'workflows',

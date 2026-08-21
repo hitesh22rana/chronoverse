@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -312,11 +313,26 @@ func SyncLegacyIdentities(
 		if execErr != nil {
 			return status.Errorf(codes.Internal, "failed to store command legacy identity: %v", execErr)
 		}
-		if tag.RowsAffected() != 1 {
+		if err = validateLegacyIdentityWrite(fresh, tag.RowsAffected()); err != nil {
 			return status.Error(codes.Internal, "legacy operation was already associated with a different request hash")
 		}
 	}
 	return nil
+}
+
+func validateLegacyIdentityWrite(fresh bool, rowsAffected int64) error {
+	if rowsAffected == 1 {
+		return nil
+	}
+	// Reserve has already established that a completed replay is canonically
+	// equivalent. Its raw legacy hash can still differ because the old workflow
+	// implementation hashed the payload's lexical JSON representation. Keep the
+	// original operation/hash pair so rollback preserves a valid replay identity;
+	// newly observed raw UUID operations are inserted independently above.
+	if !fresh && rowsAffected == 0 {
+		return nil
+	}
+	return errors.New("legacy identity write invariant violated")
 }
 
 // Complete compare-and-set completes exactly one owned PROCESSING reservation.

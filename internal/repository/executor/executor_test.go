@@ -396,6 +396,31 @@ func TestRecoveredLeaseRenewalFailureAfterSuccessfulRecoveryIsIgnored(t *testing
 	}
 }
 
+func TestRecoveredLeaseRequiresImmediateRenewalBeforeContainerAccess(t *testing.T) {
+	t.Parallel()
+
+	recoveryCalled := false
+	repo := &Repository{
+		cfg:  Config{LeaseDuration: time.Second, LeaseRenewInterval: time.Millisecond},
+		auth: fakeAuth{},
+		svc:  &Services{Jobs: &failedImmediateRenewalJobsClient{}},
+	}
+	err := repo.withRecoveredLeaseRenewal(
+		context.Background(),
+		&jobspb.ClaimJobResponse{Id: "job-1", WorkflowId: "workflow-1", LeaseToken: "stale-lease"},
+		func(context.Context) error {
+			recoveryCalled = true
+			return nil
+		},
+	)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("withRecoveredLeaseRenewal() code = %s, want %s: %v", status.Code(err), codes.FailedPrecondition, err)
+	}
+	if recoveryCalled {
+		t.Fatal("recovery accessed the container before proving lease authority")
+	}
+}
+
 func TestRecoverExpiredLeaseBatchStartsRenewalForEveryClaimedJob(t *testing.T) {
 	t.Parallel()
 
@@ -495,11 +520,23 @@ func (c *renewingRecoveryJobsClient) ReleaseJobForRetry(context.Context, *jobspb
 type lateFailingRenewalJobsClient struct {
 	jobspb.JobsServiceClient
 
+	renewals       atomic.Int32
 	renewOnce      sync.Once
 	renewAttempted chan struct{}
 }
 
+type failedImmediateRenewalJobsClient struct {
+	jobspb.JobsServiceClient
+}
+
+func (*failedImmediateRenewalJobsClient) RenewJobLease(context.Context, *jobspb.RenewJobLeaseRequest, ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+	return nil, status.Error(codes.FailedPrecondition, "lease not held")
+}
+
 func (c *lateFailingRenewalJobsClient) RenewJobLease(context.Context, *jobspb.RenewJobLeaseRequest, ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+	if c.renewals.Add(1) == 1 {
+		return &jobspb.RenewJobLeaseResponse{}, nil
+	}
 	c.renewOnce.Do(func() { close(c.renewAttempted) })
 
 	return nil, status.Error(codes.FailedPrecondition, "lease not held")

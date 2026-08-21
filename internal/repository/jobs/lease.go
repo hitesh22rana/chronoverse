@@ -110,22 +110,21 @@ func (r *Repository) ClaimJob(
 			}
 			return nil, false, stored.Reason, nil
 		}
-		var valid bool
-		query := fmt.Sprintf(`
-			SELECT EXISTS (
-				SELECT 1 FROM %s
-				WHERE id = $1
-				  AND status = 'RUNNING'
-				  AND lease_token = $2
-				  AND leased_by = $3
-				  AND lease_process_instance_id = $4
-				  AND dispatch_attempts = $5
-				  AND lease_expires_at > clock_timestamp() AT TIME ZONE 'utc'
-			);
-		`, postgres.TableJobs)
-		if err = tx.QueryRow(ctx, query, jobID, stored.Job.LeaseToken, workerID, processInstanceID, dispatchAttempt).Scan(&valid); err != nil {
-			return nil, false, "", r.mapJobLeaseReadError(err, "validate claim replay")
+		query := renewClaimReplayQuery()
+		err = tx.QueryRow(
+			ctx,
+			query,
+			jobID,
+			stored.Job.LeaseToken,
+			workerID,
+			processInstanceID,
+			dispatchAttempt,
+			leaseSeconds(leaseDuration),
+		).Scan(&stored.Job.LeaseExpiresAt)
+		if err != nil && !r.pg.IsNoRows(err) {
+			return nil, false, "", r.mapJobLeaseWriteError(err, "renew claim replay")
 		}
+		valid := err == nil
 		if err = tx.Commit(ctx); err != nil {
 			return nil, false, "", r.mapJobLeaseWriteError(err, "commit claim replay")
 		}
@@ -401,13 +400,7 @@ func (r *Repository) RenewJobLease(ctx context.Context, jobID, leaseToken string
 		span.End()
 	}()
 
-	query := fmt.Sprintf(`
-		UPDATE %s
-		SET lease_expires_at = (clock_timestamp() AT TIME ZONE 'utc') + ($3::int * interval '1 second'),
-			last_heartbeat_at = clock_timestamp() AT TIME ZONE 'utc'
-		WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
-		RETURNING lease_expires_at;
-	`, postgres.TableJobs)
+	query := renewJobLeaseQuery()
 	if err = r.pg.QueryRow(ctx, query, jobID, leaseToken, leaseSeconds(leaseDuration)).Scan(&expiresAt); err != nil {
 		if r.pg.IsNoRows(err) {
 			return time.Time{}, status.Error(grpccodes.FailedPrecondition, "renew job lease: job lease not held")
@@ -415,6 +408,23 @@ func (r *Repository) RenewJobLease(ctx context.Context, jobID, leaseToken string
 		return time.Time{}, r.mapJobLeaseWriteError(err, "renew job lease")
 	}
 	return expiresAt, nil
+}
+
+func renewJobLeaseQuery() string {
+	return fmt.Sprintf(`
+		WITH renewal AS (
+			SELECT clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
+		)
+		UPDATE %s AS job
+		SET lease_expires_at = renewal.renewed_at + ($3::int * interval '1 second'),
+			last_heartbeat_at = renewal.renewed_at
+		FROM renewal
+		WHERE job.id = $1
+		  AND job.lease_token = $2
+		  AND job.status = 'RUNNING'
+		  AND job.lease_expires_at > renewal.renewed_at
+		RETURNING job.lease_expires_at;
+	`, postgres.TableJobs)
 }
 
 // AttachJobContainer attaches a Docker container ID to a running claimed job.
@@ -795,6 +805,10 @@ func (r *Repository) RecoverExpiredJobLeases(
 		if err = json.Unmarshal(reservation.Response, &jobs); err != nil {
 			return nil, status.Errorf(grpccodes.Internal, "failed to decode recovery replay: %v", err)
 		}
+		jobs, err = r.renewRecoveryReplay(ctx, tx, jobs, workerID, processInstanceID, leaseDuration)
+		if err != nil {
+			return nil, err
+		}
 		if err = tx.Commit(ctx); err != nil {
 			return nil, r.mapJobLeaseWriteError(err, "commit recovery replay")
 		}
@@ -825,6 +839,110 @@ func (r *Repository) RecoverExpiredJobLeases(
 		return nil, r.mapJobLeaseWriteError(err, "commit recovery command")
 	}
 	return jobs, nil
+}
+
+type recoveryReplayIdentity struct {
+	ID         string `json:"id"`
+	LeaseToken string `json:"lease_token"`
+}
+
+func (r *Repository) renewRecoveryReplay(
+	ctx context.Context,
+	tx pgx.Tx,
+	stored []*jobsmodel.ExpiredJobLease,
+	workerID, processInstanceID string,
+	leaseDuration time.Duration,
+) ([]*jobsmodel.ExpiredJobLease, error) {
+	if len(stored) == 0 {
+		return stored, nil
+	}
+	identities := make([]recoveryReplayIdentity, 0, len(stored))
+	for _, job := range stored {
+		if job != nil {
+			identities = append(identities, recoveryReplayIdentity{ID: job.ID, LeaseToken: job.LeaseToken})
+		}
+	}
+	encoded, err := json.Marshal(identities)
+	if err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to encode recovery replay identities: %v", err)
+	}
+
+	rows, err := tx.Query(
+		ctx,
+		renewRecoveryReplayQuery(),
+		string(encoded),
+		workerID,
+		processInstanceID,
+		leaseSeconds(leaseDuration),
+	)
+	if err != nil {
+		return nil, r.mapJobLeaseWriteError(err, "renew recovery replay")
+	}
+	renewedIDs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
+		var id string
+		if scanErr := row.Scan(&id); scanErr != nil {
+			return "", scanErr
+		}
+		return id, nil
+	})
+	if err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
+	}
+	renewed := make(map[string]struct{}, len(renewedIDs))
+	for _, id := range renewedIDs {
+		renewed[id] = struct{}{}
+	}
+	active := make([]*jobsmodel.ExpiredJobLease, 0, len(renewed))
+	for _, job := range stored {
+		if job != nil {
+			if _, ok := renewed[job.ID]; ok {
+				active = append(active, job)
+			}
+		}
+	}
+	return active, nil
+}
+
+func renewClaimReplayQuery() string {
+	return fmt.Sprintf(`
+		WITH renewal AS (
+			SELECT clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
+		)
+		UPDATE %s AS job
+		SET lease_expires_at = renewal.renewed_at + ($6::int * interval '1 second'),
+			last_heartbeat_at = renewal.renewed_at
+		FROM renewal
+		WHERE job.id = $1
+		  AND job.status = 'RUNNING'
+		  AND job.lease_token = $2
+		  AND job.leased_by = $3
+		  AND job.lease_process_instance_id = $4
+		  AND job.dispatch_attempts = $5
+		  AND job.lease_expires_at > renewal.renewed_at
+		RETURNING job.lease_expires_at;
+	`, postgres.TableJobs)
+}
+
+func renewRecoveryReplayQuery() string {
+	return fmt.Sprintf(`
+		WITH requested AS (
+			SELECT id, lease_token
+			FROM jsonb_to_recordset($1::jsonb) AS identity(id UUID, lease_token TEXT)
+		), renewal AS (
+			SELECT clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
+		)
+		UPDATE %s AS job
+		SET lease_expires_at = renewal.renewed_at + ($4::int * interval '1 second'),
+			last_heartbeat_at = renewal.renewed_at
+		FROM requested, renewal
+		WHERE job.id = requested.id
+		  AND job.lease_token = requested.lease_token
+		  AND job.leased_by = $2
+		  AND job.lease_process_instance_id = $3
+		  AND job.status = 'RUNNING'
+		  AND job.lease_expires_at > renewal.renewed_at
+		RETURNING job.id::text;
+	`, postgres.TableJobs)
 }
 
 func releaseJobForRetryQuery() string {

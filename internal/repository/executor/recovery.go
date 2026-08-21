@@ -122,6 +122,9 @@ func (r *Repository) withRecoveredLeaseRenewal(
 ) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
+	if err := r.renewLease(ctx, claim.GetId(), claim.GetLeaseToken()); err != nil {
+		return err
+	}
 
 	renewDone := make(chan error, 1)
 	go r.renewLeaseLoop(ctx, claim.GetId(), claim.GetLeaseToken(), renewDone)

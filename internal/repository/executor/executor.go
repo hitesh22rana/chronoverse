@@ -319,6 +319,9 @@ func (r *Repository) runClaimedWorkflow(
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if renewErr := r.renewLease(ctx, claim.GetId(), claim.GetLeaseToken()); renewErr != nil {
+		return renewErr
+	}
 
 	renewDone := make(chan error, 1)
 	go r.renewLeaseLoop(ctx, claim.GetId(), claim.GetLeaseToken(), renewDone)
@@ -430,21 +433,25 @@ func (r *Repository) renewLeaseLoop(ctx context.Context, jobID, leaseToken strin
 			done <- nil
 			return
 		case <-ticker.C:
-			authCtx, err := r.withAuthorization(ctx)
-			if err != nil {
-				done <- err
-				return
-			}
-			if _, err = r.svc.Jobs.RenewJobLease(authCtx, &jobspb.RenewJobLeaseRequest{
-				Id:                   jobID,
-				LeaseToken:           leaseToken,
-				LeaseDurationSeconds: int32(r.cfg.LeaseDuration.Seconds()),
-			}); err != nil {
+			if err := r.renewLease(ctx, jobID, leaseToken); err != nil {
 				done <- err
 				return
 			}
 		}
 	}
+}
+
+func (r *Repository) renewLease(ctx context.Context, jobID, leaseToken string) error {
+	authCtx, err := r.withAuthorization(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.svc.Jobs.RenewJobLease(authCtx, &jobspb.RenewJobLeaseRequest{
+		Id:                   jobID,
+		LeaseToken:           leaseToken,
+		LeaseDurationSeconds: int32(r.cfg.LeaseDuration.Seconds()),
+	})
+	return err
 }
 
 func (r *Repository) cancelClaimedJob(ctx context.Context, claim *jobspb.ClaimJobResponse) error {

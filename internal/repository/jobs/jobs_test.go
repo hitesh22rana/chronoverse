@@ -45,6 +45,42 @@ func TestClaimJobQueryWaitsForRuntimeRowLock(t *testing.T) {
 	assertContains(t, query, "terminal_reason_code = NULL")
 }
 
+func TestClaimReplayRenewsOnlyLiveExactAuthority(t *testing.T) {
+	t.Parallel()
+
+	query := renewClaimReplayQuery()
+	assertContains(t, query, "UPDATE jobs AS job")
+	assertContains(t, query, "job.lease_token = $2")
+	assertContains(t, query, "job.leased_by = $3")
+	assertContains(t, query, "job.lease_process_instance_id = $4")
+	assertContains(t, query, "job.dispatch_attempts = $5")
+	assertContains(t, query, "job.lease_expires_at > renewal.renewed_at")
+	assertContains(t, query, "RETURNING job.lease_expires_at")
+}
+
+func TestRecoveryReplayRenewsAndReturnsOnlyLiveExactAuthorities(t *testing.T) {
+	t.Parallel()
+
+	query := renewRecoveryReplayQuery()
+	assertContains(t, query, "jsonb_to_recordset")
+	assertContains(t, query, "job.lease_token = requested.lease_token")
+	assertContains(t, query, "job.leased_by = $2")
+	assertContains(t, query, "job.lease_process_instance_id = $3")
+	assertContains(t, query, "job.status = 'RUNNING'")
+	assertContains(t, query, "job.lease_expires_at > renewal.renewed_at")
+	assertContains(t, query, "RETURNING job.id::text")
+}
+
+func TestLeaseRenewalCannotReviveExpiredAuthority(t *testing.T) {
+	t.Parallel()
+
+	query := renewJobLeaseQuery()
+	assertContains(t, query, "job.lease_token = $2")
+	assertContains(t, query, "job.status = 'RUNNING'")
+	assertContains(t, query, "job.lease_expires_at > renewal.renewed_at")
+	assertContains(t, query, "RETURNING job.lease_expires_at")
+}
+
 func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	t.Parallel()
 

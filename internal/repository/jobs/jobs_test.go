@@ -81,6 +81,33 @@ func TestLeaseRenewalCannotReviveExpiredAuthority(t *testing.T) {
 	assertContains(t, query, "RETURNING job.lease_expires_at")
 }
 
+func TestNormalizeAttachJobContainerIdentityPreservesOpaqueRuntimeNodeID(t *testing.T) {
+	t.Parallel()
+
+	jobID, runtimeNodeID, err := normalizeAttachJobContainerIdentity(
+		"550E8400-E29B-41D4-A716-446655440000",
+		"local-docker",
+	)
+	if err != nil {
+		t.Fatalf("normalizeAttachJobContainerIdentity() error = %v", err)
+	}
+	if jobID != "550e8400-e29b-41d4-a716-446655440000" {
+		t.Fatalf("job ID = %q, want canonical UUID", jobID)
+	}
+	if runtimeNodeID != "local-docker" {
+		t.Fatalf("runtime node ID = %q, want exact opaque identity", runtimeNodeID)
+	}
+}
+
+func TestNormalizeAttachJobContainerIdentityRejectsEmptyRuntimeNodeID(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := normalizeAttachJobContainerIdentity("550e8400-e29b-41d4-a716-446655440000", "")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("normalizeAttachJobContainerIdentity() code = %s, want %s: %v", status.Code(err), codes.InvalidArgument, err)
+	}
+}
+
 func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	t.Parallel()
 

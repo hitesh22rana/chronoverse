@@ -437,11 +437,7 @@ func (r *Repository) AttachJobContainer(ctx context.Context, jobID, leaseToken, 
 		}
 		span.End()
 	}()
-	jobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
-	if err != nil {
-		return err
-	}
-	runtimeNodeID, err = commandidempotency.CanonicalUUID(runtimeNodeID, "runtime node ID")
+	jobID, runtimeNodeID, err = normalizeAttachJobContainerIdentity(jobID, runtimeNodeID)
 	if err != nil {
 		return err
 	}
@@ -482,6 +478,20 @@ func (r *Repository) AttachJobContainer(ctx context.Context, jobID, leaseToken, 
 		return completeErr
 	}
 	return tx.Commit(ctx)
+}
+
+func normalizeAttachJobContainerIdentity(jobID, rawRuntimeNodeID string) (canonicalJobID, runtimeNodeID string, err error) {
+	canonicalJobID, err = commandidempotency.CanonicalUUID(jobID, "job ID")
+	if err != nil {
+		return "", "", err
+	}
+	if rawRuntimeNodeID == "" {
+		return "", "", status.Error(grpccodes.InvalidArgument, "runtime node ID is required")
+	}
+
+	// Runtime node IDs are stable opaque deployment identities backed by TEXT
+	// columns (for example, "local-docker"), not UUID command identities.
+	return canonicalJobID, rawRuntimeNodeID, nil
 }
 
 // CompleteJob completes a running claimed job.

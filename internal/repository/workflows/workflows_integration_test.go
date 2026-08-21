@@ -109,21 +109,29 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 		t.Fatalf("UpdateWorkflowBuildStatus(stale generation) code = %v, want %v (err: %v)", status.Code(staleErr), codes.FailedPrecondition, staleErr)
 	}
 
-	// IncrementWorkflowConsecutiveJobFailuresCount reaches the failure threshold.
-	thresholdReached := false
-	for i := range 5 {
+	// Consecutive failures accumulate while the workflow is active.
+	for i := range 3 {
 		reached, incErr := repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, created.ID, userID, fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1))
 		if incErr != nil {
 			t.Fatalf("IncrementWorkflowConsecutiveJobFailuresCount: %v", incErr)
 		}
-		thresholdReached = reached
+		if reached {
+			t.Fatal("failure threshold must not be reached before max")
+		}
 	}
-	if !thresholdReached {
-		t.Fatal("expected failure threshold to be reached after 5 failures (max 5)")
+	failed, err := repo.GetWorkflow(ctx, created.ID, userID)
+	if err != nil {
+		t.Fatalf("GetWorkflow after failures: %v", err)
+	}
+	if failed.ConsecutiveJobFailuresCount != 3 {
+		t.Fatalf("consecutive_job_failures_count = %d, want 3", failed.ConsecutiveJobFailuresCount)
 	}
 
-	// ResetWorkflowConsecutiveJobFailuresCount clears the counter.
-	if resetErr := repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, created.ID, userID); resetErr != nil {
+	// ResetWorkflowConsecutiveJobFailuresCount records a completed terminal
+	// effect keyed by the completing job's id and clears the counter while the
+	// workflow has not been terminated.
+	const completedJobID = "00000000-0000-0000-0000-0000000000f1"
+	if resetErr := repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, created.ID, userID, completedJobID); resetErr != nil {
 		t.Fatalf("ResetWorkflowConsecutiveJobFailuresCount: %v", resetErr)
 	}
 	reset, err := repo.GetWorkflow(ctx, created.ID, userID)
@@ -132,6 +140,31 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 	}
 	if reset.ConsecutiveJobFailuresCount != 0 {
 		t.Fatalf("consecutive_job_failures_count = %d, want 0", reset.ConsecutiveJobFailuresCount)
+	}
+
+	// Replaying the same completed-job identity is accepted as a no-op.
+	if replayResetErr := repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, created.ID, userID, completedJobID); replayResetErr != nil {
+		t.Fatalf("ResetWorkflowConsecutiveJobFailuresCount (idempotent replay): %v", replayResetErr)
+	}
+
+	// Reaching the failure threshold terminates the workflow.
+	thresholdReached := false
+	for i := range 5 {
+		reached, incErr := repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, created.ID, userID, fmt.Sprintf("00000000-0000-0000-0000-%012d", i+10))
+		if incErr != nil {
+			t.Fatalf("IncrementWorkflowConsecutiveJobFailuresCount: %v", incErr)
+		}
+		thresholdReached = reached
+	}
+	if !thresholdReached {
+		t.Fatal("expected failure threshold to be reached after 5 more failures (max 5)")
+	}
+	terminatedByThreshold, err := repo.GetWorkflow(ctx, created.ID, userID)
+	if err != nil {
+		t.Fatalf("GetWorkflow after threshold: %v", err)
+	}
+	if !terminatedByThreshold.TerminatedAt.Valid {
+		t.Fatal("terminated_at is null, want set after reaching the failure threshold")
 	}
 
 	// ListWorkflows returns the workflow with filters.

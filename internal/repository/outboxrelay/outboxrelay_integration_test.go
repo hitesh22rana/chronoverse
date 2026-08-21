@@ -3,6 +3,7 @@ package outboxrelay
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -146,5 +147,80 @@ func TestIntegrationPublishTopicPreservesOrderingAcrossKeys(t *testing.T) {
 	}
 	if published != 1 {
 		t.Fatalf("second run published %d events, want 1", published)
+	}
+}
+
+func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+
+	// Seed ledger rows: two expired completed keys, one live completed key and
+	// one in-progress key (no expiry), all in a dedicated scope.
+	scope := "cleanup-" + t.Name()
+	hashCounter := 0
+	seedKey := func(operation, key, status, expiresAtSQL string) {
+		t.Helper()
+		hashCounter++
+		query := `
+			INSERT INTO command_idempotency_keys
+				(scope, operation, idempotency_key, request_hash, status, resource_id, response, created_at, updated_at, completed_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, 'resource-1', '{}', now() AT TIME ZONE 'utc' - interval '2 hours', now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc', ` + expiresAtSQL + `)
+		`
+		if _, err := pg.Exec(ctx, query, scope, operation, key, fmt.Sprintf("%064x", hashCounter), status); err != nil {
+			t.Fatalf("seed %s/%s: %v", operation, key, err)
+		}
+	}
+	seedKey("op", "expired-1", "COMPLETED", "now() AT TIME ZONE 'utc' - interval '1 hour'")
+	seedKey("op", "expired-2", "COMPLETED", "now() AT TIME ZONE 'utc' - interval '30 minutes'")
+	seedKey("op", "live", "COMPLETED", "now() AT TIME ZONE 'utc' + interval '1 hour'")
+	if _, err := pg.Exec(ctx, `
+		INSERT INTO command_idempotency_keys
+			(scope, operation, idempotency_key, request_hash, status, created_at, updated_at)
+		VALUES ($1, 'op', 'processing', $2, 'PROCESSING', now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc')
+	`, scope, fmt.Sprintf("%064x", hashCounter+1)); err != nil {
+		t.Fatalf("seed processing key: %v", err)
+	}
+
+	repo := New(&Config{
+		BatchSize:       100,
+		MaxAttempts:     3,
+		RetryBackoff:    time.Second,
+		ProcessingLease: 30 * time.Second,
+		WorkerID:        "integration-worker",
+	}, pg, testkit.Kafka(t))
+
+	// A bounded batch deletes at most batchSize expired rows.
+	deleted, err := repo.CleanupCommandIdempotencyKeys(ctx, 1)
+	if err != nil {
+		t.Fatalf("CleanupCommandIdempotencyKeys(1): %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted %d rows with batch size 1, want 1", deleted)
+	}
+
+	// The remaining run removes every other expired row and nothing else.
+	deleted, err = repo.CleanupCommandIdempotencyKeys(ctx, 100)
+	if err != nil {
+		t.Fatalf("CleanupCommandIdempotencyKeys(100): %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted %d remaining expired rows, want 1", deleted)
+	}
+
+	var total int
+	if countErr := pg.QueryRow(ctx, `SELECT count(*) FROM command_idempotency_keys WHERE scope = $1`, scope).Scan(&total); countErr != nil {
+		t.Fatalf("count remaining keys: %v", countErr)
+	}
+	if total != 2 {
+		t.Fatalf("remaining keys = %d, want 2 (live + processing)", total)
+	}
+
+	// Nothing expired is left: another run is a no-op.
+	deleted, err = repo.CleanupCommandIdempotencyKeys(ctx, 100)
+	if err != nil {
+		t.Fatalf("CleanupCommandIdempotencyKeys (drained): %v", err)
+	}
+	if deleted != 0 {
+		t.Fatalf("deleted %d rows after drain, want 0", deleted)
 	}
 }

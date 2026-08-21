@@ -124,12 +124,16 @@ func TestIntegrationImagePullLockSerializesBuilds(t *testing.T) {
 
 func TestIntegrationPublishJobLogBatchToKafka(t *testing.T) {
 	ctx := context.Background()
+	cfg, err := normalizeConfig(&Config{
+		JobLogPublishTimeout: 5 * time.Second,
+		JobLogPublishRetries: 2,
+		JobLogPublishBackoff: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("normalizeConfig: %v", err)
+	}
 	repo := &Repository{
-		cfg: normalizeConfig(&Config{
-			JobLogPublishTimeout: 5 * time.Second,
-			JobLogPublishRetries: 2,
-			JobLogPublishBackoff: 100 * time.Millisecond,
-		}),
+		cfg: cfg,
 		kfk: testkit.Kafka(t),
 	}
 

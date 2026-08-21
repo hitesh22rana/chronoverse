@@ -239,10 +239,10 @@ Important notes:
 
 ### Integration Tests
 
-Repository integration tests live in each package under `internal/repository` as
-`*_integration_test.go` files. They run against real infrastructure
-(PostgreSQL, ClickHouse, Redis, Meilisearch, and Kafka) provisioned with
-Testcontainers, rather than mocks.
+Integration tests live in each repository package under `internal/repository` and
+in `internal/pkg/commandidempotency` as `*_integration_test.go` files. They run
+against real infrastructure (PostgreSQL, ClickHouse, Redis, Meilisearch, and
+Kafka) provisioned with Testcontainers, rather than mocks.
 
 ```sh
 make test/integration   # race detector + real containers; needs a Docker daemon

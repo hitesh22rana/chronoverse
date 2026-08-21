@@ -39,9 +39,10 @@ func TestIntegrationRegisterLoginGetUpdateUser(t *testing.T) {
 
 	email := "integration-" + t.Name() + "@chronoverse.test"
 	password := "s3cure-password"
+	idempotencyKey := "register-" + t.Name()
 
 	// Register a new user.
-	registered, token, err := repo.RegisterUser(ctx, email, password)
+	registered, token, err := repo.RegisterUser(ctx, email, password, idempotencyKey)
 	if err != nil {
 		t.Fatalf("RegisterUser: %v", err)
 	}
@@ -58,8 +59,26 @@ func TestIntegrationRegisterLoginGetUpdateUser(t *testing.T) {
 		t.Fatalf("token = %q, want %q", token, "test-token")
 	}
 
-	// Duplicate registration is rejected.
-	if _, _, dupErr := repo.RegisterUser(ctx, email, password); status.Code(dupErr) != codes.AlreadyExists {
+	// Replaying the same idempotency key with the same credentials returns the
+	// same user instead of creating a duplicate row.
+	replayed, replayToken, replayErr := repo.RegisterUser(ctx, email, password, idempotencyKey)
+	if replayErr != nil {
+		t.Fatalf("RegisterUser (idempotent replay): %v", replayErr)
+	}
+	if replayed.ID != registered.ID {
+		t.Fatalf("idempotent replay id = %q, want %q", replayed.ID, registered.ID)
+	}
+	if replayToken != "test-token" {
+		t.Fatalf("replay token = %q, want %q", replayToken, "test-token")
+	}
+
+	// Reusing the idempotency key with different credentials conflicts.
+	if _, _, conflictErr := repo.RegisterUser(ctx, email, "different-password", idempotencyKey); status.Code(conflictErr) != codes.AlreadyExists {
+		t.Fatalf("RegisterUser(key reuse) code = %v, want %v (err: %v)", status.Code(conflictErr), codes.AlreadyExists, conflictErr)
+	}
+
+	// Duplicate registration with a fresh key is rejected by the unique email.
+	if _, _, dupErr := repo.RegisterUser(ctx, email, password, idempotencyKey+"-2"); status.Code(dupErr) != codes.AlreadyExists {
 		t.Fatalf("duplicate RegisterUser code = %v, want %v (err: %v)", status.Code(dupErr), codes.AlreadyExists, dupErr)
 	}
 

@@ -22,6 +22,12 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
+// meilisearch document field names for the seeded job log search documents.
+const (
+	docJobIDField      = "job_id"
+	docWorkflowIDField = "workflow_id"
+)
+
 func TestMain(m *testing.M) {
 	testkit.Run(m, testkit.WithPostgres(), testkit.WithClickHouse(), testkit.WithRedis(), testkit.WithMeilisearch())
 }
@@ -110,6 +116,34 @@ func seedUserWorkflow(ctx context.Context, t *testing.T, pg *postgres.Postgres) 
 	return userID, workflowID
 }
 
+// queueJob moves a PENDING job to QUEUED the way the scheduler does before a
+// worker can claim it.
+func queueJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID string) {
+	t.Helper()
+	if _, err := pg.Exec(ctx, `UPDATE jobs SET status = 'QUEUED', dispatch_attempts = 1 WHERE id = $1`, jobID); err != nil {
+		t.Fatalf("queue job: %v", err)
+	}
+}
+
+// seedReadyRuntimeNode registers a healthy READY runtime node so CONTAINER
+// workflow jobs can be claimed, returning its opaque node id.
+func seedReadyRuntimeNode(ctx context.Context, t *testing.T, pg *postgres.Postgres, name string) string {
+	t.Helper()
+
+	nodeID := "integration-node-" + name
+	if _, err := pg.Exec(ctx, `
+		INSERT INTO runtime_nodes (id, node_name, docker_endpoint, status, last_heartbeat_at, max_concurrency)
+		VALUES ($1, $2, 'tcp://127.0.0.1:2375', 'READY', now() AT TIME ZONE 'utc', 4)
+		ON CONFLICT (id) DO UPDATE
+		SET status = 'READY',
+			last_heartbeat_at = now() AT TIME ZONE 'utc',
+			running_jobs = 0
+	`, nodeID, nodeID); err != nil {
+		t.Fatalf("seed runtime node: %v", err)
+	}
+	return nodeID
+}
+
 //nolint:gocyclo // The lifecycle test exercises the full job state machine in one flow.
 func TestIntegrationScheduleAndQueryJob(t *testing.T) {
 	ctx := context.Background()
@@ -167,19 +201,104 @@ func TestIntegrationScheduleAndQueryJob(t *testing.T) {
 		t.Fatalf("GetJobByID id = %q, want %q", byID.ID, jobID)
 	}
 
-	// UpdateJobStatus transitions the job to RUNNING then COMPLETED.
-	if updateErr := repo.UpdateJobStatus(ctx, jobID, "container-1", "RUNNING", ""); updateErr != nil {
-		t.Fatalf("UpdateJobStatus(RUNNING): %v", updateErr)
+	// The full lease lifecycle transitions the job to RUNNING then COMPLETED.
+	queueJob(ctx, t, pg, jobID)
+	nodeID := seedReadyRuntimeNode(ctx, t, pg, t.Name())
+	claimed, ok, claimReason, claimErr := repo.ClaimJob(
+		ctx, jobID, workflowID, "integration-worker",
+		"00000000-0000-0000-0000-0000000000c1", "claim-"+t.Name(), time.Minute, 1,
+	)
+	if claimErr != nil {
+		t.Fatalf("ClaimJob: %v", claimErr)
 	}
-	if updateErr := repo.UpdateJobStatus(ctx, jobID, "container-1", "COMPLETED", ""); updateErr != nil {
-		t.Fatalf("UpdateJobStatus(COMPLETED): %v", updateErr)
+	if !ok {
+		t.Fatalf("ClaimJob did not claim the job: %s", claimReason)
+	}
+	if claimed.LeaseToken == "" {
+		t.Fatal("expected a lease token")
+	}
+	if claimed.RuntimeNodeID.String != nodeID {
+		t.Fatalf("runtime_node_id = %q, want %q", claimed.RuntimeNodeID.String, nodeID)
+	}
+
+	// Attaching the container persists it against the held lease.
+	if attachErr := repo.AttachJobContainer(
+		ctx, jobID, claimed.LeaseToken, "container-1", nodeID, "attach-"+t.Name(),
+	); attachErr != nil {
+		t.Fatalf("AttachJobContainer: %v", attachErr)
+	}
+
+	// Completing the job releases the lease and the runtime slot.
+	if completeErr := repo.CompleteJob(ctx, jobID, claimed.LeaseToken, "complete-"+t.Name()); completeErr != nil {
+		t.Fatalf("CompleteJob: %v", completeErr)
 	}
 	final, err := repo.GetJob(ctx, jobID, workflowID, userID)
 	if err != nil {
-		t.Fatalf("GetJob after update: %v", err)
+		t.Fatalf("GetJob after completion: %v", err)
 	}
 	if final.JobStatus != "COMPLETED" {
 		t.Fatalf("job status = %q, want %q", final.JobStatus, "COMPLETED")
+	}
+	var runningJobs int
+	if err := pg.QueryRow(ctx, `SELECT running_jobs FROM runtime_nodes WHERE id = $1`, nodeID).Scan(&runningJobs); err != nil {
+		t.Fatalf("fetch runtime slot: %v", err)
+	}
+	if runningJobs != 0 {
+		t.Fatalf("running_jobs = %d, want 0 after completion", runningJobs)
+	}
+
+	// Replaying the completion command is a no-op (idempotent terminal effect).
+	if replayCompleteErr := repo.CompleteJob(ctx, jobID, claimed.LeaseToken, "complete-"+t.Name()); replayCompleteErr != nil {
+		t.Fatalf("CompleteJob (idempotent replay): %v", replayCompleteErr)
+	}
+}
+
+func TestIntegrationCancelJobReplaysSnapshot(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	userID, workflowID := seedUserWorkflow(ctx, t, pg)
+	scheduledAt := time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano)
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, scheduledAt, "MANUAL", "idem-cancel-"+t.Name(), 1)
+	if err != nil {
+		t.Fatalf("ScheduleJob: %v", err)
+	}
+
+	// Canceling a PENDING job persists the pre-cancellation cleanup snapshot.
+	commandID := "cancel-" + t.Name()
+	snapshot, cancelErr := repo.CancelJob(ctx, jobID, commandID, "OPERATOR_REQUEST")
+	if cancelErr != nil {
+		t.Fatalf("CancelJob: %v", cancelErr)
+	}
+	if snapshot.ID != jobID {
+		t.Fatalf("snapshot id = %q, want %q", snapshot.ID, jobID)
+	}
+	if snapshot.PreviousStatus != "PENDING" {
+		t.Fatalf("snapshot previous_status = %q, want %q", snapshot.PreviousStatus, "PENDING")
+	}
+
+	// The job is CANCELED in the database.
+	job, err := repo.GetJob(ctx, jobID, workflowID, userID)
+	if err != nil {
+		t.Fatalf("GetJob after cancel: %v", err)
+	}
+	if job.JobStatus != "CANCELED" {
+		t.Fatalf("job status = %q, want %q", job.JobStatus, "CANCELED")
+	}
+
+	// Replaying the same cancellation command returns the stored snapshot.
+	replayedSnapshot, replayErr := repo.CancelJob(ctx, jobID, commandID, "OPERATOR_REQUEST")
+	if replayErr != nil {
+		t.Fatalf("CancelJob (idempotent replay): %v", replayErr)
+	}
+	if replayedSnapshot == nil || replayedSnapshot.ID != snapshot.ID || replayedSnapshot.PreviousStatus != snapshot.PreviousStatus {
+		t.Fatalf("replayed snapshot = %+v, want %+v", replayedSnapshot, snapshot)
+	}
+
+	// Canceling an unknown job is not found.
+	if _, unknownErr := repo.CancelJob(ctx, "00000000-0000-0000-0000-000000000000", "cancel-unknown-"+t.Name(), "OPERATOR_REQUEST"); status.Code(unknownErr) != codes.NotFound {
+		t.Fatalf("CancelJob(unknown) code = %v, want %v (err: %v)", status.Code(unknownErr), codes.NotFound, unknownErr)
 	}
 }
 
@@ -254,12 +373,12 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	// the testkit.
 	docs := []map[string]any{
 		{
-			"id": "doc-" + t.Name() + "-1", jobLogsEventIDField: "log-1", "job_id": jobID, "workflow_id": workflowID, "user_id": userID,
-			"message": "authentication succeeded", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "sequence_num": 1, "stream": "stdout",
+			"id": "doc-" + t.Name() + "-1", jobLogsEventIDField: "log-1", docJobIDField: jobID, docWorkflowIDField: workflowID,
+			jobLogsMessageField: "authentication succeeded", jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 1, jobLogsStreamField: "stdout",
 		},
 		{
-			"id": "doc-" + t.Name() + "-2", jobLogsEventIDField: "log-2", "job_id": jobID, "workflow_id": workflowID, "user_id": userID,
-			"message": "database connection refused", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "sequence_num": 2, "stream": "stderr",
+			"id": "doc-" + t.Name() + "-2", jobLogsEventIDField: "log-2", docJobIDField: jobID, docWorkflowIDField: workflowID,
+			jobLogsMessageField: "database connection refused", jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 2, jobLogsStreamField: "stderr",
 		},
 	}
 	task, err := ms.Index(meilisearchpkg.IndexJobLogs).AddDocuments(docs, nil)

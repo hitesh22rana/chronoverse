@@ -594,11 +594,11 @@ The token is required to:
 
 ## Renewal
 
-Workers renew while the workload runs. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
+Workers prove authority with an immediate conditional renewal before starting work from a claim or recovery response, then renew while the workload runs. Renewal never revives an already-expired lease. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
 
 ## Recovery
 
-Execution workers periodically request expired-lease recovery in bounded batches. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
+Execution workers periodically request expired-lease recovery in bounded batches. A replay returns only leases whose token, worker, process owner, status, and database-evaluated expiry are still valid. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
 
 ## Split-brain prevention
 
@@ -961,7 +961,7 @@ Authenticated mutations require CSRF validation in addition to the session cooki
 
 ## Idempotency keys
 
-Retry-prone workflow and manual scheduling commands require `Idempotency-Key`. The service stores the command result with the mutation so a retry returns the original outcome.
+Registration, retry-prone workflow mutations, and manual scheduling commands require `Idempotency-Key`. The service stores the command result with the mutation so a retry returns the original outcome. The dashboard retains a registration key after a failed submission with unchanged credentials and rotates it only after success or when the credentials change.
 
 ## Key rules
 

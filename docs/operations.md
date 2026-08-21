@@ -142,9 +142,13 @@ does not support mixed application versions across an idempotency-ledger
 migration.
 
 1. Take and verify PostgreSQL and ClickHouse backups.
-2. Stop public traffic, then stop the server, scheduling and execution workers,
-   workflow workers, processors, and the outbox relay. Allow in-flight requests
-   and database transactions to finish before continuing.
+2. Stop public traffic and mutation producers first. While the existing outbox
+   relay and workflow worker are still running, wait until terminal job outbox
+   rows are published and the workflow worker's consumer lag reaches zero. This
+   drain is required before migration 11 can safely seed completed terminal
+   identities. Then stop the server, scheduling and execution workers, workflow
+   workers, processors, and the outbox relay. Allow in-flight requests and
+   database transactions to finish before continuing.
 3. Run the new release's `database-migration` image while PostgreSQL remains
    available. Migration preflight checks run before destructive schema changes;
    an unexpired in-progress command, malformed legacy identity, or normalized-key

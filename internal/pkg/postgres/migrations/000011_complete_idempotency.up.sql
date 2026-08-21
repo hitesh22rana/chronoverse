@@ -496,6 +496,29 @@ BEGIN
 END;
 $$;
 
+-- The maintenance-window runbook requires terminal job events to be fully
+-- published and consumed before this migration starts. Under that invariant,
+-- every already-completed job has already reset its workflow failure counter.
+-- Preserve those applied identities so a later Kafka redrive cannot reset a
+-- counter that was accumulated by newer failures.
+INSERT INTO workflow_terminal_effects (
+    job_id,
+    workflow_id,
+    user_id,
+    effect,
+    threshold_reached,
+    created_at
+)
+SELECT
+    job.id,
+    job.workflow_id,
+    job.user_id,
+    'COMPLETED',
+    NULL,
+    COALESCE(job.completed_at, job.updated_at, job.created_at)
+FROM jobs AS job
+WHERE job.status = 'COMPLETED';
+
 INSERT INTO workflow_terminal_effects (
     job_id,
     workflow_id,

@@ -207,7 +207,7 @@ func (r *Repository) ClaimJob(
 	var noRuntime bool
 	runtimeErr := tx.QueryRow(ctx, queuedContainerJobMissingRuntimeQuery(), jobID, workflowID, dispatchAttempt, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(&noRuntime)
 	if runtimeErr != nil {
-		return nil, false, "", runtimeErr
+		return nil, false, "", r.mapJobLeaseReadError(runtimeErr, "check queued job runtime availability")
 	}
 	if noRuntime {
 		return nil, false, "", status.Error(grpccodes.Unavailable, "no healthy runtime node is available")

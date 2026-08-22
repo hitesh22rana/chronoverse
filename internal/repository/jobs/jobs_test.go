@@ -2,6 +2,7 @@
 package jobs
 
 import (
+	"context"
 	"database/sql"
 	"regexp"
 	"strings"
@@ -260,6 +261,28 @@ func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJob
 	assertContains(t, query, "rn.status = 'READY'")
 	assertContains(t, query, "rn.last_heartbeat_at >")
 	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
+}
+
+func TestMapJobLeaseReadErrorPreservesContextStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &Repository{}
+	for name, test := range map[string]struct {
+		err  error
+		code codes.Code
+	}{
+		"canceled":          {err: context.Canceled, code: codes.Canceled},
+		"deadline exceeded": {err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			mapped := repo.mapJobLeaseReadError(test.err, "check queued job runtime availability")
+			if got := status.Code(mapped); got != test.code {
+				t.Fatalf("status.Code() = %s, want %s", got, test.code)
+			}
+		})
+	}
 }
 
 func TestReleaseJobForRetryQueryCarriesPreviousRuntimeOwner(t *testing.T) {

@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	dockerclient "github.com/docker/docker/client"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -236,6 +237,29 @@ func (s *suite) start(t *testing.T, svc service) {
 		t.Skipf("integration test skipped: failed to start %s testcontainer: %v", svc, err)
 	}
 	s.started[svc] = true
+}
+
+// RequireDocker skips the test when running in -short mode or when the local
+// Docker daemon is unreachable. Testcontainers-backed tests get this behavior
+// from suite.start; suites driving the host daemon directly (for example the
+// container workflow tests) call it at the top of each test.
+func RequireDocker(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+
+	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	if err != nil {
+		t.Skipf("integration test skipped: docker daemon unavailable: %v", err)
+	}
+	defer cli.Close()
+
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := cli.Ping(pingCtx); err != nil {
+		t.Skipf("integration test skipped: docker daemon unreachable: %v", err)
+	}
 }
 
 // Eventually polls fn every interval until it returns true or the timeout

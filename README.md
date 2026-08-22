@@ -183,7 +183,7 @@ make dependencies
 make generate
 make mockgen
 make test/short
-make test
+make test/integration
 make lint
 make build/all
 ```

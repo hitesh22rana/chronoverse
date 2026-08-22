@@ -13,19 +13,18 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 const (
 	collectionTimeout = 10 * time.Second
 )
 
-func TestDockerWorkflow_Execute(t *testing.T) {
+func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
@@ -199,13 +198,11 @@ func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
 	}
 }
 
-func TestDockerWorkflow_Build(t *testing.T) {
+func TestIntegrationDockerWorkflowBuild(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
@@ -249,13 +246,11 @@ func TestDockerWorkflow_Build(t *testing.T) {
 	}
 }
 
-func TestDockerWorkflow_ImageExists(t *testing.T) {
+func TestIntegrationDockerWorkflowImageExists(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
@@ -277,13 +272,11 @@ func TestDockerWorkflow_ImageExists(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestDockerWorkflow_Terminate(t *testing.T) {
+func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)

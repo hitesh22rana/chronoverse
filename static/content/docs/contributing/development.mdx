@@ -25,13 +25,12 @@ make mockgen
 
 ```bash
 make test/short
-make test
 make test/integration
 ```
 
-`make test/short` and `make test` run the unit suites (the full target adds the race detector). `make test/integration` runs the Testcontainers-backed integration suite under `internal/repository` and `internal/pkg/commandidempotency` against real PostgreSQL, ClickHouse, Redis, Meilisearch, and Kafka; it requires a running Docker daemon.
+`make test/short` runs every unit suite with the race detector; Docker-backed integration tests self-skip under `-short`. `make test/integration` selects every `TestIntegration*` test and needs a running Docker daemon: repository packages under `internal/repository`, the command ledger in `internal/pkg/commandidempotency` (both provisioned with Testcontainers), and the container workflow tests in `internal/pkg/kind/container` (which drive the host Docker daemon directly).
 
-Integration tests live as `*_integration_test.go` files inside each repository package. They share a single bootstrap, `internal/pkg/testkit`, that starts one container per requested service in the package's `TestMain` (for example `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`), applies the embedded migrations and index setup, and terminates everything when the test binary finishes. The suite reuses the production clients and runners from the sibling `internal/pkg` packages — `postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes`, and `kafka.EnsureTopics` — so tests exercise the exact code paths services use without re-implementing migrations. Integration tests self-skip under `-short` or when Docker is unavailable, keeping `make test/short` fast on every machine.
+Integration tests live as `*_integration_test.go` files. Testcontainers-backed suites share a single bootstrap, `internal/pkg/testkit`, that starts one container per requested service in the package's `TestMain` (for example `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`), applies the embedded migrations and index setup, and terminates everything when the test binary finishes. The suite reuses the production clients and runners from the sibling `internal/pkg` packages — `postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes`, and `kafka.EnsureTopics` — so tests exercise the exact code paths services use without re-implementing migrations. Integration tests self-skip under `-short` or when Docker is unavailable (`testkit.RequireDocker` provides the same gate for direct-daemon suites), keeping `make test/short` fast on every machine.
 
 ## Lint and build
 

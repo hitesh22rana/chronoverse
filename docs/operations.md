@@ -220,7 +220,6 @@ make dependencies
 make generate
 make mockgen
 make test/short
-make test
 make test/integration
 make lint
 make lint/fix
@@ -234,15 +233,17 @@ Important notes:
 - `make mockgen` installs the configured tools and runs every `//go:generate`
   directive.
 - `make tools` installs Go tooling into `./.bin`.
-- `make test` runs Go tests with the race detector.
+- `make test/short` runs every unit suite with the race detector; Docker-backed
+  integration tests self-skip under `-short`.
 - `make build/all` builds all Go services and workers, including `outbox-relay`.
 
 ### Integration Tests
 
-Integration tests live in each repository package under `internal/repository` and
-in `internal/pkg/commandidempotency` as `*_integration_test.go` files. They run
-against real infrastructure (PostgreSQL, ClickHouse, Redis, Meilisearch, and
-Kafka) provisioned with Testcontainers, rather than mocks.
+Every Docker-backed suite is an `*_integration_test.go` file with `TestIntegration*`
+test names: repository packages under `internal/repository`, the command ledger in
+`internal/pkg/commandidempotency` (both provisioned with Testcontainers), and the
+container workflow tests in `internal/pkg/kind/container` (which drive the host
+Docker daemon directly).
 
 ```sh
 make test/integration   # race detector + real containers; needs a Docker daemon

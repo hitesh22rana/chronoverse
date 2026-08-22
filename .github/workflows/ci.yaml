@@ -77,14 +77,11 @@ jobs:
       - name: Setup Go Environment and Dependencies
         uses: ./.github/actions/setup-go-env
 
-      - name: Pull alpine image for tests
-        run: docker pull alpine:3.22.2
-
-      # Run the unit suite with the race detector. Integration tests skip under
-      # -short and are covered by the dedicated `integration` job below, so the
-      # general test gate stays fast and Docker-independent.
+      # Run every unit suite with the race detector. Docker-backed integration
+      # tests skip under -short and are covered by the dedicated `integration`
+      # job below, so this gate stays fast and Docker-independent.
       - name: Run tests
-        run: go test -race -short ./...
+        run: make test/short
 
       - name: Check if PR can be merged
         if: github.event_name == 'pull_request'
@@ -95,7 +92,7 @@ jobs:
           fi
 
   integration:
-    name: Integration tests (Testcontainers)
+    name: Integration tests (Docker)
     permissions:
       contents: read
       packages: write

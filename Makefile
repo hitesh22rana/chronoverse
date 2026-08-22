@@ -22,19 +22,17 @@ lint: dependencies
 lint/fix: dependencies
 	@${GO_BIN}/golangci-lint run --fix
 
+# Runs every unit suite with the race detector. Docker-backed integration
+# tests self-skip under -short and are covered by test/integration.
 .PHONY: test/short
 test/short: dependencies
-	@go test -v -short ./...
+	@go test -race -short ./...
 
-.PHONY: test
-test: dependencies
-	@go test -race -v ./...
-
-# Runs only the Testcontainers-backed integration tests under
-# internal/repository and internal/pkg. Requires a running Docker daemon.
+# Runs all Docker-backed suites (Testcontainers and direct-daemon tests) by
+# selecting every TestIntegration* test. Requires a running Docker daemon.
 .PHONY: test/integration
 test/integration: dependencies
-	@go test -race -v -count=1 -run 'TestIntegration' ./internal/repository/... ./internal/pkg/commandidempotency/...
+	@go test -race -v -count=1 -run 'TestIntegration' ./...
 
 .PHONY: k8s/setup
 k8s/setup:

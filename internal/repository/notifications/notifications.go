@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -262,17 +263,9 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 		span.End()
 	}()
 
-	unique := make([]string, 0, len(ids))
-	seen := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		unique = append(unique, id)
-	}
-	if len(unique) == 0 {
-		return status.Error(codes.InvalidArgument, "at least one notification ID is required")
+	unique, err := canonicalNotificationIDs(ids)
+	if err != nil {
+		return err
 	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
@@ -319,6 +312,28 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 	}
 
 	return tx.Commit(ctx)
+}
+
+func canonicalNotificationIDs(ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one notification ID is required")
+	}
+
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, rawID := range ids {
+		id, err := uuid.Parse(rawID)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid notification ID: %v", err)
+		}
+		canonicalID := id.String()
+		if _, ok := seen[canonicalID]; ok {
+			continue
+		}
+		seen[canonicalID] = struct{}{}
+		unique = append(unique, canonicalID)
+	}
+	return unique, nil
 }
 
 // ListNotifications returns notifications by user ID.

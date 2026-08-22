@@ -187,7 +187,7 @@ func (r *Repository) ClaimJob(
 	deferredQuery := deferBlockedJobQuery()
 	deferredTag, err := tx.Exec(ctx, deferredQuery, jobID)
 	if err != nil {
-		return nil, false, "", err
+		return nil, false, "", r.mapJobLeaseWriteError(err, "defer blocked job")
 	}
 	if deferredTag.RowsAffected() > 0 {
 		reason = "job deferred behind another workflow job"

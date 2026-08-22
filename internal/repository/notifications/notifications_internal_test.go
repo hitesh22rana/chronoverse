@@ -51,3 +51,29 @@ func TestNotificationRequestHashRejectsNonObjectPayload(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalNotificationIDsDeduplicatesEquivalentUUIDSpellings(t *testing.T) {
+	t.Parallel()
+
+	const canonical = "550e8400-e29b-41d4-a716-446655440000"
+	ids, err := canonicalNotificationIDs([]string{
+		canonical,
+		"550E8400-E29B-41D4-A716-446655440000",
+		"{550e8400-e29b-41d4-a716-446655440000}",
+	})
+	if err != nil {
+		t.Fatalf("canonicalNotificationIDs() error = %v", err)
+	}
+	if len(ids) != 1 || ids[0] != canonical {
+		t.Fatalf("canonicalNotificationIDs() = %v, want [%s]", ids, canonical)
+	}
+}
+
+func TestCanonicalNotificationIDsRejectsInvalidUUID(t *testing.T) {
+	t.Parallel()
+
+	_, err := canonicalNotificationIDs([]string{"not-a-uuid"})
+	if code := status.Code(err); code != codes.InvalidArgument {
+		t.Fatalf("canonicalNotificationIDs() code = %s, want %s", code, codes.InvalidArgument)
+	}
+}

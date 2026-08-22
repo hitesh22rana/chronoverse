@@ -263,7 +263,7 @@ func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJob
 	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
 }
 
-func TestMapJobLeaseReadErrorPreservesContextStatus(t *testing.T) {
+func TestMapJobLeaseErrorsPreserveContextStatus(t *testing.T) {
 	t.Parallel()
 
 	repo := &Repository{}
@@ -277,9 +277,13 @@ func TestMapJobLeaseReadErrorPreservesContextStatus(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			mapped := repo.mapJobLeaseReadError(test.err, "check queued job runtime availability")
-			if got := status.Code(mapped); got != test.code {
-				t.Fatalf("status.Code() = %s, want %s", got, test.code)
+			for operation, mapped := range map[string]error{
+				"read":  repo.mapJobLeaseReadError(test.err, "check queued job runtime availability"),
+				"write": repo.mapJobLeaseWriteError(test.err, "defer blocked job"),
+			} {
+				if got := status.Code(mapped); got != test.code {
+					t.Errorf("%s status.Code() = %s, want %s", operation, got, test.code)
+				}
 			}
 		})
 	}

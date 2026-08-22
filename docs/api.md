@@ -420,6 +420,10 @@ Body:
 
 Returns `204 No Content`.
 
+Duplicate IDs are ignored. Every distinct ID must exist and belong to the
+authenticated user; otherwise the request returns `404 Not Found` without
+changing any notification.
+
 ## Analytics
 
 ### User Analytics

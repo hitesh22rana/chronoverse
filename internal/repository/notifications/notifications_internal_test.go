@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"context"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -75,5 +76,27 @@ func TestCanonicalNotificationIDsRejectsInvalidUUID(t *testing.T) {
 	_, err := canonicalNotificationIDs([]string{"not-a-uuid"})
 	if code := status.Code(err); code != codes.InvalidArgument {
 		t.Fatalf("canonicalNotificationIDs() code = %s, want %s", code, codes.InvalidArgument)
+	}
+}
+
+func TestMapNotificationReadDatabaseErrorPreservesContextStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &Repository{}
+	for name, test := range map[string]struct {
+		err  error
+		code codes.Code
+	}{
+		"canceled":          {err: context.Canceled, code: codes.Canceled},
+		"deadline exceeded": {err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := repo.mapNotificationReadDatabaseError(test.err, "commit notification-read transaction")
+			if code := status.Code(err); code != test.code {
+				t.Fatalf("status code = %s, want %s", code, test.code)
+			}
+		})
 	}
 }

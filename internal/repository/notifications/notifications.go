@@ -269,7 +269,7 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		return status.Errorf(codes.Internal, "failed to start notification-read transaction: %v", err)
+		return r.mapNotificationReadDatabaseError(err, "start notification-read transaction")
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
@@ -277,10 +277,7 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 	var owned int
 	query := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE id = ANY($1) AND user_id = $2`, postgres.TableNotifications)
 	if err = tx.QueryRow(ctx, query, unique, userID).Scan(&owned); err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
-			return status.Errorf(codes.InvalidArgument, "invalid notification IDs: %v", err)
-		}
-		return status.Errorf(codes.Internal, "failed to validate notification ownership: %v", err)
+		return r.mapNotificationReadDatabaseError(err, "validate notification ownership")
 	}
 	if owned != len(unique) {
 		return status.Error(codes.NotFound, "one or more notifications were not found")
@@ -294,24 +291,13 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 
 	_, err = tx.Exec(ctx, query, unique, userID)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid notification ID's: %v", err)
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to mark all notifications as read: %v", err)
-		return err
+		return r.mapNotificationReadDatabaseError(err, "mark all notifications as read")
 	}
 
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return r.mapNotificationReadDatabaseError(err, "commit notification-read transaction")
+	}
+	return nil
 }
 
 func canonicalNotificationIDs(ids []string) ([]string, error) {
@@ -334,6 +320,19 @@ func canonicalNotificationIDs(ids []string) ([]string, error) {
 		unique = append(unique, canonicalID)
 	}
 	return unique, nil
+}
+
+func (r *Repository) mapNotificationReadDatabaseError(err error, operation string) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	}
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, err.Error())
+	}
+	if r.pg.IsInvalidTextRepresentation(err) {
+		return status.Errorf(codes.InvalidArgument, "invalid notification IDs: %v", err)
+	}
+	return status.Errorf(codes.Internal, "failed to %s: %v", operation, err)
 }
 
 // ListNotifications returns notifications by user ID.

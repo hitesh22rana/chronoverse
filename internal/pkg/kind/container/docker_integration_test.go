@@ -34,6 +34,10 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		workflow.Close()
 	})
 
+	// Execute creates containers from local images without pulling, so make
+	// sure the base image exists through the production pull path.
+	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
+
 	tests := []struct {
 		name           string
 		image          string
@@ -285,6 +289,9 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 	t.Cleanup(func() {
 		workflow.Close()
 	})
+
+	// Termination creates the container through Execute, which does not pull.
+	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
 
 	tests := []struct {
 		name  string

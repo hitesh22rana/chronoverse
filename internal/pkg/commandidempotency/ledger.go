@@ -152,6 +152,9 @@ func NormalizeKey(raw string) (string, error) {
 }
 
 // Reserve creates a PROCESSING reservation or returns an unexpired completed replay.
+// A fresh reservation must be mutated and completed in this same transaction;
+// callers must never commit a PROCESSING row because it deliberately has no
+// replay expiry and represents transaction-local command ownership.
 // Compatible request hashes are accepted only when matching an existing row;
 // fresh reservations always persist the primary request hash.
 func Reserve(

@@ -421,6 +421,36 @@ func TestRecoveredLeaseRequiresImmediateRenewalBeforeContainerAccess(t *testing.
 	}
 }
 
+func TestReconcileHandoffsRetainsLiveAuthorityAndReleasesInactiveAuthority(t *testing.T) {
+	t.Parallel()
+
+	gate := newHandoffRegistry(1)
+	request := &jobspb.ClaimJobRequest{Id: "job-1", CommandId: "claim-1"}
+	entry, owner, err := gate.getOrReserve("claim-1", request)
+	if err != nil || !owner {
+		t.Fatalf("getOrReserve() = (%v, %v), want owner", owner, err)
+	}
+	if !gate.activate(entry, &jobspb.ClaimJobResponse{Claimed: true, Id: "job-1", LeaseToken: "lease-1"}) {
+		t.Fatal("activate() = false")
+	}
+	gate.markAwaiting("claim-1")
+
+	jobsClient := &reconciliationJobsClient{}
+	repo := &Repository{
+		handoffs: gate,
+		auth:     fakeAuth{},
+		svc:      &Services{Jobs: jobsClient},
+	}
+	repo.reconcileHandoffs(t.Context())
+	if gate.size() != 1 {
+		t.Fatal("live database authority released the awaiting permit")
+	}
+	repo.reconcileHandoffs(t.Context())
+	if gate.size() != 0 {
+		t.Fatal("inactive database authority retained the awaiting permit")
+	}
+}
+
 func TestRecoverExpiredLeaseBatchStartsRenewalForEveryClaimedJob(t *testing.T) {
 	t.Parallel()
 
@@ -527,6 +557,19 @@ type lateFailingRenewalJobsClient struct {
 
 type failedImmediateRenewalJobsClient struct {
 	jobspb.JobsServiceClient
+}
+
+type reconciliationJobsClient struct {
+	jobspb.JobsServiceClient
+
+	calls atomic.Int32
+}
+
+func (c *reconciliationJobsClient) ClaimJob(context.Context, *jobspb.ClaimJobRequest, ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
+	if c.calls.Add(1) == 1 {
+		return &jobspb.ClaimJobResponse{Claimed: true, Id: "job-1", LeaseToken: "lease-1"}, nil
+	}
+	return &jobspb.ClaimJobResponse{Claimed: false, Reason: "stored lease is no longer active"}, nil
 }
 
 func (*failedImmediateRenewalJobsClient) RenewJobLease(context.Context, *jobspb.RenewJobLeaseRequest, ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {

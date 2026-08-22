@@ -110,7 +110,7 @@ func (r *Repository) ClaimJob(
 			}
 			return nil, false, stored.Reason, nil
 		}
-		query := renewClaimReplayQuery()
+		query := validateClaimReplayQuery()
 		err = tx.QueryRow(
 			ctx,
 			query,
@@ -119,10 +119,9 @@ func (r *Repository) ClaimJob(
 			workerID,
 			processInstanceID,
 			dispatchAttempt,
-			leaseSeconds(leaseDuration),
 		).Scan(&stored.Job.LeaseExpiresAt)
 		if err != nil && !r.pg.IsNoRows(err) {
-			return nil, false, "", r.mapJobLeaseWriteError(err, "renew claim replay")
+			return nil, false, "", r.mapJobLeaseReadError(err, "validate claim replay")
 		}
 		valid := err == nil
 		if err = tx.Commit(ctx); err != nil {
@@ -913,23 +912,17 @@ func (r *Repository) renewRecoveryReplay(
 	return active, nil
 }
 
-func renewClaimReplayQuery() string {
+func validateClaimReplayQuery() string {
 	return fmt.Sprintf(`
-		WITH renewal AS (
-			SELECT clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
-		)
-		UPDATE %s AS job
-		SET lease_expires_at = renewal.renewed_at + ($6::int * interval '1 second'),
-			last_heartbeat_at = renewal.renewed_at
-		FROM renewal
+		SELECT job.lease_expires_at
+		FROM %s AS job
 		WHERE job.id = $1
 		  AND job.status = 'RUNNING'
 		  AND job.lease_token = $2
 		  AND job.leased_by = $3
 		  AND job.lease_process_instance_id = $4
 		  AND job.dispatch_attempts = $5
-		  AND job.lease_expires_at > renewal.renewed_at
-		RETURNING job.lease_expires_at;
+		  AND job.lease_expires_at > clock_timestamp() AT TIME ZONE 'utc';
 	`, postgres.TableJobs)
 }
 

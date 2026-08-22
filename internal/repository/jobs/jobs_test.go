@@ -45,17 +45,19 @@ func TestClaimJobQueryWaitsForRuntimeRowLock(t *testing.T) {
 	assertContains(t, query, "terminal_reason_code = NULL")
 }
 
-func TestClaimReplayRenewsOnlyLiveExactAuthority(t *testing.T) {
+func TestClaimReplayValidationIsReadOnlyAndExact(t *testing.T) {
 	t.Parallel()
 
-	query := renewClaimReplayQuery()
-	assertContains(t, query, "UPDATE jobs AS job")
+	query := validateClaimReplayQuery()
+	assertContains(t, query, "SELECT job.lease_expires_at")
+	assertContains(t, query, "FROM jobs AS job")
 	assertContains(t, query, "job.lease_token = $2")
 	assertContains(t, query, "job.leased_by = $3")
 	assertContains(t, query, "job.lease_process_instance_id = $4")
 	assertContains(t, query, "job.dispatch_attempts = $5")
-	assertContains(t, query, "job.lease_expires_at > renewal.renewed_at")
-	assertContains(t, query, "RETURNING job.lease_expires_at")
+	assertContains(t, query, "job.lease_expires_at > clock_timestamp() AT TIME ZONE 'utc'")
+	assertNotContains(t, query, "UPDATE")
+	assertNotContains(t, query, "SET lease_expires_at")
 }
 
 func TestRecoveryReplayRenewsAndReturnsOnlyLiveExactAuthorities(t *testing.T) {

@@ -96,6 +96,9 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    # Caps a stalled container or image-pull step; the Go-level timeout only
+    # bounds the tests themselves (-timeout=20m), not the job.
+    timeout-minutes: 30
     steps:
       - name: Check out code
         uses: actions/checkout@v7

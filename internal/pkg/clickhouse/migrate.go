@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// Migration represents a single embedded migration file.
-type Migration struct {
+// migration represents a single embedded migration file.
+type migration struct {
 	Version int
 	Name    string
 	Content string
@@ -93,11 +93,11 @@ func getAppliedMigrations(ctx context.Context, client *Client) (map[int]bool, er
 }
 
 // getPendingMigrations returns the embedded migrations that have not been applied yet.
-func getPendingMigrations(applied map[int]bool) ([]Migration, error) {
-	var migrations []Migration
+func getPendingMigrations(applied map[int]bool) ([]migration, error) {
+	var migrations []migration
 
 	// Read migration files from the embedded filesystem.
-	err := fs.WalkDir(MigrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -124,12 +124,12 @@ func getPendingMigrations(applied map[int]bool) ([]Migration, error) {
 		}
 
 		// Read migration content.
-		content, err := fs.ReadFile(MigrationsFS, path)
+		content, err := fs.ReadFile(migrationsFS, path)
 		if err != nil {
 			return fmt.Errorf("read migration file %s: %w", path, err)
 		}
 
-		migrations = append(migrations, Migration{
+		migrations = append(migrations, migration{
 			Version: version,
 			Name:    filename,
 			Content: string(content),
@@ -150,7 +150,7 @@ func getPendingMigrations(applied map[int]bool) ([]Migration, error) {
 }
 
 // applyMigration applies a single migration.
-func applyMigration(ctx context.Context, client *Client, migration Migration) error {
+func applyMigration(ctx context.Context, client *Client, migration migration) error {
 	// Mark migration as dirty (in progress).
 	if err := client.Exec(ctx, "INSERT INTO schema_migrations (version, dirty) VALUES (?, 1)", migration.Version); err != nil {
 		return fmt.Errorf("mark migration %d dirty: %w", migration.Version, err)
@@ -165,7 +165,9 @@ func applyMigration(ctx context.Context, client *Client, migration Migration) er
 	}
 
 	// Mark migration as clean (completed). The mutation is made synchronous so
-	// that subsequent runs never observe a stale dirty flag.
+	// that subsequent runs never observe a stale dirty flag. Note that
+	// mutations_sync = 1 only waits on the local server; a replicated cluster
+	// would need mutations_sync = 2.
 	if err := client.Exec(ctx, "ALTER TABLE schema_migrations UPDATE dirty = 0 WHERE version = ? SETTINGS mutations_sync = 1", migration.Version); err != nil {
 		return fmt.Errorf("mark migration %d clean: %w", migration.Version, err)
 	}

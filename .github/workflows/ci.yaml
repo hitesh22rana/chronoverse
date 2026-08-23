@@ -110,8 +110,9 @@ jobs:
           docker pull redis:8.2.1-alpine
           docker pull getmeili/meilisearch:v1.45.2
           docker pull confluentinc/cp-kafka:7.6.7
-          # Pre-pulled so ensureBaseImage finds it locally; the mq image used
-          # by the remote-pull test case is deliberately not pre-pulled.
+          # Pre-pulled for speed and determinism; DockerWorkflow.Build pulls
+          # the image itself when missing. The mq image used by the remote-pull
+          # test case is deliberately not pre-pulled.
           docker pull alpine:3.22.2
 
       - name: Run integration tests

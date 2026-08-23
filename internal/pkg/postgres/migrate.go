@@ -15,7 +15,7 @@ import (
 // at the given DSN. It is safe to call repeatedly; already-applied migrations
 // are a no-op.
 func Migrate(dsn string) error {
-	sourceInstance, err := iofs.New(MigrationsFS, "migrations")
+	sourceInstance, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("create migration source: %w", err)
 	}

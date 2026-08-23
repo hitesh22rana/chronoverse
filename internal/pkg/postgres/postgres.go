@@ -19,10 +19,10 @@ const (
 	MaxHealthCheckRetries = 3
 )
 
-// MigrationsFS holds the embedded postgres migration files.
+// migrationsFS holds the embedded postgres migration files.
 //
 //go:embed migrations/*.sql
-var MigrationsFS embed.FS
+var migrationsFS embed.FS
 
 // TLSConfig holds the PostgreSQL tls config.
 type TLSConfig struct {

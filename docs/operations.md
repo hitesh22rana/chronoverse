@@ -135,6 +135,16 @@ process starts, such as generated certificate files and hostPath permissions.
 Operators should still inspect bootstrap Jobs before scaling application
 workloads.
 
+### Resolving Failed Migrations
+
+Both migration runners use the same dirty-flag bookkeeping (golang-migrate for
+PostgreSQL, an equivalent native runner for ClickHouse): a migration that fails
+partway leaves its `schema_migrations` row marked dirty, and every later run
+refuses to continue rather than re-applying partially executed DDL. To recover,
+inspect the failed migration's statements, restore the schema to a consistent
+state, clear the dirty flag (`migrate force` for PostgreSQL, deleting the row
+for ClickHouse), and restart `init-database-migration`.
+
 ## Maintenance-Window Upgrades
 
 Schema-changing releases must be deployed as an offline cutover. Chronoverse

@@ -504,15 +504,47 @@ func TestIntegrationListJobsWithCursor(t *testing.T) {
 		t.Fatal("ListJobs returned an empty cursor although more jobs exist")
 	}
 
-	seen := make(map[string]struct{}, totalJobs)
+	seen := walkListJobsPages(ctx, t, repo, workflowID, userID, first)
+
+	if len(seen) != totalJobs {
+		t.Fatalf("pagination visited %d distinct jobs, want %d", len(seen), totalJobs)
+	}
+	for id := range want {
+		if _, ok := seen[id]; !ok {
+			t.Fatalf("pagination missed job %q", id)
+		}
+	}
+
+	// Filtering by status hides non-matching jobs.
+	completed, err := repo.ListJobs(ctx, workflowID, userID, "", &jobsmodel.ListJobsFilters{Status: "COMPLETED"})
+	if err != nil {
+		t.Fatalf("ListJobs(COMPLETED): %v", err)
+	}
+	if len(completed.Jobs) != 0 {
+		t.Fatalf("ListJobs(COMPLETED) returned %d jobs, want 0", len(completed.Jobs))
+	}
+}
+
+// walkListJobsPages follows ListJobs cursors from the first page until the
+// cursor is exhausted, returning every distinct job id observed. It fails the
+// test on invalid cursors, transport errors, empty pages or duplicate ids.
+func walkListJobsPages(
+	ctx context.Context,
+	t *testing.T,
+	repo *Repository,
+	workflowID, userID string,
+	first *jobsmodel.ListJobsResponse,
+) map[string]struct{} {
+	t.Helper()
+
+	seen := make(map[string]struct{}, len(first.Jobs))
 	for _, job := range first.Jobs {
 		seen[job.ID] = struct{}{}
 	}
 
-	// Cursor pagination walks the rest of the list. The returned cursor is
-	// base64-encoded; the gRPC layer decodes it before reaching the repository.
-	cursor := first.Cursor
-	for page := 2; cursor != ""; page++ {
+	// The returned cursor is base64-encoded; the gRPC layer decodes it before
+	// reaching the repository.
+	for page, cursor := 2, first.Cursor; cursor != ""; page++ {
 		raw, decodeErr := base64.StdEncoding.DecodeString(cursor)
 		if decodeErr != nil {
 			t.Fatalf("ListJobs(page %d) returned an invalid cursor: %v", page, decodeErr)
@@ -533,21 +565,5 @@ func TestIntegrationListJobsWithCursor(t *testing.T) {
 		cursor = next.Cursor
 	}
 
-	if len(seen) != totalJobs {
-		t.Fatalf("pagination visited %d distinct jobs, want %d", len(seen), totalJobs)
-	}
-	for id := range want {
-		if _, ok := seen[id]; !ok {
-			t.Fatalf("pagination missed job %q", id)
-		}
-	}
-
-	// Filtering by status hides non-matching jobs.
-	completed, err := repo.ListJobs(ctx, workflowID, userID, "", &jobsmodel.ListJobsFilters{Status: "COMPLETED"})
-	if err != nil {
-		t.Fatalf("ListJobs(COMPLETED): %v", err)
-	}
-	if len(completed.Jobs) != 0 {
-		t.Fatalf("ListJobs(COMPLETED) returned %d jobs, want 0", len(completed.Jobs))
-	}
+	return seen
 }

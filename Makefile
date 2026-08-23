@@ -30,9 +30,12 @@ test/short: dependencies
 
 # Runs all Docker-backed suites (Testcontainers and direct-daemon tests) by
 # selecting every TestIntegration* test. Requires a running Docker daemon.
+# The explicit -timeout leaves headroom over Go's default 10m per-package
+# limit: the joblogs suite boots five containers plus sequential Eventually
+# windows.
 .PHONY: test/integration
 test/integration: dependencies
-	@go test -race -v -count=1 -run 'TestIntegration' ./...
+	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' ./...
 
 .PHONY: k8s/setup
 k8s/setup:

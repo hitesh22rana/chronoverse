@@ -95,7 +95,6 @@ jobs:
     name: Integration tests (Docker)
     permissions:
       contents: read
-      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out code

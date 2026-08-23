@@ -84,27 +84,29 @@ func waitForTasks(ctx context.Context, client meilisearch.ServiceManager, taskID
 				return fmt.Errorf("get Meilisearch task info: %w", err)
 			}
 
-			allDone := true
+			done := 0
 			for i := range tasks.Results {
 				task := &tasks.Results[i]
-				//nolint:exhaustive // Task statuses are compared as documented strings.
+				//nolint:exhaustive // Non-terminal task statuses keep polling.
 				switch task.Status {
 				case "succeeded":
+					done++
+					continue
 				case "failed":
 					// Re-running against an already-provisioned database is a
-					// no-op, so treat "already exists" as success.
+					// no-op, so treat "already exists" as success for this
+					// task and keep waiting for the remaining ones.
 					if strings.Contains(task.Error.Code, "index_already_exists") {
-						return nil
+						done++
+						continue
 					}
 					return fmt.Errorf("meilisearch task %d failed: %v", task.UID, task.Error)
 				case "canceled":
 					return fmt.Errorf("meilisearch task %d was canceled", task.UID)
-				default:
-					allDone = false
 				}
 			}
 
-			if allDone {
+			if done == len(taskIDs) {
 				return nil
 			}
 		}

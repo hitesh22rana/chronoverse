@@ -24,6 +24,9 @@ type Migration struct {
 // time (the native driver rejects multi-statement queries).
 //
 // It is safe to call repeatedly; already-applied migrations are skipped.
+// A migration left in the dirty state by a previous failed run is a hard error,
+// mirroring golang-migrate: partially applied migrations cannot be safely
+// re-run, so manual resolution of schema_migrations is required.
 func Migrate(ctx context.Context, client *Client) error {
 	if err := createSchemaMigrationsTable(ctx, client); err != nil {
 		return fmt.Errorf("create schema_migrations table: %w", err)
@@ -61,20 +64,27 @@ func createSchemaMigrationsTable(ctx context.Context, client *Client) error {
 	return client.Exec(ctx, query)
 }
 
-// getAppliedMigrations returns the versions of cleanly applied migrations.
+// getAppliedMigrations returns the versions of cleanly applied migrations and
+// fails if a previous run left a migration in the dirty state.
 func getAppliedMigrations(ctx context.Context, client *Client) (map[int]bool, error) {
 	applied := make(map[int]bool)
 
-	rows, err := client.Query(ctx, "SELECT version FROM schema_migrations WHERE dirty = 0")
+	rows, err := client.Query(ctx, "SELECT version, dirty FROM schema_migrations")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var version uint32
-		if err := rows.Scan(&version); err != nil {
+		var (
+			version uint32
+			dirty   uint8
+		)
+		if err := rows.Scan(&version, &dirty); err != nil {
 			return nil, err
+		}
+		if dirty == 1 {
+			return nil, fmt.Errorf("migration %d is marked dirty: partially applied, manual intervention required", version)
 		}
 		applied[int(version)] = true
 	}
@@ -154,8 +164,9 @@ func applyMigration(ctx context.Context, client *Client, migration Migration) er
 		}
 	}
 
-	// Mark migration as clean (completed).
-	if err := client.Exec(ctx, "ALTER TABLE schema_migrations UPDATE dirty = 0 WHERE version = ?", migration.Version); err != nil {
+	// Mark migration as clean (completed). The mutation is made synchronous so
+	// that subsequent runs never observe a stale dirty flag.
+	if err := client.Exec(ctx, "ALTER TABLE schema_migrations UPDATE dirty = 0 WHERE version = ? SETTINGS mutations_sync = 1", migration.Version); err != nil {
 		return fmt.Errorf("mark migration %d clean: %w", migration.Version, err)
 	}
 

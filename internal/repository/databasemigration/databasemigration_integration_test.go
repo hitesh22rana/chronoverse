@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	clickhousepkg "github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
@@ -63,6 +65,17 @@ func TestIntegrationPostgresMigrationsApplyToFreshDatabase(t *testing.T) {
 	dsn := strings.Replace(testkit.PostgresDSN(t), "/chronoverse?", "/"+dbName+"?", 1)
 	repo := New(&Config{PostgresDSN: dsn})
 
+	// Open a dedicated connection to the freshly created database so the
+	// spot-checks below observe its schema. The shared pg pool stays bound to
+	// the already-migrated chronoverse database, and information_schema is
+	// per-database, so querying through it would silently pass regardless of
+	// what the fresh migration produced.
+	freshPG, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect fresh postgres database: %v", err)
+	}
+	t.Cleanup(freshPG.Close)
+
 	if err := repo.MigratePostgres(ctx); err != nil {
 		t.Fatalf("MigratePostgres: %v", err)
 	}
@@ -70,7 +83,7 @@ func TestIntegrationPostgresMigrationsApplyToFreshDatabase(t *testing.T) {
 	// Spot-check that the migration set created the expected tables.
 	for _, table := range []string{"users", "workflows", "jobs", "notifications", "analytics", "outbox_events", "runtime_nodes"} {
 		var exists bool
-		if err := pg.QueryRow(ctx, `
+		if err := freshPG.QueryRow(ctx, `
 			SELECT EXISTS (
 				SELECT 1 FROM information_schema.tables
 				WHERE table_schema = 'public' AND table_name = $1

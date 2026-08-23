@@ -67,10 +67,13 @@ func TestIntegrationPublishTopic(t *testing.T) {
 		t.Fatalf("outbox status = %q, want %q", status, "PUBLISHED")
 	}
 
-	// The record lands on the jobs topic with the right key and payload.
+	// The record lands on the jobs topic with the right key and payload. The
+	// predicate must select this test's record specifically: other tests in
+	// this package may have published unrelated jobs-topic records earlier,
+	// and the consumer reads from the earliest offset.
 	consumer := testkit.KafkaConsumer(t, "outboxrelay-"+t.Name(), kafka.TopicJobs)
 	record := testkit.WaitForRecord(t, consumer, 15*time.Second, func(rec *kgo.Record) bool {
-		return rec.Topic == kafka.TopicJobs
+		return rec.Topic == kafka.TopicJobs && string(rec.Key) == "workflow-1"
 	})
 	if got := string(record.Key); got != "workflow-1" {
 		t.Fatalf("record key = %q, want %q", got, "workflow-1")

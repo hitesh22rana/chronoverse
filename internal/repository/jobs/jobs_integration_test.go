@@ -3,6 +3,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"testing"
 	"time"
@@ -474,8 +475,10 @@ func TestIntegrationListJobsWithCursor(t *testing.T) {
 
 	userID, workflowID := seedUserWorkflow(ctx, t, pg)
 
-	jobIDs := make([]string, 0, 3)
-	for i := range 3 {
+	// Seed more jobs than a single page holds so pagination has work to do.
+	const totalJobs = 25
+	jobIDs := make([]string, 0, totalJobs)
+	for i := range totalJobs {
 		jobID, scheduleErr := repo.ScheduleJob(
 			ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", fmt.Sprintf("idem-list-%s-%d", t.Name(), i), 1,
 		)
@@ -485,12 +488,58 @@ func TestIntegrationListJobsWithCursor(t *testing.T) {
 		jobIDs = append(jobIDs, jobID)
 	}
 
+	want := make(map[string]struct{}, totalJobs)
+	for _, id := range jobIDs {
+		want[id] = struct{}{}
+	}
+
 	first, err := repo.ListJobs(ctx, workflowID, userID, "", &jobsmodel.ListJobsFilters{})
 	if err != nil {
 		t.Fatalf("ListJobs: %v", err)
 	}
-	if len(first.Jobs) != 3 {
-		t.Fatalf("ListJobs returned %d jobs, want 3", len(first.Jobs))
+	if len(first.Jobs) != repo.cfg.FetchLimit {
+		t.Fatalf("ListJobs returned %d jobs, want %d", len(first.Jobs), repo.cfg.FetchLimit)
+	}
+	if first.Cursor == "" {
+		t.Fatal("ListJobs returned an empty cursor although more jobs exist")
+	}
+
+	seen := make(map[string]struct{}, totalJobs)
+	for _, job := range first.Jobs {
+		seen[job.ID] = struct{}{}
+	}
+
+	// Cursor pagination walks the rest of the list. The returned cursor is
+	// base64-encoded; the gRPC layer decodes it before reaching the repository.
+	cursor := first.Cursor
+	for page := 2; cursor != ""; page++ {
+		raw, decodeErr := base64.StdEncoding.DecodeString(cursor)
+		if decodeErr != nil {
+			t.Fatalf("ListJobs(page %d) returned an invalid cursor: %v", page, decodeErr)
+		}
+		next, listErr := repo.ListJobs(ctx, workflowID, userID, string(raw), &jobsmodel.ListJobsFilters{})
+		if listErr != nil {
+			t.Fatalf("ListJobs(page %d): %v", page, listErr)
+		}
+		if len(next.Jobs) == 0 {
+			t.Fatalf("ListJobs(page %d) returned no jobs for a non-empty cursor", page)
+		}
+		for _, job := range next.Jobs {
+			if _, ok := seen[job.ID]; ok {
+				t.Fatalf("ListJobs(page %d) returned duplicate job %q", page, job.ID)
+			}
+			seen[job.ID] = struct{}{}
+		}
+		cursor = next.Cursor
+	}
+
+	if len(seen) != totalJobs {
+		t.Fatalf("pagination visited %d distinct jobs, want %d", len(seen), totalJobs)
+	}
+	for id := range want {
+		if _, ok := seen[id]; !ok {
+			t.Fatalf("pagination missed job %q", id)
+		}
 	}
 
 	// Filtering by status hides non-matching jobs.
@@ -500,10 +549,5 @@ func TestIntegrationListJobsWithCursor(t *testing.T) {
 	}
 	if len(completed.Jobs) != 0 {
 		t.Fatalf("ListJobs(COMPLETED) returned %d jobs, want 0", len(completed.Jobs))
-	}
-
-	// Cursor pagination walks the rest of the list.
-	if len(jobIDs) != 3 {
-		t.Fatalf("expected 3 job ids, got %d", len(jobIDs))
 	}
 }

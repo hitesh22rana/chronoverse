@@ -34,9 +34,7 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		workflow.Close()
 	})
 
-	// Execute creates containers from local images without pulling, so make
-	// sure the base image exists through the production pull path.
-	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
+	ensureBaseImage(t, workflow)
 
 	tests := []struct {
 		name           string
@@ -187,6 +185,14 @@ func cleanupDockerContainer(t *testing.T, workflow *container.DockerWorkflow, co
 	})
 }
 
+// ensureBaseImage makes sure the pinned alpine base image exists locally by
+// going through the production pull path; Execute and Termination create
+// containers from local images without pulling.
+func ensureBaseImage(t *testing.T, workflow *container.DockerWorkflow) {
+	t.Helper()
+	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
+}
+
 func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
 	var collected []T
 	for {
@@ -290,8 +296,7 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 		workflow.Close()
 	})
 
-	// Termination creates the container through Execute, which does not pull.
-	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
+	ensureBaseImage(t, workflow)
 
 	tests := []struct {
 		name  string

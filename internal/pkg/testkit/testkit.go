@@ -320,19 +320,31 @@ func WaitForRecord(t *testing.T, client *kgo.Client, timeout time.Duration, pred
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		fetches := client.PollFetches(context.Background())
-		if err := fetches.Err(); err != nil {
-			t.Fatalf("poll fetches: %v", err)
-		}
+	// Bound the polls: PollFetches blocks until records arrive when its
+	// context is live, so an unbounded context could stall past the deadline
+	// on an empty topic.
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+
+	for {
+		fetches := client.PollFetches(ctx)
 
 		for _, rec := range recordsFromFetches(fetches) {
 			if pred(rec) {
 				return rec
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+
+		// PollFetches returns as soon as the context expires.
+		if ctx.Err() != nil {
+			break
+		}
+
+		if err := fetches.Err(); err != nil {
+			t.Fatalf("poll fetches: %v", err)
+		}
 	}
+
 	t.Fatalf("no matching kafka record within %s", timeout)
 	return nil
 }

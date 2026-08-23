@@ -75,6 +75,8 @@ func waitForTasks(ctx context.Context, client meilisearch.ServiceManager, taskID
 		select {
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for Meilisearch tasks: %v", taskIDs)
+		case <-ctx.Done():
+			return fmt.Errorf("wait for Meilisearch tasks: %w", ctx.Err())
 		case <-ticker.C:
 			tasks, err := client.GetTasksWithContext(ctx, &meilisearch.TasksQuery{
 				UIDS:  taskIDs,

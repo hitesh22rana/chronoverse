@@ -148,31 +148,37 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 
 	// Set the max memory
 	if err := client.ConfigSet(ctx, "maxmemory", cfg.MaxMemory).Err(); err != nil {
+		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to set max memory: %v", err)
 	}
 
 	// Set the eviction policy
 	if err := client.ConfigSet(ctx, "maxmemory-policy", cfg.EvictionPolicy).Err(); err != nil {
+		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to set eviction policy: %v", err)
 	}
 
 	// Set sample size for eviction policy
 	if err := client.ConfigSet(ctx, "maxmemory-samples", fmt.Sprintf("%d", cfg.EvictionPolicySampleSize)).Err(); err != nil {
+		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to set eviction policy sample size: %v", err)
 	}
 
 	// Check the health of the connection
 	if err := healthCheck(ctx, client); err != nil {
+		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to connect to Redis: %v", err)
 	}
 
 	// Enable tracing instrumentation for Redis
 	if err := redisotel.InstrumentTracing(client); err != nil {
+		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to instrument tracing: %v", err)
 	}
 
 	// Enable metrics instrumentation for Redis
 	if err := redisotel.InstrumentMetrics(client); err != nil {
+		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to instrument metrics: %v", err)
 	}
 

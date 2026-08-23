@@ -189,7 +189,9 @@ func KafkaConsumer(t *testing.T, group string, topics ...string) *kgo.Client {
 		kgo.ConsumerGroup(group),
 		kgo.ConsumeTopics(topics...),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
-		kgo.BlockRebalanceOnPoll(),
+		// No BlockRebalanceOnPoll: tests stop polling before Close, and
+		// Close's leave-group would then block forever on a rebalance that
+		// only an in-flight poll can advance.
 		kgo.DisableAutoCommit(),
 	)
 	if err != nil {

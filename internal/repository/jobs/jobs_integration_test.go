@@ -26,6 +26,7 @@ import (
 const (
 	docJobIDField      = "job_id"
 	docWorkflowIDField = "workflow_id"
+	docUserIDField     = "user_id"
 )
 
 func TestMain(m *testing.M) {
@@ -369,16 +370,18 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 		t.Fatalf("ScheduleJob: %v", err)
 	}
 
-	// Index documents directly; the meilisearch index is already configured by
-	// the testkit.
+	// Index documents directly with the same fields the joblogs processor
+	// writes (including user_id, which SearchJobLogs filters on); the
+	// meilisearch index is already configured by the testkit.
 	docs := []map[string]any{
 		{
 			"id": "doc-" + t.Name() + "-1", jobLogsEventIDField: "log-1", docJobIDField: jobID, docWorkflowIDField: workflowID,
-			jobLogsMessageField: "authentication succeeded", jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 1, jobLogsStreamField: "stdout",
+			docUserIDField: userID, jobLogsMessageField: "authentication succeeded", jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 1, jobLogsStreamField: "stdout",
 		},
 		{
 			"id": "doc-" + t.Name() + "-2", jobLogsEventIDField: "log-2", docJobIDField: jobID, docWorkflowIDField: workflowID,
-			jobLogsMessageField: "database connection refused", jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 2, jobLogsStreamField: "stderr",
+			docUserIDField: userID, jobLogsMessageField: "database connection refused",
+			jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 2, jobLogsStreamField: "stderr",
 		},
 	}
 	task, err := ms.Index(meilisearchpkg.IndexJobLogs).AddDocuments(docs, nil)
@@ -417,6 +420,17 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-stream-"+t.Name(), 1)
 	if err != nil {
 		t.Fatalf("ScheduleJob: %v", err)
+	}
+
+	// Streaming live logs requires the job to be RUNNING; move it through the
+	// real claim lifecycle the way a worker would.
+	queueJob(ctx, t, pg, jobID)
+	seedReadyRuntimeNode(ctx, t, pg, t.Name())
+	if _, ok, _, claimErr := repo.ClaimJob(
+		ctx, jobID, workflowID, "integration-worker",
+		"00000000-0000-0000-0000-0000000000c2", "claim-stream-"+t.Name(), time.Minute, 1,
+	); claimErr != nil || !ok {
+		t.Fatalf("ClaimJob: ok=%v err=%v", ok, claimErr)
 	}
 
 	sub, err := repo.StreamJobLogs(ctx, jobID, workflowID, userID)

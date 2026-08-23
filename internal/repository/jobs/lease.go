@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -1256,10 +1258,25 @@ func leaseSeconds(d time.Duration) int64 {
 	return seconds
 }
 
+// truncateJobError truncates the error message to maxJobErrorMessageLength
+// bytes. The result is always valid UTF-8: a partial multi-byte rune at the
+// truncation boundary is trimmed and any invalid byte sequences (e.g. raw
+// container stderr) are dropped, since Postgres TEXT columns reject invalid
+// UTF-8.
 func truncateJobError(message string) string {
+	message = strings.ToValidUTF8(message, "")
 	if len(message) <= maxJobErrorMessageLength {
 		return message
 	}
 
-	return message[:maxJobErrorMessageLength]
+	truncated := message[:maxJobErrorMessageLength]
+	for truncated != "" {
+		r, size := utf8.DecodeLastRuneInString(truncated)
+		if r != utf8.RuneError || size > 1 {
+			break
+		}
+		truncated = truncated[:len(truncated)-1]
+	}
+
+	return truncated
 }

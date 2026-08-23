@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -408,5 +409,70 @@ func TestNewJobLogsSearchRequestCanDisableHighlights(t *testing.T) {
 	}
 	if got.HighlightPreTag != "" || got.HighlightPostTag != "" {
 		t.Fatalf("unexpected highlight tags: pre=%q post=%q", got.HighlightPreTag, got.HighlightPostTag)
+	}
+}
+
+func TestTruncateJobErrorAlwaysReturnsValidUTF8(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		message string
+	}{
+		{
+			name:    "empty message",
+			message: "",
+		},
+		{
+			name:    "short ascii message",
+			message: "container exited with code 1",
+		},
+		{
+			name:    "ascii message at limit",
+			message: strings.Repeat("a", maxJobErrorMessageLength),
+		},
+		{
+			name:    "ascii message over limit",
+			message: strings.Repeat("a", maxJobErrorMessageLength+10),
+		},
+		{
+			name:    "multi-byte rune straddling the boundary",
+			message: strings.Repeat("a", maxJobErrorMessageLength-1) + "日",
+		},
+		{
+			name:    "emoji sequence straddling the boundary",
+			message: strings.Repeat("a", maxJobErrorMessageLength-3) + "🚀",
+		},
+		{
+			name:    "long multi-byte message",
+			message: strings.Repeat("日本語", 2000),
+		},
+		{
+			name:    "invalid utf-8 bytes",
+			message: "exit status \xff\xfe failure",
+		},
+		{
+			name:    "invalid utf-8 bytes over limit",
+			message: strings.Repeat("b", maxJobErrorMessageLength-1) + "\xc3",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := truncateJobError(test.message)
+			if !utf8.ValidString(got) {
+				t.Fatalf("expected valid UTF-8, got %q", got)
+			}
+			if len(got) > maxJobErrorMessageLength {
+				t.Fatalf("expected length <= %d, got %d", maxJobErrorMessageLength, len(got))
+			}
+
+			// Short messages must pass through unchanged.
+			if len(test.message) <= maxJobErrorMessageLength && utf8.ValidString(test.message) && got != test.message {
+				t.Fatalf("expected message to be unchanged, got %q want %q", got, test.message)
+			}
+		})
 	}
 }

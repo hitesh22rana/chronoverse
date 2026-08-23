@@ -6,8 +6,9 @@ option go_package = "github.com/hitesh22rana/chronoverse/pkg/proto/go/users;user
 
 // RegisterUserRequest contains the details needed to register a new user.
 message RegisterUserRequest {
-  string email    = 1; // User's email address
-  string password = 2; // User's password
+  string email           = 1; // User's email address
+  string password        = 2; // User's password
+  string idempotency_key = 3; // Retry-safe registration command key
 }
 
 // RegisterUserResponse contains the result of a registration attempt.

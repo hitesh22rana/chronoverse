@@ -45,11 +45,26 @@ func TestNormalizeConfigConcurrency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := normalizeConfig(tt.cfg)
+			got, err := normalizeConfig(tt.cfg)
+			if err != nil {
+				t.Fatalf("normalizeConfig() error = %v", err)
+			}
 			if got.Concurrency != tt.want {
 				t.Fatalf("normalizeConfig().Concurrency = %d, want %d", got.Concurrency, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeConfigRejectsReconciliationLimitBelowConcurrency(t *testing.T) {
+	t.Parallel()
+
+	_, err := normalizeConfig(&Config{
+		Concurrency:                 4,
+		AwaitingReconciliationLimit: 3,
+	})
+	if err == nil {
+		t.Fatal("normalizeConfig() error = nil, want invalid reconciliation limit")
 	}
 }
 

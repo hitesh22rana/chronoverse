@@ -266,15 +266,12 @@ func TestCancelJobsMarksAllJobsCanceledBeforeContainerCleanup(t *testing.T) {
 		auth: testAuth{},
 		svc: &Services{
 			Jobs: &testJobsClient{
-				updateJobStatus: func(_ context.Context, req *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error) {
+				cancelJob: func(_ context.Context, req *jobspb.CancelJobRequest) error {
 					if req.GetId() != "job-1" && req.GetId() != "job-2" {
-						t.Fatalf("UpdateJobStatus job id = %q, want job-1 or job-2", req.GetId())
-					}
-					if req.GetStatus() != jobsmodel.JobStatusCanceled.ToString() {
-						t.Fatalf("UpdateJobStatus status = %q, want CANCELED", req.GetStatus())
+						t.Fatalf("CancelJob job id = %q, want job-1 or job-2", req.GetId())
 					}
 					events.add("cancel-" + req.GetId())
-					return &jobspb.UpdateJobStatusResponse{}, nil
+					return nil
 				},
 			},
 			Notifications: testNotificationsClient{},
@@ -332,9 +329,9 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 		auth: testAuth{},
 		svc: &Services{
 			Jobs: &testJobsClient{
-				updateJobStatus: func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error) {
+				cancelJob: func(context.Context, *jobspb.CancelJobRequest) error {
 					events.add("cancel")
-					return nil, status.Error(codes.FailedPrecondition, "job not cancellable")
+					return status.Error(codes.FailedPrecondition, "job not cancellable")
 				},
 			},
 			Notifications: testNotificationsClient{},
@@ -459,8 +456,8 @@ func TestCancelJobsIgnoresNotificationAuthorizationFailure(t *testing.T) {
 		},
 		svc: &Services{
 			Jobs: &testJobsClient{
-				updateJobStatus: func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error) {
-					return &jobspb.UpdateJobStatusResponse{}, nil
+				cancelJob: func(context.Context, *jobspb.CancelJobRequest) error {
+					return nil
 				},
 			},
 			Notifications: testNotificationsClient{},
@@ -528,6 +525,70 @@ func TestSendWorkflowTerminatedNotificationIgnoresAuthorizationFailure(t *testin
 			Generation: 1,
 		},
 	)
+}
+
+func TestHandleJobFailedContinuesAfterExistingNotificationDrift(t *testing.T) {
+	t.Parallel()
+
+	notificationCalls := &orderedEvents{}
+	repo := &Repository{
+		auth: testAuth{},
+		svc: &Services{
+			Workflows: &testWorkflowsClient{
+				workflow: &workflowspb.GetWorkflowByIDResponse{
+					Id:                               "workflow-1",
+					UserId:                           "user-1",
+					Name:                             "renamed workflow",
+					MaxConsecutiveJobFailuresAllowed: 3,
+				},
+				incrementFailures: func(context.Context, *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error) {
+					return &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{ThresholdReached: true}, nil
+				},
+			},
+			Notifications: testNotificationsClient{
+				createNotification: func(_ context.Context, req *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
+					notificationCalls.add(notificationTitle(req.GetPayload()))
+					if notificationTitle(req.GetPayload()) == "Job Execution Failed" {
+						return nil, status.Error(codes.AlreadyExists, "notification payload changed after replay")
+					}
+					return &notificationspb.CreateNotificationResponse{Id: "termination-notification"}, nil
+				},
+			},
+		},
+	}
+
+	err := repo.handleJobFailed(t.Context(), &workflowsmodel.WorkflowEvent{
+		ID:     "workflow-1",
+		UserID: "user-1",
+		Action: workflowsmodel.ActionJobFailed,
+		JobID:  "job-1",
+	})
+	if err != nil {
+		t.Fatalf("handleJobFailed() error = %v", err)
+	}
+	assertEvents(t, notificationCalls.items(), []string{"Job Execution Failed", "Workflow Terminated"})
+}
+
+func TestSendNotificationReturnsTransientFailure(t *testing.T) {
+	t.Parallel()
+
+	repo := &Repository{
+		svc: &Services{
+			Notifications: testNotificationsClient{
+				createNotification: func(context.Context, *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
+					return nil, status.Error(codes.Unavailable, "notification service unavailable")
+				},
+			},
+		},
+	}
+
+	err := repo.sendNotification(
+		t.Context(), "user-1", "workflow-1", "job-1", "Job Execution Failed", "message",
+		"WEB_ERROR", "JOB", "",
+	)
+	if code := status.Code(err); code != codes.Unavailable {
+		t.Fatalf("sendNotification() code = %s, want %s", code, codes.Unavailable)
+	}
 }
 
 type orderedEvents struct {
@@ -640,17 +701,24 @@ func (testAuth) ValidateToken(context.Context) (*jwt.Token, error) {
 
 type testJobsClient struct {
 	jobspb.JobsServiceClient
-	updateJobStatus     func(context.Context, *jobspb.UpdateJobStatusRequest) (*jobspb.UpdateJobStatusResponse, error)
+	cancelJob           func(context.Context, *jobspb.CancelJobRequest) error
 	scheduleJob         func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
 	listJobs            func(context.Context, *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error)
 	getReadyRuntimeNode func(context.Context, *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
 }
 
-func (c *testJobsClient) UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest, _ ...grpc.CallOption) (*jobspb.UpdateJobStatusResponse, error) {
-	if c.updateJobStatus == nil {
-		return &jobspb.UpdateJobStatusResponse{}, nil
+func (c *testJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest, _ ...grpc.CallOption) (*jobspb.CancelJobResponse, error) {
+	if c.cancelJob != nil {
+		if err := c.cancelJob(ctx, req); err != nil {
+			return nil, err
+		}
 	}
-	return c.updateJobStatus(ctx, req)
+	return &jobspb.CancelJobResponse{
+		Id:              req.GetId(),
+		PreviousStatus:  jobsmodel.JobStatusRunning.ToString(),
+		ContainerId:     "container-" + strings.TrimPrefix(req.GetId(), "job-"),
+		RuntimeEndpoint: "tcp://docker-proxy:2375",
+	}, nil
 }
 
 func (c *testJobsClient) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest, _ ...grpc.CallOption) (*jobspb.ScheduleJobResponse, error) {
@@ -679,8 +747,9 @@ func (c *testJobsClient) GetReadyRuntimeNode(ctx context.Context, req *jobspb.Ge
 
 type testWorkflowsClient struct {
 	workflowspb.WorkflowsServiceClient
-	workflow      *workflowspb.GetWorkflowByIDResponse
-	statusUpdates *orderedEvents
+	workflow          *workflowspb.GetWorkflowByIDResponse
+	statusUpdates     *orderedEvents
+	incrementFailures func(context.Context, *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error)
 }
 
 func (c *testWorkflowsClient) GetWorkflowByID(context.Context, *workflowspb.GetWorkflowByIDRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
@@ -702,6 +771,17 @@ func (c *testWorkflowsClient) UpdateWorkflowBuildStatus(
 		c.workflow.BuildStatus = req.GetBuildStatus()
 	}
 	return &workflowspb.UpdateWorkflowBuildStatusResponse{}, nil
+}
+
+func (c *testWorkflowsClient) IncrementWorkflowConsecutiveJobFailuresCount(
+	ctx context.Context,
+	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
+	_ ...grpc.CallOption,
+) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error) {
+	if c.incrementFailures != nil {
+		return c.incrementFailures(ctx, req)
+	}
+	return &workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse{}, nil
 }
 
 type testNotificationsClient struct {

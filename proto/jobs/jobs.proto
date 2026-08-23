@@ -19,16 +19,22 @@ message ScheduleJobResponse {
   string id = 1; // ID of the job
 }
 
-// UpdateJobStatusRequest contains the details needed to update the status of a job.
-message UpdateJobStatusRequest {
-  string id                   = 1; // ID of the job
-  string container_id         = 2; // ID of the container (if applicable)
-  string status               = 3; // Status of the job
-  string terminal_reason_code = 4; // Required cancellation reason when status is CANCELED
+// CancelJobRequest contains a deterministic workflow-driven cancellation command.
+message CancelJobRequest {
+  string id                   = 1;
+  string command_id           = 2;
+  string terminal_reason_code = 3;
 }
 
-// UpdateJobStatusResponse contains the result of a job status update attempt.
-message UpdateJobStatusResponse {}
+// CancelJobResponse is the persisted pre-cancellation cleanup snapshot.
+message CancelJobResponse {
+  string id               = 1;
+  string previous_status  = 2;
+  string container_id     = 3;
+  string runtime_node_id  = 4;
+  string runtime_endpoint = 5;
+  int32  attempt           = 6;
+}
 
 // ClaimJobRequest contains the details needed to claim a queued job for execution.
 message ClaimJobRequest {
@@ -37,6 +43,8 @@ message ClaimJobRequest {
   string worker_id              = 3; // ID of the execution worker
   int32  lease_duration_seconds = 4; // Lease duration in seconds
   int32  dispatch_attempt       = 5; // Dispatch attempt from the Kafka event
+  string command_id             = 6; // Deterministic process-local claim command
+  string process_instance_id    = 7; // Exact executor process identity
 }
 
 // ClaimJobResponse contains the result of a job claim attempt.
@@ -53,6 +61,7 @@ message ClaimJobResponse {
   string lease_token       = 10; // Lease token required for updates
   string runtime_node_id   = 11; // Runtime node selected for Docker-backed execution
   string runtime_endpoint  = 12; // Docker endpoint selected for Docker-backed execution
+  string lease_expires_at  = 13; // Authoritative committed lease expiry
 }
 
 // GetReadyRuntimeNodeRequest contains the details needed to select a runtime node.
@@ -72,7 +81,9 @@ message RenewJobLeaseRequest {
 }
 
 // RenewJobLeaseResponse contains the result of a lease renewal.
-message RenewJobLeaseResponse {}
+message RenewJobLeaseResponse {
+  string lease_expires_at = 1; // Authoritative committed lease expiry
+}
 
 // AttachJobContainerRequest contains the details needed to attach a container ID to a running job.
 message AttachJobContainerRequest {
@@ -80,6 +91,7 @@ message AttachJobContainerRequest {
   string lease_token     = 2; // Current lease token
   string container_id    = 3; // Container ID
   string runtime_node_id = 4; // Runtime node that owns the container
+  string command_id      = 5; // Logical attach command
 }
 
 // AttachJobContainerResponse contains the result of attaching a container ID.
@@ -89,6 +101,7 @@ message AttachJobContainerResponse {}
 message CompleteJobRequest {
   string id          = 1; // ID of the job
   string lease_token = 2; // Current lease token
+  string command_id  = 3; // Logical completion command
 }
 
 // CompleteJobResponse contains the result of completing a job.
@@ -102,6 +115,7 @@ message FailJobRequest {
   string error_code           = 4; // Error code
   string error_message        = 5; // Error message
   string terminal_reason_code = 6; // Normalized failure reason
+  string command_id           = 7; // Logical failure command
 }
 
 // FailJobResponse contains the result of failing a job.
@@ -112,6 +126,7 @@ message CancelClaimedJobRequest {
   string id                   = 1; // ID of the job
   string lease_token          = 2; // Current lease token
   string terminal_reason_code = 3; // Normalized cancellation reason
+  string command_id           = 4; // Logical cancellation command
 }
 
 // CancelClaimedJobResponse contains the result of canceling a claimed job.
@@ -124,6 +139,7 @@ message ReleaseJobForRetryRequest {
   string next_attempt_at = 3; // Time the job should be retried
   string error_code      = 4; // Error code
   string error_message   = 5; // Error message
+  string command_id      = 6; // Logical release command
 }
 
 // ReleaseJobForRetryResponse contains the result of releasing a job for retry.
@@ -151,6 +167,8 @@ message RecoverExpiredJobLeasesRequest {
   int32  batch_size             = 1; // Maximum number of expired leases to claim
   string worker_id              = 2; // Worker claiming the expired leases for recovery
   int32  lease_duration_seconds = 3; // Lease duration in seconds for recovered claims
+  string command_id             = 4; // Logical recovery-wave command
+  string process_instance_id    = 5; // Recovering executor process
 }
 
 // RecoverExpiredJobLeasesResponse contains expired leases to recover.
@@ -315,9 +333,9 @@ service JobsService {
     // ScheduleJob schedules a job to run at a specific time.
   rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
 
-    // UpdateJobStatus updates the status of a job.
+    // CancelJob applies a deterministic workflow-driven cancellation.
     // This is an internal API and should not be exposed to the public.
-  rpc UpdateJobStatus(UpdateJobStatusRequest) returns (UpdateJobStatusResponse) {}
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse) {}
 
     // ClaimJob atomically claims a queued job for execution.
     // This is an internal API and should not be exposed to the public.

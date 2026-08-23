@@ -11,14 +11,16 @@ const (
 	TableNotifications = "notifications"
 	// TableAnalytics is the name of the analytics table.
 	TableAnalytics = "analytics"
-	// TableWorkflowIdempotencyKeys is the name of the workflow idempotency keys table.
-	TableWorkflowIdempotencyKeys = "workflow_idempotency_keys"
+	// TableCommandIdempotencyKeys is the name of the shared command idempotency ledger.
+	TableCommandIdempotencyKeys = "command_idempotency_keys"
+	// TableCommandIdempotencyLegacyIdentities stores rollback-compatible workflow command identities.
+	TableCommandIdempotencyLegacyIdentities = "command_idempotency_legacy_identities"
 	// TableOutboxEvents is the name of the outbox events table.
 	TableOutboxEvents = "outbox_events"
 	// TableProcessedEvents is the name of the processed events table.
 	TableProcessedEvents = "processed_events"
-	// TableWorkflowFailureEvents is the name of the workflow failure events table.
-	TableWorkflowFailureEvents = "workflow_failure_events"
+	// TableWorkflowTerminalEffects is the name of the workflow terminal effects table.
+	TableWorkflowTerminalEffects = "workflow_terminal_effects"
 	// TableRuntimeNodes is the name of the runtime nodes table.
 	TableRuntimeNodes = "runtime_nodes"
 )

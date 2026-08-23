@@ -15,19 +15,21 @@ import (
 type Service interface {
 	PublishTopic(ctx context.Context, topic string, logger *zap.Logger) (int, error)
 	CleanupPublishedEvents(ctx context.Context, retention time.Duration, batchSize int) (int64, error)
+	CleanupCommandIdempotencyKeys(ctx context.Context, batchSize int) (int64, error)
 }
 
 // Config controls the outbox relay topic handlers.
 type Config struct {
-	WorkflowEnabled    bool
-	JobsEnabled        bool
-	AnalyticsEnabled   bool
-	PollInterval       time.Duration
-	ContextTimeout     time.Duration
-	CleanupEnabled     bool
-	CleanupInterval    time.Duration
-	CleanupBatchSize   int
-	PublishedRetention time.Duration
+	WorkflowEnabled              bool
+	JobsEnabled                  bool
+	AnalyticsEnabled             bool
+	PollInterval                 time.Duration
+	ContextTimeout               time.Duration
+	CleanupEnabled               bool
+	CleanupInterval              time.Duration
+	CleanupBatchSize             int
+	IdempotencyCleanupMaxBatches int
+	PublishedRetention           time.Duration
 }
 
 // OutboxRelay runs independent outbox publishing loops per enabled topic.
@@ -92,17 +94,57 @@ func (o *OutboxRelay) runCleanup(ctx context.Context) {
 }
 
 func (o *OutboxRelay) cleanupOnce(ctx context.Context) {
-	ctxTimeout, cancel := context.WithTimeout(ctx, o.cfg.ContextTimeout)
-	defer cancel()
-
-	total, err := o.svc.CleanupPublishedEvents(ctxTimeout, o.cfg.PublishedRetention, o.cfg.CleanupBatchSize)
+	outboxCtx, cancelOutbox := context.WithTimeout(ctx, o.cfg.ContextTimeout)
+	total, err := o.svc.CleanupPublishedEvents(outboxCtx, o.cfg.PublishedRetention, o.cfg.CleanupBatchSize)
+	cancelOutbox()
 	if err != nil {
 		o.logger.Error("failed to cleanup published outbox events", zap.Error(err))
-		return
-	}
-	if total > 0 {
+	} else if total > 0 {
 		o.logger.Info("cleaned up published outbox events", zap.Int64("total", total))
 	}
+
+	ledgerCtx, cancelLedger := context.WithTimeout(ctx, o.cfg.ContextTimeout)
+	ledgerTotal, ledgerBatches, ledgerDrained, ledgerErr := o.cleanupCommandIdempotencyKeys(ledgerCtx)
+	cancelLedger()
+	if ledgerErr != nil {
+		o.logger.Error("failed to cleanup command idempotency keys", zap.Error(ledgerErr))
+	} else if ledgerTotal > 0 {
+		o.logger.Info(
+			"cleaned up command idempotency keys",
+			zap.Int64("total", ledgerTotal),
+			zap.Int("batches", ledgerBatches),
+		)
+	}
+	if ledgerErr == nil && !ledgerDrained {
+		o.logger.Warn(
+			"command idempotency cleanup reached its batch limit; backlog may remain",
+			zap.Int64("total", ledgerTotal),
+			zap.Int("batches", ledgerBatches),
+		)
+	}
+}
+
+func (o *OutboxRelay) cleanupCommandIdempotencyKeys(ctx context.Context) (total int64, batches int, drained bool, err error) {
+	maxBatches := o.cfg.IdempotencyCleanupMaxBatches
+	if maxBatches <= 0 {
+		maxBatches = 1
+	}
+	for batches < maxBatches {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return total, batches, false, contextErr
+		}
+		var deleted int64
+		deleted, err = o.svc.CleanupCommandIdempotencyKeys(ctx, o.cfg.CleanupBatchSize)
+		if err != nil {
+			return total, batches, false, err
+		}
+		batches++
+		total += deleted
+		if deleted < int64(o.cfg.CleanupBatchSize) {
+			return total, batches, true, nil
+		}
+	}
+	return total, batches, false, nil
 }
 
 func (o *OutboxRelay) runTopic(ctx context.Context, topic string) {

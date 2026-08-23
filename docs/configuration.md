@@ -219,12 +219,10 @@ The Kubernetes overlays include the same topic initializer.
 ### Workflows Service
 
 - `WORKFLOWS_SERVICE_CONFIG_FETCH_LIMIT`
-- `WORKFLOWS_CLEANUP_ENABLED`
-- `WORKFLOWS_CLEANUP_INTERVAL`
-- `WORKFLOWS_CLEANUP_BATCH_SIZE`
 
-Cleanup removes old workflow-related idempotency/outbox state according to the
-service implementation.
+Shared command-ledger cleanup is owned by the outbox relay and is independent
+from published-outbox cleanup; logically expired keys can be replaced even if
+cleanup is delayed.
 
 ### Jobs Service
 
@@ -232,6 +230,7 @@ service implementation.
 - `JOBS_SERVICE_CONFIG_LOGS_FETCH_LIMIT`
 - `JOBS_SERVICE_RUNTIME_HEARTBEAT_TTL`
 - `JOBS_SERVICE_RUNTIME_LOST_AFTER`
+- `COMMAND_IDEMPOTENCY_EVENT_RETENTION`
 
 The jobs service also needs workflows-service client settings so log endpoints
 can enforce workflow retention policy. Runtime heartbeat settings control which
@@ -241,8 +240,24 @@ lease should be treated as owned by an unavailable runtime.
 ### Notifications Service
 
 - `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT`
+- `COMMAND_IDEMPOTENCY_EVENT_RETENTION`
 
 This caps the fetch size used by the notification list operation.
+
+Client and random commands remain replayable for 24 hours. Automatic scheduling,
+notification creation, and deterministic job cancellation use
+`COMMAND_IDEMPOTENCY_EVENT_RETENTION`, which defaults to `336h` and must be at
+least `168h`. Set it to at least the longest Kafka retention, published-outbox
+redrive window, or supported manual event-redrive window, whichever is greater.
+
+### Execution Worker Replay Safety
+
+- `EXECUTION_WORKER_AWAITING_RECONCILIATION_LIMIT`
+
+`0` uses normalized executor concurrency. A positive value must be at least
+executor concurrency or the worker fails during startup. The bound applies to
+claiming, active, and ambiguous handoffs; when full, Kafka receives retryable
+backpressure instead of starting another workload.
 
 ### Runtime Agent
 
@@ -292,8 +307,8 @@ The batch size controls how many due workflows are scanned per polling pass.
 
 These settings coordinate Docker image pulls for replicated workflow workers
 that share a runtime node. The lock is scoped by runtime node and exact image
-string; Docker host is used only as a fallback for legacy/local clients without
-an explicit runtime scope. Compose defaults are `10m`, `10m`, and `500ms`.
+string; Docker host is used as a fallback when a request omits an explicit
+runtime scope. Compose defaults are `10m`, `10m`, and `500ms`.
 Workflow workers do not
 launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
 not apply to this image-pull path. For `CONTAINER` workflows, successful build
@@ -368,9 +383,12 @@ metadata growth.
 - `OUTBOX_RELAY_CLEANUP_INTERVAL`
 - `OUTBOX_RELAY_CLEANUP_BATCH_SIZE`
 - `OUTBOX_RELAY_PUBLISHED_RETENTION`
+- `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES`
 
 Compose sets `OUTBOX_RELAY_WORKER_ID` from the hostname when not provided. Keep
-the processing lease longer than normal Kafka publish latency.
+the processing lease longer than normal Kafka publish latency. Idempotency
+cleanup deletes up to the configured number of batches per cleanup cycle and
+stops early after a partial batch. The default is ten batches of 1,000 rows.
 
 ## Dashboard Settings
 

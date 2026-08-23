@@ -162,6 +162,32 @@ type ClaimedJob struct {
 	LeaseToken       string         `db:"lease_token"`
 	RuntimeNodeID    sql.NullString `db:"runtime_node_id,omitempty"`
 	RuntimeEndpoint  sql.NullString `db:"runtime_endpoint,omitempty"`
+	LeaseExpiresAt   time.Time      `db:"lease_expires_at"`
+}
+
+// CancelJobSnapshot is the durable pre-cancellation cleanup response.
+type CancelJobSnapshot struct {
+	ID              string         `db:"id" json:"id"`
+	PreviousStatus  string         `db:"previous_status" json:"previous_status"`
+	ContainerID     sql.NullString `db:"container_id" json:"container_id"`
+	RuntimeNodeID   sql.NullString `db:"runtime_node_id" json:"runtime_node_id"`
+	RuntimeEndpoint sql.NullString `db:"runtime_endpoint" json:"runtime_endpoint"`
+	Attempt         int32          `db:"attempts" json:"attempt"`
+}
+
+// ToProto converts a cancellation snapshot to its protocol response.
+func (s *CancelJobSnapshot) ToProto() *jobspb.CancelJobResponse {
+	if s == nil {
+		return &jobspb.CancelJobResponse{}
+	}
+	return &jobspb.CancelJobResponse{
+		Id:              s.ID,
+		PreviousStatus:  s.PreviousStatus,
+		ContainerId:     s.ContainerID.String,
+		RuntimeNodeId:   s.RuntimeNodeID.String,
+		RuntimeEndpoint: s.RuntimeEndpoint.String,
+		Attempt:         s.Attempt,
+	}
 }
 
 // RuntimeNode represents a fresh runtime node selected for Docker data plane work.
@@ -204,6 +230,7 @@ func (j *ClaimedJob) ToClaimJobProto(claimed bool, reason string) *jobspb.ClaimJ
 		LeaseToken:       j.LeaseToken,
 		RuntimeNodeId:    j.RuntimeNodeID.String,
 		RuntimeEndpoint:  j.RuntimeEndpoint.String,
+		LeaseExpiresAt:   j.LeaseExpiresAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 

@@ -1,38 +1,47 @@
 package executor
 
 import (
+	"fmt"
 	"runtime"
 	"time"
 )
 
-func normalizeConfig(cfg *Config) Config {
+func normalizeConfig(cfg *Config) (Config, error) {
 	normalized := defaultConfig()
 	if cfg != nil {
 		applyConfigOverrides(&normalized, cfg)
 	}
 	normalizeConcurrency(&normalized)
+	if normalized.AwaitingReconciliationLimit < normalized.Concurrency {
+		return Config{}, fmt.Errorf(
+			"awaiting reconciliation limit (%d) must be at least executor concurrency (%d)",
+			normalized.AwaitingReconciliationLimit,
+			normalized.Concurrency,
+		)
+	}
 	normalizeLeaseIntervals(&normalized)
 
-	return normalized
+	return normalized, nil
 }
 
 func defaultConfig() Config {
 	return Config{
-		WorkerID:             "execution-worker",
-		Concurrency:          runtime.GOMAXPROCS(0),
-		LeaseDuration:        30 * time.Second,
-		LeaseRenewInterval:   10 * time.Second,
-		SystemRetryLimit:     3,
-		SystemRetryBackoff:   30 * time.Second,
-		RecoveryInterval:     15 * time.Second,
-		RecoveryBatchSize:    100,
-		JobLogBatchSize:      100,
-		JobLogBatchInterval:  250 * time.Millisecond,
-		JobLogPublishTimeout: 5 * time.Second,
-		JobLogPublishRetries: 3,
-		JobLogPublishBackoff: 250 * time.Millisecond,
-		JobLogLiveTimeout:    100 * time.Millisecond,
-		JobLogLiveBufferSize: 4096,
+		WorkerID:                    "execution-worker",
+		Concurrency:                 runtime.GOMAXPROCS(0),
+		LeaseDuration:               30 * time.Second,
+		LeaseRenewInterval:          10 * time.Second,
+		SystemRetryLimit:            3,
+		SystemRetryBackoff:          30 * time.Second,
+		RecoveryInterval:            15 * time.Second,
+		RecoveryBatchSize:           100,
+		JobLogBatchSize:             100,
+		JobLogBatchInterval:         250 * time.Millisecond,
+		JobLogPublishTimeout:        5 * time.Second,
+		JobLogPublishRetries:        3,
+		JobLogPublishBackoff:        250 * time.Millisecond,
+		JobLogLiveTimeout:           100 * time.Millisecond,
+		JobLogLiveBufferSize:        4096,
+		AwaitingReconciliationLimit: 0,
 	}
 }
 
@@ -60,6 +69,9 @@ func applyWorkerConfigOverrides(normalized, cfg *Config) {
 	}
 	if cfg.RecoveryBatchSize > 0 {
 		normalized.RecoveryBatchSize = cfg.RecoveryBatchSize
+	}
+	if cfg.AwaitingReconciliationLimit > 0 {
+		normalized.AwaitingReconciliationLimit = cfg.AwaitingReconciliationLimit
 	}
 }
 
@@ -99,6 +111,9 @@ func applyJobLogConfigOverrides(normalized, cfg *Config) {
 func normalizeConcurrency(cfg *Config) {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = max(1, runtime.GOMAXPROCS(0))
+	}
+	if cfg.AwaitingReconciliationLimit <= 0 {
+		cfg.AwaitingReconciliationLimit = cfg.Concurrency
 	}
 }
 

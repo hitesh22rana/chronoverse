@@ -207,39 +207,36 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 
 // sendNotification sends a notification for the job execution related events.
 func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType, occurrenceKey string) error {
+	var payload, notificationKey string
+	var err error
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
-		payload, err := notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
+		payload, err = notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
 		if err != nil {
 			return err
 		}
-
-		// Create a new notification
-		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:         userID,
-			Kind:           kind,
-			Payload:        payload,
-			IdempotencyKey: idempotency.JobNotificationEventKey(jobID, title),
-		}); err != nil {
-			return err
-		}
+		notificationKey = idempotency.JobNotificationEventKey(jobID, title)
 	case notificationsmodel.EntityWorkflow.ToString():
-		payload, err := notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
+		payload, err = notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
 		if err != nil {
 			return err
 		}
-
-		// Create a new notification
-		if _, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
-			UserId:         userID,
-			Kind:           kind,
-			Payload:        payload,
-			IdempotencyKey: idempotency.WorkflowNotificationEventKey(workflowID, title, occurrenceKey),
-		}); err != nil {
-			return err
-		}
+		notificationKey = idempotency.WorkflowNotificationEventKey(workflowID, title, occurrenceKey)
 	default:
 		return status.Error(codes.InvalidArgument, "invalid notification kind")
+	}
+
+	_, err = r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
+		UserId:         userID,
+		Kind:           kind,
+		Payload:        payload,
+		IdempotencyKey: notificationKey,
+	})
+	// The deterministic key identifies this event effect permanently. Mutable
+	// display fields may drift before a Kafka replay, but an existing effect is
+	// complete and must not prevent later effects from being emitted.
+	if err != nil && status.Code(err) != codes.AlreadyExists {
+		return err
 	}
 
 	return nil

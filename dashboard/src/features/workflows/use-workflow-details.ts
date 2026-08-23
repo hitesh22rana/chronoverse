@@ -47,13 +47,13 @@ export function useWorkflowDetails(
     }
 
     const updateWorkflowMutation = useMutation({
-        mutationFn: async (updatedWorkflowDetails: UpdateWorkflowDetails) => {
+        mutationFn: async (command: { payload: UpdateWorkflowDetails; idempotencyKey: string }) => {
             await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to update workflow", {
                 method: "PUT",
                 headers: {
-                    "Idempotency-Key": createIdempotencyKey(),
+                    "Idempotency-Key": command.idempotencyKey,
                 },
-                body: JSON.stringify(updatedWorkflowDetails),
+                body: JSON.stringify(command.payload),
             })
         },
         onSuccess: () => {
@@ -122,7 +122,10 @@ export function useWorkflowDetails(
         isLoading: getWorkflowQuery.isLoading,
         error: getWorkflowQuery.error,
         refetch: getWorkflowQuery.refetch,
-        updateWorkflow: updateWorkflowMutation.mutate,
+        updateWorkflow: (payload: UpdateWorkflowDetails) => updateWorkflowMutation.mutate({
+            payload,
+            idempotencyKey: createIdempotencyKey(),
+        }),
         isUpdating: updateWorkflowMutation.isPending,
         updateError: updateWorkflowMutation.error,
         terminateWorkflow: terminateWorkflowMutation.mutate,

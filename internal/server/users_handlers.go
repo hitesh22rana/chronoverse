@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
@@ -17,19 +18,24 @@ type registerRequest struct {
 }
 
 // handleRegisterUser handles the register request.
-//
-//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
+	idempotencyKey, ok := idempotencyKeyFromHeader(r)
+	if !ok {
+		http.Error(w, "idempotency key is required", http.StatusBadRequest)
+		return
+	}
+
 	var req registerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	var header metadata.MD
 	res, err := s.usersClient.RegisterUser(r.Context(), &userspb.RegisterUserRequest{
-		Email:    req.Email,
-		Password: req.Password,
+		Email:          req.Email,
+		Password:       req.Password,
+		IdempotencyKey: idempotencyKey,
 	}, grpc.Header(&header))
 	if err != nil {
 		handleError(w, err, "failed to register user")
@@ -71,11 +77,9 @@ type loginRequest struct {
 }
 
 // handleLoginUser handles the login request.
-//
-//nolint:dupl // it's okay to have similar code for different handlers
 func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -183,7 +187,7 @@ type updateUserRequest struct {
 // handleUpdateUser handles the update user request.
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	var req updateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

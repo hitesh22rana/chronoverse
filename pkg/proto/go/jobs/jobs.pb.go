@@ -254,31 +254,30 @@ func (x *ScheduleJobResponse) GetId() string {
 	return ""
 }
 
-// UpdateJobStatusRequest contains the details needed to update the status of a job.
-type UpdateJobStatusRequest struct {
+// CancelJobRequest contains a deterministic workflow-driven cancellation command.
+type CancelJobRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
-	ContainerId        string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`                        // ID of the container (if applicable)
-	Status             string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                                     // Status of the job
-	TerminalReasonCode string                 `protobuf:"bytes,4,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Required cancellation reason when status is CANCELED
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	CommandId          string                 `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	TerminalReasonCode string                 `protobuf:"bytes,3,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
-func (x *UpdateJobStatusRequest) Reset() {
-	*x = UpdateJobStatusRequest{}
+func (x *CancelJobRequest) Reset() {
+	*x = CancelJobRequest{}
 	mi := &file_jobs_jobs_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateJobStatusRequest) String() string {
+func (x *CancelJobRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateJobStatusRequest) ProtoMessage() {}
+func (*CancelJobRequest) ProtoMessage() {}
 
-func (x *UpdateJobStatusRequest) ProtoReflect() protoreflect.Message {
+func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_jobs_jobs_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -290,60 +289,59 @@ func (x *UpdateJobStatusRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateJobStatusRequest.ProtoReflect.Descriptor instead.
-func (*UpdateJobStatusRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
+func (*CancelJobRequest) Descriptor() ([]byte, []int) {
 	return file_jobs_jobs_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *UpdateJobStatusRequest) GetId() string {
+func (x *CancelJobRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *UpdateJobStatusRequest) GetContainerId() string {
+func (x *CancelJobRequest) GetCommandId() string {
 	if x != nil {
-		return x.ContainerId
+		return x.CommandId
 	}
 	return ""
 }
 
-func (x *UpdateJobStatusRequest) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *UpdateJobStatusRequest) GetTerminalReasonCode() string {
+func (x *CancelJobRequest) GetTerminalReasonCode() string {
 	if x != nil {
 		return x.TerminalReasonCode
 	}
 	return ""
 }
 
-// UpdateJobStatusResponse contains the result of a job status update attempt.
-type UpdateJobStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+// CancelJobResponse is the persisted pre-cancellation cleanup snapshot.
+type CancelJobResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	PreviousStatus  string                 `protobuf:"bytes,2,opt,name=previous_status,json=previousStatus,proto3" json:"previous_status,omitempty"`
+	ContainerId     string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	RuntimeNodeId   string                 `protobuf:"bytes,4,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`
+	RuntimeEndpoint string                 `protobuf:"bytes,5,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`
+	Attempt         int32                  `protobuf:"varint,6,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
-func (x *UpdateJobStatusResponse) Reset() {
-	*x = UpdateJobStatusResponse{}
+func (x *CancelJobResponse) Reset() {
+	*x = CancelJobResponse{}
 	mi := &file_jobs_jobs_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateJobStatusResponse) String() string {
+func (x *CancelJobResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateJobStatusResponse) ProtoMessage() {}
+func (*CancelJobResponse) ProtoMessage() {}
 
-func (x *UpdateJobStatusResponse) ProtoReflect() protoreflect.Message {
+func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_jobs_jobs_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -355,9 +353,51 @@ func (x *UpdateJobStatusResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateJobStatusResponse.ProtoReflect.Descriptor instead.
-func (*UpdateJobStatusResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
+func (*CancelJobResponse) Descriptor() ([]byte, []int) {
 	return file_jobs_jobs_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CancelJobResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetPreviousStatus() string {
+	if x != nil {
+		return x.PreviousStatus
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetRuntimeNodeId() string {
+	if x != nil {
+		return x.RuntimeNodeId
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetRuntimeEndpoint() string {
+	if x != nil {
+		return x.RuntimeEndpoint
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
 }
 
 // ClaimJobRequest contains the details needed to claim a queued job for execution.
@@ -368,6 +408,8 @@ type ClaimJobRequest struct {
 	WorkerId             string                 `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`                                        // ID of the execution worker
 	LeaseDurationSeconds int32                  `protobuf:"varint,4,opt,name=lease_duration_seconds,json=leaseDurationSeconds,proto3" json:"lease_duration_seconds,omitempty"` // Lease duration in seconds
 	DispatchAttempt      int32                  `protobuf:"varint,5,opt,name=dispatch_attempt,json=dispatchAttempt,proto3" json:"dispatch_attempt,omitempty"`                  // Dispatch attempt from the Kafka event
+	CommandId            string                 `protobuf:"bytes,6,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                                     // Deterministic process-local claim command
+	ProcessInstanceId    string                 `protobuf:"bytes,7,opt,name=process_instance_id,json=processInstanceId,proto3" json:"process_instance_id,omitempty"`           // Exact executor process identity
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -437,6 +479,20 @@ func (x *ClaimJobRequest) GetDispatchAttempt() int32 {
 	return 0
 }
 
+func (x *ClaimJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ClaimJobRequest) GetProcessInstanceId() string {
+	if x != nil {
+		return x.ProcessInstanceId
+	}
+	return ""
+}
+
 // ClaimJobResponse contains the result of a job claim attempt.
 type ClaimJobResponse struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
@@ -452,6 +508,7 @@ type ClaimJobResponse struct {
 	LeaseToken       string                 `protobuf:"bytes,10,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                   // Lease token required for updates
 	RuntimeNodeId    string                 `protobuf:"bytes,11,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`        // Runtime node selected for Docker-backed execution
 	RuntimeEndpoint  string                 `protobuf:"bytes,12,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`    // Docker endpoint selected for Docker-backed execution
+	LeaseExpiresAt   string                 `protobuf:"bytes,13,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"`     // Authoritative committed lease expiry
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -566,6 +623,13 @@ func (x *ClaimJobResponse) GetRuntimeNodeId() string {
 func (x *ClaimJobResponse) GetRuntimeEndpoint() string {
 	if x != nil {
 		return x.RuntimeEndpoint
+	}
+	return ""
+}
+
+func (x *ClaimJobResponse) GetLeaseExpiresAt() string {
+	if x != nil {
+		return x.LeaseExpiresAt
 	}
 	return ""
 }
@@ -723,9 +787,10 @@ func (x *RenewJobLeaseRequest) GetLeaseDurationSeconds() int32 {
 
 // RenewJobLeaseResponse contains the result of a lease renewal.
 type RenewJobLeaseResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LeaseExpiresAt string                 `protobuf:"bytes,1,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"` // Authoritative committed lease expiry
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RenewJobLeaseResponse) Reset() {
@@ -758,6 +823,13 @@ func (*RenewJobLeaseResponse) Descriptor() ([]byte, []int) {
 	return file_jobs_jobs_proto_rawDescGZIP(), []int{9}
 }
 
+func (x *RenewJobLeaseResponse) GetLeaseExpiresAt() string {
+	if x != nil {
+		return x.LeaseExpiresAt
+	}
+	return ""
+}
+
 // AttachJobContainerRequest contains the details needed to attach a container ID to a running job.
 type AttachJobContainerRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -765,6 +837,7 @@ type AttachJobContainerRequest struct {
 	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`            // Current lease token
 	ContainerId   string                 `protobuf:"bytes,3,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`         // Container ID
 	RuntimeNodeId string                 `protobuf:"bytes,4,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"` // Runtime node that owns the container
+	CommandId     string                 `protobuf:"bytes,5,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`               // Logical attach command
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -827,6 +900,13 @@ func (x *AttachJobContainerRequest) GetRuntimeNodeId() string {
 	return ""
 }
 
+func (x *AttachJobContainerRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // AttachJobContainerResponse contains the result of attaching a container ID.
 type AttachJobContainerResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -869,6 +949,7 @@ type CompleteJobRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                   // ID of the job
 	LeaseToken    string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"` // Current lease token
+	CommandId     string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`    // Logical completion command
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -913,6 +994,13 @@ func (x *CompleteJobRequest) GetId() string {
 func (x *CompleteJobRequest) GetLeaseToken() string {
 	if x != nil {
 		return x.LeaseToken
+	}
+	return ""
+}
+
+func (x *CompleteJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
 	}
 	return ""
 }
@@ -963,6 +1051,7 @@ type FailJobRequest struct {
 	ErrorCode          string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`                              // Error code
 	ErrorMessage       string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`                     // Error message
 	TerminalReasonCode string                 `protobuf:"bytes,6,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Normalized failure reason
+	CommandId          string                 `protobuf:"bytes,7,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                              // Logical failure command
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1039,6 +1128,13 @@ func (x *FailJobRequest) GetTerminalReasonCode() string {
 	return ""
 }
 
+func (x *FailJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // FailJobResponse contains the result of failing a job.
 type FailJobResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1082,6 +1178,7 @@ type CancelClaimedJobRequest struct {
 	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                             // ID of the job
 	LeaseToken         string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`                           // Current lease token
 	TerminalReasonCode string                 `protobuf:"bytes,3,opt,name=terminal_reason_code,json=terminalReasonCode,proto3" json:"terminal_reason_code,omitempty"` // Normalized cancellation reason
+	CommandId          string                 `protobuf:"bytes,4,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                              // Logical cancellation command
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1137,6 +1234,13 @@ func (x *CancelClaimedJobRequest) GetTerminalReasonCode() string {
 	return ""
 }
 
+func (x *CancelClaimedJobRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 // CancelClaimedJobResponse contains the result of canceling a claimed job.
 type CancelClaimedJobResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1182,6 +1286,7 @@ type ReleaseJobForRetryRequest struct {
 	NextAttemptAt string                 `protobuf:"bytes,3,opt,name=next_attempt_at,json=nextAttemptAt,proto3" json:"next_attempt_at,omitempty"` // Time the job should be retried
 	ErrorCode     string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`               // Error code
 	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`      // Error message
+	CommandId     string                 `protobuf:"bytes,6,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`               // Logical release command
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1247,6 +1352,13 @@ func (x *ReleaseJobForRetryRequest) GetErrorCode() string {
 func (x *ReleaseJobForRetryRequest) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *ReleaseJobForRetryRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
 	}
 	return ""
 }
@@ -1435,6 +1547,8 @@ type RecoverExpiredJobLeasesRequest struct {
 	BatchSize            int32                  `protobuf:"varint,1,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`                                    // Maximum number of expired leases to claim
 	WorkerId             string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`                                        // Worker claiming the expired leases for recovery
 	LeaseDurationSeconds int32                  `protobuf:"varint,3,opt,name=lease_duration_seconds,json=leaseDurationSeconds,proto3" json:"lease_duration_seconds,omitempty"` // Lease duration in seconds for recovered claims
+	CommandId            string                 `protobuf:"bytes,4,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`                                     // Logical recovery-wave command
+	ProcessInstanceId    string                 `protobuf:"bytes,5,opt,name=process_instance_id,json=processInstanceId,proto3" json:"process_instance_id,omitempty"`           // Recovering executor process
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -1488,6 +1602,20 @@ func (x *RecoverExpiredJobLeasesRequest) GetLeaseDurationSeconds() int32 {
 		return x.LeaseDurationSeconds
 	}
 	return 0
+}
+
+func (x *RecoverExpiredJobLeasesRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *RecoverExpiredJobLeasesRequest) GetProcessInstanceId() string {
+	if x != nil {
+		return x.ProcessInstanceId
+	}
+	return ""
 }
 
 // RecoverExpiredJobLeasesResponse contains expired leases to recover.
@@ -2727,20 +2855,29 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x12/\n" +
 	"\x13workflow_generation\x18\x06 \x01(\x03R\x12workflowGeneration\"%\n" +
 	"\x13ScheduleJobResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x95\x01\n" +
-	"\x16UpdateJobStatusRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
-	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\x120\n" +
-	"\x14terminal_reason_code\x18\x04 \x01(\tR\x12terminalReasonCode\"\x19\n" +
-	"\x17UpdateJobStatusResponse\"\xc0\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"s\n" +
+	"\x10CancelJobRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x02 \x01(\tR\tcommandId\x120\n" +
+	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\"\xdc\x01\n" +
+	"\x11CancelJobResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
+	"\x0fprevious_status\x18\x02 \x01(\tR\x0epreviousStatus\x12!\n" +
+	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12&\n" +
+	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\x12)\n" +
+	"\x10runtime_endpoint\x18\x05 \x01(\tR\x0fruntimeEndpoint\x12\x18\n" +
+	"\aattempt\x18\x06 \x01(\x05R\aattempt\"\x8f\x02\n" +
 	"\x0fClaimJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12\x1b\n" +
 	"\tworker_id\x18\x03 \x01(\tR\bworkerId\x124\n" +
 	"\x16lease_duration_seconds\x18\x04 \x01(\x05R\x14leaseDurationSeconds\x12)\n" +
-	"\x10dispatch_attempt\x18\x05 \x01(\x05R\x0fdispatchAttempt\"\x88\x03\n" +
+	"\x10dispatch_attempt\x18\x05 \x01(\x05R\x0fdispatchAttempt\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x06 \x01(\tR\tcommandId\x12.\n" +
+	"\x13process_instance_id\x18\a \x01(\tR\x11processInstanceId\"\xb2\x03\n" +
 	"\x10ClaimJobResponse\x12\x18\n" +
 	"\aclaimed\x18\x01 \x01(\bR\aclaimed\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x0e\n" +
@@ -2756,7 +2893,8 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	" \x01(\tR\n" +
 	"leaseToken\x12&\n" +
 	"\x0fruntime_node_id\x18\v \x01(\tR\rruntimeNodeId\x12)\n" +
-	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\"\x1c\n" +
+	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\x12(\n" +
+	"\x10lease_expires_at\x18\r \x01(\tR\x0eleaseExpiresAt\"\x1c\n" +
 	"\x1aGetReadyRuntimeNodeRequest\"p\n" +
 	"\x1bGetReadyRuntimeNodeResponse\x12&\n" +
 	"\x0fruntime_node_id\x18\x01 \x01(\tR\rruntimeNodeId\x12)\n" +
@@ -2765,20 +2903,25 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x124\n" +
-	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\"\x17\n" +
-	"\x15RenewJobLeaseResponse\"\x97\x01\n" +
+	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\"A\n" +
+	"\x15RenewJobLeaseResponse\x12(\n" +
+	"\x10lease_expires_at\x18\x01 \x01(\tR\x0eleaseExpiresAt\"\xb6\x01\n" +
 	"\x19AttachJobContainerRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x12!\n" +
 	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12&\n" +
-	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\"\x1c\n" +
-	"\x1aAttachJobContainerResponse\"E\n" +
+	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x05 \x01(\tR\tcommandId\"\x1c\n" +
+	"\x1aAttachJobContainerResponse\"d\n" +
 	"\x12CompleteJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
-	"leaseToken\"\x15\n" +
-	"\x13CompleteJobResponse\"\xda\x01\n" +
+	"leaseToken\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\"\x15\n" +
+	"\x13CompleteJobResponse\"\xf9\x01\n" +
 	"\x0eFailJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
@@ -2787,14 +2930,18 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x120\n" +
-	"\x14terminal_reason_code\x18\x06 \x01(\tR\x12terminalReasonCode\"\x11\n" +
-	"\x0fFailJobResponse\"|\n" +
+	"\x14terminal_reason_code\x18\x06 \x01(\tR\x12terminalReasonCode\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\a \x01(\tR\tcommandId\"\x11\n" +
+	"\x0fFailJobResponse\"\x9b\x01\n" +
 	"\x17CancelClaimedJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
 	"leaseToken\x120\n" +
-	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\"\x1a\n" +
-	"\x18CancelClaimedJobResponse\"\xb8\x01\n" +
+	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x04 \x01(\tR\tcommandId\"\x1a\n" +
+	"\x18CancelClaimedJobResponse\"\xd7\x01\n" +
 	"\x19ReleaseJobForRetryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlease_token\x18\x02 \x01(\tR\n" +
@@ -2802,7 +2949,9 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x0fnext_attempt_at\x18\x03 \x01(\tR\rnextAttemptAt\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x1c\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x06 \x01(\tR\tcommandId\"\x1c\n" +
 	"\x1aReleaseJobForRetryResponse\"\xbe\x03\n" +
 	"\x0fExpiredJobLease\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -2820,12 +2969,15 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	" \x01(\bR\flogRetention\x12&\n" +
 	"\x0fruntime_node_id\x18\v \x01(\tR\rruntimeNodeId\x12)\n" +
 	"\x10runtime_endpoint\x18\f \x01(\tR\x0fruntimeEndpoint\x12/\n" +
-	"\x13runtime_unavailable\x18\r \x01(\bR\x12runtimeUnavailable\"\x92\x01\n" +
+	"\x13runtime_unavailable\x18\r \x01(\bR\x12runtimeUnavailable\"\xe1\x01\n" +
 	"\x1eRecoverExpiredJobLeasesRequest\x12\x1d\n" +
 	"\n" +
 	"batch_size\x18\x01 \x01(\x05R\tbatchSize\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x124\n" +
-	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\"L\n" +
+	"\x16lease_duration_seconds\x18\x03 \x01(\x05R\x14leaseDurationSeconds\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x04 \x01(\tR\tcommandId\x12.\n" +
+	"\x13process_instance_id\x18\x05 \x01(\tR\x11processInstanceId\"L\n" +
 	"\x1fRecoverExpiredJobLeasesResponse\x12)\n" +
 	"\x04jobs\x18\x01 \x03(\v2\x15.jobs.ExpiredJobLeaseR\x04jobs\"Y\n" +
 	"\rGetJobRequest\x12\x0e\n" +
@@ -2954,11 +3106,10 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\fLogSortOrder\x12\x1e\n" +
 	"\x1aLOG_SORT_ORDER_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13LOG_SORT_ORDER_DESC\x10\x01\x12\x16\n" +
-	"\x12LOG_SORT_ORDER_ASC\x10\x022\x80\n" +
-	"\n" +
+	"\x12LOG_SORT_ORDER_ASC\x10\x022\xee\t\n" +
 	"\vJobsService\x12D\n" +
-	"\vScheduleJob\x12\x18.jobs.ScheduleJobRequest\x1a\x19.jobs.ScheduleJobResponse\"\x00\x12P\n" +
-	"\x0fUpdateJobStatus\x12\x1c.jobs.UpdateJobStatusRequest\x1a\x1d.jobs.UpdateJobStatusResponse\"\x00\x12;\n" +
+	"\vScheduleJob\x12\x18.jobs.ScheduleJobRequest\x1a\x19.jobs.ScheduleJobResponse\"\x00\x12>\n" +
+	"\tCancelJob\x12\x16.jobs.CancelJobRequest\x1a\x17.jobs.CancelJobResponse\"\x00\x12;\n" +
 	"\bClaimJob\x12\x15.jobs.ClaimJobRequest\x1a\x16.jobs.ClaimJobResponse\"\x00\x12\\\n" +
 	"\x13GetReadyRuntimeNode\x12 .jobs.GetReadyRuntimeNodeRequest\x1a!.jobs.GetReadyRuntimeNodeResponse\"\x00\x12J\n" +
 	"\rRenewJobLease\x12\x1a.jobs.RenewJobLeaseRequest\x1a\x1b.jobs.RenewJobLeaseResponse\"\x00\x12Y\n" +
@@ -2996,8 +3147,8 @@ var file_jobs_jobs_proto_goTypes = []any{
 	(LogSortOrder)(0),                       // 1: jobs.LogSortOrder
 	(*ScheduleJobRequest)(nil),              // 2: jobs.ScheduleJobRequest
 	(*ScheduleJobResponse)(nil),             // 3: jobs.ScheduleJobResponse
-	(*UpdateJobStatusRequest)(nil),          // 4: jobs.UpdateJobStatusRequest
-	(*UpdateJobStatusResponse)(nil),         // 5: jobs.UpdateJobStatusResponse
+	(*CancelJobRequest)(nil),                // 4: jobs.CancelJobRequest
+	(*CancelJobResponse)(nil),               // 5: jobs.CancelJobResponse
 	(*ClaimJobRequest)(nil),                 // 6: jobs.ClaimJobRequest
 	(*ClaimJobResponse)(nil),                // 7: jobs.ClaimJobResponse
 	(*GetReadyRuntimeNodeRequest)(nil),      // 8: jobs.GetReadyRuntimeNodeRequest
@@ -3045,7 +3196,7 @@ var file_jobs_jobs_proto_depIdxs = []int32{
 	36, // 8: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
 	38, // 9: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
 	2,  // 10: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
-	4,  // 11: jobs.JobsService.UpdateJobStatus:input_type -> jobs.UpdateJobStatusRequest
+	4,  // 11: jobs.JobsService.CancelJob:input_type -> jobs.CancelJobRequest
 	6,  // 12: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
 	8,  // 13: jobs.JobsService.GetReadyRuntimeNode:input_type -> jobs.GetReadyRuntimeNodeRequest
 	10, // 14: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
@@ -3062,7 +3213,7 @@ var file_jobs_jobs_proto_depIdxs = []int32{
 	35, // 25: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
 	37, // 26: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
 	3,  // 27: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
-	5,  // 28: jobs.JobsService.UpdateJobStatus:output_type -> jobs.UpdateJobStatusResponse
+	5,  // 28: jobs.JobsService.CancelJob:output_type -> jobs.CancelJobResponse
 	7,  // 29: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
 	9,  // 30: jobs.JobsService.GetReadyRuntimeNode:output_type -> jobs.GetReadyRuntimeNodeResponse
 	11, // 31: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
 
@@ -49,7 +50,7 @@ type markNotificationsReadRequest struct {
 // handleMarkNotificationsRead handles the mark notifications read request.
 func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
 	var req markNotificationsReadRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

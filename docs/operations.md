@@ -133,7 +133,65 @@ and liveness probes decide when pods receive traffic or are restarted. The local
 overlay uses init containers only for prerequisites that must exist before the
 process starts, such as generated certificate files and hostPath permissions.
 Operators should still inspect bootstrap Jobs before scaling application
-workloads during rollout.
+workloads.
+
+## Maintenance-Window Upgrades
+
+Schema-changing releases must be deployed as an offline cutover. Chronoverse
+does not support mixed application versions across an idempotency-ledger
+migration.
+
+1. Take and verify PostgreSQL and ClickHouse backups.
+2. Stop public traffic and mutation producers first. While the existing outbox
+   relay and workflow worker are still running, wait until terminal job outbox
+   rows are published and the workflow worker's consumer lag reaches zero. This
+   drain is required before migration 11 can safely seed completed terminal
+   identities. Then stop the server, scheduling and execution workers, workflow
+   workers, processors, and the outbox relay. Allow in-flight requests and
+   database transactions to finish before continuing.
+3. Run the new release's `database-migration` image while PostgreSQL remains
+   available. Migration preflight checks run before destructive schema changes;
+   an unexpired in-progress command, malformed legacy identity, or normalized-key
+   collision aborts the migration for operator reconciliation.
+4. Verify the schema version and migration logs, then delete Redis keys matching
+   `workflow:*` and `workflows:*` before starting any application process from
+   the new release. Migration-time failure-threshold reconciliation updates
+   PostgreSQL directly and cannot invalidate Redis atomically. Do not use
+   `FLUSHDB`: Redis also contains sessions and coordination state. Use an
+   approved `SCAN` plus `UNLINK` procedure for both patterns and verify both
+   scans are empty before continuing.
+5. Start domain services, then the outbox relay and workers while public traffic
+   remains stopped. Confirm health, consumer progress, outbox publication, and
+   runtime registration.
+6. Run an approved canary that exercises workflow create replay, changed-input
+   conflict, update, scheduling, termination, deletion, and deterministic outbox
+   keys. Remove its fixtures.
+7. Start the server and restore public traffic.
+
+For Compose, stop the mutation paths before replacing images:
+
+```sh
+docker compose -f compose.prod.yaml stop \
+  nginx server scheduling-worker workflow-worker execution-worker \
+  joblogs-processor analytics-processor outbox-relay
+docker compose -f compose.prod.yaml run --rm init-database-migration
+```
+
+The normal migration executable applies upgrades only. A rollback requires an
+operator-reviewed migration invocation or a verified database restore; do not
+assume that restarting old images reverses the schema.
+
+### Rollback
+
+Keep traffic, workers, processors, and outbox publication stopped. Roll back the
+database schema before starting old binaries, verify the restored schema and
+data, then start the old release as one version. The legacy schema cannot
+represent completed terminal identities, non-workflow command-ledger records,
+or every reused manual command key. Migration 11 restores one legacy workflow
+row for every accepted canonical or raw workflow-ID operation/hash pair, so
+supported workflow-update retries remain idempotent after rollback. The
+remaining documented identity loss still requires explicit operator acceptance.
+Prefer restoring the pre-upgrade backup when that loss is unacceptable.
 
 ## Health Checks
 
@@ -240,8 +298,8 @@ Lower intervals increase scheduling responsiveness and database load.
 
 Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are
-scoped to runtime node plus exact image string; Docker host is used only as a
-fallback for legacy/local clients without an explicit runtime scope. Different
+scoped to runtime node plus exact image string; Docker host is used as a fallback
+when a request omits an explicit runtime scope. Different
 runtime nodes may still pull the same image in parallel, so registry-wide rate
 limits need separate capacity planning. Workflow workers do not launch workload
 containers, so execution-worker workload container limits do not apply to image
@@ -289,11 +347,27 @@ pull, while different runtime nodes may pull independently.
   dead-event behavior.
 - `OUTBOX_RELAY_CLEANUP_*` and `OUTBOX_RELAY_PUBLISHED_RETENTION` control cleanup
   of published events.
+- `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES` bounds shared-ledger cleanup per
+  cycle. The default ten batches of 1,000 rows can drain about 960,000 expired
+  records per day at the default 15-minute interval while keeping each cycle
+  bounded.
 - `OUTBOX_RELAY_WORKFLOW_ENABLED`, `OUTBOX_RELAY_JOBS_ENABLED`, and
   `OUTBOX_RELAY_ANALYTICS_ENABLED` can disable topic groups when needed.
 
 If relay throughput is low, inspect Kafka publish latency and PostgreSQL query
 latency before reducing the poll interval.
+
+Client and random command results expire after 24 hours. Automatic scheduling,
+notification creation, and deterministic cancellation use
+`COMMAND_IDEMPOTENCY_EVENT_RETENTION`, defaulting to `336h` with a hard minimum
+of `168h`. Configure it no shorter than the longest Kafka retention,
+published-outbox redrive window, or supported manual event-redrive window.
+Automatic jobs and notifications retain their deterministic keys in domain
+rows, so an exact replay after ledger expiry reconstructs the ledger without a
+duplicate resource; changed payloads still conflict. Cancellation remains
+effect-idempotent after expiry, but its original cleanup snapshot is replayable
+only during this configured window. Workflow terminal-effect identities are
+removed with their owning workflow rather than by time-based ledger cleanup.
 
 ### Logs and Search
 

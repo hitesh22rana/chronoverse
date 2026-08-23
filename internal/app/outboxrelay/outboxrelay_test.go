@@ -21,8 +21,12 @@ func (f *fakeOutboxRelayService) PublishTopic(context.Context, string, *zap.Logg
 
 func (f *fakeOutboxRelayService) CleanupPublishedEvents(context.Context, time.Duration, int) (int64, error) {
 	f.total++
-	f.cancel()
 	return f.total, nil
+}
+
+func (f *fakeOutboxRelayService) CleanupCommandIdempotencyKeys(context.Context, int) (int64, error) {
+	f.cancel()
+	return 1, nil
 }
 
 func TestRunCleanup(t *testing.T) {

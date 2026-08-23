@@ -508,6 +508,12 @@ Kafka delivery, process crashes, and network timeouts can repeat work. Chronover
 
 Workflow create, workflow update, and manual scheduling require an `Idempotency-Key`. A repeated command with the same key returns the recorded result instead of creating another mutation.
 
+Client and random command results remain replayable for 24 hours. Deterministic automatic-scheduling, notification, and cancellation commands default to a 14-day retention and cannot be configured below seven days. The event retention must cover the longest Kafka retention, published-outbox redrive window, or supported manual event-redrive window.
+
+Automatic jobs and notifications also retain their deterministic identity in their domain rows. After the shared-ledger record expires, exact replay can reconstruct it without creating a duplicate resource, while changed input still conflicts. Cancellation remains effect-idempotent after expiry, but its original cleanup snapshot is guaranteed only during the configured event window. Workflow terminal effects follow the owning workflow lifecycle instead of a time-based ledger policy.
+
+Workflow commands keep canonical identities for current execution and exact legacy operation/hash pairs for every accepted raw UUID spelling. Migration rollback restores each pair, preventing a spelling-only retry from repeating a workflow update.
+
 ## Atomic publication intent
 
 Domain transactions write state and outbox rows together. The relay can retry publication without losing the relationship between committed state and its event.
@@ -527,6 +533,10 @@ Durable job leases ensure one worker owns a running job. Lease tokens protect ev
 ## Ordered commits
 
 Partition-aware Kafka processing advances offsets only after the configured success, retry, or terminal policy permits it.
+
+## Bounded cleanup
+
+The outbox relay removes expired ledger rows through the indexed expiry path with `FOR UPDATE SKIP LOCKED`. Each cycle is bounded by a configurable batch count and stops after a partial batch, so cleanup can drain backlog without monopolizing PostgreSQL.
 
 <Callout title="Replay-safe does not mean exactly once">
 The system accepts duplicate delivery and makes the resulting operations idempotent or preconditioned. This is more explicit and recoverable than assuming the transport provides global exactly-once execution.
@@ -584,11 +594,13 @@ The token is required to:
 
 ## Renewal
 
-Workers renew while the workload runs. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
+Workers prove authority with an immediate conditional renewal before starting work from a claim or recovery response, then renew while the workload runs. Renewal never revives an already-expired lease. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
 
 ## Recovery
 
-Execution workers periodically request expired-lease recovery in bounded batches. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
+Execution workers periodically request expired-lease recovery in bounded batches. A replay returns only leases whose token, worker, process owner, status, and database-evaluated expiry are still valid. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
+
+If execution ends without a confirmed terminal or release response, the worker retains its bounded handoff permit and reconciles the original claim against PostgreSQL. This reconciliation is read-only: it never extends the lease. A live exact authority remains suppressed, while an expired or changed authority releases the permit and leaves the job eligible for normal recovery.
 
 ## Split-brain prevention
 
@@ -637,7 +649,7 @@ Replicated workflow and execution workers can share a runtime daemon. Without co
 
 ## Lock scope
 
-The Redis lock key includes the runtime node scope and exact image string. Workers sharing a runtime node coordinate; workers on different runtime nodes may pull in parallel. Docker host is used only as a fallback for legacy/local clients that do not pass an explicit runtime scope.
+The Redis lock key includes the runtime node scope and exact image string. Workers sharing a runtime node coordinate; workers on different runtime nodes may pull in parallel. Docker host is used as a fallback when a request omits an explicit runtime scope.
 
 ## Acquisition flow
 
@@ -833,7 +845,7 @@ Internal event processing creates notifications with deterministic event identit
 
 ## Read state
 
-`PUT /notifications` accepts a list of notification IDs and marks them read. The request requires the normal authenticated mutation protections.
+`PUT /notifications` accepts a list of notification IDs and marks them read. Duplicate IDs are ignored, but every distinct ID must exist and belong to the authenticated user. If any ID is missing or belongs to another user, the entire request fails without changing read state. The request requires the normal authenticated mutation protections.
 
 ## Preferences
 
@@ -951,7 +963,7 @@ Authenticated mutations require CSRF validation in addition to the session cooki
 
 ## Idempotency keys
 
-Retry-prone workflow and manual scheduling commands require `Idempotency-Key`. The service stores the command result with the mutation so a retry returns the original outcome.
+Registration, retry-prone workflow mutations, and manual scheduling commands require `Idempotency-Key`. The service stores the command result with the mutation so a retry returns the original outcome. The dashboard retains a registration key after a failed submission with unchanged credentials and rotates it only after success or when the credentials change.
 
 ## Key rules
 
@@ -1164,6 +1176,27 @@ traffic.
 
 Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry.
 
+## Maintenance-window upgrades
+
+Deploy schema-changing releases as an offline cutover; mixed application
+versions are not supported across an idempotency-ledger migration.
+
+<Steps>
+  <Step title="Quiesce mutations">Back up the databases, stop public traffic, and stop the server, workers, processors, and outbox relay. Drain in-flight requests and transactions.</Step>
+  <Step title="Apply the new schema">Run the new release's database-migration image. Resolve any preflight failure before changing application versions. Then use an approved Redis `SCAN` plus `UNLINK` procedure to delete keys matching `workflow:*` and `workflows:*`, and verify both scans are empty while application processes remain stopped. Migration-time threshold reconciliation updates PostgreSQL directly and cannot invalidate Redis atomically. Do not use `FLUSHDB`, because Redis also stores sessions and coordination state.</Step>
+  <Step title="Start internal processing">Start one version of the domain services, then the relay and workers. Keep public traffic stopped while checking health, consumer progress, outbox publication, and runtime registration.</Step>
+  <Step title="Canary and resume">Exercise replay, changed-input conflict, scheduling, termination, deletion, and deterministic outbox keys with approved fixtures. Clean them up before restoring public traffic.</Step>
+</Steps>
+
+The standard migration executable applies upgrades only. Rollback requires an
+operator-reviewed down migration or a verified pre-upgrade database restore
+while all mutation paths remain stopped. Starting old images against the new
+schema is unsafe. Prefer restoring the backup if the legacy schema's documented
+loss of non-workflow command identities, completed terminal identities, and
+superseded reused manual keys is unacceptable.
+
+<SourceLink path="docs/operations.md">Complete upgrade and rollback runbook</SourceLink>
+
 ## Images
 
 Application images are pulled from `ghcr.io/hitesh22rana/chronoverse/*:latest`. Tagged releases are built for supported architectures by GitHub Actions.
@@ -1188,10 +1221,6 @@ The production profile declares replicated workers and resource reservations. Ef
 - Restrict access to the LGTM dashboard.
 - Restrict Docker proxy TCP `2375` to trusted Chronoverse traffic with private networking, node firewall rules or security groups, and the Docker socket proxy allowlist. NetworkPolicy support for node-IP hostPort traffic depends on the CNI.
 - Define backup, restore, and retention procedures for PostgreSQL and ClickHouse.
-
-## Upgrade order
-
-Apply compatible migrations before new services depend on them. Event and protobuf changes should remain compatible with records and replicas from the previous version during rolling replacement.
 </doc>
 
 <doc title="Kubernetes" path="./docs/deployment/kubernetes/">
@@ -1351,7 +1380,7 @@ Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients
 
 ## Workers
 
-Scheduler settings control poll interval, context timeout, and batch size. Jobs service settings include runtime heartbeat windows for claim and recovery. Runtime agent settings control runtime identity, Docker endpoint, heartbeat interval, and max concurrency; `RUNTIME_AGENT_ID` must remain stable for the same runtime node across restarts. Workflow worker settings control digest resolution and image-pull locks. Execution worker settings control concurrency, runtime-local image-pull locks, per-workload Docker container memory/CPU/PID limits, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention.
+Scheduler settings control poll interval, context timeout, and batch size. Jobs service settings include runtime heartbeat windows for claim and recovery. Jobs and notifications services use `COMMAND_IDEMPOTENCY_EVENT_RETENTION`, which defaults to `336h`, cannot be below `168h`, and must cover the longest Kafka, published-outbox, or manual redrive window. Runtime agent settings control runtime identity, Docker endpoint, heartbeat interval, and max concurrency; `RUNTIME_AGENT_ID` must remain stable for the same runtime node across restarts. Workflow worker settings control digest resolution and image-pull locks. Execution worker settings control concurrency, runtime-local image-pull locks, per-workload Docker container memory/CPU/PID limits, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention; `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES` bounds the number of expired-ledger batches removed per cycle.
 
 Domain-service-specific limits include workflow and job list fetch limits, workflow cleanup settings, and `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT` for notification listing.
 
@@ -1433,6 +1462,7 @@ paths:
       summary: Register a user
       tags: [Authentication]
       description: Creates a user and issues session and CSRF cookies.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody:
         required: true
         content:
@@ -1441,6 +1471,7 @@ paths:
       responses:
         '201': {description: User registered and session created}
         '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /auth/login:
     post:
       operationId: loginUser
@@ -1551,6 +1582,7 @@ paths:
                 {$ref: '#/components/schemas/IdentifierResponse'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /workflows/{workflow_id}:
     parameters: [{$ref: '#/components/parameters/WorkflowId'}]
     get:
@@ -1574,6 +1606,7 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowUpdateInput'}}}
       responses:
         '204': {description: Workflow updated}
+        '409': {$ref: '#/components/responses/Conflict'}
         '404': {$ref: '#/components/responses/NotFound'}
     patch:
       operationId: terminateWorkflow
@@ -1628,6 +1661,7 @@ paths:
             application/json:
               schema:
                 {$ref: '#/components/schemas/IdentifierResponse'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
   /workflows/{workflow_id}/jobs/{job_id}:
     get:
@@ -1741,6 +1775,7 @@ paths:
               properties: {ids: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}}
       responses:
         '204': {description: Notifications marked read}
+        '404': {description: One or more notifications do not exist or do not belong to the authenticated user; no notifications are changed}
   /analytics:
     get:
       operationId: getUserAnalytics
@@ -1778,9 +1813,18 @@ components:
     WorkflowId: {name: workflow_id, in: path, required: true, schema: {type: string, format: uuid}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
     Cursor: {name: cursor, in: query, required: false, schema: {type: string}, description: Opaque pagination cursor}
-    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string}, description: Stable key reused only when retrying the same mutation}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Valid UTF-8 containing 1-255 bytes after trimming only outer ASCII spaces (U+0020), with no Unicode control characters. Reuse a key only for retries of the exact same logical request.
+      schema:
+        type: string
+        minLength: 1
+        x-maxBytes: 255
   responses:
     BadRequest: {description: Invalid input or missing required idempotency key}
+    Conflict: {description: Idempotency key was already used with a different logical request}
     Unauthorized: {description: Missing or invalid session}
     NotFound: {description: Resource not found}
     PreconditionFailed: {description: Current workflow or job state does not allow the operation}
@@ -1997,7 +2041,7 @@ Workflow CRUD, build status, list filters, failure counters, termination, deleti
 
 Scheduling, reads, status updates, lease claim and renewal, container attachment, completion, failure, cancellation, retry release, expired-lease recovery, logs, search, live streaming, and job listing.
 
-`FailJob` requires a failure-family terminal reason code, while `CancelClaimedJob` and canceled `UpdateJobStatus` calls require a cancellation-family code. Generic status updates cannot set `FAILED`; workers must use `FailJob` so failure kind, diagnostics, status, and reason are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
+`FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
 
 ## Notifications service
 
@@ -2204,7 +2248,7 @@ Run one runtime agent beside each Docker-capable daemon. New container claims on
 
 ## Workflow workers
 
-Replicas that share a runtime node coordinate identical image pulls through Redis. Different runtime nodes still pull independently. Docker host is used only as a fallback for legacy/local clients without an explicit runtime scope. Build completion records the resolved workflow image digest; execution workers ensure that digest on the assigned runtime node before creating the container.
+Replicas that share a runtime node coordinate identical image pulls through Redis. Different runtime nodes still pull independently. Docker host is used as a fallback when runtime scope is omitted. Build completion records the resolved workflow image digest; execution workers ensure that digest on the assigned runtime node before creating the container.
 
 ## Outbox relay
 

@@ -49,11 +49,10 @@ type Repository interface {
 	GetWorkflow(ctx context.Context, workflowID, userID string) (*workflowsmodel.GetWorkflowResponse, error)
 	GetWorkflowByID(ctx context.Context, workflowID string) (*workflowsmodel.GetWorkflowByIDResponse, error)
 	IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (bool, error)
-	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID string) error
+	ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) error
 	TerminateWorkflow(ctx context.Context, workflowID, userID string) error
 	DeleteWorkflow(ctx context.Context, workflowID, userID string) error
 	ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (*workflowsmodel.ListWorkflowsResponse, error)
-	CleanupWorkflowIdempotencyKeys(ctx context.Context, batchSize int) (int64, error)
 }
 
 // Cache provides cache related operations.
@@ -81,11 +80,6 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 		repo:      repo,
 		cache:     cache,
 	}
-}
-
-// CleanupWorkflowIdempotencyKeys deletes expired workflow idempotency keys.
-func (s *Service) CleanupWorkflowIdempotencyKeys(ctx context.Context, batchSize int) (int64, error) {
-	return s.repo.CleanupWorkflowIdempotencyKeys(ctx, batchSize)
 }
 
 // CreateWorkflowRequest holds the request parameters for creating a new job.
@@ -181,6 +175,10 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 
 		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
+
+		if res.IdempotencyReplay {
+			return
+		}
 
 		// We use the combination of user ID and job ID as the key to uniquely identify the workflow.
 		// The key is in the format "workflow:{user_id}:{job_id}".
@@ -288,6 +286,7 @@ type UpdateWorkflowBuildStatusRequest struct {
 	ID          string `validate:"required"`
 	UserID      string `validate:"required"`
 	BuildStatus string `validate:"required"`
+	Generation  int64  `validate:"required,min=1"`
 }
 
 // UpdateWorkflowBuildStatus updates the job build status.
@@ -311,6 +310,7 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		ID:          req.GetId(),
 		UserID:      req.GetUserId(),
 		BuildStatus: req.GetBuildStatus(),
+		Generation:  req.GetGeneration(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -536,11 +536,10 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 type ResetWorkflowConsecutiveJobFailuresCountRequest struct {
 	ID     string `validate:"required"`
 	UserID string `validate:"required"`
+	JobID  string `validate:"required"`
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the job consecutive failures count.
-//
-//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) (err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.ResetWorkflowConsecutiveJobFailuresCount"),
@@ -558,6 +557,7 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 	err = s.validator.Struct(&ResetWorkflowConsecutiveJobFailuresCountRequest{
 		ID:     req.GetId(),
 		UserID: req.GetUserId(),
+		JobID:  req.GetJobId(),
 	})
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
@@ -565,7 +565,7 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 	}
 
 	// Reset the job consecutive failures count
-	err = s.repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId())
+	err = s.repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId(), req.GetJobId())
 	if err != nil {
 		return err
 	}

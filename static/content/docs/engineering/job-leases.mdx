@@ -18,11 +18,13 @@ The token is required to:
 
 ## Renewal
 
-Workers renew while the workload runs. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
+Workers prove authority with an immediate conditional renewal before starting work from a claim or recovery response, then renew while the workload runs. Renewal never revives an already-expired lease. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
 
 ## Recovery
 
-Execution workers periodically request expired-lease recovery in bounded batches. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
+Execution workers periodically request expired-lease recovery in bounded batches. A replay returns only leases whose token, worker, process owner, status, and database-evaluated expiry are still valid. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.
+
+If execution ends without a confirmed terminal or release response, the worker retains its bounded handoff permit and reconciles the original claim against PostgreSQL. This reconciliation is read-only: it never extends the lease. A live exact authority remains suppressed, while an expired or changed authority releases the permit and leaves the job eligible for normal recovery.
 
 ## Split-brain prevention
 

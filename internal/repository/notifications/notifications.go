@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -19,6 +20,8 @@ import (
 
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -35,7 +38,8 @@ type Services struct {
 
 // Config represents the repository constants configuration.
 type Config struct {
-	FetchLimit int
+	FetchLimit            int
+	EventCommandRetention time.Duration
 }
 
 // Repository provides notifications repository.
@@ -49,6 +53,12 @@ type Repository struct {
 
 // New creates a new notifications repository.
 func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, svc *Services) *Repository {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	if cfg.EventCommandRetention <= 0 {
+		cfg.EventCommandRetention = commandidempotency.DefaultEventCommandRetention
+	}
 	return &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
@@ -68,31 +78,178 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 		}
 		span.End()
 	}()
-
-	query := fmt.Sprintf(`
-        INSERT INTO %s (user_id, kind, payload, idempotency_key)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (user_id, idempotency_key)
-        WHERE idempotency_key IS NOT NULL
-        DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
-        RETURNING id;
-    `, postgres.TableNotifications)
-
-	err = r.pg.QueryRow(ctx, query, userID, kind, payload, idempotencyKey).Scan(&notificationID)
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return "", err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return "", err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to create notification: %v", err)
 		return "", err
 	}
 
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to start notification transaction: %v", err)
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
+
+	requestHash, err := notificationRequestHash(userID, kind, payload)
+	if err != nil {
+		return "", err
+	}
+	idempotencyKey, err = commandidempotency.NormalizeKey(idempotencyKey)
+	if err != nil {
+		return "", err
+	}
+	scope := commandidempotency.UserScope(userID)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationNotificationCreate, idempotencyKey, requestHash)
+	if err != nil {
+		return "", err
+	}
+	if reservation.Replay {
+		if err = tx.Commit(ctx); err != nil {
+			return "", status.Errorf(codes.Internal, "failed to commit notification replay: %v", err)
+		}
+		return reservation.ResourceID, nil
+	}
+	notificationID, legacyReplay, err := r.adoptLegacyNotificationCommand(
+		ctx, tx, userID, idempotencyKey, requestHash,
+	)
+	if err != nil {
+		return "", err
+	}
+	if legacyReplay {
+		if err = tx.Commit(ctx); err != nil {
+			return "", status.Errorf(codes.Internal, "failed to commit legacy notification replay: %v", err)
+		}
+		return notificationID, nil
+	}
+
+	notificationID, err = r.insertNotification(ctx, tx, userID, kind, payload, idempotencyKey, requestHash)
+	if err != nil {
+		return "", err
+	}
+
+	if completeErr := commandidempotency.Complete(
+		ctx, tx, scope, commandidempotency.OperationNotificationCreate,
+		idempotencyKey, requestHash, notificationID, map[string]string{"id": notificationID}, r.cfg.EventCommandRetention,
+	); completeErr != nil {
+		return "", completeErr
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return "", status.Errorf(codes.Internal, "failed to commit notification command: %v", err)
+	}
 	return notificationID, nil
+}
+
+func (r *Repository) insertNotification(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID,
+	kind,
+	payload,
+	idempotencyKey,
+	requestHash string,
+) (notificationID string, err error) {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (user_id, kind, payload, idempotency_key)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, idempotency_key)
+		WHERE idempotency_key IS NOT NULL
+		DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
+		RETURNING id, kind, payload;
+	`, postgres.TableNotifications)
+	var storedKind, storedPayload string
+	err = tx.QueryRow(ctx, query, userID, kind, payload, idempotencyKey).Scan(
+		&notificationID,
+		&storedKind,
+		&storedPayload,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			return "", status.Error(codes.DeadlineExceeded, err.Error())
+		case errors.Is(err, context.Canceled):
+			return "", status.Error(codes.Canceled, err.Error())
+		default:
+			return "", status.Errorf(codes.Internal, "failed to create notification: %v", err)
+		}
+	}
+	if err := validateStoredNotificationCommand(requestHash, userID, storedKind, storedPayload); err != nil {
+		return "", err
+	}
+	return notificationID, nil
+}
+
+func (r *Repository) adoptLegacyNotificationCommand(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID,
+	idempotencyKey,
+	requestHash string,
+) (notificationID string, found bool, err error) {
+	query := fmt.Sprintf(`
+		SELECT id, kind, payload
+		FROM %s
+		WHERE user_id = $1
+		  AND idempotency_key IS NOT NULL
+		  AND btrim(idempotency_key, ' ') = $2
+		FOR UPDATE
+		LIMIT 1;
+	`, postgres.TableNotifications)
+	var storedKind, storedPayload string
+	err = tx.QueryRow(ctx, query, userID, idempotencyKey).Scan(
+		&notificationID,
+		&storedKind,
+		&storedPayload,
+	)
+	if r.pg.IsNoRows(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, status.Errorf(codes.Internal, "failed to read legacy notification command: %v", err)
+	}
+	if validationErr := validateStoredNotificationCommand(requestHash, userID, storedKind, storedPayload); validationErr != nil {
+		return "", false, validationErr
+	}
+	if completeErr := commandidempotency.Complete(
+		ctx,
+		tx,
+		commandidempotency.UserScope(userID),
+		commandidempotency.OperationNotificationCreate,
+		idempotencyKey,
+		requestHash,
+		notificationID,
+		map[string]string{"id": notificationID},
+		r.cfg.EventCommandRetention,
+	); completeErr != nil {
+		return "", false, completeErr
+	}
+	return notificationID, true, nil
+}
+
+func validateStoredNotificationCommand(requestHash, userID, kind, payload string) error {
+	storedRequestHash, err := notificationRequestHash(userID, kind, payload)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to hash stored notification command: %v", err)
+	}
+	if storedRequestHash != requestHash {
+		return status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
+	}
+	return nil
+}
+
+func notificationRequestHash(userID, kind, payload string) (string, error) {
+	canonicalPayload, err := idempotency.CanonicalJSONObject(payload)
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "invalid notification payload: %v", err)
+	}
+	hash, err := idempotency.HashCanonical(map[string]string{
+		"user_id": userID,
+		"kind":    kind,
+		"payload": string(canonicalPayload),
+	})
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to hash notification command: %v", err)
+	}
+	return hash, nil
 }
 
 // MarkNotificationsRead marks all notifications as read.
@@ -106,37 +263,76 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 		span.End()
 	}()
 
-	query := fmt.Sprintf(`
-        UPDATE %s
-        SET read_at = COALESCE(read_at, NOW())
-        WHERE id = ANY($1) AND user_id = $2
-    `, postgres.TableNotifications)
-
-	ct, err := r.pg.Exec(ctx, query, ids, userID)
+	unique, err := canonicalNotificationIDs(ids)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid notification ID's: %v", err)
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to mark all notifications as read: %v", err)
 		return err
 	}
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return r.mapNotificationReadDatabaseError(err, "start notification-read transaction")
+	}
+	//nolint:errcheck // Rollback is a no-op after commit.
+	defer tx.Rollback(ctx)
 
-	if ct.RowsAffected() == 0 {
-		err = status.Errorf(codes.NotFound, "notifications not found")
-		return err
+	var owned int
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE id = ANY($1) AND user_id = $2`, postgres.TableNotifications)
+	if err = tx.QueryRow(ctx, query, unique, userID).Scan(&owned); err != nil {
+		return r.mapNotificationReadDatabaseError(err, "validate notification ownership")
+	}
+	if owned != len(unique) {
+		return status.Error(codes.NotFound, "one or more notifications were not found")
 	}
 
+	query = fmt.Sprintf(`
+		UPDATE %s
+		SET read_at = clock_timestamp() AT TIME ZONE 'utc'
+		WHERE id = ANY($1) AND user_id = $2 AND read_at IS NULL
+	`, postgres.TableNotifications)
+
+	_, err = tx.Exec(ctx, query, unique, userID)
+	if err != nil {
+		return r.mapNotificationReadDatabaseError(err, "mark all notifications as read")
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return r.mapNotificationReadDatabaseError(err, "commit notification-read transaction")
+	}
 	return nil
+}
+
+func canonicalNotificationIDs(ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one notification ID is required")
+	}
+
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, rawID := range ids {
+		id, err := uuid.Parse(rawID)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid notification ID: %v", err)
+		}
+		canonicalID := id.String()
+		if _, ok := seen[canonicalID]; ok {
+			continue
+		}
+		seen[canonicalID] = struct{}{}
+		unique = append(unique, canonicalID)
+	}
+	return unique, nil
+}
+
+func (r *Repository) mapNotificationReadDatabaseError(err error, operation string) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	}
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, err.Error())
+	}
+	if r.pg.IsInvalidTextRepresentation(err) {
+		return status.Errorf(codes.InvalidArgument, "invalid notification IDs: %v", err)
+	}
+	return status.Errorf(codes.Internal, "failed to %s: %v", operation, err)
 }
 
 // ListNotifications returns notifications by user ID.

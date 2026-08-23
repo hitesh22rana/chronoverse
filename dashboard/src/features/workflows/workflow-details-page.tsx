@@ -377,7 +377,7 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                         )}
                     </div>
                 ) : urlTabFilter === "jobs" && (
-                    <div className="flex items-center justify-end gap-2 w-full mb-4">
+                    <div className="flex flex-wrap items-center justify-end gap-2 w-full mb-4">
                         {/* Manual run */}
                         {!!workflow?.build_status && workflow.build_status === "COMPLETED" && (!workflow?.terminated_at) && (
                             <Button

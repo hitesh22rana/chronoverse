@@ -81,16 +81,13 @@ func UnaryLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 					)
 				}
 
-				// Add the audience, role, auth token and method to the fields.
+				// Add the audience, role, and method to the fields.
 				// These fields are extracted from the context and added to the log.
 				if audience, err := auth.ExtractAudienceFromMetadata(ctx); err == nil {
 					fields = append(fields, "audience", audience)
 				}
 				if role, err := auth.ExtractRoleFromMetadata(ctx); err == nil {
 					fields = append(fields, "role", role)
-				}
-				if authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx); err == nil {
-					fields = append(fields, "auth_token", authToken)
 				}
 				if method, ok := grpc.Method(ctx); ok {
 					fields = append(fields, "method", strings.Split(method, "/")[1])

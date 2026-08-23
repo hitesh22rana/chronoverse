@@ -2,11 +2,19 @@
 package jobs
 
 import (
+	"context"
+	"database/sql"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 )
 
 func TestJobLogsCursorRoundTrip(t *testing.T) {
@@ -39,6 +47,181 @@ func TestClaimJobQueryWaitsForRuntimeRowLock(t *testing.T) {
 	assertContains(t, query, "terminal_reason_code = NULL")
 }
 
+func TestClaimReplayValidationIsReadOnlyAndExact(t *testing.T) {
+	t.Parallel()
+
+	query := validateClaimReplayQuery()
+	assertContains(t, query, "SELECT job.lease_expires_at")
+	assertContains(t, query, "FROM jobs AS job")
+	assertContains(t, query, "job.lease_token = $2")
+	assertContains(t, query, "job.leased_by = $3")
+	assertContains(t, query, "job.lease_process_instance_id = $4")
+	assertContains(t, query, "job.dispatch_attempts = $5")
+	assertContains(t, query, "job.lease_expires_at > clock_timestamp() AT TIME ZONE 'utc'")
+	assertNotContains(t, query, "UPDATE")
+	assertNotContains(t, query, "SET lease_expires_at")
+}
+
+func TestRecoveryReplayRenewsAndReturnsOnlyLiveExactAuthorities(t *testing.T) {
+	t.Parallel()
+
+	query := renewRecoveryReplayQuery()
+	assertContains(t, query, "jsonb_to_recordset")
+	assertContains(t, query, "job.lease_token = requested.lease_token")
+	assertContains(t, query, "job.leased_by = $2")
+	assertContains(t, query, "job.lease_process_instance_id = $3")
+	assertContains(t, query, "job.status = 'RUNNING'")
+	assertContains(t, query, "job.lease_expires_at > renewal.renewed_at")
+	assertContains(t, query, "RETURNING job.id::text")
+}
+
+func TestLeaseRenewalCannotReviveExpiredAuthority(t *testing.T) {
+	t.Parallel()
+
+	query := renewJobLeaseQuery()
+	assertContains(t, query, "job.lease_token = $2")
+	assertContains(t, query, "job.status = 'RUNNING'")
+	assertContains(t, query, "job.lease_expires_at > renewal.renewed_at")
+	assertContains(t, query, "RETURNING job.lease_expires_at")
+}
+
+func TestNormalizeAttachJobContainerIdentityPreservesOpaqueRuntimeNodeID(t *testing.T) {
+	t.Parallel()
+
+	jobID, runtimeNodeID, err := normalizeAttachJobContainerIdentity(
+		"550E8400-E29B-41D4-A716-446655440000",
+		"local-docker",
+	)
+	if err != nil {
+		t.Fatalf("normalizeAttachJobContainerIdentity() error = %v", err)
+	}
+	if jobID != "550e8400-e29b-41d4-a716-446655440000" {
+		t.Fatalf("job ID = %q, want canonical UUID", jobID)
+	}
+	if runtimeNodeID != "local-docker" {
+		t.Fatalf("runtime node ID = %q, want exact opaque identity", runtimeNodeID)
+	}
+}
+
+func TestNormalizeAttachJobContainerIdentityRejectsEmptyRuntimeNodeID(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := normalizeAttachJobContainerIdentity("550e8400-e29b-41d4-a716-446655440000", "")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("normalizeAttachJobContainerIdentity() code = %s, want %s: %v", status.Code(err), codes.InvalidArgument, err)
+	}
+}
+
+func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
+	t.Parallel()
+
+	fields := scheduleJobHashFields("workflow-1", "user-1", jobsmodel.JobTriggerAutomatic.ToString(), 3)
+	if _, ok := fields["scheduled_at"]; ok {
+		t.Fatal("automatic schedule hash includes server-generated scheduled_at")
+	}
+	if got := fields["workflow_generation"]; got != int64(3) {
+		t.Fatalf("automatic schedule hash generation = %v, want 3", got)
+	}
+}
+
+func TestManualScheduleHashMatchesMigrationContract(t *testing.T) {
+	t.Parallel()
+
+	fields := scheduleJobHashFields(
+		"22222222-2222-4222-8222-222222222222",
+		"11111111-1111-4111-8111-111111111111",
+		jobsmodel.JobTriggerManual.ToString(),
+		0,
+	)
+	hash, err := idempotency.HashCanonical(fields)
+	if err != nil {
+		t.Fatalf("HashCanonical() error = %v", err)
+	}
+	const migrationHash = "17fdb0dc876aca70a2bca5498d2df43622b843bb9f34448913ef5e31ce913a3f"
+	if hash != migrationHash {
+		t.Fatalf("manual schedule hash = %q, want migration contract %q", hash, migrationHash)
+	}
+}
+
+func TestManualScheduleInsertDoesNotPermanentlyDeduplicateJobRow(t *testing.T) {
+	t.Parallel()
+
+	query, _, err := scheduleJobInsertStatement(
+		"workflow-1",
+		"user-1",
+		time.Now(),
+		jobsmodel.JobTriggerManual.ToString(),
+		"command-key",
+		0,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("scheduleJobInsertStatement() error = %v", err)
+	}
+	assertNotContains(t, query, "ON CONFLICT")
+	assertContains(t, query, "workflow_generation")
+}
+
+func TestAutomaticScheduleInsertPersistsGenerationForConflictValidation(t *testing.T) {
+	t.Parallel()
+
+	query, args, err := scheduleJobInsertStatement(
+		"workflow-1",
+		"user-1",
+		time.Now(),
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		"workflow:workflow-1:BUILD:3:automatic-job",
+		3,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("scheduleJobInsertStatement() error = %v", err)
+	}
+	if len(args) != 6 || args[5] != int64(3) {
+		t.Fatalf("automatic schedule args = %#v, want workflow generation 3", args)
+	}
+	assertContains(t, query, "workflow_generation")
+	assertContains(t, query, "RETURNING id, workflow_id, user_id, trigger, workflow_generation")
+}
+
+func TestValidateStoredAutomaticScheduleCommand(t *testing.T) {
+	t.Parallel()
+
+	requestHash, err := idempotency.HashCanonical(scheduleJobHashFields(
+		"workflow-1", "user-1", jobsmodel.JobTriggerAutomatic.ToString(), 3,
+	))
+	if err != nil {
+		t.Fatalf("HashCanonical() error = %v", err)
+	}
+	if err = validateStoredScheduleCommand(
+		requestHash,
+		"workflow-1",
+		"user-1",
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		sql.NullInt64{Int64: 3, Valid: true},
+	); err != nil {
+		t.Fatalf("validateStoredScheduleCommand() error = %v", err)
+	}
+	if code := status.Code(validateStoredScheduleCommand(
+		requestHash,
+		"workflow-1",
+		"user-1",
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		sql.NullInt64{},
+	)); code != codes.AlreadyExists {
+		t.Fatalf("unknown legacy generation code = %s, want %s", code, codes.AlreadyExists)
+	}
+	if code := status.Code(validateStoredScheduleCommand(
+		requestHash,
+		"workflow-1",
+		"user-1",
+		jobsmodel.JobTriggerAutomatic.ToString(),
+		sql.NullInt64{Int64: 4, Valid: true},
+	)); code != codes.AlreadyExists {
+		t.Fatalf("changed generation code = %s, want %s", code, codes.AlreadyExists)
+	}
+}
+
 func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {
 	query := claimJobQuery()
 
@@ -46,6 +229,17 @@ func TestClaimJobQueryGatesOnlyContainerJobsOnRuntime(t *testing.T) {
 	assertContains(t, query, "(SELECT kind FROM workflow) <> 'CONTAINER'")
 	assertContains(t, query, "OR EXISTS (SELECT 1 FROM selected_runtime)")
 	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
+}
+
+func TestClaimJobAndDeferralUseTheSameWorkflowBlockerPredicate(t *testing.T) {
+	t.Parallel()
+
+	blockedExpression := workflowClaimBlockedExpression("j")
+	assertContains(t, claimJobQuery(), "AND NOT "+blockedExpression)
+	assertContains(t, deferBlockedJobQuery(), "AND "+blockedExpression)
+	assertContains(t, blockedExpression, "active.status = 'RUNNING'")
+	assertContains(t, blockedExpression, "blocker.created_at < j.created_at")
+	assertContains(t, blockedExpression, "blocker.created_at = j.created_at")
 }
 
 func TestGetReadyRuntimeNodeQueryIgnoresExecutionCapacity(t *testing.T) {
@@ -68,6 +262,32 @@ func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJob
 	assertContains(t, query, "rn.status = 'READY'")
 	assertContains(t, query, "rn.last_heartbeat_at >")
 	assertContains(t, query, "rn.running_jobs < rn.max_concurrency")
+}
+
+func TestMapJobLeaseErrorsPreserveContextStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &Repository{}
+	for name, test := range map[string]struct {
+		err  error
+		code codes.Code
+	}{
+		"canceled":          {err: context.Canceled, code: codes.Canceled},
+		"deadline exceeded": {err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			for operation, mapped := range map[string]error{
+				"read":  repo.mapJobLeaseReadError(test.err, "check queued job runtime availability"),
+				"write": repo.mapJobLeaseWriteError(test.err, "defer blocked job"),
+			} {
+				if got := status.Code(mapped); got != test.code {
+					t.Errorf("%s status.Code() = %s, want %s", operation, got, test.code)
+				}
+			}
+		})
+	}
 }
 
 func TestReleaseJobForRetryQueryCarriesPreviousRuntimeOwner(t *testing.T) {
@@ -189,5 +409,70 @@ func TestNewJobLogsSearchRequestCanDisableHighlights(t *testing.T) {
 	}
 	if got.HighlightPreTag != "" || got.HighlightPostTag != "" {
 		t.Fatalf("unexpected highlight tags: pre=%q post=%q", got.HighlightPreTag, got.HighlightPostTag)
+	}
+}
+
+func TestTruncateJobErrorAlwaysReturnsValidUTF8(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		message string
+	}{
+		{
+			name:    "empty message",
+			message: "",
+		},
+		{
+			name:    "short ascii message",
+			message: "container exited with code 1",
+		},
+		{
+			name:    "ascii message at limit",
+			message: strings.Repeat("a", maxJobErrorMessageLength),
+		},
+		{
+			name:    "ascii message over limit",
+			message: strings.Repeat("a", maxJobErrorMessageLength+10),
+		},
+		{
+			name:    "multi-byte rune straddling the boundary",
+			message: strings.Repeat("a", maxJobErrorMessageLength-1) + "日",
+		},
+		{
+			name:    "emoji sequence straddling the boundary",
+			message: strings.Repeat("a", maxJobErrorMessageLength-3) + "🚀",
+		},
+		{
+			name:    "long multi-byte message",
+			message: strings.Repeat("日本語", 2000),
+		},
+		{
+			name:    "invalid utf-8 bytes",
+			message: "exit status \xff\xfe failure",
+		},
+		{
+			name:    "invalid utf-8 bytes over limit",
+			message: strings.Repeat("b", maxJobErrorMessageLength-1) + "\xc3",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := truncateJobError(test.message)
+			if !utf8.ValidString(got) {
+				t.Fatalf("expected valid UTF-8, got %q", got)
+			}
+			if len(got) > maxJobErrorMessageLength {
+				t.Fatalf("expected length <= %d, got %d", maxJobErrorMessageLength, len(got))
+			}
+
+			// Short messages must pass through unchanged.
+			if len(test.message) <= maxJobErrorMessageLength && utf8.ValidString(test.message) && got != test.message {
+				t.Fatalf("expected message to be unchanged, got %q want %q", got, test.message)
+			}
+		})
 	}
 }

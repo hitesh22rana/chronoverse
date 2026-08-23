@@ -56,6 +56,7 @@ type GetWorkflowResponse struct {
 	BuildHash                        sql.NullString `db:"build_hash,omitempty"`
 	ResolvedImageRef                 sql.NullString `db:"resolved_image_ref,omitempty"`
 	ResolvedImageDigest              sql.NullString `db:"resolved_image_digest,omitempty"`
+	IdempotencyReplay                bool           `db:"-" json:"-"`
 }
 
 // ToProto converts the GetWorkflowResponse to its protobuf representation.

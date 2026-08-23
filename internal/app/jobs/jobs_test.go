@@ -26,6 +26,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 func TestMain(t *testing.T) {
@@ -262,199 +263,125 @@ func TestScheduleJob(t *testing.T) {
 	}
 }
 
-func TestUpdateJobStatus(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	svc := jobsmock.NewMockService(ctrl)
-	_auth := authmock.NewMockIAuth(ctrl)
-
-	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
-		Deadline: 500 * time.Millisecond,
-	}, _auth, svc))
-	defer _close()
-
-	type args struct {
-		getCtx func() context.Context
-		req    *jobspb.UpdateJobStatusRequest
-	}
+func TestCancelJob(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*jobspb.UpdateJobStatusRequest)
-		res   *jobspb.UpdateJobStatusResponse
-		isErr bool
+		name     string
+		context  func(context.Context) context.Context
+		request  *jobspb.CancelJobRequest
+		setup    func(*authmock.MockIAuth, *jobsmock.MockService)
+		want     *jobspb.CancelJobResponse
+		wantCode codes.Code
 	}{
 		{
 			name: "success",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
-						"token",
-					)
-				},
-				req: &jobspb.UpdateJobStatusRequest{
-					Id:     "job_id",
-					Status: "QUEUED",
-				},
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					"token",
+				)
 			},
-			mock: func(_ *jobspb.UpdateJobStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().UpdateJobStatus(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil)
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
-			res:   &jobspb.UpdateJobStatusResponse{},
-			isErr: false,
+			setup: func(authService *authmock.MockIAuth, service *jobsmock.MockService) {
+				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				service.EXPECT().CancelJob(gomock.Any(), gomock.Any()).Return(&jobsmodel.CancelJobSnapshot{
+					ID:              "job-1",
+					PreviousStatus:  jobsmodel.JobStatusRunning.ToString(),
+					ContainerID:     sql.NullString{String: "container-1", Valid: true},
+					RuntimeNodeID:   sql.NullString{String: "runtime-1", Valid: true},
+					RuntimeEndpoint: sql.NullString{String: "tcp://runtime:2375", Valid: true},
+					Attempt:         2,
+				}, nil)
+			},
+			want: &jobspb.CancelJobResponse{
+				Id: "job-1", PreviousStatus: jobsmodel.JobStatusRunning.ToString(), ContainerId: "container-1",
+				RuntimeNodeId: "runtime-1", RuntimeEndpoint: "tcp://runtime:2375", Attempt: 2,
+			},
+			wantCode: codes.OK,
 		},
 		{
-			name: "error: unauthorized access (invalid role)",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
-						"token",
-					)
-				},
-				req: &jobspb.UpdateJobStatusRequest{
-					Id:     "job_id",
-					Status: "QUEUED",
-				},
+			name: "invalid role",
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "server"), auth.RoleUser),
+					"token",
+				)
 			},
-			mock:  func(_ *jobspb.UpdateJobStatusRequest) {},
-			res:   nil,
-			isErr: true,
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
+			},
+			setup:    func(*authmock.MockIAuth, *jobsmock.MockService) {},
+			wantCode: codes.PermissionDenied,
 		},
 		{
-			name: "error: invalid token",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
-						"invalid-token",
-					)
-				},
-				req: &jobspb.UpdateJobStatusRequest{
-					Id:     "job_id",
-					Status: "QUEUED",
-				},
+			name: "invalid token",
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					"invalid-token",
+				)
 			},
-			mock: func(_ *jobspb.UpdateJobStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
-			res:   nil,
-			isErr: true,
+			setup: func(authService *authmock.MockIAuth, _ *jobsmock.MockService) {
+				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+			},
+			wantCode: codes.Unauthenticated,
 		},
 		{
-			name: "error: missing required fields in request",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
-						"token",
-					)
-				},
-				req: &jobspb.UpdateJobStatusRequest{
-					Id:     "",
-					Status: "",
-				},
+			name:    "missing metadata",
+			context: func(ctx context.Context) context.Context { return ctx },
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
-			mock: func(_ *jobspb.UpdateJobStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().UpdateJobStatus(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(status.Error(codes.InvalidArgument, "id and status are required"))
-			},
-			res:   nil,
-			isErr: true,
+			setup:    func(*authmock.MockIAuth, *jobsmock.MockService) {},
+			wantCode: codes.FailedPrecondition,
 		},
 		{
-			name: "error: missing required headers in metadata",
-			args: args{
-				getCtx: func() context.Context {
-					return metadata.AppendToOutgoingContext(
-						t.Context(),
-					)
-				},
-				req: &jobspb.UpdateJobStatusRequest{
-					Id:     "job_id",
-					Status: "QUEUED",
-				},
+			name: "service failure",
+			context: func(ctx context.Context) context.Context {
+				return auth.WithAuthorizationTokenInMetadata(
+					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					"token",
+				)
 			},
-			mock:  func(_ *jobspb.UpdateJobStatusRequest) {},
-			res:   nil,
-			isErr: true,
-		},
-		{
-			name: "error: internal server error",
-			args: args{
-				getCtx: func() context.Context {
-					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
-						"token",
-					)
-				},
-				req: &jobspb.UpdateJobStatusRequest{
-					Id:     "job_id",
-					Status: "QUEUED",
-				},
+			request: &jobspb.CancelJobRequest{
+				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
-			mock: func(_ *jobspb.UpdateJobStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
-				svc.EXPECT().UpdateJobStatus(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(status.Error(codes.Internal, "internal server error"))
+			setup: func(authService *authmock.MockIAuth, service *jobsmock.MockService) {
+				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				service.EXPECT().CancelJob(gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.Internal, "cancel failed"))
 			},
-			res:   nil,
-			isErr: true,
+			wantCode: codes.Internal,
 		},
 	}
 
-	defer ctrl.Finish()
-
 	for _, tt := range tests {
-		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.UpdateJobStatus(tt.args.getCtx(), tt.args.req)
-			if (err != nil) != tt.isErr {
-				t.Errorf("UpdateJobStatus() error = %v, wantErr %v", err, tt.isErr)
-				return
-			}
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+			service := jobsmock.NewMockService(ctrl)
+			authService := authmock.NewMockIAuth(ctrl)
+			tt.setup(authService, service)
 
-			if tt.isErr {
-				if err == nil {
-					t.Error("UpdateJobStatus() error = nil, want error")
-				}
-				return
+			client, closeClient := initClient(jobs.New(t.Context(), &jobs.Config{Deadline: 500 * time.Millisecond}, authService, service))
+			defer closeClient()
+
+			response, err := client.CancelJob(tt.context(t.Context()), tt.request)
+			if code := status.Code(err); code != tt.wantCode {
+				t.Fatalf("CancelJob() code = %s, want %s: %v", code, tt.wantCode, err)
+			}
+			if tt.want != nil && (response.GetId() != tt.want.GetId() ||
+				response.GetPreviousStatus() != tt.want.GetPreviousStatus() ||
+				response.GetContainerId() != tt.want.GetContainerId() ||
+				response.GetRuntimeNodeId() != tt.want.GetRuntimeNodeId() ||
+				response.GetRuntimeEndpoint() != tt.want.GetRuntimeEndpoint() ||
+				response.GetAttempt() != tt.want.GetAttempt()) {
+				t.Fatalf("CancelJob() response = %+v, want %+v", response, tt.want)
 			}
 		})
 	}

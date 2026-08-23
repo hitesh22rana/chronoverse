@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,27 +13,34 @@ import (
 	"google.golang.org/grpc/status"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/outbox"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
 const (
-	delimiter               = '$'
-	idempotencyKeyTTL       = 24 * time.Hour
-	operationCreateWorkflow = "create_workflow"
+	delimiter                                     = '$'
+	workflowRequestWorkflowIDField                = "workflow_id"
+	workflowRequestUserIDField                    = "user_id"
+	workflowRequestNameField                      = "name"
+	workflowRequestPayloadField                   = "payload"
+	workflowRequestIntervalField                  = "interval"
+	workflowRequestMaxConsecutiveJobFailuresField = "max_consecutive_job_failures_allowed"
 )
-
-func operationUpdateWorkflow(workflowID string) string {
-	return fmt.Sprintf("update_workflow:%s", workflowID)
-}
 
 type updateWorkflowActionDecision struct {
 	buildRequired      bool
 	rescheduleRequired bool
 	nextGeneration     int64
 	buildStatus        string
+}
+
+type workflowRequestIdentitySet struct {
+	requestHash         string
+	compatibleHashes    []string
+	canonicalLegacyHash string
+	rawLegacyHash       string
 }
 
 func decideWorkflowUpdateAction(
@@ -71,85 +77,127 @@ func decideWorkflowUpdateAction(
 	return decision
 }
 
-func workflowRequestHash(fields map[string]any) (string, error) {
-	hash, err := idempotency.HashCanonical(fields)
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to hash idempotency request: %v", err)
+func workflowRequestHashes(fields map[string]any) (canonicalHash, legacyHash string, err error) {
+	legacyFields := make(map[string]any, len(fields))
+	canonicalFields := make(map[string]any, len(fields))
+	for key, value := range fields {
+		legacyFields[key] = value
+		canonicalFields[key] = value
 	}
-	return hash, nil
+
+	legacyHash, err = idempotency.HashCanonical(legacyFields)
+	if err != nil {
+		return "", "", status.Errorf(codes.Internal, "failed to hash legacy idempotency request: %v", err)
+	}
+	if payload, ok := canonicalFields[workflowRequestPayloadField].(string); ok {
+		canonicalPayload, canonicalErr := idempotency.CanonicalJSON(payload)
+		if canonicalErr != nil {
+			return "", "", status.Errorf(codes.InvalidArgument, "invalid workflow payload JSON: %v", canonicalErr)
+		}
+		canonicalFields[workflowRequestPayloadField] = string(canonicalPayload)
+	}
+	canonicalHash, err = idempotency.HashCanonical(canonicalFields)
+	if err != nil {
+		return "", "", status.Errorf(codes.Internal, "failed to hash idempotency request: %v", err)
+	}
+	return canonicalHash, legacyHash, nil
 }
 
-func reserveWorkflowIdempotencyKey(
-	ctx context.Context,
-	tx pgx.Tx,
-	userID,
-	operation,
-	key,
-	requestHash string,
-) (workflowID string, replay bool, err error) {
-	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, operation, idempotency_key, request_hash, expires_at)
-		VALUES ($1, $2, $3, $4, (now() AT TIME ZONE 'utc') + $5::interval)
-		ON CONFLICT DO NOTHING;
-	`, postgres.TableWorkflowIdempotencyKeys)
-
-	ct, err := tx.Exec(ctx, query, userID, operation, key, requestHash, fmt.Sprintf("%d seconds", int(idempotencyKeyTTL.Seconds())))
+func workflowRequestHashSet(
+	canonicalFields map[string]any,
+	rawUUIDFields map[string]string,
+) (workflowRequestIdentitySet, error) {
+	requestHash, legacyHash, err := workflowRequestHashes(canonicalFields)
 	if err != nil {
-		return "", false, status.Errorf(codes.Internal, "failed to reserve idempotency key: %v", err)
+		return workflowRequestIdentitySet{}, err
 	}
 
-	if ct.RowsAffected() > 0 {
-		return "", false, nil
+	rawFields := make(map[string]any, len(canonicalFields))
+	for key, value := range canonicalFields {
+		rawFields[key] = value
+	}
+	identityChanged := false
+	for key, rawValue := range rawUUIDFields {
+		if canonicalValue, ok := canonicalFields[key].(string); ok && rawValue != canonicalValue {
+			rawFields[key] = rawValue
+			identityChanged = true
+		}
 	}
 
-	var storedHash, statusValue string
-	var storedWorkflowID sql.NullString
-	query = fmt.Sprintf(`
-		SELECT request_hash, status, workflow_id
-		FROM %s
-		WHERE user_id = $1 AND operation = $2 AND idempotency_key = $3
-		LIMIT 1;
-	`, postgres.TableWorkflowIdempotencyKeys)
-	if err = tx.QueryRow(ctx, query, userID, operation, key).Scan(&storedHash, &statusValue, &storedWorkflowID); err != nil {
-		return "", false, status.Errorf(codes.Internal, "failed to fetch idempotency key: %v", err)
+	// PostgreSQL alias position 1 (Go index 0) is a persistence contract with
+	// migration 11's down migration: it must always contain the legacy hash
+	// built from canonical UUID text because the restored legacy operation also
+	// uses canonical text. Keep it even when it equals the primary
+	// canonical-payload hash.
+	compatibleHashes := []string{legacyHash}
+	var rawLegacyHash string
+	if identityChanged {
+		_, computedRawLegacyHash, hashErr := workflowRequestHashes(rawFields)
+		if hashErr != nil {
+			return workflowRequestIdentitySet{}, hashErr
+		}
+		rawLegacyHash = computedRawLegacyHash
+		// Raw UUID spelling remains an additional forward-upgrade matching
+		// alias; it must not displace the rollback-compatible hash above.
+		compatibleHashes = append(compatibleHashes, rawLegacyHash)
 	}
-
-	if storedHash != requestHash {
-		return "", false, status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
-	}
-
-	if statusValue != "COMPLETED" || !storedWorkflowID.Valid {
-		return "", false, status.Error(codes.Aborted, "idempotency key is already processing")
-	}
-
-	return storedWorkflowID.String, true, nil
+	return workflowRequestIdentitySet{
+		requestHash:         requestHash,
+		compatibleHashes:    uniqueRequestHashes(compatibleHashes),
+		canonicalLegacyHash: legacyHash,
+		rawLegacyHash:       rawLegacyHash,
+	}, nil
 }
 
-func completeWorkflowIdempotencyKey(
-	ctx context.Context,
-	tx pgx.Tx,
-	userID,
-	operation,
-	key,
-	workflowID string,
-	response any,
-) error {
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to marshal idempotency response: %v", err)
+func workflowCreateLegacyIdentities(set workflowRequestIdentitySet) []commandidempotency.LegacyIdentity {
+	return []commandidempotency.LegacyIdentity{{
+		Operation:   commandidempotency.LegacyOperationWorkflowCreate,
+		RequestHash: set.canonicalLegacyHash,
+	}}
+}
+
+func workflowUpdateLegacyIdentities(
+	canonicalWorkflowID,
+	rawWorkflowID string,
+	set workflowRequestIdentitySet,
+) []commandidempotency.LegacyIdentity {
+	identities := []commandidempotency.LegacyIdentity{{
+		Operation:   commandidempotency.LegacyWorkflowUpdateOperation(canonicalWorkflowID),
+		RequestHash: set.canonicalLegacyHash,
+	}}
+	if rawWorkflowID != canonicalWorkflowID {
+		identities = append(identities, commandidempotency.LegacyIdentity{
+			Operation:   commandidempotency.LegacyWorkflowUpdateOperation(rawWorkflowID),
+			RequestHash: set.rawLegacyHash,
+		})
 	}
+	return identities
+}
 
-	query := fmt.Sprintf(`
-		UPDATE %s
-		SET workflow_id = $4, response = $5::jsonb, status = 'COMPLETED'
-		WHERE user_id = $1 AND operation = $2 AND idempotency_key = $3;
-	`, postgres.TableWorkflowIdempotencyKeys)
-
-	if _, err = tx.Exec(ctx, query, userID, operation, key, workflowID, string(responseBytes)); err != nil {
-		return status.Errorf(codes.Internal, "failed to complete idempotency key: %v", err)
+func uniqueRequestHashes(hashes []string) []string {
+	unique := make([]string, 0, len(hashes))
+	seen := make(map[string]struct{}, len(hashes))
+	for _, hash := range hashes {
+		if _, exists := seen[hash]; exists {
+			continue
+		}
+		seen[hash] = struct{}{}
+		unique = append(unique, hash)
 	}
+	return unique
+}
 
-	return nil
+func isLegacyWorkflowCreateResponse(response json.RawMessage) bool {
+	if len(response) == 0 {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(response, &fields); err != nil || len(fields) != 1 {
+		return false
+	}
+	_, lowerID := fields["id"]
+	_, upperID := fields["ID"]
+	return lowerID || upperID
 }
 
 func workflowEventPayload(workflowID, userID string, action workflowsmodel.Action, generation int64) *workflowsmodel.WorkflowEvent {

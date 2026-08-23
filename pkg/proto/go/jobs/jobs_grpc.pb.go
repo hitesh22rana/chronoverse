@@ -20,7 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	JobsService_ScheduleJob_FullMethodName             = "/jobs.JobsService/ScheduleJob"
-	JobsService_UpdateJobStatus_FullMethodName         = "/jobs.JobsService/UpdateJobStatus"
+	JobsService_CancelJob_FullMethodName               = "/jobs.JobsService/CancelJob"
 	JobsService_ClaimJob_FullMethodName                = "/jobs.JobsService/ClaimJob"
 	JobsService_GetReadyRuntimeNode_FullMethodName     = "/jobs.JobsService/GetReadyRuntimeNode"
 	JobsService_RenewJobLease_FullMethodName           = "/jobs.JobsService/RenewJobLease"
@@ -46,9 +46,9 @@ const (
 type JobsServiceClient interface {
 	// ScheduleJob schedules a job to run at a specific time.
 	ScheduleJob(ctx context.Context, in *ScheduleJobRequest, opts ...grpc.CallOption) (*ScheduleJobResponse, error)
-	// UpdateJobStatus updates the status of a job.
+	// CancelJob applies a deterministic workflow-driven cancellation.
 	// This is an internal API and should not be exposed to the public.
-	UpdateJobStatus(ctx context.Context, in *UpdateJobStatusRequest, opts ...grpc.CallOption) (*UpdateJobStatusResponse, error)
+	CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*CancelJobResponse, error)
 	// ClaimJob atomically claims a queued job for execution.
 	// This is an internal API and should not be exposed to the public.
 	ClaimJob(ctx context.Context, in *ClaimJobRequest, opts ...grpc.CallOption) (*ClaimJobResponse, error)
@@ -109,10 +109,10 @@ func (c *jobsServiceClient) ScheduleJob(ctx context.Context, in *ScheduleJobRequ
 	return out, nil
 }
 
-func (c *jobsServiceClient) UpdateJobStatus(ctx context.Context, in *UpdateJobStatusRequest, opts ...grpc.CallOption) (*UpdateJobStatusResponse, error) {
+func (c *jobsServiceClient) CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*CancelJobResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateJobStatusResponse)
-	err := c.cc.Invoke(ctx, JobsService_UpdateJobStatus_FullMethodName, in, out, cOpts...)
+	out := new(CancelJobResponse)
+	err := c.cc.Invoke(ctx, JobsService_CancelJob_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -286,9 +286,9 @@ func (c *jobsServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, o
 type JobsServiceServer interface {
 	// ScheduleJob schedules a job to run at a specific time.
 	ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error)
-	// UpdateJobStatus updates the status of a job.
+	// CancelJob applies a deterministic workflow-driven cancellation.
 	// This is an internal API and should not be exposed to the public.
-	UpdateJobStatus(context.Context, *UpdateJobStatusRequest) (*UpdateJobStatusResponse, error)
+	CancelJob(context.Context, *CancelJobRequest) (*CancelJobResponse, error)
 	// ClaimJob atomically claims a queued job for execution.
 	// This is an internal API and should not be exposed to the public.
 	ClaimJob(context.Context, *ClaimJobRequest) (*ClaimJobResponse, error)
@@ -341,8 +341,8 @@ type UnimplementedJobsServiceServer struct{}
 func (UnimplementedJobsServiceServer) ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ScheduleJob not implemented")
 }
-func (UnimplementedJobsServiceServer) UpdateJobStatus(context.Context, *UpdateJobStatusRequest) (*UpdateJobStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateJobStatus not implemented")
+func (UnimplementedJobsServiceServer) CancelJob(context.Context, *CancelJobRequest) (*CancelJobResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelJob not implemented")
 }
 func (UnimplementedJobsServiceServer) ClaimJob(context.Context, *ClaimJobRequest) (*ClaimJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ClaimJob not implemented")
@@ -427,20 +427,20 @@ func _JobsService_ScheduleJob_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _JobsService_UpdateJobStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateJobStatusRequest)
+func _JobsService_CancelJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelJobRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(JobsServiceServer).UpdateJobStatus(ctx, in)
+		return srv.(JobsServiceServer).CancelJob(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: JobsService_UpdateJobStatus_FullMethodName,
+		FullMethod: JobsService_CancelJob_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(JobsServiceServer).UpdateJobStatus(ctx, req.(*UpdateJobStatusRequest))
+		return srv.(JobsServiceServer).CancelJob(ctx, req.(*CancelJobRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -720,8 +720,8 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _JobsService_ScheduleJob_Handler,
 		},
 		{
-			MethodName: "UpdateJobStatus",
-			Handler:    _JobsService_UpdateJobStatus_Handler,
+			MethodName: "CancelJob",
+			Handler:    _JobsService_CancelJob_Handler,
 		},
 		{
 			MethodName: "ClaimJob",

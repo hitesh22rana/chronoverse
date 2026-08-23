@@ -37,7 +37,7 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
-	"UpdateJobStatus":         true,
+	"CancelJob":               true,
 	"ClaimJob":                true,
 	"GetReadyRuntimeNode":     true,
 	"RenewJobLease":           true,
@@ -53,10 +53,10 @@ var internalAPIs = map[string]bool{
 // Service provides job related operations.
 type Service interface {
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
-	UpdateJobStatus(ctx context.Context, req *jobspb.UpdateJobStatusRequest) error
+	CancelJob(ctx context.Context, req *jobspb.CancelJobRequest) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (*jobspb.ClaimJobResponse, error)
 	GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
-	RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) error
+	RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) (time.Time, error)
 	AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest) error
 	CompleteJob(ctx context.Context, req *jobspb.CompleteJobRequest) error
 	FailJob(ctx context.Context, req *jobspb.FailJobRequest) error
@@ -288,39 +288,15 @@ func (j *Jobs) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) 
 	return &jobspb.ScheduleJobResponse{Id: jobID}, nil
 }
 
-// UpdateJobStatus updates the job status.
-// This is an internal method used by internal services, and it should not be exposed to the public.
-func (j *Jobs) UpdateJobStatus(
-	ctx context.Context,
-	req *jobspb.UpdateJobStatusRequest,
-) (res *jobspb.UpdateJobStatusResponse, err error) {
-	ctx, span := j.tp.Start(
-		ctx,
-		"App.UpdateJobStatus",
-		trace.WithAttributes(
-			attribute.String("id", req.GetId()),
-			attribute.String("container_id", req.GetContainerId()),
-			attribute.String("status", req.GetStatus()),
-		),
-	)
-
-	defer func() {
-		if err != nil {
-			span.SetStatus(otelcodes.Error, err.Error())
-			span.RecordError(err)
-		}
-		span.End()
-	}()
-
+// CancelJob applies a deterministic cancellation and returns its cleanup snapshot.
+func (j *Jobs) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest) (*jobspb.CancelJobResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
-
-	err = j.svc.UpdateJobStatus(ctx, req)
+	snapshot, err := j.svc.CancelJob(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-
-	return &jobspb.UpdateJobStatusResponse{}, nil
+	return snapshot.ToProto(), nil
 }
 
 // ClaimJob atomically claims a queued job for execution.
@@ -379,11 +355,12 @@ func (j *Jobs) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseReque
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 
-	if err := j.svc.RenewJobLease(ctx, req); err != nil {
+	expiresAt, err := j.svc.RenewJobLease(ctx, req)
+	if err != nil {
 		return nil, err
 	}
 
-	return &jobspb.RenewJobLeaseResponse{}, nil
+	return &jobspb.RenewJobLeaseResponse{LeaseExpiresAt: expiresAt.UTC().Format(time.RFC3339Nano)}, nil
 }
 
 // AttachJobContainer attaches a container ID to a running claimed job.

@@ -137,11 +137,11 @@ export function useWorkflowJobs(
     }
 
     const manualRunJobMutation = useMutation({
-        mutationFn: async () => {
+        mutationFn: async (idempotencyKey: string) => {
             await fetchApi(apiEndpoints.workflows.jobs.schedule(workflowId), "Failed to schedule job", {
                 method: "POST",
                 headers: {
-                    "Idempotency-Key": createIdempotencyKey(),
+                    "Idempotency-Key": idempotencyKey,
                 },
             })
         },
@@ -173,7 +173,7 @@ export function useWorkflowJobs(
             resetPagination,
             currentPage: currentCursor ? 'paginated' : 'first'
         },
-        manualRunJob: manualRunJobMutation.mutate,
+        manualRunJob: () => manualRunJobMutation.mutate(createIdempotencyKey()),
         isManualRunJobPending: manualRunJobMutation.isPending,
         manualRunJobError: manualRunJobMutation.error,
     }

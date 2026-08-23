@@ -52,8 +52,8 @@ func DefaultCircuitBreakerConfig() *CircuitBreakerConfig {
 
 // RetryConfig contains the configuration for retry behavior.
 type RetryConfig struct {
-	// MaxRetries is the maximum number of retries for a single request.
-	MaxRetries uint
+	// MaxAttempts is the maximum total number of invocations, including the initial call.
+	MaxAttempts uint
 	// BackoffExponential is the base duration for exponential backoff.
 	BackoffExponential time.Duration
 	// RetryableCodes is a list of status codes that are retryable.
@@ -65,7 +65,7 @@ type RetryConfig struct {
 // DefaultRetryConfig returns a default retry configuration.
 func DefaultRetryConfig() *RetryConfig {
 	return &RetryConfig{
-		MaxRetries:         3,
+		MaxAttempts:        3,
 		BackoffExponential: 100 * time.Millisecond,
 		RetryableCodes: []codes.Code{
 			codes.Unavailable,
@@ -131,7 +131,7 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 	// Configure retry options
 	retryOpts := []retry.CallOption{
 		retry.WithCodes(retryCfg.RetryableCodes...),
-		retry.WithMax(retryCfg.MaxRetries),
+		retry.WithMax(retryCfg.MaxAttempts),
 		retry.WithBackoff(retry.BackoffExponential(retryCfg.BackoffExponential)),
 		retry.WithPerRetryTimeout(retryCfg.PerRetryTimeout),
 	}

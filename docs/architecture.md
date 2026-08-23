@@ -167,7 +167,7 @@ expected operating conditions.
   metadata and are not part of the user-authored build hash.
 - **Image pull locks** prevent replicated workers that share a runtime daemon
   from cold-pulling the same image concurrently. Locks are scoped by runtime
-  node and image, with Docker host fallback for legacy/local clients.
+  node and image, with Docker host fallback when runtime scope is omitted.
 - **Runtime ownership** records `runtime_node_id` and `runtime_endpoint` on
   running container jobs so execution, logs, termination, deletion, and lease
   recovery target the Docker daemon that owns the container.

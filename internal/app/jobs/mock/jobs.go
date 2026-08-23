@@ -12,6 +12,7 @@ package jobs
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	jobs "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	jobs0 "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -68,6 +69,21 @@ func (m *MockService) CancelClaimedJob(ctx context.Context, req *jobs0.CancelCla
 func (mr *MockServiceMockRecorder) CancelClaimedJob(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelClaimedJob", reflect.TypeOf((*MockService)(nil).CancelClaimedJob), ctx, req)
+}
+
+// CancelJob mocks base method.
+func (m *MockService) CancelJob(ctx context.Context, req *jobs0.CancelJobRequest) (*jobs.CancelJobSnapshot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CancelJob", ctx, req)
+	ret0, _ := ret[0].(*jobs.CancelJobSnapshot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CancelJob indicates an expected call of CancelJob.
+func (mr *MockServiceMockRecorder) CancelJob(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelJob", reflect.TypeOf((*MockService)(nil).CancelJob), ctx, req)
 }
 
 // ClaimJob mocks base method.
@@ -218,11 +234,12 @@ func (mr *MockServiceMockRecorder) ReleaseJobForRetry(ctx, req any) *gomock.Call
 }
 
 // RenewJobLease mocks base method.
-func (m *MockService) RenewJobLease(ctx context.Context, req *jobs0.RenewJobLeaseRequest) error {
+func (m *MockService) RenewJobLease(ctx context.Context, req *jobs0.RenewJobLeaseRequest) (time.Time, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RenewJobLease", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(time.Time)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // RenewJobLease indicates an expected call of RenewJobLease.
@@ -274,18 +291,4 @@ func (m *MockService) StreamJobLogs(ctx context.Context, req *jobs0.StreamJobLog
 func (mr *MockServiceMockRecorder) StreamJobLogs(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamJobLogs", reflect.TypeOf((*MockService)(nil).StreamJobLogs), ctx, req)
-}
-
-// UpdateJobStatus mocks base method.
-func (m *MockService) UpdateJobStatus(ctx context.Context, req *jobs0.UpdateJobStatusRequest) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockServiceMockRecorder) UpdateJobStatus(ctx, req any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockService)(nil).UpdateJobStatus), ctx, req)
 }

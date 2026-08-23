@@ -23,6 +23,7 @@ paths:
       summary: Register a user
       tags: [Authentication]
       description: Creates a user and issues session and CSRF cookies.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody:
         required: true
         content:
@@ -31,6 +32,7 @@ paths:
       responses:
         '201': {description: User registered and session created}
         '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /auth/login:
     post:
       operationId: loginUser
@@ -141,6 +143,7 @@ paths:
                 {$ref: '#/components/schemas/IdentifierResponse'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /workflows/{workflow_id}:
     parameters: [{$ref: '#/components/parameters/WorkflowId'}]
     get:
@@ -164,6 +167,7 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowUpdateInput'}}}
       responses:
         '204': {description: Workflow updated}
+        '409': {$ref: '#/components/responses/Conflict'}
         '404': {$ref: '#/components/responses/NotFound'}
     patch:
       operationId: terminateWorkflow
@@ -218,6 +222,7 @@ paths:
             application/json:
               schema:
                 {$ref: '#/components/schemas/IdentifierResponse'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
   /workflows/{workflow_id}/jobs/{job_id}:
     get:
@@ -331,6 +336,7 @@ paths:
               properties: {ids: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}}
       responses:
         '204': {description: Notifications marked read}
+        '404': {description: One or more notifications do not exist or do not belong to the authenticated user; no notifications are changed}
   /analytics:
     get:
       operationId: getUserAnalytics
@@ -368,9 +374,18 @@ components:
     WorkflowId: {name: workflow_id, in: path, required: true, schema: {type: string, format: uuid}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
     Cursor: {name: cursor, in: query, required: false, schema: {type: string}, description: Opaque pagination cursor}
-    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string}, description: Stable key reused only when retrying the same mutation}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Valid UTF-8 containing 1-255 bytes after trimming only outer ASCII spaces (U+0020), with no Unicode control characters. Reuse a key only for retries of the exact same logical request.
+      schema:
+        type: string
+        minLength: 1
+        x-maxBytes: 255
   responses:
     BadRequest: {description: Invalid input or missing required idempotency key}
+    Conflict: {description: Idempotency key was already used with a different logical request}
     Unauthorized: {description: Missing or invalid session}
     NotFound: {description: Resource not found}
     PreconditionFailed: {description: Current workflow or job state does not allow the operation}

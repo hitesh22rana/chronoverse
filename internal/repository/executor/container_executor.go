@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -80,6 +82,7 @@ func (r *Repository) attachJobContainer(ctx context.Context, jobID, leaseToken, 
 		LeaseToken:    leaseToken,
 		ContainerId:   containerID,
 		RuntimeNodeId: runtimeNodeID,
+		CommandId:     uuid.NewString(),
 	})
 	return err
 }

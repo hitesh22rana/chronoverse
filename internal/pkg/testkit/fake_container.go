@@ -46,6 +46,11 @@ func (f *FakeContainerSvc) Build(ctx context.Context, imageName string) error {
 
 	select {
 	case <-ctx.Done():
+		// A canceled build never completes; unwind the in-flight count so
+		// later assertions on peak concurrency are not inflated.
+		f.mu.Lock()
+		f.inBuild[imageName]--
+		f.mu.Unlock()
 		return ctx.Err()
 	case <-time.After(f.BuildDelay):
 	}

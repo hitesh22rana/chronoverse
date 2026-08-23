@@ -88,6 +88,7 @@ func startKafka(ctx context.Context, s *suite) (string, *kgo.Client, error) {
 		kafkapkg.TopicJobLogs,
 		kafkapkg.TopicAnalytics,
 	); err != nil {
+		client.Close()
 		return "", nil, fmt.Errorf("create kafka topics: %w", err)
 	}
 

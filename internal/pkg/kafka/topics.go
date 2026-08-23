@@ -20,6 +20,10 @@ const (
 	TopicJobLogs = "job_logs"
 	// TopicAnalytics is the name of the Kafka topic for analytics events.
 	TopicAnalytics = "analytics"
+
+	// maxCreateTopicsAttempts bounds EnsureTopics retries (2s apart, so at
+	// most ~1 minute of waiting for the broker to answer admin requests).
+	maxCreateTopicsAttempts = 30
 )
 
 // EnsureTopics creates the given topics with a single partition, retrying until
@@ -27,10 +31,15 @@ const (
 // topics that already exist are left untouched.
 func EnsureTopics(ctx context.Context, client *kgo.Client, topics ...string) error {
 	var lastErr error
-	for range 30 {
+	for attempt := range maxCreateTopicsAttempts {
 		lastErr = createTopicsOnce(ctx, client, topics...)
 		if lastErr == nil {
 			return nil
+		}
+		// Do not sleep after the final attempt: startup is about to fail
+		// with lastErr anyway.
+		if attempt == maxCreateTopicsAttempts-1 {
+			break
 		}
 
 		select {

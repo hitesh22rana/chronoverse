@@ -174,6 +174,8 @@ func applyMigration(ctx context.Context, client *Client, migration Migration) er
 }
 
 // splitMigrationStatements splits a migration file into individual statements.
+// The split is a plain ";" separator: string literals and comments inside
+// migration files must not contain semicolons.
 func splitMigrationStatements(content string) []string {
 	parts := strings.Split(content, ";")
 	statements := make([]string, 0, len(parts))

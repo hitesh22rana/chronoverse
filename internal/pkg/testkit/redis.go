@@ -33,7 +33,12 @@ func startRedis(ctx context.Context, s *suite) (*redispkg.Store, error) {
 		MinIdleConns: 2,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
-		TLSConfig:    &redispkg.TLSConfig{Enabled: false},
+		// Mirror the production defaults; an empty MaxMemory makes
+		// CONFIG SET maxmemory fail on Redis 8.
+		MaxMemory:                "100mb",
+		EvictionPolicy:           "allkeys-lru",
+		EvictionPolicySampleSize: 5,
+		TLSConfig:                &redispkg.TLSConfig{Enabled: false},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("connect redis: %w", err)

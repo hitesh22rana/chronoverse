@@ -17,8 +17,11 @@ import (
 )
 
 const (
-	kafkaImage     = "confluentinc/cp-kafka:7.6.7"
-	kafkaClusterID = "chronoverse-test-cluster"
+	kafkaImage = "confluentinc/cp-kafka:7.6.7"
+	// kafkaClusterID must be a base64-encoded UUID (exactly 16 decoded bytes,
+	// 22 unpadded base64 characters); the Confluent entrypoint refuses to
+	// format KRaft storage with anything else and exits with code 1.
+	kafkaClusterID = "Y2hyb25vdmVyc2UtdGVzdA" // base64("chronoverse-test")
 )
 
 // startKafka starts a single-node Confluent Kafka broker in KRaft mode with a

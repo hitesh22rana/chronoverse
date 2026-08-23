@@ -15,6 +15,12 @@
 // Integration tests self-skip when running with -short or when Docker is not
 // available, so `go test ./...` keeps working in every environment and `make
 // test/short` stays fast. `make test/integration` runs the full suite.
+//
+// Container-start failures skip tests locally but fail them in strict mode:
+// enabled automatically when the CI environment variable is set (as on GitHub
+// Actions runners) so a broken Docker setup cannot produce a green build with
+// zero coverage. Set TESTKIT_STRICT=0 to force lenient behavior inside CI, or
+// TESTKIT_STRICT=1 to opt in locally.
 package testkit
 
 import (
@@ -195,7 +201,9 @@ func KafkaConsumer(t *testing.T, group string, topics ...string) *kgo.Client {
 
 // start provisions the given service exactly once per test binary. Tests are
 // skipped (never failed) when running in -short mode or when Docker is
-// unavailable, so plain `go test` works on machines without a daemon.
+// unavailable, so plain `go test` works on machines without a daemon. In
+// strict mode (CI environments, see the package documentation) start failures
+// fail instead of skip.
 func (s *suite) start(t *testing.T, svc service) {
 	t.Helper()
 	if testing.Short() {
@@ -209,7 +217,7 @@ func (s *suite) start(t *testing.T, svc service) {
 		return
 	}
 	if s.startErrs[svc] != nil {
-		t.Skipf("integration test skipped: %s testcontainer unavailable: %v", svc, s.startErrs[svc])
+		skipOrFailf(t, "%s testcontainer unavailable: %v", svc, s.startErrs[svc])
 	}
 	if !s.enabled[svc] {
 		t.Fatalf("testkit: %s is not enabled for this package; add the matching With* option to TestMain", svc)
@@ -234,7 +242,7 @@ func (s *suite) start(t *testing.T, svc service) {
 
 	if err != nil {
 		s.startErrs[svc] = err
-		t.Skipf("integration test skipped: failed to start %s testcontainer: %v", svc, err)
+		skipOrFailf(t, "failed to start %s testcontainer: %v", svc, err)
 	}
 	s.started[svc] = true
 }
@@ -242,7 +250,9 @@ func (s *suite) start(t *testing.T, svc service) {
 // RequireDocker skips the test when running in -short mode or when the local
 // Docker daemon is unreachable. Testcontainers-backed tests get this behavior
 // from suite.start; suites driving the host daemon directly (for example the
-// container workflow tests) call it at the top of each test.
+// container workflow tests) call it at the top of each test. In strict mode
+// (CI environments, see the package documentation) an unreachable daemon fails
+// instead of skips.
 func RequireDocker(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
@@ -251,15 +261,39 @@ func RequireDocker(t *testing.T) {
 
 	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
-		t.Skipf("integration test skipped: docker daemon unavailable: %v", err)
+		skipOrFailf(t, "docker daemon unavailable: %v", err)
 	}
 	defer cli.Close()
 
 	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := cli.Ping(pingCtx); err != nil {
-		t.Skipf("integration test skipped: docker daemon unreachable: %v", err)
+		skipOrFailf(t, "docker daemon unreachable: %v", err)
 	}
+}
+
+// skipOrFailf fails the test in strict mode and skips it otherwise. Used for
+// environment problems (missing daemon, failed container start) that are not
+// the fault of the code under test.
+func skipOrFailf(t *testing.T, format string, args ...any) {
+	t.Helper()
+	reason := fmt.Sprintf(format, args...)
+	if strictMode() {
+		t.Fatalf("integration test failed: %s", reason)
+	}
+	t.Skipf("integration test skipped: %s", reason)
+}
+
+// strictMode reports whether container-start failures must fail tests instead
+// of skipping them: on by default in CI environments, overridable through
+// TESTKIT_STRICT in both directions.
+func strictMode() bool {
+	if v, ok := os.LookupEnv("TESTKIT_STRICT"); ok && v != "" {
+		enabled, _ := strconv.ParseBool(v) //nolint:errcheck // Unparseable values opt out.
+		return enabled
+	}
+	enabled, _ := strconv.ParseBool(os.Getenv("CI")) //nolint:errcheck // Unset or non-boolean means local.
+	return enabled
 }
 
 // Eventually polls fn every interval until it returns true or the timeout

@@ -1583,7 +1583,12 @@ services:
           # Rate limiting zones
           limit_req_zone $$binary_remote_addr zone=auth_zone:10m rate=10r/m;
           limit_req_zone $$binary_remote_addr zone=api_zone:10m rate=20r/s;
-          limit_conn_zone $$binary_remote_addr zone=conn_zone:10m;
+          # Connection zones are separate so each route family enforces its
+          # own per-client cap instead of sharing one counter across
+          # locations.
+          limit_conn_zone $$binary_remote_addr zone=auth_conn_zone:10m;
+          limit_conn_zone $$binary_remote_addr zone=api_conn_zone:10m;
+          limit_conn_zone $$binary_remote_addr zone=events_conn_zone:10m;
           limit_req_status 429;
           limit_conn_status 429;
 
@@ -1599,7 +1604,7 @@ services:
               # and credential-stuffing attempts.
               location = /api/auth/login {
                   limit_req zone=auth_zone burst=5 nodelay;
-                  limit_conn conn_zone 20;
+                  limit_conn auth_conn_zone 20;
 
                   proxy_pass http://server:8080/auth/login;
                   proxy_set_header Host $$host;
@@ -1610,7 +1615,7 @@ services:
 
               location = /api/auth/register {
                   limit_req zone=auth_zone burst=5 nodelay;
-                  limit_conn conn_zone 20;
+                  limit_conn auth_conn_zone 20;
 
                   proxy_pass http://server:8080/auth/register;
                   proxy_set_header Host $$host;
@@ -1623,7 +1628,7 @@ services:
               # request-rate limits so a cold page load cannot exhaust the
               # API burst budget.
               location /_next/static/ {
-                  limit_conn conn_zone 50;
+                  limit_conn api_conn_zone 50;
 
                   proxy_pass http://dashboard:3000;
                   proxy_set_header Host $$host;
@@ -1634,7 +1639,7 @@ services:
 
               location / {
                   limit_req zone=api_zone burst=40 nodelay;
-                  limit_conn conn_zone 50;
+                  limit_conn api_conn_zone 50;
 
                   proxy_pass http://dashboard:3000;
                   proxy_set_header Host $$host;
@@ -1645,7 +1650,7 @@ services:
 
               # Special configuration for SSE events endpoint
               location ~ ^/api/workflows/[^/]+/jobs/[^/]+/events$$ {
-                  limit_conn conn_zone 5;
+                  limit_conn events_conn_zone 5;
 
                   rewrite ^/api/(.*)$$ /$$1 break;
                   proxy_pass http://server:8080;
@@ -1669,7 +1674,7 @@ services:
 
               location /api/ {
                   limit_req zone=api_zone burst=40 nodelay;
-                  limit_conn conn_zone 50;
+                  limit_conn api_conn_zone 50;
 
                   proxy_pass http://server:8080/;
                   proxy_set_header Host $$host;

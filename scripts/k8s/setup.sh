@@ -628,6 +628,7 @@ EOF
     TRUST_IPS=""
     if [ -n "$HOSTNET_IPS" ]; then
       TRUST_IPS="$(for ip in $HOSTNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+      warn "hostNetwork controller node addresses are reschedule-sensitive — prefer --realip-cidrs with a stable node range for production"
     fi
     if [ -n "$PODNET_IPS" ]; then
       if [ -n "$NODE_POD_CIDRS" ]; then
@@ -637,9 +638,16 @@ EOF
         warn "trusted ranges derived from current ingress-nginx pod IPs; these are ephemeral — prefer --realip-cidrs with a stable range for production"
       fi
     fi
-    if [ -z "$TRUST_IPS" ] && [ -n "$NODE_POD_CIDRS" ]; then
-      # Controllers could not be queried, but node pod CIDRs are known.
-      TRUST_IPS="$NODE_POD_CIDRS"
+    if [ -z "$TRUST_IPS" ]; then
+      # Controller mode could not be determined. Guessing pod CIDRs would
+      # break hostNetwork deployments (auth outage), and overwriting a
+      # previously-correct trust list is a regression — preserve whatever
+      # the cluster currently has and tell the operator how to resolve it.
+      if [ -n "$NODE_POD_CIDRS" ]; then
+        warn "controller mode could not be determined; leaving nginx-realip-config unchanged — pass --realip-cidrs or restore pod query access, otherwise per-client limits may not match this deployment"
+      else
+        warn "could not detect client-IP trust ranges; keeping the existing nginx-realip-config — pass --realip-cidrs or restore pod query access, otherwise per-client limits may not match this deployment"
+      fi
     fi
 
     if [ -n "$TRUST_IPS" ]; then

@@ -576,27 +576,62 @@ if [ "$MODE" = "production" ]; then
     REALIP_DETECTED="$(echo "$REALIP_CIDRS" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
     info "Using operator-provided client-IP trust ranges: $REALIP_DETECTED"
   else
-    # Tier 1: node pod CIDRs (kubeadm-style allocators: kind, k3s, GKE).
-    REALIP_DETECTED="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
-    if [ -z "$REALIP_DETECTED" ]; then
-      REALIP_DETECTED="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDR}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
-    fi
-    if [ -n "$REALIP_DETECTED" ]; then
-      info "Detected node pod CIDRs for nginx client-IP recovery: $REALIP_DETECTED"
-    fi
-  fi
+    # Trust exactly where the ingress-nginx controllers connect from:
+    # hostNetwork controllers connect from node addresses, pod-network
+    # controllers from their pod addresses. Falls back to node pod CIDRs
+    # (kubeadm-style allocators: kind, k3s, GKE) when controllers cannot
+    # be queried, e.g. EKS where the VPC CNI leaves node podCIDRs empty
+    # and controller pods are pod-network.
+    append_ip_prefix() {
+      case "$1" in
+        *:*) echo "$1/128" ;;
+        *)   echo "$1/32" ;;
+      esac
+    }
 
-  # Tier 2 (CNI-agnostic, e.g. EKS where the VPC CNI leaves node podCIDRs
-  # empty): trust the ingress-nginx controller pod addresses directly.
-  # Caveat: pod IPs are ephemeral — if the controller is rescheduled with
-  # new addresses, re-run setup or set --realip-cidrs to a stable range.
-  if [ -z "$REALIP_DETECTED" ]; then
-    POD_IPS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o jsonpath='{.items[*].status.podIP}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
-    if [ -z "$POD_IPS" ]; then
-      POD_IPS="$(kubectl_cmd get pods -A -l app.kubernetes.io/name=ingress-nginx -o jsonpath='{.items[*].status.podIP}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    CONTROLLER_ROWS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o jsonpath='{range .items[*]}{.spec.hostNetwork}{" "}{.status.podIP}{" "}{.status.hostIP}{"\n"}{end}' 2>/dev/null)"
+
+    HOSTNET_IPS=""
+    PODNET_IPS=""
+    while read -r hn pod_ip host_ip; do
+      [ -n "${hn:-}" ] || continue
+      case "$hn" in
+        true)  [ -n "$host_ip" ] && HOSTNET_IPS="$HOSTNET_IPS $host_ip" ;;
+        false) [ -n "$pod_ip" ] && PODNET_IPS="$PODNET_IPS $pod_ip" ;;
+      esac
+    done <<EOF
+$CONTROLLER_ROWS
+EOF
+    HOSTNET_IPS="$(echo $HOSTNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    PODNET_IPS="$(echo $PODNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+
+    if [ -n "$HOSTNET_IPS" ]; then
+      REALIP_DETECTED="$(for ip in $HOSTNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+      warn "ingress-nginx runs hostNetwork; trusting controller node addresses ($REALIP_DETECTED)"
     fi
-    if [ -n "$POD_IPS" ]; then
-      REALIP_DETECTED="$(echo "$POD_IPS" | tr ' ' '\n' | sed 's#$#/32#' | tr '\n' ' ' | sed 's/ $//')"
+
+    NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    if [ -z "$NODE_POD_CIDRS" ]; then
+      NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDR}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    fi
+
+    if [ -n "$HOSTNET_IPS" ] && [ -n "$NODE_POD_CIDRS" ]; then
+      # Mixed controller modes: also keep the pod-network ranges so
+      # pod-network controllers stay trusted after rescheduling.
+      REALIP_DETECTED="$REALIP_DETECTED $NODE_POD_CIDRS"
+      REALIP_DETECTED="$(echo $REALIP_DETECTED | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+      info "Client-IP trust ranges (hostNetwork controllers + pod CIDRs): $REALIP_DETECTED"
+    elif [ -n "$HOSTNET_IPS" ]; then
+      info "Client-IP trust ranges (hostNetwork controllers): $REALIP_DETECTED"
+    elif [ -n "$NODE_POD_CIDRS" ]; then
+      REALIP_DETECTED="$NODE_POD_CIDRS"
+      info "Detected node pod CIDRs for nginx client-IP recovery: $REALIP_DETECTED"
+    elif [ -n "$PODNET_IPS" ]; then
+      # CNI without node CIDR allocation (e.g. EKS VPC CNI): trust the
+      # current controller pod addresses. These are ephemeral — if the
+      # controller is rescheduled, re-run setup (this restarts nginx) or
+      # pin a stable range with --realip-cidrs.
+      REALIP_DETECTED="$(for ip in $PODNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
       warn "trusted ranges derived from current ingress-nginx pod IPs ($REALIP_DETECTED); these are ephemeral — prefer --realip-cidrs with a stable range for production"
     fi
   fi
@@ -673,6 +708,17 @@ else
     kubectl_cmd kustomize --load-restrictor=LoadRestrictionsNone "$KUSTOMIZE_DIR" | kubectl_cmd apply -f -
   else
     kubectl_cmd apply -k "$KUSTOMIZE_DIR"
+  fi
+
+  # ConfigMap volume updates reach the mounted file only via kubelet sync,
+  # and nginx never re-reads configuration on its own. When the realip trust
+  # list changed, roll the nginx Deployment so the new ranges take effect
+  # immediately instead of trusting stale addresses indefinitely.
+  if [ -n "$REALIP_CIDRS" ]; then
+    info "Restarting nginx to apply the client-IP trust ranges"
+    kubectl_cmd -n "$NAMESPACE" rollout restart deployment/nginx
+    kubectl_cmd -n "$NAMESPACE" rollout status deployment/nginx --timeout=120s ||
+      warn "nginx rollout did not complete in time; check pod logs"
   fi
   KUBECTL_CONTEXT_PREFIX=""
   if [ -n "$CONTEXT" ]; then

@@ -1580,10 +1580,49 @@ services:
       events {}
 
       http {
+          # Rate limiting zones
+          limit_req_zone $$binary_remote_addr zone=auth_zone:10m rate=10r/m;
+          limit_req_zone $$binary_remote_addr zone=api_zone:10m rate=20r/s;
+          limit_conn_zone $$binary_remote_addr zone=conn_zone:10m;
+          limit_req_status 429;
+          limit_conn_status 429;
+
           server {
               listen 80;
 
+              # Request hygiene
+              client_max_body_size 1m;
+              client_body_timeout 15s;
+              client_header_timeout 10s;
+
+              # Auth endpoints are aggressively throttled to brake brute-force
+              # and credential-stuffing attempts.
+              location = /api/auth/login {
+                  limit_req zone=auth_zone burst=5 nodelay;
+                  limit_conn conn_zone 20;
+
+                  proxy_pass http://server:8080/auth/login;
+                  proxy_set_header Host $$host;
+                  proxy_set_header X-Real-IP $$remote_addr;
+                  proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $$scheme;
+              }
+
+              location = /api/auth/register {
+                  limit_req zone=auth_zone burst=5 nodelay;
+                  limit_conn conn_zone 20;
+
+                  proxy_pass http://server:8080/auth/register;
+                  proxy_set_header Host $$host;
+                  proxy_set_header X-Real-IP $$remote_addr;
+                  proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $$scheme;
+              }
+
               location / {
+                  limit_req zone=api_zone burst=40 nodelay;
+                  limit_conn conn_zone 50;
+
                   proxy_pass http://dashboard:3000;
                   proxy_set_header Host $$host;
                   proxy_set_header X-Real-IP $$remote_addr;
@@ -1593,6 +1632,8 @@ services:
 
               # Special configuration for SSE events endpoint
               location ~ ^/api/workflows/[^/]+/jobs/[^/]+/events$$ {
+                  limit_conn conn_zone 5;
+
                   rewrite ^/api/(.*)$$ /$$1 break;
                   proxy_pass http://server:8080;
                   proxy_set_header Host $$host;
@@ -1614,6 +1655,9 @@ services:
               }
 
               location /api/ {
+                  limit_req zone=api_zone burst=40 nodelay;
+                  limit_conn conn_zone 50;
+
                   proxy_pass http://server:8080/;
                   proxy_set_header Host $$host;
                   proxy_set_header X-Real-IP $$remote_addr;

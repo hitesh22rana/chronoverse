@@ -578,10 +578,9 @@ if [ "$MODE" = "production" ]; then
   else
     # Trust exactly where the ingress-nginx controllers connect from:
     # hostNetwork controllers connect from node addresses, pod-network
-    # controllers from their pod addresses. Falls back to node pod CIDRs
-    # (kubeadm-style allocators: kind, k3s, GKE) when controllers cannot
-    # be queried, e.g. EKS where the VPC CNI leaves node podCIDRs empty
-    # and controller pods are pod-network.
+    # controllers from their pod addresses. The Go template emits an
+    # explicit boolean because PodSpec.hostNetwork is omitempty — pods
+    # omit it entirely, which would shift jsonpath columns.
     append_ip_prefix() {
       case "$1" in
         *:*) echo "$1/128" ;;
@@ -589,7 +588,7 @@ if [ "$MODE" = "production" ]; then
       esac
     }
 
-    CONTROLLER_ROWS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o jsonpath='{range .items[*]}{.spec.hostNetwork}{" "}{.status.podIP}{" "}{.status.hostIP}{"\n"}{end}' 2>/dev/null)"
+    CONTROLLER_ROWS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o go-template='{{range .items}}{{if .spec.hostNetwork}}true{{else}}false{{end}} {{.status.podIP}} {{.status.hostIP}}{{"\n"}}{{end}}' 2>/dev/null)"
 
     HOSTNET_IPS=""
     PODNET_IPS=""
@@ -605,37 +604,40 @@ EOF
     HOSTNET_IPS="$(echo $HOSTNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
     PODNET_IPS="$(echo $PODNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
-    if [ -n "$HOSTNET_IPS" ]; then
-      REALIP_DETECTED="$(for ip in $HOSTNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
-      warn "ingress-nginx runs hostNetwork; trusting controller node addresses ($REALIP_DETECTED)"
-    fi
-
     NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
     if [ -z "$NODE_POD_CIDRS" ]; then
       NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDR}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
     fi
 
-    if [ -n "$HOSTNET_IPS" ] && [ -n "$NODE_POD_CIDRS" ]; then
-      # Mixed controller modes: also keep the pod-network ranges so
-      # pod-network controllers stay trusted after rescheduling.
-      REALIP_DETECTED="$REALIP_DETECTED $NODE_POD_CIDRS"
-      REALIP_DETECTED="$(echo $REALIP_DETECTED | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
-      info "Client-IP trust ranges (hostNetwork controllers + pod CIDRs): $REALIP_DETECTED"
-    elif [ -n "$HOSTNET_IPS" ]; then
-      info "Client-IP trust ranges (hostNetwork controllers): $REALIP_DETECTED"
-    elif [ -n "$NODE_POD_CIDRS" ]; then
-      REALIP_DETECTED="$NODE_POD_CIDRS"
-      info "Detected node pod CIDRs for nginx client-IP recovery: $REALIP_DETECTED"
-    elif [ -n "$PODNET_IPS" ]; then
-      # CNI without node CIDR allocation (e.g. EKS VPC CNI): trust the
-      # current controller pod addresses. These are ephemeral — if the
-      # controller is rescheduled, re-run setup (this restarts nginx) or
-      # pin a stable range with --realip-cidrs.
-      REALIP_DETECTED="$(for ip in $PODNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
-      warn "trusted ranges derived from current ingress-nginx pod IPs ($REALIP_DETECTED); these are ephemeral — prefer --realip-cidrs with a stable range for production"
+    # Assemble independently: hostNetwork controllers contribute their node
+    # address; pod-network controllers are covered by node pod CIDRs when
+    # the cluster allocates them, otherwise by their current pod addresses.
+    TRUST_IPS=""
+    if [ -n "$HOSTNET_IPS" ]; then
+      TRUST_IPS="$(for ip in $HOSTNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+    fi
+    if [ -n "$PODNET_IPS" ]; then
+      if [ -n "$NODE_POD_CIDRS" ]; then
+        TRUST_IPS="$TRUST_IPS $NODE_POD_CIDRS"
+      else
+        TRUST_IPS="$TRUST_IPS $(for ip in $PODNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+        warn "trusted ranges derived from current ingress-nginx pod IPs; these are ephemeral — prefer --realip-cidrs with a stable range for production"
+      fi
+    fi
+    if [ -z "$TRUST_IPS" ] && [ -n "$NODE_POD_CIDRS" ]; then
+      # Controllers could not be queried, but node pod CIDRs are known.
+      TRUST_IPS="$NODE_POD_CIDRS"
+    fi
+
+    if [ -n "$TRUST_IPS" ]; then
+      REALIP_DETECTED="$(echo $TRUST_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+      if [ -n "$HOSTNET_IPS" ]; then
+        info "Client-IP trust ranges include hostNetwork controller node addresses: $REALIP_DETECTED"
+      else
+        info "Detected client-IP trust ranges for nginx: $REALIP_DETECTED"
+      fi
     fi
   fi
-
   REALIP_CIDRS="$REALIP_DETECTED"
   if [ -z "$REALIP_CIDRS" ]; then
     warn "could not detect client-IP trust ranges; keeping the placeholder range in infra/k8s/overlays/production/nginx-realip.yaml — set it for your cluster (or pass --realip-cidrs), otherwise every client shares one rate-limit bucket"

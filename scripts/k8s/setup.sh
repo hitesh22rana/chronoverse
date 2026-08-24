@@ -566,6 +566,11 @@ if [ "$MODE" = "production" ]; then
 fi
 check_storage
 
+if [ "$SKIP_APPLY" = true ]; then
+  info "Skipping manifest apply"
+  exit 0
+fi
+
 # Detect the cluster's node pod CIDRs so the nginx ingress can recover real
 # client addresses from X-Forwarded-For (see nginx-realip-config). Production
 # only: the local overlay's kind default is already correct.

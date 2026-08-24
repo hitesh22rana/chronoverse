@@ -592,7 +592,7 @@ if [ "$MODE" = "production" ]; then
     # status fields (a Pending pod may not have them yet), and whitespace
     # separation would shift columns when one is absent.
     if ! CONTROLLER_ROWS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o go-template='{{range .items}}{{if .spec.hostNetwork}}true{{else}}false{{end}}|{{if .status.podIP}}{{.status.podIP}}{{else}}-{{end}}|{{if .status.hostIP}}{{.status.hostIP}}{{else}}-{{end}}{{"\n"}}{{end}}' 2>/dev/null)"; then
-      warn "could not query ingress-nginx controller pods; falling back to node pod CIDRs"
+      warn "could not query ingress-nginx controller pods"
       CONTROLLER_ROWS=""
     fi
 

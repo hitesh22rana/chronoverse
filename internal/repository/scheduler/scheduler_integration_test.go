@@ -163,6 +163,44 @@ func TestIntegrationScheduleSkipsWorkflowsWithActiveJobs(t *testing.T) {
 	}
 }
 
+func TestIntegrationScheduleSkipsJobsOwnedByDifferentUser(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := New(&Config{BatchSize: 10}, pg)
+
+	// Regression test: a job row whose user_id differs from the
+	// workflow owner (previously insertable via manual scheduling) must never
+	// be dispatched, even if it is due.
+	userID := testkit.SeedUser(ctx, t, pg, t.Name()+"-owner@chronoverse.test")
+	workflowID := testkit.SeedWorkflow(ctx, t, pg, userID, t.Name()+"-workflow")
+	forgeUserID := testkit.SeedUser(ctx, t, pg, t.Name()+"-forger@chronoverse.test")
+
+	var forgedJobID string
+	if err := pg.QueryRow(ctx, `
+		INSERT INTO jobs (workflow_id, user_id, status, scheduled_at)
+		VALUES ($1, $2, 'PENDING', (now() AT TIME ZONE 'utc') - interval '1 minute')
+		RETURNING id
+	`, workflowID, forgeUserID).Scan(&forgedJobID); err != nil {
+		t.Fatalf("seed forged job: %v", err)
+	}
+
+	total, err := repo.Run(ctx)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("Run scheduled %d jobs, want 0 (forged job must not dispatch)", total)
+	}
+
+	var status string
+	if err := pg.QueryRow(ctx, `SELECT status FROM jobs WHERE id = $1`, forgedJobID).Scan(&status); err != nil {
+		t.Fatalf("fetch forged job: %v", err)
+	}
+	if status != "PENDING" {
+		t.Fatalf("forged job status = %q, want %q", status, "PENDING")
+	}
+}
+
 // mustUserID returns the user_id of a workflow.
 func mustUserID(ctx context.Context, t *testing.T, pg *postgres.Postgres, workflowID string) string {
 	t.Helper()

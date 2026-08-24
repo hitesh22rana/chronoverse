@@ -2,7 +2,10 @@ openapi: 3.1.0
 info:
   title: Chronoverse HTTP API
   version: 1.0.0
-  description: Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+  description: |
+    Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+
+    In production the Nginx ingress applies per-client request-rate and connection limits. Auth endpoints allow 10 requests per minute (burst 5); other routes allow 20 requests per second (burst 40). Exceeding a limit returns `429`. Request bodies larger than 1 MiB are rejected with `413`.
 servers:
   - url: http://localhost:8080
     description: Development
@@ -33,6 +36,8 @@ paths:
         '201': {description: User registered and session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/login:
     post:
       operationId: loginUser
@@ -48,6 +53,8 @@ paths:
         '201': {description: Session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {description: Invalid email or password}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/logout:
     post:
       operationId: logoutUser
@@ -389,6 +396,10 @@ components:
     Unauthorized: {description: Missing or invalid session}
     NotFound: {description: Resource not found}
     PreconditionFailed: {description: Current workflow or job state does not allow the operation}
+    TooManyRequests:
+      description: Ingress rate or connection limit exceeded for the client address
+    PayloadTooLarge:
+      description: Request body exceeds the 1 MiB ingress limit
     LogPage:
       description: Retained logs in descending sequence order
       content:

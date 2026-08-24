@@ -1,0 +1,16 @@
+# kind uses the kubeadm default pod CIDR; ingress-nginx connects to the
+# nginx service from that range. Keep this in sync with the cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-realip-config
+data:
+  realip.conf: |
+    # Rate limits key on $remote_addr, which behind ingress-nginx is the
+    # controller address rather than the client's; without this every
+    # client would share one rate limit bucket. Recover the client IP
+    # from X-Forwarded-For, trusting only addresses the controller
+    # actually connects from.
+    set_real_ip_from 10.244.0.0/16;
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;

@@ -75,6 +75,7 @@ configMapGenerator:
   - SERVER_ALLOWED_ORIGINS=http://localhost,http://localhost:3000,
 
 patches:
+- path: nginx-realip.yaml
 - target:
     kind: DaemonSet
     labelSelector: chronoverse.io/client-certs=true

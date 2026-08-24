@@ -48,6 +48,7 @@ configMapGenerator:
   - SERVER_ALLOWED_ORIGINS=https://chronoverse.example.com,
 
 patches:
+- path: nginx-realip.yaml
 - target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true

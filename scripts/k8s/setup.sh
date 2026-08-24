@@ -588,15 +588,21 @@ if [ "$MODE" = "production" ]; then
       esac
     }
 
-    CONTROLLER_ROWS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o go-template='{{range .items}}{{if .spec.hostNetwork}}true{{else}}false{{end}} {{.status.podIP}} {{.status.hostIP}}{{"\n"}}{{end}}' 2>/dev/null)"
+    # Pipe-delimited with "-" placeholders: podIP and hostIP are optional
+    # status fields (a Pending pod may not have them yet), and whitespace
+    # separation would shift columns when one is absent.
+    if ! CONTROLLER_ROWS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o go-template='{{range .items}}{{if .spec.hostNetwork}}true{{else}}false{{end}}|{{if .status.podIP}}{{.status.podIP}}{{else}}-{{end}}|{{if .status.hostIP}}{{.status.hostIP}}{{else}}-{{end}}{{"\n"}}{{end}}' 2>/dev/null)"; then
+      warn "could not query ingress-nginx controller pods; falling back to node pod CIDRs"
+      CONTROLLER_ROWS=""
+    fi
 
     HOSTNET_IPS=""
     PODNET_IPS=""
-    while read -r hn pod_ip host_ip; do
+    while IFS='|' read -r hn pod_ip host_ip; do
       [ -n "${hn:-}" ] || continue
       case "$hn" in
-        true)  [ -n "$host_ip" ] && HOSTNET_IPS="$HOSTNET_IPS $host_ip" ;;
-        false) [ -n "$pod_ip" ] && PODNET_IPS="$PODNET_IPS $pod_ip" ;;
+        true)  [ -n "$host_ip" ] && [ "$host_ip" != "-" ] && HOSTNET_IPS="$HOSTNET_IPS $host_ip" ;;
+        false) [ -n "$pod_ip" ] && [ "$pod_ip" != "-" ] && PODNET_IPS="$PODNET_IPS $pod_ip" ;;
       esac
     done <<EOF
 $CONTROLLER_ROWS
@@ -604,9 +610,16 @@ EOF
     HOSTNET_IPS="$(echo $HOSTNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
     PODNET_IPS="$(echo $PODNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
-    NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    NODE_POD_CIDRS=""
+    if ! NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
+      warn "could not query node pod CIDRs"
+      NODE_POD_CIDRS=""
+    fi
     if [ -z "$NODE_POD_CIDRS" ]; then
-      NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDR}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+      if ! NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDR}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
+        warn "could not query node pod CIDRs (legacy field)"
+        NODE_POD_CIDRS=""
+      fi
     fi
 
     # Assemble independently: hostNetwork controllers contribute their node

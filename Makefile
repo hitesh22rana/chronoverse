@@ -22,13 +22,20 @@ lint: dependencies
 lint/fix: dependencies
 	@${GO_BIN}/golangci-lint run --fix
 
+# Runs every unit suite with the race detector. Docker-backed integration
+# tests self-skip under -short and are covered by test/integration.
 .PHONY: test/short
 test/short: dependencies
-	@go test -v -short ./...
+	@go test -race -short ./...
 
-.PHONY: test
-test: dependencies
-	@go test -race -v ./...
+# Runs all Docker-backed suites (Testcontainers and direct-daemon tests) by
+# selecting every TestIntegration* test. Requires a running Docker daemon.
+# The explicit -timeout leaves headroom over Go's default 10m per-package
+# limit: the joblogs suite boots five containers plus sequential Eventually
+# windows.
+.PHONY: test/integration
+test/integration: dependencies
+	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' ./...
 
 .PHONY: k8s/setup
 k8s/setup:

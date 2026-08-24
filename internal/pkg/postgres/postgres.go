@@ -19,10 +19,10 @@ const (
 	MaxHealthCheckRetries = 3
 )
 
-// MigrationsFS holds the embedded postgres migration files.
+// migrationsFS holds the embedded postgres migration files.
 //
 //go:embed migrations/*.sql
-var MigrationsFS embed.FS
+var migrationsFS embed.FS
 
 // TLSConfig holds the PostgreSQL tls config.
 type TLSConfig struct {
@@ -150,11 +150,15 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 
 	// Check the health of the connection
 	if err := healthCheck(ctx, pool); err != nil {
+		// Release the pool: its background goroutine keeps dialing to fill
+		// MinConns and holds connections once the database becomes reachable.
+		pool.Close()
 		return nil, status.Errorf(codes.Internal, "failed to check PostgreSQL health: %v", err)
 	}
 
 	// Enable OpenTelemetry instrumentation for postgres
 	if err := otelpgx.RecordStats(pool); err != nil {
+		pool.Close()
 		return nil, status.Errorf(codes.Internal, "failed to record PostgreSQL stats: %v", err)
 	}
 

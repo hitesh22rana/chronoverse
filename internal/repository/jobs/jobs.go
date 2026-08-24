@@ -51,6 +51,10 @@ const (
 	leaseTokenField            = "lease_token"
 	claimResultField           = "claimed"
 	claimReasonField           = "reason"
+	jobLogsEventIDField        = "event_id"
+	jobLogsSequenceNumField    = "sequence_num"
+	jobLogsStreamField         = "stream"
+	jobLogsTimestampField      = "timestamp"
 )
 
 type jobLogsCursor struct {
@@ -866,8 +870,37 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		return nil, err
 	}
 
-	// Subscribe to job-specific channel
-	return r.rdb.Subscribe(ctx, redis.GetJobLogsChannel(jobID)), nil
+	// Subscribe to the job-specific channel and wait for the subscription
+	// acknowledgement so events published right after this call are not dropped.
+	return r.subscribeToJobLogsChannel(ctx, jobID)
+}
+
+// subscribeToJobLogsChannel subscribes to the job logs channel and waits for
+// the subscription acknowledgement: go-redis returns from Subscribe before the
+// server has applied it, so events published in that window would be dropped.
+func (r *Repository) subscribeToJobLogsChannel(ctx context.Context, jobID string) (*goredis.PubSub, error) {
+	channel := redis.GetJobLogsChannel(jobID)
+	sub := r.rdb.Subscribe(ctx, channel)
+
+	msg, err := sub.Receive(ctx)
+	if err != nil {
+		_ = sub.Close()
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, status.Error(codes.DeadlineExceeded, err.Error())
+		} else if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to subscribe to job logs stream: %v", err)
+	}
+
+	ack, ok := msg.(*goredis.Subscription)
+	if !ok || ack.Kind != "subscribe" || ack.Channel != channel {
+		_ = sub.Close()
+		return nil, status.Errorf(codes.Internal, "unexpected subscription acknowledgement: %#v", msg)
+	}
+
+	return sub, nil
 }
 
 // SearchJobLogs returns the filtered logs of a job.
@@ -993,7 +1026,7 @@ func (r *Repository) SearchJobLogs(
 			}
 
 			log := &jobsmodel.JobLog{}
-			if ts, ok := source["timestamp"].(string); ok {
+			if ts, ok := source[jobLogsTimestampField].(string); ok {
 				parsed, scanErr := time.Parse(time.RFC3339Nano, ts)
 				if scanErr != nil {
 					return status.Errorf(codes.Internal, "invalid timestamp format: %v", scanErr)
@@ -1001,7 +1034,7 @@ func (r *Repository) SearchJobLogs(
 				log.Timestamp = parsed
 			}
 
-			log.EventID = searchHitString(source, "event_id")
+			log.EventID = searchHitString(source, jobLogsEventIDField)
 			if log.EventID == "" {
 				log.EventID = searchHitString(source, "id")
 			}
@@ -1010,7 +1043,7 @@ func (r *Repository) SearchJobLogs(
 				log.Message = msg
 			}
 
-			switch sn := source["sequence_num"].(type) {
+			switch sn := source[jobLogsSequenceNumField].(type) {
 			case string:
 				snVal, scanErr := strconv.ParseUint(sn, 10, 32)
 				if scanErr != nil {
@@ -1021,7 +1054,7 @@ func (r *Repository) SearchJobLogs(
 				log.SequenceNum = uint32(sn)
 			}
 
-			if stream, ok := source["stream"].(string); ok {
+			if stream, ok := source[jobLogsStreamField].(string); ok {
 				log.Stream = stream
 			}
 
@@ -1227,7 +1260,7 @@ func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options
 
 	req := &meilisearch.SearchRequest{
 		Filter:               filter,
-		AttributesToRetrieve: []string{"id", "event_id", jobLogsMessageField, "sequence_num", "stream", "timestamp"},
+		AttributesToRetrieve: []string{"id", jobLogsEventIDField, jobLogsMessageField, jobLogsSequenceNumField, jobLogsStreamField, jobLogsTimestampField},
 		AttributesToSearchOn: []string{jobLogsMessageField},
 		Sort:                 []string{"sequence_num:" + sequenceDirection, "id:asc"},
 		Limit:                limit,

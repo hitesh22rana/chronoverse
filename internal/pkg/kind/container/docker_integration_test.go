@@ -13,19 +13,18 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 const (
 	collectionTimeout = 10 * time.Second
 )
 
-func TestDockerWorkflow_Execute(t *testing.T) {
+func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
@@ -34,6 +33,8 @@ func TestDockerWorkflow_Execute(t *testing.T) {
 	t.Cleanup(func() {
 		workflow.Close()
 	})
+
+	ensureBaseImage(t, workflow)
 
 	tests := []struct {
 		name           string
@@ -184,6 +185,14 @@ func cleanupDockerContainer(t *testing.T, workflow *container.DockerWorkflow, co
 	})
 }
 
+// ensureBaseImage makes sure the pinned alpine base image exists locally by
+// going through the production pull path; Execute and Termination create
+// containers from local images without pulling.
+func ensureBaseImage(t *testing.T, workflow *container.DockerWorkflow) {
+	t.Helper()
+	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
+}
+
 func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
 	var collected []T
 	for {
@@ -199,13 +208,11 @@ func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
 	}
 }
 
-func TestDockerWorkflow_Build(t *testing.T) {
+func TestIntegrationDockerWorkflowBuild(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
@@ -249,13 +256,11 @@ func TestDockerWorkflow_Build(t *testing.T) {
 	}
 }
 
-func TestDockerWorkflow_ImageExists(t *testing.T) {
+func TestIntegrationDockerWorkflowImageExists(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
@@ -277,13 +282,11 @@ func TestDockerWorkflow_ImageExists(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestDockerWorkflow_Terminate(t *testing.T) {
+func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 	t.Parallel()
 
-	// Skip if not running in CI environment
-	if testing.Short() {
-		t.Skip("Skipping long-running tests in short mode")
-	}
+	// Docker-backed workflow: skip under -short or without a daemon.
+	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
 	require.NoError(t, err)
@@ -292,6 +295,8 @@ func TestDockerWorkflow_Terminate(t *testing.T) {
 	t.Cleanup(func() {
 		workflow.Close()
 	})
+
+	ensureBaseImage(t, workflow)
 
 	tests := []struct {
 		name  string

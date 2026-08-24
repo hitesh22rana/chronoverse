@@ -77,11 +77,11 @@ jobs:
       - name: Setup Go Environment and Dependencies
         uses: ./.github/actions/setup-go-env
 
-      - name: Pull alpine image for tests
-        run: docker pull alpine:3.22.2
-
+      # Run every unit suite with the race detector. Docker-backed integration
+      # tests skip under -short and are covered by the dedicated `integration`
+      # job below, so this gate stays fast and Docker-independent.
       - name: Run tests
-        run: make test
+        run: make test/short
 
       - name: Check if PR can be merged
         if: github.event_name == 'pull_request'
@@ -90,6 +90,36 @@ jobs:
             echo "Tests failed, PR cannot be merged!"
             exit 1
           fi
+
+  integration:
+    name: Integration tests (Docker)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    # Caps a stalled container or image-pull step; the Go-level timeout only
+    # bounds the tests themselves (-timeout=20m), not the job.
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Setup Go Environment and Dependencies
+        uses: ./.github/actions/setup-go-env
+
+      - name: Pull container images for integration tests
+        run: |
+          docker pull postgres:18.0-alpine3.22
+          docker pull clickhouse/clickhouse-server:25.8.7.3
+          docker pull redis:8.2.1-alpine
+          docker pull getmeili/meilisearch:v1.45.2
+          docker pull confluentinc/cp-kafka:7.6.7
+          # Pre-pulled for speed and determinism; DockerWorkflow.Build pulls
+          # the image itself when missing. The mq image used by the remote-pull
+          # test case is deliberately not pre-pulled.
+          docker pull alpine:3.22.2
+
+      - name: Run integration tests
+        run: make test/integration
 
   dashboard:
     name: Dashboard checks
@@ -152,7 +182,7 @@ jobs:
 
   release-users-service:
     name: Release Users Service
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -206,7 +236,7 @@ jobs:
 
   release-workflows-service:
     name: Release Workflows Service
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -260,7 +290,7 @@ jobs:
 
   release-jobs-service:
     name: Release Jobs Service
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -314,7 +344,7 @@ jobs:
 
   release-notifications-service:
     name: Release Notifications Service
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -368,7 +398,7 @@ jobs:
 
   release-analytics-service:
     name: Release Analytics Service
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -421,7 +451,7 @@ jobs:
 
   release-scheduling-worker:
     name: Release Scheduling Worker
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -475,7 +505,7 @@ jobs:
 
   release-workflow-worker:
     name: Release Workflow Worker
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -529,7 +559,7 @@ jobs:
 
   release-execution-worker:
     name: Release Execution Worker
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -583,7 +613,7 @@ jobs:
 
   release-runtime-agent:
     name: Release Runtime Agent
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -637,7 +667,7 @@ jobs:
 
   release-database-migration:
     name: Release Database Migration
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -691,7 +721,7 @@ jobs:
 
   release-joblogs-processor:
     name: Release Job Logs Processor
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -745,7 +775,7 @@ jobs:
 
   release-analytics-processor:
     name: Release Analytics Processor
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -798,7 +828,7 @@ jobs:
 
   release-outbox-relay:
     name: Release Outbox Relay
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -852,7 +882,7 @@ jobs:
 
   release-server:
     name: Release Server
-    needs: [lint, build, proto-generated, test]
+    needs: [lint, build, proto-generated, test, integration]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read
@@ -906,7 +936,7 @@ jobs:
 
   release-dashboard:
     name: Release Dashboard
-    needs: [lint, build, proto-generated, test, dashboard]
+    needs: [lint, build, proto-generated, test, integration, dashboard]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
     permissions:
       contents: read

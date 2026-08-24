@@ -21,10 +21,10 @@ const (
 	MaxHealthCheckRetries = 3
 )
 
-// MigrationsFS holds the embedded clickhouse migration files.
+// migrationsFS holds the embedded clickhouse migration files.
 //
 //go:embed migrations/*.sql
-var MigrationsFS embed.FS
+var migrationsFS embed.FS
 
 // TLSConfig holds the Clickhouse tls config.
 type TLSConfig struct {

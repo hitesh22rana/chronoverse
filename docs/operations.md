@@ -135,6 +135,16 @@ process starts, such as generated certificate files and hostPath permissions.
 Operators should still inspect bootstrap Jobs before scaling application
 workloads.
 
+### Resolving Failed Migrations
+
+Both migration runners use the same dirty-flag bookkeeping (golang-migrate for
+PostgreSQL, an equivalent native runner for ClickHouse): a migration that fails
+partway leaves its `schema_migrations` row marked dirty, and every later run
+refuses to continue rather than re-applying partially executed DDL. To recover,
+inspect the failed migration's statements, restore the schema to a consistent
+state, clear the dirty flag (`migrate force` for PostgreSQL, deleting the row
+for ClickHouse), and restart `init-database-migration`.
+
 ## Maintenance-Window Upgrades
 
 Schema-changing releases must be deployed as an offline cutover. Chronoverse
@@ -220,7 +230,7 @@ make dependencies
 make generate
 make mockgen
 make test/short
-make test
+make test/integration
 make lint
 make lint/fix
 make build/all
@@ -233,8 +243,41 @@ Important notes:
 - `make mockgen` installs the configured tools and runs every `//go:generate`
   directive.
 - `make tools` installs Go tooling into `./.bin`.
-- `make test` runs Go tests with the race detector.
+- `make test/short` runs every unit suite with the race detector; Docker-backed
+  integration tests self-skip under `-short`.
 - `make build/all` builds all Go services and workers, including `outbox-relay`.
+
+### Integration Tests
+
+Every Docker-backed suite is an `*_integration_test.go` file with `TestIntegration*`
+test names: repository packages under `internal/repository`, the command ledger in
+`internal/pkg/commandidempotency` (both provisioned with Testcontainers), and the
+container workflow tests in `internal/pkg/kind/container` (which drive the host
+Docker daemon directly).
+
+```sh
+make test/integration   # race detector + real containers; needs a Docker daemon
+```
+
+Key facts:
+
+- **Bootstrap**: the shared `internal/pkg/testkit` package starts one container
+  per service on first use, applies migrations and index setup, and terminates
+  everything after the package test binary finishes. Each repository package
+  declares which services it needs in its `TestMain`, for example
+  `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`. Fixture helpers
+  such as `testkit.SeedUser` and `testkit.SeedWorkflow` insert the rows most
+  schemas depend on, so tests never repeat the same SQL.
+- **Single source of truth**: testkit reuses the production client constructors
+  and migration runners from the sibling packages under `internal/pkg` —
+  `postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes`, and
+  `kafka.EnsureTopics` — so integration tests exercise the exact code paths the
+  running services use, and the embedded migrations under
+  `internal/pkg/postgres/migrations` and `internal/pkg/clickhouse/migrations`
+  are never re-implemented in tests.
+- **Gating**: integration tests self-skip under `-short` (so `make test/short`
+  and plain `go test ./...` stay fast) and when Docker is unavailable.
+  `make test/integration` runs the full suite with the race detector.
 
 Dashboard commands:
 

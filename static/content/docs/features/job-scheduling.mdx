@@ -10,6 +10,8 @@ The scheduling worker polls for due workflows, validates generation and build st
 
 An authenticated client calls `POST /workflows/{workflow_id}/jobs/schedule` with an `Idempotency-Key`. The created job uses trigger `MANUAL` but follows the same claim, lease, execution, logging, notification, and analytics path.
 
+Manual scheduling requires the target workflow to belong to the caller and to be schedulable: not terminated and past its build. Requests against someone else's workflow, an unknown workflow, or a workflow that has not finished building return `404 Not Found`.
+
 ## Duplicate prevention
 
 Manual requests use command idempotency. Automatic scheduling uses persisted dispatch metadata and generation guards. Kafka redelivery does not imply a new logical run.

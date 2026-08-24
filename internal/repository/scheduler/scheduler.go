@@ -78,7 +78,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 
 	query := fmt.Sprintf(`
             WITH candidate_workflows AS (
-                SELECT w.id, w.generation
+                SELECT w.id, w.user_id, w.generation
             FROM %s AS w
             WHERE w.build_status = 'COMPLETED'
                 AND w.terminated_at IS NULL
@@ -141,6 +141,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
                 SELECT j.id
                 FROM %s AS j
                 WHERE j.workflow_id = w.id
+                    AND j.user_id = w.user_id
                     AND j.status = 'PENDING'
                     AND j.scheduled_at <= (now() AT TIME ZONE 'utc')
                     AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= (now() AT TIME ZONE 'utc'))

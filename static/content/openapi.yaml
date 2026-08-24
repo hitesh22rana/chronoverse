@@ -217,11 +217,12 @@ paths:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         '201':
-          description: Manual job created
+          description: Manual job created for a workflow owned by the caller that is not terminated and has completed its build
           content:
             application/json:
               schema:
                 {$ref: '#/components/schemas/IdentifierResponse'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
   /workflows/{workflow_id}/jobs/{job_id}:

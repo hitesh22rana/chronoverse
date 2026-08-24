@@ -627,8 +627,17 @@ EOF
     # the cluster allocates them, otherwise by their current pod addresses.
     TRUST_IPS=""
     if [ -n "$HOSTNET_IPS" ]; then
-      TRUST_IPS="$(for ip in $HOSTNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
-      warn "hostNetwork controller node addresses are reschedule-sensitive — prefer --realip-cidrs with a stable node range for production"
+      # hostNetwork controllers connect from node addresses. Trust every
+      # node InternalIP so reschedules or scale-out to existing nodes stay
+      # trusted; nodes added after this setup run still require a re-run
+      # or an explicit --realip-cidrs with the node range.
+      NODE_IPS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')" || NODE_IPS=""
+      if [ -z "$NODE_IPS" ]; then
+        warn "could not query node addresses; falling back to the controller node addresses"
+        NODE_IPS="$HOSTNET_IPS"
+      fi
+      TRUST_IPS="$(for ip in $NODE_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+      warn "hostNetwork trust ranges cover the cluster's current nodes — nodes added later need a setup re-run, or set --realip-cidrs with the node range for stability"
     fi
     if [ -n "$PODNET_IPS" ]; then
       if [ -n "$NODE_POD_CIDRS" ]; then
@@ -639,15 +648,12 @@ EOF
       fi
     fi
     if [ -z "$TRUST_IPS" ]; then
-      # Controller mode could not be determined. Guessing pod CIDRs would
-      # break hostNetwork deployments (auth outage), and overwriting a
-      # previously-correct trust list is a regression — preserve whatever
-      # the cluster currently has and tell the operator how to resolve it.
-      if [ -n "$NODE_POD_CIDRS" ]; then
-        warn "controller mode could not be determined; leaving nginx-realip-config unchanged — pass --realip-cidrs or restore pod query access, otherwise per-client limits may not match this deployment"
-      else
-        warn "could not detect client-IP trust ranges; keeping the existing nginx-realip-config — pass --realip-cidrs or restore pod query access, otherwise per-client limits may not match this deployment"
-      fi
+      # Controller mode could not be determined (query failed, or no
+      # controller pods matched the labels). The production overlay ships
+      # a placeholder trust list, so applying anything here would either
+      # break hostNetwork deployments or stomp a previously-correct
+      # configuration. Refuse to guess: the operator must state the range.
+      die "cannot determine the ingress-nginx client-IP source range — pass --realip-cidrs <list> (the addresses your ingress-nginx controllers connect from) so per-client rate limits match this deployment"
     fi
 
     if [ -n "$TRUST_IPS" ]; then

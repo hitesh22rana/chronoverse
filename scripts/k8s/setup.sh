@@ -631,10 +631,12 @@ EOF
       # node InternalIP so reschedules or scale-out to existing nodes stay
       # trusted; nodes added after this setup run still require a re-run
       # or an explicit --realip-cidrs with the node range.
-      NODE_IPS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')" || NODE_IPS=""
+      if ! NODE_IPS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
+        warn "could not query node addresses"
+        NODE_IPS=""
+      fi
       if [ -z "$NODE_IPS" ]; then
-        warn "could not query node addresses; falling back to the controller node addresses"
-        NODE_IPS="$HOSTNET_IPS"
+        die "cannot determine host-network node address range — pass --realip-cidrs <list> with the ingress-nginx node range (e.g. the cluster's node InternalIPs) so per-client rate limits survive controller rescheduling (node listing failed or returned empty while hostNetwork controllers were detected)"
       fi
       TRUST_IPS="$(for ip in $NODE_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
       warn "hostNetwork trust ranges cover the cluster's current nodes — nodes added later need a setup re-run, or set --realip-cidrs with the node range for stability"

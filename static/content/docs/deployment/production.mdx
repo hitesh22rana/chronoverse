@@ -21,6 +21,8 @@ Production publishes:
 - Dashboard and proxied API through Nginx on port `80`.
 - LGTM on port `3000`.
 
+Per-IP rate limits assume nginx sees real client addresses. On Linux hosts Docker preserves client IPs through published ports via DNAT; on Docker Desktop, published ports traverse the userland proxy (notably for IPv6), so nginx may see the gateway address instead and those clients aggregate into one rate-limit bucket.
+
 Kubernetes production is expected to be accessed through the configured Ingress
 host over HTTPS. Authentication cookies are scoped from `SERVER_HOST_URL`, so a
 plain `http://localhost` port-forward will not preserve login cookies when the

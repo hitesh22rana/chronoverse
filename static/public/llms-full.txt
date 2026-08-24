@@ -916,7 +916,7 @@ Reuse a key only when retrying the same logical command.
 The [endpoint reference](./docs/api/reference) is generated from the repository's OpenAPI document. It covers paths, parameters, request bodies, and response status codes.
 
 <Callout title="Ingress rate limits" type="info">
-The production Nginx ingress applies per-client limits: auth endpoints allow 10 requests per minute (burst 5), other routes 20 requests per second (burst 40), and request bodies are capped at 1 MiB. Exceeding a rate or connection limit returns `429`; oversized bodies return `413`. Immutable build assets under `/_next/static/` are exempt from request-rate limiting, and the server-sent events endpoint is connection-capped (5 per client) instead of rate-limited.
+The production Nginx ingress applies per-client limits: auth endpoints allow 10 requests per minute (burst 5), other routes 20 requests per second (burst 40), and request bodies are capped at 4 MiB. Limits are enforced per ingress replica. Exceeding a rate or connection limit returns `429`; oversized bodies return `413`. Immutable build assets under `/_next/static/` are exempt from request-rate limiting, and the server-sent events endpoint is connection-capped (5 per client) instead of rate-limited.
 </Callout>
 </doc>
 
@@ -1166,6 +1166,8 @@ Production publishes:
 - Dashboard and proxied API through Nginx on port `80`.
 - LGTM on port `3000`.
 
+Per-IP rate limits assume nginx sees real client addresses. On Linux hosts Docker preserves client IPs through published ports via DNAT; on Docker Desktop, published ports traverse the userland proxy (notably for IPv6), so nginx may see the gateway address instead and those clients aggregate into one rate-limit bucket.
+
 Kubernetes production is expected to be accessed through the configured Ingress
 host over HTTPS. Authentication cookies are scoped from `SERVER_HOST_URL`, so a
 plain `http://localhost` port-forward will not preserve login cookies when the
@@ -1278,6 +1280,14 @@ scripts/k8s/setup.sh --mode local
 Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. You can pre-create those Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites valid, complete existing Secrets. Invalid local server-security Secrets are replaced with safe local values; invalid production server-security Secrets stop setup so the operator can correct them. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
 
 The local strategy uses hostPath PVs for single-node validation. Those PVs use retained node-local paths; delete the kind cluster or clear those paths when you intentionally want an empty local data set. Production uses dynamic PVCs by default; provide `--storage-class <name>` to the setup script or rely on the cluster default StorageClass. Production requires dynamic storage; use the local strategy for single-node hostPath validation.
+
+## Ingress client-IP recovery
+
+Rate limits key on the client address. Behind ingress-nginx, the nginx service would otherwise see the controller address and collapse every client into one shared bucket. The base config therefore recovers the client from `X-Forwarded-For` through a dedicated `nginx-realip-config` ConfigMap mounted into the nginx Deployment.
+
+`scripts/k8s/setup.sh --mode production` detects the cluster's node pod CIDRs and patches that ConfigMap automatically. For direct Kustomize applies, set `set_real_ip_from` in `infra/k8s/overlays/production/nginx-realip.yaml` to the source range your ingress-nginx controller connects from. Too narrow, and every client shares one bucket; too broad, and in-cluster callers can forge `X-Forwarded-For` to obtain unlimited fresh buckets.
+
+When a cloud load balancer sits in front of ingress-nginx, the `X-Forwarded-For` chain gains one more hop. Preserving the client address across that hop is ingress-nginx's own concern (`use-forwarded-headers` plus its proxy trust configuration); Chronoverse's `real_ip` block covers only the ingress-nginx-to-nginx hop.
 
 ## Scaling
 
@@ -1444,7 +1454,7 @@ info:
   description: |
     Public session-authenticated API exposed by the Chronoverse HTTP gateway.
 
-    In production the Nginx ingress applies per-client request-rate and connection limits. Auth endpoints allow 10 requests per minute (burst 5); other routes allow 20 requests per second (burst 40). The server-sent events endpoint and immutable build assets under `/_next/static/` are not request-rate limited; the events endpoint instead allows up to 5 concurrent connections per client. Exceeding a limit returns `429`. Request bodies larger than 1 MiB are rejected with `413`.
+    In production the Nginx ingress applies per-client request-rate and connection limits. Auth endpoints allow 10 requests per minute (burst 5); other routes allow 20 requests per second (burst 40). The server-sent events endpoint and immutable build assets under `/_next/static/` are not request-rate limited; the events endpoint instead allows up to 5 concurrent connections per client. Limits are enforced per ingress replica. Exceeding a limit returns `429`. Request bodies larger than 4 MiB are rejected with `413`.
 servers:
   - url: http://localhost:8080
     description: Development
@@ -1838,7 +1848,7 @@ components:
     TooManyRequests:
       description: Ingress rate or connection limit exceeded for the client address
     PayloadTooLarge:
-      description: Request body exceeds the 1 MiB ingress limit
+      description: Request body exceeds the 4 MiB ingress limit
     LogPage:
       description: Retained logs in descending sequence order
       content:

@@ -3,7 +3,9 @@ package heartbeat
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -13,12 +15,37 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
+// dialerFactory creates the net.Dialer used for outbound heartbeat requests.
+// The production factory enforces the egress guard; tests may inject a
+// permissive factory to exercise plain HTTP semantics against local servers.
+type dialerFactory func(requestTimeout time.Duration) *net.Dialer
+
+// Option configures a HeartBeat workflow.
+type Option func(*HeartBeat)
+
+// WithDialerFactory overrides the outbound dialer factory.
+func WithDialerFactory(factory dialerFactory) Option {
+	return func(h *HeartBeat) {
+		if factory != nil {
+			h.dialerFor = factory
+		}
+	}
+}
+
 // HeartBeat represents the HEARTBEAT workflow.
-type HeartBeat struct{}
+type HeartBeat struct {
+	dialerFor dialerFactory
+}
 
 // New creates a new HEARTBEAT workflow.
-func New() *HeartBeat {
-	return &HeartBeat{}
+func New(options ...Option) *HeartBeat {
+	h := &HeartBeat{dialerFor: newGuardedDialer}
+	for _, option := range options {
+		if option != nil {
+			option(h)
+		}
+	}
+	return h
 }
 
 // Execute executes the HEARTBEAT workflow.
@@ -29,10 +56,16 @@ func (h *HeartBeat) Execute(
 	expectedStatusCode int,
 	headers map[string][]string,
 ) error {
-	// HTTP client with timeout
+	// HTTP client with timeout and an egress guard. The guard validates the
+	// resolved destination address at dial time so redirects and DNS rebinding
+	// cannot reach protected networks.
 	client := &http.Client{
-		Timeout:   timeout,
-		Transport: otelpkg.HTTPTransport(nil),
+		Timeout: timeout,
+		Transport: otelpkg.HTTPTransport(&http.Transport{
+			DialContext:         h.dialerFor(timeout).DialContext,
+			ForceAttemptHTTP2:   true,
+			TLSHandshakeTimeout: 5 * time.Second,
+		}),
 	}
 
 	// Create request with context
@@ -51,6 +84,13 @@ func (h *HeartBeat) Execute(
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) && errors.Is(urlErr.Err, ErrDisallowedTarget) {
+			return status.Errorf(codes.FailedPrecondition, "endpoint is not allowed: %v", ErrDisallowedTarget)
+		}
+		if errors.Is(err, ErrDisallowedTarget) {
+			return status.Errorf(codes.FailedPrecondition, "endpoint is not allowed: %v", ErrDisallowedTarget)
+		}
 		if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
 			return terminalreason.Wrap(terminalreason.TimeLimitExceeded, err)
 		}

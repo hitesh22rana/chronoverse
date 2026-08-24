@@ -2,6 +2,7 @@ package heartbeat_test
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,16 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
+
+// unguarded returns a HeartBeat whose outbound dialer has no egress guard.
+// It lets these tests exercise plain HTTP semantics against local httptest
+// servers; the guard itself is covered by egress tests and by
+// TestHeartBeat_Execute_BlockedByDefaultEgressGuard below.
+func unguarded() *heartbeat.HeartBeat {
+	return heartbeat.New(heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer {
+		return &net.Dialer{}
+	}))
+}
 
 func TestNew(t *testing.T) {
 	t.Parallel()
@@ -65,7 +76,7 @@ func TestHeartBeatExecuteEmitsHTTPClientTelemetry(t *testing.T) {
 	defer server.Close()
 
 	ctx, span := tracerProvider.Tracer("heartbeat-test").Start(context.Background(), "execute")
-	err := heartbeat.New().Execute(ctx, time.Second, server.URL, http.StatusOK, nil)
+	err := unguarded().Execute(ctx, time.Second, server.URL, http.StatusOK, nil)
 	span.End()
 	if err != nil {
 		t.Fatalf("heartbeat execution failed: %v", err)
@@ -229,7 +240,7 @@ func TestHeartBeat_Execute(t *testing.T) {
 				}
 			}
 
-			h := heartbeat.New()
+			h := unguarded()
 			ctx := t.Context()
 
 			gotErr := h.Execute(ctx, tt.timeout, tt.endpoint, tt.expectedStatusCode, tt.headers)
@@ -246,4 +257,18 @@ func TestHeartBeat_Execute(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHeartBeat_Execute_BlockedByDefaultEgressGuard(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// The production constructor must refuse loopback targets outright.
+	err := heartbeat.New().Execute(t.Context(), 5*time.Second, server.URL, http.StatusOK, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not allowed")
 }

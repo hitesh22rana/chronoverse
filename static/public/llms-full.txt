@@ -915,8 +915,8 @@ Reuse a key only when retrying the same logical command.
 
 The [endpoint reference](./docs/api/reference) is generated from the repository's OpenAPI document. It covers paths, parameters, request bodies, and response status codes.
 
-<Callout title="No documented rate limiter" type="warning">
-The current gateway maps `ResourceExhausted` to HTTP `429`, but the repository does not define a general public request-rate policy. Clients should not assume limits that are not configured by the deployment.
+<Callout title="Ingress rate limits" type="info">
+The production Nginx ingress applies per-client limits: auth endpoints allow 10 requests per minute (burst 5), other routes 20 requests per second (burst 40), and request bodies are capped at 1 MiB. Exceeding a rate or connection limit returns `429`; oversized bodies return `413`.
 </Callout>
 </doc>
 
@@ -1441,7 +1441,10 @@ openapi: 3.1.0
 info:
   title: Chronoverse HTTP API
   version: 1.0.0
-  description: Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+  description: |
+    Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+
+    In production the Nginx ingress applies per-client request-rate and connection limits. Auth endpoints allow 10 requests per minute (burst 5); other routes allow 20 requests per second (burst 40). Exceeding a limit returns `429`. Request bodies larger than 1 MiB are rejected with `413`.
 servers:
   - url: http://localhost:8080
     description: Development
@@ -1472,6 +1475,8 @@ paths:
         '201': {description: User registered and session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/login:
     post:
       operationId: loginUser
@@ -1487,6 +1492,8 @@ paths:
         '201': {description: Session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {description: Invalid email or password}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/logout:
     post:
       operationId: logoutUser
@@ -1828,6 +1835,10 @@ components:
     Unauthorized: {description: Missing or invalid session}
     NotFound: {description: Resource not found}
     PreconditionFailed: {description: Current workflow or job state does not allow the operation}
+    TooManyRequests:
+      description: Ingress rate or connection limit exceeded for the client address
+    PayloadTooLarge:
+      description: Request body exceeds the 1 MiB ingress limit
     LogPage:
       description: Retained logs in descending sequence order
       content:

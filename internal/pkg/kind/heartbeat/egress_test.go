@@ -1,3 +1,4 @@
+//nolint:testpackage // Unit tests exercise unexported guard internals (isDisallowedIP, newGuardedDialer).
 package heartbeat
 
 import (

@@ -255,6 +255,65 @@ func TestIntegrationScheduleAndQueryJob(t *testing.T) {
 	}
 }
 
+func TestIntegrationScheduleJobManualOwnershipGuard(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	ownerID, workflowID := seedUserWorkflow(ctx, t, pg)
+	attackerID := testkit.SeedUser(ctx, t, pg, t.Name()+"-attacker@chronoverse.test")
+
+	scheduledAt := time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano)
+
+	// Unbuilt and terminated workflows exist and are owned by the caller,
+	// but they must not be schedulable.
+	unbuiltWorkflowID := testkit.SeedWorkflow(ctx, t, pg, ownerID, t.Name()+"-unbuilt")
+	if _, err := pg.Exec(ctx, `UPDATE workflows SET build_status = 'QUEUED' WHERE id = $1`, unbuiltWorkflowID); err != nil {
+		t.Fatalf("unbuild workflow: %v", err)
+	}
+	terminatedWorkflowID := testkit.SeedWorkflow(ctx, t, pg, ownerID, t.Name()+"-terminated")
+	if _, err := pg.Exec(ctx, `UPDATE workflows SET terminated_at = (now() AT TIME ZONE 'utc') WHERE id = $1`, terminatedWorkflowID); err != nil {
+		t.Fatalf("terminate workflow: %v", err)
+	}
+
+	cases := []struct {
+		name       string
+		workflowID string
+		userID     string
+	}{
+		{"cross user", workflowID, attackerID},
+		{"nonexistent workflow", "00000000-0000-0000-0000-000000000000", ownerID},
+		{"unbuilt workflow", unbuiltWorkflowID, ownerID},
+		{"terminated workflow", terminatedWorkflowID, ownerID},
+	}
+	for _, tc := range cases {
+		_, err := repo.ScheduleJob(ctx, tc.workflowID, tc.userID, scheduledAt, "MANUAL", fmt.Sprintf("idem-guard-%s-%s", t.Name(), tc.name), 1)
+		if status.Code(err) != codes.NotFound {
+			t.Fatalf("ScheduleJob(%s) code = %v, want %v (err: %v)", tc.name, status.Code(err), codes.NotFound, err)
+		}
+	}
+
+	// Rejected attempts must not leave job rows behind.
+	for _, wfID := range []string{workflowID, unbuiltWorkflowID, terminatedWorkflowID} {
+		var jobCount int
+		if err := pg.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE workflow_id = $1`, wfID).Scan(&jobCount); err != nil {
+			t.Fatalf("count jobs: %v", err)
+		}
+		if jobCount != 0 {
+			t.Fatalf("workflow %q has %d jobs, want 0 after rejected schedules", wfID, jobCount)
+		}
+	}
+
+	// The owner can still schedule their built workflow after the rejections.
+	jobID, err := repo.ScheduleJob(ctx, workflowID, ownerID, scheduledAt, "MANUAL", fmt.Sprintf("idem-guard-owner-%s", t.Name()), 1)
+	if err != nil {
+		t.Fatalf("ScheduleJob (owner): %v", err)
+	}
+	if jobID == "" {
+		t.Fatal("expected a job id")
+	}
+}
+
 func TestIntegrationCancelJobReplaysSnapshot(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)

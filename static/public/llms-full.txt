@@ -749,6 +749,8 @@ Trace context helps explain a distributed operation. Replay safety, outbox state
 
 Use heartbeat workflows for endpoint availability and infrastructure checks where a full container command is unnecessary.
 
+Heartbeat targets must be publicly reachable endpoints. Requests that resolve to loopback, private, link-local, or multicast addresses are rejected at execution time and fail the job permanently with `EXECUTION_FAILED`. The check is applied per connection attempt, so redirects and DNS changes cannot route a probe to an internal address.
+
 ## Container
 
 `CONTAINER` workflows describe a Docker image and command in the payload. The workflow worker resolves execution metadata, `jobs-service` assigns a fresh runtime node during claim, and the execution worker runs the workload through the runtime endpoint registered by `runtime-agent`.

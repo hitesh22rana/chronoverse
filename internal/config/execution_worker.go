@@ -38,6 +38,7 @@ type ExecutionWorkerConfig struct {
 	JobLogPublishBackoff        time.Duration `envconfig:"EXECUTION_WORKER_JOB_LOG_PUBLISH_BACKOFF" default:"250ms"`
 	JobLogLiveTimeout           time.Duration `envconfig:"EXECUTION_WORKER_JOB_LOG_LIVE_TIMEOUT" default:"100ms"`
 	JobLogLiveBufferSize        int           `envconfig:"EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE" default:"4096"`
+	HeartbeatNAT64Prefixes      []string      `envconfig:"EXECUTION_WORKER_HEARTBEAT_NAT64_PREFIXES" default:""`
 	ImagePullLockTTL            time.Duration `envconfig:"EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL" default:"10m"`
 	ImagePullLockWaitTimeout    time.Duration `envconfig:"EXECUTION_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT" default:"10m"`
 	ImagePullLockRetryInterval  time.Duration `envconfig:"EXECUTION_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL" default:"500ms"`

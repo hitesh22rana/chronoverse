@@ -116,9 +116,12 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 	}
 }
 
-// WithWorkloadNetworkBootstrap makes construction ensure (and validate) the
-// workload network immediately, failing fast on misconfiguration. Only
-// execution paths need this: image-resolution and health-only clients
+// WithWorkloadNetworkBootstrap makes client construction ensure (and
+// validate) the workload network, failing fast on misconfiguration. The
+// execution worker constructs clients lazily per runtime endpoint, so this
+// typically fires on the first job for an endpoint rather than at worker
+// process startup; Execute revalidates before every creation regardless.
+// Only execution paths need this: image-resolution and health-only clients
 // (workflow-worker, runtime-agent) must not touch or create the network,
 // otherwise a custom EXECUTION_WORKER_WORKLOAD_NETWORK could not avoid the
 // default name.

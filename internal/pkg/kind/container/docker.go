@@ -32,6 +32,14 @@ const (
 	// capDropAll drops every Linux capability from workload containers.
 	capDropAll = "ALL"
 
+	// workloadNetworkICCOption disables direct communication between workload
+	// containers attached to the same bridge network.
+	workloadNetworkICCOption = "com.docker.network.bridge.enable_icc"
+
+	// platformNetwork is the Docker network used by Chronoverse services in the
+	// bundled Compose deployments. Workloads must never attach to it.
+	platformNetwork = "chronoverse"
+
 	// DefaultWorkloadNetwork is the docker network every workload container is
 	// attached to. It is created on demand (bridge driver, inter-container
 	// communication disabled) so tenant workloads never share the default
@@ -134,8 +142,12 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 // exist yet. Compose deployments declare the same network explicitly; k8s-mode
 // daemons get it created here through the socket proxy.
 func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
-	if _, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
-		return nil
+	if err := validateWorkloadNetworkName(w.workloadNetwork); err != nil {
+		return err
+	}
+
+	if inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
+		return validateWorkloadNetwork(w.workloadNetwork, inspected)
 	} else if !cerrdefs.IsNotFound(err) {
 		return status.Errorf(codes.Internal, "failed to inspect workload network %q: %v", w.workloadNetwork, err)
 	}
@@ -144,17 +156,62 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		Driver: "bridge",
 		Options: map[string]string{
 			// Tenant containers on this network must not reach each other.
-			"com.docker.network.bridge.enable_icc": "false",
+			workloadNetworkICCOption: "false",
 		},
 	}); err != nil {
 		// Concurrent constructors can race the create (parallel tests, several
 		// workers booting against one daemon), and the daemon surfaces that
-		// conflict with inconsistent status codes. Existence is success:
-		// re-inspect and only fail when the network is genuinely absent.
-		if _, ierr := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); ierr != nil {
+		// conflict with inconsistent status codes. Re-inspect the winner and
+		// accept it only when it has the required isolation properties.
+		inspected, inspectErr := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+		if inspectErr != nil {
 			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
 		}
+		return validateWorkloadNetwork(w.workloadNetwork, inspected)
 	}
+
+	// Verify the daemon-created network instead of assuming the requested
+	// options were honored. This keeps startup fail-closed with nonstandard
+	// drivers or daemons.
+	inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to verify workload network %q after creation: %v", w.workloadNetwork, err)
+	}
+	return validateWorkloadNetwork(w.workloadNetwork, inspected)
+}
+
+func validateWorkloadNetworkName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || trimmed != name {
+		return status.Errorf(codes.FailedPrecondition, "workload network name %q is invalid", name)
+	}
+	normalized := strings.ToLower(trimmed)
+
+	switch normalized {
+	case network.NetworkDefault, network.NetworkHost, network.NetworkNone, network.NetworkBridge, network.NetworkNat, platformNetwork, "container":
+		return status.Errorf(codes.FailedPrecondition, "workload network %q is reserved", name)
+	}
+	if strings.HasPrefix(normalized, "container:") {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q is a reserved container network mode", name)
+	}
+
+	return nil
+}
+
+func validateWorkloadNetwork(configuredName string, inspected network.Inspect) error {
+	if err := validateWorkloadNetworkName(inspected.Name); err != nil {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to an unsafe network: %v", configuredName, err)
+	}
+	if inspected.Name != configuredName {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to unexpected network %q", configuredName, inspected.Name)
+	}
+	if inspected.Driver != "bridge" {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q uses driver %q, want bridge", configuredName, inspected.Driver)
+	}
+	if inspected.Options[workloadNetworkICCOption] != "false" {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q does not disable inter-container communication", configuredName)
+	}
+
 	return nil
 }
 

@@ -82,7 +82,7 @@ func TestResolveImageDigestKeepsAlreadyDigestedReference(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/networks/"):
 			// Constructor ensures the workload network: report it as existing.
 			w.Header().Set("Content-Type", "application/json")
-			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge"}`)
+			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"false"}}`)
 		default:
 			t.Fatalf("unexpected Docker API request: %s %s", r.Method, r.URL.String())
 		}

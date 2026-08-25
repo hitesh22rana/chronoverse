@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,16 @@ const (
 	// workloadNetworkICCOption disables direct communication between workload
 	// containers attached to the same bridge network.
 	workloadNetworkICCOption = "com.docker.network.bridge.enable_icc"
+	workloadNetworkDriver    = "bridge"
+	workloadNetworkICCOff    = "false"
+
+	// dockerProxyTokenEnv names the optional shared token used to authenticate
+	// trusted clients to the Kubernetes Docker socket proxy.
+	dockerProxyTokenEnv = "DOCKER_PROXY_TOKEN" //nolint:gosec // Environment-variable name, not a credential.
+
+	// dockerProxyTokenHeader carries the shared proxy token without changing the
+	// Docker endpoint URL persisted in runtime ownership records.
+	dockerProxyTokenHeader = "X-Chronoverse-Docker-Proxy-Token" //nolint:gosec // Header name, not a credential.
 
 	// platformNetwork is the Docker network used by Chronoverse services in the
 	// bundled Compose deployments. Workloads must never attach to it.
@@ -51,10 +62,11 @@ const (
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
-	pullGroup       singleflight.Group
-	resourceLimits  ResourceLimits
-	dockerHost      string
-	workloadNetwork string
+	pullGroup        singleflight.Group
+	resourceLimits   ResourceLimits
+	dockerHost       string
+	workloadNetwork  string
+	dockerProxyToken string
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -101,7 +113,10 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
-	w := &DockerWorkflow{workloadNetwork: DefaultWorkloadNetwork}
+	w := &DockerWorkflow{
+		workloadNetwork:  DefaultWorkloadNetwork,
+		dockerProxyToken: os.Getenv(dockerProxyTokenEnv),
+	}
 	for _, option := range options {
 		if option != nil {
 			option(w)
@@ -114,6 +129,11 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	}
 	if w.dockerHost != "" {
 		clientOptions = append(clientOptions, client.WithHost(w.dockerHost))
+	}
+	if w.dockerProxyToken != "" {
+		clientOptions = append(clientOptions, client.WithHTTPHeaders(map[string]string{
+			dockerProxyTokenHeader: w.dockerProxyToken,
+		}))
 	}
 	cli, err := client.NewClientWithOpts(
 		clientOptions...,
@@ -147,16 +167,16 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	}
 
 	if inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
-		return validateWorkloadNetwork(w.workloadNetwork, inspected)
+		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
 	} else if !cerrdefs.IsNotFound(err) {
 		return status.Errorf(codes.Internal, "failed to inspect workload network %q: %v", w.workloadNetwork, err)
 	}
 
 	if _, err := w.Client.NetworkCreate(ctx, w.workloadNetwork, network.CreateOptions{
-		Driver: "bridge",
+		Driver: workloadNetworkDriver,
 		Options: map[string]string{
 			// Tenant containers on this network must not reach each other.
-			workloadNetworkICCOption: "false",
+			workloadNetworkICCOption: workloadNetworkICCOff,
 		},
 	}); err != nil {
 		// Concurrent constructors can race the create (parallel tests, several
@@ -167,7 +187,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		if inspectErr != nil {
 			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
 		}
-		return validateWorkloadNetwork(w.workloadNetwork, inspected)
+		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
 	}
 
 	// Verify the daemon-created network instead of assuming the requested
@@ -177,7 +197,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to verify workload network %q after creation: %v", w.workloadNetwork, err)
 	}
-	return validateWorkloadNetwork(w.workloadNetwork, inspected)
+	return validateWorkloadNetwork(w.workloadNetwork, &inspected)
 }
 
 func validateWorkloadNetworkName(name string) error {
@@ -198,17 +218,17 @@ func validateWorkloadNetworkName(name string) error {
 	return nil
 }
 
-func validateWorkloadNetwork(configuredName string, inspected network.Inspect) error {
+func validateWorkloadNetwork(configuredName string, inspected *network.Inspect) error {
 	if err := validateWorkloadNetworkName(inspected.Name); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to an unsafe network: %v", configuredName, err)
 	}
 	if inspected.Name != configuredName {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to unexpected network %q", configuredName, inspected.Name)
 	}
-	if inspected.Driver != "bridge" {
+	if inspected.Driver != workloadNetworkDriver {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q uses driver %q, want bridge", configuredName, inspected.Driver)
 	}
-	if inspected.Options[workloadNetworkICCOption] != "false" {
+	if inspected.Options[workloadNetworkICCOption] != workloadNetworkICCOff {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q does not disable inter-container communication", configuredName)
 	}
 

@@ -53,14 +53,17 @@ func TestDockerImageInspectErrorMapsDockerErrorClasses(t *testing.T) {
 }
 
 func TestResolveImageDigestKeepsAlreadyDigestedReference(t *testing.T) {
-	t.Parallel()
-
 	const imageRef = "registry.example.com/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const proxyToken = "test-docker-proxy-token" //nolint:gosec // Non-secret test fixture.
+	t.Setenv(dockerProxyTokenEnv, proxyToken)
 	var inspectCalls atomic.Int32
 	var pullCalls atomic.Int32
 	pulled := atomic.Bool{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get(dockerProxyTokenHeader); got != proxyToken {
+			t.Fatalf("%s header = %q, want configured token", dockerProxyTokenHeader, got)
+		}
 		switch {
 		case r.URL.Path == "/_ping":
 			w.Header().Set("API-Version", "1.51")

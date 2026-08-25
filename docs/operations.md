@@ -85,10 +85,13 @@ cluster whose nodes really provide that socket.
 
 The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
 Docker-capable node. Official overlays register `tcp://$(NODE_IP):2375` so
-running job cleanup survives proxy pod restarts on the same node. Multi-node
-kind and other Docker-container-based Kubernetes emulators can have a specific
-hostPort routing limitation where pods on one emulator node cannot reach another
-emulator node's host port; if you choose that topology, use a pod-IP endpoint
+running job cleanup survives proxy pod restarts on the same node. The generated
+`docker-proxy-auth` token authenticates runtime-agent and worker requests, and
+the proxy forwards only the Docker methods and paths used by Chronoverse.
+Multi-node kind and other Docker-container-based Kubernetes emulators can have a
+specific hostPort routing limitation where pods on one emulator node cannot
+reach another emulator node's host port; if you choose that topology, use a
+pod-IP endpoint
 override as an emulator-only workaround. `workflow-worker` and
 `execution-worker` do not need the Docker node label; they can schedule anywhere
 with network access to TCP `2375` on registered runtime endpoints.
@@ -470,6 +473,9 @@ expected keys.
   and have the `chronoverse.io/docker-workloads=true` label.
 - Confirm workers can reach runtime node IPs on TCP `2375`; NetworkPolicy,
   node firewall rules, or security groups may block hostPort traffic.
+- Confirm the `docker-proxy-auth` Secret exists with a non-empty
+  `DOCKER_PROXY_TOKEN`; the proxy fails closed and workers cannot ping it when
+  the token is missing or mismatched.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

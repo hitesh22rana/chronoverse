@@ -703,6 +703,8 @@ spec:
             name: observability-config
         - configMapRef:
             name: workflow-worker-config
+        - secretRef:
+            name: docker-proxy-auth
         resources:
           requests:
             cpu: 200m
@@ -764,6 +766,8 @@ spec:
             name: observability-config
         - configMapRef:
             name: execution-worker-config
+        - secretRef:
+            name: docker-proxy-auth
         resources:
           requests:
             cpu: 200m

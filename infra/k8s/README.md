@@ -125,6 +125,7 @@ Production Secrets include:
 - `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`, `MEILI_MASTER_KEY`
 - `kafka-tls-secret`: `KAFKA_SSL_KEYSTORE_PASSWORD`, `KAFKA_SSL_TRUSTSTORE_PASSWORD`, `KAFKA_SSL_KEY_PASSWORD`
 - `chronoverse-server-security`: `CRYPTO_SECRET`, `SERVER_CSRF_HMAC_SECRET`
+- `docker-proxy-auth`: `DOCKER_PROXY_TOKEN`
 - `chronoverse-auth`: `auth.ed`, `auth.ed.pub`
 - `chronoverse-ca`: `ca.crt`
 - `chronoverse-ingress-tls`: `tls.crt`, `tls.key`
@@ -161,7 +162,12 @@ sidecar. Workers do not need the Docker node label and can schedule anywhere.
 
 Official overlays register `tcp://$(NODE_IP):2375` through the Docker proxy
 `hostPort`, not `tcp://docker-proxy:2375`. This keeps running job cleanup valid
-across proxy pod restarts on the same node.
+across proxy pod restarts on the same node. The setup script generates a
+high-entropy `docker-proxy-auth` token and injects it only into the proxy,
+runtime-agent, workflow-worker, and execution-worker. The proxy rejects requests
+without that token and applies an exact method-and-path allowlist; network access
+is limited to inspect and create, so callers cannot connect workloads to another
+bridge.
 
 Multi-node kind and similar Docker-container-based Kubernetes emulators may not
 route one emulator node's hostPort from pods on another emulator node. If you
@@ -171,8 +177,9 @@ clusters should use node-stable runtime endpoints.
 
 Worker pods need egress to TCP `2375` on runtime node IPs. The base
 NetworkPolicy allows that port, but production should also restrict access with
-private networking, node firewalls or security groups, and the Docker socket
-proxy allowlist. Do not expose TCP `2375` publicly.
+private networking, node firewalls or security groups. The application-layer
+token and API allowlist are additional controls, not a reason to expose TCP
+`2375` publicly.
 
 Production authentication cookies are scoped from `SERVER_HOST_URL`. A
 production overlay configured for `https://chronoverse.example.com` will reject

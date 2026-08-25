@@ -19,7 +19,6 @@ func TestValidateWorkloadNetworkNameRejectsReservedModes(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range []string{"", " bridge", "bridge", "HOST", "none", "default", "nat", "container", "container:peer", platformNetwork} {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if err := validateWorkloadNetworkName(name); status.Code(err) != codes.FailedPrecondition {
@@ -95,7 +94,7 @@ func TestValidateWorkloadNetworkRequiresIsolatedBridge(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := validateWorkloadNetwork(DefaultWorkloadNetwork, tt.inspected)
+			err := validateWorkloadNetwork(DefaultWorkloadNetwork, &tt.inspected)
 			if status.Code(err) != tt.wantCode {
 				t.Fatalf("validateWorkloadNetwork() code = %s, want %s: %v", status.Code(err), tt.wantCode, err)
 			}

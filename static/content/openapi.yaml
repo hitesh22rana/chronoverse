@@ -406,7 +406,7 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
- components:
+components:
   securitySchemes:
     cookieSession:
       type: apiKey

@@ -29,7 +29,19 @@ func isDisallowedIP(ip net.IP) bool {
 		ip.IsLinkLocalMulticast() ||
 		ip.IsMulticast() ||
 		ip.IsInterfaceLocalMulticast() ||
+		!isGlobalUnicastStrict(ip) ||
 		isSpecialUse(ip)
+}
+
+func isGlobalUnicastStrict(ip net.IP) bool {
+	if ip.To4() != nil {
+		return true
+	}
+	if len(ip) != net.IPv6len {
+		return false
+	}
+	// IPv6 global unicast is 2000::/3 (0010... to 0011...)
+	return ip[0] >= 0x20 && ip[0] <= 0x3f
 }
 
 var specialCIDRs []*net.IPNet
@@ -39,6 +51,7 @@ func init() {
 		// RFC 6598 CGNAT
 		"100.64.0.0/10",
 		// IANA IPv4 special-use
+		"0.0.0.0/8",
 		"192.0.0.0/24",
 		"192.0.2.0/24",
 		"192.88.99.0/24",
@@ -46,15 +59,20 @@ func init() {
 		"198.51.100.0/24",
 		"203.0.113.0/24",
 		"240.0.0.0/4",
-		// IPv6 special-use
+		// IPv6 special-use — IANA registries
 		"64:ff9b::/96",
 		"64:ff9b:1::/48",
 		"100::/64",
+		"100::/8",
+		"2001::/23",
 		"2001::/32",
 		"2001:10::/28",
 		"2001:2::/48",
 		"2001:db8::/32",
+		"2002::/16",
+		"3fff::/20",
 		"5f00::/8",
+		"fec0::/10",
 	} {
 		_, n, err := net.ParseCIDR(cidr)
 		if err != nil {

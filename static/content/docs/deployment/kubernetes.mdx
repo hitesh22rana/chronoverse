@@ -61,6 +61,8 @@ Rate limits key on the client address. Behind ingress-nginx, the nginx service w
 
 When a cloud load balancer sits in front of ingress-nginx, the `X-Forwarded-For` chain gains one more hop. Preserving the client address across that hop is ingress-nginx's own concern (`use-forwarded-headers` plus its proxy trust configuration); Chronoverse's `real_ip` block covers only the ingress-nginx-to-nginx hop.
 
+Slow-client limits follow the same split: ingress-nginx terminates public client connections and buffers each request before forwarding a fast controller-to-pod request, so the `client_header_timeout 10s` and `client_body_timeout 15s` directives in the nginx service configuration only govern that internal hop and cannot brake external slow clients. Enforce them at the public edge by setting `client-header-timeout: "10"` and `client-body-timeout: "15"` in the ingress-nginx controller ConfigMap — these are controller-global settings with no per-Ingress annotation equivalent, and without them the edge keeps the controller's 60-second defaults.
+
 ## Scaling
 
 The local strategy runs one replica per app deployment. The production strategy includes CPU/memory HorizontalPodAutoscalers for app services and background workers. Install metrics-server or provide equivalent `autoscaling/v2` resource metrics before relying on HPAs.

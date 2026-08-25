@@ -601,18 +601,24 @@ if [ "$MODE" = "production" ]; then
       CONTROLLER_ROWS=""
     fi
 
-    HOSTNET_IPS=""
+    # Track observed network MODES separately from address availability: a
+    # Pending pod has no podIP/hostIP yet, but during a network-mode rollout
+    # it still reveals the mode being rolled out to. Ignoring it would let
+    # setup succeed with trust ranges covering only the old mode, leaving
+    # the new controller's sources untrusted once it starts serving.
+    HOSTNET_SEEN=false
+    PODNET_SEEN=false
     PODNET_IPS=""
     while IFS='|' read -r hn pod_ip host_ip; do
       [ -n "${hn:-}" ] || continue
       case "$hn" in
-        true)  [ -n "$host_ip" ] && [ "$host_ip" != "-" ] && HOSTNET_IPS="$HOSTNET_IPS $host_ip" ;;
-        false) [ -n "$pod_ip" ] && [ "$pod_ip" != "-" ] && PODNET_IPS="$PODNET_IPS $pod_ip" ;;
+        true)  HOSTNET_SEEN=true ;;
+        false) PODNET_SEEN=true
+               [ -n "$pod_ip" ] && [ "$pod_ip" != "-" ] && PODNET_IPS="$PODNET_IPS $pod_ip" ;;
       esac
     done <<EOF
 $CONTROLLER_ROWS
 EOF
-    HOSTNET_IPS="$(echo $HOSTNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
     PODNET_IPS="$(echo $PODNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
     NODE_POD_CIDRS=""
@@ -631,7 +637,7 @@ EOF
     # address; pod-network controllers are covered by node pod CIDRs when
     # the cluster allocates them, otherwise by their current pod addresses.
     TRUST_IPS=""
-    if [ -n "$HOSTNET_IPS" ]; then
+    if [ "$HOSTNET_SEEN" = true ]; then
       # hostNetwork controllers connect from node addresses. Trust every
       # node InternalIP so reschedules or scale-out to existing nodes stay
       # trusted; nodes added after this setup run still require a re-run
@@ -646,12 +652,14 @@ EOF
       TRUST_IPS="$(for ip in $NODE_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
       warn "hostNetwork trust ranges cover the cluster's current nodes — nodes added later need a setup re-run, or set --realip-cidrs with the node range for stability"
     fi
-    if [ -n "$PODNET_IPS" ]; then
+    if [ "$PODNET_SEEN" = true ]; then
       if [ -n "$NODE_POD_CIDRS" ]; then
         TRUST_IPS="$TRUST_IPS $NODE_POD_CIDRS"
-      else
+      elif [ -n "$PODNET_IPS" ]; then
         TRUST_IPS="$TRUST_IPS $(for ip in $PODNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
         warn "trusted ranges derived from current ingress-nginx pod IPs; these are ephemeral — prefer --realip-cidrs with a stable range for production"
+      else
+        die "pod-network controllers detected but neither node pod CIDRs nor usable pod addresses are available — pass --realip-cidrs <list> with the cluster's pod-network range (or restore node/pod query access) so pod-network controller clients get per-client rate limits"
       fi
     fi
     if [ -z "$TRUST_IPS" ]; then
@@ -665,7 +673,7 @@ EOF
 
     if [ -n "$TRUST_IPS" ]; then
       REALIP_DETECTED="$(echo $TRUST_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
-      if [ -n "$HOSTNET_IPS" ]; then
+      if [ "$HOSTNET_SEEN" = true ]; then
         info "Client-IP trust ranges include hostNetwork controller node addresses: $REALIP_DETECTED"
       else
         info "Detected client-IP trust ranges for nginx: $REALIP_DETECTED"

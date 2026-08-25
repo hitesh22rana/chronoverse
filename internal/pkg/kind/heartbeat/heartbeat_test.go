@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -276,19 +277,53 @@ func TestHeartBeat_Execute_BlockedByDefaultEgressGuard(t *testing.T) {
 func TestHeartBeat_Execute_CleansUpTransport(t *testing.T) {
 	t.Parallel()
 
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requests++
+	var mu sync.Mutex
+	conns := make(map[net.Conn]http.ConnState)
+	states := make(map[http.ConnState]int)
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	server.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
+		prev := conns[conn]
+		if prev != http.StateNew {
+			states[prev]--
+		}
+		states[state]++
+		conns[conn] = state
+		if state == http.StateClosed {
+			delete(conns, conn)
+		}
+	}
+	server.Start()
 	defer server.Close()
 
 	h := unguarded()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		err := h.Execute(t.Context(), 2*time.Second, server.URL, http.StatusNoContent, nil)
 		assert.NoError(t, err)
+
+		// After Execute returns, the transport has called CloseIdleConnections.
+		// The server should have no idle connections — they must be closed
+		// well before the 30s IdleConnTimeout.
+		assert.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return states[http.StateIdle] == 0
+		}, 500*time.Millisecond, 10*time.Millisecond, "connection should not remain idle after Execute")
 	}
-	assert.Equal(t, 10, requests)
-	// If idle connections were leaked, the server would retain 10 idle conns; with
-	// transport.CloseIdleConnections deferred, each Execute cleans up.
+
+	// After all executions, no connections should remain idle; they should be closed.
+	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return states[http.StateIdle] == 0
+	}, 500*time.Millisecond, 10*time.Millisecond)
+
+	mu.Lock()
+	closed := states[http.StateClosed]
+	mu.Unlock()
+	assert.GreaterOrEqual(t, closed, 5, "each Execute should have closed its transport connection")
 }

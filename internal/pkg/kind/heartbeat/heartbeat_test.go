@@ -272,3 +272,23 @@ func TestHeartBeat_Execute_BlockedByDefaultEgressGuard(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not allowed")
 }
+
+func TestHeartBeat_Execute_CleansUpTransport(t *testing.T) {
+	t.Parallel()
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	h := unguarded()
+	for i := 0; i < 10; i++ {
+		err := h.Execute(t.Context(), 2*time.Second, server.URL, http.StatusNoContent, nil)
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, 10, requests)
+	// If idle connections were leaked, the server would retain 10 idle conns; with
+	// transport.CloseIdleConnections deferred, each Execute cleans up.
+}

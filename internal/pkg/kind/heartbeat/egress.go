@@ -50,6 +50,13 @@ func isDisallowedIP(ip net.IP) bool {
 	if !isGlobalUnicastStrict(ip) {
 		return true
 	}
+	// 2001::/23 is IANA non-globally reachable except for more-specific
+	// globally reachable allocations. Default-deny the /23 and allow only
+	// the known global exceptions, rather than permitting everything not
+	// individually listed.
+	if isIn2001_23(ip) && !isGlobal2001_23Exception(ip) {
+		return true
+	}
 	return isSpecialUse(ip)
 }
 
@@ -68,6 +75,8 @@ var (
 	nat64WellKnownCIDR *net.IPNet
 	nat64LocalCIDR     *net.IPNet
 	specialCIDRs       []*net.IPNet
+	rfc2001_23CIDR     *net.IPNet
+	global2001_23CIDRs []*net.IPNet
 )
 
 func isNAT64WellKnown(ip net.IP) bool {
@@ -82,6 +91,23 @@ func extractNAT64IPv4(ip net.IP) net.IP {
 	return net.IPv4(ip[12], ip[13], ip[14], ip[15])
 }
 
+func isIn2001_23(ip net.IP) bool {
+	return rfc2001_23CIDR != nil && rfc2001_23CIDR.Contains(ip)
+}
+
+func isGlobal2001_23Exception(ip net.IP) bool {
+	for _, cidr := range global2001_23CIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	// Three anycast addresses 2001:1::1, 2001:1::2, 2001:1::3
+	if ip.Equal(net.ParseIP("2001:1::1")) || ip.Equal(net.ParseIP("2001:1::2")) || ip.Equal(net.ParseIP("2001:1::3")) {
+		return true
+	}
+	return false
+}
+
 func init() {
 	var err error
 	_, nat64WellKnownCIDR, err = net.ParseCIDR("64:ff9b::/96")
@@ -91,6 +117,22 @@ func init() {
 	_, nat64LocalCIDR, err = net.ParseCIDR("64:ff9b:1::/48")
 	if err != nil {
 		panic(err)
+	}
+	_, rfc2001_23CIDR, err = net.ParseCIDR("2001::/23")
+	if err != nil {
+		panic(err)
+	}
+	for _, cidr := range []string{
+		"2001:3::/32",
+		"2001:4:112::/48",
+		"2001:20::/28",
+		"2001:30::/28",
+	} {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(err)
+		}
+		global2001_23CIDRs = append(global2001_23CIDRs, n)
 	}
 	for _, cidr := range []string{
 		// RFC 6598 CGNAT

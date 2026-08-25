@@ -64,6 +64,14 @@ func run() int {
 		return ExitError
 	}
 
+	// Register the deployment's RFC 6052 network-specific Pref64 prefixes so
+	// heartbeat egress validation decodes and re-checks their embedded IPv4
+	// addresses (NAT64 must not bypass the private-address policy).
+	if nat64Err := heartbeat.ConfigureNAT64Prefixes(cfg.ExecutionWorkerConfig.HeartbeatNAT64Prefixes); nat64Err != nil {
+		fmt.Fprintln(os.Stderr, nat64Err)
+		return ExitError
+	}
+
 	// Initialize the auth issuer
 	auth, err := auth.New()
 	if err != nil {

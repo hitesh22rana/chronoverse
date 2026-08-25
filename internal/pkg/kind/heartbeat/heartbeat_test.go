@@ -2,9 +2,11 @@ package heartbeat_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -20,14 +22,18 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
-// unguarded returns a HeartBeat whose outbound dialer has no egress guard.
-// It lets these tests exercise plain HTTP semantics against local httptest
-// servers; the guard itself is covered by egress tests and by
+// unguarded returns a HeartBeat whose outbound dialer has no egress guard and
+// whose destination validator accepts anything. It lets these tests exercise
+// plain HTTP semantics against local httptest servers; the guard itself is
+// covered by egress tests and by
 // TestHeartBeat_Execute_BlockedByDefaultEgressGuard below.
 func unguarded() *heartbeat.HeartBeat {
-	return heartbeat.New(heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer {
-		return &net.Dialer{}
-	}))
+	return heartbeat.New(
+		heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer {
+			return &net.Dialer{}
+		}),
+		heartbeat.WithHostValidator(func(context.Context, string) error { return nil }),
+	)
 }
 
 func TestNew(t *testing.T) {
@@ -326,4 +332,131 @@ func TestHeartBeat_Execute_CleansUpTransport(t *testing.T) {
 	closed := states[http.StateClosed]
 	mu.Unlock()
 	assert.GreaterOrEqual(t, closed, 5, "each Execute should have closed its transport connection")
+}
+
+func newProxiedHeartbeat(proxyURL string) (hb *heartbeat.HeartBeat, validated func() []string) {
+	var mu sync.Mutex
+	var hosts []string
+	h := heartbeat.New(
+		heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer { return &net.Dialer{} }),
+		heartbeat.WithProxyResolver(func(*url.URL) (*url.URL, error) { return url.Parse(proxyURL) }),
+		heartbeat.WithHostValidator(func(_ context.Context, host string) error {
+			mu.Lock()
+			defer mu.Unlock()
+			hosts = append(hosts, host)
+			return nil
+		}),
+	)
+	return h, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), hosts...)
+	}
+}
+
+func TestHeartBeat_Execute_EnvProxyRoutesAndValidatesOriginalDestination(t *testing.T) {
+	var proxyMu sync.Mutex
+	var proxiedHosts []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyMu.Lock()
+		proxiedHosts = append(proxiedHosts, r.Host)
+		proxyMu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxy.Close()
+
+	var targetMu sync.Mutex
+	targetHits := 0
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetMu.Lock()
+		targetHits++
+		targetMu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	targetHost := mustURLHostname(t, target.URL)
+	h, validated := newProxiedHeartbeat(proxy.URL)
+
+	err := h.Execute(t.Context(), 5*time.Second, target.URL+"/ping", http.StatusOK, nil)
+	assert.NoError(t, err)
+
+	// The request was forwarded through the proxy...
+	proxyMu.Lock()
+	hosts := append([]string(nil), proxiedHosts...)
+	proxyMu.Unlock()
+	fullHost := mustURLHostPort(t, target.URL)
+	assert.Equal(t, []string{fullHost}, hosts)
+
+	// ...the ORIGINAL destination was validated, not just the proxy address...
+	assert.Equal(t, []string{targetHost}, validated())
+
+	// ...and the target was never contacted directly.
+	targetMu.Lock()
+	hits := targetHits
+	targetMu.Unlock()
+	assert.Zero(t, hits)
+}
+
+func TestHeartBeat_Execute_EnvProxyRedirectHopsRevalidated(t *testing.T) {
+	// The proxy serves both hops so every round trip flows through it.
+	redirected := false
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !redirected {
+			redirected = true
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxy.Close()
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	h, validated := newProxiedHeartbeat(proxy.URL)
+	err := h.Execute(t.Context(), 5*time.Second, target.URL, http.StatusOK, nil)
+	assert.NoError(t, err)
+
+	// Every redirect hop is validated individually, even when connecting via
+	// the proxy (where dial-time inspection only sees the proxy address).
+	assert.Len(t, validated(), 2)
+}
+
+func TestHeartBeat_Execute_HostValidatorRejectionMapsToNotAllowed(t *testing.T) {
+	h := heartbeat.New(
+		heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer { return &net.Dialer{} }),
+		heartbeat.WithHostValidator(func(_ context.Context, _ string) error {
+			return fmt.Errorf("%w: 10.0.0.1", heartbeat.ErrDisallowedTarget)
+		}),
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := h.Execute(t.Context(), 5*time.Second, server.URL, http.StatusOK, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "endpoint is not allowed")
+}
+
+func mustURLHostPort(t *testing.T, raw string) string {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
+	}
+	return u.Host
+}
+
+func mustURLHostname(t *testing.T, raw string) string {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
+	}
+	return u.Hostname()
 }

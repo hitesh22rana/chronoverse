@@ -135,3 +135,100 @@ func TestGuardedDialerControl(t *testing.T) {
 		}
 	}
 }
+
+func TestNAT64NetworkSpecificPrefixes(t *testing.T) {
+	// Independent RFC 6052 section 2.2 embedding offsets: byte positions of
+	// the four IPv4 octets inside a 16-byte address. Prefixes shorter than
+	// /64 skip the reserved u-octet at byte 8.
+	offsets := map[int][4]int{
+		32: {4, 5, 6, 7},
+		40: {5, 6, 7, 9},
+		48: {6, 7, 9, 10},
+		56: {7, 9, 10, 11},
+		64: {8, 9, 10, 11},
+		96: {12, 13, 14, 15},
+	}
+	prefixFor := map[int]string{
+		32: "2606:4700::/32",
+		40: "2620:0:aa00::/40",
+		48: "2800:1f0:1234::/48",
+		56: "2402:9400:4321:4300::/56",
+		64: "2607:f8b0:5555:5555::/64",
+		96: "2605:1234:5678:9abc:def0::/96",
+	}
+
+	build := func(t *testing.T, prefix string, bits int, v4 [4]byte) net.IP {
+		t.Helper()
+		base, _, err := net.ParseCIDR(prefix)
+		if err != nil {
+			t.Fatalf("parse prefix %q: %v", prefix, err)
+		}
+		addr := make(net.IP, net.IPv6len)
+		copy(addr, base.To16())
+		for i, o := range offsets[bits] {
+			addr[o] = v4[i]
+		}
+		return addr
+	}
+
+	// Before configuration, an address under a globally routed network-specific
+	// Pref64 /96 embedding a private IPv4 passes as ordinary global unicast.
+	unconfigured := build(t, prefixFor[96], 96, [4]byte{10, 0, 0, 1})
+	if !isGlobalUnicastStrict(unconfigured) || isDisallowedIP(unconfigured) {
+		t.Fatalf("expected %s to pass as global unicast before configuration", unconfigured)
+	}
+
+	specs := make([]string, 0, len(prefixFor))
+	for bits := range prefixFor {
+		specs = append(specs, prefixFor[bits])
+	}
+	if err := ConfigureNAT64Prefixes(specs); err != nil {
+		t.Fatalf("configure: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := ConfigureNAT64Prefixes(nil); err != nil {
+			t.Errorf("reset prefixes: %v", err)
+		}
+	})
+
+	for bits := range prefixFor {
+		private := build(t, prefixFor[bits], bits, [4]byte{10, 0, 0, 1})
+		public := build(t, prefixFor[bits], bits, [4]byte{93, 184, 216, 34})
+		if !isDisallowedIP(private) {
+			t.Errorf("/%d: embedded private IPv4 not rejected: %s", bits, private)
+		}
+		if isDisallowedIP(public) {
+			t.Errorf("/%d: embedded public IPv4 wrongly rejected: %s", bits, public)
+		}
+	}
+}
+
+func TestConfigureNAT64PrefixesRejectsInvalidSpecs(t *testing.T) {
+	tests := []struct {
+		name string
+		spec string
+	}{
+		{"ipv4 cidr", "10.0.0.0/96"},
+		{"unsupported length", "2606:4700::/24"},
+		{"garbage", "not-a-cidr"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ConfigureNAT64Prefixes([]string{tt.spec})
+			if err == nil {
+				t.Fatalf("expected error for %q", tt.spec)
+			}
+		})
+	}
+
+	// Blank entries are tolerated so comma-joined environment values can carry
+	// stray whitespace without failing startup.
+	if err := ConfigureNAT64Prefixes([]string{"", "  ", "2606:4700::/96"}); err != nil {
+		t.Fatalf("expected blank-tolerant parse, got %v", err)
+	}
+	t.Cleanup(func() {
+		if err := ConfigureNAT64Prefixes(nil); err != nil {
+			t.Errorf("reset prefixes: %v", err)
+		}
+	})
+}

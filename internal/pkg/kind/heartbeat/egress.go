@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -24,13 +25,7 @@ func isDisallowedIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	if ip.IsUnspecified() ||
-		ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() ||
-		ip.IsInterfaceLocalMulticast() {
+	if isReservedOrNonUnicast(ip) {
 		return true
 	}
 	// IANA 192.0.0.0/24 is reserved but contains two globally reachable
@@ -48,11 +43,17 @@ func isDisallowedIP(ip net.IP) bool {
 	// 64:ff9b:1::/48 must remain blocked entirely per RFC 8215 (IPv4 bits
 	// at 48-63 and 72-87, suffix ignored by translators).
 	if isNAT64WellKnown(ip) {
-		embedded := extractNAT64IPv4(ip)
-		return isDisallowedIP(embedded)
+		return isDisallowedIP(extractEmbeddedIPv4(ip, 96))
 	}
 	if isNAT64Local(ip) {
 		return true
+	}
+	// RFC 6052 network-specific Pref64 prefixes configured by the operator:
+	// decode the embedded IPv4 and apply the IPv4 guard, exactly like the
+	// well-known prefix. Checked before the global-unicast and special-use
+	// screens so test/documentary NSPs remain configurable.
+	if bits, ok := longestMatchingNAT64Prefix(ip); ok {
+		return isDisallowedIP(extractEmbeddedIPv4(ip, bits))
 	}
 	if !isGlobalUnicastStrict(ip) {
 		return true
@@ -65,6 +66,37 @@ func isDisallowedIP(ip net.IP) bool {
 		return true
 	}
 	return isSpecialUse(ip)
+}
+
+// isReservedOrNonUnicast reports whether the address is unspecified,
+// loopback, private, link-local, multicast, or interface-local multicast —
+// ranges that must never be reached by user-defined workflows.
+func isReservedOrNonUnicast(ip net.IP) bool {
+	return ip.IsUnspecified() ||
+		ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() ||
+		ip.IsInterfaceLocalMulticast()
+}
+
+// longestMatchingNAT64Prefix reports the prefix length of the most-specific
+// configured RFC 6052 prefix containing ip (prefixes may nest; the longest
+// wins so decoding uses the narrowest embedding layout). ok is false when no
+// configured prefix matches.
+func longestMatchingNAT64Prefix(ip net.IP) (bits int, ok bool) {
+	best := -1
+	for i := range customNAT64Prefixes {
+		if customNAT64Prefixes[i].net.Contains(ip) &&
+			(best == -1 || customNAT64Prefixes[i].bits > customNAT64Prefixes[best].bits) {
+			best = i
+		}
+	}
+	if best == -1 {
+		return 0, false
+	}
+	return customNAT64Prefixes[best].bits, true
 }
 
 func isGlobalUnicastStrict(ip net.IP) bool {
@@ -94,8 +126,76 @@ func isNAT64Local(ip net.IP) bool {
 	return nat64LocalCIDR != nil && nat64LocalCIDR.Contains(ip)
 }
 
-func extractNAT64IPv4(ip net.IP) net.IP {
-	return net.IPv4(ip[12], ip[13], ip[14], ip[15])
+// nat64Prefix is one operator-configured RFC 6052 network-specific Pref64
+// prefix. bits records the prefix length, which determines where the
+// embedded IPv4 address sits inside the address.
+type nat64Prefix struct {
+	net  *net.IPNet
+	bits int
+}
+
+// customNAT64Prefixes holds the deployment's Pref64 prefixes. It is written
+// once by ConfigureNAT64Prefixes during startup (before any traffic) and only
+// read afterwards; tests may reconfigure sequentially.
+var customNAT64Prefixes []nat64Prefix
+
+// ConfigureNAT64Prefixes registers the deployment's RFC 6052 network-specific
+// Pref64 prefixes (for example an ISP- or enterprise-assigned /96). Addresses
+// under a configured prefix are decoded to their embedded IPv4 address and
+// re-checked by the same policy as direct IPv4 targets, so NAT64 translation
+// cannot smuggle traffic to protected IPv4 space. Call this during startup,
+// before any heartbeat executes.
+//
+// Each entry must be an IPv6 CIDR whose length is one of the RFC 6052
+// embedding layouts: /32, /40, /48, /56, /64 or /96. Prefix lengths outside
+// that set are rejected because the embedded IPv4 position would be ambiguous.
+func ConfigureNAT64Prefixes(specs []string) error {
+	parsed := make([]nat64Prefix, 0, len(specs))
+	for _, spec := range specs {
+		spec = strings.TrimSpace(spec)
+		if spec == "" {
+			continue
+		}
+		base, ipnet, err := net.ParseCIDR(spec)
+		if err != nil {
+			return fmt.Errorf("invalid NAT64 prefix %q: %w", spec, err)
+		}
+		bits, _ := ipnet.Mask.Size()
+		if base.To4() != nil {
+			return fmt.Errorf("invalid NAT64 prefix %q: must be an IPv6 CIDR", spec)
+		}
+		switch bits {
+		case 32, 40, 48, 56, 64, 96:
+		default:
+			return fmt.Errorf("invalid NAT64 prefix %q: length must be one of the RFC 6052 embedding layouts /32, /40, /48, /56, /64 or /96", spec)
+		}
+		parsed = append(parsed, nat64Prefix{net: ipnet, bits: bits})
+	}
+	customNAT64Prefixes = parsed
+	return nil
+}
+
+// extractEmbeddedIPv4 decodes the RFC 6052 IPv4 representation embedded at
+// the given prefix length. Layouts shorter than /64 skip the reserved u-octet
+// at byte 8 of the address (RFC 6052 section 2.2).
+func extractEmbeddedIPv4(ip net.IP, bits int) net.IP {
+	b := ip.To16()
+	switch bits {
+	case 96:
+		return net.IPv4(b[12], b[13], b[14], b[15])
+	case 64:
+		return net.IPv4(b[8], b[9], b[10], b[11])
+	case 32:
+		return net.IPv4(b[4], b[5], b[6], b[7])
+	case 40:
+		return net.IPv4(b[5], b[6], b[7], b[9])
+	case 48:
+		return net.IPv4(b[6], b[7], b[9], b[10])
+	case 56:
+		return net.IPv4(b[7], b[9], b[10], b[11])
+	default:
+		return nil
+	}
 }
 
 func isIn2001_23(ip net.IP) bool {
@@ -185,6 +285,15 @@ func isSpecialUse(ip net.IP) bool {
 	return false
 }
 
+// dialTimeoutFor clamps the per-attempt dial wait so dead internal addresses
+// fail fast regardless of the overall request timeout.
+func dialTimeoutFor(requestTimeout time.Duration) time.Duration {
+	if requestTimeout <= 0 || requestTimeout > maxDialTimeout {
+		return maxDialTimeout
+	}
+	return requestTimeout
+}
+
 // newGuardedDialer returns a dialer that validates the resolved destination
 // address inside its Control hook, i.e. at connection-establishment time.
 //
@@ -193,13 +302,8 @@ func isSpecialUse(ip net.IP) bool {
 // DNS rebinding where a name resolves public before the check and private at
 // dial time. Every connection attempt of every redirect hop is re-validated.
 func newGuardedDialer(requestTimeout time.Duration) *net.Dialer {
-	dialTimeout := requestTimeout
-	if dialTimeout <= 0 || dialTimeout > maxDialTimeout {
-		dialTimeout = maxDialTimeout
-	}
-
 	return &net.Dialer{
-		Timeout: dialTimeout,
+		Timeout: dialTimeoutFor(requestTimeout),
 		Control: func(_, address string, _ syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {

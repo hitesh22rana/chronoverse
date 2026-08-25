@@ -10,6 +10,7 @@ SKIP_APPLY=false
 CREATE_KIND=false
 STORAGE_CLASS=""
 REALIP_CIDRS=""
+ALLOW_REALIP_SNAPSHOT=false
 INSECURE_DEFAULT_SECRET='a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?'
 
 usage() {
@@ -23,8 +24,13 @@ Options:
   --skip-apply                  Bootstrap prerequisites but do not apply manifests.
   --storage-class <name>        Production StorageClass override.
   --realip-cidrs <list>         Production client-IP trust ranges for nginx
-                                rate limiting (comma/space separated). Overrides
-                                pod-CIDR auto-detection.
+                                 rate limiting (comma/space separated). Overrides
+                                 pod-CIDR auto-detection.
+  --allow-realip-snapshot       Allow pod-network real-IP trust to be derived from
+                                 the current node pod-CIDR snapshot. Use only for
+                                 static clusters; scalable production should use
+                                 --realip-cidrs with the cluster's pod range
+                                 (e.g. --cluster-cidr) so new nodes remain trusted.
   --create-kind                 Create the local kind cluster before applying local.
   -h, --help                    Show this help.
 EOF
@@ -94,6 +100,10 @@ while [ "$#" -gt 0 ]; do
     --realip-cidrs)
       REALIP_CIDRS="${2:-}"
       shift 2
+      ;;
+    --allow-realip-snapshot)
+      ALLOW_REALIP_SNAPSHOT=true
+      shift
       ;;
     --create-kind)
       CREATE_KIND=true
@@ -654,6 +664,9 @@ EOF
     fi
     if [ "$PODNET_SEEN" = true ]; then
       if [ -n "$NODE_POD_CIDRS" ]; then
+        if [ "$ALLOW_REALIP_SNAPSHOT" != true ]; then
+          die "pod-network trust ranges are a point-in-time snapshot of node pod CIDRs ($NODE_POD_CIDRS) — for scalable production, pass --realip-cidrs <list> with the cluster's stable pod range (e.g. the kube-controller-manager --cluster-cidr); for static clusters where nodes never scale out, pass --allow-realip-snapshot to acknowledge that new nodes with disjoint CIDRs will be untrusted until a setup re-run and nginx rollout"
+        fi
         TRUST_IPS="$TRUST_IPS $NODE_POD_CIDRS"
         warn "pod-network trust ranges are a snapshot of current node pod CIDRs ($NODE_POD_CIDRS) — new nodes with disjoint CIDRs need a setup re-run or --realip-cidrs with the cluster's pod range for stability (e.g. the cluster's --cluster-cidr or pod CIDR supernet); otherwise clients via new controllers will share one rate-limit bucket"
       elif [ -n "$PODNET_IPS" ]; then

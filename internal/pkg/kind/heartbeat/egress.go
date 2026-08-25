@@ -169,6 +169,13 @@ func ConfigureNAT64Prefixes(specs []string) error {
 		default:
 			return fmt.Errorf("invalid NAT64 prefix %q: length must be one of the RFC 6052 embedding layouts /32, /40, /48, /56, /64 or /96", spec)
 		}
+		// RFC 6052 reserves bits 64-71 as the u-octet and requires them to
+		// be zero. For prefixes shorter than /96 this is checked on each
+		// synthesized address below; a /96 includes the octet in the prefix,
+		// so reject an invalid deployment configuration at startup.
+		if bits == 96 && ipnet.IP.To16()[8] != 0 {
+			return fmt.Errorf("invalid NAT64 prefix %q: RFC 6052 u-octet bits 64-71 must be zero", spec)
+		}
 		parsed = append(parsed, nat64Prefix{net: ipnet, bits: bits})
 	}
 	customNAT64Prefixes = parsed
@@ -176,15 +183,22 @@ func ConfigureNAT64Prefixes(specs []string) error {
 }
 
 // extractEmbeddedIPv4 decodes the RFC 6052 IPv4 representation embedded at
-// the given prefix length. Layouts shorter than /64 skip the reserved u-octet
-// at byte 8 of the address (RFC 6052 section 2.2).
+// the given prefix length. Every layout shorter than /96 skips the reserved
+// u-octet at byte 8, which RFC 6052 requires to be zero. A nil result is
+// deliberately treated as disallowed by isDisallowedIP.
 func extractEmbeddedIPv4(ip net.IP, bits int) net.IP {
 	b := ip.To16()
+	if b == nil {
+		return nil
+	}
+	if bits < 96 && b[8] != 0 {
+		return nil
+	}
 	switch bits {
 	case 96:
 		return net.IPv4(b[12], b[13], b[14], b[15])
 	case 64:
-		return net.IPv4(b[8], b[9], b[10], b[11])
+		return net.IPv4(b[9], b[10], b[11], b[12])
 	case 32:
 		return net.IPv4(b[4], b[5], b[6], b[7])
 	case 40:

@@ -138,14 +138,14 @@ func TestGuardedDialerControl(t *testing.T) {
 
 func TestNAT64NetworkSpecificPrefixes(t *testing.T) {
 	// Independent RFC 6052 section 2.2 embedding offsets: byte positions of
-	// the four IPv4 octets inside a 16-byte address. Prefixes shorter than
-	// /64 skip the reserved u-octet at byte 8.
+	// the four IPv4 octets inside a 16-byte address. Every prefix shorter than
+	// /96 skips the reserved u-octet at byte 8.
 	offsets := map[int][4]int{
 		32: {4, 5, 6, 7},
 		40: {5, 6, 7, 9},
 		48: {6, 7, 9, 10},
 		56: {7, 9, 10, 11},
-		64: {8, 9, 10, 11},
+		64: {9, 10, 11, 12},
 		96: {12, 13, 14, 15},
 	}
 	prefixFor := map[int]string{
@@ -154,7 +154,7 @@ func TestNAT64NetworkSpecificPrefixes(t *testing.T) {
 		48: "2800:1f0:1234::/48",
 		56: "2402:9400:4321:4300::/56",
 		64: "2607:f8b0:5555:5555::/64",
-		96: "2605:1234:5678:9abc:def0::/96",
+		96: "2605:1234:5678:9abc::/96",
 	}
 
 	build := func(t *testing.T, prefix string, bits int, v4 [4]byte) net.IP {
@@ -200,6 +200,13 @@ func TestNAT64NetworkSpecificPrefixes(t *testing.T) {
 		if isDisallowedIP(public) {
 			t.Errorf("/%d: embedded public IPv4 wrongly rejected: %s", bits, public)
 		}
+		if bits < 96 {
+			malformed := build(t, prefixFor[bits], bits, [4]byte{10, 0, 0, 1})
+			malformed[8] = 8
+			if !isDisallowedIP(malformed) {
+				t.Errorf("/%d: nonzero RFC 6052 u-octet not rejected: %s", bits, malformed)
+			}
+		}
 	}
 }
 
@@ -210,6 +217,7 @@ func TestConfigureNAT64PrefixesRejectsInvalidSpecs(t *testing.T) {
 	}{
 		{"ipv4 cidr", "10.0.0.0/96"},
 		{"unsupported length", "2606:4700::/24"},
+		{"nonzero /96 u-octet", "2605:1234:5678:9abc:100::/96"},
 		{"garbage", "not-a-cidr"},
 	}
 	for _, tt := range tests {

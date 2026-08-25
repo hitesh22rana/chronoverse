@@ -68,6 +68,10 @@ type DockerWorkflow struct {
 	dockerHost       string
 	workloadNetwork  string
 	dockerProxyToken string
+
+	// bootstrapWorkloadNetwork ensures (and validates) the workload network at
+	// construction. Opt-in for execution paths only; see WithWorkloadNetworkBootstrap.
+	bootstrapWorkloadNetwork bool
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -112,6 +116,18 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 	}
 }
 
+// WithWorkloadNetworkBootstrap makes construction ensure (and validate) the
+// workload network immediately, failing fast on misconfiguration. Only
+// execution paths need this: image-resolution and health-only clients
+// (workflow-worker, runtime-agent) must not touch or create the network,
+// otherwise a custom EXECUTION_WORKER_WORKLOAD_NETWORK could not avoid the
+// default name.
+func WithWorkloadNetworkBootstrap() DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.bootstrapWorkloadNetwork = true
+	}
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	w := &DockerWorkflow{
@@ -151,8 +167,13 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 
 	// Fail construction when the isolation network cannot be guaranteed —
 	// silently falling back to the default bridge would resurrect VULN-004.
-	if err := w.ensureWorkloadNetwork(context.Background()); err != nil {
-		return nil, err
+	// Bootstrap is opt-in: only clients that execute workloads ensure the
+	// network, so image-resolution and health-only clients stay decoupled
+	// from the workload network configuration.
+	if w.bootstrapWorkloadNetwork {
+		if err := w.ensureWorkloadNetwork(context.Background()); err != nil {
+			return nil, err
+		}
 	}
 
 	return w, nil
@@ -305,8 +326,11 @@ func (w *DockerWorkflow) Execute(
 	// Cached endpoint clients outlive the network they initialized. Revalidate
 	// immediately before use so a pruned network is recreated and a replaced,
 	// insecure network is rejected before Docker can attach a tenant workload.
+	// Validation failures here are infrastructure conditions (node-side
+	// drift), not user mistakes: report them as retryable system errors
+	// instead of permanently failing the claimed job.
 	if err := w.ensureWorkloadNetwork(ctx); err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", err)
 	}
 
 	// Create container with auto-removal
@@ -317,7 +341,7 @@ func (w *DockerWorkflow) Execute(
 		// not have created an attached container, so this single retry cannot
 		// duplicate a successfully-created workload.
 		if ensureErr := w.ensureWorkloadNetwork(ctx); ensureErr != nil {
-			return "", nil, nil, ensureErr
+			return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", ensureErr)
 		}
 		resp, err = createContainer()
 	}

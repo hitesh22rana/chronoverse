@@ -135,6 +135,7 @@ func run() int {
 			container.WithDockerHost(endpoint),
 			container.WithResourceLimits(resourceLimits),
 			container.WithWorkloadNetwork(cfg.ExecutionWorkerConfig.WorkloadNetwork),
+			container.WithWorkloadNetworkBootstrap(),
 		)
 	})
 	defer func() {

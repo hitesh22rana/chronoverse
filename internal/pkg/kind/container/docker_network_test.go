@@ -341,8 +341,8 @@ func TestExecuteRejectsReplacedWorkloadNetwork(t *testing.T) {
 	workflow := newNetworkTestWorkflow(t, daemon)
 
 	id, logsCh, errsCh, err := workflow.Execute(context.Background(), time.Second, "alpine:3", []string{"echo", "hi"}, nil)
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("Execute() code = %s, want %s: %v", status.Code(err), codes.FailedPrecondition, err)
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("Execute() code = %s, want %s: %v", status.Code(err), codes.Internal, err)
 	}
 	if id != "" || logsCh != nil || errsCh != nil {
 		t.Fatalf("Execute() = (%q, %v, %v), want empty results", id, logsCh, errsCh)
@@ -387,5 +387,44 @@ func TestExecuteReturnsWorkloadNetworkRecreationFailure(t *testing.T) {
 	}
 	if got := daemon.containerCreateCalls.Load(); got != 1 {
 		t.Errorf("container create calls = %d, want 1", got)
+	}
+}
+
+func TestNewDockerWorkflowNetworkCallsAreBootstrapOnly(t *testing.T) {
+	networkCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/_ping":
+			w.Header().Set("API-Version", "1.51")
+			writeDockerTestResponse(t, w, "OK")
+		case strings.Contains(r.URL.Path, "/networks/"):
+			networkCalls++
+			w.Header().Set("Content-Type", "application/json")
+			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"`+workloadNetworkICCOption+`":"false"}}`)
+		default:
+			t.Fatalf("unexpected Docker API request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	// Default constructor (workflow-worker / runtime-agent path): no network calls.
+	w, err := NewDockerWorkflow(WithDockerHost(server.URL))
+	if err != nil {
+		t.Fatalf("default NewDockerWorkflow() error = %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+	if networkCalls != 0 {
+		t.Fatalf("default constructor made %d network calls, want 0", networkCalls)
+	}
+	_ = w.Close()
+
+	// Bootstrap opt-in (execution-worker path): exactly one ensure call.
+	wb, err := NewDockerWorkflow(WithDockerHost(server.URL), WithWorkloadNetworkBootstrap())
+	if err != nil {
+		t.Fatalf("bootstrap NewDockerWorkflow() error = %v", err)
+	}
+	t.Cleanup(func() { _ = wb.Close() })
+	if networkCalls != 1 {
+		t.Fatalf("bootstrap constructor made %d network calls, want 1", networkCalls)
 	}
 }

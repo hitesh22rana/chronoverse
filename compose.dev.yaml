@@ -364,7 +364,6 @@ services:
       POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 1
-      EXECUTION_WORKER_WORKLOAD_NETWORK: ${EXECUTION_WORKER_WORKLOAD_NETWORK:-chronoverse-workloads}
       DOCKER_HOST: tcp://docker-proxy:2375
       RUNTIME_AGENT_ID: local-docker
       RUNTIME_AGENT_NODE_NAME: compose-local

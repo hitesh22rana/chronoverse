@@ -5,7 +5,7 @@ info:
   description: |
     Public session-authenticated API exposed by the Chronoverse HTTP gateway.
 
-    In production the Nginx ingress applies per-client request-rate and connection limits. Auth endpoints allow 10 requests per minute (burst 5); other routes including the server-sent events handshake allow 20 requests per second (burst 40). The events endpoint additionally allows up to 5 concurrent connections per client; immutable build assets under `/_next/static/` are not request-rate limited but are connection-limited. Limits are enforced per ingress replica. Exceeding a limit returns `429`. Request bodies larger than 4 MiB are rejected with `413`.
+    In production the Nginx ingress applies per-client request-rate and connection limits. Login and registration allow 10 requests per minute (burst 5); other routes including `/api/auth/logout`, `/api/auth/validate`, and the server-sent events handshake allow 20 requests per second (burst 40). The events endpoint additionally allows up to 5 concurrent connections per client. Immutable build assets under `/_next/static/` are exempt from request-rate limiting but are still connection-limited. Limits are enforced per ingress replica. Exceeding a limit returns `429`. Request bodies larger than 4 MiB are rejected with `413`.
 servers:
   - url: http://localhost:8080
     description: Development

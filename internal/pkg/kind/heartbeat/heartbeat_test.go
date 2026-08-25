@@ -2,6 +2,7 @@ package heartbeat_test
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -32,8 +33,15 @@ func unguarded() *heartbeat.HeartBeat {
 		heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer {
 			return &net.Dialer{}
 		}),
-		heartbeat.WithHostValidator(func(context.Context, string) error { return nil }),
+		heartbeat.WithTargetResolver(resolveAnyTarget),
 	)
+}
+
+func resolveAnyTarget(ctx context.Context, host string) ([]net.IPAddr, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		return []net.IPAddr{{IP: ip}}, nil
+	}
+	return net.DefaultResolver.LookupIPAddr(ctx, host)
 }
 
 func TestNew(t *testing.T) {
@@ -328,23 +336,27 @@ func TestHeartBeat_Execute_CleansUpTransport(t *testing.T) {
 		return states[http.StateIdle] == 0
 	}, 500*time.Millisecond, 10*time.Millisecond)
 
-	mu.Lock()
-	closed := states[http.StateClosed]
-	mu.Unlock()
-	assert.GreaterOrEqual(t, closed, 5, "each Execute should have closed its transport connection")
+	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return states[http.StateClosed] >= 5
+	}, 500*time.Millisecond, 10*time.Millisecond, "each Execute should have closed its transport connection")
 }
 
-func newProxiedHeartbeat(proxyURL string) (hb *heartbeat.HeartBeat, validated func() []string) {
+func newProxiedHeartbeat(
+	proxyFor func(*url.URL) (*url.URL, error),
+	resolve func(context.Context, string) ([]net.IPAddr, error),
+) (hb *heartbeat.HeartBeat, resolved func() []string) {
 	var mu sync.Mutex
 	var hosts []string
 	h := heartbeat.New(
 		heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer { return &net.Dialer{} }),
-		heartbeat.WithProxyResolver(func(*url.URL) (*url.URL, error) { return url.Parse(proxyURL) }),
-		heartbeat.WithHostValidator(func(_ context.Context, host string) error {
+		heartbeat.WithProxyResolver(proxyFor),
+		heartbeat.WithTargetResolver(func(ctx context.Context, host string) ([]net.IPAddr, error) {
 			mu.Lock()
-			defer mu.Unlock()
 			hosts = append(hosts, host)
-			return nil
+			mu.Unlock()
+			return resolve(ctx, host)
 		}),
 	)
 	return h, func() []string {
@@ -354,17 +366,168 @@ func newProxiedHeartbeat(proxyURL string) (hb *heartbeat.HeartBeat, validated fu
 	}
 }
 
-func TestHeartBeat_Execute_EnvProxyRoutesAndValidatesOriginalDestination(t *testing.T) {
-	var proxyMu sync.Mutex
-	var proxiedHosts []string
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxyMu.Lock()
-		proxiedHosts = append(proxiedHosts, r.Host)
-		proxyMu.Unlock()
-		w.WriteHeader(http.StatusOK)
+func newTunnelProxy(
+	t *testing.T,
+	handle func(connectRequest, request *http.Request) (int, http.Header),
+) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, connectRequest *http.Request) {
+		if connectRequest.Method != http.MethodConnect {
+			t.Errorf("proxy method = %s, want CONNECT", connectRequest.Method)
+			http.Error(w, "CONNECT required", http.StatusMethodNotAllowed)
+			return
+		}
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("proxy response writer does not support hijacking")
+			return
+		}
+		conn, buffered, err := hijacker.Hijack()
+		if err != nil {
+			t.Errorf("hijack proxy connection: %v", err)
+			return
+		}
+		defer conn.Close()
+		if _, writeErr := buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); writeErr != nil {
+			t.Errorf("write CONNECT response: %v", writeErr)
+			return
+		}
+		if flushErr := buffered.Flush(); flushErr != nil {
+			t.Errorf("flush CONNECT response: %v", flushErr)
+			return
+		}
+
+		tunneledRequest, err := http.ReadRequest(buffered.Reader)
+		if err != nil {
+			t.Errorf("read tunneled request: %v", err)
+			return
+		}
+		defer tunneledRequest.Body.Close()
+		statusCode, headers := handle(connectRequest, tunneledRequest)
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+		if _, err := fmt.Fprintf(buffered, "HTTP/1.1 %d %s\r\n", statusCode, http.StatusText(statusCode)); err != nil {
+			t.Errorf("write tunneled status: %v", err)
+			return
+		}
+		for key, values := range headers {
+			for _, value := range values {
+				if _, err := fmt.Fprintf(buffered, "%s: %s\r\n", key, value); err != nil {
+					t.Errorf("write tunneled header: %v", err)
+					return
+				}
+			}
+		}
+		if _, err := buffered.WriteString("Content-Length: 0\r\nConnection: close\r\n\r\n"); err != nil {
+			t.Errorf("write tunneled response: %v", err)
+			return
+		}
+		if err := buffered.Flush(); err != nil {
+			t.Errorf("flush tunneled response: %v", err)
+		}
 	}))
+}
+
+func TestHeartBeat_Execute_EnvProxyPinsValidatedDestination(t *testing.T) {
+	var proxyMu sync.Mutex
+	var connectTargets []string
+	var originHosts []string
+	var proxyAuthorization []string
+	proxy := newTunnelProxy(t, func(connectRequest, request *http.Request) (int, http.Header) {
+		proxyMu.Lock()
+		connectTargets = append(connectTargets, connectRequest.Host)
+		originHosts = append(originHosts, request.Host)
+		proxyAuthorization = append(proxyAuthorization, connectRequest.Header.Get("Proxy-Authorization"))
+		proxyMu.Unlock()
+		return http.StatusOK, nil
+	})
 	defer proxy.Close()
 
+	proxyURL, err := url.Parse(proxy.URL)
+	assert.NoError(t, err)
+	proxyURL.User = url.UserPassword("worker", "secret")
+	h, resolved := newProxiedHeartbeat(
+		func(*url.URL) (*url.URL, error) { return proxyURL, nil },
+		func(context.Context, string) ([]net.IPAddr, error) {
+			return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+		},
+	)
+
+	err = h.Execute(t.Context(), 5*time.Second, "http://heartbeat.example.test/ping", http.StatusOK, nil)
+	assert.NoError(t, err)
+
+	proxyMu.Lock()
+	targets := append([]string(nil), connectTargets...)
+	hosts := append([]string(nil), originHosts...)
+	authorization := append([]string(nil), proxyAuthorization...)
+	proxyMu.Unlock()
+	assert.Equal(t, []string{"93.184.216.34:80"}, targets, "proxy must receive the validated IP, not resolve the user hostname")
+	assert.Equal(t, []string{"heartbeat.example.test"}, hosts, "origin Host header must be preserved")
+	assert.Equal(t, []string{"Basic d29ya2VyOnNlY3JldA=="}, authorization)
+	assert.Equal(t, []string{"heartbeat.example.test"}, resolved())
+}
+
+func TestHeartBeat_Execute_EnvProxyPreservesTLSIdentity(t *testing.T) {
+	tlsFixture := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	serverTLSConfig := tlsFixture.TLS.Clone()
+	tlsFixture.Close()
+
+	connectTarget := make(chan string, 1)
+	serverName := make(chan string, 1)
+	serverTLSConfig.GetConfigForClient = func(info *tls.ClientHelloInfo) (*tls.Config, error) {
+		serverName <- info.ServerName
+		return nil, nil //nolint:nilnil // nil selects the current TLS config.
+	}
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		connectTarget <- request.Host
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			return
+		}
+		conn, buffered, err := hijacker.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if _, err = buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+			return
+		}
+		if err = buffered.Flush(); err != nil {
+			return
+		}
+		tlsConn := tls.Server(conn, serverTLSConfig)
+		if handshakeErr := tlsConn.HandshakeContext(request.Context()); handshakeErr == nil {
+			return
+		}
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	assert.NoError(t, err)
+
+	h, _ := newProxiedHeartbeat(
+		func(*url.URL) (*url.URL, error) { return proxyURL, nil },
+		func(context.Context, string) ([]net.IPAddr, error) {
+			return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+		},
+	)
+	err = h.Execute(t.Context(), 5*time.Second, "https://heartbeat.example.test/status", http.StatusOK, nil)
+	assert.Error(t, err, "the fixture certificate is intentionally untrusted")
+	select {
+	case got := <-connectTarget:
+		assert.Equal(t, "93.184.216.34:443", got)
+	case <-time.After(time.Second):
+		t.Fatal("proxy did not receive CONNECT")
+	}
+	select {
+	case got := <-serverName:
+		assert.Equal(t, "heartbeat.example.test", got)
+	case <-time.After(time.Second):
+		t.Fatal("origin TLS handshake did not preserve SNI")
+	}
+}
+
+func TestHeartBeat_Execute_EnvProxyRedirectReevaluatesNoProxy(t *testing.T) {
 	var targetMu sync.Mutex
 	targetHits := 0
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -375,61 +538,122 @@ func TestHeartBeat_Execute_EnvProxyRoutesAndValidatesOriginalDestination(t *test
 	}))
 	defer target.Close()
 
-	targetHost := mustURLHostname(t, target.URL)
-	h, validated := newProxiedHeartbeat(proxy.URL)
-
-	err := h.Execute(t.Context(), 5*time.Second, target.URL+"/ping", http.StatusOK, nil)
+	proxyHits := 0
+	proxy := newTunnelProxy(t, func(_, _ *http.Request) (int, http.Header) {
+		proxyHits++
+		return http.StatusFound, http.Header{"Location": {target.URL + "/final"}}
+	})
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
 	assert.NoError(t, err)
 
-	// The request was forwarded through the proxy...
-	proxyMu.Lock()
-	hosts := append([]string(nil), proxiedHosts...)
-	proxyMu.Unlock()
-	fullHost := mustURLHostPort(t, target.URL)
-	assert.Equal(t, []string{fullHost}, hosts)
+	h, resolved := newProxiedHeartbeat(
+		func(requestURL *url.URL) (*url.URL, error) {
+			if requestURL.Hostname() == "heartbeat.example.test" {
+				return proxyURL, nil
+			}
+			return nil, nil //nolint:nilnil // A nil proxy is the explicit direct-connection result.
+		},
+		func(ctx context.Context, host string) ([]net.IPAddr, error) {
+			if host == "heartbeat.example.test" {
+				return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+			}
+			return resolveAnyTarget(ctx, host)
+		},
+	)
+	err = h.Execute(t.Context(), 5*time.Second, "http://heartbeat.example.test/start", http.StatusOK, nil)
+	assert.NoError(t, err)
 
-	// ...the ORIGINAL destination was validated, not just the proxy address...
-	assert.Equal(t, []string{targetHost}, validated())
-
-	// ...and the target was never contacted directly.
 	targetMu.Lock()
 	hits := targetHits
 	targetMu.Unlock()
-	assert.Zero(t, hits)
+	assert.Equal(t, 1, proxyHits)
+	assert.Equal(t, 1, hits, "NO_PROXY-equivalent redirect must connect directly")
+	assert.Equal(t, []string{"heartbeat.example.test", mustURLHostname(t, target.URL)}, resolved())
 }
 
-func TestHeartBeat_Execute_EnvProxyRedirectHopsRevalidated(t *testing.T) {
-	// The proxy serves both hops so every round trip flows through it.
-	redirected := false
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !redirected {
-			redirected = true
-			http.Redirect(w, r, "/final", http.StatusFound)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
+func TestHeartBeat_Execute_EnvProxyRedirectCanSelectProxy(t *testing.T) {
+	proxyHits := 0
+	proxy := newTunnelProxy(t, func(_, _ *http.Request) (int, http.Header) {
+		proxyHits++
+		return http.StatusOK, nil
+	})
 	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	assert.NoError(t, err)
 
+	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://proxied.example.test/final", http.StatusFound)
+	}))
+	defer direct.Close()
+
+	h, resolved := newProxiedHeartbeat(
+		func(requestURL *url.URL) (*url.URL, error) {
+			if requestURL.Hostname() == "proxied.example.test" {
+				return proxyURL, nil
+			}
+			return nil, nil //nolint:nilnil // A nil proxy is the explicit direct-connection result.
+		},
+		func(ctx context.Context, host string) ([]net.IPAddr, error) {
+			if host == "proxied.example.test" {
+				return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+			}
+			return resolveAnyTarget(ctx, host)
+		},
+	)
+	err = h.Execute(t.Context(), 5*time.Second, direct.URL, http.StatusOK, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, proxyHits, "redirect must re-evaluate proxy policy")
+	assert.Equal(t, []string{mustURLHostname(t, direct.URL), "proxied.example.test"}, resolved())
+}
+
+func TestHeartBeat_Execute_EnvProxyRelativeRedirectKeepsOriginalHost(t *testing.T) {
+	proxyHits := 0
+	proxy := newTunnelProxy(t, func(_, request *http.Request) (int, http.Header) {
+		proxyHits++
+		if request.URL.Path == "/start" {
+			return http.StatusFound, http.Header{"Location": {"/final"}}
+		}
+		return http.StatusOK, nil
+	})
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	assert.NoError(t, err)
+
+	h, resolved := newProxiedHeartbeat(
+		func(*url.URL) (*url.URL, error) { return proxyURL, nil },
+		func(context.Context, string) ([]net.IPAddr, error) {
+			return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+		},
+	)
+	err = h.Execute(t.Context(), 5*time.Second, "http://heartbeat.example.test/start", http.StatusOK, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, proxyHits)
+	assert.Equal(t, []string{"heartbeat.example.test", "heartbeat.example.test"}, resolved())
+}
+
+func TestHeartBeat_Execute_ProxyResolverErrorFailsClosed(t *testing.T) {
+	targetHits := 0
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits++
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer target.Close()
 
-	h, validated := newProxiedHeartbeat(proxy.URL)
+	h, _ := newProxiedHeartbeat(
+		func(*url.URL) (*url.URL, error) { return nil, fmt.Errorf("proxy configuration is invalid") },
+		resolveAnyTarget,
+	)
 	err := h.Execute(t.Context(), 5*time.Second, target.URL, http.StatusOK, nil)
-	assert.NoError(t, err)
-
-	// Every redirect hop is validated individually, even when connecting via
-	// the proxy (where dial-time inspection only sees the proxy address).
-	assert.Len(t, validated(), 2)
+	assert.ErrorContains(t, err, "proxy configuration is invalid")
+	assert.Zero(t, targetHits, "proxy errors must not fall back to a direct connection")
 }
 
-func TestHeartBeat_Execute_HostValidatorRejectionMapsToNotAllowed(t *testing.T) {
+func TestHeartBeat_Execute_TargetResolverRejectionMapsToNotAllowed(t *testing.T) {
 	h := heartbeat.New(
 		heartbeat.WithDialerFactory(func(time.Duration) *net.Dialer { return &net.Dialer{} }),
-		heartbeat.WithHostValidator(func(_ context.Context, _ string) error {
-			return fmt.Errorf("%w: 10.0.0.1", heartbeat.ErrDisallowedTarget)
+		heartbeat.WithTargetResolver(func(context.Context, string) ([]net.IPAddr, error) {
+			return nil, fmt.Errorf("%w: 10.0.0.1", heartbeat.ErrDisallowedTarget)
 		}),
 	)
 
@@ -441,15 +665,6 @@ func TestHeartBeat_Execute_HostValidatorRejectionMapsToNotAllowed(t *testing.T) 
 	err := h.Execute(t.Context(), 5*time.Second, server.URL, http.StatusOK, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "endpoint is not allowed")
-}
-
-func mustURLHostPort(t *testing.T, raw string) string {
-	t.Helper()
-	u, err := url.Parse(raw)
-	if err != nil {
-		t.Fatalf("parse %q: %v", raw, err)
-	}
-	return u.Host
 }
 
 func mustURLHostname(t *testing.T, raw string) string {

@@ -22,7 +22,7 @@ The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `R
 
 ## Docker access
 
-Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access. In Kubernetes, a generated high-entropy token authenticates runtime-agent and worker requests, and a method-and-path allowlist permits image, container, and log operations plus exactly two network operations — inspect and create. Workload containers never receive the token, and `/networks/*/connect` and `/networks/*/disconnect` are denied. The runtime uses those two allowed operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs; startup fails if it cannot.
+Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access. In Kubernetes, a generated high-entropy token authenticates runtime-agent and worker requests, and a method-and-path allowlist permits image, container, and log operations plus exactly two network operations — inspect and create. Workload containers never receive the token, and `/networks/*/connect` and `/networks/*/disconnect` are denied. The runtime uses those two allowed operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs. It revalidates the network immediately before each container creation, recreates a safely pruned network, and fails closed if the network has been replaced with an unsafe configuration.
 
 ## Production secrets
 

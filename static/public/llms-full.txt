@@ -757,7 +757,7 @@ Heartbeat targets must be publicly reachable endpoints. Requests that resolve to
 
 Container workflows can retain stdout and stderr, stream output while running, and participate in text search and raw downloads after completion.
 
-Every workload container runs isolated: it is attached to a dedicated `chronoverse-workloads` Docker network (never the default bridge) with inter-container communication disabled, so tenant workloads cannot reach each other even by IP. All Linux capabilities are dropped, privilege escalation is disabled (`no-new-privileges`), the root filesystem is read-only with a writable `nosuid` tmpfs at `/tmp`, and IPC is private. Internet egress remains available for legitimate jobs; host-published ports stay reachable from workloads via the network gateway and remain protected by the platform's own mTLS and authentication layers. Set `EXECUTION_WORKER_WORKLOAD_NETWORK` to pin workloads to a different network name — the runtime creates it on demand and refuses to start if it cannot be guaranteed.
+Every workload container runs isolated: it is attached to a dedicated `chronoverse-workloads` Docker network (never the default bridge) with inter-container communication disabled, so tenant workloads cannot reach each other even by IP. All Linux capabilities are dropped, privilege escalation is disabled (`no-new-privileges`), the root filesystem is read-only with a writable `nosuid` tmpfs at `/tmp`, and IPC is private. Internet egress remains available for legitimate jobs; host-published ports stay reachable from workloads via the network gateway and remain protected by the platform's own mTLS and authentication layers. Set `EXECUTION_WORKER_WORKLOAD_NETWORK` to pin workloads to a different network name — the runtime creates or revalidates it immediately before each workload and refuses to run if isolation cannot be guaranteed. Custom names must match `[A-Za-z0-9][A-Za-z0-9_.-]*` so they are portable across direct Docker and the Kubernetes socket proxy.
 
 ## Shared controls
 
@@ -1436,7 +1436,7 @@ The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `R
 
 ## Docker access
 
-Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access. In Kubernetes, a generated high-entropy token authenticates runtime-agent and worker requests, and a method-and-path allowlist permits image, container, and log operations plus exactly two network operations — inspect and create. Workload containers never receive the token, and `/networks/*/connect` and `/networks/*/disconnect` are denied. The runtime uses those two allowed operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs; startup fails if it cannot.
+Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access. In Kubernetes, a generated high-entropy token authenticates runtime-agent and worker requests, and a method-and-path allowlist permits image, container, and log operations plus exactly two network operations — inspect and create. Workload containers never receive the token, and `/networks/*/connect` and `/networks/*/disconnect` are denied. The runtime uses those two allowed operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs. It revalidates the network immediately before each container creation, recreates a safely pruned network, and fails closed if the network has been replaced with an unsafe configuration.
 
 ## Production secrets
 
@@ -2308,7 +2308,7 @@ Consumer throughput is bounded by partition count. Production defaults use more 
 
 Scale concurrency only when registered runtime capacity, Docker CPU, memory, image bandwidth, Kafka partitions, jobs-service latency, and lease-renewal headroom support it.
 
-Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker, and do not apply to image pulls. `EXECUTION_WORKER_WORKLOAD_NETWORK` names the dedicated Docker network every workload attaches to (default `chronoverse-workloads`, created on demand with inter-container communication disabled).
+Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker, and do not apply to image pulls. `EXECUTION_WORKER_WORKLOAD_NETWORK` names the dedicated Docker network every workload attaches to (default `chronoverse-workloads`, created on demand with inter-container communication disabled). Custom names must match `[A-Za-z0-9][A-Za-z0-9_.-]*`; the runtime revalidates the network before every container creation and recreates it after a safe prune.
 
 Execution workers do not need to run on the same node as the Docker daemon. They receive `runtime_endpoint` from `jobs-service` and use the direct Docker data plane for image ensure, container start, logs, and cleanup.
 

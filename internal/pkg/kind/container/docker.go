@@ -146,8 +146,14 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 			// Tenant containers on this network must not reach each other.
 			"com.docker.network.bridge.enable_icc": "false",
 		},
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-		return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
+	}); err != nil {
+		// Concurrent constructors can race the create (parallel tests, several
+		// workers booting against one daemon), and the daemon surfaces that
+		// conflict with inconsistent status codes. Existence is success:
+		// re-inspect and only fail when the network is genuinely absent.
+		if _, ierr := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); ierr != nil {
+			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
+		}
 	}
 	return nil
 }

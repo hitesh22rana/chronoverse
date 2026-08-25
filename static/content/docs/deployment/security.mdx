@@ -22,7 +22,7 @@ The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `R
 
 ## Docker access
 
-Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access.
+Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access. The proxy permits image, container, and log operations plus exactly two network operations — inspect and create — solely so the runtime can guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs; startup fails if it cannot.
 
 ## Production secrets
 

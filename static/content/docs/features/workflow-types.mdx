@@ -14,6 +14,8 @@ Heartbeat targets must be publicly reachable endpoints. Requests that resolve to
 
 Container workflows can retain stdout and stderr, stream output while running, and participate in text search and raw downloads after completion.
 
+Every workload container runs isolated: it is attached to a dedicated `chronoverse-workloads` Docker network (never the default bridge) with inter-container communication disabled, so tenant workloads cannot reach each other even by IP. All Linux capabilities are dropped, privilege escalation is disabled (`no-new-privileges`), the root filesystem is read-only with a writable `nosuid` tmpfs at `/tmp`, and IPC is private. Internet egress remains available for legitimate jobs; host-published ports stay reachable from workloads via the network gateway and remain protected by the platform's own mTLS and authentication layers. Set `EXECUTION_WORKER_WORKLOAD_NETWORK` to pin workloads to a different network name — the runtime creates it on demand and refuses to start if it cannot be guaranteed.
+
 ## Shared controls
 
 Both kinds support interval scheduling, manual runs, failure thresholds, termination, notifications, and analytics. Their execution and logging behavior differs, but they share replay-safe scheduling and lifecycle state.

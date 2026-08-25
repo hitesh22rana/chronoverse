@@ -27,7 +27,42 @@ func isDisallowedIP(ip net.IP) bool {
 		ip.IsPrivate() ||
 		ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast()
+		ip.IsMulticast() ||
+		isSharedAddress(ip)
+}
+
+// isSharedAddress reports whether ip is in RFC 6598 CGNAT space
+// (100.64.0.0/10) or other non-public special-use ranges that are
+// routable in many environments but must be treated as internal for
+// SSRF purposes. net.IP.IsPrivate does not cover CGNAT, so it would
+// otherwise be permitted. This also covers common cloud metadata
+// endpoints that fall within CGNAT (e.g. 100.100.100.200).
+func isSharedAddress(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	// RFC 6598 CGNAT 100.64.0.0/10
+	if ip4 := ip.To4(); ip4 != nil {
+		// 100.64.0.0/10 is 100.64.0.0 - 100.127.255.255
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+			return true
+		}
+		// RFC 2544 benchmark 198.18.0.0/15
+		if ip4[0] == 198 && (ip4[1] == 18 || ip4[1] == 19) {
+			return true
+		}
+		// TEST-NET-1/2/3 documentation ranges (should not be used as heartbeat targets)
+		if ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 2 {
+			return true
+		}
+		if ip4[0] == 198 && ip4[1] == 51 && ip4[2] == 100 {
+			return true
+		}
+		if ip4[0] == 203 && ip4[1] == 0 && ip4[2] == 113 {
+			return true
+		}
+	}
+	return false
 }
 
 // newGuardedDialer returns a dialer that validates the resolved destination

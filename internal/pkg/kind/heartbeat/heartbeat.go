@@ -59,14 +59,18 @@ func (h *HeartBeat) Execute(
 	// HTTP client with timeout and an egress guard. The guard validates the
 	// resolved destination address at dial time so redirects and DNS rebinding
 	// cannot reach protected networks.
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: otelpkg.HTTPTransport(&http.Transport{
-			DialContext:         h.dialerFor(timeout).DialContext,
-			ForceAttemptHTTP2:   true,
-			TLSHandshakeTimeout: 5 * time.Second,
-		}),
+	transport := &http.Transport{
+		DialContext:         h.dialerFor(timeout).DialContext,
+		ForceAttemptHTTP2:   true,
+		TLSHandshakeTimeout: 5 * time.Second,
+		IdleConnTimeout:     30 * time.Second,
+		MaxIdleConns:        2,
 	}
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: otelpkg.HTTPTransport(transport),
+	}
+	defer client.CloseIdleConnections()
 
 	// Create request with context
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)

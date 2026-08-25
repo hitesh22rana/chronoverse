@@ -21,16 +21,30 @@ const maxDialTimeout = 10 * time.Second
 // isDisallowedIP reports whether the IP falls into address ranges that must
 // never be reached by user-defined heartbeat workflows.
 func isDisallowedIP(ip net.IP) bool {
-	return ip == nil ||
-		ip.IsUnspecified() ||
+	if ip == nil {
+		return true
+	}
+	if ip.IsUnspecified() ||
 		ip.IsLoopback() ||
 		ip.IsPrivate() ||
 		ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() ||
 		ip.IsMulticast() ||
-		ip.IsInterfaceLocalMulticast() ||
-		!isGlobalUnicastStrict(ip) ||
-		isSpecialUse(ip)
+		ip.IsInterfaceLocalMulticast() {
+		return true
+	}
+	// NAT64 well-known prefix 64:ff9b::/96 — decode embedded IPv4 and
+	// apply the IPv4 guard. IANA marks this prefix globally reachable
+	// (RFC 6052) for DNS64 synthesis, so blocking the prefix outright
+	// would break IPv6-only workers reaching public IPv4-only endpoints.
+	if isNAT64(ip) {
+		embedded := extractNAT64IPv4(ip)
+		return isDisallowedIP(embedded)
+	}
+	if !isGlobalUnicastStrict(ip) {
+		return true
+	}
+	return isSpecialUse(ip)
 }
 
 func isGlobalUnicastStrict(ip net.IP) bool {
@@ -44,9 +58,34 @@ func isGlobalUnicastStrict(ip net.IP) bool {
 	return ip[0] >= 0x20 && ip[0] <= 0x3f
 }
 
+var nat64CIDRs []*net.IPNet
+
+func isNAT64(ip net.IP) bool {
+	for _, cidr := range nat64CIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractNAT64IPv4(ip net.IP) net.IP {
+	return net.IPv4(ip[12], ip[13], ip[14], ip[15])
+}
+
 var specialCIDRs []*net.IPNet
 
 func init() {
+	for _, cidr := range []string{
+		"64:ff9b::/96",
+		"64:ff9b:1::/48",
+	} {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(err)
+		}
+		nat64CIDRs = append(nat64CIDRs, n)
+	}
 	for _, cidr := range []string{
 		// RFC 6598 CGNAT
 		"100.64.0.0/10",
@@ -59,20 +98,15 @@ func init() {
 		"198.51.100.0/24",
 		"203.0.113.0/24",
 		"240.0.0.0/4",
-		// IPv6 special-use — IANA registries
-		"64:ff9b::/96",
-		"64:ff9b:1::/48",
-		"100::/64",
-		"100::/8",
-		"2001::/23",
+		// IPv6 special-use — within 2000::/3 but still non-public
 		"2001::/32",
 		"2001:10::/28",
+		"2001:100::/24",
 		"2001:2::/48",
 		"2001:db8::/32",
 		"2002::/16",
 		"3fff::/20",
 		"5f00::/8",
-		"fec0::/10",
 	} {
 		_, n, err := net.ParseCIDR(cidr)
 		if err != nil {

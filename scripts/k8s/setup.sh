@@ -655,6 +655,7 @@ EOF
     if [ "$PODNET_SEEN" = true ]; then
       if [ -n "$NODE_POD_CIDRS" ]; then
         TRUST_IPS="$TRUST_IPS $NODE_POD_CIDRS"
+        warn "pod-network trust ranges are a snapshot of current node pod CIDRs ($NODE_POD_CIDRS) — new nodes with disjoint CIDRs need a setup re-run or --realip-cidrs with the cluster's pod range for stability (e.g. the cluster's --cluster-cidr or pod CIDR supernet); otherwise clients via new controllers will share one rate-limit bucket"
       elif [ -n "$PODNET_IPS" ]; then
         TRUST_IPS="$TRUST_IPS $(for ip in $PODNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
         warn "trusted ranges derived from current ingress-nginx pod IPs; these are ephemeral — prefer --realip-cidrs with a stable range for production"

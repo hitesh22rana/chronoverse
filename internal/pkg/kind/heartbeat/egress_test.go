@@ -51,6 +51,8 @@ func TestIsDisallowedIP_CGNATAndSpecialUse(t *testing.T) {
 		// IANA IPv4 special-use
 		{"0.0.0.1", true},
 		{"192.0.0.1", true},
+		{"192.0.0.9", false},
+		{"192.0.0.10", false},
 		{"192.0.2.1", true},
 		{"192.88.99.2", true},
 		{"198.18.0.1", true},
@@ -109,6 +111,8 @@ func TestGuardedDialerControl(t *testing.T) {
 		{"192.168.0.20:6379", true, true},
 		{"100.64.0.1:80", true, true},
 		{"192.0.0.1:80", true, true},
+		{"192.0.0.9:80", false, false},
+		{"192.0.0.10:80", false, false},
 		{"[64:ff9b:1::1]:80", true, true},
 		{"[64:ff9b::8.8.8.8]:80", false, false},
 		{"[64:ff9b::10.0.0.1]:80", true, true},

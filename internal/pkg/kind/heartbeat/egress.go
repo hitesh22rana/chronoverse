@@ -33,6 +33,13 @@ func isDisallowedIP(ip net.IP) bool {
 		ip.IsInterfaceLocalMulticast() {
 		return true
 	}
+	// IANA 192.0.0.0/24 is reserved but contains two globally reachable
+	// anycast exceptions that must satisfy the public-endpoint policy:
+	// 192.0.0.9 (PCP Anycast, RFC 7723) and 192.0.0.10 (TURN Anycast,
+	// RFC 8155). Allow them before the denylist.
+	if isGlobal192_0_0_24Exception(ip) {
+		return false
+	}
 	// NAT64 well-known prefix 64:ff9b::/96 — decode embedded IPv4 and
 	// apply the IPv4 guard. IANA marks this prefix globally reachable
 	// (RFC 6052) for DNS64 synthesis, so blocking the prefix outright
@@ -106,6 +113,10 @@ func isGlobal2001_23Exception(ip net.IP) bool {
 		return true
 	}
 	return false
+}
+
+func isGlobal192_0_0_24Exception(ip net.IP) bool {
+	return ip.Equal(net.ParseIP("192.0.0.9")) || ip.Equal(net.ParseIP("192.0.0.10"))
 }
 
 func init() {

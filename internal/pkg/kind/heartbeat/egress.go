@@ -37,9 +37,15 @@ func isDisallowedIP(ip net.IP) bool {
 	// apply the IPv4 guard. IANA marks this prefix globally reachable
 	// (RFC 6052) for DNS64 synthesis, so blocking the prefix outright
 	// would break IPv6-only workers reaching public IPv4-only endpoints.
-	if isNAT64(ip) {
+	// Only /96 is specified for low-32-bit embedding; the local-use
+	// 64:ff9b:1::/48 must remain blocked entirely per RFC 8215 (IPv4 bits
+	// at 48-63 and 72-87, suffix ignored by translators).
+	if isNAT64WellKnown(ip) {
 		embedded := extractNAT64IPv4(ip)
 		return isDisallowedIP(embedded)
+	}
+	if isNAT64Local(ip) {
+		return true
 	}
 	if !isGlobalUnicastStrict(ip) {
 		return true
@@ -58,33 +64,33 @@ func isGlobalUnicastStrict(ip net.IP) bool {
 	return ip[0] >= 0x20 && ip[0] <= 0x3f
 }
 
-var nat64CIDRs []*net.IPNet
+var (
+	nat64WellKnownCIDR *net.IPNet
+	nat64LocalCIDR     *net.IPNet
+	specialCIDRs       []*net.IPNet
+)
 
-func isNAT64(ip net.IP) bool {
-	for _, cidr := range nat64CIDRs {
-		if cidr.Contains(ip) {
-			return true
-		}
-	}
-	return false
+func isNAT64WellKnown(ip net.IP) bool {
+	return nat64WellKnownCIDR != nil && nat64WellKnownCIDR.Contains(ip)
+}
+
+func isNAT64Local(ip net.IP) bool {
+	return nat64LocalCIDR != nil && nat64LocalCIDR.Contains(ip)
 }
 
 func extractNAT64IPv4(ip net.IP) net.IP {
 	return net.IPv4(ip[12], ip[13], ip[14], ip[15])
 }
 
-var specialCIDRs []*net.IPNet
-
 func init() {
-	for _, cidr := range []string{
-		"64:ff9b::/96",
-		"64:ff9b:1::/48",
-	} {
-		_, n, err := net.ParseCIDR(cidr)
-		if err != nil {
-			panic(err)
-		}
-		nat64CIDRs = append(nat64CIDRs, n)
+	var err error
+	_, nat64WellKnownCIDR, err = net.ParseCIDR("64:ff9b::/96")
+	if err != nil {
+		panic(err)
+	}
+	_, nat64LocalCIDR, err = net.ParseCIDR("64:ff9b:1::/48")
+	if err != nil {
+		panic(err)
 	}
 	for _, cidr := range []string{
 		// RFC 6598 CGNAT
@@ -103,6 +109,7 @@ func init() {
 		"2001:10::/28",
 		"2001:100::/24",
 		"2001:2::/48",
+		"2001:5::/32",
 		"2001:db8::/32",
 		"2002::/16",
 		"3fff::/20",

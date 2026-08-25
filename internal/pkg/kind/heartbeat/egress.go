@@ -28,37 +28,45 @@ func isDisallowedIP(ip net.IP) bool {
 		ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() ||
 		ip.IsMulticast() ||
-		isSharedAddress(ip)
+		ip.IsInterfaceLocalMulticast() ||
+		isSpecialUse(ip)
 }
 
-// isSharedAddress reports whether ip is in RFC 6598 CGNAT space
-// (100.64.0.0/10) or other non-public special-use ranges that are
-// routable in many environments but must be treated as internal for
-// SSRF purposes. net.IP.IsPrivate does not cover CGNAT, so it would
-// otherwise be permitted. This also covers common cloud metadata
-// endpoints that fall within CGNAT (e.g. 100.100.100.200).
-func isSharedAddress(ip net.IP) bool {
-	if ip == nil {
-		return false
+var specialCIDRs []*net.IPNet
+
+func init() {
+	for _, cidr := range []string{
+		// RFC 6598 CGNAT
+		"100.64.0.0/10",
+		// IANA IPv4 special-use
+		"192.0.0.0/24",
+		"192.0.2.0/24",
+		"192.88.99.0/24",
+		"198.18.0.0/15",
+		"198.51.100.0/24",
+		"203.0.113.0/24",
+		"240.0.0.0/4",
+		// IPv6 special-use
+		"64:ff9b::/96",
+		"64:ff9b:1::/48",
+		"100::/64",
+		"2001::/32",
+		"2001:10::/28",
+		"2001:2::/48",
+		"2001:db8::/32",
+		"5f00::/8",
+	} {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(err)
+		}
+		specialCIDRs = append(specialCIDRs, n)
 	}
-	// RFC 6598 CGNAT 100.64.0.0/10
-	if ip4 := ip.To4(); ip4 != nil {
-		// 100.64.0.0/10 is 100.64.0.0 - 100.127.255.255
-		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
-			return true
-		}
-		// RFC 2544 benchmark 198.18.0.0/15
-		if ip4[0] == 198 && (ip4[1] == 18 || ip4[1] == 19) {
-			return true
-		}
-		// TEST-NET-1/2/3 documentation ranges (should not be used as heartbeat targets)
-		if ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 2 {
-			return true
-		}
-		if ip4[0] == 198 && ip4[1] == 51 && ip4[2] == 100 {
-			return true
-		}
-		if ip4[0] == 203 && ip4[1] == 0 && ip4[2] == 113 {
+}
+
+func isSpecialUse(ip net.IP) bool {
+	for _, cidr := range specialCIDRs {
+		if cidr.Contains(ip) {
 			return true
 		}
 	}

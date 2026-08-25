@@ -70,7 +70,7 @@ func (h *HeartBeat) Execute(
 		Timeout:   timeout,
 		Transport: otelpkg.HTTPTransport(transport),
 	}
-	defer client.CloseIdleConnections()
+	defer transport.CloseIdleConnections()
 
 	// Create request with context
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)

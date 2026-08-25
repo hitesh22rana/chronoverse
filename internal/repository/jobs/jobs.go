@@ -273,6 +273,9 @@ func (r *Repository) ScheduleJob(
 		case r.pg.IsNoRows(err) && trigger == jobsmodel.JobTriggerAutomatic.ToString() && workflowGeneration > 0:
 			err = status.Errorf(codes.FailedPrecondition, "workflow generation mismatch or workflow is not schedulable")
 			return "", err
+		case r.pg.IsNoRows(err) && trigger == jobsmodel.JobTriggerManual.ToString():
+			err = status.Errorf(codes.NotFound, "workflow not found, not owned by user, or not schedulable")
+			return "", err
 		}
 
 		err = status.Errorf(codes.Internal, "failed to insert job: %v", err)
@@ -369,11 +372,20 @@ func scheduleJobInsertStatement(
 
 	switch {
 	case trigger == jobsmodel.JobTriggerManual.ToString():
+		// Ownership guard: the caller must own the target workflow and the
+		// workflow must be schedulable. Mirrors automaticScheduleGuardSQL so
+		// cross-user scheduling cannot insert job rows.
 		return fmt.Sprintf(`
             INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
-            VALUES ($1, $2, $3, $4, $5, NULL)
+            SELECT $1, $2, $3, $4, $5, NULL
+            FROM %s AS w
+            WHERE w.id = $1
+                AND w.user_id = $2
+                AND w.terminated_at IS NULL
+                AND w.build_status = 'COMPLETED'
+            FOR SHARE
             RETURNING id, workflow_id, user_id, trigger, workflow_generation;
-        `, postgres.TableJobs), args, nil
+        `, postgres.TableJobs, postgres.TableWorkflows), args, nil
 	case automaticIdempotencyKeyProvided:
 		guard := automaticScheduleGuardSQL(workflowGeneration)
 		return fmt.Sprintf(`

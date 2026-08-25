@@ -2,7 +2,10 @@ openapi: 3.1.0
 info:
   title: Chronoverse HTTP API
   version: 1.0.0
-  description: Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+  description: |
+    Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+
+    In production the Nginx ingress applies per-client request-rate and connection limits. Login and registration allow 10 requests per minute (burst 5); other routes including `/api/auth/logout`, `/api/auth/validate`, and the server-sent events handshake allow 20 requests per second (burst 40). The events endpoint additionally allows up to 5 concurrent connections per client. Immutable build assets under `/_next/static/` are exempt from request-rate limiting but are still connection-limited. Limits are enforced per ingress replica. Exceeding a limit returns `429`. Request bodies larger than 4 MiB are rejected with `413`.
 servers:
   - url: http://localhost:8080
     description: Development
@@ -33,6 +36,8 @@ paths:
         '201': {description: User registered and session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/login:
     post:
       operationId: loginUser
@@ -48,6 +53,8 @@ paths:
         '201': {description: Session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {description: Invalid email or password}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/logout:
     post:
       operationId: logoutUser
@@ -57,6 +64,7 @@ paths:
       responses:
         '204': {description: Session and CSRF cookies deleted}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/validate:
     post:
       operationId: validateSession
@@ -66,6 +74,7 @@ paths:
       responses:
         '200': {description: Session and CSRF state are valid}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /users:
     get:
       operationId: getCurrentUser
@@ -79,6 +88,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/User'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     put:
       operationId: updateCurrentUser
       summary: Update current user
@@ -98,6 +108,8 @@ paths:
       responses:
         '204': {description: User preferences updated}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows:
     get:
       operationId: listWorkflows
@@ -123,6 +135,7 @@ paths:
                   workflows: {type: array, items: {$ref: '#/components/schemas/WorkflowListItem'}}
                   cursor: {type: string}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     post:
       operationId: createWorkflow
       summary: Create a workflow
@@ -144,6 +157,8 @@ paths:
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}:
     parameters: [{$ref: '#/components/parameters/WorkflowId'}]
     get:
@@ -155,7 +170,9 @@ paths:
         '200':
           description: Workflow details
           content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowDetail'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     put:
       operationId: updateWorkflow
       summary: Update a workflow
@@ -167,8 +184,11 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowUpdateInput'}}}
       responses:
         '204': {description: Workflow updated}
-        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     patch:
       operationId: terminateWorkflow
       summary: Terminate a workflow
@@ -176,7 +196,9 @@ paths:
       security: [{cookieSession: [], csrfToken: []}]
       responses:
         '204': {description: Workflow terminated}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     delete:
       operationId: deleteWorkflow
       summary: Delete a workflow
@@ -184,7 +206,9 @@ paths:
       security: [{cookieSession: [], csrfToken: []}]
       responses:
         '204': {description: Terminated workflow deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs:
     get:
       operationId: listJobs
@@ -206,6 +230,8 @@ paths:
                 properties:
                   jobs: {type: array, items: {$ref: '#/components/schemas/JobListItem'}}
                   cursor: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/schedule:
     post:
       operationId: scheduleJob
@@ -222,9 +248,11 @@ paths:
             application/json:
               schema:
                 {$ref: '#/components/schemas/IdentifierResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}:
     get:
       operationId: getJob
@@ -238,7 +266,9 @@ paths:
         '200':
           description: Job details
           content: {application/json: {schema: {$ref: '#/components/schemas/JobDetail'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/logs:
     get:
       operationId: getJobLogs
@@ -251,7 +281,9 @@ paths:
         - {$ref: '#/components/parameters/Cursor'}
       responses:
         '200': {$ref: '#/components/responses/LogPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/logs/search:
     get:
       operationId: searchJobLogs
@@ -266,7 +298,9 @@ paths:
         - {name: q, in: query, schema: {type: string}, description: Search query. Omit for stream-only filtering.}
       responses:
         '200': {$ref: '#/components/responses/LogPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/logs/raw:
     get:
       operationId: downloadJobLogs
@@ -298,6 +332,8 @@ paths:
                 description: Newline-delimited JSON where each line conforms to JobLogDownloadEntry
         '400':
           description: Invalid filter or format, or the job has not reached a terminal state
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/events:
     get:
       operationId: streamJobLogs
@@ -311,6 +347,8 @@ paths:
         '200':
           description: "Server-Sent Events stream. Errors after headers are written use event:error frames."
           content: {text/event-stream: {schema: {type: string}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /notifications:
     get:
       operationId: listNotifications
@@ -322,6 +360,8 @@ paths:
         '200':
           description: Paginated notifications
           content: {application/json: {schema: {$ref: '#/components/schemas/NotificationPage'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     put:
       operationId: markNotificationsRead
       summary: Mark notifications read
@@ -337,7 +377,10 @@ paths:
               properties: {ids: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}}
       responses:
         '204': {description: Notifications marked read}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {description: One or more notifications do not exist or do not belong to the authenticated user; no notifications are changed}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /analytics:
     get:
       operationId: getUserAnalytics
@@ -348,6 +391,8 @@ paths:
         '200':
           description: Aggregate totals for the authenticated user
           content: {application/json: {schema: {$ref: '#/components/schemas/UserAnalytics'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /analytics/{workflow_id}:
     get:
       operationId: getWorkflowAnalytics
@@ -359,6 +404,8 @@ paths:
         '200':
           description: Aggregate totals for one workflow
           content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
 components:
   securitySchemes:
     cookieSession:
@@ -390,6 +437,10 @@ components:
     Unauthorized: {description: Missing or invalid session}
     NotFound: {description: Resource not found}
     PreconditionFailed: {description: Current workflow or job state does not allow the operation}
+    TooManyRequests:
+      description: Ingress rate or connection limit exceeded for the client address
+    PayloadTooLarge:
+      description: Request body exceeds the 4 MiB ingress limit
     LogPage:
       description: Retained logs in descending sequence order
       content:

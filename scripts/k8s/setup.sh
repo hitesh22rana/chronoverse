@@ -9,6 +9,8 @@ DRY_RUN=false
 SKIP_APPLY=false
 CREATE_KIND=false
 STORAGE_CLASS=""
+REALIP_CIDRS=""
+ALLOW_REALIP_SNAPSHOT=false
 INSECURE_DEFAULT_SECRET='a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?'
 
 usage() {
@@ -21,6 +23,14 @@ Options:
   --dry-run                     Validate and print dry-run apply output.
   --skip-apply                  Bootstrap prerequisites but do not apply manifests.
   --storage-class <name>        Production StorageClass override.
+  --realip-cidrs <list>         Production client-IP trust ranges for nginx
+                                 rate limiting (comma/space separated). Overrides
+                                 pod-CIDR auto-detection.
+  --allow-realip-snapshot       Allow pod-network real-IP trust to be derived from
+                                 the current node pod-CIDR snapshot. Use only for
+                                 static clusters; scalable production should use
+                                 --realip-cidrs with the cluster's pod range
+                                 (e.g. --cluster-cidr) so new nodes remain trusted.
   --create-kind                 Create the local kind cluster before applying local.
   -h, --help                    Show this help.
 EOF
@@ -33,6 +43,10 @@ die() {
 
 info() {
   echo "==> $*"
+}
+
+warn() {
+  echo "warning: $*" >&2
 }
 
 need_cmd() {
@@ -82,6 +96,14 @@ while [ "$#" -gt 0 ]; do
     --storage-class)
       STORAGE_CLASS="${2:-}"
       shift 2
+      ;;
+    --realip-cidrs)
+      REALIP_CIDRS="${2:-}"
+      shift 2
+      ;;
+    --allow-realip-snapshot)
+      ALLOW_REALIP_SNAPSHOT=true
+      shift
       ;;
     --create-kind)
       CREATE_KIND=true
@@ -554,15 +576,148 @@ if [ "$MODE" = "production" ]; then
 fi
 check_storage
 
-if [ -n "$STORAGE_CLASS" ]; then
+if [ "$SKIP_APPLY" = true ]; then
+  info "Skipping manifest apply"
+  exit 0
+fi
+
+# Detect the cluster's node pod CIDRs so the nginx ingress can recover real
+# client addresses from X-Forwarded-For (see nginx-realip-config). Production
+# only: the local overlay's kind default is already correct.
+REALIP_DETECTED=""
+if [ "$MODE" = "production" ]; then
+  if [ -n "$REALIP_CIDRS" ]; then
+    # Operator override via --realip-cidrs: normalize commas to spaces.
+    REALIP_DETECTED="$(echo "$REALIP_CIDRS" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+    info "Using operator-provided client-IP trust ranges: $REALIP_DETECTED"
+  else
+    # Trust exactly where the ingress-nginx controllers connect from:
+    # hostNetwork controllers connect from node addresses, pod-network
+    # controllers from their pod addresses. The Go template emits an
+    # explicit boolean because PodSpec.hostNetwork is omitempty — pods
+    # omit it entirely, which would shift jsonpath columns.
+    append_ip_prefix() {
+      case "$1" in
+        *:*) echo "$1/128" ;;
+        *)   echo "$1/32" ;;
+      esac
+    }
+
+    # Pipe-delimited with "-" placeholders: podIP and hostIP are optional
+    # status fields (a Pending pod may not have them yet), and whitespace
+    # separation would shift columns when one is absent.
+    if ! CONTROLLER_ROWS="$(kubectl_cmd get pods -A -l app.kubernetes.io/component=controller,app.kubernetes.io/name=ingress-nginx -o go-template='{{range .items}}{{if .spec.hostNetwork}}true{{else}}false{{end}}|{{if .status.podIP}}{{.status.podIP}}{{else}}-{{end}}|{{if .status.hostIP}}{{.status.hostIP}}{{else}}-{{end}}{{"\n"}}{{end}}' 2>/dev/null)"; then
+      warn "could not query ingress-nginx controller pods"
+      CONTROLLER_ROWS=""
+    fi
+
+    # Track observed network MODES separately from address availability: a
+    # Pending pod has no podIP/hostIP yet, but during a network-mode rollout
+    # it still reveals the mode being rolled out to. Ignoring it would let
+    # setup succeed with trust ranges covering only the old mode, leaving
+    # the new controller's sources untrusted once it starts serving.
+    HOSTNET_SEEN=false
+    PODNET_SEEN=false
+    PODNET_IPS=""
+    while IFS='|' read -r hn pod_ip host_ip; do
+      [ -n "${hn:-}" ] || continue
+      case "$hn" in
+        true)  HOSTNET_SEEN=true ;;
+        false) PODNET_SEEN=true
+               [ -n "$pod_ip" ] && [ "$pod_ip" != "-" ] && PODNET_IPS="$PODNET_IPS $pod_ip" ;;
+      esac
+    done <<EOF
+$CONTROLLER_ROWS
+EOF
+    PODNET_IPS="$(echo $PODNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+
+    NODE_POD_CIDRS=""
+    if ! NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
+      warn "could not query node pod CIDRs"
+      NODE_POD_CIDRS=""
+    fi
+    if [ -z "$NODE_POD_CIDRS" ]; then
+      if ! NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDR}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
+        warn "could not query node pod CIDRs (legacy field)"
+        NODE_POD_CIDRS=""
+      fi
+    fi
+
+    # Assemble independently: hostNetwork controllers contribute their node
+    # address; pod-network controllers are covered by node pod CIDRs when
+    # the cluster allocates them, otherwise by their current pod addresses.
+    TRUST_IPS=""
+    if [ "$HOSTNET_SEEN" = true ]; then
+      # hostNetwork controllers connect from node addresses. Trust every
+      # node InternalIP so reschedules or scale-out to existing nodes stay
+      # trusted; nodes added after this setup run still require a re-run
+      # or an explicit --realip-cidrs with the node range.
+      if ! NODE_IPS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
+        warn "could not query node addresses"
+        NODE_IPS=""
+      fi
+      if [ -z "$NODE_IPS" ]; then
+        die "cannot determine host-network node address range — pass --realip-cidrs <list> with the ingress-nginx node range (e.g. the cluster's node InternalIPs) so per-client rate limits survive controller rescheduling (node listing failed or returned empty while hostNetwork controllers were detected)"
+      fi
+      TRUST_IPS="$(for ip in $NODE_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+      warn "hostNetwork trust ranges cover the cluster's current nodes — nodes added later need a setup re-run, or set --realip-cidrs with the node range for stability"
+    fi
+    if [ "$PODNET_SEEN" = true ]; then
+      if [ -n "$NODE_POD_CIDRS" ]; then
+        if [ "$ALLOW_REALIP_SNAPSHOT" != true ]; then
+          die "pod-network trust ranges are a point-in-time snapshot of node pod CIDRs ($NODE_POD_CIDRS) — for scalable production, pass --realip-cidrs <list> with the cluster's stable pod range (e.g. the kube-controller-manager --cluster-cidr); for static clusters where nodes never scale out, pass --allow-realip-snapshot to acknowledge that new nodes with disjoint CIDRs will be untrusted until a setup re-run and nginx rollout"
+        fi
+        TRUST_IPS="$TRUST_IPS $NODE_POD_CIDRS"
+        warn "pod-network trust ranges are a snapshot of current node pod CIDRs ($NODE_POD_CIDRS) — new nodes with disjoint CIDRs need a setup re-run or --realip-cidrs with the cluster's pod range for stability (e.g. the cluster's --cluster-cidr or pod CIDR supernet); otherwise clients via new controllers will share one rate-limit bucket"
+      elif [ -n "$PODNET_IPS" ]; then
+        if [ "$ALLOW_REALIP_SNAPSHOT" != true ]; then
+          die "trusted ranges derived from current ingress-nginx pod IPs are ephemeral ($PODNET_IPS) — for production, pass --realip-cidrs <list> with the cluster's stable pod range (e.g. the kube-controller-manager --cluster-cidr); for ephemeral or static clusters, pass --allow-realip-snapshot to acknowledge that a controller rollout will leave clients sharing one rate-limit bucket until a setup re-run and nginx rollout"
+        fi
+        TRUST_IPS="$TRUST_IPS $(for ip in $PODNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+        warn "trusted ranges derived from current ingress-nginx pod IPs; these are ephemeral — prefer --realip-cidrs with a stable range for production"
+      else
+        die "pod-network controllers detected but neither node pod CIDRs nor usable pod addresses are available — pass --realip-cidrs <list> with the cluster's pod-network range (or restore node/pod query access) so pod-network controller clients get per-client rate limits"
+      fi
+    fi
+    if [ -z "$TRUST_IPS" ]; then
+      # Controller mode could not be determined (query failed, or no
+      # controller pods matched the labels). The production overlay ships
+      # a placeholder trust list, so applying anything here would either
+      # break hostNetwork deployments or stomp a previously-correct
+      # configuration. Refuse to guess: the operator must state the range.
+      die "cannot determine the ingress-nginx client-IP source range — pass --realip-cidrs <list> (the addresses your ingress-nginx controllers connect from) so per-client rate limits match this deployment"
+    fi
+
+    if [ -n "$TRUST_IPS" ]; then
+      REALIP_DETECTED="$(echo $TRUST_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+      if [ "$HOSTNET_SEEN" = true ]; then
+        info "Client-IP trust ranges include hostNetwork controller node addresses: $REALIP_DETECTED"
+      else
+        info "Detected client-IP trust ranges for nginx: $REALIP_DETECTED"
+      fi
+    fi
+  fi
+  REALIP_CIDRS="$REALIP_DETECTED"
+  if [ -z "$REALIP_CIDRS" ]; then
+    warn "could not detect client-IP trust ranges; keeping the placeholder range in infra/k8s/overlays/production/nginx-realip.yaml — set it for your cluster (or pass --realip-cidrs), otherwise every client shares one rate-limit bucket"
+  fi
+fi
+
+USE_PATCH_DIR=false
+if [ -n "$STORAGE_CLASS" ] || [ -n "$REALIP_CIDRS" ]; then
+  USE_PATCH_DIR=true
   PATCH_DIR="$(mktemp -d "$ROOT_DIR/.k8s-setup.XXXXXX")"
   mkdir -p "$PATCH_DIR"
-  cat > "$PATCH_DIR/kustomization.yaml" <<EOF
+  {
+    cat <<EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
 - ../infra/k8s/overlays/$MODE
 patches:
+EOF
+    if [ -n "$STORAGE_CLASS" ]; then
+      cat <<EOF
 - target:
     kind: PersistentVolumeClaim
   patch: |-
@@ -570,6 +725,27 @@ patches:
       path: /spec/storageClassName
       value: $STORAGE_CLASS
 EOF
+    fi
+    if [ -n "$REALIP_CIDRS" ]; then
+      echo "- path: nginx-realip-patch.yaml"
+    fi
+  } > "$PATCH_DIR/kustomization.yaml"
+  if [ -n "$REALIP_CIDRS" ]; then
+    {
+      echo "apiVersion: v1"
+      echo "kind: ConfigMap"
+      echo "metadata:"
+      echo "  name: nginx-realip-config"
+      echo "data:"
+      echo "  realip.conf: |"
+      echo "    # Auto-generated by scripts/k8s/setup.sh from the cluster's node pod CIDRs."
+      for cidr in $REALIP_CIDRS; do
+        echo "    set_real_ip_from $cidr;"
+      done
+      echo "    real_ip_header X-Forwarded-For;"
+      echo "    real_ip_recursive on;"
+    } > "$PATCH_DIR/nginx-realip-patch.yaml"
+  fi
   KUSTOMIZE_DIR="$PATCH_DIR"
 fi
 
@@ -582,17 +758,28 @@ delete_bootstrap_jobs
 
 if [ "$DRY_RUN" = true ]; then
   info "Running dry-run apply for $MODE"
-  if [ -n "$STORAGE_CLASS" ]; then
+  if [ "$USE_PATCH_DIR" = true ]; then
     kubectl_cmd kustomize --load-restrictor=LoadRestrictionsNone "$KUSTOMIZE_DIR" | kubectl_cmd apply --dry-run=client --validate=false -f -
   else
     kubectl_cmd apply --dry-run=client --validate=false -k "$KUSTOMIZE_DIR"
   fi
 else
   info "Applying $MODE overlay"
-  if [ -n "$STORAGE_CLASS" ]; then
+  if [ "$USE_PATCH_DIR" = true ]; then
     kubectl_cmd kustomize --load-restrictor=LoadRestrictionsNone "$KUSTOMIZE_DIR" | kubectl_cmd apply -f -
   else
     kubectl_cmd apply -k "$KUSTOMIZE_DIR"
+  fi
+
+  # ConfigMap volume updates reach the mounted file only via kubelet sync,
+  # and nginx never re-reads configuration on its own. When the realip trust
+  # list changed, roll the nginx Deployment so the new ranges take effect
+  # immediately instead of trusting stale addresses indefinitely.
+  if [ -n "$REALIP_CIDRS" ]; then
+    info "Restarting nginx to apply the client-IP trust ranges"
+    kubectl_cmd -n "$NAMESPACE" rollout restart deployment/nginx
+    kubectl_cmd -n "$NAMESPACE" rollout status deployment/nginx --timeout=120s ||
+      warn "nginx rollout did not complete in time; check pod logs"
   fi
   KUBECTL_CONTEXT_PREFIX=""
   if [ -n "$CONTEXT" ]; then

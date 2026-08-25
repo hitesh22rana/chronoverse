@@ -917,8 +917,8 @@ Reuse a key only when retrying the same logical command.
 
 The [endpoint reference](./docs/api/reference) is generated from the repository's OpenAPI document. It covers paths, parameters, request bodies, and response status codes.
 
-<Callout title="No documented rate limiter" type="warning">
-The current gateway maps `ResourceExhausted` to HTTP `429`, but the repository does not define a general public request-rate policy. Clients should not assume limits that are not configured by the deployment.
+<Callout title="Ingress rate limits" type="info">
+The production Nginx ingress applies per-client limits: login and registration allow 10 requests per minute (burst 5); other routes including `/api/auth/logout`, `/api/auth/validate`, and the server-sent events handshake allow 20 requests per second (burst 40). The events endpoint additionally allows up to 5 concurrent connections per client. Request bodies are capped at 4 MiB. Limits are enforced per ingress replica. Exceeding a rate or connection limit returns `429`; oversized bodies return `413`. Immutable build assets under `/_next/static/` are exempt from request-rate limiting but are still connection-limited.
 </Callout>
 </doc>
 
@@ -1168,6 +1168,8 @@ Production publishes:
 - Dashboard and proxied API through Nginx on port `80`.
 - LGTM on port `3000`.
 
+Per-IP rate limits assume nginx sees real client addresses. On Linux hosts Docker preserves client IPs through published ports via DNAT; on Docker Desktop, published ports traverse the userland proxy (notably for IPv6), so nginx may see the gateway address instead and those clients aggregate into one rate-limit bucket.
+
 Kubernetes production is expected to be accessed through the configured Ingress
 host over HTTPS. Authentication cookies are scoped from `SERVER_HOST_URL`, so a
 plain `http://localhost` port-forward will not preserve login cookies when the
@@ -1280,6 +1282,16 @@ scripts/k8s/setup.sh --mode local
 Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. You can pre-create those Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites valid, complete existing Secrets. Invalid local server-security Secrets are replaced with safe local values; invalid production server-security Secrets stop setup so the operator can correct them. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
 
 The local strategy uses hostPath PVs for single-node validation. Those PVs use retained node-local paths; delete the kind cluster or clear those paths when you intentionally want an empty local data set. Production uses dynamic PVCs by default; provide `--storage-class <name>` to the setup script or rely on the cluster default StorageClass. Production requires dynamic storage; use the local strategy for single-node hostPath validation.
+
+## Ingress client-IP recovery
+
+Rate limits key on the client address. Behind ingress-nginx, the nginx service would otherwise see the controller address and collapse every client into one shared bucket. The base config therefore recovers the client from `X-Forwarded-For` through a dedicated `nginx-realip-config` ConfigMap mounted into the nginx Deployment.
+
+`scripts/k8s/setup.sh --mode production` resolves the trust ranges, in order: an explicit `--realip-cidrs <list>` flag (stable, recommended for scalable production — e.g. the kube-controller-manager `--cluster-cidr`), then auto-detection from the running ingress-nginx controllers. HostNetwork controllers contribute all current node InternalIPs (snapshot — new nodes need a re-run or `--realip-cidrs`). Pod-network controllers are covered by node pod CIDRs when available (snapshot — new nodes with disjoint CIDRs need a re-run or a stable `--realip-cidrs`; for static clusters, pass `--allow-realip-snapshot` to acknowledge), otherwise by ephemeral controller pod IPs (prefer the flag). For direct Kustomize applies, set `set_real_ip_from` in `infra/k8s/overlays/production/nginx-realip.yaml` to the source range your ingress-nginx controller connects from, then run `kubectl -n chronoverse rollout restart deployment/nginx` — ConfigMap volume updates reach the mounted file but nginx does not reload it on its own. Too narrow, and every client shares one bucket; too broad, and in-cluster callers can forge `X-Forwarded-For` to obtain unlimited fresh buckets. Clusters whose CNI does not populate node pod CIDRs (for example EKS with the Amazon VPC CNI, where pods draw VPC subnet addresses) are covered by the controller-pod fallback or the flag. After applying, setup restarts the nginx Deployment so updated trust ranges take effect immediately.
+
+When a cloud load balancer sits in front of ingress-nginx, the `X-Forwarded-For` chain gains one more hop. Preserving the client address across that hop is ingress-nginx's own concern (`use-forwarded-headers` plus its proxy trust configuration); Chronoverse's `real_ip` block covers only the ingress-nginx-to-nginx hop.
+
+Slow-client limits follow the same split: ingress-nginx terminates public client connections and buffers each request before forwarding a fast controller-to-pod request, so the `client_header_timeout 10s` and `client_body_timeout 15s` directives in the nginx service configuration only govern that internal hop and cannot brake external slow clients. Enforce them at the public edge by setting `client-header-timeout: "10"` and `client-body-timeout: "15"` in the ingress-nginx controller ConfigMap — these are controller-global settings with no per-Ingress annotation equivalent, and without them the edge keeps the controller's 60-second defaults.
 
 ## Scaling
 
@@ -1443,7 +1455,10 @@ openapi: 3.1.0
 info:
   title: Chronoverse HTTP API
   version: 1.0.0
-  description: Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+  description: |
+    Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+
+    In production the Nginx ingress applies per-client request-rate and connection limits. Login and registration allow 10 requests per minute (burst 5); other routes including `/api/auth/logout`, `/api/auth/validate`, and the server-sent events handshake allow 20 requests per second (burst 40). The events endpoint additionally allows up to 5 concurrent connections per client. Immutable build assets under `/_next/static/` are exempt from request-rate limiting but are still connection-limited. Limits are enforced per ingress replica. Exceeding a limit returns `429`. Request bodies larger than 4 MiB are rejected with `413`.
 servers:
   - url: http://localhost:8080
     description: Development
@@ -1474,6 +1489,8 @@ paths:
         '201': {description: User registered and session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/login:
     post:
       operationId: loginUser
@@ -1489,6 +1506,8 @@ paths:
         '201': {description: Session created}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {description: Invalid email or password}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/logout:
     post:
       operationId: logoutUser
@@ -1498,6 +1517,7 @@ paths:
       responses:
         '204': {description: Session and CSRF cookies deleted}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /auth/validate:
     post:
       operationId: validateSession
@@ -1507,6 +1527,7 @@ paths:
       responses:
         '200': {description: Session and CSRF state are valid}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /users:
     get:
       operationId: getCurrentUser
@@ -1520,6 +1541,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/User'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     put:
       operationId: updateCurrentUser
       summary: Update current user
@@ -1539,6 +1561,8 @@ paths:
       responses:
         '204': {description: User preferences updated}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows:
     get:
       operationId: listWorkflows
@@ -1564,6 +1588,7 @@ paths:
                   workflows: {type: array, items: {$ref: '#/components/schemas/WorkflowListItem'}}
                   cursor: {type: string}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     post:
       operationId: createWorkflow
       summary: Create a workflow
@@ -1585,6 +1610,8 @@ paths:
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}:
     parameters: [{$ref: '#/components/parameters/WorkflowId'}]
     get:
@@ -1596,7 +1623,9 @@ paths:
         '200':
           description: Workflow details
           content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowDetail'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     put:
       operationId: updateWorkflow
       summary: Update a workflow
@@ -1608,8 +1637,11 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowUpdateInput'}}}
       responses:
         '204': {description: Workflow updated}
-        '409': {$ref: '#/components/responses/Conflict'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     patch:
       operationId: terminateWorkflow
       summary: Terminate a workflow
@@ -1617,7 +1649,9 @@ paths:
       security: [{cookieSession: [], csrfToken: []}]
       responses:
         '204': {description: Workflow terminated}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     delete:
       operationId: deleteWorkflow
       summary: Delete a workflow
@@ -1625,7 +1659,9 @@ paths:
       security: [{cookieSession: [], csrfToken: []}]
       responses:
         '204': {description: Terminated workflow deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs:
     get:
       operationId: listJobs
@@ -1647,6 +1683,8 @@ paths:
                 properties:
                   jobs: {type: array, items: {$ref: '#/components/schemas/JobListItem'}}
                   cursor: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/schedule:
     post:
       operationId: scheduleJob
@@ -1663,9 +1701,11 @@ paths:
             application/json:
               schema:
                 {$ref: '#/components/schemas/IdentifierResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}:
     get:
       operationId: getJob
@@ -1679,7 +1719,9 @@ paths:
         '200':
           description: Job details
           content: {application/json: {schema: {$ref: '#/components/schemas/JobDetail'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/logs:
     get:
       operationId: getJobLogs
@@ -1692,7 +1734,9 @@ paths:
         - {$ref: '#/components/parameters/Cursor'}
       responses:
         '200': {$ref: '#/components/responses/LogPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/logs/search:
     get:
       operationId: searchJobLogs
@@ -1707,7 +1751,9 @@ paths:
         - {name: q, in: query, schema: {type: string}, description: Search query. Omit for stream-only filtering.}
       responses:
         '200': {$ref: '#/components/responses/LogPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/logs/raw:
     get:
       operationId: downloadJobLogs
@@ -1739,6 +1785,8 @@ paths:
                 description: Newline-delimited JSON where each line conforms to JobLogDownloadEntry
         '400':
           description: Invalid filter or format, or the job has not reached a terminal state
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /workflows/{workflow_id}/jobs/{job_id}/events:
     get:
       operationId: streamJobLogs
@@ -1752,6 +1800,8 @@ paths:
         '200':
           description: "Server-Sent Events stream. Errors after headers are written use event:error frames."
           content: {text/event-stream: {schema: {type: string}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /notifications:
     get:
       operationId: listNotifications
@@ -1763,6 +1813,8 @@ paths:
         '200':
           description: Paginated notifications
           content: {application/json: {schema: {$ref: '#/components/schemas/NotificationPage'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
     put:
       operationId: markNotificationsRead
       summary: Mark notifications read
@@ -1778,7 +1830,10 @@ paths:
               properties: {ids: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}}
       responses:
         '204': {description: Notifications marked read}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {description: One or more notifications do not exist or do not belong to the authenticated user; no notifications are changed}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /analytics:
     get:
       operationId: getUserAnalytics
@@ -1789,6 +1844,8 @@ paths:
         '200':
           description: Aggregate totals for the authenticated user
           content: {application/json: {schema: {$ref: '#/components/schemas/UserAnalytics'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
   /analytics/{workflow_id}:
     get:
       operationId: getWorkflowAnalytics
@@ -1800,6 +1857,8 @@ paths:
         '200':
           description: Aggregate totals for one workflow
           content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
 components:
   securitySchemes:
     cookieSession:
@@ -1831,6 +1890,10 @@ components:
     Unauthorized: {description: Missing or invalid session}
     NotFound: {description: Resource not found}
     PreconditionFailed: {description: Current workflow or job state does not allow the operation}
+    TooManyRequests:
+      description: Ingress rate or connection limit exceeded for the client address
+    PayloadTooLarge:
+      description: Request body exceeds the 4 MiB ingress limit
     LogPage:
       description: Retained logs in descending sequence order
       content:

@@ -749,7 +749,7 @@ Trace context helps explain a distributed operation. Replay safety, outbox state
 
 Use heartbeat workflows for endpoint availability and infrastructure checks where a full container command is unnecessary.
 
-Heartbeat targets must be publicly reachable endpoints. Requests that resolve to loopback, private, link-local, or multicast addresses are rejected at execution time and fail the job permanently with `EXECUTION_FAILED`. The check is applied per connection attempt, so redirects and DNS changes cannot route a probe to an internal address.
+Heartbeat targets must be publicly reachable endpoints. Requests that resolve to loopback, private (RFC 1918), CGNAT (`100.64.0.0/10`), link-local, multicast, IANA special-use (TEST-NET, documentation, benchmarking, reserved `0.0.0.0/8`/`192.0.0.0/24`/`240.0.0.0/4` etc.), or IPv6 outside strict global unicast `2000::/3` / special-use within it (`2001::/32`, `2001:10::/28`, `2001:db8::/32`, `2002::/16`, `5f00::/8`, default-deny `2001::/23` with globally-reachable exceptions `2001:3::/32`, `2001:20::/28` etc.) are rejected at execution time and fail the job permanently with `EXECUTION_FAILED`. Well-known NAT64 `64:ff9b::/96` is decoded to its embedded IPv4 and re-checked (`64:ff9b::8.8.8.8` allowed, `64:ff9b::10.0.0.1` blocked), while local-use `64:ff9b:1::/48` remains blocked. The check is applied per connection attempt, so redirects and DNS rebinding cannot route a probe to an internal address.
 
 ## Container
 

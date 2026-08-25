@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -157,6 +158,14 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	return w, nil
 }
 
+// workloadNetworkMissing reports whether the configured workload network is
+// currently absent from the daemon. Other inspect errors return false so the
+// caller keeps its original failure.
+func (w *DockerWorkflow) workloadNetworkMissing(ctx context.Context) bool {
+	_, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+	return cerrdefs.IsNotFound(err)
+}
+
 // ensureWorkloadNetwork idempotently creates the dedicated workload network
 // (bridge driver, inter-container communication disabled) when it does not
 // exist yet. Compose deployments declare the same network explicitly; k8s-mode
@@ -200,6 +209,12 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	return validateWorkloadNetwork(w.workloadNetwork, &inspected)
 }
 
+// workloadNetworkNamePattern deliberately limits configured names to the safe
+// character class accepted by the k8s socket-proxy ACL for network inspect
+// paths. This is a portable subset of Docker network names, so a name accepted
+// in direct-Docker mode cannot fail only after moving the worker to k8s.
+var workloadNetworkNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
 func validateWorkloadNetworkName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" || trimmed != name {
@@ -213,6 +228,9 @@ func validateWorkloadNetworkName(name string) error {
 	}
 	if strings.HasPrefix(normalized, "container:") {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q is a reserved container network mode", name)
+	}
+	if !workloadNetworkNamePattern.MatchString(trimmed) {
+		return status.Errorf(codes.FailedPrecondition, "workload network name %q is invalid", name)
 	}
 
 	return nil
@@ -270,18 +288,39 @@ func (w *DockerWorkflow) Execute(
 
 	containerTimeout := int(timeout.Seconds())
 
+	createContainer := func() (container.CreateResponse, error) {
+		return w.Client.ContainerCreate(
+			ctx,
+			&container.Config{
+				Image:       image,
+				Cmd:         cmd,
+				StopTimeout: &containerTimeout,
+				Env:         env,
+			},
+			w.hostConfig(),
+			nil, nil, "",
+		)
+	}
+
+	// Cached endpoint clients outlive the network they initialized. Revalidate
+	// immediately before use so a pruned network is recreated and a replaced,
+	// insecure network is rejected before Docker can attach a tenant workload.
+	if err := w.ensureWorkloadNetwork(ctx); err != nil {
+		return "", nil, nil, err
+	}
+
 	// Create container with auto-removal
-	resp, err := w.Client.ContainerCreate(
-		ctx,
-		&container.Config{
-			Image:       image,
-			Cmd:         cmd,
-			StopTimeout: &containerTimeout,
-			Env:         env,
-		},
-		w.hostConfig(),
-		nil, nil, "",
-	)
+	resp, err := createContainer()
+	if err != nil && w.workloadNetworkMissing(ctx) {
+		// Close the narrow race where the network is pruned between the check
+		// above and ContainerCreate. A missing network also proves Docker could
+		// not have created an attached container, so this single retry cannot
+		// duplicate a successfully-created workload.
+		if ensureErr := w.ensureWorkloadNetwork(ctx); ensureErr != nil {
+			return "", nil, nil, ensureErr
+		}
+		resp, err = createContainer()
+	}
 	if err != nil || resp.ID == "" {
 		return "", nil, nil, status.Errorf(codes.FailedPrecondition, "failed to create container: %v", err)
 	}

@@ -1658,6 +1658,7 @@ services:
 
               # Special configuration for SSE events endpoint
               location ~ ^/api/workflows/[^/]+/jobs/[^/]+/events$$ {
+                  limit_req zone=api_zone burst=40 nodelay;
                   limit_conn events_conn_zone 5;
 
                   rewrite ^/api/(.*)$$ /$$1 break;

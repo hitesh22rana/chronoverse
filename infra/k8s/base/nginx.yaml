@@ -100,6 +100,7 @@ data:
           proxy_send_timeout 60s;
         }
         location ~ ^/api/workflows/.*/jobs/.*/events$ {
+          limit_req zone=api_zone burst=40 nodelay;
           limit_conn events_conn_zone 5;
 
           rewrite ^/api/(.*)$ /$1 break;

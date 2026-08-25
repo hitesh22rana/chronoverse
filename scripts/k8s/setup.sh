@@ -670,6 +670,9 @@ EOF
         TRUST_IPS="$TRUST_IPS $NODE_POD_CIDRS"
         warn "pod-network trust ranges are a snapshot of current node pod CIDRs ($NODE_POD_CIDRS) — new nodes with disjoint CIDRs need a setup re-run or --realip-cidrs with the cluster's pod range for stability (e.g. the cluster's --cluster-cidr or pod CIDR supernet); otherwise clients via new controllers will share one rate-limit bucket"
       elif [ -n "$PODNET_IPS" ]; then
+        if [ "$ALLOW_REALIP_SNAPSHOT" != true ]; then
+          die "trusted ranges derived from current ingress-nginx pod IPs are ephemeral ($PODNET_IPS) — for production, pass --realip-cidrs <list> with the cluster's stable pod range (e.g. the kube-controller-manager --cluster-cidr); for ephemeral or static clusters, pass --allow-realip-snapshot to acknowledge that a controller rollout will leave clients sharing one rate-limit bucket until a setup re-run and nginx rollout"
+        fi
         TRUST_IPS="$TRUST_IPS $(for ip in $PODNET_IPS; do append_ip_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
         warn "trusted ranges derived from current ingress-nginx pod IPs; these are ephemeral — prefer --realip-cidrs with a stable range for production"
       else

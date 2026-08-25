@@ -346,7 +346,7 @@ services:
       AUTH: 1 # Allow registry authentication
 
       # Network permissions
-      NETWORKS: 0
+      NETWORKS: 1 # Needed to ensure the dedicated workload network exists
       VOLUMES: 0
     networks:
       - chronoverse
@@ -364,6 +364,7 @@ services:
       POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 1
+      EXECUTION_WORKER_WORKLOAD_NETWORK: ${EXECUTION_WORKER_WORKLOAD_NETWORK:-chronoverse-workloads}
       DOCKER_HOST: tcp://docker-proxy:2375
       RUNTIME_AGENT_ID: local-docker
       RUNTIME_AGENT_NODE_NAME: compose-local
@@ -1275,6 +1276,7 @@ services:
       EXECUTION_WORKER_JOB_LOG_PUBLISH_RETRIES: 3
       EXECUTION_WORKER_JOB_LOG_PUBLISH_BACKOFF: 250ms
       EXECUTION_WORKER_JOB_LOG_LIVE_TIMEOUT: 100ms
+      EXECUTION_WORKER_WORKLOAD_NETWORK: ${EXECUTION_WORKER_WORKLOAD_NETWORK:-chronoverse-workloads}
       EXECUTION_WORKER_JOB_LOG_LIVE_BUFFER_SIZE: 4096
       EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL: 10m
       EXECUTION_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT: 10m
@@ -1641,6 +1643,14 @@ volumes:
   otel-lgtm:
 
 networks:
+  # Dedicated network for tenant workload containers (VULN-004b). No platform
+  # service attaches to it; the runtime pins workloads here and creates it on
+  # demand when missing. ICC is disabled so tenants cannot reach each other.
+  chronoverse-workloads:
+    name: chronoverse-workloads
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
   chronoverse:
     name: chronoverse
     driver: bridge

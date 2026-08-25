@@ -15,7 +15,7 @@ data:
   CONTAINER_STOP: "1"
   POST: "1"
   AUTH: "1"
-  NETWORKS: "0"
+  NETWORKS: "1"
   VOLUMES: "0"
 ---
 apiVersion: apps/v1

@@ -14,6 +14,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"golang.org/x/sync/singleflight"
@@ -27,14 +28,25 @@ import (
 const (
 	// containerStopTimeout is the default timeout for stopping a container.
 	containerStopTimeout = 2 * time.Second
+
+	// capDropAll drops every Linux capability from workload containers.
+	capDropAll = "ALL"
+
+	// DefaultWorkloadNetwork is the docker network every workload container is
+	// attached to. It is created on demand (bridge driver, inter-container
+	// communication disabled) so tenant workloads never share the default
+	// bridge with each other or with the host's published-port surface
+	// (VULN-004a/b).
+	DefaultWorkloadNetwork = "chronoverse-workloads"
 )
 
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
-	pullGroup      singleflight.Group
-	resourceLimits ResourceLimits
-	dockerHost     string
+	pullGroup       singleflight.Group
+	resourceLimits  ResourceLimits
+	dockerHost      string
+	workloadNetwork string
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -68,9 +80,20 @@ func WithDockerHost(host string) DockerWorkflowOption {
 	}
 }
 
+// WithWorkloadNetwork overrides the docker network workload containers are
+// attached to. The network is created on demand if the daemon does not have
+// it yet.
+func WithWorkloadNetwork(name string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		if name != "" {
+			w.workloadNetwork = name
+		}
+	}
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
-	w := &DockerWorkflow{}
+	w := &DockerWorkflow{workloadNetwork: DefaultWorkloadNetwork}
 	for _, option := range options {
 		if option != nil {
 			option(w)
@@ -97,7 +120,36 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 		return nil, err
 	}
 
+	// Fail construction when the isolation network cannot be guaranteed —
+	// silently falling back to the default bridge would resurrect VULN-004.
+	if err := w.ensureWorkloadNetwork(context.Background()); err != nil {
+		return nil, err
+	}
+
 	return w, nil
+}
+
+// ensureWorkloadNetwork idempotently creates the dedicated workload network
+// (bridge driver, inter-container communication disabled) when it does not
+// exist yet. Compose deployments declare the same network explicitly; k8s-mode
+// daemons get it created here through the socket proxy.
+func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
+	if _, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
+		return nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return status.Errorf(codes.Internal, "failed to inspect workload network %q: %v", w.workloadNetwork, err)
+	}
+
+	if _, err := w.Client.NetworkCreate(ctx, w.workloadNetwork, network.CreateOptions{
+		Driver: "bridge",
+		Options: map[string]string{
+			// Tenant containers on this network must not reach each other.
+			"com.docker.network.bridge.enable_icc": "false",
+		},
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
+	}
+	return nil
 }
 
 func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
@@ -239,8 +291,26 @@ func (w *DockerWorkflow) Execute(
 }
 
 func (w *DockerWorkflow) hostConfig() *container.HostConfig {
+	// Workload isolation (VULN-004a): pin every tenant container to the
+	// dedicated workload network (never the default bridge), drop all
+	// capabilities, forbid privilege escalation, and keep the root filesystem
+	// read-only with a writable tmpfs at /tmp. Resource limits remain
+	// operator-configured.
+	networkMode := DefaultWorkloadNetwork
+	if w != nil && w.workloadNetwork != "" {
+		networkMode = w.workloadNetwork
+	}
+
 	hostConfig := &container.HostConfig{
-		AutoRemove: false,
+		AutoRemove:     false,
+		NetworkMode:    container.NetworkMode(networkMode),
+		CapDrop:        []string{capDropAll},
+		SecurityOpt:    []string{"no-new-privileges"},
+		ReadonlyRootfs: true,
+		Tmpfs: map[string]string{
+			"/tmp": "rw,nosuid,size=256m",
+		},
+		IpcMode: container.IPCModePrivate,
 	}
 	if w == nil {
 		return hostConfig

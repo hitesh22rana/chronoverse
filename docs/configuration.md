@@ -271,18 +271,28 @@ backpressure instead of starting another workload.
 `runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
 PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
-In Kubernetes, the `docker-proxy` DaemonSet exposes a `ClusterIP` Service
-`docker-proxy:2375` and the `runtime-agent` sidecar registers the stable
-service endpoint `tcp://docker-proxy.chronoverse.svc:2375`. The proxy no longer
-uses a `hostPort`; reachability is gated by a dedicated `NetworkPolicy`
-(allowing only the `runtime-agent` sidecar and the `execution-worker` /
-`workflow-worker` pods) and by the `docker-proxy-auth` token that
-`scripts/k8s/setup.sh` provisions. Every Docker request carries
-`X-Chronoverse-Docker-Proxy-Token` and the haproxy allowlist enforces an exact
-method-and-path check before forwarding to the host socket.
+In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
+(`DaemonSet` on `chronoverse.io/docker-workloads=true` nodes) and register a
+node-stable endpoint `tcp://$(NODE_IP):2375` via `hostPort: 2375` — not a pod IP
+or `tcp://docker-proxy:2375` `ClusterIP`. The DaemonSet is per-node by design;
+a `ClusterIP` would load-balance to a random backend and break the invariant
+that `ClaimJob` (`internal/repository/jobs/lease.go:254`) selects one `runtime_nodes`
+row and workers later dial its stored `runtime_endpoint` (`internal/repository/executor/executor.go:682`,
+`internal/repository/jobs/lease.go:1063` recovery). After PR #113 the endpoint
+is **authenticated but plaintext**: `scripts/k8s/setup.sh` provisions `docker-proxy-auth`
+(high-entropy `X-Chronoverse-Docker-Proxy-Token`), HAProxy enforces it plus an
+exact Docker method/path allowlist before forwarding to the host socket. Workload
+containers do not receive the token. The residual is that compromise of the
+shared bearer token still grants node-level Docker access; `hostPort` bypasses
+`NetworkPolicy`, so restrict TCP 2375 at the infrastructure layer (node firewall /
+security group / CNI host policy). A follow-up should move to `2376` with mutual
+TLS and per-client certificates (runtime-agent vs workers) as described in the
+stack B assessment.
 Multi-node kind and similar Docker-container-based Kubernetes emulators can
-make `ClusterIP` routing behave differently; if needed, override the endpoint as
-an emulator-only workaround.
+make node host ports reachable only from pods on the same emulator node. In that
+specific topology, use a pod-IP endpoint override as an emulator workaround; do
+not use pod-IP runtime endpoints for real Kubernetes clusters where node IPs are
+routable.
 `RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
 it from durable node identity, such as the Kubernetes node name, hostname, or a
 mounted identity file; do not generate a new random ID on every restart.

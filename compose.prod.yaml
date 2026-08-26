@@ -369,7 +369,6 @@ services:
     restart: on-failure
     volumes:
       - lgtm:/data
-      - otel-lgtm:/otel-lgtm
     networks:
       - chronoverse
 
@@ -1725,7 +1724,6 @@ volumes:
   kafka:
   kafka-secrets:
   lgtm:
-  otel-lgtm:
 
 networks:
   # Dedicated network for tenant workload containers (VULN-004b). No platform

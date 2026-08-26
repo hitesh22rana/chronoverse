@@ -18,7 +18,7 @@ Development builds local images and exposes internal ports for debugging:
 | Dashboard | `3001` | Next.js dashboard, built with `NEXT_PUBLIC_API_URL=http://localhost:8080` |
 | HTTP API | `8080` | Direct server access |
 | OTLP gRPC | `4317` | OpenTelemetry collector endpoint |
-| LGTM Grafana | — | Not host-published by default; use `kubectl port-forward svc/lgtm 3000:3000` (k8s) or `docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm` (`compose.grafana.yaml` publishes `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000` on loopback). Anonymous access disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`), authenticated via `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD` (dev defaults to `admin` / `chronoverse-local-grafana-password`, override via `GF_SECURITY_ADMIN_PASSWORD`). **Existing volumes**: Grafana sets `admin_password` only on first run (see `grafana/otel-lgtm` `run-grafana.sh`); after upgrading a persisted `lgtm:/data` volume, rotate with `docker compose exec lgtm grafana-cli admin reset-admin-password <new>` or `docker volume rm chronoverse_lgtm` (destroys dashboards) |
+| LGTM Grafana | — | Not host-published by default; use the loopback override or Kubernetes port-forward described in [Grafana access and Compose upgrades](#grafana-access-and-compose-upgrades). Anonymous access is disabled; development credentials default to `admin` / `chronoverse-local-grafana-password` |
 | PostgreSQL | `5432` | TLS-enabled database |
 | ClickHouse | `9440` | Secure native protocol |
 | Redis | `6379` | TLS-enabled Redis |
@@ -43,7 +43,51 @@ exposure is intentionally small:
 | Component | Host port | Notes |
 | --- | ---: | --- |
 | Nginx | `80` | Dashboard and `/api/...` reverse proxy |
-| LGTM Grafana | — | Not host-published. Access via SSH tunnel / `kubectl port-forward svc/lgtm 3000:3000`. Anonymous access disabled; credentials from `grafana-secret` (production) or `GF_SECURITY_ADMIN_PASSWORD` env (compose, required) |
+| LGTM Grafana | — | Not host-published by default. Access via the opt-in Compose loopback override or `kubectl port-forward`; anonymous access is disabled and production credentials come from `GF_SECURITY_ADMIN_PASSWORD` (Compose, required) or `grafana-secret` (Kubernetes) |
+
+### Grafana access and Compose upgrades
+
+Compose keeps Grafana private by default. To expose the UI only on the Docker
+host loopback interface, recreate `lgtm` with the opt-in override:
+
+```sh
+docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+# Production uses the same override and requires the production environment:
+docker compose -f compose.prod.yaml -f compose.grafana.yaml up -d lgtm
+```
+
+The host port defaults to `3000`; set `GRAFANA_HOST_PORT` to choose another.
+Kubernetes uses `kubectl port-forward svc/lgtm 3000:3000` instead.
+
+Grafana applies `GF_SECURITY_ADMIN_PASSWORD` only when it first creates its
+database. When upgrading an existing Compose `lgtm:/data` volume, first
+recreate the container from the updated Compose file. This detaches the old
+`/otel-lgtm` application volume so the pinned image supplies its hardened
+startup script and binaries. Then run the repository helper, which resets the
+database password from the container's configured
+`GF_SECURITY_ADMIN_PASSWORD`, migrates a legacy stored admin login to the
+configured `GF_SECURITY_ADMIN_USER`, and verifies anonymous `401` plus
+authenticated `200` responses:
+
+```sh
+docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
+# For production, use compose.prod.yaml with its required environment instead.
+scripts/grafana/reset-admin-password.sh
+```
+
+The helper assumes an old login of `admin` when the configured username does
+not already authenticate. If an existing database uses another login and you
+are changing it, supply that stored login explicitly:
+
+```sh
+GRAFANA_CURRENT_ADMIN_USER=old-login scripts/grafana/reset-admin-password.sh
+```
+
+Set `GRAFANA_CONTAINER` when the container is not named `lgtm`. Passwords are
+fed to Grafana through standard input, so values beginning with `-` are not
+parsed as CLI flags. Do not remove the `lgtm` volume as an authentication
+migration: `/data` contains the Grafana database and dashboards together with
+persisted Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 Production Kafka topic partition defaults are:
 

@@ -28,8 +28,15 @@ The development endpoints are:
 | --- | --- |
 | Dashboard | `http://localhost:3001` |
 | HTTP API | `http://localhost:8080` |
-| LGTM | `http://localhost:3000` |
+| LGTM Grafana | Not host-published by default |
 | gRPC services | `localhost:50051` through `localhost:50055` |
+
+To open Grafana on the Docker host loopback interface, apply the opt-in
+override and sign in with `admin` / `chronoverse-local-grafana-password`:
+
+```bash
+docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+```
 
 <Callout title="Startup is dependency ordered" type="note">
 Certificates, infrastructure health, Kafka topics, and database migrations must complete before domain services and workers become ready.
@@ -42,4 +49,3 @@ docker compose -f compose.dev.yaml down
 ```
 
 Use `down -v` only when you intentionally want to delete local data and certificate volumes.
-

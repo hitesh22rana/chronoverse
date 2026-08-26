@@ -4,7 +4,42 @@ Chronoverse emits OpenTelemetry traces, metrics, and structured logs to the bund
 
 ## Collection
 
-Services and workers export over OTLP gRPC to `lgtm:4317`. The Grafana UI is available inside the `lgtm` container on port `3000` (not host-published by default; use `kubectl port-forward svc/lgtm 3000:3000` for k8s, or `docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm` for Compose — `compose.grafana.yaml` publishes `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000` on loopback). Anonymous access is disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`); authenticate with `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`. For an existing `lgtm` volume, `admin_password` is only applied on first run — rotate with `docker compose exec lgtm grafana-cli admin reset-admin-password <new>` and verify anonymous `curl http://localhost:3000/api/admin/settings` returns `401` and the old `admin/admin` no longer works.
+Services and workers export over OTLP gRPC to `lgtm:4317`. The Grafana UI is
+available inside the `lgtm` container on port `3000`, but is not host-published
+by default. Anonymous access is disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`);
+authenticate with `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`.
+
+## Grafana access
+
+For Kubernetes, use `kubectl port-forward svc/lgtm 3000:3000`. For Compose, use
+the opt-in loopback override:
+
+```sh
+docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+```
+
+`compose.grafana.yaml` publishes
+`127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000`; it does not expose Grafana to the
+LAN.
+
+For an existing Compose `lgtm:/data` volume, recreate `lgtm` from the updated
+Compose file and reset the database credential from the configured container
+secret:
+
+```sh
+docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
+scripts/grafana/reset-admin-password.sh
+```
+
+The helper refuses containers that still mount the obsolete `/otel-lgtm`
+application volume. It uses Grafana's supported `grafana cli` command with the
+correct image home and data paths, passes the password through standard input,
+and migrates the stored `admin` login to `GF_SECURITY_ADMIN_USER` when needed.
+If the stored login is not `admin`, run the helper with
+`GRAFANA_CURRENT_ADMIN_USER=old-login`. It then verifies anonymous requests
+return `401` and the configured credentials return `200`. Do not delete the
+`lgtm` volume for this migration: `/data` contains the Grafana database and
+dashboards, Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 ## Traces
 

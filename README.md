@@ -111,26 +111,43 @@ Development defaults expose internal ports for debugging:
 - Redis TLS: `6379`
 - Meilisearch HTTPS: `7700`
 - Kafka SSL/controller: `9094` / `9093`
-- LGTM dashboard: `http://localhost:3000`
+- LGTM Grafana: not host-published by default; OTLP gRPC remains available on
+  `4317`. For local UI access, use
+  `docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm`,
+  which binds Grafana to `127.0.0.1:${GRAFANA_HOST_PORT:-3000}`, or use
+  `kubectl port-forward svc/lgtm 3000:3000` with Kubernetes. Sign in with the
+  development default `admin` / `chronoverse-local-grafana-password`. After
+  upgrading an existing `lgtm:/data` volume, run
+  `scripts/grafana/reset-admin-password.sh`; if its stored admin login is not
+  `admin`, set `GRAFANA_CURRENT_ADMIN_USER` to that login.
 
 ### Production Stack
 
 ```sh
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
 docker compose -f compose.prod.yaml up -d
 ```
 
-Persist these two distinct values in your secret manager and reuse them across
-server restarts. Production startup rejects empty values, the known development
-placeholder, and reuse of one value for both purposes.
+Persist these values in your secret manager and reuse them across server
+restarts. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct;
+production startup rejects empty values, the known development placeholder,
+and reuse of one value for both purposes.
 
 Production uses published images, internal service networking, resource limits,
 replicated workers, and a single Nginx entry point:
 
 - Dashboard and proxied API: `http://localhost`
 - API routes through Nginx: `/api/...`
-- LGTM dashboard: `http://localhost:3000`
+- LGTM Grafana: not host-published by default. Use
+  `docker compose -f compose.prod.yaml -f compose.grafana.yaml up -d lgtm` for
+  an opt-in loopback binding, or `kubectl port-forward svc/lgtm 3000:3000` for
+  Kubernetes. Compose uses `GF_SECURITY_ADMIN_USER` /
+  `GF_SECURITY_ADMIN_PASSWORD`; Kubernetes production uses `grafana-secret`.
+  Run `scripts/grafana/reset-admin-password.sh` after upgrading an existing
+  Compose `lgtm:/data` volume, with `GRAFANA_CURRENT_ADMIN_USER` set when the
+  stored login is not the legacy default `admin`.
 
 Before running a real deployment, replace development secrets, default
 passwords, and generated local certificate assumptions with environment-specific

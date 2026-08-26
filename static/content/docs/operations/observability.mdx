@@ -4,7 +4,7 @@ Chronoverse emits OpenTelemetry traces, metrics, and structured logs to the bund
 
 ## Collection
 
-Services and workers export over OTLP gRPC to `lgtm:4317`. The Grafana UI is available inside the `lgtm` container on port `3000` (not host-published; use `kubectl port-forward svc/lgtm 3000:3000` or a compose port tunnel, authenticated via `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`; anonymous access disabled).
+Services and workers export over OTLP gRPC to `lgtm:4317`. The Grafana UI is available inside the `lgtm` container on port `3000` (not host-published by default; use `kubectl port-forward svc/lgtm 3000:3000` for k8s, or `docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm` for Compose — `compose.grafana.yaml` publishes `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000` on loopback). Anonymous access is disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`); authenticate with `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`. For an existing `lgtm` volume, `admin_password` is only applied on first run — rotate with `docker compose exec lgtm grafana-cli admin reset-admin-password <new>` and verify anonymous `curl http://localhost:3000/api/admin/settings` returns `401` and the old `admin/admin` no longer works.
 
 ## Traces
 

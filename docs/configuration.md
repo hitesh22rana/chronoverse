@@ -18,7 +18,7 @@ Development builds local images and exposes internal ports for debugging:
 | Dashboard | `3001` | Next.js dashboard, built with `NEXT_PUBLIC_API_URL=http://localhost:8080` |
 | HTTP API | `8080` | Direct server access |
 | OTLP gRPC | `4317` | OpenTelemetry collector endpoint |
-| LGTM Grafana | — | Not host-published; access via `docker compose port lgtm 3000` tunnel or `kubectl port-forward svc/lgtm 3000:3000`. Anonymous access disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`), authenticated via `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD` (dev defaults to `admin` / `chronoverse-local-grafana-password`, override via `GF_SECURITY_ADMIN_PASSWORD`) |
+| LGTM Grafana | — | Not host-published by default; use `kubectl port-forward svc/lgtm 3000:3000` (k8s) or `docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm` (`compose.grafana.yaml` publishes `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000` on loopback). Anonymous access disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`), authenticated via `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD` (dev defaults to `admin` / `chronoverse-local-grafana-password`, override via `GF_SECURITY_ADMIN_PASSWORD`). **Existing volumes**: Grafana sets `admin_password` only on first run (see `grafana/otel-lgtm` `run-grafana.sh`); after upgrading a persisted `lgtm:/data` volume, rotate with `docker compose exec lgtm grafana-cli admin reset-admin-password <new>` or `docker volume rm chronoverse_lgtm` (destroys dashboards) |
 | PostgreSQL | `5432` | TLS-enabled database |
 | ClickHouse | `9440` | Secure native protocol |
 | Redis | `6379` | TLS-enabled Redis |

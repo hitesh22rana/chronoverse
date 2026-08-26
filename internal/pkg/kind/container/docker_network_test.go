@@ -391,7 +391,7 @@ func TestExecuteReturnsWorkloadNetworkRecreationFailure(t *testing.T) {
 	}
 }
 
-func TestNewDockerWorkflowNetworkCallsAreBootstrapOnly(t *testing.T) {
+func TestNewDockerWorkflowMakesNoNetworkCalls(t *testing.T) {
 	networkCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -408,10 +408,8 @@ func TestNewDockerWorkflowNetworkCallsAreBootstrapOnly(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	// No constructor touches the network anymore: isolation is enforced in
-	// Execute, and lifecycle-only clients (workflow-worker, runtime-agent,
-	// expired-lease recovery) must construct successfully even when the
-	// workload network is misconfigured or absent.
+	// No constructor touches the network: isolation is enforced in Execute, and
+	// lifecycle-only clients must construct even with a broken network.
 	w, err := NewDockerWorkflow(WithDockerHost(server.URL))
 	if err != nil {
 		t.Fatalf("NewDockerWorkflow() error = %v", err)
@@ -449,9 +447,8 @@ func TestConstructorClosesClientOnHealthCheckFailure(t *testing.T) {
 		t.Fatal("failed constructor must not return a client")
 	}
 
-	// The endpoint cache re-runs construction on every claim, so an unclosed
-	// client would accumulate one idle connection per claim until file
-	// descriptors run out.
+	// The endpoint cache re-runs construction per claim: an unclosed client
+	// leaks one idle connection per attempt.
 	select {
 	case <-connClosed:
 	case <-time.After(2 * time.Second):

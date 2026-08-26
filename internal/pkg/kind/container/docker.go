@@ -34,29 +34,22 @@ const (
 	// capDropAll drops every Linux capability from workload containers.
 	capDropAll = "ALL"
 
-	// workloadNetworkICCOption disables direct communication between workload
-	// containers attached to the same bridge network.
+	// workloadNetworkICCOption/Driver/ICCOff describe the dedicated workload
+	// bridge: tenant containers on it cannot reach each other.
 	workloadNetworkICCOption = "com.docker.network.bridge.enable_icc"
 	workloadNetworkDriver    = "bridge"
 	workloadNetworkICCOff    = "false"
 
-	// dockerProxyTokenEnv names the optional shared token used to authenticate
-	// trusted clients to the Kubernetes Docker socket proxy.
-	dockerProxyTokenEnv = "DOCKER_PROXY_TOKEN" //nolint:gosec // Environment-variable name, not a credential.
-
-	// dockerProxyTokenHeader carries the shared proxy token without changing the
-	// Docker endpoint URL persisted in runtime ownership records.
+	// dockerProxyTokenEnv / dockerProxyTokenHeader carry the shared Kubernetes
+	// socket-proxy credential without changing the persisted endpoint URL.
+	dockerProxyTokenEnv    = "DOCKER_PROXY_TOKEN"               //nolint:gosec // Environment-variable name, not a credential.
 	dockerProxyTokenHeader = "X-Chronoverse-Docker-Proxy-Token" //nolint:gosec // Header name, not a credential.
 
-	// platformNetwork is the Docker network used by Chronoverse services in the
-	// bundled Compose deployments. Workloads must never attach to it.
+	// platformNetwork is the Compose service network; workloads must never attach.
 	platformNetwork = "chronoverse"
 
-	// DefaultWorkloadNetwork is the docker network every workload container is
-	// attached to. It is created on demand (bridge driver, inter-container
-	// communication disabled) so tenant workloads never share the default
-	// bridge with each other or with the host's published-port surface
-	// (VULN-004a/b).
+	// DefaultWorkloadNetwork is the ICC-disabled bridge every workload is pinned
+	// to; created on demand (VULN-004a/b).
 	DefaultWorkloadNetwork = "chronoverse-workloads"
 )
 
@@ -146,35 +139,28 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	w.Client = cli
 
 	if err := w.healthCheck(context.Background()); err != nil {
-		// EndpointCache does not cache failed constructors, so it re-runs this
-		// construction on every claim. Close the client (and its idle ping
-		// connection) or persistent bootstrap faults leak one connection per
-		// attempt until file descriptors run out.
+		// EndpointCache retries failed constructions per claim: close the ping
+		// connection or persistent faults leak one connection per attempt.
 		cli.Close()
 		return nil, err
 	}
 
-	// Network isolation is enforced in Execute (ensure + validate before every
-	// container creation), NOT here: construction is shared by lifecycle-only
-	// clients — expired-lease recovery needs inspect/terminate/logs and must
-	// succeed even when the workload network is misconfigured, or expired
-	// containers would never be cleaned up.
+	// No network work here: lifecycle-only clients (expired-lease recovery)
+	// must construct even when the workload network is broken. Execute enforces
+	// isolation before every container creation.
 
 	return w, nil
 }
 
-// workloadNetworkMissing reports whether the configured workload network is
-// currently absent from the daemon. Other inspect errors return false so the
-// caller keeps its original failure.
+// workloadNetworkMissing reports whether the configured network is absent;
+// other inspect errors return false so the caller keeps its original failure.
 func (w *DockerWorkflow) workloadNetworkMissing(ctx context.Context) bool {
 	_, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
 	return cerrdefs.IsNotFound(err)
 }
 
 // ensureWorkloadNetwork idempotently creates the dedicated workload network
-// (bridge driver, inter-container communication disabled) when it does not
-// exist yet. Compose deployments declare the same network explicitly; k8s-mode
-// daemons get it created here through the socket proxy.
+// (bridge, ICC disabled) when missing, then validates what the daemon created.
 func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	if err := validateWorkloadNetworkName(w.workloadNetwork); err != nil {
 		return err
@@ -193,10 +179,8 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 			workloadNetworkICCOption: workloadNetworkICCOff,
 		},
 	}); err != nil {
-		// Concurrent constructors can race the create (parallel tests, several
-		// workers booting against one daemon), and the daemon surfaces that
-		// conflict with inconsistent status codes. Re-inspect the winner and
-		// accept it only when it has the required isolation properties.
+		// Lost a create race (or the daemon reported the conflict with an
+		// inconsistent status): accept the winner only if it is isolated.
 		inspected, inspectErr := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
 		if inspectErr != nil {
 			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
@@ -204,9 +188,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
 	}
 
-	// Verify the daemon-created network instead of assuming the requested
-	// options were honored. This keeps startup fail-closed with nonstandard
-	// drivers or daemons.
+	// Verify the daemon honored the requested options (fail-closed).
 	inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to verify workload network %q after creation: %v", w.workloadNetwork, err)
@@ -214,10 +196,9 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	return validateWorkloadNetwork(w.workloadNetwork, &inspected)
 }
 
-// workloadNetworkNamePattern deliberately limits configured names to the safe
-// character class accepted by the k8s socket-proxy ACL for network inspect
-// paths. This is a portable subset of Docker network names, so a name accepted
-// in direct-Docker mode cannot fail only after moving the worker to k8s.
+// workloadNetworkNamePattern is the character class the k8s socket-proxy ACL
+// accepts for network paths, so configured names stay portable between direct
+// Docker and proxied Kubernetes daemons.
 var workloadNetworkNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 func validateWorkloadNetworkName(name string) error {
@@ -307,12 +288,10 @@ func (w *DockerWorkflow) Execute(
 		)
 	}
 
-	// Cached endpoint clients outlive the network they initialized. Revalidate
-	// immediately before use so a pruned network is recreated and a replaced,
-	// insecure network is rejected before Docker can attach a tenant workload.
-	// Validation failures here are infrastructure conditions (node-side
-	// drift), not user mistakes: report them as retryable system errors
-	// instead of permanently failing the claimed job.
+	// Cached clients outlive the network they initialized: revalidate before
+	// use so prunes are recreated and unsafe replacements are rejected before
+	// Docker attaches a workload. Drift is infra, not user error, hence the
+	// retryable Internal classification.
 	if err := w.ensureWorkloadNetwork(ctx); err != nil {
 		return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", err)
 	}
@@ -320,10 +299,8 @@ func (w *DockerWorkflow) Execute(
 	// Create container with auto-removal
 	resp, err := createContainer()
 	if err != nil && w.workloadNetworkMissing(ctx) {
-		// Close the narrow race where the network is pruned between the check
-		// above and ContainerCreate. A missing network also proves Docker could
-		// not have created an attached container, so this single retry cannot
-		// duplicate a successfully-created workload.
+		// The network was pruned between the check and the create; a missing
+		// network proves no container was created, so one retry is safe.
 		if ensureErr := w.ensureWorkloadNetwork(ctx); ensureErr != nil {
 			return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", ensureErr)
 		}
@@ -421,11 +398,8 @@ func (w *DockerWorkflow) Execute(
 }
 
 func (w *DockerWorkflow) hostConfig() *container.HostConfig {
-	// Workload isolation (VULN-004a): pin every tenant container to the
-	// dedicated workload network (never the default bridge), drop all
-	// capabilities, forbid privilege escalation, and keep the root filesystem
-	// read-only with a writable tmpfs at /tmp. Resource limits remain
-	// operator-configured.
+	// Workload isolation (VULN-004a): dedicated network, no capabilities, no
+	// privilege escalation, read-only rootfs with a writable /tmp.
 	networkMode := DefaultWorkloadNetwork
 	if w != nil && w.workloadNetwork != "" {
 		networkMode = w.workloadNetwork

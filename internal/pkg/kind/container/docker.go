@@ -68,10 +68,6 @@ type DockerWorkflow struct {
 	dockerHost       string
 	workloadNetwork  string
 	dockerProxyToken string
-
-	// bootstrapWorkloadNetwork ensures (and validates) the workload network at
-	// construction. Opt-in for execution paths only; see WithWorkloadNetworkBootstrap.
-	bootstrapWorkloadNetwork bool
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -113,21 +109,6 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 		if name != "" {
 			w.workloadNetwork = name
 		}
-	}
-}
-
-// WithWorkloadNetworkBootstrap makes client construction ensure (and
-// validate) the workload network, failing fast on misconfiguration. The
-// execution worker constructs clients lazily per runtime endpoint, so this
-// typically fires on the first job for an endpoint rather than at worker
-// process startup; Execute revalidates before every creation regardless.
-// Only execution paths need this: image-resolution and health-only clients
-// (workflow-worker, runtime-agent) must not touch or create the network,
-// otherwise a custom EXECUTION_WORKER_WORKLOAD_NETWORK could not avoid the
-// default name.
-func WithWorkloadNetworkBootstrap() DockerWorkflowOption {
-	return func(w *DockerWorkflow) {
-		w.bootstrapWorkloadNetwork = true
 	}
 }
 
@@ -173,22 +154,11 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 		return nil, err
 	}
 
-	// Fail construction when the isolation network cannot be guaranteed —
-	// silently falling back to the default bridge would resurrect VULN-004.
-	// Bootstrap is opt-in: only clients that execute workloads ensure the
-	// network, so image-resolution and health-only clients stay decoupled
-	// from the workload network configuration.
-	if w.bootstrapWorkloadNetwork {
-		if err := w.ensureWorkloadNetwork(context.Background()); err != nil {
-			// Bootstrap runs lazily inside claim processing, so the same
-			// node-side drift that Execute wraps as a retryable system error
-			// flows through here. Keep the classification identical: an
-			// unsafe or missing network is infrastructure, never the user's
-			// EXECUTION_FAILED.
-			cli.Close()
-			return nil, status.Errorf(codes.Internal, "workload network bootstrap failed: %v", err)
-		}
-	}
+	// Network isolation is enforced in Execute (ensure + validate before every
+	// container creation), NOT here: construction is shared by lifecycle-only
+	// clients — expired-lease recovery needs inspect/terminate/logs and must
+	// succeed even when the workload network is misconfigured, or expired
+	// containers would never be cleaned up.
 
 	return w, nil
 }

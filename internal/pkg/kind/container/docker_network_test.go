@@ -408,73 +408,30 @@ func TestNewDockerWorkflowNetworkCallsAreBootstrapOnly(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	// Default constructor (workflow-worker / runtime-agent path): no network calls.
+	// No constructor touches the network anymore: isolation is enforced in
+	// Execute, and lifecycle-only clients (workflow-worker, runtime-agent,
+	// expired-lease recovery) must construct successfully even when the
+	// workload network is misconfigured or absent.
 	w, err := NewDockerWorkflow(WithDockerHost(server.URL))
 	if err != nil {
-		t.Fatalf("default NewDockerWorkflow() error = %v", err)
+		t.Fatalf("NewDockerWorkflow() error = %v", err)
 	}
 	t.Cleanup(func() { _ = w.Close() })
 	if networkCalls != 0 {
-		t.Fatalf("default constructor made %d network calls, want 0", networkCalls)
-	}
-	_ = w.Close()
-
-	// Bootstrap opt-in (execution-worker path): exactly one ensure call.
-	wb, err := NewDockerWorkflow(WithDockerHost(server.URL), WithWorkloadNetworkBootstrap())
-	if err != nil {
-		t.Fatalf("bootstrap NewDockerWorkflow() error = %v", err)
-	}
-	t.Cleanup(func() { _ = wb.Close() })
-	if networkCalls != 1 {
-		t.Fatalf("bootstrap constructor made %d network calls, want 1", networkCalls)
+		t.Fatalf("constructor made %d network calls, want 0", networkCalls)
 	}
 }
 
-func TestBootstrapValidationFailureIsInfrastructureError(t *testing.T) {
-	// An existing network with ICC enabled is node-side drift: construction
-	// must surface codes.Internal (retryable system failure) instead of
-	// codes.FailedPrecondition (permanent user failure).
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/_ping":
-			w.Header().Set("API-Version", "1.51")
-			writeDockerTestResponse(t, w, "OK")
-		case strings.Contains(r.URL.Path, "/networks/create"):
-			w.Header().Set("Content-Type", "application/json")
-			writeDockerTestResponse(t, w, `{"ID":"net-1","Warning":""}`)
-		case strings.Contains(r.URL.Path, "/networks/"):
-			w.Header().Set("Content-Type", "application/json")
-			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"`+workloadNetworkICCOption+`":"true"}}`)
-		default:
-			t.Fatalf("unexpected Docker API request: %s %s", r.Method, r.URL.String())
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	_, err := NewDockerWorkflow(WithDockerHost(server.URL), WithWorkloadNetworkBootstrap())
-	if err == nil {
-		t.Fatal("NewDockerWorkflow() expected failure for ICC-enabled workload network")
-	}
-	if status.Code(err) != codes.Internal {
-		t.Fatalf("bootstrap failure code = %s, want %s (retryable): %v", status.Code(err), codes.Internal, err)
-	}
-}
-
-func TestConstructorClosesClientOnBootstrapFailure(t *testing.T) {
+func TestConstructorClosesClientOnHealthCheckFailure(t *testing.T) {
 	connClosed := make(chan struct{}, 8)
 
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/_ping":
-			w.Header().Set("API-Version", "1.51")
-			writeDockerTestResponse(t, w, "OK")
-		case strings.Contains(r.URL.Path, "/networks/"):
-			// Node-side drift: network exists but is unsafe, so bootstrap fails.
-			w.Header().Set("Content-Type", "application/json")
-			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"`+workloadNetworkICCOption+`":"true"}}`)
-		default:
-			t.Fatalf("unexpected Docker API request: %s %s", r.Method, r.URL.String())
+		if strings.Contains(r.URL.Path, "/_ping") {
+			// Daemon unavailable: health check fails during construction.
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
+		t.Fatalf("unexpected Docker API request: %s %s", r.Method, r.URL.String())
 	}))
 	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
 		if state == http.StateClosed {
@@ -484,17 +441,17 @@ func TestConstructorClosesClientOnBootstrapFailure(t *testing.T) {
 	server.Start()
 	t.Cleanup(server.Close)
 
-	w, err := NewDockerWorkflow(WithDockerHost(server.URL), WithWorkloadNetworkBootstrap())
+	w, err := NewDockerWorkflow(WithDockerHost(server.URL))
 	if err == nil {
-		t.Fatal("expected bootstrap failure for unsafe workload network")
+		t.Fatal("expected construction failure when the daemon is unavailable")
 	}
 	if w != nil {
 		t.Fatal("failed constructor must not return a client")
 	}
 
-	// The ping connection must be closed instead of leaked: the endpoint cache
-	// re-runs construction on every claim, so an unclosed client would
-	// accumulate one idle connection per claim until file descriptors run out.
+	// The endpoint cache re-runs construction on every claim, so an unclosed
+	// client would accumulate one idle connection per claim until file
+	// descriptors run out.
 	select {
 	case <-connClosed:
 	case <-time.After(2 * time.Second):

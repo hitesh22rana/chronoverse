@@ -33,10 +33,13 @@ scripts/grafana/reset-admin-password.sh
 
 The helper refuses containers that still mount the obsolete `/otel-lgtm`
 application volume. It uses Grafana's supported `grafana cli` command with the
-correct image home and data paths, then verifies anonymous requests return
-`401` and the configured credentials return `200`. Do not delete the `lgtm`
-volume for this migration: `/data` contains the Grafana database and dashboards,
-Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
+correct image home and data paths, passes the password through standard input,
+and migrates the stored `admin` login to `GF_SECURITY_ADMIN_USER` when needed.
+If the stored login is not `admin`, run the helper with
+`GRAFANA_CURRENT_ADMIN_USER=old-login`. It then verifies anonymous requests
+return `401` and the configured credentials return `200`. Do not delete the
+`lgtm` volume for this migration: `/data` contains the Grafana database and
+dashboards, Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 ## Traces
 

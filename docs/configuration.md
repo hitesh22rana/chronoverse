@@ -65,8 +65,9 @@ recreate the container from the updated Compose file. This detaches the old
 `/otel-lgtm` application volume so the pinned image supplies its hardened
 startup script and binaries. Then run the repository helper, which resets the
 database password from the container's configured
-`GF_SECURITY_ADMIN_PASSWORD` and verifies anonymous `401` plus authenticated
-`200` responses:
+`GF_SECURITY_ADMIN_PASSWORD`, migrates a legacy stored admin login to the
+configured `GF_SECURITY_ADMIN_USER`, and verifies anonymous `401` plus
+authenticated `200` responses:
 
 ```sh
 docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
@@ -74,10 +75,19 @@ docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
 scripts/grafana/reset-admin-password.sh
 ```
 
-Set `GRAFANA_CONTAINER` when the container is not named `lgtm`. Do not remove
-the `lgtm` volume as an authentication migration: `/data` contains the Grafana
-database and dashboards together with persisted Prometheus metrics, Loki logs,
-Tempo traces, and Pyroscope profiles.
+The helper assumes an old login of `admin` when the configured username does
+not already authenticate. If an existing database uses another login and you
+are changing it, supply that stored login explicitly:
+
+```sh
+GRAFANA_CURRENT_ADMIN_USER=old-login scripts/grafana/reset-admin-password.sh
+```
+
+Set `GRAFANA_CONTAINER` when the container is not named `lgtm`. Passwords are
+fed to Grafana through standard input, so values beginning with `-` are not
+parsed as CLI flags. Do not remove the `lgtm` volume as an authentication
+migration: `/data` contains the Grafana database and dashboards together with
+persisted Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 Production Kafka topic partition defaults are:
 

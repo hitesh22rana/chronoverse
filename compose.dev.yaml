@@ -315,7 +315,6 @@ services:
     restart: on-failure
     volumes:
       - lgtm:/data
-      - otel-lgtm:/otel-lgtm
     ports:
       - "4317:4317"
     networks:
@@ -1639,7 +1638,6 @@ volumes:
   kafka:
   kafka-secrets:
   lgtm:
-  otel-lgtm:
 
 networks:
   # Dedicated network for tenant workload containers (VULN-004b). No platform

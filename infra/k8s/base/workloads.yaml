@@ -685,7 +685,7 @@ spec:
       containers:
       - name: workflow-worker
         image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: redis-connection-config
@@ -703,6 +703,8 @@ spec:
             name: observability-config
         - configMapRef:
             name: workflow-worker-config
+        - secretRef:
+            name: docker-proxy-auth
         resources:
           requests:
             cpu: 200m
@@ -754,7 +756,7 @@ spec:
       containers:
       - name: execution-worker
         image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: redis-connection-config
@@ -764,6 +766,8 @@ spec:
             name: observability-config
         - configMapRef:
             name: execution-worker-config
+        - secretRef:
+            name: docker-proxy-auth
         resources:
           requests:
             cpu: 200m

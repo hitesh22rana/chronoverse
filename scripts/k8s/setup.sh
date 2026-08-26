@@ -207,6 +207,7 @@ secret_keys() {
     meilisearch-secret) echo "MEILISEARCH_MASTER_KEY MEILI_MASTER_KEY" ;;
     kafka-tls-secret) echo "KAFKA_SSL_KEYSTORE_PASSWORD KAFKA_SSL_TRUSTSTORE_PASSWORD KAFKA_SSL_KEY_PASSWORD" ;;
     chronoverse-server-security) echo "CRYPTO_SECRET SERVER_CSRF_HMAC_SECRET" ;;
+    docker-proxy-auth) echo "DOCKER_PROXY_TOKEN" ;;
     chronoverse-auth) echo "auth.ed auth.ed.pub" ;;
     chronoverse-ca) echo "ca.crt" ;;
     chronoverse-ingress-tls) echo "tls.crt tls.key" ;;
@@ -290,7 +291,7 @@ cleanup() {
 trap cleanup EXIT
 
 create_data_secrets() {
-  local postgres_password clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret
+  local postgres_password clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret docker_proxy_token
   if [ "$MODE" = "local" ]; then
     postgres_password="chronoverse-local-postgres-password"
     clickhouse_password="chronoverse-local-clickhouse-password"
@@ -308,6 +309,7 @@ create_data_secrets() {
     crypto_secret="$(random_hex 16)"
     csrf_secret="$(random_hex 32)"
   fi
+  docker_proxy_token="$(random_hex 32)"
 
   create_literal_secret postgres-secret \
     --from-literal=POSTGRES_USER=postgres \
@@ -327,6 +329,9 @@ create_data_secrets() {
     --from-literal=KAFKA_SSL_KEY_PASSWORD="$kafka_keystore"
 
   create_server_security_secret "$crypto_secret" "$csrf_secret"
+
+  create_literal_secret docker-proxy-auth \
+    --from-literal=DOCKER_PROXY_TOKEN="$docker_proxy_token"
 }
 
 create_server_security_secret() {

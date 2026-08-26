@@ -274,7 +274,10 @@ there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
 In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
 and register a node-stable endpoint such as `tcp://$(NODE_IP):2375`, not a pod
 IP or `tcp://docker-proxy:2375` service DNS name. The Docker proxy host port
-must stay private and reachable only by trusted Chronoverse workers.
+must stay private. `scripts/k8s/setup.sh` provisions `docker-proxy-auth`; trusted
+runtime and worker clients attach its token to every Docker request, and the
+proxy enforces an exact method-and-path allowlist before forwarding to the host
+socket.
 Multi-node kind and similar Docker-container-based Kubernetes emulators can
 make node host ports reachable only from pods on the same emulator node. In that
 specific topology, use a pod-IP endpoint override as an emulator workaround; do

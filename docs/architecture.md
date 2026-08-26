@@ -76,8 +76,9 @@ replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 - **Meilisearch** indexes retained job logs for search.
 - **Runtime agent** registers each Docker-capable node and heartbeats Docker
   endpoint health/capacity into PostgreSQL.
-- **Docker socket proxy** exposes a narrow node-local Docker API surface to
-  workers for container lifecycle and log access.
+- **Docker socket proxy** exposes an authenticated, method-and-path-allowlisted
+  node-local Docker API surface to workers for container lifecycle and log
+  access.
 - **LGTM** receives OpenTelemetry data and exposes local dashboards.
 
 The Kubernetes local overlay includes these infrastructure systems for

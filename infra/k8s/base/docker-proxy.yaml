@@ -3,20 +3,68 @@ kind: ConfigMap
 metadata:
   name: docker-proxy-config
 data:
-  IMAGES: "1"
-  IMAGE_CREATE: "1"
-  CONTAINERS: "1"
-  CONTAINER_CREATE: "1"
-  CONTAINER_START: "1"
-  CONTAINER_LOGS: "1"
-  CONTAINER_ATTACH: "1"
-  CONTAINER_WAIT: "1"
-  CONTAINER_DELETE: "1"
-  CONTAINER_STOP: "1"
-  POST: "1"
-  AUTH: "1"
-  NETWORKS: "0"
-  VOLUMES: "0"
+  haproxy.cfg: |
+    global
+      log stdout format raw daemon
+      maxconn 4000
+
+    defaults
+      mode http
+      log global
+      option httplog
+      option dontlognull
+      option http-server-close
+      option redispatch
+      retries 3
+      timeout http-request 10s
+      timeout queue 1m
+      timeout connect 10s
+      timeout client 10m
+      timeout server 10m
+      timeout http-keep-alive 10s
+      timeout check 10s
+      maxconn 3000
+
+    backend dockerbackend
+      server dockersocket /var/run/docker.sock
+
+    frontend dockerfrontend
+      bind :2375
+
+      # Only trusted workers receive this generated token. Keeping it out of
+      # the registered endpoint also prevents accidental disclosure in jobs.
+      acl authorized req.hdr(X-Chronoverse-Docker-Proxy-Token) -m str "${DOCKER_PROXY_TOKEN}"
+      http-request deny unless authorized
+
+      # Exact method-and-path allowlist for Docker calls used by Chronoverse.
+      # In particular, NETWORKS does not grant /networks/*/(dis)connect.
+      acl read_method method GET HEAD
+      acl post_method method POST
+      acl delete_method method DELETE
+      acl ping_or_version path,url_dec -m reg -i ^(/v[0-9.]+)?/((_ping)|(version))/?$
+      acl image_inspect path,url_dec -m reg -i ^(/v[0-9.]+)?/images/.+/json/?$
+      acl image_create path,url_dec -m reg -i ^(/v[0-9.]+)?/images/create/?$
+      acl container_inspect path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/json/?$
+      acl container_logs path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/logs/?$
+      acl container_create path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/create/?$
+      acl container_action path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/((start)|(stop)|(wait))/?$
+      acl container_delete path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/?$
+      acl network_inspect path,url_dec -m reg -i ^(/v[0-9.]+)?/networks/[a-zA-Z0-9_.-]+/?$
+      acl network_create path,url_dec -m reg -i ^(/v[0-9.]+)?/networks/create/?$
+
+      http-request allow if read_method ping_or_version
+      http-request allow if read_method image_inspect
+      http-request allow if post_method image_create
+      http-request allow if read_method container_inspect
+      http-request allow if read_method container_logs
+      http-request allow if post_method container_create
+      http-request allow if post_method container_action
+      http-request allow if delete_method container_delete
+      http-request allow if read_method network_inspect
+      http-request allow if post_method network_create
+      http-request deny
+
+      default_backend dockerbackend
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -56,14 +104,22 @@ spec:
       - name: docker-proxy
         image: tecnativa/docker-socket-proxy:v0.4.1
         imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-ec"]
+        args:
+        - |
+          test -n "${DOCKER_PROXY_TOKEN}"
+          exec haproxy -W -db -f /etc/docker-proxy/haproxy.cfg
         ports:
         - name: docker
           containerPort: 2375
           hostPort: 2375
           protocol: TCP
-        envFrom:
-        - configMapRef:
-            name: docker-proxy-config
+        env:
+        - name: DOCKER_PROXY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: docker-proxy-auth
+              key: DOCKER_PROXY_TOKEN
         resources:
           requests:
             cpu: 50m
@@ -74,9 +130,12 @@ spec:
         volumeMounts:
         - name: docker-socket
           mountPath: /var/run/docker.sock
+        - name: docker-proxy-config
+          mountPath: /etc/docker-proxy
+          readOnly: true
       - name: runtime-agent
         image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: postgres-connection-config
@@ -87,6 +146,11 @@ spec:
         - configMapRef:
             name: runtime-agent-config
         env:
+        - name: DOCKER_PROXY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: docker-proxy-auth
+              key: DOCKER_PROXY_TOKEN
         - name: NODE_NAME
           valueFrom:
             fieldRef:
@@ -131,6 +195,9 @@ spec:
         hostPath:
           path: /var/run/docker.sock
           type: Socket
+      - name: docker-proxy-config
+        configMap:
+          name: docker-proxy-config
       - name: certs
         projected:
           defaultMode: 0440
@@ -147,20 +214,3 @@ spec:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: docker-proxy
-  labels:
-    app.kubernetes.io/name: docker-proxy
-    app.kubernetes.io/component: proxy
-spec:
-  type: ClusterIP
-  internalTrafficPolicy: Local
-  selector:
-    app.kubernetes.io/name: docker-proxy
-  ports:
-  - name: docker
-    port: 2375
-    targetPort: docker

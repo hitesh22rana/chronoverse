@@ -23,7 +23,7 @@ Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Schedulin
 - Redis: sessions, cached reads, live log pub/sub, and image-pull locks.
 - Meilisearch: retained log search.
 - Runtime agent: Docker-capable node registration, heartbeat, and capacity metadata.
-- Docker proxy: constrained node-local container lifecycle access.
+- Docker proxy: token-authenticated, method-and-path-allowlisted node-local container lifecycle access.
 - LGTM: OpenTelemetry collection and dashboards.
 
 ## Design invariant

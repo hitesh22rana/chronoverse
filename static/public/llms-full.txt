@@ -426,7 +426,7 @@ Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Schedulin
 - Redis: sessions, cached reads, live log pub/sub, and image-pull locks.
 - Meilisearch: retained log search.
 - Runtime agent: Docker-capable node registration, heartbeat, and capacity metadata.
-- Docker proxy: constrained node-local container lifecycle access.
+- Docker proxy: token-authenticated, method-and-path-allowlisted node-local container lifecycle access.
 - LGTM: OpenTelemetry collection and dashboards.
 
 ## Design invariant
@@ -756,6 +756,8 @@ Heartbeat targets must be publicly reachable endpoints. Requests that resolve to
 `CONTAINER` workflows describe a Docker image and command in the payload. The workflow worker resolves execution metadata, `jobs-service` assigns a fresh runtime node during claim, and the execution worker runs the workload through the runtime endpoint registered by `runtime-agent`.
 
 Container workflows can retain stdout and stderr, stream output while running, and participate in text search and raw downloads after completion.
+
+Every workload container runs isolated: it is attached to a dedicated `chronoverse-workloads` Docker network (never the default bridge) with inter-container communication disabled, so tenant workloads cannot reach each other even by IP. All Linux capabilities are dropped, privilege escalation is disabled (`no-new-privileges`), the root filesystem is read-only with a writable `nosuid` tmpfs at `/tmp`, and IPC is private. Internet egress remains available for legitimate jobs; host-published ports stay reachable from workloads via the network gateway and remain protected by the platform's own mTLS and authentication layers. Set `EXECUTION_WORKER_WORKLOAD_NETWORK` to pin workloads to a different network name — the runtime creates or revalidates it immediately before each workload and refuses to run if isolation cannot be guaranteed. Custom names must match `[A-Za-z0-9][A-Za-z0-9_.-]*` so they are portable across direct Docker and the Kubernetes socket proxy.
 
 ## Shared controls
 
@@ -1180,7 +1182,7 @@ The production Ingress references `chronoverse-ingress-tls`; replace the
 generated self-signed fallback with a trusted certificate before exposing real
 traffic.
 
-Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry.
+Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry. Kubernetes setup generates a proxy token shared only by trusted runtime and worker processes, and the proxy enforces an exact method-and-path allowlist.
 
 ## Maintenance-window upgrades
 
@@ -1225,7 +1227,7 @@ The production profile declares replicated workers and resource reservations. Ef
 - Configure the public host URL, allowed origins, secure cookies, and same-site policy.
 - Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
 - Restrict access to the LGTM dashboard.
-- Restrict Docker proxy TCP `2375` to trusted Chronoverse traffic with private networking, node firewall rules or security groups, and the Docker socket proxy allowlist. NetworkPolicy support for node-IP hostPort traffic depends on the CNI.
+- Restrict Docker proxy TCP `2375` to trusted Chronoverse traffic with private networking, node firewall rules or security groups. Preserve the generated proxy token and exact Docker API allowlist; NetworkPolicy support for node-IP hostPort traffic depends on the CNI.
 - Define backup, restore, and retention procedures for PostgreSQL and ClickHouse.
 </doc>
 
@@ -1245,7 +1247,7 @@ scripts/k8s/setup.sh --mode production
 
 `production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services and workers, runtime-agent, Docker proxy, migrations, and topic initialization.
 
-The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes.
+The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` with a high-entropy token shared only by the Docker proxy, runtime-agent, workflow-worker, and execution-worker.
 
 Useful non-interactive options include:
 
@@ -1314,11 +1316,11 @@ Kubernetes does not provide deployment startup ordering for long-running pods. C
 
 ## Docker execution model
 
-Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register a node-stable endpoint, `tcp://$(NODE_IP):2375`, exposed by the Docker proxy `hostPort`; `tcp://docker-proxy:2375` must not be persisted as a runtime endpoint.
+Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register a node-stable endpoint, `tcp://$(NODE_IP):2375`, exposed by the Docker proxy `hostPort`; `tcp://docker-proxy:2375` must not be persisted as a runtime endpoint. Every trusted client attaches the generated proxy token, and the proxy forwards only an exact allowlist of Docker methods and paths. Workload containers have neither the token nor access to network connect/disconnect endpoints.
 
 `workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
 
-Workers must be able to reach runtime node IPs on TCP `2375`. The base NetworkPolicy allows that egress port, but production clusters should also restrict the host port with private networking, node firewall rules or security groups, and the Docker socket proxy API allowlist. Docker API port `2375` must never be publicly exposed.
+Workers must be able to reach runtime node IPs on TCP `2375`. The base NetworkPolicy allows that egress port, but production clusters should also restrict the host port with private networking, node firewall rules or security groups. Token authentication and the Docker API allowlist are additional controls; Docker API port `2375` must never be publicly exposed.
 
 Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's hostPort from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.
 
@@ -1434,7 +1436,7 @@ The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `R
 
 ## Docker access
 
-Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access.
+Execution components use a socket proxy with a narrow API surface instead of broad direct daemon access. In Kubernetes, a generated high-entropy token authenticates runtime-agent and worker requests, and a method-and-path allowlist permits image, container, and log operations plus exactly two network operations — inspect and create. Workload containers never receive the token, and `/networks/*/connect` and `/networks/*/disconnect` are denied. The runtime uses those two allowed operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs. It revalidates the network immediately before each container creation, recreates a safely pruned network, and fails closed if the network has been replaced with an unsafe configuration.
 
 ## Production secrets
 
@@ -2183,7 +2185,7 @@ Carries durable asynchronous events. It is a transport log, not the only record 
 
 ## Runtime registry and Docker proxy
 
-`runtime-agent` registers Docker-capable nodes in PostgreSQL and heartbeats Docker endpoint health, capacity, and status. The Docker proxy exposes a narrow subset of Docker APIs to workers instead of mounting the daemon socket directly into every process.
+`runtime-agent` registers Docker-capable nodes in PostgreSQL and heartbeats Docker endpoint health, capacity, and status. The Docker proxy exposes a token-authenticated, method-and-path-allowlisted subset of Docker APIs to workers instead of mounting the daemon socket directly into every process.
 
 `runtime-agent` owns rows in `runtime_nodes`. Jobs store `runtime_node_id` and an endpoint snapshot while they are running so execution, logs, termination, deletion, and expired-lease recovery use the Docker daemon that owns the container.
 
@@ -2306,7 +2308,7 @@ Consumer throughput is bounded by partition count. Production defaults use more 
 
 Scale concurrency only when registered runtime capacity, Docker CPU, memory, image bandwidth, Kafka partitions, jobs-service latency, and lease-renewal headroom support it.
 
-Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker, and do not apply to image pulls.
+Execution worker container limits protect the worker process. `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits protect each Docker workload container launched by the worker, and do not apply to image pulls. `EXECUTION_WORKER_WORKLOAD_NETWORK` names the dedicated Docker network every workload attaches to (default `chronoverse-workloads`, created on demand with inter-container communication disabled). Custom names must match `[A-Za-z0-9][A-Za-z0-9_.-]*`; the runtime revalidates the network before every container creation and recreates it after a safe prune.
 
 Execution workers do not need to run on the same node as the Docker daemon. They receive `runtime_endpoint` from `jobs-service` and use the direct Docker data plane for image ensure, container start, logs, and cleanup.
 

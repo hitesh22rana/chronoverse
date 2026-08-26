@@ -45,6 +45,7 @@ type ExecutionWorkerConfig struct {
 	WorkloadMemory              string        `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY" default:"512m"`
 	WorkloadCPUs                float64       `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS" default:"1"`
 	WorkloadPidsLimit           int64         `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT" default:"256"`
+	WorkloadNetwork             string        `envconfig:"EXECUTION_WORKER_WORKLOAD_NETWORK" default:"chronoverse-workloads"`
 }
 
 // InitExecutionJobConfig initializes the execution worker configuration.

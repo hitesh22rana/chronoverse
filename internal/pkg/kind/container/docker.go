@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +16,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"golang.org/x/sync/singleflight"
@@ -27,14 +30,37 @@ import (
 const (
 	// containerStopTimeout is the default timeout for stopping a container.
 	containerStopTimeout = 2 * time.Second
+
+	// capDropAll drops every Linux capability from workload containers.
+	capDropAll = "ALL"
+
+	// workloadNetworkICCOption/Driver/ICCOff describe the dedicated workload
+	// bridge: tenant containers on it cannot reach each other.
+	workloadNetworkICCOption = "com.docker.network.bridge.enable_icc"
+	workloadNetworkDriver    = "bridge"
+	workloadNetworkICCOff    = "false"
+
+	// dockerProxyTokenEnv / dockerProxyTokenHeader carry the shared Kubernetes
+	// socket-proxy credential without changing the persisted endpoint URL.
+	dockerProxyTokenEnv    = "DOCKER_PROXY_TOKEN"               //nolint:gosec // Environment-variable name, not a credential.
+	dockerProxyTokenHeader = "X-Chronoverse-Docker-Proxy-Token" //nolint:gosec // Header name, not a credential.
+
+	// platformNetwork is the Compose service network; workloads must never attach.
+	platformNetwork = "chronoverse"
+
+	// DefaultWorkloadNetwork is the ICC-disabled bridge every workload is pinned
+	// to; created on demand (VULN-004a/b).
+	DefaultWorkloadNetwork = "chronoverse-workloads"
 )
 
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
-	pullGroup      singleflight.Group
-	resourceLimits ResourceLimits
-	dockerHost     string
+	pullGroup        singleflight.Group
+	resourceLimits   ResourceLimits
+	dockerHost       string
+	workloadNetwork  string
+	dockerProxyToken string
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -68,9 +94,23 @@ func WithDockerHost(host string) DockerWorkflowOption {
 	}
 }
 
+// WithWorkloadNetwork overrides the docker network workload containers are
+// attached to. The network is created on demand if the daemon does not have
+// it yet.
+func WithWorkloadNetwork(name string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		if name != "" {
+			w.workloadNetwork = name
+		}
+	}
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
-	w := &DockerWorkflow{}
+	w := &DockerWorkflow{
+		workloadNetwork:  DefaultWorkloadNetwork,
+		dockerProxyToken: os.Getenv(dockerProxyTokenEnv),
+	}
 	for _, option := range options {
 		if option != nil {
 			option(w)
@@ -84,6 +124,11 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	if w.dockerHost != "" {
 		clientOptions = append(clientOptions, client.WithHost(w.dockerHost))
 	}
+	if w.dockerProxyToken != "" {
+		clientOptions = append(clientOptions, client.WithHTTPHeaders(map[string]string{
+			dockerProxyTokenHeader: w.dockerProxyToken,
+		}))
+	}
 	cli, err := client.NewClientWithOpts(
 		clientOptions...,
 	)
@@ -94,10 +139,104 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	w.Client = cli
 
 	if err := w.healthCheck(context.Background()); err != nil {
+		// EndpointCache retries failed constructions per claim: close the ping
+		// connection or persistent faults leak one connection per attempt.
+		cli.Close()
 		return nil, err
 	}
 
+	// No network work here: lifecycle-only clients (expired-lease recovery)
+	// must construct even when the workload network is broken. Execute enforces
+	// isolation before every container creation.
+
 	return w, nil
+}
+
+// workloadNetworkMissing reports whether the configured network is absent;
+// other inspect errors return false so the caller keeps its original failure.
+func (w *DockerWorkflow) workloadNetworkMissing(ctx context.Context) bool {
+	_, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+	return cerrdefs.IsNotFound(err)
+}
+
+// ensureWorkloadNetwork idempotently creates the dedicated workload network
+// (bridge, ICC disabled) when missing, then validates what the daemon created.
+func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
+	if err := validateWorkloadNetworkName(w.workloadNetwork); err != nil {
+		return err
+	}
+
+	if inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
+		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+	} else if !cerrdefs.IsNotFound(err) {
+		return status.Errorf(codes.Internal, "failed to inspect workload network %q: %v", w.workloadNetwork, err)
+	}
+
+	if _, err := w.Client.NetworkCreate(ctx, w.workloadNetwork, network.CreateOptions{
+		Driver: workloadNetworkDriver,
+		Options: map[string]string{
+			// Tenant containers on this network must not reach each other.
+			workloadNetworkICCOption: workloadNetworkICCOff,
+		},
+	}); err != nil {
+		// Lost a create race (or the daemon reported the conflict with an
+		// inconsistent status): accept the winner only if it is isolated.
+		inspected, inspectErr := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+		if inspectErr != nil {
+			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
+		}
+		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+	}
+
+	// Verify the daemon honored the requested options (fail-closed).
+	inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to verify workload network %q after creation: %v", w.workloadNetwork, err)
+	}
+	return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+}
+
+// workloadNetworkNamePattern is the character class the k8s socket-proxy ACL
+// accepts for network paths, so configured names stay portable between direct
+// Docker and proxied Kubernetes daemons.
+var workloadNetworkNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+func validateWorkloadNetworkName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || trimmed != name {
+		return status.Errorf(codes.FailedPrecondition, "workload network name %q is invalid", name)
+	}
+	normalized := strings.ToLower(trimmed)
+
+	switch normalized {
+	case network.NetworkDefault, network.NetworkHost, network.NetworkNone, network.NetworkBridge, network.NetworkNat, platformNetwork, "container":
+		return status.Errorf(codes.FailedPrecondition, "workload network %q is reserved", name)
+	}
+	if strings.HasPrefix(normalized, "container:") {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q is a reserved container network mode", name)
+	}
+	if !workloadNetworkNamePattern.MatchString(trimmed) {
+		return status.Errorf(codes.FailedPrecondition, "workload network name %q is invalid", name)
+	}
+
+	return nil
+}
+
+func validateWorkloadNetwork(configuredName string, inspected *network.Inspect) error {
+	if err := validateWorkloadNetworkName(inspected.Name); err != nil {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to an unsafe network: %v", configuredName, err)
+	}
+	if inspected.Name != configuredName {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to unexpected network %q", configuredName, inspected.Name)
+	}
+	if inspected.Driver != workloadNetworkDriver {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q uses driver %q, want bridge", configuredName, inspected.Driver)
+	}
+	if inspected.Options[workloadNetworkICCOption] != workloadNetworkICCOff {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q does not disable inter-container communication", configuredName)
+	}
+
+	return nil
 }
 
 func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
@@ -135,18 +274,38 @@ func (w *DockerWorkflow) Execute(
 
 	containerTimeout := int(timeout.Seconds())
 
+	createContainer := func() (container.CreateResponse, error) {
+		return w.Client.ContainerCreate(
+			ctx,
+			&container.Config{
+				Image:       image,
+				Cmd:         cmd,
+				StopTimeout: &containerTimeout,
+				Env:         env,
+			},
+			w.hostConfig(),
+			nil, nil, "",
+		)
+	}
+
+	// Cached clients outlive the network they initialized: revalidate before
+	// use so prunes are recreated and unsafe replacements are rejected before
+	// Docker attaches a workload. Drift is infra, not user error, hence the
+	// retryable Internal classification.
+	if err := w.ensureWorkloadNetwork(ctx); err != nil {
+		return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", err)
+	}
+
 	// Create container with auto-removal
-	resp, err := w.Client.ContainerCreate(
-		ctx,
-		&container.Config{
-			Image:       image,
-			Cmd:         cmd,
-			StopTimeout: &containerTimeout,
-			Env:         env,
-		},
-		w.hostConfig(),
-		nil, nil, "",
-	)
+	resp, err := createContainer()
+	if err != nil && w.workloadNetworkMissing(ctx) {
+		// The network was pruned between the check and the create; a missing
+		// network proves no container was created, so one retry is safe.
+		if ensureErr := w.ensureWorkloadNetwork(ctx); ensureErr != nil {
+			return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", ensureErr)
+		}
+		resp, err = createContainer()
+	}
 	if err != nil || resp.ID == "" {
 		return "", nil, nil, status.Errorf(codes.FailedPrecondition, "failed to create container: %v", err)
 	}
@@ -239,8 +398,23 @@ func (w *DockerWorkflow) Execute(
 }
 
 func (w *DockerWorkflow) hostConfig() *container.HostConfig {
+	// Workload isolation (VULN-004a): dedicated network, no capabilities, no
+	// privilege escalation, read-only rootfs with a writable /tmp.
+	networkMode := DefaultWorkloadNetwork
+	if w != nil && w.workloadNetwork != "" {
+		networkMode = w.workloadNetwork
+	}
+
 	hostConfig := &container.HostConfig{
-		AutoRemove: false,
+		AutoRemove:     false,
+		NetworkMode:    container.NetworkMode(networkMode),
+		CapDrop:        []string{capDropAll},
+		SecurityOpt:    []string{"no-new-privileges"},
+		ReadonlyRootfs: true,
+		Tmpfs: map[string]string{
+			"/tmp": "rw,nosuid,size=256m",
+		},
+		IpcMode: container.IPCModePrivate,
 	}
 	if w == nil {
 		return hostConfig

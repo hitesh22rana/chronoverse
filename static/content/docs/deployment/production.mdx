@@ -31,7 +31,7 @@ The production Ingress references `chronoverse-ingress-tls`; replace the
 generated self-signed fallback with a trusted certificate before exposing real
 traffic.
 
-Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry.
+Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2375` through the proxy `hostPort`; workers can schedule anywhere and route Docker work through the runtime registry. Kubernetes setup generates a proxy token shared only by trusted runtime and worker processes, and the proxy enforces an exact method-and-path allowlist.
 
 ## Maintenance-window upgrades
 
@@ -76,5 +76,5 @@ The production profile declares replicated workers and resource reservations. Ef
 - Configure the public host URL, allowed origins, secure cookies, and same-site policy.
 - Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
 - Restrict access to the LGTM dashboard.
-- Restrict Docker proxy TCP `2375` to trusted Chronoverse traffic with private networking, node firewall rules or security groups, and the Docker socket proxy allowlist. NetworkPolicy support for node-IP hostPort traffic depends on the CNI.
+- Restrict Docker proxy TCP `2375` to trusted Chronoverse traffic with private networking, node firewall rules or security groups. Preserve the generated proxy token and exact Docker API allowlist; NetworkPolicy support for node-IP hostPort traffic depends on the CNI.
 - Define backup, restore, and retention procedures for PostgreSQL and ClickHouse.

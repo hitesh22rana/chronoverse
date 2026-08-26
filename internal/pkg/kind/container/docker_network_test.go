@@ -428,3 +428,33 @@ func TestNewDockerWorkflowNetworkCallsAreBootstrapOnly(t *testing.T) {
 		t.Fatalf("bootstrap constructor made %d network calls, want 1", networkCalls)
 	}
 }
+
+func TestBootstrapValidationFailureIsInfrastructureError(t *testing.T) {
+	// An existing network with ICC enabled is node-side drift: construction
+	// must surface codes.Internal (retryable system failure) instead of
+	// codes.FailedPrecondition (permanent user failure).
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/_ping":
+			w.Header().Set("API-Version", "1.51")
+			writeDockerTestResponse(t, w, "OK")
+		case strings.Contains(r.URL.Path, "/networks/create"):
+			w.Header().Set("Content-Type", "application/json")
+			writeDockerTestResponse(t, w, `{"ID":"net-1","Warning":""}`)
+		case strings.Contains(r.URL.Path, "/networks/"):
+			w.Header().Set("Content-Type", "application/json")
+			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"`+workloadNetworkICCOption+`":"true"}}`)
+		default:
+			t.Fatalf("unexpected Docker API request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := NewDockerWorkflow(WithDockerHost(server.URL), WithWorkloadNetworkBootstrap())
+	if err == nil {
+		t.Fatal("NewDockerWorkflow() expected failure for ICC-enabled workload network")
+	}
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("bootstrap failure code = %s, want %s (retryable): %v", status.Code(err), codes.Internal, err)
+	}
+}

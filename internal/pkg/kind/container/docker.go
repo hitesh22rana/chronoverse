@@ -175,7 +175,12 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	// from the workload network configuration.
 	if w.bootstrapWorkloadNetwork {
 		if err := w.ensureWorkloadNetwork(context.Background()); err != nil {
-			return nil, err
+			// Bootstrap runs lazily inside claim processing, so the same
+			// node-side drift that Execute wraps as a retryable system error
+			// flows through here. Keep the classification identical: an
+			// unsafe or missing network is infrastructure, never the user's
+			// EXECUTION_FAILED.
+			return nil, status.Errorf(codes.Internal, "workload network bootstrap failed: %v", err)
 		}
 	}
 

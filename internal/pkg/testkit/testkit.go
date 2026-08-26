@@ -171,28 +171,25 @@ func KafkaSeed(t *testing.T) string {
 
 // Kafka returns a franz-go client connected to the shared Kafka broker. The
 // client has no consumer group and is meant for producing records and admin
-// operations. Consumers with their own group are created with KafkaConsumer.
+// operations. Tests that need to observe records use KafkaRecordConsumer.
 func Kafka(t *testing.T) *kgo.Client {
 	t.Helper()
 	shared.start(t, serviceKafka)
 	return shared.kfk
 }
 
-// KafkaConsumer returns a fresh consumer client with a dedicated consumer group
-// that starts reading from the earliest offset of the given topics.
-func KafkaConsumer(t *testing.T, group string, topics ...string) *kgo.Client {
+// KafkaRecordConsumer returns a fresh direct consumer that starts reading from
+// the earliest offset of the given topics. Record-observer tests do not need
+// consumer-group coordination, whose initial rebalance can be slow when CI is
+// provisioning several Kafka containers concurrently.
+func KafkaRecordConsumer(t *testing.T, topics ...string) *kgo.Client {
 	t.Helper()
 	shared.start(t, serviceKafka)
 
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(shared.kafkaSeed),
-		kgo.ConsumerGroup(group),
 		kgo.ConsumeTopics(topics...),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
-		// No BlockRebalanceOnPoll: tests stop polling before Close, and
-		// Close's leave-group would then block forever on a rebalance that
-		// only an in-flight poll can advance.
-		kgo.DisableAutoCommit(),
 	)
 	if err != nil {
 		t.Fatalf("failed to create kafka consumer: %v", err)

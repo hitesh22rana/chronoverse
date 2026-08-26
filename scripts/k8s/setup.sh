@@ -215,6 +215,7 @@ secret_keys() {
     chronoverse-service-tls) echo "users-service.crt users-service.key workflows-service.crt workflows-service.key jobs-service.crt jobs-service.key notifications-service.crt notifications-service.key analytics-service.crt analytics-service.key" ;;
     chronoverse-infra-tls) echo "postgres.crt postgres.key redis.crt redis.key clickhouse.crt clickhouse.key kafka.crt kafka.key meilisearch.crt meilisearch.key" ;;
     chronoverse-kafka-tls) echo "kafka.keystore.jks kafka.truststore.jks keystore_creds.txt truststore_creds.txt key_creds.txt" ;;
+    grafana-secret) echo "GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD" ;;
     *) die "unknown secret $1" ;;
   esac
 }
@@ -332,6 +333,18 @@ create_data_secrets() {
 
   create_literal_secret docker-proxy-auth \
     --from-literal=DOCKER_PROXY_TOKEN="$docker_proxy_token"
+
+  # Grafana admin credentials: local uses fixed defaults, production generates random.
+  local grafana_user="admin"
+  local grafana_password
+  if [ "$MODE" = "local" ]; then
+    grafana_password="chronoverse-local-grafana-password"
+  else
+    grafana_password="$(random_hex 24)"
+  fi
+  create_literal_secret grafana-secret \
+    --from-literal=GF_SECURITY_ADMIN_USER="$grafana_user" \
+    --from-literal=GF_SECURITY_ADMIN_PASSWORD="$grafana_password"
 }
 
 create_server_security_secret() {

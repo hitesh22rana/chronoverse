@@ -2232,7 +2232,7 @@ Chronoverse emits OpenTelemetry traces, metrics, and structured logs to the bund
 
 ## Collection
 
-Services and workers export over OTLP gRPC to `lgtm:4317`. The local Grafana UI is published on port `3000`.
+Services and workers export over OTLP gRPC to `lgtm:4317`. The Grafana UI is available inside the `lgtm` container on port `3000` (not host-published; use `kubectl port-forward svc/lgtm 3000:3000` or a compose port tunnel, authenticated via `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`; anonymous access disabled).
 
 ## Traces
 

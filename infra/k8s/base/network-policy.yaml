@@ -42,3 +42,33 @@ spec:
       port: 9094
     - protocol: TCP
       port: 9440
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: docker-proxy
+  labels:
+    app.kubernetes.io/name: docker-proxy
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: docker-proxy
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    # runtime-agent runs as a sidecar in the same DaemonSet pod (self)
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: docker-proxy
+    # execution/workflow workers dial the docker endpoint reported by runtime_nodes
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: execution-worker
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: workflow-worker
+    ports:
+    - protocol: TCP
+      port: 2375

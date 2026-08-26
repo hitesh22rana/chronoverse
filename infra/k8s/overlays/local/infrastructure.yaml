@@ -744,9 +744,11 @@ spec:
           containerPort: 4318
         env:
         - name: GF_AUTH_ANONYMOUS_ENABLED
-          value: "true"
-        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
-          value: Admin
+          value: "false"
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: chronoverse-local-grafana-password
         resources:
           requests:
             cpu: 250m

@@ -17,8 +17,8 @@ Development builds local images and exposes internal ports for debugging:
 | --- | ---: | --- |
 | Dashboard | `3001` | Next.js dashboard, built with `NEXT_PUBLIC_API_URL=http://localhost:8080` |
 | HTTP API | `8080` | Direct server access |
-| LGTM | `3000` | Observability UI |
 | OTLP gRPC | `4317` | OpenTelemetry collector endpoint |
+| LGTM Grafana | — | Not host-published; access via `docker compose port lgtm 3000` tunnel or `kubectl port-forward svc/lgtm 3000:3000`. Anonymous access disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`), authenticated via `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD` (dev defaults to `admin` / `chronoverse-local-grafana-password`, override via `GF_SECURITY_ADMIN_PASSWORD`) |
 | PostgreSQL | `5432` | TLS-enabled database |
 | ClickHouse | `9440` | Secure native protocol |
 | Redis | `6379` | TLS-enabled Redis |
@@ -43,7 +43,7 @@ exposure is intentionally small:
 | Component | Host port | Notes |
 | --- | ---: | --- |
 | Nginx | `80` | Dashboard and `/api/...` reverse proxy |
-| LGTM | `3000` | Observability UI |
+| LGTM Grafana | — | Not host-published. Access via SSH tunnel / `kubectl port-forward svc/lgtm 3000:3000`. Anonymous access disabled; credentials from `grafana-secret` (production) or `GF_SECURITY_ADMIN_PASSWORD` env (compose, required) |
 
 Production Kafka topic partition defaults are:
 
@@ -271,18 +271,18 @@ backpressure instead of starting another workload.
 `runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
 PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
-In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
-and register a node-stable endpoint such as `tcp://$(NODE_IP):2375`, not a pod
-IP or `tcp://docker-proxy:2375` service DNS name. The Docker proxy host port
-must stay private. `scripts/k8s/setup.sh` provisions `docker-proxy-auth`; trusted
-runtime and worker clients attach its token to every Docker request, and the
-proxy enforces an exact method-and-path allowlist before forwarding to the host
-socket.
+In Kubernetes, the `docker-proxy` DaemonSet exposes a `ClusterIP` Service
+`docker-proxy:2375` and the `runtime-agent` sidecar registers the stable
+service endpoint `tcp://docker-proxy.chronoverse.svc:2375`. The proxy no longer
+uses a `hostPort`; reachability is gated by a dedicated `NetworkPolicy`
+(allowing only the `runtime-agent` sidecar and the `execution-worker` /
+`workflow-worker` pods) and by the `docker-proxy-auth` token that
+`scripts/k8s/setup.sh` provisions. Every Docker request carries
+`X-Chronoverse-Docker-Proxy-Token` and the haproxy allowlist enforces an exact
+method-and-path check before forwarding to the host socket.
 Multi-node kind and similar Docker-container-based Kubernetes emulators can
-make node host ports reachable only from pods on the same emulator node. In that
-specific topology, use a pod-IP endpoint override as an emulator workaround; do
-not use pod-IP runtime endpoints for real Kubernetes clusters where node IPs are
-routable.
+make `ClusterIP` routing behave differently; if needed, override the endpoint as
+an emulator-only workaround.
 `RUNTIME_AGENT_ID` must be stable for the lifetime of that runtime node. Derive
 it from durable node identity, such as the Kubernetes node name, hostname, or a
 mounted identity file; do not generate a new random ID on every restart.
@@ -437,3 +437,5 @@ and partial internal TLS trust chains:
 - `chronoverse-service-tls`: per-service gRPC certificate and key files
 - `chronoverse-infra-tls`: PostgreSQL, Redis, ClickHouse, Kafka, and Meilisearch certificate/key pairs
 - `chronoverse-kafka-tls`: Kafka keystore, truststore, and credential files
+- `grafana-secret`: `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD` (Grafana admin credentials; `setup.sh` generates for both local and production, preserves operator-provided values; compose production requires `GF_SECURITY_ADMIN_PASSWORD` via env)
+- `docker-proxy-auth`: `DOCKER_PROXY_TOKEN` (256-bit haproxy token; `setup.sh` generates, consumed by `docker-proxy` and `runtime-agent`/`execution-worker`/`workflow-worker` via `X-Chronoverse-Docker-Proxy-Token`)

@@ -754,9 +754,19 @@ spec:
           containerPort: 4318
         env:
         - name: GF_AUTH_ANONYMOUS_ENABLED
-          value: "true"
-        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
-          value: Admin
+          value: "false"
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_SECURITY_ADMIN_USER
+              optional: false
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_SECURITY_ADMIN_PASSWORD
+              optional: false
         resources:
           requests:
             cpu: 250m

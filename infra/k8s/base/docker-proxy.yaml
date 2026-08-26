@@ -66,6 +66,23 @@ data:
 
       default_backend dockerbackend
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docker-proxy
+  labels:
+    app.kubernetes.io/name: docker-proxy
+    app.kubernetes.io/component: proxy
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: docker-proxy
+  ports:
+  - name: docker
+    port: 2375
+    targetPort: docker
+    protocol: TCP
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -112,7 +129,6 @@ spec:
         ports:
         - name: docker
           containerPort: 2375
-          hostPort: 2375
           protocol: TCP
         env:
         - name: DOCKER_PROXY_TOKEN
@@ -168,9 +184,9 @@ spec:
         - name: RUNTIME_AGENT_NODE_NAME
           value: $(NODE_NAME)
         - name: DOCKER_HOST
-          value: tcp://$(NODE_IP):2375
+          value: tcp://docker-proxy.chronoverse.svc:2375
         - name: RUNTIME_AGENT_DOCKER_ENDPOINT
-          value: tcp://$(NODE_IP):2375
+          value: tcp://docker-proxy.chronoverse.svc:2375
         resources:
           requests:
             cpu: 50m

@@ -135,7 +135,7 @@ spec:
           readOnly: true
       - name: runtime-agent
         image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: postgres-connection-config

@@ -165,6 +165,11 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	w.Client = cli
 
 	if err := w.healthCheck(context.Background()); err != nil {
+		// EndpointCache does not cache failed constructors, so it re-runs this
+		// construction on every claim. Close the client (and its idle ping
+		// connection) or persistent bootstrap faults leak one connection per
+		// attempt until file descriptors run out.
+		cli.Close()
 		return nil, err
 	}
 
@@ -180,6 +185,7 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 			// flows through here. Keep the classification identical: an
 			// unsafe or missing network is infrastructure, never the user's
 			// EXECUTION_FAILED.
+			cli.Close()
 			return nil, status.Errorf(codes.Internal, "workload network bootstrap failed: %v", err)
 		}
 	}

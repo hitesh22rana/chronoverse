@@ -3,6 +3,7 @@ package container
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -456,5 +457,47 @@ func TestBootstrapValidationFailureIsInfrastructureError(t *testing.T) {
 	}
 	if status.Code(err) != codes.Internal {
 		t.Fatalf("bootstrap failure code = %s, want %s (retryable): %v", status.Code(err), codes.Internal, err)
+	}
+}
+
+func TestConstructorClosesClientOnBootstrapFailure(t *testing.T) {
+	connClosed := make(chan struct{}, 8)
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/_ping":
+			w.Header().Set("API-Version", "1.51")
+			writeDockerTestResponse(t, w, "OK")
+		case strings.Contains(r.URL.Path, "/networks/"):
+			// Node-side drift: network exists but is unsafe, so bootstrap fails.
+			w.Header().Set("Content-Type", "application/json")
+			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"`+workloadNetworkICCOption+`":"true"}}`)
+		default:
+			t.Fatalf("unexpected Docker API request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			connClosed <- struct{}{}
+		}
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+
+	w, err := NewDockerWorkflow(WithDockerHost(server.URL), WithWorkloadNetworkBootstrap())
+	if err == nil {
+		t.Fatal("expected bootstrap failure for unsafe workload network")
+	}
+	if w != nil {
+		t.Fatal("failed constructor must not return a client")
+	}
+
+	// The ping connection must be closed instead of leaked: the endpoint cache
+	// re-runs construction on every claim, so an unclosed client would
+	// accumulate one idle connection per claim until file descriptors run out.
+	select {
+	case <-connClosed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ping connection was not closed after failed construction")
 	}
 }

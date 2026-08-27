@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -32,7 +33,12 @@ import (
 
 const (
 	// containerStopTimeout is the default timeout for stopping a container.
-	containerStopTimeout = 2 * time.Second
+	containerStopTimeout      = 2 * time.Second
+	dockerDialTimeout         = 10 * time.Second
+	dockerTLSHandshakeTimeout = 10 * time.Second
+	dockerHealthCheckTimeout  = 10 * time.Second
+	dockerIdleConnTimeout     = 30 * time.Second
+	dockerMaxIdleConns        = 6
 
 	// capDropAll drops every Linux capability from workload containers.
 	capDropAll = "ALL"
@@ -140,10 +146,36 @@ func WithDockerProxyToken(token string) DockerWorkflowOption {
 
 // newDockerProxyTLSConfig loads mTLS credentials for the per-node proxy on :2376.
 func newDockerProxyTLSConfig(caFile, certFile, keyFile, serverName string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
+	if serverName == "" {
+		return nil, errors.New("docker-proxy TLS server name is required")
+	}
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
 		return nil, err
 	}
+	if _, err := loadDockerProxyCAPool(caFile); err != nil {
+		return nil, err
+	}
+
+	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: serverName,
+		// Verification is performed in VerifyConnection so the projected CA
+		// bundle can rotate without restarting every cached Docker client.
+		InsecureSkipVerify: true, //nolint:gosec // VerifyConnection performs hostname and chain verification with the current CA bundle.
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				return nil, err
+			}
+			return &cert, nil
+		},
+		VerifyConnection: func(state tls.ConnectionState) error {
+			return verifyDockerProxyConnection(&state, caFile, serverName)
+		},
+	}, nil
+}
+
+func loadDockerProxyCAPool(caFile string) (*x509.CertPool, error) {
 	caPEM, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, err
@@ -152,15 +184,28 @@ func newDockerProxyTLSConfig(caFile, certFile, keyFile, serverName string) (*tls
 	if !caPool.AppendCertsFromPEM(caPEM) {
 		return nil, errors.New("failed to append docker-proxy CA")
 	}
-	cfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
-		MinVersion:   tls.VersionTLS12,
+	return caPool, nil
+}
+
+func verifyDockerProxyConnection(state *tls.ConnectionState, caFile, serverName string) error {
+	if len(state.PeerCertificates) == 0 {
+		return errors.New("docker-proxy did not present a server certificate")
 	}
-	if serverName != "" {
-		cfg.ServerName = serverName
+	roots, err := loadDockerProxyCAPool(caFile)
+	if err != nil {
+		return err
 	}
-	return cfg, nil
+	intermediates := x509.NewCertPool()
+	for _, cert := range state.PeerCertificates[1:] {
+		intermediates.AddCert(cert)
+	}
+	_, err = state.PeerCertificates[0].Verify(x509.VerifyOptions{
+		DNSName:       serverName,
+		Roots:         roots,
+		Intermediates: intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	})
+	return err
 }
 
 // NewDockerWorkflow creates a new DockerWorkflow.
@@ -196,10 +241,18 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 			return nil, status.Errorf(codes.Internal, "failed to load docker proxy TLS config: %v", err)
 		}
 		transport := &http.Transport{
-			TLSClientConfig: tlsConfig,
+			DialContext: (&net.Dialer{
+				Timeout:   dockerDialTimeout,
+				KeepAlive: dockerIdleConnTimeout,
+			}).DialContext,
+			MaxIdleConns:        dockerMaxIdleConns,
+			IdleConnTimeout:     dockerIdleConnTimeout,
+			TLSHandshakeTimeout: dockerTLSHandshakeTimeout,
+			TLSClientConfig:     tlsConfig,
 		}
 		httpClient := &http.Client{
-			Transport: transport,
+			Transport:     transport,
+			CheckRedirect: client.CheckRedirect,
 		}
 		clientOptions = append(clientOptions, client.WithHTTPClient(httpClient))
 	}
@@ -212,7 +265,9 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 
 	w.Client = cli
 
-	if err := w.healthCheck(context.Background()); err != nil {
+	healthCtx, cancelHealth := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
+	defer cancelHealth()
+	if err := w.healthCheck(healthCtx); err != nil {
 		// EndpointCache retries failed constructions per claim: close the ping
 		// connection or persistent faults leak one connection per attempt.
 		cli.Close()
@@ -424,12 +479,14 @@ func (w *DockerWorkflow) Execute(
 				errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", timeoutCtx.Err())
 			}
 
-			// Container execution timed out - try to stop the container
+			// Container execution timed out - try to stop the container.
 			stopTimeout := int(containerStopTimeout.Seconds())
-			//nolint:errcheck,contextcheck // Ignore error, as we are trying to stop the container gracefully
-			_ = w.Client.ContainerStop(context.Background(), containerID, container.StopOptions{
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
+			//nolint:errcheck,contextcheck // Ignore error, as we are trying to stop the container gracefully.
+			_ = w.Client.ContainerStop(stopCtx, containerID, container.StopOptions{
 				Timeout: &stopTimeout,
 			})
+			stopCancel()
 
 			// Wait for logs to finish
 			select {

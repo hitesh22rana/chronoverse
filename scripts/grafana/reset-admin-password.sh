@@ -66,6 +66,16 @@ docker exec -i "$grafana_container" /bin/sh -ec '
     echo "error: Grafana executable is missing from the image" >&2
     exit 1
   }
+  if printf "%s" "$GF_SECURITY_ADMIN_USER" | od -An -tx1 | LC_ALL=C grep -q -E "(^| )(0[0-9a-f]|1[0-9a-f]|7f)( |$)"; then
+    echo "error: GF_SECURITY_ADMIN_USER contains a control character and cannot be migrated safely" >&2
+    exit 1
+  fi
+  case "$GF_SECURITY_ADMIN_USER" in
+    *:*)
+      echo "error: GF_SECURITY_ADMIN_USER cannot contain a colon because Grafana Basic authentication uses it as a delimiter" >&2
+      exit 1
+      ;;
+  esac
   printf "%s" "$GF_SECURITY_ADMIN_PASSWORD" | \
     /otel-lgtm/grafana/bin/grafana cli \
       --homepath /otel-lgtm/grafana \
@@ -97,7 +107,7 @@ docker exec \
     exit 1
   fi
 
-  if printf '%s' "$GF_SECURITY_ADMIN_USER" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+  if printf '%s' "$GF_SECURITY_ADMIN_USER" | od -An -tx1 | LC_ALL=C grep -q -E "(^| )(0[0-9a-f]|1[0-9a-f]|7f)( |$)"; then
     echo "error: GF_SECURITY_ADMIN_USER contains a control character and cannot be migrated safely" >&2
     exit 1
   fi

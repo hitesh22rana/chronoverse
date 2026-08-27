@@ -41,6 +41,10 @@ test/integration: dependencies
 k8s/setup:
 	@./scripts/k8s/setup.sh
 
+.PHONY: compose/validate
+compose/validate:
+	@./scripts/compose/validate.sh
+
 .PHONY: k8s/render/local
 k8s/render/local:
 	@kubectl kustomize infra/k8s/overlays/local

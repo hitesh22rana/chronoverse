@@ -16,6 +16,10 @@ Execution workers do not need to run on the same node as the Docker daemon. They
 
 Run one runtime agent beside each Docker-capable daemon. New container claims only use fresh `READY` runtime rows. Missing heartbeats pause new claims for that runtime, while expired-lease recovery uses the stored job owner to decide whether to clean up or retry.
 
+Kubernetes runtime endpoints are node IPs on mTLS `hostPort:2376`, not a load-balanced Service. Every labeled node must expose Docker Engine and be routable from every worker. Client caches are bounded to 256 endpoints with 30-minute idle and LRU eviction, so node churn does not grow worker memory without limit. containerd-only clusters are not Docker-workflow runtimes; multi-node kind-like emulators require an explicit cross-node hostPort reachability test.
+
+Role certificates scale with replicas: workflow-worker replicas share the workflow role and execution-worker replicas share the execution role, while each role is mounted separately. This separates privilege classes, not individual pod identities. A compromised execution role remains node-root-equivalent because it can create containers; use isolated/rootless runtime pools when that shared role blast radius is unacceptable.
+
 ## Workflow workers
 
 Replicas that share a runtime node coordinate identical image pulls through Redis. Different runtime nodes still pull independently. Docker host is used as a fallback when runtime scope is omitted. Build completion records the resolved workflow image digest; execution workers ensure that digest on the assigned runtime node before creating the container.

@@ -88,17 +88,65 @@ for Docker-backed workers because its node does not expose Docker Engine at
 cluster whose nodes really provide that socket.
 
 The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
-Docker-capable node. Official overlays register `tcp://$(NODE_IP):2375` so
-running job cleanup survives proxy pod restarts on the same node. The generated
-`docker-proxy-auth` token authenticates runtime-agent and worker requests, and
-the proxy forwards only the Docker methods and paths used by Chronoverse.
-Multi-node kind and other Docker-container-based Kubernetes emulators can have a
-specific hostPort routing limitation where pods on one emulator node cannot
-reach another emulator node's host port; if you choose that topology, use a
-pod-IP endpoint
-override as an emulator-only workaround. `workflow-worker` and
-`execution-worker` do not need the Docker node label; they can schedule anywhere
-with network access to TCP `2375` on registered runtime endpoints.
+Docker-capable node. Official overlays construct an IPv4/IPv6-safe node endpoint on `2376` via
+`hostPort:2376` so running job cleanup survives proxy pod restarts on the same
+node. Health probes use `tcp://127.0.0.1:2376` (loopback) while the advertised
+endpoint remains node-stable. The proxy binds
+`:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
+plus the `X-Chronoverse-Docker-Proxy-Token` and exact certificate-role and
+method/path ACLs. Runtime-agent receives health APIs only, workflow-worker gets
+image and cancellation-cleanup calls, and execution-worker gets the execution
+surface. The server and each role use separate private-key mounts; workload
+containers receive neither token nor certificate. Multi-node kind and other Docker-container-based Kubernetes emulators
+can have a specific hostPort routing limitation where pods on one emulator node
+cannot reach another emulator node's host port; if you choose that topology,
+use a pod-IP endpoint override as an emulator-only workaround.
+`workflow-worker` and `execution-worker` do not need the Docker node label;
+they can schedule anywhere with network access to TCP `2376` on registered
+runtime endpoints.
+
+When upgrading an existing installation from plaintext `2375`, rebuild and
+restart `runtime-agent`, `workflow-worker`, and `execution-worker` together.
+With Docker proxy mTLS configured, runtime-agent normalizes its configured
+health endpoint and both workers preserve the stored runtime host while
+normalizing legacy `tcp://<host>:2375` snapshots to port `2376`. Workers do
+this before endpoint-cache lookup. Current runtime registrations already use
+`2376`, and historical jobs or idempotency snapshots therefore need no manual
+database rewrite. Plaintext Docker endpoints remain unchanged when proxy TLS
+is disabled.
+
+The execution-worker identity remains node-root-equivalent if its key and token
+are compromised because it can create containers on a host Docker daemon. Role
+authorization prevents runtime-agent or workflow-worker credentials from
+inheriting that create privilege, but workflow cleanup credentials can still
+read logs and stop/delete a known container ID. Docker is not a tenant security
+boundary; per-container policy requires a narrower execution broker.
+
+### Docker Proxy Certificate Rotation
+
+Kubernetes rotation is integrated into setup and stages overlapping trust:
+
+```sh
+scripts/k8s/setup.sh --mode production --context <context> \
+  --rotate-docker-proxy-certs
+```
+
+This requires an existing deployment. The standalone
+`scripts/k8s/rotate-docker-proxy-certs.sh --context <context>` command skips the
+manifest apply. Both rotate the three clients before the server and remove the
+old CA only after all identities trust the replacement. Run in a maintenance
+window; a single-node hostPort DaemonSet briefly interrupts Docker calls while
+its pod restarts.
+
+Compose rotation requires a stopped stack because it replaces the dedicated
+issuer and every mounted role directory as one atomic set:
+
+```sh
+docker compose -f compose.prod.yaml down
+docker compose -f compose.prod.yaml run --rm --no-deps \
+  -e DOCKER_PROXY_ROTATE_CERTS=true init-certs
+docker compose -f compose.prod.yaml up -d
+```
 
 ### Stop and Inspect
 
@@ -120,8 +168,9 @@ kubectl -n chronoverse logs deploy/server
 
 ## Startup Order
 
-1. `init-certs` generates the local CA, service certificates, client
-   certificates, Kafka keystore/truststore files, and auth keys.
+1. `init-certs` generates the local service CA, service certificates, client
+   certificates, Kafka keystore/truststore files, auth keys, and a separate
+   role-isolated Docker proxy PKI.
 2. PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, LGTM, and Docker proxy
    start with TLS-enabled configuration.
 3. `init-kafka-topics` creates or expands Kafka topics.
@@ -449,6 +498,13 @@ the longest replay window you expect to tolerate.
   paths match the generated files.
 - For Kafka, inspect the generated keystore/truststore files in the Kafka certs
   mount.
+- For Docker proxy failures, verify the dedicated `docker-proxy-certs` role
+  mount in Compose or the `docker-proxy-ca`/`server`/matching `client-*` Secret
+  in Kubernetes. A `403` means token or role authorization failed; a TLS alert
+  means the issuer, EKU, hostname, or mounted keypair failed authentication.
+- Compose clients mount their role at `/docker-proxy-certs`, not below the
+  read-only `/certs` mount. Run `make compose/validate` to detect invalid nested
+  mount targets and incomplete role-specific TLS wiring.
 
 For local development, recreating the stack and cert volume can clear stale
 certificate state:
@@ -463,7 +519,8 @@ This deletes local data volumes.
 For Kubernetes production, verify that `chronoverse-auth`, `chronoverse-ca`,
 `chronoverse-client-tls`, `chronoverse-service-tls`, and
 `chronoverse-kafka-tls` exist in the `chronoverse` namespace and contain the
-expected keys.
+expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
+`docker-proxy-server`, and all three `docker-proxy-client-*` Secrets.
 
 ### Kubernetes Readiness Problems
 
@@ -475,11 +532,12 @@ expected keys.
   generated or operator-provided Secrets match the target cluster.
 - Confirm Docker-capable nodes expose Docker Engine at `/var/run/docker.sock`
   and have the `chronoverse.io/docker-workloads=true` label.
-- Confirm workers can reach runtime node IPs on TCP `2375`; NetworkPolicy,
-  node firewall rules, or security groups may block hostPort traffic.
-- Confirm the `docker-proxy-auth` Secret exists with a non-empty
-  `DOCKER_PROXY_TOKEN`; the proxy fails closed and workers cannot ping it when
-  the token is missing or mismatched.
+- Confirm workers can reach runtime node IPs on TCP `2376` (`hostPort` bypasses
+  `NetworkPolicy` — restrict `2376` at infra layer); the proxy requires
+  `docker-proxy-ca`/`server`/`client-*` Secrets plus `docker-proxy-auth`
+  `DOCKER_PROXY_TOKEN` (mTLS `verify required` + token second factor — missing
+  or mismatched material fails closed and workers cannot ping `127.0.0.1:2376`
+  or `$(NODE_IP):2376`).
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

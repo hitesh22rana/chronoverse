@@ -49,8 +49,9 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-	if cfg.RuntimeAgentConfig.ID == "" || cfg.RuntimeAgentConfig.NodeName == "" || cfg.RuntimeAgentConfig.DockerEndpoint == "" {
-		fmt.Fprintln(os.Stderr, "runtime agent id, node name, and docker endpoint are required")
+	if cfg.RuntimeAgentConfig.ID == "" || cfg.RuntimeAgentConfig.NodeName == "" ||
+		cfg.RuntimeAgentConfig.DockerEndpoint == "" || cfg.RuntimeAgentConfig.DockerHealthEndpoint == "" {
+		fmt.Fprintln(os.Stderr, "runtime agent id, node name, Docker health endpoint, and advertised Docker endpoint are required")
 		return ExitError
 	}
 
@@ -78,7 +79,16 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	health, err := container.NewDockerWorkflow(container.WithDockerHost(cfg.RuntimeAgentConfig.DockerEndpoint))
+	health, err := container.NewDockerWorkflow(
+		container.WithDockerHost(cfg.RuntimeAgentConfig.DockerHealthEndpoint),
+		container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
+			CAFile:     cfg.DockerProxy.TLS.CAFile,
+			CertFile:   cfg.DockerProxy.TLS.CertFile,
+			KeyFile:    cfg.DockerProxy.TLS.KeyFile,
+			ServerName: cfg.DockerProxy.TLS.ServerName,
+		}),
+		container.WithDockerProxyToken(cfg.DockerProxy.Token),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to ping runtime Docker endpoint: %v\n", err)
 		return ExitError
@@ -103,7 +113,8 @@ func run() int {
 		zap.String("environment", cfg.Environment.Env),
 		zap.String("runtime_id", cfg.RuntimeAgentConfig.ID),
 		zap.String("node_name", cfg.RuntimeAgentConfig.NodeName),
-		zap.String("docker_endpoint", cfg.RuntimeAgentConfig.DockerEndpoint),
+		zap.String("docker_health_endpoint", cfg.RuntimeAgentConfig.DockerHealthEndpoint),
+		zap.String("docker_advertised_endpoint", cfg.RuntimeAgentConfig.DockerEndpoint),
 		zap.Duration("heartbeat_interval", cfg.RuntimeAgentConfig.HeartbeatInterval),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),

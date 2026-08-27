@@ -3,8 +3,12 @@ package container
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
@@ -29,7 +33,14 @@ import (
 
 const (
 	// containerStopTimeout is the default timeout for stopping a container.
-	containerStopTimeout = 2 * time.Second
+	containerStopTimeout      = 2 * time.Second
+	dockerDialTimeout         = 10 * time.Second
+	dockerTLSHandshakeTimeout = 10 * time.Second
+	dockerHealthCheckTimeout  = 10 * time.Second
+	dockerIdleConnTimeout     = 30 * time.Second
+	dockerMaxIdleConns        = 6
+	legacyDockerProxyPort     = "2375"
+	dockerProxyTLSPort        = "2376"
 
 	// capDropAll drops every Linux capability from workload containers.
 	capDropAll = "ALL"
@@ -53,6 +64,17 @@ const (
 	DefaultWorkloadNetwork = "chronoverse-workloads"
 )
 
+// DockerProxyTLSConfig holds mTLS credentials for the per-node proxy on :2376.
+// It is supplied via DockerWorkflowOption so callers can use the
+// application's envconfig-based env management instead of direct os.Getenv
+// checks inside the workflow package.
+type DockerProxyTLSConfig struct {
+	CAFile     string
+	CertFile   string
+	KeyFile    string
+	ServerName string
+}
+
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
@@ -61,6 +83,7 @@ type DockerWorkflow struct {
 	dockerHost       string
 	workloadNetwork  string
 	dockerProxyToken string
+	dockerProxyTLS   DockerProxyTLSConfig
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -105,6 +128,107 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 	}
 }
 
+// WithDockerProxyTLS configures mTLS credentials for the per-node Docker
+// proxy. The workload containers never receive these credentials; only the
+// runtime-agent and worker processes use them.
+func WithDockerProxyTLS(cfg DockerProxyTLSConfig) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.dockerProxyTLS = cfg
+	}
+}
+
+// WithDockerProxyToken configures the shared bearer token for the Docker
+// proxy. It is kept separate from the endpoint URL to avoid accidental
+// disclosure in persisted job state.
+func WithDockerProxyToken(token string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.dockerProxyToken = token
+	}
+}
+
+// newDockerProxyTLSConfig loads mTLS credentials for the per-node proxy on :2376.
+func newDockerProxyTLSConfig(caFile, certFile, keyFile, serverName string) (*tls.Config, error) {
+	if serverName == "" {
+		return nil, errors.New("docker-proxy TLS server name is required")
+	}
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		return nil, err
+	}
+	if _, err := loadDockerProxyCAPool(caFile); err != nil {
+		return nil, err
+	}
+
+	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: serverName,
+		// Verification is performed in VerifyConnection so the projected CA
+		// bundle can rotate without restarting every cached Docker client.
+		InsecureSkipVerify: true, //nolint:gosec // VerifyConnection performs hostname and chain verification with the current CA bundle.
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				return nil, err
+			}
+			return &cert, nil
+		},
+		VerifyConnection: func(state tls.ConnectionState) error {
+			return verifyDockerProxyConnection(&state, caFile, serverName)
+		},
+	}, nil
+}
+
+func loadDockerProxyCAPool(caFile string) (*x509.CertPool, error) {
+	caPEM, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, err
+	}
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("failed to append docker-proxy CA")
+	}
+	return caPool, nil
+}
+
+func verifyDockerProxyConnection(state *tls.ConnectionState, caFile, serverName string) error {
+	if len(state.PeerCertificates) == 0 {
+		return errors.New("docker-proxy did not present a server certificate")
+	}
+	roots, err := loadDockerProxyCAPool(caFile)
+	if err != nil {
+		return err
+	}
+	intermediates := x509.NewCertPool()
+	for _, cert := range state.PeerCertificates[1:] {
+		intermediates.AddCert(cert)
+	}
+	_, err = state.PeerCertificates[0].Verify(x509.VerifyOptions{
+		DNSName:       serverName,
+		Roots:         roots,
+		Intermediates: intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	})
+	return err
+}
+
+// NormalizeDockerProxyEndpoint migrates persisted plaintext proxy endpoints
+// to the mTLS listener while preserving the exact runtime host. It is a no-op
+// unless Docker proxy TLS is configured, so ordinary plaintext Docker daemons
+// on port 2375 remain untouched.
+func NormalizeDockerProxyEndpoint(endpoint string, tlsConfigured bool) string {
+	if !tlsConfigured {
+		return endpoint
+	}
+	const tcpPrefix = "tcp://"
+	if !strings.HasPrefix(endpoint, tcpPrefix) {
+		return endpoint
+	}
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(endpoint, tcpPrefix))
+	if err != nil || host == "" || port != legacyDockerProxyPort {
+		return endpoint
+	}
+	return tcpPrefix + net.JoinHostPort(host, dockerProxyTLSPort)
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	w := &DockerWorkflow{
@@ -116,6 +240,7 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 			option(w)
 		}
 	}
+	w.dockerHost = NormalizeDockerProxyEndpoint(w.dockerHost, w.dockerProxyTLS.CAFile != "")
 
 	clientOptions := []client.Opt{
 		client.FromEnv,
@@ -129,6 +254,30 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 			dockerProxyTokenHeader: w.dockerProxyToken,
 		}))
 	}
+	if w.dockerProxyTLS.CAFile != "" {
+		if w.dockerProxyTLS.CertFile == "" || w.dockerProxyTLS.KeyFile == "" {
+			return nil, status.Errorf(codes.Internal, "docker proxy TLS misconfigured: CA file set but cert/key missing")
+		}
+		tlsConfig, err := newDockerProxyTLSConfig(w.dockerProxyTLS.CAFile, w.dockerProxyTLS.CertFile, w.dockerProxyTLS.KeyFile, w.dockerProxyTLS.ServerName)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to load docker proxy TLS config: %v", err)
+		}
+		transport := &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   dockerDialTimeout,
+				KeepAlive: dockerIdleConnTimeout,
+			}).DialContext,
+			MaxIdleConns:        dockerMaxIdleConns,
+			IdleConnTimeout:     dockerIdleConnTimeout,
+			TLSHandshakeTimeout: dockerTLSHandshakeTimeout,
+			TLSClientConfig:     tlsConfig,
+		}
+		httpClient := &http.Client{
+			Transport:     transport,
+			CheckRedirect: client.CheckRedirect,
+		}
+		clientOptions = append(clientOptions, client.WithHTTPClient(httpClient))
+	}
 	cli, err := client.NewClientWithOpts(
 		clientOptions...,
 	)
@@ -138,7 +287,9 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 
 	w.Client = cli
 
-	if err := w.healthCheck(context.Background()); err != nil {
+	healthCtx, cancelHealth := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
+	defer cancelHealth()
+	if err := w.healthCheck(healthCtx); err != nil {
 		// EndpointCache retries failed constructions per claim: close the ping
 		// connection or persistent faults leak one connection per attempt.
 		cli.Close()
@@ -350,12 +501,14 @@ func (w *DockerWorkflow) Execute(
 				errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", timeoutCtx.Err())
 			}
 
-			// Container execution timed out - try to stop the container
+			// Container execution timed out - try to stop the container.
 			stopTimeout := int(containerStopTimeout.Seconds())
-			//nolint:errcheck,contextcheck // Ignore error, as we are trying to stop the container gracefully
-			_ = w.Client.ContainerStop(context.Background(), containerID, container.StopOptions{
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
+			//nolint:errcheck,contextcheck // Ignore error, as we are trying to stop the container gracefully.
+			_ = w.Client.ContainerStop(stopCtx, containerID, container.StopOptions{
 				Timeout: &stopTimeout,
 			})
+			stopCancel()
 
 			// Wait for logs to finish
 			select {

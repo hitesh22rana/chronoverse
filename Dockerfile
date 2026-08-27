@@ -36,8 +36,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Final minimal stage
 FROM alpine:3.24.1
 
-# Create a non-root user and group
-RUN addgroup -S app && adduser -S -G app app
+# Keep this identity stable: Kubernetes fsGroup and Compose Docker-proxy role
+# directories grant private-key access only to app UID/GID 100:101.
+RUN addgroup -S -g 101 app && adduser -S -D -H -u 100 -G app app
 
 # Set the build arguments
 ARG NAME

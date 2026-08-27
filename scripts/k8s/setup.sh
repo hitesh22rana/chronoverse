@@ -11,6 +11,7 @@ CREATE_KIND=false
 STORAGE_CLASS=""
 REALIP_CIDRS=""
 ALLOW_REALIP_SNAPSHOT=false
+ROTATE_DOCKER_PROXY_CERTS=false
 INSECURE_DEFAULT_SECRET='a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?'
 
 usage() {
@@ -32,6 +33,8 @@ Options:
                                  --realip-cidrs with the cluster's pod range
                                  (e.g. --cluster-cidr) so new nodes remain trusted.
   --create-kind                 Create the local kind cluster before applying local.
+  --rotate-docker-proxy-certs  After a successful apply, rotate the existing
+                                Docker proxy PKI with overlapping CA trust.
   -h, --help                    Show this help.
 EOF
 }
@@ -109,6 +112,10 @@ while [ "$#" -gt 0 ]; do
       CREATE_KIND=true
       shift
       ;;
+    --rotate-docker-proxy-certs)
+      ROTATE_DOCKER_PROXY_CERTS=true
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -144,6 +151,9 @@ EOF
 
 [ -n "$MODE" ] || select_mode
 [ "$MODE" = "local" ] || [ "$MODE" = "production" ] || die "--mode must be local or production"
+if [ "$ROTATE_DOCKER_PROXY_CERTS" = true ] && { [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; }; then
+  die "--rotate-docker-proxy-certs requires a real manifest apply; do not combine it with --dry-run or --skip-apply"
+fi
 
 need_cmd kubectl
 need_cmd openssl
@@ -196,6 +206,12 @@ if [ "$DRY_RUN" = false ]; then
   kubectl_cmd create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl_cmd apply -f -
 fi
 
+if [ "$ROTATE_DOCKER_PROXY_CERTS" = true ]; then
+  kubectl_cmd -n "$NAMESPACE" get daemonset/docker-proxy \
+    deployment/workflow-worker deployment/execution-worker >/dev/null 2>&1 ||
+    die "--rotate-docker-proxy-certs requires an existing Chronoverse deployment; run setup once without the flag first"
+fi
+
 random_hex() {
   openssl rand -hex "${1:-24}"
 }
@@ -208,6 +224,11 @@ secret_keys() {
     kafka-tls-secret) echo "KAFKA_SSL_KEYSTORE_PASSWORD KAFKA_SSL_TRUSTSTORE_PASSWORD KAFKA_SSL_KEY_PASSWORD" ;;
     chronoverse-server-security) echo "CRYPTO_SECRET SERVER_CSRF_HMAC_SECRET" ;;
     docker-proxy-auth) echo "DOCKER_PROXY_TOKEN" ;;
+    docker-proxy-ca) echo "ca.crt" ;;
+    docker-proxy-server) echo "server.pem" ;;
+    docker-proxy-client-runtime-agent) echo "tls.crt tls.key" ;;
+    docker-proxy-client-workflow-worker) echo "tls.crt tls.key" ;;
+    docker-proxy-client-execution-worker) echo "tls.crt tls.key" ;;
     chronoverse-auth) echo "auth.ed auth.ed.pub" ;;
     chronoverse-ca) echo "ca.crt" ;;
     chronoverse-ingress-tls) echo "tls.crt tls.key" ;;
@@ -552,6 +573,59 @@ create_production_tls_secrets() {
 
 }
 
+create_docker_proxy_tls_secrets() {
+  local required=(docker-proxy-ca docker-proxy-server docker-proxy-client-runtime-agent docker-proxy-client-workflow-worker docker-proxy-client-execution-worker)
+  local existing_count=0
+  local secret
+  for secret in "${required[@]}"; do
+    if secret_exists "$secret"; then
+      validate_secret_complete "$secret"
+      existing_count=$((existing_count + 1))
+    fi
+  done
+  if [ "$existing_count" -eq "${#required[@]}" ]; then
+    return
+  fi
+  if [ "$existing_count" -gt 0 ]; then
+    die "docker-proxy TLS secrets are an atomic set; either provide all of ${required[*]} or delete the partial set and rerun setup"
+  fi
+
+  info "Generating missing docker-proxy mTLS material"
+  openssl genrsa -out "$TMP_DIR/docker-proxy-ca.key" 4096 >/dev/null 2>&1
+  openssl req -x509 -new -nodes -key "$TMP_DIR/docker-proxy-ca.key" -sha256 -days 3650 -out "$TMP_DIR/docker-proxy-ca.crt" -subj "/CN=docker-proxy-ca" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign" >/dev/null 2>&1
+
+  openssl genrsa -out "$TMP_DIR/docker-proxy-server.key" 4096 >/dev/null 2>&1
+  openssl req -new -key "$TMP_DIR/docker-proxy-server.key" -out "$TMP_DIR/docker-proxy-server.csr" -subj "/CN=docker-proxy" >/dev/null 2>&1
+  cat > "$TMP_DIR/docker-proxy-server-ext.cnf" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,DNS:docker-proxy.chronoverse.svc.cluster.local,IP:127.0.0.1
+EOF
+  openssl x509 -req -in "$TMP_DIR/docker-proxy-server.csr" -CA "$TMP_DIR/docker-proxy-ca.crt" -CAkey "$TMP_DIR/docker-proxy-ca.key" -CAcreateserial -out "$TMP_DIR/docker-proxy-server.crt" -days 3650 -extfile "$TMP_DIR/docker-proxy-server-ext.cnf" >/dev/null 2>&1
+  cat "$TMP_DIR/docker-proxy-server.crt" "$TMP_DIR/docker-proxy-server.key" > "$TMP_DIR/docker-proxy-server.pem"
+
+  for client in runtime-agent workflow-worker execution-worker; do
+    openssl genrsa -out "$TMP_DIR/docker-proxy-client-$client.key" 4096 >/dev/null 2>&1
+    openssl req -new -key "$TMP_DIR/docker-proxy-client-$client.key" -out "$TMP_DIR/docker-proxy-client-$client.csr" -subj "/CN=docker-proxy-client-$client" >/dev/null 2>&1
+    cat > "$TMP_DIR/docker-proxy-client-$client-ext.cnf" <<EOF
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth
+subjectAltName=DNS:docker-proxy-client-$client
+EOF
+    openssl x509 -req -in "$TMP_DIR/docker-proxy-client-$client.csr" -CA "$TMP_DIR/docker-proxy-ca.crt" -CAkey "$TMP_DIR/docker-proxy-ca.key" -CAcreateserial -out "$TMP_DIR/docker-proxy-client-$client.crt" -days 3650 -extfile "$TMP_DIR/docker-proxy-client-$client-ext.cnf" >/dev/null 2>&1
+  done
+
+  create_file_secret docker-proxy-ca --from-file=ca.crt="$TMP_DIR/docker-proxy-ca.crt"
+  create_file_secret docker-proxy-server --from-file=server.pem="$TMP_DIR/docker-proxy-server.pem"
+  create_file_secret docker-proxy-client-runtime-agent --from-file=tls.crt="$TMP_DIR/docker-proxy-client-runtime-agent.crt" --from-file=tls.key="$TMP_DIR/docker-proxy-client-runtime-agent.key"
+  create_file_secret docker-proxy-client-workflow-worker --from-file=tls.crt="$TMP_DIR/docker-proxy-client-workflow-worker.crt" --from-file=tls.key="$TMP_DIR/docker-proxy-client-workflow-worker.key"
+  create_file_secret docker-proxy-client-execution-worker --from-file=tls.crt="$TMP_DIR/docker-proxy-client-execution-worker.crt" --from-file=tls.key="$TMP_DIR/docker-proxy-client-execution-worker.key"
+}
+
 check_storage() {
   if [ "$MODE" != "production" ]; then
     return
@@ -592,6 +666,7 @@ create_data_secrets
 if [ "$MODE" = "production" ]; then
   create_production_tls_secrets
 fi
+create_docker_proxy_tls_secrets
 check_storage
 
 if [ "$SKIP_APPLY" = true ]; then
@@ -637,7 +712,7 @@ if [ "$MODE" = "production" ]; then
     HOSTNET_SEEN=false
     PODNET_SEEN=false
     PODNET_IPS=""
-    while IFS='|' read -r hn pod_ip host_ip; do
+    while IFS='|' read -r hn pod_ip _host_ip; do
       [ -n "${hn:-}" ] || continue
       case "$hn" in
         true)  HOSTNET_SEEN=true ;;
@@ -647,7 +722,7 @@ if [ "$MODE" = "production" ]; then
     done <<EOF
 $CONTROLLER_ROWS
 EOF
-    PODNET_IPS="$(echo $PODNET_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    PODNET_IPS="$(echo "$PODNET_IPS" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
     NODE_POD_CIDRS=""
     if ! NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
@@ -707,7 +782,7 @@ EOF
     fi
 
     if [ -n "$TRUST_IPS" ]; then
-      REALIP_DETECTED="$(echo $TRUST_IPS | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+      REALIP_DETECTED="$(echo "$TRUST_IPS" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"
       if [ "$HOSTNET_SEEN" = true ]; then
         info "Client-IP trust ranges include hostNetwork controller node addresses: $REALIP_DETECTED"
       else
@@ -799,6 +874,16 @@ else
     kubectl_cmd -n "$NAMESPACE" rollout status deployment/nginx --timeout=120s ||
       warn "nginx rollout did not complete in time; check pod logs"
   fi
+
+  if [ "$ROTATE_DOCKER_PROXY_CERTS" = true ]; then
+    info "Rotating Docker proxy certificates with overlapping CA trust"
+    rotation_args=(--namespace "$NAMESPACE")
+    if [ -n "$CONTEXT" ]; then
+      rotation_args+=(--context "$CONTEXT")
+    fi
+    "$ROOT_DIR/scripts/k8s/rotate-docker-proxy-certs.sh" "${rotation_args[@]}"
+  fi
+
   KUBECTL_CONTEXT_PREFIX=""
   if [ -n "$CONTEXT" ]; then
     KUBECTL_CONTEXT_PREFIX="--context $CONTEXT "

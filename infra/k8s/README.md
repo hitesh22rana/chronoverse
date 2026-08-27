@@ -42,6 +42,7 @@ scripts/k8s/setup.sh --mode production --dry-run
 scripts/k8s/setup.sh --mode production --storage-class fast-ssd
 scripts/k8s/setup.sh --mode production --context my-cluster
 scripts/k8s/setup.sh --mode production --skip-apply
+scripts/k8s/setup.sh --mode production --context my-cluster --rotate-docker-proxy-certs
 scripts/k8s/setup.sh --mode local --create-kind
 ```
 
@@ -126,6 +127,9 @@ Production Secrets include:
 - `kafka-tls-secret`: `KAFKA_SSL_KEYSTORE_PASSWORD`, `KAFKA_SSL_TRUSTSTORE_PASSWORD`, `KAFKA_SSL_KEY_PASSWORD`
 - `chronoverse-server-security`: `CRYPTO_SECRET`, `SERVER_CSRF_HMAC_SECRET`
 - `docker-proxy-auth`: `DOCKER_PROXY_TOKEN`
+- `docker-proxy-ca`: `ca.crt` (mTLS CA for Docker proxy)
+- `docker-proxy-server`: `server.pem` (HAProxy `crt` + `ca-file` for `:2376`)
+- `docker-proxy-client-runtime-agent` / `docker-proxy-client-workflow-worker` / `docker-proxy-client-execution-worker`: `tls.crt`, `tls.key` (separate client-auth-only role identities for `tcp://...:2376`, `DOCKER_PROXY_TLS_*`, `ServerName docker-proxy`)
 - `chronoverse-auth`: `auth.ed`, `auth.ed.pub`
 - `chronoverse-ca`: `ca.crt`
 - `chronoverse-ingress-tls`: `tls.crt`, `tls.key`
@@ -160,14 +164,27 @@ Container workflows use Docker through runtime ownership. Each labeled
 Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent`
 sidecar. Workers do not need the Docker node label and can schedule anywhere.
 
-Official overlays register `tcp://$(NODE_IP):2375` through the Docker proxy
-`hostPort`, not `tcp://docker-proxy:2375`. This keeps running job cleanup valid
-across proxy pod restarts on the same node. The setup script generates a
-high-entropy `docker-proxy-auth` token and injects it only into the proxy,
-runtime-agent, workflow-worker, and execution-worker. The proxy rejects requests
-without that token and applies an exact method-and-path allowlist; network access
-is limited to inspect and create, so callers cannot connect workloads to another
-bridge.
+Official overlays register an IPv4/IPv6-safe `NODE_IP:2376` endpoint through
+the Docker proxy `hostPort`, not a load-balanced ClusterIP. This keeps running job cleanup valid
+across proxy pod restarts on the same node. The DaemonSet's HAProxy binds
+`:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
+plus the `X-Chronoverse-Docker-Proxy-Token` header and an exact Docker
+method/path allowlist; runtime-agent health probes `tcp://127.0.0.1:2376`
+(loopback), while the advertised node endpoint uses role-specific mTLS
+certificates (`DOCKER_PROXY_TLS_CA_FILE`/`CERT_FILE`/`KEY_FILE`,
+`ServerName docker-proxy` via `internal/pkg/kind/container/docker.go`) —
+`docker-proxy-client-runtime-agent` (ping/version), `workflow-worker` (image
+inspect/pull plus container logs/stop/delete), and `execution-worker` (the
+workflow surface plus container inspect/create/start/wait and network
+inspect/create). Unknown identities and cross-role calls are denied. The token
+remains as a second factor; workload containers receive neither.
+
+The root HAProxy server key and non-root runtime-agent client key use separate
+projected volumes. Worker pods mount only their own role Secret and use
+`fsGroup: 101` with `0440` files, so replica count and node count do not change
+key readability or expose another role's private key. TLS clients reload the CA
+bundle and keypair on new handshakes, and endpoint clients are bounded to 256
+entries with idle/LRU eviction to avoid unbounded growth as runtime nodes churn.
 
 Multi-node kind and similar Docker-container-based Kubernetes emulators may not
 route one emulator node's hostPort from pods on another emulator node. If you
@@ -175,11 +192,49 @@ choose that topology, use a pod-IP runtime endpoint override as an
 emulator-specific workaround. Real single-node and multi-node Kubernetes
 clusters should use node-stable runtime endpoints.
 
-Worker pods need egress to TCP `2375` on runtime node IPs. The base
-NetworkPolicy allows that port, but production should also restrict access with
-private networking, node firewalls or security groups. The application-layer
-token and API allowlist are additional controls, not a reason to expose TCP
-`2375` publicly.
+Worker pods need egress to TCP `2376` on runtime node IPs. The base
+NetworkPolicy allows that port, but `hostPort` bypasses `NetworkPolicy` across
+CNI implementations — production must restrict `2376` at the infrastructure
+layer (node firewall / security group / CNI host policy) in addition to the
+mTLS + token + allowlist. Do not expose `2376` publicly.
+
+The supported runtime matrix is explicit:
+
+| Topology | Support and requirement |
+| --- | --- |
+| Compose development/production | Single Docker host and one proxy; workers may replicate in production and share a least-privilege role identity. |
+| Kubernetes single-node | Supported when the node exposes `/var/run/docker.sock` and carries the Docker workload label. |
+| Kubernetes multi-node | Supported when every labeled runtime node exposes Docker Engine and worker pods can route to every labeled node IP on `2376`. |
+| containerd-only Kubernetes or Docker Desktop's built-in Kubernetes | Not supported for Docker-backed workflows because the required Docker Engine socket is absent. |
+| Multi-node kind-like emulators | Conditional: some emulator networks cannot route cross-node hostPorts; validate first or use the documented pod-IP override only for that emulator. |
+
+The execution-worker role can create containers and is therefore
+node-root-equivalent if both that role key and token are compromised. mTLS
+prevents network impersonation and the role ACL contains runtime-agent and
+workflow-worker compromise from container creation, but the workflow cleanup
+role can still read logs and stop/delete a known container ID. These calls are
+not tenant-scoped at the HAProxy layer. The design does not turn Docker Engine
+into a tenant security boundary; use a purpose-built execution broker or
+isolated/rootless runtime pools where stronger blast-radius control is required.
+
+## Docker Proxy Certificate Rotation
+
+The setup script creates new installations atomically. Rotate an existing
+installation during a maintenance window with:
+
+```sh
+scripts/k8s/setup.sh --mode production --context <context> \
+  --rotate-docker-proxy-certs
+```
+
+The rotation script installs an old+new CA bundle, rolls the DaemonSet, rotates
+the three client-role Secrets, rotates the server Secret, then removes the old
+CA and rolls all proxy clients again. This order works for single-node and
+multi-node clusters without a mixed-issuer authentication gap. A single-node
+DaemonSet still has a brief proxy interruption while its hostPort pod restarts.
+Use `scripts/k8s/rotate-docker-proxy-certs.sh --context <context>` directly when
+the manifests do not need to be reapplied. Setup rejects rotation with
+`--dry-run`/`--skip-apply` and requires an existing proxy and worker deployment.
 
 Production authentication cookies are scoped from `SERVER_HOST_URL`. A
 production overlay configured for `https://chronoverse.example.com` will reject

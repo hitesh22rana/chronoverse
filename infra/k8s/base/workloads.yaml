@@ -680,6 +680,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -705,6 +709,15 @@ spec:
             name: workflow-worker-config
         - secretRef:
             name: docker-proxy-auth
+        env:
+        - name: DOCKER_PROXY_TLS_CA_FILE
+          value: /certs/docker-proxy/ca.crt
+        - name: DOCKER_PROXY_TLS_CERT_FILE
+          value: /certs/docker-proxy/client.crt
+        - name: DOCKER_PROXY_TLS_KEY_FILE
+          value: /certs/docker-proxy/client.key
+        - name: DOCKER_PROXY_TLS_SERVER_NAME
+          value: docker-proxy
         resources:
           requests:
             cpu: 200m
@@ -715,6 +728,9 @@ spec:
         volumeMounts:
         - name: certs
           mountPath: /certs
+          readOnly: true
+        - name: docker-proxy-certs
+          mountPath: /certs/docker-proxy
           readOnly: true
       volumes:
       - name: certs
@@ -729,6 +745,22 @@ spec:
               name: chronoverse-client-tls
           - secret:
               name: chronoverse-service-tls
+      - name: docker-proxy-certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: docker-proxy-ca
+              items:
+              - key: ca.crt
+                path: ca.crt
+          - secret:
+              name: docker-proxy-client-workflow-worker
+              items:
+              - key: tls.crt
+                path: client.crt
+              - key: tls.key
+                path: client.key
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -751,6 +783,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -768,6 +804,15 @@ spec:
             name: execution-worker-config
         - secretRef:
             name: docker-proxy-auth
+        env:
+        - name: DOCKER_PROXY_TLS_CA_FILE
+          value: /certs/docker-proxy/ca.crt
+        - name: DOCKER_PROXY_TLS_CERT_FILE
+          value: /certs/docker-proxy/client.crt
+        - name: DOCKER_PROXY_TLS_KEY_FILE
+          value: /certs/docker-proxy/client.key
+        - name: DOCKER_PROXY_TLS_SERVER_NAME
+          value: docker-proxy
         resources:
           requests:
             cpu: 200m
@@ -778,6 +823,9 @@ spec:
         volumeMounts:
         - name: certs
           mountPath: /certs
+          readOnly: true
+        - name: docker-proxy-certs
+          mountPath: /certs/docker-proxy
           readOnly: true
       volumes:
       - name: certs
@@ -792,6 +840,22 @@ spec:
               name: chronoverse-client-tls
           - secret:
               name: chronoverse-service-tls
+      - name: docker-proxy-certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: docker-proxy-ca
+              items:
+              - key: ca.crt
+                path: ca.crt
+          - secret:
+              name: docker-proxy-client-execution-worker
+              items:
+              - key: tls.crt
+                path: client.crt
+              - key: tls.key
+                path: client.key
 ---
 apiVersion: apps/v1
 kind: Deployment

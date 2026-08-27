@@ -103,7 +103,7 @@ spec:
                 values: ["true"]
       containers:
       - name: docker-proxy
-        image: haproxy:3.0-alpine
+        image: haproxy:3.4-alpine
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "-ec"]
         args:

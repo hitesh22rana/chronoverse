@@ -377,9 +377,14 @@ services:
     image: haproxy:3.4-alpine
     container_name: docker-proxy
     user: root
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./certs/docker-proxy:/certs/docker-proxy:ro
+      - ./docker-proxy-certs/server:/certs/docker-proxy:ro
       - ./compose/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks:
       - chronoverse
@@ -406,11 +411,12 @@ services:
       RUNTIME_AGENT_ID: local-docker
       RUNTIME_AGENT_NODE_NAME: compose-local
       RUNTIME_AGENT_DOCKER_ENDPOINT: tcp://docker-proxy:2376
+      RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT: tcp://docker-proxy:2376
       RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
       RUNTIME_AGENT_MAX_CONCURRENCY: ${RUNTIME_AGENT_MAX_CONCURRENCY:-4}
       DOCKER_PROXY_TLS_CA_FILE: certs/docker-proxy/ca.crt
-      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client-runtime-agent.crt
-      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client-runtime-agent.key
+      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client.crt
+      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client.key
       DOCKER_PROXY_TLS_SERVER_NAME: docker-proxy
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
@@ -427,6 +433,7 @@ services:
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
+      - ./docker-proxy-certs/runtime-agent:/certs/docker-proxy:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -446,6 +453,8 @@ services:
     container_name: init-certs
     volumes:
       - ./certs:/certs:rw
+      - ./docker-proxy-certs:/docker-proxy-certs:rw
+      - ./scripts/compose/init-docker-proxy-certs.sh:/usr/local/bin/init-docker-proxy-certs:ro
     entrypoint: |
       sh -c '
         if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
@@ -554,32 +563,8 @@ services:
           echo "✅ Client certificate created"
         fi
 
-        echo "🔐 Generating docker-proxy mTLS certificates..."
-        mkdir -p /certs/docker-proxy
-        if [ ! -f /certs/docker-proxy/server.crt ] || [ ! -f /certs/docker-proxy/server.key ]; then
-          openssl genrsa -out /certs/docker-proxy/server.key 4096
-          openssl req -new -key /certs/docker-proxy/server.key -out /certs/docker-proxy/server.csr -subj "/CN=docker-proxy"
-          printf "subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,DNS:docker-proxy.chronoverse.svc.cluster.local,IP:127.0.0.1,IP:0.0.0.0\n" > /certs/docker-proxy/server-ext.cnf
-          openssl x509 -req -in /certs/docker-proxy/server.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key -CAcreateserial -out /certs/docker-proxy/server.crt -days 365 -extfile /certs/docker-proxy/server-ext.cnf
-          cat /certs/docker-proxy/server.crt /certs/docker-proxy/server.key > /certs/docker-proxy/server.pem
-          rm -f /certs/docker-proxy/server.csr /certs/docker-proxy/server-ext.cnf
-          cp /certs/ca/ca.crt /certs/docker-proxy/ca.crt
-          echo "✅ docker-proxy server certificate created"
-        fi
-        for client in runtime-agent workflow-worker execution-worker; do
-          if [ ! -f /certs/docker-proxy/client-$$client.crt ] || [ ! -f /certs/docker-proxy/client-$$client.key ]; then
-            openssl genrsa -out /certs/docker-proxy/client-$$client.key 4096
-            openssl req -new -key /certs/docker-proxy/client-$$client.key -out /certs/docker-proxy/client-$$client.csr -subj "/CN=docker-proxy-client-$$client"
-            printf "subjectAltName=DNS:docker-proxy-client-%s\n" "$$client" > /certs/docker-proxy/client-$$client-ext.cnf
-            openssl x509 -req -in /certs/docker-proxy/client-$$client.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key -CAcreateserial -out /certs/docker-proxy/client-$$client.crt -days 365 -extfile /certs/docker-proxy/client-$$client-ext.cnf
-            rm -f /certs/docker-proxy/client-$$client.csr /certs/docker-proxy/client-$$client-ext.cnf
-            echo "✅ docker-proxy client $$client certificate created"
-          fi
-        done
-        if [ ! -f /certs/docker-proxy/token ]; then
-          openssl rand -hex 32 > /certs/docker-proxy/token
-          echo "✅ docker-proxy token created"
-        fi
+        DOCKER_PROXY_ROTATE_CERTS="$${DOCKER_PROXY_ROTATE_CERTS:-false}" \
+          /usr/local/bin/init-docker-proxy-certs /docker-proxy-certs /certs/docker-proxy
 
         echo "🔐 Setting permissions for all certificates..."
 
@@ -603,14 +588,6 @@ services:
         chmod 600 /certs/clients/client.key
 
         chmod 444 /certs/clients/client.crt
-
-        chmod 444 /certs/docker-proxy/ca.crt
-        chmod 444 /certs/docker-proxy/server.crt
-        chmod 400 /certs/docker-proxy/server.key
-        chmod 400 /certs/docker-proxy/server.pem
-        chmod 444 /certs/docker-proxy/client-*.crt
-        chmod 400 /certs/docker-proxy/client-*.key
-        chmod 400 /certs/docker-proxy/token
 
         # ClickHouse server files: make readable by clickhouse user (UID/GID 101).
         chown 101:101 /certs/clickhouse/clickhouse.key /certs/clickhouse/clickhouse.crt
@@ -1199,8 +1176,8 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2376
       DOCKER_PROXY_TLS_CA_FILE: certs/docker-proxy/ca.crt
-      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client-workflow-worker.crt
-      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client-workflow-worker.key
+      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client.crt
+      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client.key
       DOCKER_PROXY_TLS_SERVER_NAME: docker-proxy
       WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL: 10m
       WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT: 10m
@@ -1209,6 +1186,7 @@ services:
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
+      - ./docker-proxy-certs/workflow-worker:/certs/docker-proxy:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/docker-proxy/ca.crt ]; do 
@@ -1303,13 +1281,14 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2376
       DOCKER_PROXY_TLS_CA_FILE: certs/docker-proxy/ca.crt
-      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client-execution-worker.crt
-      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client-execution-worker.key
+      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client.crt
+      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client.key
       DOCKER_PROXY_TLS_SERVER_NAME: docker-proxy
       ENV: production
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
+      - ./docker-proxy-certs/execution-worker:/certs/docker-proxy:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/auth.ed ] || [ ! -f /certs/docker-proxy/ca.crt ]; do 

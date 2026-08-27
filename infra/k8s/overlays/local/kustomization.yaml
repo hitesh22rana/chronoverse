@@ -97,10 +97,11 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
-    # certs sits at index 2 in the base DaemonSet (after docker-socket and
-    # docker-proxy-config); keep this patch aligned with the base volume order.
+    # certs sits at index 4 in the base DaemonSet (after docker-socket,
+    # docker-proxy-config, and the two isolated Docker proxy identities); keep
+    # this patch aligned with the base volume order.
     - op: replace
-      path: /spec/template/spec/volumes/2
+      path: /spec/template/spec/volumes/4
       value:
         name: certs
         persistentVolumeClaim:

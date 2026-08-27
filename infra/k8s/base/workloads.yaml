@@ -680,6 +680,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -743,7 +747,7 @@ spec:
               name: chronoverse-service-tls
       - name: docker-proxy-certs
         projected:
-          defaultMode: 0400
+          defaultMode: 0440
           sources:
           - secret:
               name: docker-proxy-ca
@@ -779,6 +783,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -834,7 +842,7 @@ spec:
               name: chronoverse-service-tls
       - name: docker-proxy-certs
         projected:
-          defaultMode: 0400
+          defaultMode: 0440
           sources:
           - secret:
               name: docker-proxy-ca

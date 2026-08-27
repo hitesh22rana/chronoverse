@@ -14,7 +14,7 @@ The development stack starts one `runtime-agent` named `local-docker` beside `do
 | --- | ---: |
 | Dashboard | `3001` |
 | API | `8080` |
-| LGTM | `3000` |
+| LGTM Grafana | — (not host-published by default; `compose.grafana.yaml` → `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000` or `kubectl -n chronoverse port-forward svc/lgtm 3000:3000`) |
 | OTLP gRPC | `4317` |
 | PostgreSQL | `5432` |
 | ClickHouse TLS | `9440` |

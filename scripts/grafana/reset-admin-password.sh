@@ -97,11 +97,11 @@ docker exec \
     exit 1
   fi
 
+  if printf '%s' "$GF_SECURITY_ADMIN_USER" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    echo "error: GF_SECURITY_ADMIN_USER contains a control character and cannot be migrated safely" >&2
+    exit 1
+  fi
   case "$GF_SECURITY_ADMIN_USER" in
-    *[![:print:]]*)
-      echo "error: GF_SECURITY_ADMIN_USER contains a control character and cannot be migrated safely" >&2
-      exit 1
-      ;;
     *:*)
       echo "error: GF_SECURITY_ADMIN_USER cannot contain a colon because Grafana Basic authentication uses it as a delimiter" >&2
       exit 1

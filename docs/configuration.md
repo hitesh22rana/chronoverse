@@ -309,17 +309,20 @@ backpressure instead of starting another workload.
 - `RUNTIME_AGENT_ID`
 - `RUNTIME_AGENT_NODE_NAME`
 - `RUNTIME_AGENT_DOCKER_ENDPOINT`
+- `RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT`
+- `RUNTIME_AGENT_DOCKER_ADVERTISE_HOST`
+- `RUNTIME_AGENT_DOCKER_ADVERTISE_PORT` (default `2376`)
 - `RUNTIME_AGENT_HEARTBEAT_INTERVAL`
 - `RUNTIME_AGENT_MAX_CONCURRENCY`
 - `DOCKER_HOST`
 
 `runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
 PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
-there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
+there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2376`.
 In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
 (`DaemonSet` on `chronoverse.io/docker-workloads=true` nodes) and register a
-node-stable endpoint `tcp://$(NODE_IP):2376` via `hostPort: 2376` — not a pod IP
-or `tcp://docker-proxy:2375` `ClusterIP`. The DaemonSet is per-node by design;
+node-stable endpoint on `NODE_IP:2376` via `hostPort: 2376` — not a pod IP or
+load-balanced `tcp://docker-proxy:2376` `ClusterIP`. The DaemonSet is per-node by design;
 a `ClusterIP` would load-balance to a random backend and break the invariant
 that `ClaimJob` (`internal/repository/jobs/lease.go:254`) selects one `runtime_nodes`
 row and workers later dial its stored `runtime_endpoint` (`internal/repository/executor/executor.go:682`,
@@ -328,15 +331,34 @@ binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/
 plus the `X-Chronoverse-Docker-Proxy-Token` header allowlist and an exact
 Docker method/path allowlist before forwarding to the host socket. Runtime-agent
 health probes `tcp://127.0.0.1:2376` (loopback, no `hostPort` needed); the
-advertised endpoint remains `tcp://$(NODE_IP):2376`. Workers and the agent dial
-with per-client mTLS certificates (`DOCKER_PROXY_TLS_CA_FILE`/`CERT_FILE`/`KEY_FILE`,
-`ServerName docker-proxy`) via `internal/pkg/kind/container/docker.go:109`
-`client.WithTLSClientConfig` plus the token second factor — per-client certs
-are `docker-proxy-client-runtime-agent` (ping/version), `workflow-worker`
-(images), and `execution-worker` (containers). Workload containers receive
-neither token nor certs. `hostPort` bypasses `NetworkPolicy`, so restrict TCP
-`2376` at the infrastructure layer (node firewall / security group / CNI host
-policy).
+advertised endpoint is constructed from
+`RUNTIME_AGENT_DOCKER_ADVERTISE_HOST`/`PORT` with IPv6-safe brackets. Workers
+and the agent use a bounded custom Docker HTTP transport with mTLS
+(`DOCKER_PROXY_TLS_CA_FILE`/`CERT_FILE`/`KEY_FILE`, `ServerName docker-proxy`)
+plus the token second factor. The CA bundle and client keypair are reloaded on
+each new TLS handshake so staged certificate rotation does not leave cached
+clients pinned to old files.
+
+Certificate identity is also authorization, not just authentication:
+
+| Certificate role | Allowed Docker API operations |
+| --- | --- |
+| `runtime-agent` | ping and version only |
+| `workflow-worker` | ping/version, image inspect/pull, and container logs/stop/delete for cancellation cleanup |
+| `execution-worker` | workflow operations plus container inspect/create/start/wait and network inspect/create |
+
+Unknown client subjects and cross-role operations are denied before the Docker
+socket. Workload containers receive neither token nor certificates. The
+execution-worker identity remains highly privileged by necessity: Docker
+container creation against a host daemon is node-root-equivalent if that
+identity and token are compromised. Keep execution workers inside the trusted
+control plane and use rootless/isolated runtimes when the threat model requires
+a smaller blast radius. The workflow role cannot create containers, but its
+log/stop/delete cleanup calls are not tenant-scoped by HAProxy; a compromised
+workflow identity can affect a known container ID on any reachable runtime.
+Per-container authorization requires a purpose-built broker rather than direct
+Docker API access. `hostPort` bypasses `NetworkPolicy`, so restrict TCP `2376`
+at the infrastructure layer (node firewall / security group / CNI host policy).
 Multi-node kind and similar Docker-container-based Kubernetes emulators can
 make node host ports reachable only from pods on the same emulator node. In that
 specific topology, use a pod-IP endpoint override as an emulator workaround; do
@@ -500,4 +522,32 @@ and partial internal TLS trust chains:
 - `docker-proxy-auth`: `DOCKER_PROXY_TOKEN` (256-bit haproxy token; `setup.sh` generates, consumed by `docker-proxy` and `runtime-agent`/`execution-worker`/`workflow-worker` via `X-Chronoverse-Docker-Proxy-Token`)
 - `docker-proxy-ca`: `ca.crt` (docker-proxy mTLS CA; `setup.sh` generates per-mode)
 - `docker-proxy-server`: `server.pem` (HAProxy server `tls.crt`+`tls.key` combined; `setup.sh` generates)
-- `docker-proxy-client-runtime-agent` / `docker-proxy-client-workflow-worker` / `docker-proxy-client-execution-worker`: `tls.crt`, `tls.key` (per-client mTLS certs for `tcp://...:2376` `DOCKER_PROXY_TLS_*`; `setup.sh` generates, consumed via `WithTLSClientConfig` `ServerName docker-proxy`)
+- `docker-proxy-client-runtime-agent` / `docker-proxy-client-workflow-worker` / `docker-proxy-client-execution-worker`: `tls.crt`, `tls.key` (separate role mTLS identities for `tcp://...:2376`; `setup.sh` generates certificates restricted to client authentication)
+
+Kubernetes mounts the HAProxy server identity and runtime-agent client identity
+as separate projected volumes. Worker pods receive only their own role Secret,
+with an explicit UID/GID and `fsGroup` so non-root images can read `0440` keys.
+The Docker proxy CA private key is never stored in a runtime Secret. Rotate an
+existing Kubernetes deployment with the overlapping-CA workflow:
+
+```sh
+scripts/k8s/setup.sh --mode production --context <context> \
+  --rotate-docker-proxy-certs
+```
+
+The setup flag requires an existing deployment and delegates to
+`scripts/k8s/rotate-docker-proxy-certs.sh` after the manifest apply succeeds.
+The standalone script performs the same rotation without reapplying manifests.
+
+Compose generates a dedicated Docker proxy CA outside the shared `./certs`
+tree. Runtime services mount only one of
+`docker-proxy-certs/{server,runtime-agent,workflow-worker,execution-worker}`;
+only `init-certs` can access the issuer directory. For a maintenance-window
+rotation, stop the stack, regenerate all proxy identities, and recreate it:
+
+```sh
+docker compose -f compose.prod.yaml down
+docker compose -f compose.prod.yaml run --rm --no-deps \
+  -e DOCKER_PROXY_ROTATE_CERTS=true init-certs
+docker compose -f compose.prod.yaml up -d
+```

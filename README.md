@@ -92,6 +92,12 @@ Runtime readiness is based on successful Docker health heartbeats; `UNHEALTHY`
 means the agent is alive but its Docker endpoint is unusable, while `DRAINING`
 means intentional shutdown or scale-down. `RUNTIME_AGENT_ID` must be stable per
 runtime node across restarts, not randomly regenerated at startup.
+Docker proxy traffic uses mTLS on `2376` plus a token and certificate-role API
+ACLs. Compose and Kubernetes isolate the server, runtime-agent,
+workflow-worker, and execution-worker private keys rather than sharing one
+certificate directory. Kubernetes requires Docker Engine on every labeled
+runtime node and routable node IPs; containerd-only clusters are not a supported
+Docker-workflow runtime.
 
 ### Development Stack
 
@@ -167,6 +173,14 @@ For production:
 
 ```sh
 scripts/k8s/setup.sh --mode production
+```
+
+Rotate an existing Kubernetes Docker proxy PKI with overlapping CA trust during
+a maintenance window:
+
+```sh
+scripts/k8s/setup.sh --mode production --context <context> \
+  --rotate-docker-proxy-certs
 ```
 
 The local strategy is a single-node, self-contained Kubernetes setup for

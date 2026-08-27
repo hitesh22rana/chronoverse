@@ -76,9 +76,11 @@ replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 - **Meilisearch** indexes retained job logs for search.
 - **Runtime agent** registers each Docker-capable node and heartbeats Docker
   endpoint health/capacity into PostgreSQL.
-- **Docker socket proxy** exposes an authenticated, method-and-path-allowlisted
-  node-local Docker API surface to workers for container lifecycle and log
-  access.
+- **Docker socket proxy** exposes an mTLS- and token-authenticated node-local
+  Docker API. Certificate-role ACLs limit runtime-agent to health, workflow-worker
+  to image and cancellation-cleanup operations, and execution-worker to the
+  container/network execution surface. Server and role private keys are mounted
+  separately.
 - **LGTM** receives OpenTelemetry data and exposes local dashboards.
 
 The Kubernetes local overlay includes these infrastructure systems for

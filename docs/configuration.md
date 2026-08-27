@@ -17,8 +17,8 @@ Development builds local images and exposes internal ports for debugging:
 | --- | ---: | --- |
 | Dashboard | `3001` | Next.js dashboard, built with `NEXT_PUBLIC_API_URL=http://localhost:8080` |
 | HTTP API | `8080` | Direct server access |
-| LGTM | `3000` | Observability UI |
 | OTLP gRPC | `4317` | OpenTelemetry collector endpoint |
+| LGTM Grafana | — | Not host-published by default; use the loopback override or Kubernetes port-forward described in [Grafana access and Compose upgrades](#grafana-access-and-compose-upgrades). Anonymous access is disabled; development credentials default to `admin` / `chronoverse-local-grafana-password` |
 | PostgreSQL | `5432` | TLS-enabled database |
 | ClickHouse | `9440` | Secure native protocol |
 | Redis | `6379` | TLS-enabled Redis |
@@ -43,7 +43,52 @@ exposure is intentionally small:
 | Component | Host port | Notes |
 | --- | ---: | --- |
 | Nginx | `80` | Dashboard and `/api/...` reverse proxy |
-| LGTM | `3000` | Observability UI |
+| LGTM Grafana | — | Not host-published by default. Access via the opt-in Compose loopback override or `kubectl port-forward`; anonymous access is disabled and production credentials come from `GF_SECURITY_ADMIN_PASSWORD` (Compose, required) or `grafana-secret` (Kubernetes) |
+
+### Grafana access and Compose upgrades
+
+Compose keeps Grafana private by default. To expose the UI only on the Docker
+host loopback interface, recreate `lgtm` with the opt-in override:
+
+```sh
+docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+# Production uses the same override and requires the production environment:
+docker compose -f compose.prod.yaml -f compose.grafana.yaml up -d lgtm
+```
+
+The host port defaults to `3000`; set `GRAFANA_HOST_PORT` to choose another.
+Kubernetes uses
+`kubectl -n chronoverse port-forward svc/lgtm 3000:3000` instead.
+
+Grafana applies `GF_SECURITY_ADMIN_PASSWORD` only when it first creates its
+database. When upgrading an existing Compose `lgtm:/data` volume, first
+recreate the container from the updated Compose file. This detaches the old
+`/otel-lgtm` application volume so the pinned image supplies its hardened
+startup script and binaries. Then run the repository helper, which resets the
+database password from the container's configured
+`GF_SECURITY_ADMIN_PASSWORD`, migrates a legacy stored admin login to the
+configured `GF_SECURITY_ADMIN_USER`, and verifies anonymous `401` plus
+authenticated `200` responses:
+
+```sh
+docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
+# For production, use compose.prod.yaml with its required environment instead.
+scripts/grafana/reset-admin-password.sh
+```
+
+The helper assumes an old login of `admin` when the configured username does
+not already authenticate. If an existing database uses another login and you
+are changing it, supply that stored login explicitly:
+
+```sh
+GRAFANA_CURRENT_ADMIN_USER=old-login scripts/grafana/reset-admin-password.sh
+```
+
+Set `GRAFANA_CONTAINER` when the container is not named `lgtm`. Passwords are
+fed to Grafana through standard input, so values beginning with `-` are not
+parsed as CLI flags. Do not remove the `lgtm` volume as an authentication
+migration: `/data` contains the Grafana database and dashboards together with
+persisted Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 Production Kafka topic partition defaults are:
 
@@ -272,12 +317,22 @@ backpressure instead of starting another workload.
 PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
 In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
-and register a node-stable endpoint such as `tcp://$(NODE_IP):2375`, not a pod
-IP or `tcp://docker-proxy:2375` service DNS name. The Docker proxy host port
-must stay private. `scripts/k8s/setup.sh` provisions `docker-proxy-auth`; trusted
-runtime and worker clients attach its token to every Docker request, and the
-proxy enforces an exact method-and-path allowlist before forwarding to the host
-socket.
+(`DaemonSet` on `chronoverse.io/docker-workloads=true` nodes) and register a
+node-stable endpoint `tcp://$(NODE_IP):2375` via `hostPort: 2375` — not a pod IP
+or `tcp://docker-proxy:2375` `ClusterIP`. The DaemonSet is per-node by design;
+a `ClusterIP` would load-balance to a random backend and break the invariant
+that `ClaimJob` (`internal/repository/jobs/lease.go:254`) selects one `runtime_nodes`
+row and workers later dial its stored `runtime_endpoint` (`internal/repository/executor/executor.go:682`,
+`internal/repository/jobs/lease.go:1063` recovery). After PR #113 the endpoint
+is **authenticated but plaintext**: `scripts/k8s/setup.sh` provisions `docker-proxy-auth`
+(high-entropy `X-Chronoverse-Docker-Proxy-Token`), HAProxy enforces it plus an
+exact Docker method/path allowlist before forwarding to the host socket. Workload
+containers do not receive the token. The residual is that compromise of the
+shared bearer token still grants node-level Docker access; `hostPort` bypasses
+`NetworkPolicy`, so restrict TCP 2375 at the infrastructure layer (node firewall /
+security group / CNI host policy). A follow-up should move to `2376` with mutual
+TLS and per-client certificates (runtime-agent vs workers) as described in the
+stack B assessment.
 Multi-node kind and similar Docker-container-based Kubernetes emulators can
 make node host ports reachable only from pods on the same emulator node. In that
 specific topology, use a pod-IP endpoint override as an emulator workaround; do
@@ -437,3 +492,5 @@ and partial internal TLS trust chains:
 - `chronoverse-service-tls`: per-service gRPC certificate and key files
 - `chronoverse-infra-tls`: PostgreSQL, Redis, ClickHouse, Kafka, and Meilisearch certificate/key pairs
 - `chronoverse-kafka-tls`: Kafka keystore, truststore, and credential files
+- `grafana-secret`: `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD` (Grafana admin credentials; `setup.sh` generates for both local and production, preserves operator-provided values; compose production requires `GF_SECURITY_ADMIN_PASSWORD` via env)
+- `docker-proxy-auth`: `DOCKER_PROXY_TOKEN` (256-bit haproxy token; `setup.sh` generates, consumed by `docker-proxy` and `runtime-agent`/`execution-worker`/`workflow-worker` via `X-Chronoverse-Docker-Proxy-Token`)

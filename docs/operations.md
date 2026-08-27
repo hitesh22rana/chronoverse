@@ -15,7 +15,9 @@ Useful endpoints:
 
 - Dashboard: `http://localhost:3001`
 - API: `http://localhost:8080`
-- LGTM: `http://localhost:3000`
+- LGTM Grafana: not host-published by default; run
+  `docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm` for
+  loopback-only access on `http://127.0.0.1:${GRAFANA_HOST_PORT:-3000}`
 - gRPC: `localhost:50051` through `localhost:50055`
 
 Development builds local service images and exposes internal infrastructure
@@ -26,17 +28,19 @@ ports for debugging.
 ```sh
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
 docker compose -f compose.prod.yaml up -d
 ```
 
-Persist these two distinct values in your secret manager and reuse them across
-server restarts.
+Persist these values in your secret manager and reuse them across server
+restarts. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct.
 
 Useful endpoints:
 
 - Dashboard: `http://localhost`
 - API through Nginx: `http://localhost/api/...`
-- LGTM: `http://localhost:3000`
+- LGTM Grafana: not host-published by default; add `compose.grafana.yaml` for
+  opt-in loopback-only access
 
 Production uses published images, internal service ports, generated TLS
 configuration, resource limits, and replicated worker settings.

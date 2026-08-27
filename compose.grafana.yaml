@@ -1,0 +1,14 @@
+name: chronoverse
+# Opt-in Grafana UI exposure for local debugging.
+# Base compose files no longer publish Grafana on the host (GF_AUTH_ANONYMOUS_ENABLED=false).
+# This override publishes it only on loopback so it is not reachable from the LAN.
+# Usage:
+#   docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+#   docker compose -f compose.prod.yaml -f compose.grafana.yaml up -d lgtm
+#   # or for an arbitrary host port:
+#   GRAFANA_HOST_PORT=3002 docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+# Then open http://localhost:${GRAFANA_HOST_PORT:-3000} with GF_SECURITY_ADMIN_USER / GF_SECURITY_ADMIN_PASSWORD.
+services:
+  lgtm:
+    ports:
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000"

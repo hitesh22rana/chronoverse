@@ -88,8 +88,15 @@ The development endpoints are:
 | --- | --- |
 | Dashboard | `http://localhost:3001` |
 | HTTP API | `http://localhost:8080` |
-| LGTM | `http://localhost:3000` |
+| LGTM Grafana | Not host-published by default |
 | gRPC services | `localhost:50051` through `localhost:50055` |
+
+To open Grafana on the Docker host loopback interface, apply the opt-in
+override and sign in with `admin` / `chronoverse-local-grafana-password`:
+
+```bash
+docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+```
 
 <Callout title="Startup is dependency ordered" type="note">
 Certificates, infrastructure health, Kafka topics, and database migrations must complete before domain services and workers become ready.
@@ -1076,11 +1083,16 @@ Chronoverse ships Docker Compose topologies and Kubernetes Kustomize overlays.
 
 ## Development
 
-`compose.dev.yaml` builds local images and exposes infrastructure, API, dashboard, gRPC, and observability ports for debugging.
+`compose.dev.yaml` builds local images and exposes infrastructure, API,
+dashboard, gRPC, and OTLP ports for debugging. Grafana is private by default;
+`compose.grafana.yaml` provides an opt-in loopback-only UI binding.
 
 ## Production
 
-`compose.prod.yaml` uses GHCR application images, keeps services on internal networks, applies resource constraints, runs replicated worker groups, and publishes Nginx plus the LGTM dashboard.
+`compose.prod.yaml` uses GHCR application images, keeps services on internal
+networks, applies resource constraints, runs replicated worker groups, and
+publishes only Nginx. Grafana remains internal unless the loopback override or
+a Kubernetes port-forward is used.
 
 `infra/k8s/overlays/local` provides a self-contained single-node Kubernetes profile for validation. `infra/k8s/overlays/production` provides the self-hosted Kubernetes deployment shape with in-cluster PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, services, workers, dynamic PVCs, and HPAs.
 
@@ -1115,7 +1127,7 @@ The development stack starts one `runtime-agent` named `local-docker` beside `do
 | --- | ---: |
 | Dashboard | `3001` |
 | API | `8080` |
-| LGTM | `3000` |
+| LGTM Grafana | — (not host-published by default; `compose.grafana.yaml` → `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000` or `kubectl -n chronoverse port-forward svc/lgtm 3000:3000`) |
 | OTLP gRPC | `4317` |
 | PostgreSQL | `5432` |
 | ClickHouse TLS | `9440` |
@@ -1156,10 +1168,14 @@ This removes databases, Kafka data, and generated certificate volumes. Use it on
 ```bash
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
 docker compose -f compose.prod.yaml up -d
 ```
 
-Persist these two distinct values in your secret manager and reuse them across server restarts. Production startup rejects empty values, the known development placeholder, and reused server secrets.
+Persist these values in your secret manager and reuse them across server
+restarts. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct.
+Production startup rejects empty values, the known development placeholder, and
+reused server secrets.
 
 For Kubernetes, use the setup script. It preserves valid, complete pre-created Secrets and generates missing bootstrap material:
 
@@ -1170,7 +1186,8 @@ scripts/k8s/setup.sh --mode production
 Production publishes:
 
 - Dashboard and proxied API through Nginx on port `80`.
-- LGTM on port `3000`.
+
+Grafana is not host-published by default (no port `3000`); use the opt-in Compose loopback override (`compose.grafana.yaml` → `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000`) or `kubectl -n chronoverse port-forward svc/lgtm 3000:3000`.
 
 Per-IP rate limits assume nginx sees real client addresses. On Linux hosts Docker preserves client IPs through published ports via DNAT; on Docker Desktop, published ports traverse the userland proxy (notably for IPv6), so nginx may see the gateway address instead and those clients aggregate into one rate-limit bucket.
 
@@ -2232,7 +2249,43 @@ Chronoverse emits OpenTelemetry traces, metrics, and structured logs to the bund
 
 ## Collection
 
-Services and workers export over OTLP gRPC to `lgtm:4317`. The local Grafana UI is published on port `3000`.
+Services and workers export over OTLP gRPC to `lgtm:4317`. The Grafana UI is
+available inside the `lgtm` container on port `3000`, but is not host-published
+by default. Anonymous access is disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`);
+authenticate with `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`.
+
+## Grafana access
+
+For Kubernetes, use
+`kubectl -n chronoverse port-forward svc/lgtm 3000:3000`. For Compose, use the
+opt-in loopback override:
+
+```sh
+docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
+```
+
+`compose.grafana.yaml` publishes
+`127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000`; it does not expose Grafana to the
+LAN.
+
+For an existing Compose `lgtm:/data` volume, recreate `lgtm` from the updated
+Compose file and reset the database credential from the configured container
+secret:
+
+```sh
+docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
+scripts/grafana/reset-admin-password.sh
+```
+
+The helper refuses containers that still mount the obsolete `/otel-lgtm`
+application volume. It uses Grafana's supported `grafana cli` command with the
+correct image home and data paths, passes the password through standard input,
+and migrates the stored `admin` login to `GF_SECURITY_ADMIN_USER` when needed.
+If the stored login is not `admin`, run the helper with
+`GRAFANA_CURRENT_ADMIN_USER=old-login`. It then verifies anonymous requests
+return `401` and the configured credentials return `200`. Do not delete the
+`lgtm` volume for this migration: `/data` contains the Grafana database and
+dashboards, Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 ## Traces
 

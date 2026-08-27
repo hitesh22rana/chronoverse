@@ -71,7 +71,7 @@ func TestIntegrationPublishTopic(t *testing.T) {
 	// predicate must select this test's record specifically: other tests in
 	// this package may have published unrelated jobs-topic records earlier,
 	// and the consumer reads from the earliest offset.
-	consumer := testkit.KafkaConsumer(t, "outboxrelay-"+t.Name(), kafka.TopicJobs)
+	consumer := testkit.KafkaRecordConsumer(t, kafka.TopicJobs)
 	record := testkit.WaitForRecord(t, consumer, 15*time.Second, func(rec *kgo.Record) bool {
 		return rec.Topic == kafka.TopicJobs && string(rec.Key) == "workflow-1"
 	})

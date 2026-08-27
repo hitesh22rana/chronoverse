@@ -4,11 +4,16 @@ Chronoverse ships Docker Compose topologies and Kubernetes Kustomize overlays.
 
 ## Development
 
-`compose.dev.yaml` builds local images and exposes infrastructure, API, dashboard, gRPC, and observability ports for debugging.
+`compose.dev.yaml` builds local images and exposes infrastructure, API,
+dashboard, gRPC, and OTLP ports for debugging. Grafana is private by default;
+`compose.grafana.yaml` provides an opt-in loopback-only UI binding.
 
 ## Production
 
-`compose.prod.yaml` uses GHCR application images, keeps services on internal networks, applies resource constraints, runs replicated worker groups, and publishes Nginx plus the LGTM dashboard.
+`compose.prod.yaml` uses GHCR application images, keeps services on internal
+networks, applies resource constraints, runs replicated worker groups, and
+publishes only Nginx. Grafana remains internal unless the loopback override or
+a Kubernetes port-forward is used.
 
 `infra/k8s/overlays/local` provides a self-contained single-node Kubernetes profile for validation. `infra/k8s/overlays/production` provides the self-hosted Kubernetes deployment shape with in-cluster PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, services, workers, dynamic PVCs, and HPAs.
 

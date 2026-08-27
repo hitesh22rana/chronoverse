@@ -98,9 +98,9 @@ func TestIntegrationPublishJobLogBatchToKafka(t *testing.T) {
 		Value: payload,
 	}})
 
-	consumer := testkit.KafkaConsumer(t, "executor-logs-"+t.Name(), kafkapkg.TopicJobLogs)
+	consumer := testkit.KafkaRecordConsumer(t, kafkapkg.TopicJobLogs)
 	record := testkit.WaitForRecord(t, consumer, 15*time.Second, func(rec *kgo.Record) bool {
-		return rec.Topic == kafkapkg.TopicJobLogs
+		return rec.Topic == kafkapkg.TopicJobLogs && string(rec.Key) == jobID
 	})
 	if got := string(record.Key); got != jobID {
 		t.Fatalf("record key = %q, want %q", got, jobID)

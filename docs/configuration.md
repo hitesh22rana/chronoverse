@@ -318,21 +318,25 @@ PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2375`.
 In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
 (`DaemonSet` on `chronoverse.io/docker-workloads=true` nodes) and register a
-node-stable endpoint `tcp://$(NODE_IP):2375` via `hostPort: 2375` — not a pod IP
+node-stable endpoint `tcp://$(NODE_IP):2376` via `hostPort: 2376` — not a pod IP
 or `tcp://docker-proxy:2375` `ClusterIP`. The DaemonSet is per-node by design;
 a `ClusterIP` would load-balance to a random backend and break the invariant
 that `ClaimJob` (`internal/repository/jobs/lease.go:254`) selects one `runtime_nodes`
 row and workers later dial its stored `runtime_endpoint` (`internal/repository/executor/executor.go:682`,
-`internal/repository/jobs/lease.go:1063` recovery). After PR #113 the endpoint
-is **authenticated but plaintext**: `scripts/k8s/setup.sh` provisions `docker-proxy-auth`
-(high-entropy `X-Chronoverse-Docker-Proxy-Token`), HAProxy enforces it plus an
-exact Docker method/path allowlist before forwarding to the host socket. Workload
-containers do not receive the token. The residual is that compromise of the
-shared bearer token still grants node-level Docker access; `hostPort` bypasses
-`NetworkPolicy`, so restrict TCP 2375 at the infrastructure layer (node firewall /
-security group / CNI host policy). A follow-up should move to `2376` with mutual
-TLS and per-client certificates (runtime-agent vs workers) as described in the
-stack B assessment.
+`internal/repository/jobs/lease.go:1063` recovery). The DaemonSet's HAProxy
+binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
+plus the `X-Chronoverse-Docker-Proxy-Token` header allowlist and an exact
+Docker method/path allowlist before forwarding to the host socket. Runtime-agent
+health probes `tcp://127.0.0.1:2376` (loopback, no `hostPort` needed); the
+advertised endpoint remains `tcp://$(NODE_IP):2376`. Workers and the agent dial
+with per-client mTLS certificates (`DOCKER_PROXY_TLS_CA_FILE`/`CERT_FILE`/`KEY_FILE`,
+`ServerName docker-proxy`) via `internal/pkg/kind/container/docker.go:109`
+`client.WithTLSClientConfig` plus the token second factor — per-client certs
+are `docker-proxy-client-runtime-agent` (ping/version), `workflow-worker`
+(images), and `execution-worker` (containers). Workload containers receive
+neither token nor certs. `hostPort` bypasses `NetworkPolicy`, so restrict TCP
+`2376` at the infrastructure layer (node firewall / security group / CNI host
+policy).
 Multi-node kind and similar Docker-container-based Kubernetes emulators can
 make node host ports reachable only from pods on the same emulator node. In that
 specific topology, use a pod-IP endpoint override as an emulator workaround; do
@@ -494,3 +498,6 @@ and partial internal TLS trust chains:
 - `chronoverse-kafka-tls`: Kafka keystore, truststore, and credential files
 - `grafana-secret`: `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD` (Grafana admin credentials; `setup.sh` generates for both local and production, preserves operator-provided values; compose production requires `GF_SECURITY_ADMIN_PASSWORD` via env)
 - `docker-proxy-auth`: `DOCKER_PROXY_TOKEN` (256-bit haproxy token; `setup.sh` generates, consumed by `docker-proxy` and `runtime-agent`/`execution-worker`/`workflow-worker` via `X-Chronoverse-Docker-Proxy-Token`)
+- `docker-proxy-ca`: `ca.crt` (docker-proxy mTLS CA; `setup.sh` generates per-mode)
+- `docker-proxy-server`: `server.pem` (HAProxy server `tls.crt`+`tls.key` combined; `setup.sh` generates)
+- `docker-proxy-client-runtime-agent` / `docker-proxy-client-workflow-worker` / `docker-proxy-client-execution-worker`: `tls.crt`, `tls.key` (per-client mTLS certs for `tcp://...:2376` `DOCKER_PROXY_TLS_*`; `setup.sh` generates, consumed via `WithTLSClientConfig` `ServerName docker-proxy`)

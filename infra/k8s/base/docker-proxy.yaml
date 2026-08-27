@@ -29,10 +29,11 @@ data:
       server dockersocket /var/run/docker.sock
 
     frontend dockerfrontend
-      bind :2375
+      bind :2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required
 
       # Only trusted workers receive this generated token. Keeping it out of
       # the registered endpoint also prevents accidental disclosure in jobs.
+      # mTLS is the primary authentication; the token remains as a second factor.
       acl authorized req.hdr(X-Chronoverse-Docker-Proxy-Token) -m str "${DOCKER_PROXY_TOKEN}"
       http-request deny unless authorized
 
@@ -111,8 +112,8 @@ spec:
           exec haproxy -W -db -f /etc/docker-proxy/haproxy.cfg
         ports:
         - name: docker
-          containerPort: 2375
-          hostPort: 2375
+          containerPort: 2376
+          hostPort: 2376
           protocol: TCP
         env:
         - name: DOCKER_PROXY_TOKEN
@@ -132,6 +133,9 @@ spec:
           mountPath: /var/run/docker.sock
         - name: docker-proxy-config
           mountPath: /etc/docker-proxy
+          readOnly: true
+        - name: docker-proxy-certs
+          mountPath: /certs/docker-proxy
           readOnly: true
       - name: runtime-agent
         image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
@@ -168,9 +172,17 @@ spec:
         - name: RUNTIME_AGENT_NODE_NAME
           value: $(NODE_NAME)
         - name: DOCKER_HOST
-          value: tcp://$(NODE_IP):2375
+          value: tcp://127.0.0.1:2376
         - name: RUNTIME_AGENT_DOCKER_ENDPOINT
-          value: tcp://$(NODE_IP):2375
+          value: tcp://$(NODE_IP):2376
+        - name: DOCKER_PROXY_TLS_CA_FILE
+          value: /certs/docker-proxy/ca.crt
+        - name: DOCKER_PROXY_TLS_CERT_FILE
+          value: /certs/docker-proxy/client.crt
+        - name: DOCKER_PROXY_TLS_KEY_FILE
+          value: /certs/docker-proxy/client.key
+        - name: DOCKER_PROXY_TLS_SERVER_NAME
+          value: docker-proxy
         resources:
           requests:
             cpu: 50m
@@ -190,6 +202,9 @@ spec:
         - name: certs
           mountPath: /certs
           readOnly: true
+        - name: docker-proxy-certs
+          mountPath: /certs/docker-proxy
+          readOnly: true
       volumes:
       - name: docker-socket
         hostPath:
@@ -198,6 +213,27 @@ spec:
       - name: docker-proxy-config
         configMap:
           name: docker-proxy-config
+      - name: docker-proxy-certs
+        projected:
+          defaultMode: 0400
+          sources:
+          - secret:
+              name: docker-proxy-ca
+              items:
+              - key: ca.crt
+                path: ca.crt
+          - secret:
+              name: docker-proxy-server
+              items:
+              - key: server.pem
+                path: server.pem
+          - secret:
+              name: docker-proxy-client-runtime-agent
+              items:
+              - key: tls.crt
+                path: client.crt
+              - key: tls.key
+                path: client.key
       - name: certs
         projected:
           defaultMode: 0440

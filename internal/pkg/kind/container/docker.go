@@ -3,8 +3,11 @@ package container
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
@@ -44,6 +47,14 @@ const (
 	// socket-proxy credential without changing the persisted endpoint URL.
 	dockerProxyTokenEnv    = "DOCKER_PROXY_TOKEN"               //nolint:gosec // Environment-variable name, not a credential.
 	dockerProxyTokenHeader = "X-Chronoverse-Docker-Proxy-Token" //nolint:gosec // Header name, not a credential.
+
+	// dockerProxyTLS envs configure mTLS to the per-node proxy on :2376.
+	// The token remains as a second factor; workload containers never receive
+	// either credential.
+	dockerProxyTLSCAFileEnv     = "DOCKER_PROXY_TLS_CA_FILE"
+	dockerProxyTLSCertFileEnv   = "DOCKER_PROXY_TLS_CERT_FILE"
+	dockerProxyTLSKeyFileEnv    = "DOCKER_PROXY_TLS_KEY_FILE"
+	dockerProxyTLSServerNameEnv = "DOCKER_PROXY_TLS_SERVER_NAME"
 
 	// platformNetwork is the Compose service network; workloads must never attach.
 	platformNetwork = "chronoverse"
@@ -105,6 +116,31 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 	}
 }
 
+// newDockerProxyTLSConfig loads mTLS credentials for the per-node proxy on :2376.
+func newDockerProxyTLSConfig(caFile, certFile, keyFile, serverName string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	caPEM, err := os.ReadFile(caFile) //nolint:gosec // caFile is a controlled mount path from env (DOCKER_PROXY_TLS_CA_FILE) or default /certs/docker-proxy/ca.crt
+	if err != nil {
+		return nil, err
+	}
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("failed to append docker-proxy CA")
+	}
+	cfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caPool,
+		MinVersion:   tls.VersionTLS12,
+	}
+	if serverName != "" {
+		cfg.ServerName = serverName
+	}
+	return cfg, nil
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	w := &DockerWorkflow{
@@ -128,6 +164,25 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 		clientOptions = append(clientOptions, client.WithHTTPHeaders(map[string]string{
 			dockerProxyTokenHeader: w.dockerProxyToken,
 		}))
+	}
+	if caFile := os.Getenv(dockerProxyTLSCAFileEnv); caFile != "" {
+		certFile := os.Getenv(dockerProxyTLSCertFileEnv)
+		keyFile := os.Getenv(dockerProxyTLSKeyFileEnv)
+		serverName := os.Getenv(dockerProxyTLSServerNameEnv)
+		if certFile == "" || keyFile == "" {
+			return nil, status.Errorf(codes.Internal, "docker proxy TLS misconfigured: %s set but cert/key missing", dockerProxyTLSCAFileEnv)
+		}
+		tlsConfig, err := newDockerProxyTLSConfig(caFile, certFile, keyFile, serverName)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to load docker proxy TLS config: %v", err)
+		}
+		transport := &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+		httpClient := &http.Client{
+			Transport: transport,
+		}
+		clientOptions = append(clientOptions, client.WithHTTPClient(httpClient))
 	}
 	cli, err := client.NewClientWithOpts(
 		clientOptions...,

@@ -126,6 +126,9 @@ Production Secrets include:
 - `kafka-tls-secret`: `KAFKA_SSL_KEYSTORE_PASSWORD`, `KAFKA_SSL_TRUSTSTORE_PASSWORD`, `KAFKA_SSL_KEY_PASSWORD`
 - `chronoverse-server-security`: `CRYPTO_SECRET`, `SERVER_CSRF_HMAC_SECRET`
 - `docker-proxy-auth`: `DOCKER_PROXY_TOKEN`
+- `docker-proxy-ca`: `ca.crt` (mTLS CA for Docker proxy)
+- `docker-proxy-server`: `server.pem` (HAProxy `crt` + `ca-file` for `:2376`)
+- `docker-proxy-client-runtime-agent` / `docker-proxy-client-workflow-worker` / `docker-proxy-client-execution-worker`: `tls.crt`, `tls.key` (per-client mTLS for `tcp://...:2376`, `DOCKER_PROXY_TLS_*` `ServerName docker-proxy`)
 - `chronoverse-auth`: `auth.ed`, `auth.ed.pub`
 - `chronoverse-ca`: `ca.crt`
 - `chronoverse-ingress-tls`: `tls.crt`, `tls.key`
@@ -160,14 +163,18 @@ Container workflows use Docker through runtime ownership. Each labeled
 Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent`
 sidecar. Workers do not need the Docker node label and can schedule anywhere.
 
-Official overlays register `tcp://$(NODE_IP):2375` through the Docker proxy
+Official overlays register `tcp://$(NODE_IP):2376` through the Docker proxy
 `hostPort`, not `tcp://docker-proxy:2375`. This keeps running job cleanup valid
-across proxy pod restarts on the same node. The setup script generates a
-high-entropy `docker-proxy-auth` token and injects it only into the proxy,
-runtime-agent, workflow-worker, and execution-worker. The proxy rejects requests
-without that token and applies an exact method-and-path allowlist; network access
-is limited to inspect and create, so callers cannot connect workloads to another
-bridge.
+across proxy pod restarts on the same node. The DaemonSet's HAProxy binds
+`:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
+plus the `X-Chronoverse-Docker-Proxy-Token` header and an exact Docker
+method/path allowlist; runtime-agent health probes `tcp://127.0.0.1:2376`
+(loopback), while the advertised `tcp://$(NODE_IP):2376` uses per-client mTLS
+certificates (`DOCKER_PROXY_TLS_CA_FILE`/`CERT_FILE`/`KEY_FILE`,
+`ServerName docker-proxy` via `internal/pkg/kind/container/docker.go`) —
+`docker-proxy-client-runtime-agent` (ping/version), `workflow-worker`
+(images), `execution-worker` (containers). The token remains as a second
+factor; workload containers receive neither.
 
 Multi-node kind and similar Docker-container-based Kubernetes emulators may not
 route one emulator node's hostPort from pods on another emulator node. If you
@@ -175,11 +182,11 @@ choose that topology, use a pod-IP runtime endpoint override as an
 emulator-specific workaround. Real single-node and multi-node Kubernetes
 clusters should use node-stable runtime endpoints.
 
-Worker pods need egress to TCP `2375` on runtime node IPs. The base
-NetworkPolicy allows that port, but production should also restrict access with
-private networking, node firewalls or security groups. The application-layer
-token and API allowlist are additional controls, not a reason to expose TCP
-`2375` publicly.
+Worker pods need egress to TCP `2376` on runtime node IPs. The base
+NetworkPolicy allows that port, but `hostPort` bypasses `NetworkPolicy` across
+CNI implementations — production must restrict `2376` at the infrastructure
+layer (node firewall / security group / CNI host policy) in addition to the
+mTLS + token + allowlist. Do not expose `2376` publicly.
 
 Production authentication cookies are scoped from `SERVER_HOST_URL`. A
 production overlay configured for `https://chronoverse.example.com` will reject

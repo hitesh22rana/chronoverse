@@ -11,8 +11,9 @@ authenticate with `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD`.
 
 ## Grafana access
 
-For Kubernetes, use `kubectl port-forward svc/lgtm 3000:3000`. For Compose, use
-the opt-in loopback override:
+For Kubernetes, use
+`kubectl -n chronoverse port-forward svc/lgtm 3000:3000`. For Compose, use the
+opt-in loopback override:
 
 ```sh
 docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm

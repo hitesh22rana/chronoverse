@@ -57,7 +57,8 @@ docker compose -f compose.prod.yaml -f compose.grafana.yaml up -d lgtm
 ```
 
 The host port defaults to `3000`; set `GRAFANA_HOST_PORT` to choose another.
-Kubernetes uses `kubectl port-forward svc/lgtm 3000:3000` instead.
+Kubernetes uses
+`kubectl -n chronoverse port-forward svc/lgtm 3000:3000` instead.
 
 Grafana applies `GF_SECURITY_ADMIN_PASSWORD` only when it first creates its
 database. When upgrading an existing Compose `lgtm:/data` volume, first

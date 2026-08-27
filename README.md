@@ -115,9 +115,10 @@ Development defaults expose internal ports for debugging:
   `4317`. For local UI access, use
   `docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm`,
   which binds Grafana to `127.0.0.1:${GRAFANA_HOST_PORT:-3000}`, or use
-  `kubectl port-forward svc/lgtm 3000:3000` with Kubernetes. Sign in with the
-  development default `admin` / `chronoverse-local-grafana-password`. After
-  upgrading an existing `lgtm:/data` volume, run
+  `kubectl -n chronoverse port-forward svc/lgtm 3000:3000` with Kubernetes.
+  Sign in with the development default `admin` /
+  `chronoverse-local-grafana-password`. After upgrading an existing
+  `lgtm:/data` volume, run
   `scripts/grafana/reset-admin-password.sh`; if its stored admin login is not
   `admin`, set `GRAFANA_CURRENT_ADMIN_USER` to that login.
 
@@ -142,7 +143,8 @@ replicated workers, and a single Nginx entry point:
 - API routes through Nginx: `/api/...`
 - LGTM Grafana: not host-published by default. Use
   `docker compose -f compose.prod.yaml -f compose.grafana.yaml up -d lgtm` for
-  an opt-in loopback binding, or `kubectl port-forward svc/lgtm 3000:3000` for
+  an opt-in loopback binding, or
+  `kubectl -n chronoverse port-forward svc/lgtm 3000:3000` for
   Kubernetes. Compose uses `GF_SECURITY_ADMIN_USER` /
   `GF_SECURITY_ADMIN_PASSWORD`; Kubernetes production uses `grafana-secret`.
   Run `scripts/grafana/reset-admin-password.sh` after upgrading an existing

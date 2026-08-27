@@ -20,6 +20,9 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v7
 
+      - name: Validate Docker Compose configurations
+        run: make compose/validate
+
       - name: Setup Go Environment and Dependencies
         uses: ./.github/actions/setup-go-env
 

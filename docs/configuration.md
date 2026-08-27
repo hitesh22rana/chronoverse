@@ -542,8 +542,14 @@ The standalone script performs the same rotation without reapplying manifests.
 Compose generates a dedicated Docker proxy CA outside the shared `./certs`
 tree. Runtime services mount only one of
 `docker-proxy-certs/{server,runtime-agent,workflow-worker,execution-worker}`;
-only `init-certs` can access the issuer directory. For a maintenance-window
-rotation, stop the stack, regenerate all proxy identities, and recreate it:
+only `init-certs` can access the issuer directory. Docker proxy clients mount
+their role at `/docker-proxy-certs`, separately from the read-only `/certs`
+application-certificate mount. Do not nest the role mount below `/certs`:
+Docker cannot create a child mountpoint after mounting that parent read-only.
+`make compose/validate` checks this invariant in both Compose configurations.
+
+For a maintenance-window rotation, stop the stack, regenerate all proxy
+identities, and recreate it:
 
 ```sh
 docker compose -f compose.prod.yaml down

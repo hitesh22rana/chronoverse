@@ -492,6 +492,9 @@ the longest replay window you expect to tolerate.
   mount in Compose or the `docker-proxy-ca`/`server`/matching `client-*` Secret
   in Kubernetes. A `403` means token or role authorization failed; a TLS alert
   means the issuer, EKU, hostname, or mounted keypair failed authentication.
+- Compose clients mount their role at `/docker-proxy-certs`, not below the
+  read-only `/certs` mount. Run `make compose/validate` to detect invalid nested
+  mount targets and incomplete role-specific TLS wiring.
 
 For local development, recreating the stack and cert volume can clear stale
 certificate state:

@@ -360,9 +360,9 @@ services:
       RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT: tcp://docker-proxy:2376
       RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
       RUNTIME_AGENT_MAX_CONCURRENCY: ${RUNTIME_AGENT_MAX_CONCURRENCY:-4}
-      DOCKER_PROXY_TLS_CA_FILE: certs/docker-proxy/ca.crt
-      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client.crt
-      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client.key
+      DOCKER_PROXY_TLS_CA_FILE: /docker-proxy-certs/ca.crt
+      DOCKER_PROXY_TLS_CERT_FILE: /docker-proxy-certs/client.crt
+      DOCKER_PROXY_TLS_KEY_FILE: /docker-proxy-certs/client.key
       DOCKER_PROXY_TLS_SERVER_NAME: docker-proxy
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
@@ -378,14 +378,14 @@ services:
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
-      - ./docker-proxy-certs/runtime-agent:/certs/docker-proxy:ro
+      - ./docker-proxy-certs/runtime-agent:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/docker-proxy/ca.crt ]; do
+      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
-      export DOCKER_PROXY_TOKEN=$(cat /certs/docker-proxy/token 2>/dev/null || echo "")
+      export DOCKER_PROXY_TOKEN=$(cat /docker-proxy-certs/token 2>/dev/null || echo "")
       exec /bin/service
       '
     depends_on:
@@ -1187,9 +1187,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2376
-      DOCKER_PROXY_TLS_CA_FILE: certs/docker-proxy/ca.crt
-      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client.crt
-      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client.key
+      DOCKER_PROXY_TLS_CA_FILE: /docker-proxy-certs/ca.crt
+      DOCKER_PROXY_TLS_CERT_FILE: /docker-proxy-certs/client.crt
+      DOCKER_PROXY_TLS_KEY_FILE: /docker-proxy-certs/client.key
       DOCKER_PROXY_TLS_SERVER_NAME: docker-proxy
       WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL: 10m
       WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT: 10m
@@ -1206,14 +1206,14 @@ services:
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
-      - ./docker-proxy-certs/workflow-worker:/certs/docker-proxy:ro
+      - ./docker-proxy-certs/workflow-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/docker-proxy/ca.crt ]; do 
+      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
-      export DOCKER_PROXY_TOKEN=$(cat /certs/docker-proxy/token 2>/dev/null || echo "")
+      export DOCKER_PROXY_TOKEN=$(cat /docker-proxy-certs/token 2>/dev/null || echo "")
       exec /bin/service
       '
     depends_on:
@@ -1298,9 +1298,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       DOCKER_HOST: tcp://docker-proxy:2376
-      DOCKER_PROXY_TLS_CA_FILE: certs/docker-proxy/ca.crt
-      DOCKER_PROXY_TLS_CERT_FILE: certs/docker-proxy/client.crt
-      DOCKER_PROXY_TLS_KEY_FILE: certs/docker-proxy/client.key
+      DOCKER_PROXY_TLS_CA_FILE: /docker-proxy-certs/ca.crt
+      DOCKER_PROXY_TLS_CERT_FILE: /docker-proxy-certs/client.crt
+      DOCKER_PROXY_TLS_KEY_FILE: /docker-proxy-certs/client.key
       DOCKER_PROXY_TLS_SERVER_NAME: docker-proxy
       ENV: development
     build:
@@ -1314,14 +1314,14 @@ services:
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
-      - ./docker-proxy-certs/execution-worker:/certs/docker-proxy:ro
+      - ./docker-proxy-certs/execution-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/docker-proxy/ca.crt ]; do 
+      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
-      export DOCKER_PROXY_TOKEN=$(cat /certs/docker-proxy/token 2>/dev/null || echo "")
+      export DOCKER_PROXY_TOKEN=$(cat /docker-proxy-certs/token 2>/dev/null || echo "")
       exec /bin/service
       '
     depends_on:

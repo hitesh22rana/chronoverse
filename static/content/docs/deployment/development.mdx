@@ -38,6 +38,15 @@ docker compose -f compose.dev.yaml logs -f runtime-agent
 docker compose -f compose.dev.yaml up -d --build jobs-service
 ```
 
+Changes to the shared Docker client package require rebuilding all three
+consumers so endpoint migration, mTLS, and certificate reload behavior stay in
+sync:
+
+```bash
+docker compose -f compose.dev.yaml build runtime-agent workflow-worker execution-worker
+docker compose -f compose.dev.yaml up -d --no-deps --force-recreate runtime-agent workflow-worker execution-worker
+```
+
 ## Reset local state
 
 ```bash

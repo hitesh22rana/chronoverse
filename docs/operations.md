@@ -105,6 +105,16 @@ use a pod-IP endpoint override as an emulator-only workaround.
 they can schedule anywhere with network access to TCP `2376` on registered
 runtime endpoints.
 
+When upgrading an existing installation from plaintext `2375`, rebuild and
+restart `runtime-agent`, `workflow-worker`, and `execution-worker` together.
+With Docker proxy mTLS configured, runtime-agent normalizes its configured
+health endpoint and both workers preserve the stored runtime host while
+normalizing legacy `tcp://<host>:2375` snapshots to port `2376`. Workers do
+this before endpoint-cache lookup. Current runtime registrations already use
+`2376`, and historical jobs or idempotency snapshots therefore need no manual
+database rewrite. Plaintext Docker endpoints remain unchanged when proxy TLS
+is disabled.
+
 The execution-worker identity remains node-root-equivalent if its key and token
 are compromised because it can create containers on a host Docker daemon. Role
 authorization prevents runtime-agent or workflow-worker credentials from

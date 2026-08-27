@@ -84,6 +84,58 @@ func TestDockerProxyTLSConfigRequiresServerName(t *testing.T) {
 	}
 }
 
+func TestNormalizeDockerProxyEndpointMigratesLegacyPort(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		endpoint      string
+		tlsConfigured bool
+		want          string
+	}{
+		"compose hostname": {
+			endpoint:      "tcp://docker-proxy:2375",
+			tlsConfigured: true,
+			want:          "tcp://docker-proxy:2376",
+		},
+		"IPv4 node": {
+			endpoint:      "tcp://10.42.0.7:2375",
+			tlsConfigured: true,
+			want:          "tcp://10.42.0.7:2376",
+		},
+		"IPv6 node": {
+			endpoint:      "tcp://[fd00::7]:2375",
+			tlsConfigured: true,
+			want:          "tcp://[fd00::7]:2376",
+		},
+		"plaintext Docker daemon": {
+			endpoint: "tcp://docker-engine:2375",
+			want:     "tcp://docker-engine:2375",
+		},
+		"current mTLS endpoint": {
+			endpoint:      "tcp://docker-proxy:2376",
+			tlsConfigured: true,
+			want:          "tcp://docker-proxy:2376",
+		},
+		"Unix socket": {
+			endpoint:      "unix:///var/run/docker.sock",
+			tlsConfigured: true,
+			want:          "unix:///var/run/docker.sock",
+		},
+		"malformed endpoint": {
+			endpoint:      "tcp://docker-proxy",
+			tlsConfigured: true,
+			want:          "tcp://docker-proxy",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := NormalizeDockerProxyEndpoint(tt.endpoint, tt.tlsConfigured); got != tt.want {
+				t.Fatalf("NormalizeDockerProxyEndpoint(%q, %t) = %q, want %q", tt.endpoint, tt.tlsConfigured, got, tt.want)
+			}
+		})
+	}
+}
+
 type dockerProxyTestCertificate struct {
 	cert    *x509.Certificate
 	certPEM []byte

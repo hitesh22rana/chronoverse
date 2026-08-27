@@ -39,6 +39,8 @@ const (
 	dockerHealthCheckTimeout  = 10 * time.Second
 	dockerIdleConnTimeout     = 30 * time.Second
 	dockerMaxIdleConns        = 6
+	legacyDockerProxyPort     = "2375"
+	dockerProxyTLSPort        = "2376"
 
 	// capDropAll drops every Linux capability from workload containers.
 	capDropAll = "ALL"
@@ -208,6 +210,25 @@ func verifyDockerProxyConnection(state *tls.ConnectionState, caFile, serverName 
 	return err
 }
 
+// NormalizeDockerProxyEndpoint migrates persisted plaintext proxy endpoints
+// to the mTLS listener while preserving the exact runtime host. It is a no-op
+// unless Docker proxy TLS is configured, so ordinary plaintext Docker daemons
+// on port 2375 remain untouched.
+func NormalizeDockerProxyEndpoint(endpoint string, tlsConfigured bool) string {
+	if !tlsConfigured {
+		return endpoint
+	}
+	const tcpPrefix = "tcp://"
+	if !strings.HasPrefix(endpoint, tcpPrefix) {
+		return endpoint
+	}
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(endpoint, tcpPrefix))
+	if err != nil || host == "" || port != legacyDockerProxyPort {
+		return endpoint
+	}
+	return tcpPrefix + net.JoinHostPort(host, dockerProxyTLSPort)
+}
+
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	w := &DockerWorkflow{
@@ -219,6 +240,7 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 			option(w)
 		}
 	}
+	w.dockerHost = NormalizeDockerProxyEndpoint(w.dockerHost, w.dockerProxyTLS.CAFile != "")
 
 	clientOptions := []client.Opt{
 		client.FromEnv,

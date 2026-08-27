@@ -26,6 +26,8 @@ Execution components use an mTLS socket proxy with a narrow API surface instead 
 
 Compose stores the proxy issuer, server identity, and each client role outside the shared `certs` tree and mounts only the exact role directory into a runtime service. Kubernetes uses separate projected volumes and non-root-readable `0440` role keys; the proxy server key is never mounted into runtime-agent. TLS clients reload the CA bundle and client keypair on every new handshake, which supports staged rotation without pinning cached clients to old files.
 
+The `2375` to `2376` upgrade is backward-compatible with persisted runtime references. When proxy mTLS is configured, runtime-agent normalizes its configured health endpoint, while both Docker-using workers preserve each stored DNS name or node IP and normalize only the legacy TCP port before their bounded endpoint-cache lookup. Historical jobs and command snapshots therefore require no database rewrite. Plaintext Docker endpoints are not changed when proxy TLS is disabled.
+
 The runtime uses the two allowed network operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs. It revalidates the network immediately before each container creation, recreates a safely pruned network, and fails closed if the network has been replaced with an unsafe configuration.
 
 <Callout title="Docker create remains privileged" type="warning">

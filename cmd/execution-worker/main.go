@@ -214,6 +214,7 @@ func run() int {
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
 		CsvcForEndpoint: func(runtimeNodeID, endpoint string) (executorrepo.ContainerSvc, error) {
+			endpoint = container.NormalizeDockerProxyEndpoint(endpoint, cfg.DockerProxy.TLS.CAFile != "")
 			csvc, csvcErr := dockerClients.Get(endpoint)
 			if csvcErr != nil {
 				return nil, csvcErr

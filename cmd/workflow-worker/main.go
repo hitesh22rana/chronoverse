@@ -172,6 +172,7 @@ func run() int {
 		}
 	}()
 	containerSvcForEndpoint := func(runtimeNodeID, endpoint string) (workflowrepo.ContainerSvc, error) {
+		endpoint = container.NormalizeDockerProxyEndpoint(endpoint, cfg.DockerProxy.TLS.CAFile != "")
 		csvc, csvcErr := dockerClients.Get(endpoint)
 		if csvcErr != nil {
 			return nil, csvcErr

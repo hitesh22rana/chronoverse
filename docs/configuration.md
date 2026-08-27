@@ -339,6 +339,16 @@ plus the token second factor. The CA bundle and client keypair are reloaded on
 each new TLS handshake so staged certificate rotation does not leave cached
 clients pinned to old files.
 
+When mTLS is configured, the shared Docker client also normalizes a legacy
+`tcp://<same-host>:2375` endpoint to
+`tcp://<same-host>:2376`. The exact DNS name, IPv4 address, or bracketed IPv6
+address is preserved. Runtime-agent applies this to its configured health
+endpoint, and workers normalize persisted endpoints before the bounded
+endpoint-cache lookup so old and new snapshots share one client. This is a
+no-op when mTLS is not configured, for Unix sockets, and for every other port.
+It lets jobs and workflow command snapshots created before the `2376`
+migration finish without a database rewrite in Compose or Kubernetes.
+
 Certificate identity is also authorization, not just authentication:
 
 | Certificate role | Allowed Docker API operations |

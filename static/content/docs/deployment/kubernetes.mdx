@@ -90,6 +90,8 @@ The proxy server identity and runtime-agent client identity are separate project
 
 `workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
 
+During an upgrade from plaintext `2375`, deploy matching runtime-agent, workflow-worker, and execution-worker images. With proxy mTLS configured, runtime-agent normalizes its configured health endpoint, while both workers preserve the stored runtime host and normalize only a legacy `tcp://<host>:2375` endpoint before cache lookup. This covers historical job and idempotency snapshots on both single-node and multi-node clusters without rewriting PostgreSQL. Endpoints remain unchanged when proxy TLS is disabled.
+
 Workers must be able to reach runtime node IPs on TCP `2376`. The base NetworkPolicy allows that egress port, but `hostPort` bypasses `NetworkPolicy` across CNIs — production must restrict `2376` at the infrastructure layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + token + allowlist. Never expose `2376` publicly.
 
 Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's hostPort from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.

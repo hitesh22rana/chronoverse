@@ -1151,6 +1151,15 @@ docker compose -f compose.dev.yaml logs -f runtime-agent
 docker compose -f compose.dev.yaml up -d --build jobs-service
 ```
 
+Changes to the shared Docker client package require rebuilding all three
+consumers so endpoint migration, mTLS, and certificate reload behavior stay in
+sync:
+
+```bash
+docker compose -f compose.dev.yaml build runtime-agent workflow-worker execution-worker
+docker compose -f compose.dev.yaml up -d --no-deps --force-recreate runtime-agent workflow-worker execution-worker
+```
+
 ## Reset local state
 
 ```bash
@@ -1341,6 +1350,8 @@ The proxy server identity and runtime-agent client identity are separate project
 
 `workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
 
+During an upgrade from plaintext `2375`, deploy matching runtime-agent, workflow-worker, and execution-worker images. With proxy mTLS configured, runtime-agent normalizes its configured health endpoint, while both workers preserve the stored runtime host and normalize only a legacy `tcp://<host>:2375` endpoint before cache lookup. This covers historical job and idempotency snapshots on both single-node and multi-node clusters without rewriting PostgreSQL. Endpoints remain unchanged when proxy TLS is disabled.
+
 Workers must be able to reach runtime node IPs on TCP `2376`. The base NetworkPolicy allows that egress port, but `hostPort` bypasses `NetworkPolicy` across CNIs — production must restrict `2376` at the infrastructure layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + token + allowlist. Never expose `2376` publicly.
 
 Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's hostPort from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.
@@ -1471,6 +1482,8 @@ The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `R
 Execution components use an mTLS socket proxy with a narrow API surface instead of broad direct daemon access. A dedicated proxy CA, a generated high-entropy token, and exact certificate-subject ACLs authenticate and authorize three roles: runtime-agent can only ping/read version; workflow-worker can inspect/pull images and log/stop/delete containers for cancellation cleanup; execution-worker additionally receives container inspect/create/start/wait and network inspect/create. Unknown subjects and cross-role operations are denied. Workload containers never receive a token or certificate, and `/networks/*/connect` and `/networks/*/disconnect` are denied.
 
 Compose stores the proxy issuer, server identity, and each client role outside the shared `certs` tree and mounts only the exact role directory into a runtime service. Kubernetes uses separate projected volumes and non-root-readable `0440` role keys; the proxy server key is never mounted into runtime-agent. TLS clients reload the CA bundle and client keypair on every new handshake, which supports staged rotation without pinning cached clients to old files.
+
+The `2375` to `2376` upgrade is backward-compatible with persisted runtime references. When proxy mTLS is configured, runtime-agent normalizes its configured health endpoint, while both Docker-using workers preserve each stored DNS name or node IP and normalize only the legacy TCP port before their bounded endpoint-cache lookup. Historical jobs and command snapshots therefore require no database rewrite. Plaintext Docker endpoints are not changed when proxy TLS is disabled.
 
 The runtime uses the two allowed network operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs. It revalidates the network immediately before each container creation, recreates a safely pruned network, and fails closed if the network has been replaced with an unsafe configuration.
 

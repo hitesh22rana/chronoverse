@@ -746,9 +746,17 @@ spec:
         - name: GF_AUTH_ANONYMOUS_ENABLED
           value: "false"
         - name: GF_SECURITY_ADMIN_USER
-          value: admin
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_SECURITY_ADMIN_USER
+              optional: false
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: chronoverse-local-grafana-password
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_SECURITY_ADMIN_PASSWORD
+              optional: false
         resources:
           requests:
             cpu: 250m

@@ -17,6 +17,7 @@ type ExecutionWorker struct {
 	WorkflowsService
 	JobsService
 	NotificationsService
+	DockerProxy
 	ExecutionWorkerConfig
 }
 

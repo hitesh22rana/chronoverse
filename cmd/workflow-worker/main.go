@@ -155,7 +155,16 @@ func run() int {
 		RetryInterval: cfg.ImagePullLockRetryInterval,
 	}
 	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
-		return container.NewDockerWorkflow(container.WithDockerHost(endpoint))
+		return container.NewDockerWorkflow(
+			container.WithDockerHost(endpoint),
+			container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
+				CAFile:     cfg.DockerProxy.TLS.CAFile,
+				CertFile:   cfg.DockerProxy.TLS.CertFile,
+				KeyFile:    cfg.DockerProxy.TLS.KeyFile,
+				ServerName: cfg.DockerProxy.TLS.ServerName,
+			}),
+			container.WithDockerProxyToken(cfg.DockerProxy.Token),
+		)
 	})
 	defer func() {
 		if closeErr := dockerClients.Close(); closeErr != nil {

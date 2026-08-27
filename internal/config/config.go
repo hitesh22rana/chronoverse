@@ -190,3 +190,16 @@ type AnalyticsService struct {
 		CAFile  string `envconfig:"ANALYTICS_SERVICE_TLS_CA_FILE" default:""`
 	}
 }
+
+// DockerProxy holds the mTLS and token configuration for the per-node
+// Docker proxy on :2376. It is used by the runtime-agent and workers that
+// dial the node's Docker daemon via the proxy.
+type DockerProxy struct {
+	TLS struct {
+		CAFile     string `envconfig:"DOCKER_PROXY_TLS_CA_FILE" default:""`
+		CertFile   string `envconfig:"DOCKER_PROXY_TLS_CERT_FILE" default:""`
+		KeyFile    string `envconfig:"DOCKER_PROXY_TLS_KEY_FILE" default:""`
+		ServerName string `envconfig:"DOCKER_PROXY_TLS_SERVER_NAME" default:"docker-proxy"`
+	}
+	Token string `envconfig:"DOCKER_PROXY_TOKEN" default:""`
+}

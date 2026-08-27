@@ -78,7 +78,16 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	health, err := container.NewDockerWorkflow(container.WithDockerHost(cfg.RuntimeAgentConfig.DockerEndpoint))
+	health, err := container.NewDockerWorkflow(
+		container.WithDockerHost(cfg.RuntimeAgentConfig.DockerEndpoint),
+		container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
+			CAFile:     cfg.DockerProxy.TLS.CAFile,
+			CertFile:   cfg.DockerProxy.TLS.CertFile,
+			KeyFile:    cfg.DockerProxy.TLS.KeyFile,
+			ServerName: cfg.DockerProxy.TLS.ServerName,
+		}),
+		container.WithDockerProxyToken(cfg.DockerProxy.Token),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to ping runtime Docker endpoint: %v\n", err)
 		return ExitError

@@ -48,14 +48,6 @@ const (
 	dockerProxyTokenEnv    = "DOCKER_PROXY_TOKEN"               //nolint:gosec // Environment-variable name, not a credential.
 	dockerProxyTokenHeader = "X-Chronoverse-Docker-Proxy-Token" //nolint:gosec // Header name, not a credential.
 
-	// dockerProxyTLS envs configure mTLS to the per-node proxy on :2376.
-	// The token remains as a second factor; workload containers never receive
-	// either credential.
-	dockerProxyTLSCAFileEnv     = "DOCKER_PROXY_TLS_CA_FILE"
-	dockerProxyTLSCertFileEnv   = "DOCKER_PROXY_TLS_CERT_FILE"
-	dockerProxyTLSKeyFileEnv    = "DOCKER_PROXY_TLS_KEY_FILE"
-	dockerProxyTLSServerNameEnv = "DOCKER_PROXY_TLS_SERVER_NAME"
-
 	// platformNetwork is the Compose service network; workloads must never attach.
 	platformNetwork = "chronoverse"
 
@@ -63,6 +55,17 @@ const (
 	// to; created on demand (VULN-004a/b).
 	DefaultWorkloadNetwork = "chronoverse-workloads"
 )
+
+// DockerProxyTLSConfig holds mTLS credentials for the per-node proxy on :2376.
+// It is supplied via DockerWorkflowOption so callers can use the
+// application's envconfig-based env management instead of direct os.Getenv
+// checks inside the workflow package.
+type DockerProxyTLSConfig struct {
+	CAFile     string
+	CertFile   string
+	KeyFile    string
+	ServerName string
+}
 
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
@@ -72,6 +75,7 @@ type DockerWorkflow struct {
 	dockerHost       string
 	workloadNetwork  string
 	dockerProxyToken string
+	dockerProxyTLS   DockerProxyTLSConfig
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -116,13 +120,31 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 	}
 }
 
+// WithDockerProxyTLS configures mTLS credentials for the per-node Docker
+// proxy. The workload containers never receive these credentials; only the
+// runtime-agent and worker processes use them.
+func WithDockerProxyTLS(cfg DockerProxyTLSConfig) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.dockerProxyTLS = cfg
+	}
+}
+
+// WithDockerProxyToken configures the shared bearer token for the Docker
+// proxy. It is kept separate from the endpoint URL to avoid accidental
+// disclosure in persisted job state.
+func WithDockerProxyToken(token string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.dockerProxyToken = token
+	}
+}
+
 // newDockerProxyTLSConfig loads mTLS credentials for the per-node proxy on :2376.
 func newDockerProxyTLSConfig(caFile, certFile, keyFile, serverName string) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
 	}
-	caPEM, err := os.ReadFile(caFile) //nolint:gosec // caFile is a controlled mount path from env (DOCKER_PROXY_TLS_CA_FILE) or default /certs/docker-proxy/ca.crt
+	caPEM, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, err
 	}
@@ -165,14 +187,11 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 			dockerProxyTokenHeader: w.dockerProxyToken,
 		}))
 	}
-	if caFile := os.Getenv(dockerProxyTLSCAFileEnv); caFile != "" {
-		certFile := os.Getenv(dockerProxyTLSCertFileEnv)
-		keyFile := os.Getenv(dockerProxyTLSKeyFileEnv)
-		serverName := os.Getenv(dockerProxyTLSServerNameEnv)
-		if certFile == "" || keyFile == "" {
-			return nil, status.Errorf(codes.Internal, "docker proxy TLS misconfigured: %s set but cert/key missing", dockerProxyTLSCAFileEnv)
+	if w.dockerProxyTLS.CAFile != "" {
+		if w.dockerProxyTLS.CertFile == "" || w.dockerProxyTLS.KeyFile == "" {
+			return nil, status.Errorf(codes.Internal, "docker proxy TLS misconfigured: CA file set but cert/key missing")
 		}
-		tlsConfig, err := newDockerProxyTLSConfig(caFile, certFile, keyFile, serverName)
+		tlsConfig, err := newDockerProxyTLSConfig(w.dockerProxyTLS.CAFile, w.dockerProxyTLS.CertFile, w.dockerProxyTLS.KeyFile, w.dockerProxyTLS.ServerName)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to load docker proxy TLS config: %v", err)
 		}

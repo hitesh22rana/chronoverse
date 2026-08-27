@@ -135,6 +135,13 @@ func run() int {
 			container.WithDockerHost(endpoint),
 			container.WithResourceLimits(resourceLimits),
 			container.WithWorkloadNetwork(cfg.ExecutionWorkerConfig.WorkloadNetwork),
+			container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
+				CAFile:     cfg.DockerProxy.TLS.CAFile,
+				CertFile:   cfg.DockerProxy.TLS.CertFile,
+				KeyFile:    cfg.DockerProxy.TLS.KeyFile,
+				ServerName: cfg.DockerProxy.TLS.ServerName,
+			}),
+			container.WithDockerProxyToken(cfg.DockerProxy.Token),
 		)
 	})
 	defer func() {

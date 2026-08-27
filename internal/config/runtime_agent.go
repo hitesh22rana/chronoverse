@@ -12,6 +12,7 @@ type RuntimeAgent struct {
 	Environment
 
 	Postgres
+	DockerProxy
 	RuntimeAgentConfig
 }
 

@@ -18,6 +18,7 @@ type WorkflowWorker struct {
 	WorkflowsService
 	JobsService
 	NotificationsService
+	DockerProxy
 	WorkflowWorkerConfig
 }
 

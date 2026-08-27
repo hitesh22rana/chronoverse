@@ -103,7 +103,7 @@ spec:
                 values: ["true"]
       containers:
       - name: docker-proxy
-        image: tecnativa/docker-socket-proxy:v0.4.1
+        image: haproxy:3.0-alpine
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "-ec"]
         args:
@@ -137,6 +137,12 @@ spec:
         - name: docker-proxy-certs
           mountPath: /certs/docker-proxy
           readOnly: true
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
       - name: runtime-agent
         image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
         imagePullPolicy: Always

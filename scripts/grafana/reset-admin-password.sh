@@ -4,10 +4,31 @@ set -euo pipefail
 
 grafana_container="${GRAFANA_CONTAINER:-lgtm}"
 grafana_current_admin_user="${GRAFANA_CURRENT_ADMIN_USER:-admin}"
+grafana_ready_timeout=60
 
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
+}
+
+wait_for_grafana() {
+  local deadline=$((SECONDS + grafana_ready_timeout))
+
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if docker exec "$grafana_container" /bin/sh -ec '
+      curl --silent --fail --output /dev/null --max-time 2 \
+        http://127.0.0.1:3000/api/health
+    ' >/dev/null 2>&1; then
+      return
+    fi
+
+    if [ "$(docker container inspect --format '{{.State.Running}}' "$grafana_container" 2>/dev/null || true)" != "true" ]; then
+      die "Grafana container '$grafana_container' stopped while waiting for readiness"
+    fi
+    sleep 1
+  done
+
+  die "Grafana in container '$grafana_container' did not become ready within ${grafana_ready_timeout}s"
 }
 
 if ! docker container inspect "$grafana_container" >/dev/null 2>&1; then
@@ -26,6 +47,11 @@ otel_lgtm_mount="$(
 if [ -n "$otel_lgtm_mount" ]; then
   die "Grafana container '$grafana_container' still mounts /otel-lgtm; recreate it with the updated Compose file first"
 fi
+
+# Compose reports container startup before Grafana necessarily accepts HTTP
+# requests. Wait before changing the database so a startup timeout cannot leave
+# the credential migration partially applied.
+wait_for_grafana
 
 docker exec -i "$grafana_container" /bin/sh -ec '
   test -n "${GF_SECURITY_ADMIN_USER:-}" || {
@@ -46,6 +72,10 @@ docker exec -i "$grafana_container" /bin/sh -ec '
       --configOverrides cfg:default.paths.data=/data/grafana/data \
       admin reset-admin-password --password-from-stdin
 '
+
+# The CLI writes the database directly. Confirm the running server is still
+# reachable before login migration and verification.
+wait_for_grafana
 
 docker exec \
   --env "GRAFANA_CURRENT_ADMIN_USER=$grafana_current_admin_user" \

@@ -13,7 +13,7 @@ scripts/k8s/setup.sh --mode production
 
 `production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services and workers, runtime-agent, Docker proxy, migrations, and topic initialization.
 
-The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` with a high-entropy token shared only by the Docker proxy, runtime-agent, workflow-worker, and execution-worker.
+The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
 
 Useful non-interactive options include:
 
@@ -82,11 +82,11 @@ Kubernetes does not provide deployment startup ordering for long-running pods. C
 
 ## Docker execution model
 
-Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register a node-stable endpoint, `tcp://$(NODE_IP):2375`, exposed by the Docker proxy `hostPort`; `tcp://docker-proxy:2375` must not be persisted as a runtime endpoint. Every trusted client attaches the generated proxy token, and the proxy forwards only an exact allowlist of Docker methods and paths. Workload containers have neither the token nor access to network connect/disconnect endpoints.
+Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register `tcp://$(NODE_IP):2376` via `hostPort:2376` (`tcp://docker-proxy:2375` must not be persisted); health probes use `tcp://127.0.0.1:2376` while the advertised endpoint remains `tcp://$(NODE_IP):2376`. The proxy binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required` plus `X-Chronoverse-Docker-Proxy-Token` and an exact Docker method/path allowlist; per-client mTLS (`DOCKER_PROXY_TLS_*`, `ServerName docker-proxy` via `WithDockerProxyTLS`/`WithDockerProxyToken`) authenticates callers — workload containers have neither.
 
 `workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
 
-Workers must be able to reach runtime node IPs on TCP `2375`. The base NetworkPolicy allows that egress port, but production clusters should also restrict the host port with private networking, node firewall rules or security groups. Token authentication and the Docker API allowlist are additional controls; Docker API port `2375` must never be publicly exposed.
+Workers must be able to reach runtime node IPs on TCP `2376`. The base NetworkPolicy allows that egress port, but `hostPort` bypasses `NetworkPolicy` across CNIs — production must restrict `2376` at the infrastructure layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + token + allowlist. Never expose `2376` publicly.
 
 Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's hostPort from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.
 

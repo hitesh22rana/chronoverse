@@ -88,17 +88,22 @@ for Docker-backed workers because its node does not expose Docker Engine at
 cluster whose nodes really provide that socket.
 
 The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
-Docker-capable node. Official overlays register `tcp://$(NODE_IP):2375` so
-running job cleanup survives proxy pod restarts on the same node. The generated
-`docker-proxy-auth` token authenticates runtime-agent and worker requests, and
-the proxy forwards only the Docker methods and paths used by Chronoverse.
-Multi-node kind and other Docker-container-based Kubernetes emulators can have a
-specific hostPort routing limitation where pods on one emulator node cannot
-reach another emulator node's host port; if you choose that topology, use a
-pod-IP endpoint
-override as an emulator-only workaround. `workflow-worker` and
-`execution-worker` do not need the Docker node label; they can schedule anywhere
-with network access to TCP `2375` on registered runtime endpoints.
+Docker-capable node. Official overlays register `tcp://$(NODE_IP):2376` via
+`hostPort:2376` so running job cleanup survives proxy pod restarts on the same
+node. Health probes use `tcp://127.0.0.1:2376` (loopback) while the advertised
+endpoint remains `tcp://$(NODE_IP):2376`. The proxy binds
+`:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
+plus the `X-Chronoverse-Docker-Proxy-Token` and an exact Docker method/path
+allowlist; per-client mTLS certificates (`docker-proxy-client-runtime-agent`,
+`workflow-worker`, `execution-worker` via `DOCKER_PROXY_TLS_*`,
+`ServerName docker-proxy`) authenticate callers — workload containers receive
+neither. Multi-node kind and other Docker-container-based Kubernetes emulators
+can have a specific hostPort routing limitation where pods on one emulator node
+cannot reach another emulator node's host port; if you choose that topology,
+use a pod-IP endpoint override as an emulator-only workaround.
+`workflow-worker` and `execution-worker` do not need the Docker node label;
+they can schedule anywhere with network access to TCP `2376` on registered
+runtime endpoints.
 
 ### Stop and Inspect
 
@@ -475,11 +480,12 @@ expected keys.
   generated or operator-provided Secrets match the target cluster.
 - Confirm Docker-capable nodes expose Docker Engine at `/var/run/docker.sock`
   and have the `chronoverse.io/docker-workloads=true` label.
-- Confirm workers can reach runtime node IPs on TCP `2375`; NetworkPolicy,
-  node firewall rules, or security groups may block hostPort traffic.
-- Confirm the `docker-proxy-auth` Secret exists with a non-empty
-  `DOCKER_PROXY_TOKEN`; the proxy fails closed and workers cannot ping it when
-  the token is missing or mismatched.
+- Confirm workers can reach runtime node IPs on TCP `2376` (`hostPort` bypasses
+  `NetworkPolicy` — restrict `2376` at infra layer); the proxy requires
+  `docker-proxy-ca`/`server`/`client-*` Secrets plus `docker-proxy-auth`
+  `DOCKER_PROXY_TOKEN` (mTLS `verify required` + token second factor — missing
+  or mismatched material fails closed and workers cannot ping `127.0.0.1:2376`
+  or `$(NODE_IP):2376`).
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

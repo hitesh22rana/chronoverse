@@ -21,8 +21,9 @@ log delivery, notifications, analytics, and replay-safe event publication.
 In Kubernetes, `infra/k8s` provides Kustomize overlays. The local overlay
 deploys the same entry points inside a single namespace. The production overlay
 deploys the application, workers, Nginx, Docker proxy, Kafka topic initializer,
-migration job, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, LGTM, dynamic
-PVCs, and HorizontalPodAutoscalers. It is a self-hosted topology; operators own
+migration and role-bootstrap jobs, PgBouncer, PostgreSQL, Redis, Kafka,
+ClickHouse, Meilisearch, LGTM, dynamic PVCs, service HorizontalPodAutoscalers,
+and KEDA Kafka-lag scaling. It is a self-hosted topology; operators own
 the StorageClass, Secret lifecycle, ingress hostnames, runtime-node preparation,
 backups, and production sizing.
 
@@ -65,6 +66,8 @@ replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 
 ## Data Stores and Infrastructure
 
+- **PgBouncer** transaction-pools application connections and bounds aggregate
+  PostgreSQL backend usage as replicas scale and roll.
 - **PostgreSQL** stores users, workflows, jobs, runtime nodes, analytics,
   idempotency keys, outbox events, leases, retry state, and transactional
   metadata.

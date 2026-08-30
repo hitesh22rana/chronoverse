@@ -111,13 +111,13 @@ the low/mid/high-resource worker groups.
 `infra/k8s` is organized as Kustomize:
 
 - `base/` contains application services, workers, dashboard, Nginx, Docker
-  proxy, RBAC, network policy, PodDisruptionBudgets, Kafka topic initialization,
-  and shared ConfigMaps.
+  proxy, PgBouncer, RBAC, network policy, PodDisruptionBudgets, Kafka topic
+  initialization, KEDA consumer scaling, and shared ConfigMaps.
 - `overlays/local/` adds in-cluster PostgreSQL, Redis, ClickHouse, Kafka,
   Meilisearch, LGTM, hostPath storage, and certificate bootstrap jobs.
 - `overlays/production/` deploys self-hosted PostgreSQL, Redis, ClickHouse,
-  Kafka, Meilisearch, runtime-agent, dynamic PVCs, and HPAs for services and
-  workers.
+  Kafka, Meilisearch, runtime-agent, dynamic PVCs, service HPAs, production
+  topic partitions, and production KEDA ceilings.
 
 Common commands:
 
@@ -192,8 +192,11 @@ Common settings:
   `POSTGRES_TLS_CERT_FILE`, `POSTGRES_TLS_KEY_FILE`
 
 PostgreSQL holds transactional state, idempotency records, job leases, and
-outbox events. Keep its TLS and credential values environment-specific outside
-local development.
+outbox events. In Kubernetes, `POSTGRES_HOST=postgres` addresses PgBouncer and
+`postgres-primary` addresses PostgreSQL directly for role bootstrap. Workload
+ConfigMaps set explicit two- or four-connection maxima and allow a zero idle
+minimum. Keep TLS and credential values environment-specific outside local
+development.
 
 ### ClickHouse
 
@@ -517,6 +520,8 @@ partial Secrets, insecure server secret placeholders, reused server secrets,
 and partial internal TLS trust chains:
 
 - `postgres-secret`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
+- `postgres-app-secret`: the dedicated `chronoverse_app` non-superuser identity
+  used by application workloads through PgBouncer
 - `clickhouse-secret`: `CLICKHOUSE_PASSWORD`
 - `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`, `MEILI_MASTER_KEY`
 - `kafka-tls-secret`: Kafka keystore, truststore, and key passwords

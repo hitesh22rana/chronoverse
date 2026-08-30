@@ -187,7 +187,10 @@ The local strategy is a single-node, self-contained Kubernetes setup for
 validation with kind/minikube-style clusters. The production strategy is the
 self-hosted Chronoverse stack on your Kubernetes infrastructure: services,
 workers, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, runtime-agent, and
-storage all run under your cluster. The setup script preserves valid, complete
+storage all run under your cluster. Application database traffic is bounded by
+PgBouncer transaction pooling, while Kafka consumers scale from lag through
+KEDA. KEDA is a platform prerequisite and is validated, not installed, by the
+setup script. The setup script preserves valid, complete
 operator-provided Secrets, rejects partial production TLS trust chains and
 insecure or reused server secrets, and generates missing bootstrap material. See
 [infra/k8s/README.md](./infra/k8s/README.md), [configuration](./docs/configuration.md),

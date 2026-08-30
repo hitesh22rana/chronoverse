@@ -18,7 +18,7 @@ Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients
 
 ## Infrastructure
 
-- PostgreSQL: connection pool, dial timeout, credentials, database, and TLS paths.
+- PostgreSQL: PgBouncer endpoint, connection pool, dial timeout, dedicated application credentials, database, and TLS paths. Kubernetes defines explicit per-workload `POSTGRES_MIN_CONNS`/`POSTGRES_MAX_CONNS` budgets; zero is a valid idle minimum.
 - ClickHouse: hosts, credentials, pool limits, dial timeout, and TLS paths.
 - Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths. Production compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` for every Redis client process so startup order cannot reset the server to the lower code default.
 - Meilisearch: URI, master key, and TLS client settings.
@@ -29,6 +29,8 @@ Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients
 Scheduler settings control poll interval, context timeout, and batch size. Jobs service settings include runtime heartbeat windows for claim and recovery. Jobs and notifications services use `COMMAND_IDEMPOTENCY_EVENT_RETENTION`, which defaults to `336h`, cannot be below `168h`, and must cover the longest Kafka, published-outbox, or manual redrive window. Runtime agent settings separate the local health endpoint (`RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT`) from either an explicit advertised endpoint or an IPv4/IPv6-safe `RUNTIME_AGENT_DOCKER_ADVERTISE_HOST`/`PORT`; identity, heartbeat interval, and max concurrency remain independently configurable, and `RUNTIME_AGENT_ID` must remain stable for the same runtime node across restarts. Workflow worker settings control digest resolution and image-pull locks. Execution worker settings control concurrency, runtime-local image-pull locks, per-workload Docker container memory/CPU/PID limits, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention; `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES` bounds the number of expired-ledger batches removed per cycle.
 
 Domain-service-specific limits include workflow and job list fetch limits, workflow cleanup settings, and `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT` for notification listing.
+
+The Kubernetes observability ConfigMap exports metrics every 2 seconds and batches spans/logs on a 1-second schedule. These intervals avoid turning a 500ms export loop into material idle CPU usage on small service replicas.
 
 ## Detailed source
 

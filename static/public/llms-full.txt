@@ -1271,7 +1271,7 @@ scripts/k8s/setup.sh --mode production
 
 `local` is a single-node, self-contained validation strategy. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, generated local certificate bootstrap jobs, Kafka topic initialization, one replica per application deployment, Nginx, and the Docker socket proxy with a runtime-agent sidecar.
 
-`production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services and workers, runtime-agent, Docker proxy, migrations, and topic initialization.
+`production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services, KEDA Kafka-lag scaling for consumers, runtime-agent, Docker proxy, PgBouncer, migrations, and topic initialization.
 
 The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
 
@@ -1291,7 +1291,20 @@ scripts/k8s/setup.sh --mode production --context <context> --rotate-docker-proxy
 
 Kubernetes does not include a generic `kubectl` command to create a cluster. Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or managed Kubernetes provisioning.
 
-The setup workflow requires `kubectl` and OpenSSL. Production Secret generation also requires Java `keytool`; `--create-kind` additionally requires kind. The production overlay needs a default dynamic StorageClass or an explicit `--storage-class`, and its HPAs need metrics-server or an equivalent `autoscaling/v2` resource-metrics provider.
+The setup workflow requires `kubectl` and OpenSSL. Production Secret generation also requires Java `keytool`; `--create-kind` additionally requires kind. The production overlay needs a default dynamic StorageClass or an explicit `--storage-class`, and its service HPAs need metrics-server or an equivalent `autoscaling/v2` resource-metrics provider.
+
+KEDA is a cluster-level prerequisite for both overlays. Chronoverse does not install or upgrade platform controllers. One supported installation is:
+
+```bash
+helm repo add kedacore https://kedacore.github.io/charts
+helm repo update
+helm upgrade --install keda kedacore/keda --version 2.20.2 \
+  --namespace keda --create-namespace
+kubectl get crd scaledobjects.keda.sh
+kubectl get apiservice v1beta1.external.metrics.k8s.io
+```
+
+`scripts/k8s/setup.sh` stops with actionable instructions when the KEDA CRD, KEDA external-metrics API, or Docker-node label is absent. It warns when resource metrics or `IngressClass nginx` are unavailable. An ingress controller is needed only for Ingress-based access; port forwarding remains available without one.
 
 Container workflows require Docker-capable runtime nodes. Label every node that should own Docker containers:
 
@@ -1311,7 +1324,7 @@ scripts/k8s/setup.sh --mode local
 
 ## Secrets and storage
 
-Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. You can pre-create those Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites valid, complete existing Secrets. Invalid local server-security Secrets are replaced with safe local values; invalid production server-security Secrets stop setup so the operator can correct them. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
+Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. PostgreSQL itself and the role-bootstrap Job receive `postgres-secret`; application pods receive `postgres-app-secret` for the dedicated `chronoverse_app` non-superuser role. You can pre-create these Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites valid, complete existing Secrets. Invalid local server-security Secrets are replaced with safe local values; invalid production server-security Secrets stop setup so the operator can correct them. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. The PostgreSQL certificate must cover both `postgres` and `postgres-primary`; setup rejects an older certificate missing the direct-backend SAN. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
 
 The local strategy uses hostPath PVs for single-node validation. Those PVs use retained node-local paths; delete the kind cluster or clear those paths when you intentionally want an empty local data set. Production uses dynamic PVCs by default; provide `--storage-class <name>` to the setup script or rely on the cluster default StorageClass. Production requires dynamic storage; use the local strategy for single-node hostPath validation.
 
@@ -1327,7 +1340,7 @@ Slow-client limits follow the same split: ingress-nginx terminates public client
 
 ## Scaling
 
-The local strategy runs one replica per app deployment. The production strategy includes CPU/memory HorizontalPodAutoscalers for app services and background workers. Install metrics-server or provide equivalent `autoscaling/v2` resource metrics before relying on HPAs.
+The local strategy runs one replica per app deployment. The production strategy includes CPU/memory HorizontalPodAutoscalers for app services. Backend service requests are `100m` CPU and `128Mi` memory; at a 70% CPU target this represents 70m instead of the unstable 35m target produced by the former 50m request. Limits and HPA maxima remain separate safety ceilings. Install metrics-server or provide equivalent `autoscaling/v2` resource metrics before relying on these HPAs.
 
 The five domain gRPC Services are headless. Their DNS records publish ready Pod
 IPs so the gRPC clients' `round_robin` policy can balance calls across resolved
@@ -1336,11 +1349,19 @@ healthy, long-lived gRPC-Go channel may not immediately re-resolve DNS solely
 because an HPA added a replica, so proactive endpoint refresh is a separate
 scaling concern.
 
-Kafka-lag-driven worker scaling is not built into the Kustomize overlay. Use KEDA or a custom metrics adapter when worker count should follow topic lag.
+Kafka consumers scale from lag through base KEDA `ScaledObject` resources. Local maxima follow the base topic partition counts: workflows 2, jobs 4, job logs 4, and analytics 2. Production raises both topic partitions and consumer maxima to 6, 12, 12, and 6 respectively. KEDA cannot usefully exceed the topic's available partitions; CPU/memory HPAs therefore do not compete for ownership of these four consumer Deployments.
+
+## PostgreSQL connection capacity
+
+Applications connect to the `postgres` Service, backed by PgBouncer transaction pooling. PgBouncer reaches the database through the private `postgres-primary` Service. Production runs two poolers; each permits 20 normal and 5 reserve backend connections, bounding the pair at 50 of PostgreSQL's 100 slots. The remaining capacity covers bootstrap, migrations, administration, and failure handling.
+
+Client pools are budgeted per workload rather than inheriting ten connections per pod: API services, job-log processing, and outbox use a maximum of four; scheduling, analytics processing, and runtime-agent use two. Idle minima are zero except for one outbox connection. PostgreSQL-client Deployments use `maxSurge: 0`, so a rollout cannot create an extra wave of connection pools. Production PostgreSQL requests `500m` CPU / `1Gi` memory and limits `2` CPU / `2Gi` memory.
+
+PgBouncer and PostgreSQL limits are safety boundaries, not a throughput guarantee. Before raising replicas, pool sizes, or partitions, load-test representative transaction duration, pool wait time, PostgreSQL CPU/memory, locks, and active connections.
 
 ## Startup behavior
 
-Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with application retry behavior, readiness/liveness probes, and bootstrap Jobs for migrations, Kafka topics, and local certificate material.
+Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with cancellable PostgreSQL startup retries using a bounded backoff of roughly 30 seconds, readiness/liveness probes, and bootstrap Jobs for the application database role, migrations, Kafka topics, and local certificate material. gRPC services handle SIGTERM, drain for up to 20 seconds, then close database pools and telemetry providers with bounded cleanup.
 
 ## Docker execution model
 
@@ -1433,7 +1454,7 @@ Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients
 
 ## Infrastructure
 
-- PostgreSQL: connection pool, dial timeout, credentials, database, and TLS paths.
+- PostgreSQL: PgBouncer endpoint, connection pool, dial timeout, dedicated application credentials, database, and TLS paths. Kubernetes defines explicit per-workload `POSTGRES_MIN_CONNS`/`POSTGRES_MAX_CONNS` budgets; zero is a valid idle minimum.
 - ClickHouse: hosts, credentials, pool limits, dial timeout, and TLS paths.
 - Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths. Production compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` for every Redis client process so startup order cannot reset the server to the lower code default.
 - Meilisearch: URI, master key, and TLS client settings.
@@ -1444,6 +1465,8 @@ Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients
 Scheduler settings control poll interval, context timeout, and batch size. Jobs service settings include runtime heartbeat windows for claim and recovery. Jobs and notifications services use `COMMAND_IDEMPOTENCY_EVENT_RETENTION`, which defaults to `336h`, cannot be below `168h`, and must cover the longest Kafka, published-outbox, or manual redrive window. Runtime agent settings separate the local health endpoint (`RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT`) from either an explicit advertised endpoint or an IPv4/IPv6-safe `RUNTIME_AGENT_DOCKER_ADVERTISE_HOST`/`PORT`; identity, heartbeat interval, and max concurrency remain independently configurable, and `RUNTIME_AGENT_ID` must remain stable for the same runtime node across restarts. Workflow worker settings control digest resolution and image-pull locks. Execution worker settings control concurrency, runtime-local image-pull locks, per-workload Docker container memory/CPU/PID limits, leases, retries, recovery, and log publication. Processor settings control batching and cleanup. Outbox settings control enabled topic groups, claims, retries, cleanup, and retention; `OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES` bounds the number of expired-ledger batches removed per cycle.
 
 Domain-service-specific limits include workflow and job list fetch limits, workflow cleanup settings, and `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT` for notification listing.
+
+The Kubernetes observability ConfigMap exports metrics every 2 seconds and batches spans/logs on a 1-second schedule. These intervals avoid turning a 500ms export loop into material idle CPU usage on small service replicas.
 
 ## Detailed source
 
@@ -1461,7 +1484,7 @@ The complete current variable inventory remains in `docs/configuration.md` and t
 
 `init-certs` generates a local CA, server certificates, client certificates, Kafka keystore and truststore material, and Ed25519 authentication keys in the shared certificate volume.
 
-The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves valid, complete operator-provided Secrets.
+The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves valid, complete operator-provided Secrets. PostgreSQL certificates cover the PgBouncer client endpoint (`postgres`) and direct backend endpoint (`postgres-primary`).
 
 ## Encrypted infrastructure
 
@@ -1495,7 +1518,7 @@ The execution-worker identity is node-root-equivalent if its private key and tok
 
 Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be persistent, distinct values; production startup rejects the known development placeholder and reuse of one value for both purposes.
 
-For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, the `docker-proxy-ca`/`docker-proxy-server`/three `docker-proxy-client-*` Secrets, `postgres-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. The setup script validates complete pre-created server-security Secrets before preserving them. Internal TLS trust-chain and Docker proxy PKI Secrets are treated as atomic sets; partial material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
+For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, the `docker-proxy-ca`/`docker-proxy-server`/three `docker-proxy-client-*` Secrets, `postgres-secret`, `postgres-app-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. `postgres-secret` is restricted to PostgreSQL and role bootstrap; application workloads use the `chronoverse_app` non-superuser identity from `postgres-app-secret` through PgBouncer transaction pooling. The setup script validates complete pre-created server-security Secrets before preserving them. Internal TLS trust-chain and Docker proxy PKI Secrets are treated as atomic sets; partial material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
 
 Use `scripts/k8s/setup.sh --mode production --context <context> --rotate-docker-proxy-certs` for an overlapping-CA Kubernetes rotation after applying current manifests; the standalone `scripts/k8s/rotate-docker-proxy-certs.sh` performs the same rotation without an apply. For Compose, stop the stack, run `init-certs` once with `-e DOCKER_PROXY_ROTATE_CERTS=true`, and recreate the stack. Docker proxy clients mount their isolated role at `/docker-proxy-certs`, separately from the read-only `/certs` application-certificate mount; `make compose/validate` rejects nested read-only mount targets and incomplete role wiring. Both rotations are maintenance operations; the Kubernetes workflow stages old+new trust before replacing clients and server certificates.
 

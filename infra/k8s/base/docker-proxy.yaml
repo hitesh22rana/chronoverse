@@ -87,6 +87,8 @@ metadata:
     app.kubernetes.io/name: docker-proxy
     app.kubernetes.io/component: proxy
     chronoverse.io/client-certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   selector:
     matchLabels:
@@ -96,6 +98,8 @@ spec:
       labels:
         app.kubernetes.io/name: docker-proxy
         app.kubernetes.io/component: proxy
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
     spec:
       terminationGracePeriodSeconds: 30
       securityContext:

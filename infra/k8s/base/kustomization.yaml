@@ -26,8 +26,11 @@ resources:
 patches:
 - target:
     kind: Deployment
-    labelSelector: chronoverse.io/postgres-client=true
+    labelSelector: chronoverse.io/datastore-client=true
   patch: |-
+    - op: add
+      path: /spec/template/metadata/labels/chronoverse.io~1datastore-client
+      value: "true"
     - op: add
       path: /spec/strategy
       value:

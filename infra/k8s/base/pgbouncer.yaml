@@ -41,6 +41,8 @@ metadata:
   labels:
     app.kubernetes.io/name: pgbouncer
     app.kubernetes.io/component: database-pooler
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   strategy:
@@ -56,6 +58,8 @@ spec:
       labels:
         app.kubernetes.io/name: pgbouncer
         app.kubernetes.io/component: database-pooler
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -187,6 +191,8 @@ metadata:
   labels:
     app.kubernetes.io/name: init-postgres-app-role
     app.kubernetes.io/component: init-job
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   backoffLimit: 12
   template:
@@ -194,6 +200,8 @@ spec:
       labels:
         app.kubernetes.io/name: init-postgres-app-role
         app.kubernetes.io/component: init-job
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
     spec:
       restartPolicy: OnFailure
       securityContext:

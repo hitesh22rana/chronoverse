@@ -6,7 +6,9 @@ metadata:
     app.kubernetes.io/name: users-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
 spec:
   replicas: 2
   selector:
@@ -17,6 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: users-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -120,7 +124,10 @@ metadata:
     app.kubernetes.io/name: workflows-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -131,6 +138,9 @@ spec:
       labels:
         app.kubernetes.io/name: workflows-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -210,7 +220,11 @@ metadata:
     app.kubernetes.io/name: jobs-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   replicas: 2
   selector:
@@ -221,6 +235,10 @@ spec:
       labels:
         app.kubernetes.io/name: jobs-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -306,6 +324,7 @@ metadata:
     app.kubernetes.io/name: notifications-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
@@ -317,6 +336,7 @@ spec:
       labels:
         app.kubernetes.io/name: notifications-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -392,6 +412,7 @@ metadata:
     app.kubernetes.io/name: analytics-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
@@ -403,6 +424,7 @@ spec:
       labels:
         app.kubernetes.io/name: analytics-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -478,6 +500,8 @@ metadata:
     app.kubernetes.io/name: server
     app.kubernetes.io/component: gateway
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/redis-client: "true"
 spec:
   replicas: 2
   selector:
@@ -488,6 +512,7 @@ spec:
       labels:
         app.kubernetes.io/name: server
         app.kubernetes.io/component: gateway
+        chronoverse.io/redis-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -613,6 +638,7 @@ metadata:
     app.kubernetes.io/name: scheduling-worker
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
 spec:
   replicas: 1
@@ -624,6 +650,7 @@ spec:
       labels:
         app.kubernetes.io/name: scheduling-worker
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -673,6 +700,11 @@ metadata:
     app.kubernetes.io/name: workflow-worker
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   replicas: 2
   selector:
@@ -683,6 +715,10 @@ spec:
       labels:
         app.kubernetes.io/name: workflow-worker
         app.kubernetes.io/component: worker
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -776,6 +812,9 @@ metadata:
     app.kubernetes.io/name: execution-worker
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -786,6 +825,8 @@ spec:
       labels:
         app.kubernetes.io/name: execution-worker
         app.kubernetes.io/component: worker
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -871,7 +912,12 @@ metadata:
     app.kubernetes.io/name: joblogs-processor
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   replicas: 2
   selector:
@@ -882,6 +928,11 @@ spec:
       labels:
         app.kubernetes.io/name: joblogs-processor
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -943,7 +994,9 @@ metadata:
     app.kubernetes.io/name: analytics-processor
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -954,6 +1007,8 @@ spec:
       labels:
         app.kubernetes.io/name: analytics-processor
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -1005,7 +1060,9 @@ metadata:
     app.kubernetes.io/name: outbox-relay
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -1016,6 +1073,8 @@ spec:
       labels:
         app.kubernetes.io/name: outbox-relay
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -1072,6 +1131,10 @@ metadata:
     app.kubernetes.io/name: database-migration
     app.kubernetes.io/component: init-job
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   backoffLimit: 6
   template:
@@ -1079,6 +1142,10 @@ spec:
       labels:
         app.kubernetes.io/name: database-migration
         app.kubernetes.io/component: init-job
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       restartPolicy: OnFailure
       securityContext:

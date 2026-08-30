@@ -8,9 +8,10 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
-	"google.golang.org/grpc"
 )
 
 var (

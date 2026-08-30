@@ -304,6 +304,31 @@ create_literal_secret() {
   apply_secret_yaml "$yaml"
 }
 
+create_local_keda_tls_placeholders() {
+  [ "$MODE" = "local" ] || return
+
+  local name yaml
+  for name in chronoverse-ca chronoverse-client-tls; do
+    if secret_exists "$name"; then
+      info "Keeping existing local KEDA TLS secret $name"
+      continue
+    fi
+
+    info "Creating local KEDA TLS placeholder $name"
+    if [ "$name" = "chronoverse-ca" ]; then
+      yaml="$(kubectl_cmd -n "$NAMESPACE" create secret generic "$name" \
+        --from-literal=ca.crt=pending-local-certificate-bootstrap \
+        --dry-run=client -o yaml)"
+    else
+      yaml="$(kubectl_cmd -n "$NAMESPACE" create secret generic "$name" \
+        --from-literal=tls.crt=pending-local-certificate-bootstrap \
+        --from-literal=tls.key=pending-local-certificate-bootstrap \
+        --dry-run=client -o yaml)"
+    fi
+    apply_secret_yaml "$yaml"
+  done
+}
+
 TMP_DIR="$(mktemp -d)"
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -729,7 +754,7 @@ delete_bootstrap_jobs() {
 
   local jobs=(init-postgres-app-role database-migration init-kafka-topics)
   if [ "$MODE" = "local" ]; then
-    jobs+=(init-certs init-service-certs)
+    jobs+=(init-certs init-service-certs init-keda-secrets)
   fi
 
   info "Recreating bootstrap jobs for $MODE apply"
@@ -741,6 +766,7 @@ check_keda
 check_docker_nodes
 check_optional_cluster_services
 create_data_secrets
+create_local_keda_tls_placeholders
 if [ "$MODE" = "production" ]; then
   create_production_tls_secrets
 fi

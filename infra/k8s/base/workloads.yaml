@@ -1080,6 +1080,12 @@ spec:
       - name: database-migration
         image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
         imagePullPolicy: IfNotPresent
+        # golang-migrate uses session-level PostgreSQL advisory locks, which
+        # are incompatible with PgBouncer transaction pooling. Bootstrap
+        # migrations therefore connect to the primary directly.
+        env:
+        - name: POSTGRES_HOST
+          value: postgres-primary
         envFrom:
         - configMapRef:
             name: postgres-connection-config

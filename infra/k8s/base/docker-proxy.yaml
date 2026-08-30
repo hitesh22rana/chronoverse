@@ -165,7 +165,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:

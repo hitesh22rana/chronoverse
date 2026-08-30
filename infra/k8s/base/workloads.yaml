@@ -32,7 +32,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -41,8 +41,8 @@ spec:
             name: users-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -145,7 +145,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -156,8 +156,8 @@ spec:
             name: workflows-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -234,7 +234,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -251,8 +251,8 @@ spec:
             name: jobs-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -329,15 +329,15 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:
             name: notifications-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -414,15 +414,15 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:
             name: analytics-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -631,7 +631,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:
@@ -888,7 +888,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -959,7 +959,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: kafka-connection-config
         - configMapRef:
@@ -1025,7 +1025,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: kafka-connection-config
         - configMapRef:
@@ -1084,7 +1084,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: clickhouse-connection-config
         - secretRef:

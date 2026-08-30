@@ -19,8 +19,25 @@ resources:
 - nginx.yaml
 - ingress.yaml
 - pod-disruption-budgets.yaml
+- pgbouncer.yaml
+- kafka-scaling.yaml
+- keda-kafka-network-policy.yaml
 
 patches:
+- target:
+    kind: Deployment
+    labelSelector: chronoverse.io/certs=true
+  patch: |-
+    - op: add
+      path: /spec/strategy
+      value:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+    - op: add
+      path: /spec/template/spec/terminationGracePeriodSeconds
+      value: 30
 - target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true

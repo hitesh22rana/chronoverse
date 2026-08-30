@@ -10,6 +10,8 @@ resources:
 - cert-bootstrap.yaml
 
 replicas:
+- name: pgbouncer
+  count: 1
 - name: analytics-processor
   count: 1
 - name: analytics-service
@@ -76,6 +78,26 @@ configMapGenerator:
 
 patches:
 - path: nginx-realip.yaml
+- target:
+    kind: Deployment
+    name: pgbouncer
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/2
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+- target:
+    kind: Job
+    name: init-postgres-app-role
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
 - target:
     kind: DaemonSet
     labelSelector: chronoverse.io/client-certs=true

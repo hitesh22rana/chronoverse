@@ -40,6 +40,10 @@ configMapGenerator:
   behavior: merge
   literals:
   - KAFKA_BROKERS=kafka:9094
+- name: execution-worker-config
+  behavior: merge
+  literals:
+  - EXECUTION_WORKER_CONCURRENCY=2
 - name: server-config
   behavior: merge
   literals:
@@ -49,6 +53,47 @@ configMapGenerator:
 
 patches:
 - path: nginx-realip.yaml
+- path: kafka-advertised-listener.yaml
+- target:
+    kind: ScaledObject
+    name: workflow-worker-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 6
+- target:
+    kind: ScaledObject
+    name: execution-worker-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 12
+- target:
+    kind: ScaledObject
+    name: joblogs-processor-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 12
+- target:
+    kind: ScaledObject
+    name: analytics-processor-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 6
 - target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true
@@ -380,3 +425,19 @@ patches:
                 path: meilisearch/meilisearch.crt
               - key: meilisearch.key
                 path: meilisearch/meilisearch.key
+- target:
+    kind: Job
+    name: init-kafka-topics
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/env/2/value
+      value: "6"
+    - op: replace
+      path: /spec/template/spec/containers/0/env/3/value
+      value: "12"
+    - op: replace
+      path: /spec/template/spec/containers/0/env/4/value
+      value: "12"
+    - op: replace
+      path: /spec/template/spec/containers/0/env/5/value
+      value: "6"

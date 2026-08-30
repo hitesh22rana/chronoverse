@@ -1,0 +1,107 @@
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: kafka-tls-auth
+spec:
+  secretTargetRef:
+  - parameter: ca
+    name: chronoverse-ca
+    key: ca.crt
+  - parameter: cert
+    name: chronoverse-client-tls
+    key: tls.crt
+  - parameter: key
+    name: chronoverse-client-tls
+    key: tls.key
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: workflow-worker-kafka
+spec:
+  scaleTargetRef:
+    name: workflow-worker
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  triggers:
+  - type: kafka
+    metadata:
+      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      consumerGroup: workflow-worker
+      topic: workflows
+      lagThreshold: "10"
+      activationLagThreshold: "0"
+      limitToPartitionsWithLag: "true"
+      offsetResetPolicy: latest
+      tls: enable
+    authenticationRef:
+      name: kafka-tls-auth
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: execution-worker-kafka
+spec:
+  scaleTargetRef:
+    name: execution-worker
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+  - type: kafka
+    metadata:
+      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      consumerGroup: execution-worker
+      topic: jobs
+      lagThreshold: "10"
+      activationLagThreshold: "0"
+      limitToPartitionsWithLag: "true"
+      offsetResetPolicy: latest
+      tls: enable
+    authenticationRef:
+      name: kafka-tls-auth
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: joblogs-processor-kafka
+spec:
+  scaleTargetRef:
+    name: joblogs-processor
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+  - type: kafka
+    metadata:
+      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      consumerGroup: joblogs-processor
+      topic: job_logs
+      lagThreshold: "100"
+      activationLagThreshold: "0"
+      limitToPartitionsWithLag: "true"
+      offsetResetPolicy: latest
+      tls: enable
+    authenticationRef:
+      name: kafka-tls-auth
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: analytics-processor-kafka
+spec:
+  scaleTargetRef:
+    name: analytics-processor
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  triggers:
+  - type: kafka
+    metadata:
+      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      consumerGroup: analytics-processor
+      topic: analytics
+      lagThreshold: "10"
+      activationLagThreshold: "0"
+      limitToPartitionsWithLag: "true"
+      offsetResetPolicy: latest
+      tls: enable
+    authenticationRef:
+      name: kafka-tls-auth

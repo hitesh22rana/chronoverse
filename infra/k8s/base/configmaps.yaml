@@ -5,7 +5,8 @@ metadata:
 data:
   POSTGRES_HOST: postgres.example.internal
   POSTGRES_PORT: "5432"
-  POSTGRES_MIN_CONNS: "2"
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "0"
   POSTGRES_TLS_ENABLED: "true"
   POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
   POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
@@ -68,8 +69,8 @@ data:
   OTEL_EXPORTER_OTLP_LOGS_INSECURE: "true"
   OTEL_EXPORTER_OTLP_PROTOCOL: grpc
   OTEL_LOGS_EXPORTER: otlp
-  OTEL_METRIC_EXPORT_INTERVAL: "500"
-  OTEL_BSP_SCHEDULE_DELAY: "500"
+  OTEL_METRIC_EXPORT_INTERVAL: "2000"
+  OTEL_BSP_SCHEDULE_DELAY: "1000"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -83,6 +84,8 @@ data:
   GRPC_TLS_CA_FILE: certs/ca/ca.crt
   GRPC_TLS_CERT_FILE: certs/users-service/users-service.crt
   GRPC_TLS_KEY_FILE: certs/users-service/users-service.key
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -96,6 +99,8 @@ data:
   GRPC_TLS_CA_FILE: certs/ca/ca.crt
   GRPC_TLS_CERT_FILE: certs/workflows-service/workflows-service.crt
   GRPC_TLS_KEY_FILE: certs/workflows-service/workflows-service.key
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -116,6 +121,8 @@ data:
   WORKFLOWS_SERVICE_TLS_ENABLED: "true"
   WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
   COMMAND_IDEMPOTENCY_EVENT_RETENTION: 336h
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -136,6 +143,8 @@ data:
   USERS_SERVICE_TLS_ENABLED: "true"
   USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
   COMMAND_IDEMPOTENCY_EVENT_RETENTION: 336h
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -149,6 +158,8 @@ data:
   GRPC_TLS_CA_FILE: certs/ca/ca.crt
   GRPC_TLS_CERT_FILE: certs/analytics-service/analytics-service.crt
   GRPC_TLS_KEY_FILE: certs/analytics-service/analytics-service.key
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -190,6 +201,8 @@ metadata:
   name: runtime-agent-config
 data:
   ENV: production
+  POSTGRES_MAX_CONNS: "2"
+  POSTGRES_MIN_CONNS: "0"
   RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
   RUNTIME_AGENT_MAX_CONCURRENCY: "4"
 ---
@@ -199,6 +212,8 @@ metadata:
   name: scheduling-worker-config
 data:
   ENV: production
+  POSTGRES_MAX_CONNS: "2"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -251,6 +266,8 @@ metadata:
 data:
   ENV: production
   KAFKA_CONSUMER_GROUP: joblogs-processor
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -259,6 +276,8 @@ metadata:
 data:
   ENV: production
   KAFKA_CONSUMER_GROUP: analytics-processor
+  POSTGRES_MAX_CONNS: "2"
+  POSTGRES_MIN_CONNS: "0"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -266,6 +285,8 @@ metadata:
   name: outbox-relay-config
 data:
   ENV: production
+  POSTGRES_MAX_CONNS: "4"
+  POSTGRES_MIN_CONNS: "1"
   OUTBOX_RELAY_PROCESSING_LEASE: 30s
   OUTBOX_RELAY_CLEANUP_ENABLED: "true"
   OUTBOX_RELAY_CLEANUP_INTERVAL: 15m

@@ -12,6 +12,7 @@ STORAGE_CLASS=""
 REALIP_CIDRS=""
 ALLOW_REALIP_SNAPSHOT=false
 ROTATE_DOCKER_PROXY_CERTS=false
+INGRESS_NGINX_AVAILABLE=false
 INSECURE_DEFAULT_SECRET='a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?'
 
 usage() {
@@ -218,7 +219,7 @@ random_hex() {
 
 secret_keys() {
   case "$1" in
-    postgres-secret) echo "POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB" ;;
+    postgres-secret|postgres-app-secret) echo "POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB" ;;
     clickhouse-secret) echo "CLICKHOUSE_PASSWORD" ;;
     meilisearch-secret) echo "MEILISEARCH_MASTER_KEY MEILI_MASTER_KEY" ;;
     kafka-tls-secret) echo "KAFKA_SSL_KEYSTORE_PASSWORD KAFKA_SSL_TRUSTSTORE_PASSWORD KAFKA_SSL_KEY_PASSWORD" ;;
@@ -313,9 +314,10 @@ cleanup() {
 trap cleanup EXIT
 
 create_data_secrets() {
-  local postgres_password clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret docker_proxy_token
+  local postgres_password postgres_app_password clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret docker_proxy_token
   if [ "$MODE" = "local" ]; then
     postgres_password="chronoverse-local-postgres-password"
+    postgres_app_password="chronoverse-local-app-postgres-password"
     clickhouse_password="chronoverse-local-clickhouse-password"
     meili_key="chronoverse-local-meilisearch-master-key"
     kafka_keystore="chronoverse-local-kafka-keystore-password"
@@ -324,6 +326,7 @@ create_data_secrets() {
     csrf_secret="chronoverse-local-csrf-hmac-0001"
   else
     postgres_password="$(random_hex 24)"
+    postgres_app_password="$(random_hex 24)"
     clickhouse_password="$(random_hex 24)"
     meili_key="$(random_hex 32)"
     kafka_keystore="$(random_hex 18)"
@@ -336,6 +339,11 @@ create_data_secrets() {
   create_literal_secret postgres-secret \
     --from-literal=POSTGRES_USER=postgres \
     --from-literal=POSTGRES_PASSWORD="$postgres_password" \
+    --from-literal=POSTGRES_DB=chronoverse
+
+  create_literal_secret postgres-app-secret \
+    --from-literal=POSTGRES_USER=chronoverse_app \
+    --from-literal=POSTGRES_PASSWORD="$postgres_app_password" \
     --from-literal=POSTGRES_DB=chronoverse
 
   create_literal_secret clickhouse-secret \
@@ -513,6 +521,10 @@ create_production_tls_secrets() {
     fi
   done
   if [ "$existing_count" -eq "${#tls_required[@]}" ]; then
+    kubectl_cmd -n "$NAMESPACE" get secret chronoverse-infra-tls -o jsonpath='{.data.postgres\.crt}' | openssl base64 -d -A > "$TMP_DIR/existing-postgres.crt"
+    if ! openssl x509 -in "$TMP_DIR/existing-postgres.crt" -noout -text | grep -q 'DNS:postgres-primary'; then
+      die "existing PostgreSQL certificate does not cover postgres-primary; rotate the atomic Chronoverse TLS secret set before applying PgBouncer"
+    fi
     return
   fi
   if [ "$existing_count" -gt 0 ]; then
@@ -523,7 +535,11 @@ create_production_tls_secrets() {
   generate_ca
   local svc
   for svc in users-service workflows-service jobs-service notifications-service analytics-service postgres redis clickhouse kafka meilisearch; do
-    generate_cert "$svc" "$svc" "DNS:$svc,DNS:$svc.$NAMESPACE,DNS:$svc.$NAMESPACE.svc,DNS:$svc.$NAMESPACE.svc.cluster.local,IP:127.0.0.1"
+    if [ "$svc" = postgres ]; then
+      generate_cert "$svc" "$svc" "DNS:postgres,DNS:postgres.$NAMESPACE,DNS:postgres.$NAMESPACE.svc,DNS:postgres.$NAMESPACE.svc.cluster.local,DNS:postgres-primary,DNS:postgres-primary.$NAMESPACE,DNS:postgres-primary.$NAMESPACE.svc,DNS:postgres-primary.$NAMESPACE.svc.cluster.local,IP:127.0.0.1"
+    else
+      generate_cert "$svc" "$svc" "DNS:$svc,DNS:$svc.$NAMESPACE,DNS:$svc.$NAMESPACE.svc,DNS:$svc.$NAMESPACE.svc.cluster.local,IP:127.0.0.1"
+    fi
   done
   generate_cert client chronoverse-client "DNS:client"
 
@@ -648,12 +664,70 @@ check_storage() {
   die "production requires a default StorageClass, --storage-class, or explicit storage provisioning"
 }
 
+check_keda() {
+  if [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  if ! kubectl_cmd get crd scaledobjects.keda.sh >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+KEDA is required for Chronoverse Kafka-lag autoscaling but is not installed.
+Install it as cluster infrastructure, then rerun this script:
+
+  helm repo add kedacore https://kedacore.github.io/charts
+  helm repo update
+  helm upgrade --install keda kedacore/keda --version 2.20.2 --namespace keda --create-namespace
+
+Verify with: kubectl get crd scaledobjects.keda.sh
+EOF
+    die "missing KEDA prerequisite"
+  fi
+  if ! kubectl_cmd get apiservice v1beta1.external.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null | grep -q True; then
+    die "KEDA CRDs exist but its external metrics API is not available; repair the platform installation and verify kubectl get apiservice v1beta1.external.metrics.k8s.io"
+  fi
+  info "KEDA prerequisite is available"
+}
+
+check_docker_nodes() {
+  if [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  local nodes
+  nodes="$(kubectl_cmd get nodes -l chronoverse.io/docker-workloads=true -o name 2>/dev/null || true)"
+  if [ -z "$nodes" ]; then
+    cat >&2 <<'EOF'
+No Docker-capable Kubernetes node is labeled for Chronoverse container jobs.
+After confirming /var/run/docker.sock is available on the intended node(s), run:
+
+  kubectl label node <node-name> chronoverse.io/docker-workloads=true
+
+Label every node that may own Chronoverse Docker workloads, then rerun setup.
+EOF
+    die "missing chronoverse.io/docker-workloads=true node label"
+  fi
+  info "Docker-capable nodes: $(echo "$nodes" | sed 's|node/||g' | tr '\n' ' ')"
+}
+
+check_optional_cluster_services() {
+  if [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  if [ "$MODE" = "production" ] && ! kubectl_cmd get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null | grep -q True; then
+    warn "Kubernetes resource metrics API is unavailable; install metrics-server (or your provider's equivalent) before relying on service CPU/memory HPAs"
+  fi
+  if ! kubectl_cmd get ingressclass nginx >/dev/null 2>&1; then
+    warn "IngressClass nginx is unavailable; the Chronoverse Ingress will not route until an nginx-compatible ingress controller is provisioned (port-forward access remains available)"
+  else
+    INGRESS_NGINX_AVAILABLE=true
+    info "IngressClass nginx is available"
+  fi
+}
+
 delete_bootstrap_jobs() {
   if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
     return
   fi
 
-  local jobs=(database-migration init-kafka-topics)
+  local jobs=(init-postgres-app-role database-migration init-kafka-topics)
   if [ "$MODE" = "local" ]; then
     jobs+=(init-certs init-service-certs)
   fi
@@ -662,12 +736,15 @@ delete_bootstrap_jobs() {
   kubectl_cmd -n "$NAMESPACE" delete job "${jobs[@]}" --ignore-not-found >/dev/null
 }
 
+check_storage
+check_keda
+check_docker_nodes
+check_optional_cluster_services
 create_data_secrets
 if [ "$MODE" = "production" ]; then
   create_production_tls_secrets
 fi
 create_docker_proxy_tls_secrets
-check_storage
 
 if [ "$SKIP_APPLY" = true ]; then
   info "Skipping manifest apply"
@@ -678,7 +755,7 @@ fi
 # client addresses from X-Forwarded-For (see nginx-realip-config). Production
 # only: the local overlay's kind default is already correct.
 REALIP_DETECTED=""
-if [ "$MODE" = "production" ]; then
+if [ "$MODE" = "production" ] && [ "$INGRESS_NGINX_AVAILABLE" = true ]; then
   if [ -n "$REALIP_CIDRS" ]; then
     # Operator override via --realip-cidrs: normalize commas to spaces.
     REALIP_DETECTED="$(echo "$REALIP_CIDRS" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"

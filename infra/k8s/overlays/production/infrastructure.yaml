@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: postgres
     app.kubernetes.io/component: database
 spec:
-  serviceName: postgres
+  serviceName: postgres-primary
   replicas: 1
   selector:
     matchLabels:
@@ -77,6 +77,8 @@ spec:
         - ssl_ca_file=/postgres-tls/ca.crt
         - -c
         - hba_file=/postgres-config/pg_hba.conf
+        - -c
+        - max_connections=100
         ports:
         - name: postgres
           containerPort: 5432
@@ -88,11 +90,11 @@ spec:
           value: /var/lib/postgresql/data/pgdata
         resources:
           requests:
-            cpu: 250m
-            memory: 384Mi
+            cpu: 500m
+            memory: 1Gi
           limits:
-            cpu: "1"
-            memory: 1024Mi
+            cpu: "2"
+            memory: 2Gi
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
@@ -129,7 +131,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres
+  name: postgres-primary
 spec:
   type: ClusterIP
   selector:
@@ -394,11 +396,11 @@ spec:
               key: CLICKHOUSE_PASSWORD
         resources:
           requests:
-            cpu: 250m
-            memory: 512Mi
+            cpu: 500m
+            memory: 1Gi
           limits:
-            cpu: "1"
-            memory: 1536Mi
+            cpu: "2"
+            memory: 3Gi
         volumeMounts:
         - name: clickhouse-storage
           mountPath: /var/lib/clickhouse
@@ -576,11 +578,11 @@ spec:
           value: "1"
         resources:
           requests:
-            cpu: 500m
-            memory: 512Mi
-          limits:
             cpu: "1"
-            memory: 1024Mi
+            memory: 1Gi
+          limits:
+            cpu: "2"
+            memory: 2Gi
         volumeMounts:
         - name: kafka-storage
           mountPath: /var/lib/kafka/data
@@ -769,11 +771,11 @@ spec:
               optional: false
         resources:
           requests:
-            cpu: 250m
-            memory: 384Mi
+            cpu: 500m
+            memory: 1Gi
           limits:
-            cpu: "1"
-            memory: 1024Mi
+            cpu: "2"
+            memory: 2Gi
 ---
 apiVersion: v1
 kind: Service

@@ -26,7 +26,7 @@ resources:
 patches:
 - target:
     kind: Deployment
-    labelSelector: chronoverse.io/certs=true
+    labelSelector: chronoverse.io/postgres-client=true
   patch: |-
     - op: add
       path: /spec/strategy
@@ -35,6 +35,10 @@ patches:
         rollingUpdate:
           maxSurge: 0
           maxUnavailable: 1
+- target:
+    kind: Deployment
+    labelSelector: chronoverse.io/certs=true
+  patch: |-
     - op: add
       path: /spec/template/spec/terminationGracePeriodSeconds
       value: 30

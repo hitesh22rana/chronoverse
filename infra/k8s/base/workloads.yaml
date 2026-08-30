@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: users-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -119,6 +120,7 @@ metadata:
     app.kubernetes.io/name: workflows-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -208,6 +210,7 @@ metadata:
     app.kubernetes.io/name: jobs-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -303,6 +306,7 @@ metadata:
     app.kubernetes.io/name: notifications-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -388,6 +392,7 @@ metadata:
     app.kubernetes.io/name: analytics-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -608,6 +613,7 @@ metadata:
     app.kubernetes.io/name: scheduling-worker
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 1
   selector:
@@ -865,6 +871,7 @@ metadata:
     app.kubernetes.io/name: joblogs-processor
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -936,6 +943,7 @@ metadata:
     app.kubernetes.io/name: analytics-processor
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -997,6 +1005,7 @@ metadata:
     app.kubernetes.io/name: outbox-relay
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:

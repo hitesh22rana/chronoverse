@@ -53,7 +53,7 @@ type Postgres struct {
 	Password    string        `envconfig:"POSTGRES_PASSWORD" default:"postgres"`
 	Database    string        `envconfig:"POSTGRES_DB" default:"chronoverse"`
 	MaxConns    int32         `envconfig:"POSTGRES_MAX_CONNS" default:"10"`
-	MinConns    int32         `envconfig:"POSTGRES_MIN_CONNS" default:"5"`
+	MinConns    int32         `envconfig:"POSTGRES_MIN_CONNS" default:"0"`
 	MaxConnLife time.Duration `envconfig:"POSTGRES_MAX_CONN_LIFE" default:"1h"`
 	MaxConnIdle time.Duration `envconfig:"POSTGRES_MAX_CONN_IDLE" default:"30m"`
 	DialTimeout time.Duration `envconfig:"POSTGRES_DIAL_TIMEOUT" default:"5s"`

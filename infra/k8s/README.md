@@ -206,11 +206,31 @@ processing uses 0 / 4, and outbox uses 1 / 4. The Go client honors a zero
 minimum and retries PostgreSQL startup for roughly 30 seconds with bounded
 backoff.
 
-PostgreSQL-client Deployments use `maxSurge: 0`, and gRPC services drain for up
+Datastore-client Deployments use `maxSurge: 0`, and gRPC services drain for up
 to 20 seconds on SIGTERM before their pools and telemetry providers close.
 These are capacity guards, not proof of workload capacity: validate PgBouncer
 queue time, PostgreSQL memory/CPU, transaction duration, and connection counts
 under representative load before changing replica or pool ceilings.
+
+Workload and pod-template labels describe each datastore dependency:
+
+| Label | Dependency |
+| --- | --- |
+| `chronoverse.io/datastore-client=true` | One or more stateful dependencies |
+| `chronoverse.io/postgres-client=true` | PostgreSQL or PgBouncer |
+| `chronoverse.io/redis-client=true` | Redis |
+| `chronoverse.io/kafka-client=true` | Kafka |
+| `chronoverse.io/clickhouse-client=true` | ClickHouse |
+| `chronoverse.io/meilisearch-client=true` | Meilisearch |
+
+These labels support inventory queries and datastore-specific policy. Every
+datastore-client Deployment uses `maxSurge: 0` so a rollout does not create an
+extra wave of database, cache, search, or broker clients. The specific labels
+remain available for targeted inspection; for example, list every Kafka-using
+pod with `kubectl -n chronoverse get pods -l chronoverse.io/kafka-client=true`.
+This rollout guard does not replace datastore readiness or application startup
+retry: a cold cluster can still fail if a dependency stays unavailable beyond
+the configured retry window.
 
 ## Runtime Ownership
 

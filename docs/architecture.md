@@ -192,11 +192,12 @@ expected operating conditions.
 - Compose generates a local CA, service certificates, client certificates, and
   Ed25519 auth keys through `init-certs`.
 - The Kubernetes local overlay generates development certificates into a local
-  certificate PVC. Production mounts Kubernetes Secrets for auth keys, CA
-  material, client TLS, service TLS, infrastructure TLS, Kafka stores, and
-  datastore credentials. The setup script preserves valid, complete operator-provided
-  Secrets and can generate a missing fallback set; partial internal TLS trust
-  chains are rejected.
+  certificate PVC and mirrors only the CA and generic Kafka client identity
+  into narrowly managed Secrets for KEDA. Production mounts Kubernetes Secrets
+  for auth keys, CA material, client TLS, service TLS, infrastructure TLS,
+  Kafka stores, and datastore credentials. The setup script preserves valid,
+  complete operator-provided Secrets and can generate a missing fallback set;
+  partial internal TLS trust chains are rejected.
 - PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC services run with
   TLS or mTLS in compose.
 - The HTTP server uses encrypted session cookies, constant-time CSRF HMAC

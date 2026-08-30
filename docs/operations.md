@@ -174,16 +174,19 @@ kubectl -n chronoverse logs deploy/server
 1. `init-certs` generates the local service CA, service certificates, client
    certificates, Kafka keystore/truststore files, auth keys, and a separate
    role-isolated Docker proxy PKI.
-2. PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, LGTM, and Docker proxy
+2. `init-keda-secrets` mirrors the local CA and generic Kafka client identity
+   from the certificate PVC into the two Kubernetes Secrets used by KEDA.
+3. PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, LGTM, and Docker proxy
    start with TLS-enabled configuration.
-3. `init-postgres-app-role` creates or updates the dedicated non-superuser
+4. `init-postgres-app-role` creates or updates the dedicated non-superuser
    application role.
-4. `init-kafka-topics` creates or expands Kafka topics.
-5. `database-migration` applies PostgreSQL migrations, ClickHouse
+5. `init-kafka-topics` creates or expands Kafka topics.
+6. `database-migration` connects directly to `postgres-primary` for its
+   session-level advisory lock, then applies PostgreSQL migrations, ClickHouse
    migrations, and Meilisearch index setup.
-6. gRPC services become ready after their dependencies are healthy.
-7. Workers become ready after dependent services and topics are available.
-8. The dashboard and Nginx expose the application.
+7. gRPC services become ready after their dependencies are healthy.
+8. Workers become ready after dependent services and topics are available.
+9. The dashboard and Nginx expose the application.
 
 Kubernetes does not provide Compose-style dependency ordering for long-running
 Deployments. The overlays include explicit Jobs for certificate bootstrap

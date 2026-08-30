@@ -9,7 +9,7 @@ scripts/k8s/setup.sh --mode local
 scripts/k8s/setup.sh --mode production
 ```
 
-`local` is a single-node, self-contained validation strategy. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, generated local certificate bootstrap jobs, Kafka topic initialization, one replica per application deployment, Nginx, and the Docker socket proxy with a runtime-agent sidecar.
+`local` is a single-node, self-contained validation strategy. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, generated local certificate bootstrap jobs, Kafka topic initialization, one replica per application deployment, Nginx, and the Docker socket proxy with a runtime-agent sidecar. After generating certificates on the local PVC, a resource-name-scoped bootstrap Job mirrors only the CA and generic client identity into `chronoverse-ca` and `chronoverse-client-tls` Secrets so KEDA can authenticate to Kafka.
 
 `production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services, KEDA Kafka-lag scaling for consumers, runtime-agent, Docker proxy, PgBouncer, migrations, and topic initialization.
 
@@ -93,7 +93,7 @@ Kafka consumers scale from lag through base KEDA `ScaledObject` resources. Local
 
 ## PostgreSQL connection capacity
 
-Applications connect to the `postgres` Service, backed by PgBouncer transaction pooling. PgBouncer reaches the database through the private `postgres-primary` Service. Production runs two poolers; each permits 20 normal and 5 reserve backend connections, bounding the pair at 50 of PostgreSQL's 100 slots. The remaining capacity covers bootstrap, migrations, administration, and failure handling.
+Applications connect to the `postgres` Service, backed by PgBouncer transaction pooling. PgBouncer reaches the database through the private `postgres-primary` Service. The `database-migration` Job bypasses PgBouncer and connects to `postgres-primary` because `golang-migrate` relies on session-level PostgreSQL advisory locks, which transaction pooling cannot preserve. Production runs two poolers; each permits 20 normal and 5 reserve backend connections, bounding the pair at 50 of PostgreSQL's 100 slots. The remaining capacity covers bootstrap, migrations, administration, and failure handling.
 
 Client pools are budgeted per workload rather than inheriting ten connections per pod: API services, job-log processing, and outbox use a maximum of four; scheduling, analytics processing, and runtime-agent use two. Idle minima are zero except for one outbox connection. PostgreSQL-client Deployments use `maxSurge: 0`, so a rollout cannot create an extra wave of connection pools. Production PostgreSQL requests `500m` CPU / `1Gi` memory and limits `2` CPU / `2Gi` memory.
 

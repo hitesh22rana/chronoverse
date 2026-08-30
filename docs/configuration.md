@@ -193,7 +193,9 @@ Common settings:
 
 PostgreSQL holds transactional state, idempotency records, job leases, and
 outbox events. In Kubernetes, `POSTGRES_HOST=postgres` addresses PgBouncer and
-`postgres-primary` addresses PostgreSQL directly for role bootstrap. Workload
+`postgres-primary` addresses PostgreSQL directly for role bootstrap and schema
+migrations. Migrations bypass transaction pooling because their session-level
+advisory lock must remain on one PostgreSQL backend. Workload
 ConfigMaps set explicit two- or four-connection maxima and allow a zero idle
 minimum. Keep TLS and credential values environment-specific outside local
 development.

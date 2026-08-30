@@ -48,7 +48,10 @@ scripts/k8s/setup.sh --mode production
 `local` is a single-node, self-contained validation strategy. It includes
 in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath
 storage, generated local certificate bootstrap jobs, one replica per app, and a
-single-node kind example.
+single-node kind example. Because KEDA cannot read certificates from the local
+certificate PVC, a narrowly scoped bootstrap Job mirrors only the local CA and
+generic Kafka client identity into `chronoverse-ca` and
+`chronoverse-client-tls` Secrets after certificate generation.
 
 `production` is a self-hosted strategy for your Kubernetes infrastructure. It
 includes Chronoverse services, workers, PostgreSQL, Redis, Kafka, ClickHouse,
@@ -188,6 +191,11 @@ through the private `postgres-primary` Service. Each pooler is capped at 25
 backend connections (20 normal plus 5 reserve), so the pair can consume at most
 50 of PostgreSQL's 100 connections and leaves capacity for bootstrap,
 migrations, administration, and failure handling.
+
+The `database-migration` Job also connects directly to `postgres-primary`.
+`golang-migrate` uses session-level PostgreSQL advisory locks, which are not
+compatible with PgBouncer transaction pooling; normal application traffic must
+continue to use the pooled `postgres` Service.
 
 The setup script creates `chronoverse_app` as a dedicated non-superuser role.
 Only PostgreSQL itself and the role-bootstrap Job receive `postgres-secret`;

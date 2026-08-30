@@ -175,7 +175,7 @@ func Init() (context.Context, func()) {
 	}
 }
 
-// GracefulStop drains a gRPC server after ctx is cancelled, with a bounded
+// GracefulStop drains a gRPC server after ctx is canceled, with a bounded
 // fallback so Kubernetes termination can always complete.
 func GracefulStop(ctx context.Context, server *grpc.Server, timeout time.Duration) {
 	<-ctx.Done()

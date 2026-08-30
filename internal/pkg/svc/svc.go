@@ -8,8 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	"google.golang.org/grpc"
-
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 )
@@ -172,21 +170,5 @@ func Init() (context.Context, func()) {
 				_ = shutdownFunc(shutdownCtx)
 			}
 		})
-	}
-}
-
-// GracefulStop drains a gRPC server after ctx is canceled, with a bounded
-// fallback so Kubernetes termination can always complete.
-func GracefulStop(ctx context.Context, server *grpc.Server, timeout time.Duration) {
-	<-ctx.Done()
-	done := make(chan struct{})
-	go func() {
-		server.GracefulStop()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(timeout):
-		server.Stop()
 	}
 }

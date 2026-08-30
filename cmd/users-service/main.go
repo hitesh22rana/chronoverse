@@ -16,6 +16,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/app/users"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	grpcserverpkg "github.com/hitesh22rana/chronoverse/internal/pkg/grpcserver"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
@@ -133,7 +134,7 @@ func run() int {
 		return ExitError
 	}
 
-	go svcpkg.GracefulStop(ctx, app, 20*time.Second)
+	go grpcserverpkg.GracefulStop(ctx, app, 20*time.Second)
 
 	// Log the service information
 	loggerpkg.FromContext(ctx).Info(

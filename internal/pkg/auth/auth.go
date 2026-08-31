@@ -26,6 +26,13 @@ const (
 	// For security reasons, the token should expire in a short time.
 	Expiry = time.Minute * 15 // 15 minutes
 
+	// clockSkewLeeway tolerates the small clock differences that are normal
+	// between Kubernetes nodes. Without it, a token issued on a node whose
+	// clock is slightly ahead can fail its nbf check on another node.
+	clockSkewLeeway   = 30 * time.Second
+	jwtExpiryClaim    = "exp"
+	jwtNotBeforeClaim = "nbf"
+
 	// audienceMetadataKey is the key for the audience in the metadata.
 	audienceMetadataKey = "Audience"
 
@@ -323,12 +330,12 @@ func (a *Auth) IssueToken(ctx context.Context, subject string) (token string, er
 
 	now := time.Now()
 	_token := jwt.NewWithClaims(&jwt.SigningMethodEd25519{}, jwt.MapClaims{
-		"aud": audience,
-		"nbf": now.Unix(),
-		"iat": now.Unix(),
-		"exp": now.Add(Expiry).Unix(),
-		"iss": a.issuer,
-		"sub": subject,
+		"aud":             audience,
+		jwtNotBeforeClaim: now.Unix(),
+		"iat":             now.Unix(),
+		jwtExpiryClaim:    now.Add(Expiry).Unix(),
+		"iss":             a.issuer,
+		"sub":             subject,
 
 		// role is the role of the audience
 		"role": role,
@@ -368,7 +375,8 @@ func (a *Auth) ValidateToken(ctx context.Context) (token *jwt.Token, err error) 
 			}
 
 			return a.publicKey, nil
-		})
+		},
+		jwt.WithLeeway(clockSkewLeeway))
 	if err != nil {
 		// check if the token is expired
 		// if the token is expired, return an error with code DeadlineExceeded.

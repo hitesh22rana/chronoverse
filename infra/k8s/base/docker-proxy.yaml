@@ -142,8 +142,8 @@ spec:
               key: DOCKER_PROXY_TOKEN
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 200m
             memory: 256Mi
@@ -214,8 +214,8 @@ spec:
           value: docker-proxy
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 200m
             memory: 256Mi
@@ -291,3 +291,8 @@ spec:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
+          - secret:
+              name: docker-proxy-ca
+              items:
+              - key: ca.crt
+                path: docker-proxy/.mountpoint

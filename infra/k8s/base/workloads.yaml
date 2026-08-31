@@ -787,6 +787,11 @@ spec:
               name: chronoverse-client-tls
           - secret:
               name: chronoverse-service-tls
+          - secret:
+              name: docker-proxy-ca
+              items:
+              - key: ca.crt
+                path: docker-proxy/.mountpoint
       - name: docker-proxy-certs
         projected:
           defaultMode: 0440
@@ -887,6 +892,11 @@ spec:
               name: chronoverse-client-tls
           - secret:
               name: chronoverse-service-tls
+          - secret:
+              name: docker-proxy-ca
+              items:
+              - key: ca.crt
+                path: docker-proxy/.mountpoint
       - name: docker-proxy-certs
         projected:
           defaultMode: 0440
@@ -1031,8 +1041,8 @@ spec:
             name: analytics-processor-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -1102,7 +1112,7 @@ spec:
             name: outbox-relay-config
         resources:
           requests:
-            cpu: 50m
+            cpu: 100m
             memory: 128Mi
           limits:
             cpu: 250m
@@ -1179,8 +1189,8 @@ spec:
             name: observability-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi

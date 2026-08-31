@@ -305,7 +305,7 @@ create_literal_secret() {
 }
 
 create_local_keda_tls_placeholders() {
-  [ "$MODE" = "local" ] || return
+  [ "$MODE" = "local" ] || return 0
 
   local name yaml
   for name in chronoverse-ca chronoverse-client-tls; do
@@ -391,7 +391,9 @@ create_data_secrets() {
   # Grafana admin credentials: local uses fixed defaults, production generates random.
   local grafana_user="admin"
   local grafana_password
-  if [ "$MODE" = "local" ]; then
+  if [ -n "${GF_SECURITY_ADMIN_PASSWORD:-}" ]; then
+    grafana_password="$GF_SECURITY_ADMIN_PASSWORD"
+  elif [ "$MODE" = "local" ]; then
     grafana_password="chronoverse-local-grafana-password"
   else
     grafana_password="$(random_hex 24)"
@@ -761,6 +763,109 @@ delete_bootstrap_jobs() {
   kubectl_cmd -n "$NAMESPACE" delete job "${jobs[@]}" --ignore-not-found >/dev/null
 }
 
+wait_for_bootstrap_jobs() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  local job jobs=(init-postgres-app-role database-migration init-kafka-topics)
+  if [ "$MODE" = "local" ]; then
+    jobs=(init-certs init-service-certs init-keda-secrets "${jobs[@]}")
+  fi
+  # Deployments are applied in the same transaction as these Jobs.  Waiting
+  # here establishes the schema/topic readiness barrier before we declare the
+  # application rollout complete; otherwise a cold datastore start can leave
+  # pods permanently CrashLooping after their short startup retry budget.
+  for job in "${jobs[@]}"; do
+    info "Waiting for bootstrap Job $job"
+    kubectl_cmd -n "$NAMESPACE" wait --for=condition=complete "job/$job" --timeout=20m
+  done
+}
+
+reconcile_keda_scaled_objects() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  local reconcile_id scaled_object scaled_objects
+  scaled_objects="$(kubectl_cmd -n "$NAMESPACE" get scaledobjects.keda.sh \
+    -l app.kubernetes.io/part-of=chronoverse -o name 2>/dev/null || true)"
+  [ -n "$scaled_objects" ] || return 0
+
+  # KEDA can evaluate the ScaledObjects before Kafka has started on a cold
+  # cluster.  A failed initial scaler check does not necessarily reconcile as
+  # soon as the broker becomes ready, leaving the generated HPAs absent.  The
+  # topic bootstrap Job proves that Kafka and its TLS listener are usable, so
+  # force one reconciliation after that readiness barrier and require every
+  # scaler to become Ready before setup succeeds.
+  reconcile_id="$(date +%s)"
+  info "Reconciling KEDA ScaledObjects after Kafka bootstrap"
+  while IFS= read -r scaled_object; do
+    [ -n "$scaled_object" ] || continue
+    kubectl_cmd -n "$NAMESPACE" annotate "$scaled_object" \
+      chronoverse.io/reconcile="$reconcile_id" --overwrite >/dev/null
+  done <<EOF
+$scaled_objects
+EOF
+
+  while IFS= read -r scaled_object; do
+    [ -n "$scaled_object" ] || continue
+    kubectl_cmd -n "$NAMESPACE" wait --for=condition=Ready "$scaled_object" --timeout=5m
+  done <<EOF
+$scaled_objects
+EOF
+}
+
+wait_for_database_pooler() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  # A PgBouncer configuration change can trigger its rollout during apply.
+  # Do not restart database clients until the transaction pool is available;
+  # otherwise their first health check can race the temporary empty Service.
+  info "Waiting for PgBouncer rollout"
+  kubectl_cmd -n "$NAMESPACE" rollout status deployment/pgbouncer --timeout=10m
+}
+
+restart_runtime_daemonset() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  # runtime-agent registers itself in the runtime_nodes table.  On a clean
+  # install the DaemonSet can start before database-migration creates that
+  # table and remain in CrashLoopBackOff after setup otherwise completes.
+  info "Restarting docker-proxy DaemonSet after database bootstrap"
+  kubectl_cmd -n "$NAMESPACE" rollout restart daemonset/docker-proxy
+  kubectl_cmd -n "$NAMESPACE" rollout status daemonset/docker-proxy --timeout=10m
+}
+
+restart_application_deployments() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  local deployment deployments
+  deployments="$(kubectl_cmd -n "$NAMESPACE" get deployments -l app.kubernetes.io/part-of=chronoverse -o name | grep -Ev '/(lgtm|nginx|pgbouncer)$' || true)"
+  [ -n "$deployments" ] || return 0
+
+  info "Restarting stateless Chronoverse Deployments after bootstrap completion"
+  while IFS= read -r deployment; do
+    [ -n "$deployment" ] || continue
+    kubectl_cmd -n "$NAMESPACE" rollout restart "$deployment"
+  done <<EOF
+$deployments
+EOF
+
+  while IFS= read -r deployment; do
+    [ -n "$deployment" ] || continue
+    kubectl_cmd -n "$NAMESPACE" rollout status "$deployment" --timeout=10m
+  done <<EOF
+$deployments
+EOF
+}
+
 check_storage
 check_keda
 check_docker_nodes
@@ -974,9 +1079,15 @@ else
   if [ -n "$REALIP_CIDRS" ]; then
     info "Restarting nginx to apply the client-IP trust ranges"
     kubectl_cmd -n "$NAMESPACE" rollout restart deployment/nginx
-    kubectl_cmd -n "$NAMESPACE" rollout status deployment/nginx --timeout=120s ||
+    kubectl_cmd -n "$NAMESPACE" rollout status deployment/nginx --timeout=10m ||
       warn "nginx rollout did not complete in time; check pod logs"
   fi
+
+  wait_for_bootstrap_jobs
+  reconcile_keda_scaled_objects
+  wait_for_database_pooler
+  restart_runtime_daemonset
+  restart_application_deployments
 
   if [ "$ROTATE_DOCKER_PROXY_CERTS" = true ]; then
     info "Rotating Docker proxy certificates with overlapping CA trust"

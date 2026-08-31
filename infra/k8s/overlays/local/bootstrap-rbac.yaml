@@ -17,10 +17,9 @@ rules:
   resourceNames:
   - chronoverse-ca
   - chronoverse-client-tls
-  # Kubernetes cannot restrict create by resourceNames. setup.sh creates
-  # placeholders, so the in-cluster bootstrap only needs narrowly scoped
-  # patch access to synchronize the generated local CA and client identity.
-  verbs: ["patch"]
+  # setup.sh creates the placeholders; the in-cluster job only reads and
+  # patches those two named Secrets with the generated local material.
+  verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

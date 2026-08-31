@@ -10,6 +10,7 @@ data:
     [pgbouncer]
     listen_addr = 0.0.0.0
     listen_port = 5432
+    unix_socket_dir =
     auth_type = scram-sha-256
     auth_file = /etc/pgbouncer-runtime/userlist.txt
     pool_mode = transaction
@@ -66,12 +67,13 @@ spec:
         runAsUser: 70
         runAsGroup: 70
         fsGroup: 70
+        supplementalGroups: [101]
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       initContainers:
       - name: prepare-pgbouncer
-        image: edoburu/pgbouncer:1.25.2
+        image: edoburu/pgbouncer:v1.25.2-p0
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -96,13 +98,19 @@ spec:
           mountPath: /runtime
       containers:
       - name: pgbouncer
-        image: edoburu/pgbouncer:1.25.2
+        image: edoburu/pgbouncer:v1.25.2-p0
         imagePullPolicy: IfNotPresent
         command: ["pgbouncer"]
         args: ["/etc/pgbouncer-runtime/pgbouncer.ini"]
         ports:
         - name: postgres
           containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app-secret
+              key: POSTGRES_USER
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -116,14 +124,20 @@ spec:
             cpu: 500m
             memory: 256Mi
         readinessProbe:
-          tcpSocket:
-            port: postgres
+          exec:
+            command:
+            - sh
+            - -ec
+            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d chronoverse -U "$POSTGRES_USER"
           periodSeconds: 5
           timeoutSeconds: 2
           failureThreshold: 12
         livenessProbe:
-          tcpSocket:
-            port: postgres
+          exec:
+            command:
+            - sh
+            - -ec
+            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d chronoverse -U "$POSTGRES_USER"
           periodSeconds: 10
           timeoutSeconds: 2
           failureThreshold: 6
@@ -209,6 +223,7 @@ spec:
         runAsUser: 70
         runAsGroup: 70
         fsGroup: 70
+        supplementalGroups: [101]
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
@@ -268,8 +283,8 @@ spec:
             drop: ["ALL"]
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi

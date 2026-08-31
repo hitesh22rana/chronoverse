@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chronoverse-bootstrap
+  labels:
+    app.kubernetes.io/component: bootstrap
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chronoverse-bootstrap
+  labels:
+    app.kubernetes.io/component: bootstrap
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames:
+  - chronoverse-ca
+  - chronoverse-client-tls
+  # setup.sh creates the placeholders; the in-cluster job only reads and
+  # patches those two named Secrets with the generated local material.
+  verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chronoverse-bootstrap
+  labels:
+    app.kubernetes.io/component: bootstrap
+subjects:
+- kind: ServiceAccount
+  name: chronoverse-bootstrap
+  namespace: chronoverse
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: chronoverse-bootstrap

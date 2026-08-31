@@ -16,7 +16,7 @@ import (
 
 const (
 	// MaxHealthCheckRetries is the maximum number of retries for the health check.
-	MaxHealthCheckRetries = 3
+	MaxHealthCheckRetries = 10
 )
 
 // migrationsFS holds the embedded postgres migration files.
@@ -56,14 +56,21 @@ type Postgres struct {
 func healthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 	var err error
 
-	backoff := 100 * time.Millisecond
+	backoff := 500 * time.Millisecond
 	for i := 1; i <= MaxHealthCheckRetries; i++ {
 		if err = pool.Ping(ctx); err == nil {
 			break
 		}
 		if i < MaxHealthCheckRetries {
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
 			backoff *= 2
+			if backoff > 5*time.Second {
+				backoff = 5 * time.Second
+			}
 		}
 	}
 
@@ -74,9 +81,6 @@ func healthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	if cfg.MaxConns == 0 {
 		cfg.MaxConns = 10
-	}
-	if cfg.MinConns == 0 {
-		cfg.MinConns = 2
 	}
 	if cfg.MaxConnLife == 0 {
 		cfg.MaxConnLife = time.Hour

@@ -10,11 +10,45 @@ setup script.
 - Java `keytool` when production Kafka TLS material must be generated.
 - kind only when using `--create-kind`.
 - A default dynamic StorageClass or `--storage-class <name>` for production.
+- KEDA installed by the platform team; Chronoverse uses it for Kafka consumer
+  lag autoscaling in every overlay.
 - metrics-server or an equivalent `autoscaling/v2` resource-metrics provider
   before relying on the production HPAs.
+- An nginx-compatible ingress controller providing `IngressClass` `nginx` when
+  Kubernetes Ingress access is required. Port-forward access does not need it.
 
 Container execution also requires labeled Docker-capable nodes as described
 under [Cluster Prerequisites](#cluster-prerequisites).
+
+Chronoverse deliberately does not install cluster-wide controllers. A typical
+KEDA installation is:
+
+```sh
+helm repo add kedacore https://kedacore.github.io/charts
+helm repo update
+helm upgrade --install keda kedacore/keda --version 2.20.2 --namespace keda --create-namespace
+kubectl label namespace keda chronoverse.io/keda-kafka-access=true --overwrite
+kubectl get crd scaledobjects.keda.sh
+kubectl get apiservice v1beta1.external.metrics.k8s.io
+```
+
+The Kafka NetworkPolicy selects the KEDA installation namespace through
+`chronoverse.io/keda-kafka-access=true`, rather than assuming the namespace is
+named `keda`. Apply that label to whichever platform-managed namespace serves
+`v1beta1.external.metrics.k8s.io`; `setup.sh` discovers that namespace from the
+APIService and fails early with the exact label command when the contract is
+missing.
+
+Install metrics-server and an ingress controller using the lifecycle mechanism
+recommended by the Kubernetes provider. `setup.sh` validates or warns about
+these contracts and prints actionable guidance; it never assumes ownership of
+them.
+
+Internal clients, Kafka broker metadata, and KEDA use namespace-qualified
+partial Service names such as `kafka.chronoverse.svc`. They deliberately omit
+the cluster DNS suffix, so clusters with a domain other than `cluster.local`
+are supported through the standard Kubernetes Pod DNS search list. Preserve
+the normal `ClusterFirst` DNS behavior if you customize workload DNS settings.
 
 ## Setup
 
@@ -28,12 +62,22 @@ scripts/k8s/setup.sh --mode production
 `local` is a single-node, self-contained validation strategy. It includes
 in-cluster PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath
 storage, generated local certificate bootstrap jobs, one replica per app, and a
-single-node kind example.
+single-node kind example. Because KEDA cannot read certificates from the local
+certificate PVC, a narrowly scoped bootstrap Job mirrors only the local CA and
+generic Kafka client identity into `chronoverse-ca` and
+`chronoverse-client-tls` Secrets after certificate generation.
 
 `production` is a self-hosted strategy for your Kubernetes infrastructure. It
 includes Chronoverse services, workers, PostgreSQL, Redis, Kafka, ClickHouse,
 Meilisearch, runtime-agent, Docker proxy, Nginx, migrations, topic
 initialization, dynamic PVCs, and HPAs.
+
+After applying either overlay, the setup entrypoint waits for certificate,
+role, migration, and topic bootstrap Jobs as applicable. It then reconciles
+and verifies the KEDA Kafka scalers, waits for PgBouncer, rolls the Docker proxy
+DaemonSet, and restarts/waits for stateless application Deployments. A
+successful return therefore means the post-bootstrap workload rollout is
+available; direct `kubectl apply -k` users must perform equivalent checks.
 
 The script is interactive by default and also supports repeatable flags:
 
@@ -122,6 +166,8 @@ can correct it.
 Production Secrets include:
 
 - `postgres-secret`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
+- `postgres-app-secret`: the dedicated, non-superuser application role using
+  the same key names; application pods never receive `postgres-secret`
 - `clickhouse-secret`: `CLICKHOUSE_PASSWORD`
 - `meilisearch-secret`: `MEILISEARCH_MASTER_KEY`, `MEILI_MASTER_KEY`
 - `kafka-tls-secret`: `KAFKA_SSL_KEYSTORE_PASSWORD`, `KAFKA_SSL_TRUSTSTORE_PASSWORD`, `KAFKA_SSL_KEY_PASSWORD`
@@ -157,6 +203,63 @@ The production overlay uses dynamic PVCs by default. Provide a StorageClass with
 `scripts/k8s/setup.sh --mode production --storage-class <name>` or rely on the
 cluster default StorageClass. Production requires dynamic storage; use the
 `local` strategy for single-node hostPath validation.
+
+## PostgreSQL connection capacity
+
+Applications connect to the `postgres` Service, which is a two-replica
+PgBouncer tier using transaction pooling. PgBouncer connects to the database
+through the private `postgres-primary` Service. Each pooler is capped at 25
+backend connections (20 normal plus 5 reserve), so the pair can consume at most
+50 of PostgreSQL's 100 connections and leaves capacity for bootstrap,
+migrations, administration, and failure handling.
+
+The `database-migration` Job also connects directly to `postgres-primary`.
+`golang-migrate` uses session-level PostgreSQL advisory locks, which are not
+compatible with PgBouncer transaction pooling; normal application traffic must
+continue to use the pooled `postgres` Service.
+
+The setup script creates `chronoverse_app` as a dedicated non-superuser role.
+Only PostgreSQL itself and the role-bootstrap Job receive `postgres-secret`;
+application pods receive `postgres-app-secret`. Application pool budgets are
+declared per workload ConfigMap. API services use 0 minimum / 4 maximum,
+scheduling and analytics use 0 / 2, runtime-agent uses 0 / 2, job-log
+processing uses 0 / 4, and outbox uses 1 / 4. The Go client honors a zero
+minimum and retries PostgreSQL startup for roughly 30 seconds with bounded
+backoff.
+
+`postgres-secret` and `postgres-app-secret` must contain the same
+`POSTGRES_DB`. Setup derives a missing peer Secret from the existing value and
+rejects a mismatch. PgBouncer generates its single database mapping from that
+value at pod startup, so operator-provided names are supported without exposing
+a wildcard database route. Names are limited to 63 ASCII letters, digits, or
+underscores so they are safe as unquoted PgBouncer mapping keys; the reserved
+name `pgbouncer` is rejected.
+
+Datastore-client Deployments use `maxSurge: 0`, and gRPC services drain for up
+to 20 seconds on SIGTERM before their pools and telemetry providers close.
+These are capacity guards, not proof of workload capacity: validate PgBouncer
+queue time, PostgreSQL memory/CPU, transaction duration, and connection counts
+under representative load before changing replica or pool ceilings.
+
+Workload and pod-template labels describe each datastore dependency:
+
+| Label | Dependency |
+| --- | --- |
+| `chronoverse.io/datastore-client=true` | One or more stateful dependencies |
+| `chronoverse.io/postgres-client=true` | PostgreSQL or PgBouncer |
+| `chronoverse.io/redis-client=true` | Redis |
+| `chronoverse.io/kafka-client=true` | Kafka |
+| `chronoverse.io/clickhouse-client=true` | ClickHouse |
+| `chronoverse.io/meilisearch-client=true` | Meilisearch |
+
+These labels support inventory queries and datastore-specific policy. Every
+datastore-client Deployment uses `maxSurge: 0` so a rollout does not create an
+extra wave of database, cache, search, or broker clients. The specific labels
+remain available for targeted inspection; for example, list every Kafka-using
+pod with `kubectl -n chronoverse get pods -l chronoverse.io/kafka-client=true`.
+This rollout guard does not replace datastore readiness or application startup
+retry: a cold cluster can still fail if a dependency stays unavailable beyond
+the configured retry window.
 
 ## Runtime Ownership
 

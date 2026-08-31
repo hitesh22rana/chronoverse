@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"time"
 
 	_ "github.com/KimMachineGun/automemlimit"
 	"github.com/go-playground/validator/v10"
@@ -19,6 +20,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
+	grpcserverpkg "github.com/hitesh22rana/chronoverse/internal/pkg/grpcserver"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -202,13 +204,7 @@ func run() int {
 		return ExitError
 	}
 
-	// Gracefully shutdown the service
-	go func() {
-		<-ctx.Done()
-		if err := listener.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to close listener: %v\n", err)
-		}
-	}()
+	go grpcserverpkg.GracefulStop(ctx, app, 20*time.Second)
 
 	// Log the service information
 	loggerpkg.FromContext(ctx).Info(
@@ -225,6 +221,9 @@ func run() int {
 
 	// Serve the gRPC service
 	if err := app.Serve(listener); err != nil {
+		if ctx.Err() != nil {
+			return ExitOk
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}

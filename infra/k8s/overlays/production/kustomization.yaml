@@ -40,6 +40,10 @@ configMapGenerator:
   behavior: merge
   literals:
   - KAFKA_BROKERS=kafka:9094
+- name: execution-worker-config
+  behavior: merge
+  literals:
+  - EXECUTION_WORKER_CONCURRENCY=2
 - name: server-config
   behavior: merge
   literals:
@@ -49,6 +53,47 @@ configMapGenerator:
 
 patches:
 - path: nginx-realip.yaml
+- path: kafka-advertised-listener.yaml
+- target:
+    kind: ScaledObject
+    name: workflow-worker-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 6
+- target:
+    kind: ScaledObject
+    name: execution-worker-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 12
+- target:
+    kind: ScaledObject
+    name: joblogs-processor-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 12
+- target:
+    kind: ScaledObject
+    name: analytics-processor-kafka
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 6
 - target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true
@@ -62,6 +107,9 @@ patches:
         labelSelector:
           matchLabels:
             app.kubernetes.io/part-of: chronoverse
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/0
       value:
@@ -119,23 +167,49 @@ patches:
       path: /spec/template/spec/initContainers
       value:
       - name: wait-for-datastores
-        image: alpine:3.22.2
+        # Use the postgres image so we get pg_isready/psql out of the box
+        # and can wait for both the TCP port and the chronoverse_app role
+        # (the latter is created by init-postgres-app-role, which runs in
+        # parallel and is required for the migration connection to succeed).
+        image: postgres:18.0-alpine3.22
         command:
         - sh
-        - -c
+        - -ec
         - |
           set -eu
           first_clickhouse="${CLICKHOUSE_HOSTS%%,*}"
           clickhouse_host="${first_clickhouse%%:*}"
           clickhouse_port="${first_clickhouse##*:}"
           if [ "$clickhouse_port" = "$first_clickhouse" ]; then clickhouse_port=9440; fi
-          until nc -z "$POSTGRES_HOST" "$POSTGRES_PORT"; do echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT"; sleep 2; done
+          export PGSSLMODE=verify-full
+          export PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key
+          until pg_isready -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT"; sleep 2; done
+          # The migration connects as POSTGRES_USER (chronoverse_app), which
+          # is provisioned by init-postgres-app-role. Wait until the role
+          # exists; psql exits non-zero on a missing role.
+          until PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT 1" >/dev/null 2>&1; do
+            echo "waiting for postgres role $POSTGRES_USER"
+            sleep 2
+          done
           until nc -z "$clickhouse_host" "$clickhouse_port"; do echo "waiting for clickhouse at $clickhouse_host:$clickhouse_port"; sleep 2; done
+        env:
+        # Migrations must run on the primary directly. golang-migrate's
+        # pg_advisory_lock/pg_advisory_unlock rely on a single session, and
+        # pgbouncer's transaction pool reassigns backend connections between
+        # statements, which would strand the lock and block subsequent runs.
+        - name: POSTGRES_HOST
+          value: postgres-primary
+        - name: POSTGRES_PORT
+          value: "5432"
         envFrom:
         - configMapRef:
-            name: postgres-connection-config
-        - configMapRef:
             name: clickhouse-connection-config
+        - secretRef:
+            name: postgres-app-secret
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532
@@ -144,6 +218,9 @@ patches:
           readOnlyRootFilesystem: true
           capabilities:
             drop: ["ALL"]
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/0
       value:
@@ -174,6 +251,9 @@ patches:
     kind: StatefulSet
     name: postgres
   patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/1/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/1
       value:
@@ -235,6 +315,9 @@ patches:
           readOnly: true
         - name: certs
           mountPath: /certs
+    - op: test
+      path: /spec/template/spec/volumes/1/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/1
       value:
@@ -275,6 +358,9 @@ patches:
       value:
         fsGroup: 101
         fsGroupChangePolicy: OnRootMismatch
+    - op: test
+      path: /spec/template/spec/volumes/1/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/1
       value:
@@ -301,6 +387,9 @@ patches:
                 path: clickhouse/clickhouse.crt
               - key: clickhouse.key
                 path: clickhouse/clickhouse.key
+    - op: test
+      path: /spec/template/spec/volumes/2/name
+      value: clickhouse-certs
     - op: replace
       path: /spec/template/spec/volumes/2
       value:
@@ -322,6 +411,9 @@ patches:
                 path: clickhouse.crt
               - key: clickhouse.key
                 path: clickhouse.key
+    - op: test
+      path: /spec/template/spec/volumes/3/name
+      value: clickhouse-ca
     - op: replace
       path: /spec/template/spec/volumes/3
       value:
@@ -339,6 +431,9 @@ patches:
     kind: StatefulSet
     name: kafka
   patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/1/name
+      value: kafka-secrets-storage
     - op: replace
       path: /spec/template/spec/volumes/1
       value:
@@ -354,6 +449,9 @@ patches:
     kind: StatefulSet
     name: meilisearch
   patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/1/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/1
       value:
@@ -380,3 +478,40 @@ patches:
                 path: meilisearch/meilisearch.crt
               - key: meilisearch.key
                 path: meilisearch/meilisearch.key
+- target:
+    kind: Job
+    name: init-kafka-topics
+  patch: |-
+    # The base init-kafka-topics Job has 6 positional env entries:
+    #   /env/0  KAFKA_BOOTSTRAP_SERVER
+    #   /env/1  KAFKA_TOPIC_REPLICATION_FACTOR
+    #   /env/2  KAFKA_WORKFLOWS_TOPIC_PARTITIONS
+    #   /env/3  KAFKA_JOBS_TOPIC_PARTITIONS
+    #   /env/4  KAFKA_JOB_LOGS_TOPIC_PARTITIONS
+    #   /env/5  KAFKA_ANALYTICS_TOPIC_PARTITIONS
+    # Each test op asserts the entry's name so that reordering in the base
+    # fails loudly instead of silently misconfiguring partitions.
+    - op: test
+      path: /spec/template/spec/containers/0/env/2/name
+      value: KAFKA_WORKFLOWS_TOPIC_PARTITIONS
+    - op: replace
+      path: /spec/template/spec/containers/0/env/2/value
+      value: "6"
+    - op: test
+      path: /spec/template/spec/containers/0/env/3/name
+      value: KAFKA_JOBS_TOPIC_PARTITIONS
+    - op: replace
+      path: /spec/template/spec/containers/0/env/3/value
+      value: "12"
+    - op: test
+      path: /spec/template/spec/containers/0/env/4/name
+      value: KAFKA_JOB_LOGS_TOPIC_PARTITIONS
+    - op: replace
+      path: /spec/template/spec/containers/0/env/4/value
+      value: "12"
+    - op: test
+      path: /spec/template/spec/containers/0/env/5/name
+      value: KAFKA_ANALYTICS_TOPIC_PARTITIONS
+    - op: replace
+      path: /spec/template/spec/containers/0/env/5/value
+      value: "6"

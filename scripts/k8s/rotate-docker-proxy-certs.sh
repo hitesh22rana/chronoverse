@@ -106,7 +106,7 @@ cat > "$TMP_DIR/server-ext.cnf" <<'EOF'
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,DNS:docker-proxy.chronoverse.svc.cluster.local,IP:127.0.0.1
+subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,IP:127.0.0.1
 EOF
 openssl x509 -req -in "$TMP_DIR/server.csr" -CA "$TMP_DIR/new-ca.crt" \
   -CAkey "$TMP_DIR/new-ca.key" -CAcreateserial -out "$TMP_DIR/server.crt" \

@@ -6,6 +6,9 @@ metadata:
     app.kubernetes.io/name: users-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
 spec:
   replicas: 2
   selector:
@@ -16,6 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: users-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -32,7 +37,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -41,8 +46,8 @@ spec:
             name: users-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -119,6 +124,10 @@ metadata:
     app.kubernetes.io/name: workflows-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -129,6 +138,9 @@ spec:
       labels:
         app.kubernetes.io/name: workflows-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -145,7 +157,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -156,8 +168,8 @@ spec:
             name: workflows-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -208,6 +220,11 @@ metadata:
     app.kubernetes.io/name: jobs-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   replicas: 2
   selector:
@@ -218,6 +235,10 @@ spec:
       labels:
         app.kubernetes.io/name: jobs-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -234,7 +255,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -251,8 +272,8 @@ spec:
             name: jobs-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -303,6 +324,8 @@ metadata:
     app.kubernetes.io/name: notifications-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -313,6 +336,7 @@ spec:
       labels:
         app.kubernetes.io/name: notifications-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -329,15 +353,15 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:
             name: notifications-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -388,6 +412,8 @@ metadata:
     app.kubernetes.io/name: analytics-service
     app.kubernetes.io/component: backend
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 2
   selector:
@@ -398,6 +424,7 @@ spec:
       labels:
         app.kubernetes.io/name: analytics-service
         app.kubernetes.io/component: backend
+        chronoverse.io/postgres-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -414,15 +441,15 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:
             name: analytics-service-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -473,6 +500,8 @@ metadata:
     app.kubernetes.io/name: server
     app.kubernetes.io/component: gateway
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/redis-client: "true"
 spec:
   replicas: 2
   selector:
@@ -483,6 +512,7 @@ spec:
       labels:
         app.kubernetes.io/name: server
         app.kubernetes.io/component: gateway
+        chronoverse.io/redis-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -608,6 +638,8 @@ metadata:
     app.kubernetes.io/name: scheduling-worker
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   replicas: 1
   selector:
@@ -618,6 +650,7 @@ spec:
       labels:
         app.kubernetes.io/name: scheduling-worker
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -631,7 +664,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:
@@ -667,6 +700,11 @@ metadata:
     app.kubernetes.io/name: workflow-worker
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   replicas: 2
   selector:
@@ -677,6 +715,10 @@ spec:
       labels:
         app.kubernetes.io/name: workflow-worker
         app.kubernetes.io/component: worker
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -711,11 +753,11 @@ spec:
             name: docker-proxy-auth
         env:
         - name: DOCKER_PROXY_TLS_CA_FILE
-          value: /certs/docker-proxy/ca.crt
+          value: /docker-proxy-certs/ca.crt
         - name: DOCKER_PROXY_TLS_CERT_FILE
-          value: /certs/docker-proxy/client.crt
+          value: /docker-proxy-certs/client.crt
         - name: DOCKER_PROXY_TLS_KEY_FILE
-          value: /certs/docker-proxy/client.key
+          value: /docker-proxy-certs/client.key
         - name: DOCKER_PROXY_TLS_SERVER_NAME
           value: docker-proxy
         resources:
@@ -730,7 +772,7 @@ spec:
           mountPath: /certs
           readOnly: true
         - name: docker-proxy-certs
-          mountPath: /certs/docker-proxy
+          mountPath: /docker-proxy-certs
           readOnly: true
       volumes:
       - name: certs
@@ -770,6 +812,9 @@ metadata:
     app.kubernetes.io/name: execution-worker
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -780,6 +825,8 @@ spec:
       labels:
         app.kubernetes.io/name: execution-worker
         app.kubernetes.io/component: worker
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -806,11 +853,11 @@ spec:
             name: docker-proxy-auth
         env:
         - name: DOCKER_PROXY_TLS_CA_FILE
-          value: /certs/docker-proxy/ca.crt
+          value: /docker-proxy-certs/ca.crt
         - name: DOCKER_PROXY_TLS_CERT_FILE
-          value: /certs/docker-proxy/client.crt
+          value: /docker-proxy-certs/client.crt
         - name: DOCKER_PROXY_TLS_KEY_FILE
-          value: /certs/docker-proxy/client.key
+          value: /docker-proxy-certs/client.key
         - name: DOCKER_PROXY_TLS_SERVER_NAME
           value: docker-proxy
         resources:
@@ -825,7 +872,7 @@ spec:
           mountPath: /certs
           readOnly: true
         - name: docker-proxy-certs
-          mountPath: /certs/docker-proxy
+          mountPath: /docker-proxy-certs
           readOnly: true
       volumes:
       - name: certs
@@ -865,6 +912,12 @@ metadata:
     app.kubernetes.io/name: joblogs-processor
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/redis-client: "true"
+    chronoverse.io/kafka-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   replicas: 2
   selector:
@@ -875,6 +928,11 @@ spec:
       labels:
         app.kubernetes.io/name: joblogs-processor
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/redis-client: "true"
+        chronoverse.io/kafka-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -888,7 +946,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: redis-connection-config
         - configMapRef:
@@ -936,6 +994,9 @@ metadata:
     app.kubernetes.io/name: analytics-processor
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -946,6 +1007,8 @@ spec:
       labels:
         app.kubernetes.io/name: analytics-processor
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -959,7 +1022,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: kafka-connection-config
         - configMapRef:
@@ -968,8 +1031,8 @@ spec:
             name: analytics-processor-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi
@@ -997,6 +1060,9 @@ metadata:
     app.kubernetes.io/name: outbox-relay
     app.kubernetes.io/component: worker
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
   selector:
@@ -1007,6 +1073,8 @@ spec:
       labels:
         app.kubernetes.io/name: outbox-relay
         app.kubernetes.io/component: worker
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -1025,7 +1093,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: kafka-connection-config
         - configMapRef:
@@ -1034,7 +1102,7 @@ spec:
             name: outbox-relay-config
         resources:
           requests:
-            cpu: 50m
+            cpu: 100m
             memory: 128Mi
           limits:
             cpu: 250m
@@ -1063,6 +1131,10 @@ metadata:
     app.kubernetes.io/name: database-migration
     app.kubernetes.io/component: init-job
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+    chronoverse.io/clickhouse-client: "true"
+    chronoverse.io/meilisearch-client: "true"
 spec:
   backoffLimit: 6
   template:
@@ -1070,6 +1142,10 @@ spec:
       labels:
         app.kubernetes.io/name: database-migration
         app.kubernetes.io/component: init-job
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
+        chronoverse.io/clickhouse-client: "true"
+        chronoverse.io/meilisearch-client: "true"
     spec:
       restartPolicy: OnFailure
       securityContext:
@@ -1080,11 +1156,17 @@ spec:
       - name: database-migration
         image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
         imagePullPolicy: IfNotPresent
+        # golang-migrate uses session-level PostgreSQL advisory locks, which
+        # are incompatible with PgBouncer transaction pooling. Bootstrap
+        # migrations therefore connect to the primary directly.
+        env:
+        - name: POSTGRES_HOST
+          value: postgres-primary
         envFrom:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: clickhouse-connection-config
         - secretRef:
@@ -1097,8 +1179,8 @@ spec:
             name: observability-config
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 250m
             memory: 256Mi

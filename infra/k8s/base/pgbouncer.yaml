@@ -1,0 +1,343 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+data:
+  pgbouncer.ini: |
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 5432
+    unix_socket_dir =
+    auth_type = scram-sha-256
+    auth_file = /etc/pgbouncer-runtime/userlist.txt
+    pool_mode = transaction
+    max_client_conn = 500
+    default_pool_size = 20
+    reserve_pool_size = 5
+    reserve_pool_timeout = 5
+    max_db_connections = 25
+    max_user_connections = 25
+    max_prepared_statements = 200
+    server_reset_query = DISCARD ALL
+    server_check_delay = 10
+    server_connect_timeout = 10
+    query_wait_timeout = 120
+    idle_transaction_timeout = 60
+    client_tls_sslmode = verify-full
+    client_tls_ca_file = /certs/ca/ca.crt
+    client_tls_cert_file = /certs/postgres/postgres.crt
+    client_tls_key_file = /certs/postgres/postgres.key
+    server_tls_sslmode = verify-full
+    server_tls_ca_file = /certs/ca/ca.crt
+    server_tls_cert_file = /certs/clients/client.crt
+    server_tls_key_file = /certs/clients/client.key
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  labels:
+    app.kubernetes.io/name: pgbouncer
+    app.kubernetes.io/component: database-pooler
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pgbouncer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pgbouncer
+        app.kubernetes.io/component: database-pooler
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        supplementalGroups: [101]
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: prepare-pgbouncer
+        image: edoburu/pgbouncer:v1.25.2-p0
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          export LC_ALL=C
+          case "$POSTGRES_DB" in
+            ""|*[!A-Za-z0-9_]*)
+              echo "POSTGRES_DB must contain only ASCII letters, digits, or underscore" >&2
+              exit 1
+              ;;
+          esac
+          case "$POSTGRES_DB" in
+            [Pp][Gg][Bb][Oo][Uu][Nn][Cc][Ee][Rr])
+              echo "POSTGRES_DB must not use the reserved PgBouncer database name" >&2
+              exit 1
+              ;;
+          esac
+          if [ "${#POSTGRES_DB}" -gt 63 ]; then
+            echo "POSTGRES_DB must not exceed 63 characters" >&2
+            exit 1
+          fi
+          {
+            printf '[databases]\n'
+            printf '%s = host=postgres-primary port=5432 dbname=%s pool_size=20 reserve_pool_size=5\n\n' "$POSTGRES_DB" "$POSTGRES_DB"
+            cat /config/pgbouncer.ini
+          } > /runtime/pgbouncer.ini
+          printf '"%s" "%s"\n' "$POSTGRES_USER" "$POSTGRES_PASSWORD" > /runtime/userlist.txt
+          chmod 0600 /runtime/pgbouncer.ini /runtime/userlist.txt
+        envFrom:
+        - secretRef:
+            name: postgres-app-secret
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: runtime
+          mountPath: /runtime
+      containers:
+      - name: pgbouncer
+        image: edoburu/pgbouncer:v1.25.2-p0
+        imagePullPolicy: IfNotPresent
+        command: ["pgbouncer"]
+        args: ["/etc/pgbouncer-runtime/pgbouncer.ini"]
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app-secret
+              key: POSTGRES_DB
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -ec
+            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d "$POSTGRES_DB" -U "$POSTGRES_USER"
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 12
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -ec
+            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d "$POSTGRES_DB" -U "$POSTGRES_USER"
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 6
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 5"]
+        volumeMounts:
+        - name: runtime
+          mountPath: /etc/pgbouncer-runtime
+          readOnly: true
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: config
+        configMap:
+          name: pgbouncer-config
+      - name: runtime
+        emptyDir: {}
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-infra-tls
+              items:
+              - key: postgres.crt
+                path: postgres/postgres.crt
+              - key: postgres.key
+                path: postgres/postgres.key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: pgbouncer
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: pgbouncer
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: postgres
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-postgres-app-role
+  labels:
+    app.kubernetes.io/name: init-postgres-app-role
+    app.kubernetes.io/component: init-job
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
+spec:
+  backoffLimit: 12
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: init-postgres-app-role
+        app.kubernetes.io/component: init-job
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        supplementalGroups: [101]
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: init-postgres-app-role
+        image: postgres:18.0-alpine3.22
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          if [ "$POSTGRES_DB" != "$APP_POSTGRES_DB" ]; then
+            echo "postgres-secret and postgres-app-secret must use the same POSTGRES_DB" >&2
+            exit 1
+          fi
+          export PGHOST=postgres-primary PGPORT=5432 PGSSLMODE=verify-full
+          export PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key
+          until PGPASSWORD="$ADMIN_PASSWORD" pg_isready -U "$ADMIN_USER" -d "$POSTGRES_DB"; do
+            echo "waiting for PostgreSQL primary"
+            sleep 2
+          done
+          PGPASSWORD="$ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$ADMIN_USER" -d "$POSTGRES_DB" \
+            --set=app_user="$POSTGRES_USER" --set=app_password="$POSTGRES_PASSWORD" <<'SQL'
+          SELECT format('CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', :'app_user', :'app_password')
+          WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user') \gexec
+          SELECT format('ALTER ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', :'app_user', :'app_password') \gexec
+          SELECT format('ALTER DATABASE %I OWNER TO %I', current_database(), :'app_user') \gexec
+          SELECT format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO %I', current_database(), :'app_user') \gexec
+          SELECT format('ALTER SCHEMA public OWNER TO %I', :'app_user') \gexec
+          SELECT format('GRANT USAGE, CREATE ON SCHEMA public TO %I', :'app_user') \gexec
+          SELECT format('ALTER TABLE %I.%I OWNER TO %I', schemaname, tablename, :'app_user')
+          FROM pg_tables WHERE schemaname = 'public' \gexec
+          SELECT format('ALTER SEQUENCE %I.%I OWNER TO %I', sequence_schema, sequence_name, :'app_user')
+          FROM information_schema.sequences WHERE sequence_schema = 'public' \gexec
+          SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', :'app_user') \gexec
+          SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I', :'app_user') \gexec
+          SQL
+        env:
+        - name: ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        - name: APP_POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app-secret
+              key: POSTGRES_DB
+        envFrom:
+        - secretRef:
+            name: postgres-app-secret
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key

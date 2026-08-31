@@ -87,6 +87,8 @@ metadata:
     app.kubernetes.io/name: docker-proxy
     app.kubernetes.io/component: proxy
     chronoverse.io/client-certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/postgres-client: "true"
 spec:
   selector:
     matchLabels:
@@ -96,6 +98,8 @@ spec:
       labels:
         app.kubernetes.io/name: docker-proxy
         app.kubernetes.io/component: proxy
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/postgres-client: "true"
     spec:
       terminationGracePeriodSeconds: 30
       securityContext:
@@ -138,8 +142,8 @@ spec:
               key: DOCKER_PROXY_TOKEN
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 200m
             memory: 256Mi
@@ -165,7 +169,7 @@ spec:
         - configMapRef:
             name: postgres-connection-config
         - secretRef:
-            name: postgres-secret
+            name: postgres-app-secret
         - configMapRef:
             name: observability-config
         - configMapRef:
@@ -201,17 +205,17 @@ spec:
         - name: RUNTIME_AGENT_DOCKER_ADVERTISE_PORT
           value: "2376"
         - name: DOCKER_PROXY_TLS_CA_FILE
-          value: /certs/docker-proxy/ca.crt
+          value: /docker-proxy-certs/ca.crt
         - name: DOCKER_PROXY_TLS_CERT_FILE
-          value: /certs/docker-proxy/client.crt
+          value: /docker-proxy-certs/client.crt
         - name: DOCKER_PROXY_TLS_KEY_FILE
-          value: /certs/docker-proxy/client.key
+          value: /docker-proxy-certs/client.key
         - name: DOCKER_PROXY_TLS_SERVER_NAME
           value: docker-proxy
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
             cpu: 200m
             memory: 256Mi
@@ -228,7 +232,7 @@ spec:
           mountPath: /certs
           readOnly: true
         - name: docker-proxy-runtime-client-certs
-          mountPath: /certs/docker-proxy
+          mountPath: /docker-proxy-certs
           readOnly: true
       volumes:
       - name: docker-socket

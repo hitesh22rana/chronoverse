@@ -112,11 +112,17 @@ spec:
           for svc in $services; do
             cert_path="/certs/$svc"
             if [ -f "$cert_path/$svc.crt" ] && [ -f "$cert_path/$svc.key" ]; then
-              continue
+              if [ "$svc" != postgres ] || openssl x509 -in "$cert_path/$svc.crt" -noout -checkhost postgres-primary >/dev/null 2>&1; then
+                continue
+              fi
             fi
             openssl genrsa -out "$cert_path/$svc.key" 4096
             openssl req -new -key "$cert_path/$svc.key" -out "$cert_path/$svc.csr" -subj "/CN=$svc"
-            printf "subjectAltName=DNS:%s,DNS:%s.chronoverse,DNS:%s.chronoverse.svc,DNS:%s.chronoverse.svc.cluster.local,IP:127.0.0.1\n" "$svc" "$svc" "$svc" "$svc" > "$cert_path/$svc-ext.cnf"
+            if [ "$svc" = postgres ]; then
+              printf "subjectAltName=DNS:postgres,DNS:postgres.chronoverse,DNS:postgres.chronoverse.svc,DNS:postgres-primary,DNS:postgres-primary.chronoverse,DNS:postgres-primary.chronoverse.svc,IP:127.0.0.1\n" > "$cert_path/$svc-ext.cnf"
+            else
+              printf "subjectAltName=DNS:%s,DNS:%s.chronoverse,DNS:%s.chronoverse.svc,IP:127.0.0.1\n" "$svc" "$svc" "$svc" > "$cert_path/$svc-ext.cnf"
+            fi
             openssl x509 -req -in "$cert_path/$svc.csr" -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key -CAcreateserial -out "$cert_path/$svc.crt" -days 365 -extfile "$cert_path/$svc-ext.cnf"
             rm -f "$cert_path/$svc.csr" "$cert_path/$svc-ext.cnf"
           done
@@ -142,6 +148,7 @@ spec:
           printf "%s\n" "${KAFKA_SSL_KEYSTORE_PASSWORD}" > /certs/kafka/key_creds.txt
           chown -R 0:101 /certs
           chown -R 101:101 /certs/clickhouse
+          chown 70:70 /certs/postgres/postgres.key
           chmod -R a+rX /certs
           chmod 0600 /certs/postgres/postgres.key /certs/clients/client.key
           chgrp 101 /certs/clients/client.key
@@ -165,3 +172,98 @@ spec:
       - name: certs
         persistentVolumeClaim:
           claimName: certs-pvc
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-keda-secrets
+  labels:
+    app.kubernetes.io/name: init-keda-secrets
+    app.kubernetes.io/component: init-job
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: init-keda-secrets
+        app.kubernetes.io/component: init-job
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: chronoverse-bootstrap
+      securityContext:
+        fsGroup: 1001
+        supplementalGroups: [101]
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: wait-for-service-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do echo waiting for service certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      containers:
+      - name: init-keda-secrets
+        # KEDA's Kafka trigger reads TLS material from Kubernetes Secrets.
+        # Local workloads use the certificate PVC, so copy only the CA and
+        # generic client identity needed by TriggerAuthentication into the
+        # placeholders created by setup.sh.
+        image: alpine/k8s:1.35.3@sha256:097aa60cbef561146757c7494468e9d7b04d843597ad1a1515ed09d0708c8014
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -ec
+        - |
+          set -eu
+          : "${NAMESPACE:?NAMESPACE must be set}"
+          sync_secret() {
+            local name="$1"; shift
+            kubectl --cache-dir=/tmp/kubectl-cache -n "$NAMESPACE" create secret generic "$name" \
+              --dry-run=client -o json "$@" | \
+              kubectl --cache-dir=/tmp/kubectl-cache -n "$NAMESPACE" patch secret "$name" --type=merge --patch-file=/dev/stdin
+          }
+          sync_secret chronoverse-ca --from-file=ca.crt=/certs/ca/ca.crt
+          sync_secret chronoverse-client-tls \
+            --from-file=tls.crt=/certs/clients/client.crt \
+            --from-file=tls.key=/certs/clients/client.key
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+      - name: tmp
+        emptyDir: {}

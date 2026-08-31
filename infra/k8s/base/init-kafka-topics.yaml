@@ -6,6 +6,8 @@ metadata:
     app.kubernetes.io/name: init-kafka-topics
     app.kubernetes.io/component: init-job
     chronoverse.io/certs: "true"
+    chronoverse.io/datastore-client: "true"
+    chronoverse.io/kafka-client: "true"
 spec:
   backoffLimit: 12
   template:
@@ -13,6 +15,8 @@ spec:
       labels:
         app.kubernetes.io/name: init-kafka-topics
         app.kubernetes.io/component: init-job
+        chronoverse.io/datastore-client: "true"
+        chronoverse.io/kafka-client: "true"
     spec:
       restartPolicy: OnFailure
       containers:

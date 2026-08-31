@@ -49,5 +49,4 @@ certs/docker-proxy/token
 certs/docker-proxy/*.crt
 certs/docker-proxy/*.key
 certs/docker-proxy/*.pem
-docker-proxy-certs/*
-!docker-proxy-certs/.gitkeep
+docker-proxy-certs/**/token

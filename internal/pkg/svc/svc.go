@@ -2,6 +2,11 @@ package svc
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
@@ -108,7 +113,7 @@ func initSvcInfo() {
 //
 //nolint:gocritic // Ignore the linter for this function
 func Init() (context.Context, func()) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	// Initialize the service information
 	initSvcInfo()
@@ -119,15 +124,15 @@ func Init() (context.Context, func()) {
 		panic(err)
 	}
 
-	shutdownFuncs := []func() error{}
+	shutdownFuncs := []func(context.Context) error{}
 
 	// Initialize the OpenTelemetry TracerProvider
 	tp, err := otelpkg.InitTracerProvider(ctx, res)
 	if err != nil {
 		panic(err)
 	}
-	shutdownFuncs = append(shutdownFuncs, func() error {
-		return tp.Shutdown(ctx)
+	shutdownFuncs = append(shutdownFuncs, func(shutdownCtx context.Context) error {
+		return tp.Shutdown(shutdownCtx)
 	})
 
 	// Initialize the OpenTelemetry MeterProvider
@@ -135,8 +140,8 @@ func Init() (context.Context, func()) {
 	if err != nil {
 		panic(err)
 	}
-	shutdownFuncs = append(shutdownFuncs, func() error {
-		return mp.Shutdown(ctx)
+	shutdownFuncs = append(shutdownFuncs, func(shutdownCtx context.Context) error {
+		return mp.Shutdown(shutdownCtx)
 	})
 
 	// Initialize the OpenTelemetry LoggerProvider
@@ -144,21 +149,26 @@ func Init() (context.Context, func()) {
 	if err != nil {
 		panic(err)
 	}
-	shutdownFuncs = append(shutdownFuncs, func() error {
-		return lp.Shutdown(ctx)
+	shutdownFuncs = append(shutdownFuncs, func(shutdownCtx context.Context) error {
+		return lp.Shutdown(shutdownCtx)
 	})
 
 	// Initialize and set the logger in the context
 	ctx, logger := loggerpkg.Init(ctx, svc.GetName(), lp)
-	shutdownFuncs = append(shutdownFuncs, func() error {
+	shutdownFuncs = append(shutdownFuncs, func(context.Context) error {
 		return logger.Sync()
 	})
 
+	var shutdownOnce sync.Once
 	return ctx, func() {
-		for _, shutdownFunc := range shutdownFuncs {
-			//nolint:errcheck // Ignore errors from shutdown functions
-			_ = shutdownFunc()
-		}
-		cancel()
+		shutdownOnce.Do(func() {
+			stopSignals()
+			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelShutdown()
+			for _, shutdownFunc := range shutdownFuncs {
+				//nolint:errcheck // Ignore errors from shutdown functions
+				_ = shutdownFunc(shutdownCtx)
+			}
+		})
 	}
 }

@@ -55,9 +55,16 @@ scripts/k8s/setup.sh --mode production
 The local strategy is self-contained for single-node validation and runs one
 replica per app deployment. The production strategy is self-hosted on your
 Kubernetes infrastructure and includes PostgreSQL, Redis, Kafka, ClickHouse,
-Meilisearch, application services, workers, runtime-agent, and CPU/memory
-HorizontalPodAutoscalers. Production autoscaling requires metrics-server or an
-equivalent `autoscaling/v2` resource metrics provider.
+Meilisearch, PgBouncer, application services, workers, runtime-agent,
+CPU/memory HorizontalPodAutoscalers for services, and KEDA Kafka-lag scaling
+for consumers. Production service autoscaling requires metrics-server or an
+equivalent `autoscaling/v2` resource metrics provider. KEDA is a platform
+prerequisite for both overlays; `setup.sh` checks its CRD and external metrics
+API but does not install it. Label the platform-managed namespace serving the
+external metrics API with `chronoverse.io/keda-kafka-access=true`; the Kafka
+NetworkPolicy uses that stable label so KEDA installations are not restricted
+to a namespace literally named `keda`. Setup discovers and validates the
+serving namespace before applying Chronoverse.
 
 Kubernetes does not include a generic `kubectl` command to create a cluster.
 Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or
@@ -171,15 +178,19 @@ kubectl -n chronoverse logs deploy/server
 1. `init-certs` generates the local service CA, service certificates, client
    certificates, Kafka keystore/truststore files, auth keys, and a separate
    role-isolated Docker proxy PKI.
-2. PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, LGTM, and Docker proxy
+2. `init-keda-secrets` mirrors the local CA and generic Kafka client identity
+   from the certificate PVC into the two Kubernetes Secrets used by KEDA.
+3. PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, LGTM, and Docker proxy
    start with TLS-enabled configuration.
-3. `init-kafka-topics` creates or expands Kafka topics.
-4. `init-database-migration` applies PostgreSQL migrations, ClickHouse
+4. `init-postgres-app-role` creates or updates the dedicated non-superuser
+   application role.
+5. `init-kafka-topics` creates or expands Kafka topics.
+6. `database-migration` connects directly to `postgres-primary` for its
+   session-level advisory lock, then applies PostgreSQL migrations, ClickHouse
    migrations, and Meilisearch index setup.
-5. gRPC services start after migrations and their dependencies are healthy.
-6. Workers start after dependent services and topics are ready.
-7. The dashboard starts after backend services.
-8. Production Nginx starts after dashboard and server.
+7. gRPC services become ready after their dependencies are healthy.
+8. Workers become ready after dependent services and topics are available.
+9. The dashboard and Nginx expose the application.
 
 Kubernetes does not provide Compose-style dependency ordering for long-running
 Deployments. The overlays include explicit Jobs for certificate bootstrap
@@ -188,8 +199,11 @@ containers are expected to retry transient dependency failures, while readiness
 and liveness probes decide when pods receive traffic or are restarted. The local
 overlay uses init containers only for prerequisites that must exist before the
 process starts, such as generated certificate files and hostPath permissions.
-Operators should still inspect bootstrap Jobs before scaling application
-workloads.
+The setup entrypoint waits for every bootstrap Job, forces a post-Kafka KEDA
+reconciliation, waits for PgBouncer, rolls the Docker proxy DaemonSet, and then
+restarts and waits for stateless application Deployments. Direct Kustomize
+users must inspect those Jobs and perform equivalent rollout checks before
+scaling application workloads.
 
 ### Resolving Failed Migrations
 
@@ -374,7 +388,23 @@ Tune before starting the stack or before topic initialization:
 - `KAFKA_TOPIC_REPLICATION_FACTOR`
 
 Kafka auto topic creation is disabled. The init job can expand partition counts
-but should not be treated as a substitute for capacity planning.
+but should not be treated as a substitute for capacity planning. Kubernetes
+base uses 2/4/4/2 partitions for workflows/jobs/job_logs/analytics; production
+overrides these to 6/12/12/6 and applies matching KEDA consumer ceilings.
+
+### PostgreSQL connection pools
+
+Kubernetes applications connect through the `postgres` PgBouncer Service in
+transaction mode; PostgreSQL itself is available privately as
+`postgres-primary`. Two production PgBouncer replicas are each limited to 25
+backend connections, preserving half of PostgreSQL's 100 slots for bootstrap,
+migrations, administration, and faults. Application pools are explicitly
+budgeted at two or four connections per pod with zero idle minimum except for
+outbox-relay's single warm connection. Do not raise these values without load
+testing pool wait time, transaction duration, database CPU/memory, and locks.
+PgBouncer generates its one allowed database mapping from
+`postgres-app-secret.POSTGRES_DB`; the admin and application PostgreSQL Secrets
+must name the same database, and setup rejects a mismatch before apply.
 
 ### Scheduler
 

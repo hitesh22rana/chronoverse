@@ -4,7 +4,7 @@
 
 `init-certs` generates a local CA, server certificates, client certificates, Kafka keystore and truststore material, and Ed25519 authentication keys in the shared certificate volume.
 
-The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves valid, complete operator-provided Secrets.
+The Kubernetes local overlay uses the same bootstrap idea through Jobs and a local certificate PVC. The production setup script creates missing Kubernetes Secrets for bootstrap material and preserves valid, complete operator-provided Secrets. PostgreSQL certificates cover the PgBouncer client endpoint (`postgres`) and direct backend endpoint (`postgres-primary`).
 
 ## Encrypted infrastructure
 
@@ -13,6 +13,11 @@ Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafk
 ## Service authorization
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
+
+Internal Ed25519 JWT validation allows at most 30 seconds of clock skew for
+`nbf` and expiry checks so ordinary multi-node time differences do not reject a
+fresh token. Keep every Kubernetes node synchronized with a reliable time
+source; the bounded leeway is not a substitute for host time synchronization.
 
 ## Browser security
 
@@ -38,7 +43,7 @@ The execution-worker identity is node-root-equivalent if its private key and tok
 
 Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be persistent, distinct values; production startup rejects the known development placeholder and reuse of one value for both purposes.
 
-For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, the `docker-proxy-ca`/`docker-proxy-server`/three `docker-proxy-client-*` Secrets, `postgres-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. The setup script validates complete pre-created server-security Secrets before preserving them. Internal TLS trust-chain and Docker proxy PKI Secrets are treated as atomic sets; partial material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
+For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, the `docker-proxy-ca`/`docker-proxy-server`/three `docker-proxy-client-*` Secrets, `postgres-secret`, `postgres-app-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. `postgres-secret` is restricted to PostgreSQL and role bootstrap; application workloads use the `chronoverse_app` non-superuser identity from `postgres-app-secret` through PgBouncer transaction pooling. Both PostgreSQL Secrets must name the same database; PgBouncer generates its single route from `postgres-app-secret.POSTGRES_DB`, and setup rejects mismatches or names unsafe for its configuration. The setup script validates complete pre-created server-security Secrets before preserving them. Internal TLS trust-chain and Docker proxy PKI Secrets are treated as atomic sets; partial material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
 
 Use `scripts/k8s/setup.sh --mode production --context <context> --rotate-docker-proxy-certs` for an overlapping-CA Kubernetes rotation after applying current manifests; the standalone `scripts/k8s/rotate-docker-proxy-certs.sh` performs the same rotation without an apply. For Compose, stop the stack, run `init-certs` once with `-e DOCKER_PROXY_ROTATE_CERTS=true`, and recreate the stack. Docker proxy clients mount their isolated role at `/docker-proxy-certs`, separately from the read-only `/certs` application-certificate mount; `make compose/validate` rejects nested read-only mount targets and incomplete role wiring. Both rotations are maintenance operations; the Kubernetes workflow stages old+new trust before replacing clients and server certificates.
 

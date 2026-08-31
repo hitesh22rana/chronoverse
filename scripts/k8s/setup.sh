@@ -12,6 +12,7 @@ STORAGE_CLASS=""
 REALIP_CIDRS=""
 ALLOW_REALIP_SNAPSHOT=false
 ROTATE_DOCKER_PROXY_CERTS=false
+INGRESS_NGINX_AVAILABLE=false
 INSECURE_DEFAULT_SECRET='a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?'
 
 usage() {
@@ -218,7 +219,7 @@ random_hex() {
 
 secret_keys() {
   case "$1" in
-    postgres-secret) echo "POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB" ;;
+    postgres-secret|postgres-app-secret) echo "POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB" ;;
     clickhouse-secret) echo "CLICKHOUSE_PASSWORD" ;;
     meilisearch-secret) echo "MEILISEARCH_MASTER_KEY MEILI_MASTER_KEY" ;;
     kafka-tls-secret) echo "KAFKA_SSL_KEYSTORE_PASSWORD KAFKA_SSL_TRUSTSTORE_PASSWORD KAFKA_SSL_KEY_PASSWORD" ;;
@@ -303,6 +304,46 @@ create_literal_secret() {
   apply_secret_yaml "$yaml"
 }
 
+validate_postgres_database_name() {
+  local database_name="$1" LC_ALL=C
+  case "$database_name" in
+    ""|*[!A-Za-z0-9_]*)
+      die "POSTGRES_DB must contain only ASCII letters, digits, or underscore"
+      ;;
+  esac
+  case "$database_name" in
+    [Pp][Gg][Bb][Oo][Uu][Nn][Cc][Ee][Rr])
+      die "POSTGRES_DB must not use the reserved PgBouncer database name"
+      ;;
+  esac
+  [ "${#database_name}" -le 63 ] || die "POSTGRES_DB must not exceed 63 characters"
+}
+
+create_local_keda_tls_placeholders() {
+  [ "$MODE" = "local" ] || return 0
+
+  local name yaml
+  for name in chronoverse-ca chronoverse-client-tls; do
+    if secret_exists "$name"; then
+      info "Keeping existing local KEDA TLS secret $name"
+      continue
+    fi
+
+    info "Creating local KEDA TLS placeholder $name"
+    if [ "$name" = "chronoverse-ca" ]; then
+      yaml="$(kubectl_cmd -n "$NAMESPACE" create secret generic "$name" \
+        --from-literal=ca.crt=pending-local-certificate-bootstrap \
+        --dry-run=client -o yaml)"
+    else
+      yaml="$(kubectl_cmd -n "$NAMESPACE" create secret generic "$name" \
+        --from-literal=tls.crt=pending-local-certificate-bootstrap \
+        --from-literal=tls.key=pending-local-certificate-bootstrap \
+        --dry-run=client -o yaml)"
+    fi
+    apply_secret_yaml "$yaml"
+  done
+}
+
 TMP_DIR="$(mktemp -d)"
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -313,9 +354,10 @@ cleanup() {
 trap cleanup EXIT
 
 create_data_secrets() {
-  local postgres_password clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret docker_proxy_token
+  local postgres_password postgres_app_password postgres_db admin_postgres_db app_postgres_db clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret docker_proxy_token
   if [ "$MODE" = "local" ]; then
     postgres_password="chronoverse-local-postgres-password"
+    postgres_app_password="chronoverse-local-app-postgres-password"
     clickhouse_password="chronoverse-local-clickhouse-password"
     meili_key="chronoverse-local-meilisearch-master-key"
     kafka_keystore="chronoverse-local-kafka-keystore-password"
@@ -324,6 +366,7 @@ create_data_secrets() {
     csrf_secret="chronoverse-local-csrf-hmac-0001"
   else
     postgres_password="$(random_hex 24)"
+    postgres_app_password="$(random_hex 24)"
     clickhouse_password="$(random_hex 24)"
     meili_key="$(random_hex 32)"
     kafka_keystore="$(random_hex 18)"
@@ -333,10 +376,35 @@ create_data_secrets() {
   fi
   docker_proxy_token="$(random_hex 32)"
 
+  postgres_db="chronoverse"
+  admin_postgres_db=""
+  app_postgres_db=""
+  if secret_exists postgres-secret; then
+    validate_secret_complete postgres-secret
+    admin_postgres_db="$(secret_decoded_value postgres-secret POSTGRES_DB)"
+    validate_postgres_database_name "$admin_postgres_db"
+    postgres_db="$admin_postgres_db"
+  fi
+  if secret_exists postgres-app-secret; then
+    validate_secret_complete postgres-app-secret
+    app_postgres_db="$(secret_decoded_value postgres-app-secret POSTGRES_DB)"
+    validate_postgres_database_name "$app_postgres_db"
+    if [ -n "$admin_postgres_db" ] && [ "$admin_postgres_db" != "$app_postgres_db" ]; then
+      die "postgres-secret and postgres-app-secret must use the same POSTGRES_DB"
+    fi
+    postgres_db="$app_postgres_db"
+  fi
+  validate_postgres_database_name "$postgres_db"
+
   create_literal_secret postgres-secret \
     --from-literal=POSTGRES_USER=postgres \
     --from-literal=POSTGRES_PASSWORD="$postgres_password" \
-    --from-literal=POSTGRES_DB=chronoverse
+    --from-literal=POSTGRES_DB="$postgres_db"
+
+  create_literal_secret postgres-app-secret \
+    --from-literal=POSTGRES_USER=chronoverse_app \
+    --from-literal=POSTGRES_PASSWORD="$postgres_app_password" \
+    --from-literal=POSTGRES_DB="$postgres_db"
 
   create_literal_secret clickhouse-secret \
     --from-literal=CLICKHOUSE_PASSWORD="$clickhouse_password"
@@ -358,7 +426,9 @@ create_data_secrets() {
   # Grafana admin credentials: local uses fixed defaults, production generates random.
   local grafana_user="admin"
   local grafana_password
-  if [ "$MODE" = "local" ]; then
+  if [ -n "${GF_SECURITY_ADMIN_PASSWORD:-}" ]; then
+    grafana_password="$GF_SECURITY_ADMIN_PASSWORD"
+  elif [ "$MODE" = "local" ]; then
     grafana_password="chronoverse-local-grafana-password"
   else
     grafana_password="$(random_hex 24)"
@@ -513,6 +583,10 @@ create_production_tls_secrets() {
     fi
   done
   if [ "$existing_count" -eq "${#tls_required[@]}" ]; then
+    kubectl_cmd -n "$NAMESPACE" get secret chronoverse-infra-tls -o jsonpath='{.data.postgres\.crt}' | openssl base64 -d -A > "$TMP_DIR/existing-postgres.crt"
+    if ! openssl x509 -in "$TMP_DIR/existing-postgres.crt" -noout -text | grep -q 'DNS:postgres-primary'; then
+      die "existing PostgreSQL certificate does not cover postgres-primary; rotate the atomic Chronoverse TLS secret set before applying PgBouncer"
+    fi
     return
   fi
   if [ "$existing_count" -gt 0 ]; then
@@ -523,7 +597,11 @@ create_production_tls_secrets() {
   generate_ca
   local svc
   for svc in users-service workflows-service jobs-service notifications-service analytics-service postgres redis clickhouse kafka meilisearch; do
-    generate_cert "$svc" "$svc" "DNS:$svc,DNS:$svc.$NAMESPACE,DNS:$svc.$NAMESPACE.svc,DNS:$svc.$NAMESPACE.svc.cluster.local,IP:127.0.0.1"
+    if [ "$svc" = postgres ]; then
+      generate_cert "$svc" "$svc" "DNS:postgres,DNS:postgres.$NAMESPACE,DNS:postgres.$NAMESPACE.svc,DNS:postgres-primary,DNS:postgres-primary.$NAMESPACE,DNS:postgres-primary.$NAMESPACE.svc,IP:127.0.0.1"
+    else
+      generate_cert "$svc" "$svc" "DNS:$svc,DNS:$svc.$NAMESPACE,DNS:$svc.$NAMESPACE.svc,IP:127.0.0.1"
+    fi
   done
   generate_cert client chronoverse-client "DNS:client"
 
@@ -602,7 +680,7 @@ create_docker_proxy_tls_secrets() {
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,DNS:docker-proxy.chronoverse.svc.cluster.local,IP:127.0.0.1
+subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,IP:127.0.0.1
 EOF
   openssl x509 -req -in "$TMP_DIR/docker-proxy-server.csr" -CA "$TMP_DIR/docker-proxy-ca.crt" -CAkey "$TMP_DIR/docker-proxy-ca.key" -CAcreateserial -out "$TMP_DIR/docker-proxy-server.crt" -days 3650 -extfile "$TMP_DIR/docker-proxy-server-ext.cnf" >/dev/null 2>&1
   cat "$TMP_DIR/docker-proxy-server.crt" "$TMP_DIR/docker-proxy-server.key" > "$TMP_DIR/docker-proxy-server.pem"
@@ -648,26 +726,210 @@ check_storage() {
   die "production requires a default StorageClass, --storage-class, or explicit storage provisioning"
 }
 
+check_keda() {
+  if [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  if ! kubectl_cmd get crd scaledobjects.keda.sh >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+KEDA is required for Chronoverse Kafka-lag autoscaling but is not installed.
+Install it as cluster infrastructure, then rerun this script:
+
+  helm repo add kedacore https://kedacore.github.io/charts
+  helm repo update
+  helm upgrade --install keda kedacore/keda --version 2.20.2 --namespace keda --create-namespace
+  kubectl label namespace keda chronoverse.io/keda-kafka-access=true --overwrite
+
+Verify with: kubectl get crd scaledobjects.keda.sh
+EOF
+    die "missing KEDA prerequisite"
+  fi
+  if ! kubectl_cmd get apiservice v1beta1.external.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null | grep -q True; then
+    die "KEDA CRDs exist but its external metrics API is not available; repair the platform installation and verify kubectl get apiservice v1beta1.external.metrics.k8s.io"
+  fi
+
+  local keda_namespace keda_network_access
+  keda_namespace="$(kubectl_cmd get apiservice v1beta1.external.metrics.k8s.io \
+    -o jsonpath='{.spec.service.namespace}' 2>/dev/null || true)"
+  [ -n "$keda_namespace" ] || die "KEDA external metrics API does not identify its serving namespace"
+  keda_network_access="$(kubectl_cmd get namespace "$keda_namespace" \
+    -o jsonpath='{.metadata.labels.chronoverse\.io/keda-kafka-access}' 2>/dev/null || true)"
+  if [ "$keda_network_access" != "true" ]; then
+    cat >&2 <<EOF
+KEDA is available in namespace $keda_namespace, but that namespace is not
+authorized by the Chronoverse Kafka NetworkPolicy. Label this platform-owned
+namespace, then rerun setup:
+
+  kubectl label namespace $keda_namespace chronoverse.io/keda-kafka-access=true --overwrite
+EOF
+    die "KEDA namespace is missing chronoverse.io/keda-kafka-access=true"
+  fi
+
+  info "KEDA prerequisite is available in authorized namespace $keda_namespace"
+}
+
+check_docker_nodes() {
+  if [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  local nodes
+  nodes="$(kubectl_cmd get nodes -l chronoverse.io/docker-workloads=true -o name 2>/dev/null || true)"
+  if [ -z "$nodes" ]; then
+    cat >&2 <<'EOF'
+No Docker-capable Kubernetes node is labeled for Chronoverse container jobs.
+After confirming /var/run/docker.sock is available on the intended node(s), run:
+
+  kubectl label node <node-name> chronoverse.io/docker-workloads=true
+
+Label every node that may own Chronoverse Docker workloads, then rerun setup.
+EOF
+    die "missing chronoverse.io/docker-workloads=true node label"
+  fi
+  info "Docker-capable nodes: $(echo "$nodes" | sed 's|node/||g' | tr '\n' ' ')"
+}
+
+check_optional_cluster_services() {
+  if [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  if [ "$MODE" = "production" ] && ! kubectl_cmd get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null | grep -q True; then
+    warn "Kubernetes resource metrics API is unavailable; install metrics-server (or your provider's equivalent) before relying on service CPU/memory HPAs"
+  fi
+  if ! kubectl_cmd get ingressclass nginx >/dev/null 2>&1; then
+    warn "IngressClass nginx is unavailable; the Chronoverse Ingress will not route until an nginx-compatible ingress controller is provisioned (port-forward access remains available)"
+  else
+    INGRESS_NGINX_AVAILABLE=true
+    info "IngressClass nginx is available"
+  fi
+}
+
 delete_bootstrap_jobs() {
   if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
     return
   fi
 
-  local jobs=(database-migration init-kafka-topics)
+  local jobs=(init-postgres-app-role database-migration init-kafka-topics)
   if [ "$MODE" = "local" ]; then
-    jobs+=(init-certs init-service-certs)
+    jobs+=(init-certs init-service-certs init-keda-secrets)
   fi
 
   info "Recreating bootstrap jobs for $MODE apply"
   kubectl_cmd -n "$NAMESPACE" delete job "${jobs[@]}" --ignore-not-found >/dev/null
 }
 
+wait_for_bootstrap_jobs() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  local job jobs=(init-postgres-app-role database-migration init-kafka-topics)
+  if [ "$MODE" = "local" ]; then
+    jobs=(init-certs init-service-certs init-keda-secrets "${jobs[@]}")
+  fi
+  # Deployments are applied in the same transaction as these Jobs.  Waiting
+  # here establishes the schema/topic readiness barrier before we declare the
+  # application rollout complete; otherwise a cold datastore start can leave
+  # pods permanently CrashLooping after their short startup retry budget.
+  for job in "${jobs[@]}"; do
+    info "Waiting for bootstrap Job $job"
+    kubectl_cmd -n "$NAMESPACE" wait --for=condition=complete "job/$job" --timeout=20m
+  done
+}
+
+reconcile_keda_scaled_objects() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  local reconcile_id scaled_object scaled_objects
+  scaled_objects="$(kubectl_cmd -n "$NAMESPACE" get scaledobjects.keda.sh \
+    -l app.kubernetes.io/part-of=chronoverse -o name 2>/dev/null || true)"
+  [ -n "$scaled_objects" ] || return 0
+
+  # KEDA can evaluate the ScaledObjects before Kafka has started on a cold
+  # cluster.  A failed initial scaler check does not necessarily reconcile as
+  # soon as the broker becomes ready, leaving the generated HPAs absent.  The
+  # topic bootstrap Job proves that Kafka and its TLS listener are usable, so
+  # force one reconciliation after that readiness barrier and require every
+  # scaler to become Ready before setup succeeds.
+  reconcile_id="$(date +%s)"
+  info "Reconciling KEDA ScaledObjects after Kafka bootstrap"
+  while IFS= read -r scaled_object; do
+    [ -n "$scaled_object" ] || continue
+    kubectl_cmd -n "$NAMESPACE" annotate "$scaled_object" \
+      chronoverse.io/reconcile="$reconcile_id" --overwrite >/dev/null
+  done <<EOF
+$scaled_objects
+EOF
+
+  while IFS= read -r scaled_object; do
+    [ -n "$scaled_object" ] || continue
+    kubectl_cmd -n "$NAMESPACE" wait --for=condition=Ready "$scaled_object" --timeout=5m
+  done <<EOF
+$scaled_objects
+EOF
+}
+
+wait_for_database_pooler() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  # A PgBouncer configuration change can trigger its rollout during apply.
+  # Do not restart database clients until the transaction pool is available;
+  # otherwise their first health check can race the temporary empty Service.
+  info "Waiting for PgBouncer rollout"
+  kubectl_cmd -n "$NAMESPACE" rollout status deployment/pgbouncer --timeout=10m
+}
+
+restart_runtime_daemonset() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  # runtime-agent registers itself in the runtime_nodes table.  On a clean
+  # install the DaemonSet can start before database-migration creates that
+  # table and remain in CrashLoopBackOff after setup otherwise completes.
+  info "Restarting docker-proxy DaemonSet after database bootstrap"
+  kubectl_cmd -n "$NAMESPACE" rollout restart daemonset/docker-proxy
+  kubectl_cmd -n "$NAMESPACE" rollout status daemonset/docker-proxy --timeout=10m
+}
+
+restart_application_deployments() {
+  if [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; then
+    return
+  fi
+
+  local deployment deployments
+  deployments="$(kubectl_cmd -n "$NAMESPACE" get deployments -l app.kubernetes.io/part-of=chronoverse -o name | grep -Ev '/(lgtm|nginx|pgbouncer)$' || true)"
+  [ -n "$deployments" ] || return 0
+
+  info "Restarting stateless Chronoverse Deployments after bootstrap completion"
+  while IFS= read -r deployment; do
+    [ -n "$deployment" ] || continue
+    kubectl_cmd -n "$NAMESPACE" rollout restart "$deployment"
+  done <<EOF
+$deployments
+EOF
+
+  while IFS= read -r deployment; do
+    [ -n "$deployment" ] || continue
+    kubectl_cmd -n "$NAMESPACE" rollout status "$deployment" --timeout=10m
+  done <<EOF
+$deployments
+EOF
+}
+
+check_storage
+check_keda
+check_docker_nodes
+check_optional_cluster_services
 create_data_secrets
+create_local_keda_tls_placeholders
 if [ "$MODE" = "production" ]; then
   create_production_tls_secrets
 fi
 create_docker_proxy_tls_secrets
-check_storage
 
 if [ "$SKIP_APPLY" = true ]; then
   info "Skipping manifest apply"
@@ -678,7 +940,7 @@ fi
 # client addresses from X-Forwarded-For (see nginx-realip-config). Production
 # only: the local overlay's kind default is already correct.
 REALIP_DETECTED=""
-if [ "$MODE" = "production" ]; then
+if [ "$MODE" = "production" ] && [ "$INGRESS_NGINX_AVAILABLE" = true ]; then
   if [ -n "$REALIP_CIDRS" ]; then
     # Operator override via --realip-cidrs: normalize commas to spaces.
     REALIP_DETECTED="$(echo "$REALIP_CIDRS" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
@@ -871,9 +1133,15 @@ else
   if [ -n "$REALIP_CIDRS" ]; then
     info "Restarting nginx to apply the client-IP trust ranges"
     kubectl_cmd -n "$NAMESPACE" rollout restart deployment/nginx
-    kubectl_cmd -n "$NAMESPACE" rollout status deployment/nginx --timeout=120s ||
+    kubectl_cmd -n "$NAMESPACE" rollout status deployment/nginx --timeout=10m ||
       warn "nginx rollout did not complete in time; check pod logs"
   fi
+
+  wait_for_bootstrap_jobs
+  reconcile_keda_scaled_objects
+  wait_for_database_pooler
+  restart_runtime_daemonset
+  restart_application_deployments
 
   if [ "$ROTATE_DOCKER_PROXY_CERTS" = true ]; then
     info "Rotating Docker proxy certificates with overlapping CA trust"

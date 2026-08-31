@@ -21,8 +21,9 @@ log delivery, notifications, analytics, and replay-safe event publication.
 In Kubernetes, `infra/k8s` provides Kustomize overlays. The local overlay
 deploys the same entry points inside a single namespace. The production overlay
 deploys the application, workers, Nginx, Docker proxy, Kafka topic initializer,
-migration job, PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, LGTM, dynamic
-PVCs, and HorizontalPodAutoscalers. It is a self-hosted topology; operators own
+migration and role-bootstrap jobs, PgBouncer, PostgreSQL, Redis, Kafka,
+ClickHouse, Meilisearch, LGTM, dynamic PVCs, service HorizontalPodAutoscalers,
+and KEDA Kafka-lag scaling. It is a self-hosted topology; operators own
 the StorageClass, Secret lifecycle, ingress hostnames, runtime-node preparation,
 backups, and production sizing.
 
@@ -65,6 +66,8 @@ replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 
 ## Data Stores and Infrastructure
 
+- **PgBouncer** transaction-pools application connections and bounds aggregate
+  PostgreSQL backend usage as replicas scale and roll.
 - **PostgreSQL** stores users, workflows, jobs, runtime nodes, analytics,
   idempotency keys, outbox events, leases, retry state, and transactional
   metadata.
@@ -189,11 +192,12 @@ expected operating conditions.
 - Compose generates a local CA, service certificates, client certificates, and
   Ed25519 auth keys through `init-certs`.
 - The Kubernetes local overlay generates development certificates into a local
-  certificate PVC. Production mounts Kubernetes Secrets for auth keys, CA
-  material, client TLS, service TLS, infrastructure TLS, Kafka stores, and
-  datastore credentials. The setup script preserves valid, complete operator-provided
-  Secrets and can generate a missing fallback set; partial internal TLS trust
-  chains are rejected.
+  certificate PVC and mirrors only the CA and generic Kafka client identity
+  into narrowly managed Secrets for KEDA. Production mounts Kubernetes Secrets
+  for auth keys, CA material, client TLS, service TLS, infrastructure TLS,
+  Kafka stores, and datastore credentials. The setup script preserves valid,
+  complete operator-provided Secrets and can generate a missing fallback set;
+  partial internal TLS trust chains are rejected.
 - PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC services run with
   TLS or mTLS in compose.
 - The HTTP server uses encrypted session cookies, constant-time CSRF HMAC

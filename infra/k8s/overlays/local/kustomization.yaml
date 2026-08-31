@@ -8,8 +8,11 @@ resources:
 - storage.yaml
 - infrastructure.yaml
 - cert-bootstrap.yaml
+- bootstrap-rbac.yaml
 
 replicas:
+- name: pgbouncer
+  count: 1
 - name: analytics-processor
   count: 1
 - name: analytics-service
@@ -77,6 +80,53 @@ configMapGenerator:
 patches:
 - path: nginx-realip.yaml
 - target:
+    kind: Deployment
+    name: pgbouncer
+  patch: |-
+    # volumes/2 in the base pgbouncer Deployment is the certs volume; assert
+    # the name so a base reorder fails loudly instead of silently rewriting
+    # the wrong slot.
+    - op: test
+      path: /spec/template/spec/volumes/2/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/2
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+- target:
+    kind: Job
+    name: init-postgres-app-role
+  patch: |-
+    - op: add
+      path: /spec/template/spec/initContainers
+      value:
+      - name: wait-for-certs
+        image: alpine:3.22.2
+        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ] && [ -f /certs/postgres/postgres.crt ] && [ -f /certs/postgres/postgres.key ]; do echo waiting for local postgres certificates; sleep 2; done"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        persistentVolumeClaim:
+          claimName: certs-pvc
+- target:
     kind: DaemonSet
     labelSelector: chronoverse.io/client-certs=true
   patch: |-
@@ -99,7 +149,11 @@ patches:
           mountPath: /certs
     # certs sits at index 4 in the base DaemonSet (after docker-socket,
     # docker-proxy-config, and the two isolated Docker proxy identities); keep
-    # this patch aligned with the base volume order.
+    # this patch aligned with the base volume order. The test op guards
+    # against silent reordering.
+    - op: test
+      path: /spec/template/spec/volumes/4/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/4
       value:
@@ -127,6 +181,9 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/0
       value:
@@ -155,23 +212,49 @@ patches:
         - name: certs
           mountPath: /certs
       - name: wait-for-datastores
-        image: alpine:3.22.2
+        # Use the postgres image so we get pg_isready/psql out of the box
+        # and can wait for both the TCP port and the chronoverse_app role
+        # (the latter is created by init-postgres-app-role, which runs in
+        # parallel and is required for the migration connection to succeed).
+        image: postgres:18.0-alpine3.22
         command:
         - sh
-        - -c
+        - -ec
         - |
           set -eu
           first_clickhouse="${CLICKHOUSE_HOSTS%%,*}"
           clickhouse_host="${first_clickhouse%%:*}"
           clickhouse_port="${first_clickhouse##*:}"
           if [ "$clickhouse_port" = "$first_clickhouse" ]; then clickhouse_port=9440; fi
-          until nc -z "$POSTGRES_HOST" "$POSTGRES_PORT"; do echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT"; sleep 2; done
+          export PGSSLMODE=verify-full
+          export PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key
+          until pg_isready -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT"; sleep 2; done
+          # The migration connects as POSTGRES_USER (chronoverse_app), which
+          # is provisioned by init-postgres-app-role. Wait until the role
+          # exists; psql exits non-zero on a missing role.
+          until PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT 1" >/dev/null 2>&1; do
+            echo "waiting for postgres role $POSTGRES_USER"
+            sleep 2
+          done
           until nc -z "$clickhouse_host" "$clickhouse_port"; do echo "waiting for clickhouse at $clickhouse_host:$clickhouse_port"; sleep 2; done
+        env:
+        # Migrations must run on the primary directly. golang-migrate's
+        # pg_advisory_lock/pg_advisory_unlock rely on a single session, and
+        # pgbouncer's transaction pool reassigns backend connections between
+        # statements, which would strand the lock and block subsequent runs.
+        - name: POSTGRES_HOST
+          value: postgres-primary
+        - name: POSTGRES_PORT
+          value: "5432"
         envFrom:
         - configMapRef:
-            name: postgres-connection-config
-        - configMapRef:
             name: clickhouse-connection-config
+        - secretRef:
+            name: postgres-app-secret
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532
@@ -180,6 +263,9 @@ patches:
           readOnlyRootFilesystem: true
           capabilities:
             drop: ["ALL"]
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
     - op: replace
       path: /spec/template/spec/volumes/0
       value:
@@ -209,12 +295,18 @@ patches:
           mountPath: /etc/kafka/secrets
           subPath: kafka
           readOnly: true
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: kafka-client-secrets
     - op: replace
       path: /spec/template/spec/volumes/0
       value:
         name: kafka-client-secrets
         persistentVolumeClaim:
           claimName: certs-pvc
+    - op: test
+      path: /spec/template/spec/containers/0/volumeMounts/0/name
+      value: kafka-client-secrets
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts/0
       value:

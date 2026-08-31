@@ -541,6 +541,13 @@ and partial internal TLS trust chains:
 - `docker-proxy-server`: `server.pem` (HAProxy server `tls.crt`+`tls.key` combined; `setup.sh` generates)
 - `docker-proxy-client-runtime-agent` / `docker-proxy-client-workflow-worker` / `docker-proxy-client-execution-worker`: `tls.crt`, `tls.key` (separate role mTLS identities for `tcp://...:2376`; `setup.sh` generates certificates restricted to client authentication)
 
+Both PostgreSQL Secrets must use the same `POSTGRES_DB`. Kubernetes setup
+derives a missing peer Secret from the existing database name, rejects
+mismatches, and generates PgBouncer's single allowed mapping from the
+application Secret. Custom names may contain up to 63 ASCII letters, digits, or
+underscores; other characters and the reserved name `pgbouncer` are rejected
+before they can be interpreted as PgBouncer configuration.
+
 Kubernetes mounts the HAProxy server identity and runtime-agent client identity
 as separate projected volumes. Worker pods receive only their own role Secret,
 with an explicit UID/GID and `fsGroup` so non-root images can read `0440` keys.

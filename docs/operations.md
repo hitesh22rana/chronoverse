@@ -402,6 +402,9 @@ migrations, administration, and faults. Application pools are explicitly
 budgeted at two or four connections per pod with zero idle minimum except for
 outbox-relay's single warm connection. Do not raise these values without load
 testing pool wait time, transaction duration, database CPU/memory, and locks.
+PgBouncer generates its one allowed database mapping from
+`postgres-app-secret.POSTGRES_DB`; the admin and application PostgreSQL Secrets
+must name the same database, and setup rejects a mismatch before apply.
 
 ### Scheduler
 

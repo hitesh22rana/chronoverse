@@ -4,9 +4,6 @@ metadata:
   name: pgbouncer-config
 data:
   pgbouncer.ini: |
-    [databases]
-    chronoverse = host=postgres-primary port=5432 dbname=chronoverse pool_size=20 reserve_pool_size=5
-
     [pgbouncer]
     listen_addr = 0.0.0.0
     listen_port = 5432
@@ -79,7 +76,28 @@ spec:
         - sh
         - -ec
         - |
-          cp /config/pgbouncer.ini /runtime/pgbouncer.ini
+          export LC_ALL=C
+          case "$POSTGRES_DB" in
+            ""|*[!A-Za-z0-9_]*)
+              echo "POSTGRES_DB must contain only ASCII letters, digits, or underscore" >&2
+              exit 1
+              ;;
+          esac
+          case "$POSTGRES_DB" in
+            [Pp][Gg][Bb][Oo][Uu][Nn][Cc][Ee][Rr])
+              echo "POSTGRES_DB must not use the reserved PgBouncer database name" >&2
+              exit 1
+              ;;
+          esac
+          if [ "${#POSTGRES_DB}" -gt 63 ]; then
+            echo "POSTGRES_DB must not exceed 63 characters" >&2
+            exit 1
+          fi
+          {
+            printf '[databases]\n'
+            printf '%s = host=postgres-primary port=5432 dbname=%s pool_size=20 reserve_pool_size=5\n\n' "$POSTGRES_DB" "$POSTGRES_DB"
+            cat /config/pgbouncer.ini
+          } > /runtime/pgbouncer.ini
           printf '"%s" "%s"\n' "$POSTGRES_USER" "$POSTGRES_PASSWORD" > /runtime/userlist.txt
           chmod 0600 /runtime/pgbouncer.ini /runtime/userlist.txt
         envFrom:
@@ -111,6 +129,11 @@ spec:
             secretKeyRef:
               name: postgres-app-secret
               key: POSTGRES_USER
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app-secret
+              key: POSTGRES_DB
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -128,7 +151,7 @@ spec:
             command:
             - sh
             - -ec
-            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d chronoverse -U "$POSTGRES_USER"
+            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d "$POSTGRES_DB" -U "$POSTGRES_USER"
           periodSeconds: 5
           timeoutSeconds: 2
           failureThreshold: 12
@@ -137,7 +160,7 @@ spec:
             command:
             - sh
             - -ec
-            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d chronoverse -U "$POSTGRES_USER"
+            - PGSSLMODE=verify-ca PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key pg_isready -h 127.0.0.1 -p 5432 -d "$POSTGRES_DB" -U "$POSTGRES_USER"
           periodSeconds: 10
           timeoutSeconds: 2
           failureThreshold: 6
@@ -235,6 +258,10 @@ spec:
         - sh
         - -ec
         - |
+          if [ "$POSTGRES_DB" != "$APP_POSTGRES_DB" ]; then
+            echo "postgres-secret and postgres-app-secret must use the same POSTGRES_DB" >&2
+            exit 1
+          fi
           export PGHOST=postgres-primary PGPORT=5432 PGSSLMODE=verify-full
           export PGSSLROOTCERT=/certs/ca/ca.crt PGSSLCERT=/certs/clients/client.crt PGSSLKEY=/certs/clients/client.key
           until PGPASSWORD="$ADMIN_PASSWORD" pg_isready -U "$ADMIN_USER" -d "$POSTGRES_DB"; do
@@ -272,6 +299,11 @@ spec:
           valueFrom:
             secretKeyRef:
               name: postgres-secret
+              key: POSTGRES_DB
+        - name: APP_POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-app-secret
               key: POSTGRES_DB
         envFrom:
         - secretRef:

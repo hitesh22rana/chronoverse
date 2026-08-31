@@ -75,6 +75,13 @@ scripts/k8s/setup.sh --mode local
 
 Production uses Kubernetes Secrets for credentials, server cookie/CSRF secrets, auth keys, CA material, Ingress TLS, service TLS, client mTLS, infrastructure TLS, and Kafka JKS material. PostgreSQL itself and the role-bootstrap Job receive `postgres-secret`; application pods receive `postgres-app-secret` for the dedicated `chronoverse_app` non-superuser role. You can pre-create these Secrets to control credentials and certificates. The setup script creates only missing non-TLS Secrets and never overwrites valid, complete existing Secrets. Invalid local server-security Secrets are replaced with safe local values; invalid production server-security Secrets stop setup so the operator can correct them. Internal production TLS trust-chain Secrets are atomic: provide all of `chronoverse-ca`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, and `chronoverse-kafka-tls`, or let setup generate the full fallback set. The PostgreSQL certificate must cover both `postgres` and `postgres-primary`; setup rejects an older certificate missing the direct-backend SAN. `chronoverse-ingress-tls` is edge TLS and can be managed independently. Local generated data-store credentials are deterministic development defaults so retained hostPath data can survive a resource delete/recreate without drifting away from regenerated Secrets; production generated fallback credentials remain random.
 
+`postgres-secret` and `postgres-app-secret` must use the same `POSTGRES_DB`.
+Setup derives a missing peer Secret from an existing custom value and rejects a
+mismatch. PgBouncer generates its single allowed database mapping from the
+application Secret at startup instead of hard-coding `chronoverse` or exposing
+a wildcard route. Database names may contain at most 63 ASCII letters, digits,
+or underscores; the reserved name `pgbouncer` is rejected.
+
 The local strategy uses hostPath PVs for single-node validation. Those PVs use retained node-local paths; delete the kind cluster or clear those paths when you intentionally want an empty local data set. Production uses dynamic PVCs by default; provide `--storage-class <name>` to the setup script or rely on the cluster default StorageClass. Production requires dynamic storage; use the local strategy for single-node hostPath validation.
 
 ## Ingress client-IP recovery

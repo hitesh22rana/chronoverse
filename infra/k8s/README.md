@@ -221,6 +221,14 @@ processing uses 0 / 4, and outbox uses 1 / 4. The Go client honors a zero
 minimum and retries PostgreSQL startup for roughly 30 seconds with bounded
 backoff.
 
+`postgres-secret` and `postgres-app-secret` must contain the same
+`POSTGRES_DB`. Setup derives a missing peer Secret from the existing value and
+rejects a mismatch. PgBouncer generates its single database mapping from that
+value at pod startup, so operator-provided names are supported without exposing
+a wildcard database route. Names are limited to 63 ASCII letters, digits, or
+underscores so they are safe as unquoted PgBouncer mapping keys; the reserved
+name `pgbouncer` is rejected.
+
 Datastore-client Deployments use `maxSurge: 0`, and gRPC services drain for up
 to 20 seconds on SIGTERM before their pools and telemetry providers close.
 These are capacity guards, not proof of workload capacity: validate PgBouncer

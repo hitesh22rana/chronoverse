@@ -304,6 +304,21 @@ create_literal_secret() {
   apply_secret_yaml "$yaml"
 }
 
+validate_postgres_database_name() {
+  local database_name="$1" LC_ALL=C
+  case "$database_name" in
+    ""|*[!A-Za-z0-9_]*)
+      die "POSTGRES_DB must contain only ASCII letters, digits, or underscore"
+      ;;
+  esac
+  case "$database_name" in
+    [Pp][Gg][Bb][Oo][Uu][Nn][Cc][Ee][Rr])
+      die "POSTGRES_DB must not use the reserved PgBouncer database name"
+      ;;
+  esac
+  [ "${#database_name}" -le 63 ] || die "POSTGRES_DB must not exceed 63 characters"
+}
+
 create_local_keda_tls_placeholders() {
   [ "$MODE" = "local" ] || return 0
 
@@ -339,7 +354,7 @@ cleanup() {
 trap cleanup EXIT
 
 create_data_secrets() {
-  local postgres_password postgres_app_password clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret docker_proxy_token
+  local postgres_password postgres_app_password postgres_db admin_postgres_db app_postgres_db clickhouse_password meili_key kafka_keystore kafka_truststore crypto_secret csrf_secret docker_proxy_token
   if [ "$MODE" = "local" ]; then
     postgres_password="chronoverse-local-postgres-password"
     postgres_app_password="chronoverse-local-app-postgres-password"
@@ -361,15 +376,35 @@ create_data_secrets() {
   fi
   docker_proxy_token="$(random_hex 32)"
 
+  postgres_db="chronoverse"
+  admin_postgres_db=""
+  app_postgres_db=""
+  if secret_exists postgres-secret; then
+    validate_secret_complete postgres-secret
+    admin_postgres_db="$(secret_decoded_value postgres-secret POSTGRES_DB)"
+    validate_postgres_database_name "$admin_postgres_db"
+    postgres_db="$admin_postgres_db"
+  fi
+  if secret_exists postgres-app-secret; then
+    validate_secret_complete postgres-app-secret
+    app_postgres_db="$(secret_decoded_value postgres-app-secret POSTGRES_DB)"
+    validate_postgres_database_name "$app_postgres_db"
+    if [ -n "$admin_postgres_db" ] && [ "$admin_postgres_db" != "$app_postgres_db" ]; then
+      die "postgres-secret and postgres-app-secret must use the same POSTGRES_DB"
+    fi
+    postgres_db="$app_postgres_db"
+  fi
+  validate_postgres_database_name "$postgres_db"
+
   create_literal_secret postgres-secret \
     --from-literal=POSTGRES_USER=postgres \
     --from-literal=POSTGRES_PASSWORD="$postgres_password" \
-    --from-literal=POSTGRES_DB=chronoverse
+    --from-literal=POSTGRES_DB="$postgres_db"
 
   create_literal_secret postgres-app-secret \
     --from-literal=POSTGRES_USER=chronoverse_app \
     --from-literal=POSTGRES_PASSWORD="$postgres_app_password" \
-    --from-literal=POSTGRES_DB=chronoverse
+    --from-literal=POSTGRES_DB="$postgres_db"
 
   create_literal_secret clickhouse-secret \
     --from-literal=CLICKHOUSE_PASSWORD="$clickhouse_password"

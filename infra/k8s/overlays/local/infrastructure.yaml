@@ -535,7 +535,7 @@ spec:
         - name: KAFKA_CONTROLLER_LISTENER_NAMES
           value: CONTROLLER
         - name: KAFKA_ADVERTISED_LISTENERS
-          value: SSL://kafka.chronoverse.svc.cluster.local:9094
+          value: SSL://kafka.chronoverse.svc:9094
         - name: KAFKA_SSL_KEYSTORE_LOCATION
           value: /etc/kafka/secrets
         - name: KAFKA_SSL_KEYSTORE_FILENAME

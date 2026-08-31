@@ -9,4 +9,4 @@ spec:
       - name: kafka
         env:
         - name: KAFKA_ADVERTISED_LISTENERS
-          value: SSL://kafka.chronoverse.svc.cluster.local:9094
+          value: SSL://kafka.chronoverse.svc:9094

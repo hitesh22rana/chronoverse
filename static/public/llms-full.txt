@@ -1315,6 +1315,12 @@ resource metrics or `IngressClass nginx` are unavailable. An ingress controller
 is needed only for Ingress-based access; port forwarding remains available
 without one.
 
+Internal clients, Kafka broker metadata, and KEDA use namespace-qualified
+partial Service names such as `kafka.chronoverse.svc`. They do not assume the
+default `cluster.local` suffix and resolve through the standard Kubernetes Pod
+DNS search list. Preserve normal `ClusterFirst` DNS behavior when customizing
+workload DNS settings.
+
 Container workflows require Docker-capable runtime nodes. Label every node that should own Docker containers:
 
 ```bash

@@ -116,7 +116,7 @@ data:
   GRPC_TLS_KEY_FILE: certs/jobs-service/jobs-service.key
   CLIENT_TLS_CERT_FILE: certs/clients/client.crt
   CLIENT_TLS_KEY_FILE: certs/clients/client.key
-  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc
   WORKFLOWS_SERVICE_PORT: "50052"
   WORKFLOWS_SERVICE_TLS_ENABLED: "true"
   WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
@@ -138,7 +138,7 @@ data:
   GRPC_TLS_KEY_FILE: certs/notifications-service/notifications-service.key
   CLIENT_TLS_CERT_FILE: certs/clients/client.crt
   CLIENT_TLS_KEY_FILE: certs/clients/client.key
-  USERS_SERVICE_HOST: dns:///users-service.chronoverse.svc.cluster.local
+  USERS_SERVICE_HOST: dns:///users-service.chronoverse.svc
   USERS_SERVICE_PORT: "50051"
   USERS_SERVICE_TLS_ENABLED: "true"
   USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
@@ -174,23 +174,23 @@ data:
   SERVER_ALLOWED_ORIGINS: https://chronoverse.example.com,
   CLIENT_TLS_CERT_FILE: certs/clients/client.crt
   CLIENT_TLS_KEY_FILE: certs/clients/client.key
-  USERS_SERVICE_HOST: dns:///users-service.chronoverse.svc.cluster.local
+  USERS_SERVICE_HOST: dns:///users-service.chronoverse.svc
   USERS_SERVICE_PORT: "50051"
   USERS_SERVICE_TLS_ENABLED: "true"
   USERS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc
   WORKFLOWS_SERVICE_PORT: "50052"
   WORKFLOWS_SERVICE_TLS_ENABLED: "true"
   WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc.cluster.local
+  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc
   JOBS_SERVICE_PORT: "50053"
   JOBS_SERVICE_TLS_ENABLED: "true"
   JOBS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc.cluster.local
+  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc
   NOTIFICATIONS_SERVICE_PORT: "50054"
   NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
   NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  ANALYTICS_SERVICE_HOST: dns:///analytics-service.chronoverse.svc.cluster.local
+  ANALYTICS_SERVICE_HOST: dns:///analytics-service.chronoverse.svc
   ANALYTICS_SERVICE_PORT: "50055"
   ANALYTICS_SERVICE_TLS_ENABLED: "true"
   ANALYTICS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
@@ -224,15 +224,15 @@ data:
   KAFKA_CONSUMER_GROUP: workflow-worker
   CLIENT_TLS_CERT_FILE: certs/clients/client.crt
   CLIENT_TLS_KEY_FILE: certs/clients/client.key
-  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc
   WORKFLOWS_SERVICE_PORT: "50052"
   WORKFLOWS_SERVICE_TLS_ENABLED: "true"
   WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc.cluster.local
+  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc
   JOBS_SERVICE_PORT: "50053"
   JOBS_SERVICE_TLS_ENABLED: "true"
   JOBS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc.cluster.local
+  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc
   NOTIFICATIONS_SERVICE_PORT: "50054"
   NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
   NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
@@ -246,15 +246,15 @@ data:
   KAFKA_CONSUMER_GROUP: execution-worker
   CLIENT_TLS_CERT_FILE: certs/clients/client.crt
   CLIENT_TLS_KEY_FILE: certs/clients/client.key
-  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc.cluster.local
+  WORKFLOWS_SERVICE_HOST: dns:///workflows-service.chronoverse.svc
   WORKFLOWS_SERVICE_PORT: "50052"
   WORKFLOWS_SERVICE_TLS_ENABLED: "true"
   WORKFLOWS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc.cluster.local
+  JOBS_SERVICE_HOST: dns:///jobs-service.chronoverse.svc
   JOBS_SERVICE_PORT: "50053"
   JOBS_SERVICE_TLS_ENABLED: "true"
   JOBS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt
-  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc.cluster.local
+  NOTIFICATIONS_SERVICE_HOST: dns:///notifications-service.chronoverse.svc
   NOTIFICATIONS_SERVICE_PORT: "50054"
   NOTIFICATIONS_SERVICE_TLS_ENABLED: "true"
   NOTIFICATIONS_SERVICE_TLS_CA_FILE: certs/ca/ca.crt

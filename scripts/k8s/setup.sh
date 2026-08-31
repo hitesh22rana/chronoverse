@@ -598,9 +598,9 @@ create_production_tls_secrets() {
   local svc
   for svc in users-service workflows-service jobs-service notifications-service analytics-service postgres redis clickhouse kafka meilisearch; do
     if [ "$svc" = postgres ]; then
-      generate_cert "$svc" "$svc" "DNS:postgres,DNS:postgres.$NAMESPACE,DNS:postgres.$NAMESPACE.svc,DNS:postgres.$NAMESPACE.svc.cluster.local,DNS:postgres-primary,DNS:postgres-primary.$NAMESPACE,DNS:postgres-primary.$NAMESPACE.svc,DNS:postgres-primary.$NAMESPACE.svc.cluster.local,IP:127.0.0.1"
+      generate_cert "$svc" "$svc" "DNS:postgres,DNS:postgres.$NAMESPACE,DNS:postgres.$NAMESPACE.svc,DNS:postgres-primary,DNS:postgres-primary.$NAMESPACE,DNS:postgres-primary.$NAMESPACE.svc,IP:127.0.0.1"
     else
-      generate_cert "$svc" "$svc" "DNS:$svc,DNS:$svc.$NAMESPACE,DNS:$svc.$NAMESPACE.svc,DNS:$svc.$NAMESPACE.svc.cluster.local,IP:127.0.0.1"
+      generate_cert "$svc" "$svc" "DNS:$svc,DNS:$svc.$NAMESPACE,DNS:$svc.$NAMESPACE.svc,IP:127.0.0.1"
     fi
   done
   generate_cert client chronoverse-client "DNS:client"
@@ -680,7 +680,7 @@ create_docker_proxy_tls_secrets() {
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,DNS:docker-proxy.chronoverse.svc.cluster.local,IP:127.0.0.1
+subjectAltName=DNS:docker-proxy,DNS:docker-proxy.chronoverse,DNS:docker-proxy.chronoverse.svc,IP:127.0.0.1
 EOF
   openssl x509 -req -in "$TMP_DIR/docker-proxy-server.csr" -CA "$TMP_DIR/docker-proxy-ca.crt" -CAkey "$TMP_DIR/docker-proxy-ca.key" -CAcreateserial -out "$TMP_DIR/docker-proxy-server.crt" -days 3650 -extfile "$TMP_DIR/docker-proxy-server-ext.cnf" >/dev/null 2>&1
   cat "$TMP_DIR/docker-proxy-server.crt" "$TMP_DIR/docker-proxy-server.key" > "$TMP_DIR/docker-proxy-server.pem"

@@ -26,7 +26,7 @@ spec:
   triggers:
   - type: kafka
     metadata:
-      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      bootstrapServers: kafka.chronoverse.svc:9094
       consumerGroup: workflow-worker
       topic: workflows
       lagThreshold: "10"
@@ -49,7 +49,7 @@ spec:
   triggers:
   - type: kafka
     metadata:
-      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      bootstrapServers: kafka.chronoverse.svc:9094
       consumerGroup: execution-worker
       topic: jobs
       lagThreshold: "10"
@@ -72,7 +72,7 @@ spec:
   triggers:
   - type: kafka
     metadata:
-      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      bootstrapServers: kafka.chronoverse.svc:9094
       consumerGroup: joblogs-processor
       topic: job_logs
       lagThreshold: "100"
@@ -95,7 +95,7 @@ spec:
   triggers:
   - type: kafka
     metadata:
-      bootstrapServers: kafka.chronoverse.svc.cluster.local:9094
+      bootstrapServers: kafka.chronoverse.svc:9094
       consumerGroup: analytics-processor
       topic: analytics
       lagThreshold: "10"

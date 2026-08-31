@@ -119,9 +119,9 @@ spec:
             openssl genrsa -out "$cert_path/$svc.key" 4096
             openssl req -new -key "$cert_path/$svc.key" -out "$cert_path/$svc.csr" -subj "/CN=$svc"
             if [ "$svc" = postgres ]; then
-              printf "subjectAltName=DNS:postgres,DNS:postgres.chronoverse,DNS:postgres.chronoverse.svc,DNS:postgres.chronoverse.svc.cluster.local,DNS:postgres-primary,DNS:postgres-primary.chronoverse,DNS:postgres-primary.chronoverse.svc,DNS:postgres-primary.chronoverse.svc.cluster.local,IP:127.0.0.1\n" > "$cert_path/$svc-ext.cnf"
+              printf "subjectAltName=DNS:postgres,DNS:postgres.chronoverse,DNS:postgres.chronoverse.svc,DNS:postgres-primary,DNS:postgres-primary.chronoverse,DNS:postgres-primary.chronoverse.svc,IP:127.0.0.1\n" > "$cert_path/$svc-ext.cnf"
             else
-              printf "subjectAltName=DNS:%s,DNS:%s.chronoverse,DNS:%s.chronoverse.svc,DNS:%s.chronoverse.svc.cluster.local,IP:127.0.0.1\n" "$svc" "$svc" "$svc" "$svc" > "$cert_path/$svc-ext.cnf"
+              printf "subjectAltName=DNS:%s,DNS:%s.chronoverse,DNS:%s.chronoverse.svc,IP:127.0.0.1\n" "$svc" "$svc" "$svc" > "$cert_path/$svc-ext.cnf"
             fi
             openssl x509 -req -in "$cert_path/$svc.csr" -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key -CAcreateserial -out "$cert_path/$svc.crt" -days 365 -extfile "$cert_path/$svc-ext.cnf"
             rm -f "$cert_path/$svc.csr" "$cert_path/$svc-ext.cnf"

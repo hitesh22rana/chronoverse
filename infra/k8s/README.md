@@ -44,6 +44,12 @@ recommended by the Kubernetes provider. `setup.sh` validates or warns about
 these contracts and prints actionable guidance; it never assumes ownership of
 them.
 
+Internal clients, Kafka broker metadata, and KEDA use namespace-qualified
+partial Service names such as `kafka.chronoverse.svc`. They deliberately omit
+the cluster DNS suffix, so clusters with a domain other than `cluster.local`
+are supported through the standard Kubernetes Pod DNS search list. Preserve
+the normal `ClusterFirst` DNS behavior if you customize workload DNS settings.
+
 ## Setup
 
 Use the setup script as the primary entrypoint:

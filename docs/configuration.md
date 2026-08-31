@@ -119,6 +119,11 @@ the low/mid/high-resource worker groups.
   Kafka, Meilisearch, runtime-agent, dynamic PVCs, service HPAs, production
   topic partitions, and production KEDA ceilings.
 
+Kubernetes runtime endpoints use namespace-qualified partial Service DNS names
+such as `kafka.chronoverse.svc`, rather than assuming the default
+`cluster.local` cluster domain. These names rely on the standard Pod DNS search
+list and `ClusterFirst` behavior.
+
 Common commands:
 
 ```sh

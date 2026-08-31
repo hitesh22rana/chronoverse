@@ -58,6 +58,13 @@ includes Chronoverse services, workers, PostgreSQL, Redis, Kafka, ClickHouse,
 Meilisearch, runtime-agent, Docker proxy, Nginx, migrations, topic
 initialization, dynamic PVCs, and HPAs.
 
+After applying either overlay, the setup entrypoint waits for certificate,
+role, migration, and topic bootstrap Jobs as applicable. It then reconciles
+and verifies the KEDA Kafka scalers, waits for PgBouncer, rolls the Docker proxy
+DaemonSet, and restarts/waits for stateless application Deployments. A
+successful return therefore means the post-bootstrap workload rollout is
+available; direct `kubectl apply -k` users must perform equivalent checks.
+
 The script is interactive by default and also supports repeatable flags:
 
 ```sh

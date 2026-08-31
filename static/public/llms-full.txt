@@ -1363,7 +1363,7 @@ Controllers and their pod templates carry `chronoverse.io/datastore-client` plus
 
 ## Startup behavior
 
-Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with cancellable PostgreSQL startup retries using a bounded backoff of roughly 30 seconds, readiness/liveness probes, and bootstrap Jobs for the application database role, migrations, Kafka topics, and local certificate material. gRPC services handle SIGTERM, drain for up to 20 seconds, then close database pools and telemetry providers with bounded cleanup.
+Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with cancellable PostgreSQL startup retries using a bounded backoff of roughly 30 seconds, readiness/liveness probes, and bootstrap Jobs for the application database role, migrations, Kafka topics, and local certificate material. The setup entrypoint waits for those Jobs, forces the KEDA Kafka scalers to reconcile after the broker is usable, waits for PgBouncer, rolls the Docker proxy DaemonSet, and then restarts and waits for stateless application Deployments. A successful setup return therefore represents post-bootstrap availability; direct Kustomize users must perform equivalent Job and rollout checks. gRPC services handle SIGTERM, drain for up to 20 seconds, then close database pools and telemetry providers with bounded cleanup.
 
 ## Docker execution model
 
@@ -1495,6 +1495,11 @@ Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafk
 ## Service authorization
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
+
+Internal Ed25519 JWT validation allows at most 30 seconds of clock skew for
+`nbf` and expiry checks so ordinary multi-node time differences do not reject a
+fresh token. Keep every Kubernetes node synchronized with a reliable time
+source; the bounded leeway is not a substitute for host time synchronization.
 
 ## Browser security
 

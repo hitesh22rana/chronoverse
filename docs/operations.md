@@ -195,8 +195,11 @@ containers are expected to retry transient dependency failures, while readiness
 and liveness probes decide when pods receive traffic or are restarted. The local
 overlay uses init containers only for prerequisites that must exist before the
 process starts, such as generated certificate files and hostPath permissions.
-Operators should still inspect bootstrap Jobs before scaling application
-workloads.
+The setup entrypoint waits for every bootstrap Job, forces a post-Kafka KEDA
+reconciliation, waits for PgBouncer, rolls the Docker proxy DaemonSet, and then
+restarts and waits for stateless application Deployments. Direct Kustomize
+users must inspect those Jobs and perform equivalent rollout checks before
+scaling application workloads.
 
 ### Resolving Failed Migrations
 

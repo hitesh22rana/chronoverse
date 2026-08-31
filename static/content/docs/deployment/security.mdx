@@ -14,6 +14,11 @@ Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafk
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
 
+Internal Ed25519 JWT validation allows at most 30 seconds of clock skew for
+`nbf` and expiry checks so ordinary multi-node time differences do not reject a
+fresh token. Keep every Kubernetes node synchronized with a reliable time
+source; the bounded leeway is not a substitute for host time synchronization.
+
 ## Browser security
 
 Sessions are stored in encrypted cookies. Mutating browser requests require CSRF validation, and token HMACs are compared in constant time. CORS origins and same-site behavior are configurable.

@@ -205,11 +205,11 @@ spec:
         - name: RUNTIME_AGENT_DOCKER_ADVERTISE_PORT
           value: "2376"
         - name: DOCKER_PROXY_TLS_CA_FILE
-          value: /certs/docker-proxy/ca.crt
+          value: /docker-proxy-certs/ca.crt
         - name: DOCKER_PROXY_TLS_CERT_FILE
-          value: /certs/docker-proxy/client.crt
+          value: /docker-proxy-certs/client.crt
         - name: DOCKER_PROXY_TLS_KEY_FILE
-          value: /certs/docker-proxy/client.key
+          value: /docker-proxy-certs/client.key
         - name: DOCKER_PROXY_TLS_SERVER_NAME
           value: docker-proxy
         resources:
@@ -232,7 +232,7 @@ spec:
           mountPath: /certs
           readOnly: true
         - name: docker-proxy-runtime-client-certs
-          mountPath: /certs/docker-proxy
+          mountPath: /docker-proxy-certs
           readOnly: true
       volumes:
       - name: docker-socket
@@ -291,8 +291,3 @@ spec:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: docker-proxy-ca
-              items:
-              - key: ca.crt
-                path: docker-proxy/.mountpoint

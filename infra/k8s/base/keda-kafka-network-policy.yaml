@@ -12,7 +12,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: keda
+          chronoverse.io/keda-kafka-access: "true"
     ports:
     - protocol: TCP
       port: 9094

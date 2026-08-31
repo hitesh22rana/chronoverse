@@ -27,9 +27,17 @@ KEDA installation is:
 helm repo add kedacore https://kedacore.github.io/charts
 helm repo update
 helm upgrade --install keda kedacore/keda --version 2.20.2 --namespace keda --create-namespace
+kubectl label namespace keda chronoverse.io/keda-kafka-access=true --overwrite
 kubectl get crd scaledobjects.keda.sh
 kubectl get apiservice v1beta1.external.metrics.k8s.io
 ```
+
+The Kafka NetworkPolicy selects the KEDA installation namespace through
+`chronoverse.io/keda-kafka-access=true`, rather than assuming the namespace is
+named `keda`. Apply that label to whichever platform-managed namespace serves
+`v1beta1.external.metrics.k8s.io`; `setup.sh` discovers that namespace from the
+APIService and fails early with the exact label command when the contract is
+missing.
 
 Install metrics-server and an ingress controller using the lifecycle mechanism
 recommended by the Kubernetes provider. `setup.sh` validates or warns about

@@ -60,7 +60,11 @@ CPU/memory HorizontalPodAutoscalers for services, and KEDA Kafka-lag scaling
 for consumers. Production service autoscaling requires metrics-server or an
 equivalent `autoscaling/v2` resource metrics provider. KEDA is a platform
 prerequisite for both overlays; `setup.sh` checks its CRD and external metrics
-API but does not install it.
+API but does not install it. Label the platform-managed namespace serving the
+external metrics API with `chronoverse.io/keda-kafka-access=true`; the Kafka
+NetworkPolicy uses that stable label so KEDA installations are not restricted
+to a namespace literally named `keda`. Setup discovers and validates the
+serving namespace before applying Chronoverse.
 
 Kubernetes does not include a generic `kubectl` command to create a cluster.
 Create the cluster with your lifecycle tool, such as kind, minikube, kubeadm, or

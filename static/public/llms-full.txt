@@ -1300,11 +1300,20 @@ helm repo add kedacore https://kedacore.github.io/charts
 helm repo update
 helm upgrade --install keda kedacore/keda --version 2.20.2 \
   --namespace keda --create-namespace
+kubectl label namespace keda chronoverse.io/keda-kafka-access=true --overwrite
 kubectl get crd scaledobjects.keda.sh
 kubectl get apiservice v1beta1.external.metrics.k8s.io
 ```
 
-`scripts/k8s/setup.sh` stops with actionable instructions when the KEDA CRD, KEDA external-metrics API, or Docker-node label is absent. It warns when resource metrics or `IngressClass nginx` are unavailable. An ingress controller is needed only for Ingress-based access; port forwarding remains available without one.
+The Kafka NetworkPolicy authorizes KEDA through the stable namespace label
+`chronoverse.io/keda-kafka-access=true`, not a hard-coded namespace name. When
+KEDA is installed in another platform-managed namespace, apply the same label
+there. `scripts/k8s/setup.sh` discovers that namespace from the external
+metrics APIService and stops with an actionable command when the label, KEDA
+CRD, external-metrics API, or Docker-node label is absent. It warns when
+resource metrics or `IngressClass nginx` are unavailable. An ingress controller
+is needed only for Ingress-based access; port forwarding remains available
+without one.
 
 Container workflows require Docker-capable runtime nodes. Label every node that should own Docker containers:
 

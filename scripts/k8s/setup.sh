@@ -703,6 +703,7 @@ Install it as cluster infrastructure, then rerun this script:
   helm repo add kedacore https://kedacore.github.io/charts
   helm repo update
   helm upgrade --install keda kedacore/keda --version 2.20.2 --namespace keda --create-namespace
+  kubectl label namespace keda chronoverse.io/keda-kafka-access=true --overwrite
 
 Verify with: kubectl get crd scaledobjects.keda.sh
 EOF
@@ -711,7 +712,25 @@ EOF
   if ! kubectl_cmd get apiservice v1beta1.external.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null | grep -q True; then
     die "KEDA CRDs exist but its external metrics API is not available; repair the platform installation and verify kubectl get apiservice v1beta1.external.metrics.k8s.io"
   fi
-  info "KEDA prerequisite is available"
+
+  local keda_namespace keda_network_access
+  keda_namespace="$(kubectl_cmd get apiservice v1beta1.external.metrics.k8s.io \
+    -o jsonpath='{.spec.service.namespace}' 2>/dev/null || true)"
+  [ -n "$keda_namespace" ] || die "KEDA external metrics API does not identify its serving namespace"
+  keda_network_access="$(kubectl_cmd get namespace "$keda_namespace" \
+    -o jsonpath='{.metadata.labels.chronoverse\.io/keda-kafka-access}' 2>/dev/null || true)"
+  if [ "$keda_network_access" != "true" ]; then
+    cat >&2 <<EOF
+KEDA is available in namespace $keda_namespace, but that namespace is not
+authorized by the Chronoverse Kafka NetworkPolicy. Label this platform-owned
+namespace, then rerun setup:
+
+  kubectl label namespace $keda_namespace chronoverse.io/keda-kafka-access=true --overwrite
+EOF
+    die "KEDA namespace is missing chronoverse.io/keda-kafka-access=true"
+  fi
+
+  info "KEDA prerequisite is available in authorized namespace $keda_namespace"
 }
 
 check_docker_nodes() {

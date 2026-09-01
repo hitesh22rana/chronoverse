@@ -49,7 +49,7 @@ configuration, resource limits, and replicated worker settings.
 
 ```sh
 scripts/k8s/setup.sh --mode local
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 The local strategy is self-contained for single-node validation and runs one

@@ -172,7 +172,7 @@ scripts/k8s/setup.sh --mode local
 For production:
 
 ```sh
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 Rotate an existing Kubernetes Docker proxy PKI with overlapping CA trust during

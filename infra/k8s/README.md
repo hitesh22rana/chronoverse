@@ -56,7 +56,7 @@ Use the setup script as the primary entrypoint:
 
 ```sh
 scripts/k8s/setup.sh --mode local
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 `local` is a single-node, self-contained validation strategy. It includes
@@ -82,10 +82,10 @@ available; direct `kubectl apply -k` users must perform equivalent checks.
 The script is interactive by default and also supports repeatable flags:
 
 ```sh
-scripts/k8s/setup.sh --mode production --dry-run
-scripts/k8s/setup.sh --mode production --storage-class fast-ssd
+scripts/k8s/setup.sh --mode production --context my-cluster --dry-run
+scripts/k8s/setup.sh --mode production --context my-cluster --storage-class fast-ssd
 scripts/k8s/setup.sh --mode production --context my-cluster
-scripts/k8s/setup.sh --mode production --skip-apply
+scripts/k8s/setup.sh --mode production --context my-cluster --skip-apply
 scripts/k8s/setup.sh --mode production --context my-cluster --rotate-docker-proxy-certs
 scripts/k8s/setup.sh --mode local --create-kind
 ```
@@ -200,7 +200,7 @@ hostPath directories when you intentionally want a completely empty local data
 set.
 
 The production overlay uses dynamic PVCs by default. Provide a StorageClass with
-`scripts/k8s/setup.sh --mode production --storage-class <name>` or rely on the
+`scripts/k8s/setup.sh --mode production --context <context> --storage-class <name>` or rely on the
 cluster default StorageClass. Production requires dynamic storage; use the
 `local` strategy for single-node hostPath validation.
 
@@ -355,7 +355,7 @@ make k8s/render/production
 make k8s/dry-run/local
 make k8s/dry-run/production
 scripts/k8s/setup.sh --mode local --dry-run
-scripts/k8s/setup.sh --mode production --dry-run
+scripts/k8s/setup.sh --mode production --context <context> --dry-run
 ```
 
 The render targets work offline. The kubectl and setup-script dry runs still use

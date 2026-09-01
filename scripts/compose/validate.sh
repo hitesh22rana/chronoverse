@@ -19,7 +19,10 @@ render_compose() {
   output_file=$2
 
   if [ "$compose_file" = "compose.prod.yaml" ]; then
-    CRYPTO_SECRET=0123456789abcdef0123456789abcdef \
+    POSTGRES_PASSWORD=compose-validation \
+      CLICKHOUSE_PASSWORD=compose-validation \
+      MEILI_MASTER_KEY=compose-validation \
+      CRYPTO_SECRET=0123456789abcdef0123456789abcdef \
       SERVER_CSRF_HMAC_SECRET=abcdef0123456789abcdef0123456789 \
       GF_SECURITY_ADMIN_PASSWORD=compose-validation \
       docker compose -f "$root_dir/$compose_file" config --format json > "$output_file"

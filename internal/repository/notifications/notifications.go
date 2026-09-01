@@ -449,8 +449,11 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
+// The audience set names every service this repository may forward a call to
+// — notifications-service is the only target for the workflow terminal and
+// job terminal notification writes.
 func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
-	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject)
+	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, "notifications-service")
 }
 
 func encodeCursor(cursor string) string {

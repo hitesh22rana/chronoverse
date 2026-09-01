@@ -22,52 +22,49 @@ type WrappedServerStream struct {
 	Ctx context.Context
 }
 
-// Context returns the context of the wrapped server stream.
+// Context returns the context of the wrapped stream.
 func (w *WrappedServerStream) Context() context.Context {
 	return w.Ctx
 }
 
-// StreamAudienceInterceptor extracts the audience from the metadata and adds it to the context.
-// It returns a new wrapped stream with the modified context.
+// StreamAudienceInterceptor propagates the JWT-validated audience from
+// context. See UnaryAudienceInterceptor for the rationale — metadata is
+// never trusted on authenticated RPCs.
 func StreamAudienceInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// Extract the audience from metadata.
-		audience, err := auth.ExtractAudienceFromMetadata(stream.Context())
-		if err != nil {
+		if _, err := auth.ExtractAudienceFromContext(stream.Context()); err != nil {
 			return err
 		}
 
 		return handler(srv, &WrappedServerStream{
 			ServerStream: stream,
-			Ctx:          auth.WithAudience(stream.Context(), audience),
+			Ctx:          stream.Context(),
 		})
 	}
 }
 
-// StreamRoleInterceptor extracts the role from the metadata and validates it using the provided callback function.
-// If the role is not valid, it returns an error with code PermissionDenied.
+// StreamRoleInterceptor reads the role from the JWT-validated context and
+// dispatches the callback. The metadata "Role" header is intentionally
+// NEVER consulted.
 func StreamRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// Extract the role from metadata.
-		role, err := auth.ExtractRoleFromMetadata(stream.Context())
+		role, err := auth.ExtractRoleFromContext(stream.Context())
 		if err != nil {
 			return err
 		}
 
-		// Validate the role using the callback function.
 		if callbackFunc(info.FullMethod, role) {
 			return status.Error(codes.PermissionDenied, "unauthorized access")
 		}
 
 		return handler(srv, &WrappedServerStream{
 			ServerStream: stream,
-			Ctx:          auth.WithRole(stream.Context(), role),
+			Ctx:          stream.Context(),
 		})
 	}
 }
 
 // StreamLoggingInterceptor returns a gRPC stream interceptor that logs the requests and responses.
-// It uses zap logger to log the messages.
 func StreamLoggingInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
 	return logging.StreamServerInterceptor(
 		loggingInterceptor(logger),
@@ -95,6 +92,12 @@ func StreamLoggingInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
 					)
 				}
 
+				if audience, err := auth.ExtractAudienceFromContext(ctx); err == nil {
+					fields = append(fields, "audience", audience)
+				}
+				if role, err := auth.ExtractRoleFromContext(ctx); err == nil {
+					fields = append(fields, "role", role)
+				}
 				if method, ok := grpc.Method(ctx); ok {
 					fields = append(fields, "method", strings.Split(method, "/")[1])
 				}

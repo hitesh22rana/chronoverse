@@ -15,42 +15,64 @@ import (
 )
 
 // RoleInterceptorCallbackFunc is a callback function that checks if the role is valid for the method.
-// It takes the method name and role as arguments and returns true if the role is valid.
+// It takes the method name and role as arguments and returns true if the role is invalid.
 // This is used to validate the role in the RoleInterceptor.
 // This function is to be implemented by the service that uses the interceptor.
 // If the role is not valid, the interceptor will return an error with code PermissionDenied.
 type RoleInterceptorCallbackFunc func(method, role string) bool
 
-// UnaryAudienceInterceptor sets the audience from the metadata and adds it to the context.
+// UnaryAudienceInterceptor propagates the JWT-validated audience from context
+// for log enrichment. It does NOT trust the metadata header on authenticated
+// RPCs — that audience is established by ValidateToken and must already be
+// present in context when this interceptor runs.
+//
+// Health-check RPCs and other exempt routes are intentionally allowed to
+// pass through without a validated audience; the authToken interceptor
+// skips them and the logging fields will simply omit "audience" / "role"
+// for those calls.
 func UnaryAudienceInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the audience from metadata.
-		audience, err := auth.ExtractAudienceFromMetadata(ctx)
-		if err != nil {
-			return "", err
+		if _, err := auth.ExtractAudienceFromContext(ctx); err != nil {
+			if !isHealthCheckContext(ctx) {
+				return "", err
+			}
 		}
 
-		return handler(auth.WithAudience(ctx, audience), req)
+		return handler(ctx, req)
 	}
 }
 
-// UnaryRoleInterceptor extracts the role from the metadata and adds it to the context.
-// If the role is not valid, it returns an error with code PermissionDenied.
+// UnaryRoleInterceptor reads the role from the JWT-validated context (set
+// by ValidateToken) and dispatches the callback. The metadata "Role" header
+// is intentionally NEVER consulted — see the C2 finding in
+// SECURITY_ASSESSMENT_STACK_C.md.
 func UnaryRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Extract the role from metadata.
-		role, err := auth.ExtractRoleFromMetadata(ctx)
+		role, err := auth.ExtractRoleFromContext(ctx)
 		if err != nil {
+			if isHealthCheckContext(ctx) {
+				return handler(ctx, req)
+			}
 			return "", err
 		}
 
-		// Validate the role using the callback function.
 		if callbackFunc(info.FullMethod, role) {
 			return "", status.Error(codes.PermissionDenied, "unauthorized access")
 		}
 
-		return handler(auth.WithRole(ctx, role), req)
+		return handler(ctx, req)
 	}
+}
+
+// isHealthCheckContext returns true when the gRPC method is a health check.
+// Health checks bypass ValidateToken so they have no audience/role in
+// context; the audience/role interceptors must tolerate that.
+func isHealthCheckContext(ctx context.Context) bool {
+	method, ok := grpc.Method(ctx)
+	if !ok {
+		return false
+	}
+	return strings.Contains(method, "/grpc.health.v1.Health/")
 }
 
 // UnaryLoggingInterceptor returns a gRPC unary interceptor that logs the requests and responses.
@@ -81,12 +103,13 @@ func UnaryLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 					)
 				}
 
-				// Add the audience, role, and method to the fields.
-				// These fields are extracted from the context and added to the log.
-				if audience, err := auth.ExtractAudienceFromMetadata(ctx); err == nil {
+				// Audience and role are now read from the JWT-validated
+				// context (set by ValidateToken). The metadata headers
+				// are intentionally NOT consulted.
+				if audience, err := auth.ExtractAudienceFromContext(ctx); err == nil {
 					fields = append(fields, "audience", audience)
 				}
-				if role, err := auth.ExtractRoleFromMetadata(ctx); err == nil {
+				if role, err := auth.ExtractRoleFromContext(ctx); err == nil {
 					fields = append(fields, "role", role)
 				}
 				if method, ok := grpc.Method(ctx); ok {

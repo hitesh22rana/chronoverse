@@ -64,7 +64,13 @@ type Users struct {
 	svc  Service
 }
 
-// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
+// authTokenInterceptor extracts and validates the authToken from the metadata.
+// On authenticated RPCs it delegates to ValidateToken which enforces the JWT
+// issuer/audience/role claims and writes them into context for downstream
+// authorization. On unauthenticated RPCs (RegisterUser/LoginUser) it seeds
+// the audience/role from metadata so the repository can mint the user's
+// session JWT — the metadata is trusted ONLY on this exempt path because
+// there is no incoming token to validate.
 func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
@@ -72,23 +78,37 @@ func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
 			return handler(ctx, req)
 		}
 
-		// Skip the interceptor if the method doesn't require authentication.
+		// Unauthenticated RPC path: seed audience/role from metadata.
 		if !isAuthRequired(info.FullMethod) {
+			audience, err := auth.ExtractAudienceFromMetadata(ctx)
+			if err != nil {
+				return "", err
+			}
+			ctx = auth.WithAudience(ctx, audience)
+
+			role, err := auth.ExtractRoleFromMetadata(ctx)
+			if err != nil {
+				return "", err
+			}
+			ctx = auth.WithRole(ctx, role)
+
 			return handler(ctx, req)
 		}
 
-		// Extract the authToken from metadata.
+		// Authenticated RPC path: validate the token and require that its
+		// aud claim names this service.
 		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			return "", err
 		}
 
 		ctx = auth.WithAuthorizationToken(ctx, authToken)
-		if _, err := u.auth.ValidateToken(ctx); err != nil {
+		newCtx, _, err := u.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		if err != nil {
 			return "", err
 		}
 
-		return handler(ctx, req)
+		return handler(newCtx, req)
 	}
 }
 
@@ -175,12 +195,18 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			// authToken must run before the audience/role interceptors so
+			// the JWT-validated audience/role are in context when the
+			// downstream interceptors read them. The unauthenticated
+			// RegisterUser/LoginUser path seeds audience/role from
+			// metadata and then returns, so the audience/role
+			// interceptors always see a populated context here.
+			users.authTokenInterceptor(),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false
 			}),
-			users.authTokenInterceptor(),
 		),
 	)
 

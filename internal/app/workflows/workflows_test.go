@@ -131,7 +131,7 @@ func TestCreateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -167,7 +167,7 @@ func TestCreateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -196,7 +196,7 @@ func TestCreateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -252,7 +252,7 @@ func TestCreateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -331,7 +331,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -364,7 +364,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -392,7 +392,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -446,7 +446,7 @@ func TestUpdateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -522,7 +522,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateWorkflowBuildStatus(
 					gomock.Any(),
 					gomock.Any(),
@@ -551,7 +551,9 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					BuildStatus: "COMPLETED",
 				},
 			},
-			mock:  func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {},
+			mock: func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+			},
 			res:   nil,
 			isErr: true,
 		},
@@ -576,7 +578,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -602,7 +604,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateWorkflowBuildStatus(
 					gomock.Any(),
 					gomock.Any(),
@@ -650,7 +652,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.UpdateWorkflowBuildStatusRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateWorkflowBuildStatus(
 					gomock.Any(),
 					gomock.Any(),
@@ -725,7 +727,7 @@ func TestGetWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -783,7 +785,7 @@ func TestGetWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -808,7 +810,7 @@ func TestGetWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -854,7 +856,7 @@ func TestGetWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -928,7 +930,7 @@ func TestGetWorkflowByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflowByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -986,7 +988,9 @@ func TestGetWorkflowByID(t *testing.T) {
 					Id: "workflow_id",
 				},
 			},
-			mock:  func(_ *workflowspb.GetWorkflowByIDRequest) {},
+			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+			},
 			res:   nil,
 			isErr: true,
 		},
@@ -1009,7 +1013,7 @@ func TestGetWorkflowByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -1033,7 +1037,7 @@ func TestGetWorkflowByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflowByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -1077,7 +1081,7 @@ func TestGetWorkflowByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflowByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -1152,7 +1156,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					gomock.Any(),
@@ -1183,7 +1187,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					gomock.Any(),
@@ -1213,7 +1217,9 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					UserId: "user1",
 				},
 			},
-			mock:  func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {},
+			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+			},
 			res:   nil,
 			isErr: true,
 		},
@@ -1237,7 +1243,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -1262,7 +1268,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					gomock.Any(),
@@ -1308,7 +1314,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().IncrementWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					gomock.Any(),
@@ -1383,7 +1389,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					gomock.Any(),
@@ -1411,7 +1417,9 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					UserId: "user1",
 				},
 			},
-			mock:  func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {},
+			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+			},
 			res:   nil,
 			isErr: true,
 		},
@@ -1435,7 +1443,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -1460,7 +1468,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					gomock.Any(),
@@ -1504,7 +1512,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ResetWorkflowConsecutiveJobFailuresCount(
 					gomock.Any(),
 					gomock.Any(),
@@ -1579,7 +1587,7 @@ func TestTerminateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.TerminateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().TerminateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -1608,7 +1616,7 @@ func TestTerminateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.TerminateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -1633,7 +1641,7 @@ func TestTerminateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.TerminateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().TerminateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -1679,7 +1687,7 @@ func TestTerminateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.TerminateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().TerminateWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -1754,7 +1762,7 @@ func TestDeleteWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().DeleteWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -1783,7 +1791,7 @@ func TestDeleteWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -1808,7 +1816,7 @@ func TestDeleteWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().DeleteWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -1854,7 +1862,7 @@ func TestDeleteWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.DeleteWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().DeleteWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -1929,7 +1937,7 @@ func TestListWorkflows(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListWorkflows(
 					gomock.Any(),
 					gomock.Any(),
@@ -1997,7 +2005,7 @@ func TestListWorkflows(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -2022,7 +2030,7 @@ func TestListWorkflows(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListWorkflows(
 					gomock.Any(),
 					gomock.Any(),
@@ -2068,7 +2076,7 @@ func TestListWorkflows(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListWorkflows(
 					gomock.Any(),
 					gomock.Any(),

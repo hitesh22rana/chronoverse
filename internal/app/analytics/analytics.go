@@ -60,7 +60,7 @@ type Analytics struct {
 	svc  Service
 }
 
-// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
+// authTokenInterceptor extracts and validates the authToken from the metadata.
 func (a *Analytics) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
@@ -75,11 +75,12 @@ func (a *Analytics) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		}
 
 		ctx = auth.WithAuthorizationToken(ctx, authToken)
-		if _, err := a.auth.ValidateToken(ctx); err != nil {
+		newCtx, _, err := a.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		if err != nil {
 			return "", err
 		}
 
-		return handler(ctx, req)
+		return handler(newCtx, req)
 	}
 }
 
@@ -150,12 +151,15 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			// authToken must run before the audience/role interceptors so
+			// the JWT-validated audience/role are in context when the
+			// downstream interceptors read them.
+			analytics.authTokenInterceptor(),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false
 			}),
-			analytics.authTokenInterceptor(),
 		),
 	)
 

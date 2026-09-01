@@ -110,11 +110,12 @@ func (j *Jobs) unaryAuthTokenInterceptor() grpc.UnaryServerInterceptor {
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
-		if _, err := j.auth.ValidateToken(ctx); err != nil {
+		newCtx, _, err := j.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		if err != nil {
 			return "", err
 		}
 
-		return handler(ctx, req)
+		return handler(newCtx, req)
 	}
 }
 
@@ -128,13 +129,14 @@ func (j *Jobs) streamAuthTokenInterceptor() grpc.StreamServerInterceptor {
 		}
 
 		ctx := authpkg.WithAuthorizationToken(stream.Context(), authToken)
-		if _, err := j.auth.ValidateToken(ctx); err != nil {
+		newCtx, _, err := j.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		if err != nil {
 			return err
 		}
 
 		return handler(srv, &grpcmiddlewares.WrappedServerStream{
 			ServerStream: stream,
-			Ctx:          ctx,
+			Ctx:          newCtx,
 		})
 	}
 }
@@ -172,22 +174,24 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			// authToken must run before the audience/role interceptors so
+			// the JWT-validated audience/role are in context when the
+			// downstream interceptors read them.
+			jobs.unaryAuthTokenInterceptor(),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
-			jobs.unaryAuthTokenInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
+			jobs.streamAuthTokenInterceptor(),
 			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.StreamAudienceInterceptor(),
 			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.
 			grpcmiddlewares.StreamRoleInterceptor(func(_, _ string) bool {
 				return false
 			}),
-			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.
-			jobs.streamAuthTokenInterceptor(),
 		),
 	)
 

@@ -69,7 +69,7 @@ type Notifications struct {
 	svc  Service
 }
 
-// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
+// authTokenInterceptor extracts and validates the authToken from the metadata.
 func (n *Notifications) authTokenInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
@@ -84,11 +84,12 @@ func (n *Notifications) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
-		if _, err := n.auth.ValidateToken(ctx); err != nil {
+		newCtx, _, err := n.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		if err != nil {
 			return "", err
 		}
 
-		return handler(ctx, req)
+		return handler(newCtx, req)
 	}
 }
 
@@ -125,12 +126,15 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			// authToken must run before the audience/role interceptors so
+			// the JWT-validated audience/role are in context when the
+			// downstream interceptors read them.
+			notifications.authTokenInterceptor(),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
-			notifications.authTokenInterceptor(),
 		),
 	)
 

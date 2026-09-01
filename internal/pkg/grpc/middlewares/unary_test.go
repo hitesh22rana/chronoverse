@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 )
 
@@ -20,11 +21,17 @@ func TestUnaryLoggingInterceptorDoesNotLogAuthorizationToken(t *testing.T) {
 
 	core, logs := observer.New(zapcore.InfoLevel)
 	interceptor := grpcmiddlewares.UnaryLoggingInterceptor(zap.New(core))
+	// Audience and role are now derived from the validated JWT context
+	// (set by auth.ValidateToken), never from the metadata header. The
+	// metadata "audience"/"role" entries are still populated by the
+	// gateway for the unauthenticated RegisterUser/LoginUser hop, but
+	// they are intentionally NOT logged — the validated context is the
+	// only authoritative source.
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer "+sensitiveToken,
-		"audience", "users-service",
-		"role", "user",
 	))
+	ctx = auth.WithAudience(ctx, "users-service")
+	ctx = auth.WithRole(ctx, string(auth.RoleUser))
 
 	_, err := interceptor(
 		ctx,

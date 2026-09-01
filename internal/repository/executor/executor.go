@@ -653,8 +653,10 @@ func extractFieldFromRecordValue(recordValue []byte) (scheduledJobRecord, error)
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
+// The audience set names every service this repository may forward a call to
+// — the executor forwards job-state updates to the jobs-service.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
-	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
+	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject, "jobs-service")
 }
 
 // executeWorkflow executes the workflow.

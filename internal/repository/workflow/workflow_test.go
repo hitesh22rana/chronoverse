@@ -688,15 +688,15 @@ type testAuth struct {
 	issueToken func(context.Context, string) (string, error)
 }
 
-func (a testAuth) IssueToken(ctx context.Context, subject string) (string, error) {
+func (a testAuth) IssueToken(ctx context.Context, subject string, _ ...string) (string, error) {
 	if a.issueToken != nil {
 		return a.issueToken(ctx, subject)
 	}
 	return "token", nil
 }
 
-func (testAuth) ValidateToken(context.Context) (*jwt.Token, error) {
-	return &jwt.Token{Valid: true}, nil
+func (testAuth) ValidateToken(context.Context, string) (context.Context, *jwt.Token, error) {
+	return context.Background(), &jwt.Token{Valid: true}, nil
 }
 
 type testJobsClient struct {

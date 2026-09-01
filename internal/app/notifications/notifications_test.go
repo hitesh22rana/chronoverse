@@ -123,7 +123,7 @@ func TestCreateNotification(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.CreateNotificationRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateNotification(
 					gomock.Any(),
 					gomock.Any(),
@@ -152,7 +152,9 @@ func TestCreateNotification(t *testing.T) {
 					Payload: `{"key": "value"}`,
 				},
 			},
-			mock:  func(_ *notificationspb.CreateNotificationRequest) {},
+			mock: func(_ *notificationspb.CreateNotificationRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+			},
 			res:   nil,
 			isErr: true,
 		},
@@ -177,7 +179,7 @@ func TestCreateNotification(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.CreateNotificationRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -203,7 +205,7 @@ func TestCreateNotification(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.CreateNotificationRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateNotification(
 					gomock.Any(),
 					gomock.Any(),
@@ -251,7 +253,7 @@ func TestCreateNotification(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.CreateNotificationRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateNotification(
 					gomock.Any(),
 					gomock.Any(),
@@ -326,7 +328,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
@@ -355,7 +357,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -380,7 +382,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
@@ -426,7 +428,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
@@ -501,7 +503,7 @@ func TestListNotifications(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.ListNotificationsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListNotifications(
 					gomock.Any(),
 					gomock.Any(),
@@ -569,7 +571,7 @@ func TestListNotifications(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.ListNotificationsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			res:   nil,
 			isErr: true,
@@ -594,7 +596,7 @@ func TestListNotifications(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.ListNotificationsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListNotifications(
 					gomock.Any(),
 					gomock.Any(),
@@ -640,7 +642,7 @@ func TestListNotifications(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.ListNotificationsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListNotifications(
 					gomock.Any(),
 					gomock.Any(),

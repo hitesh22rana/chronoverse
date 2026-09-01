@@ -53,7 +53,7 @@ func newTestRepository(t *testing.T, preference string) *Repository {
 	ctrl := gomock.NewController(t)
 	_auth := authmock.NewMockIAuth(ctrl)
 	_auth.EXPECT().
-		IssueToken(gomock.Any(), gomock.Any()).
+		IssueToken(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return("test-token", nil).
 		AnyTimes()
 

@@ -1220,7 +1220,7 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 // withAuthorization issues the necessary headers and tokens for authorization.
 // Job-log lookups call workflows-service to enforce workflow ownership.
 func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
-	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, "workflows-service")
+	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, auth.ServiceNameWorkflows)
 }
 
 // parseTime parses the time.

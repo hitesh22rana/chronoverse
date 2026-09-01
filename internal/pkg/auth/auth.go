@@ -1,6 +1,5 @@
 //go:generate mockgen -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
 
-//nolint:goconst // service names are intentionally repeated across TrustAudiences/GatewayAudiences
 package auth
 
 import (
@@ -53,6 +52,23 @@ const (
 	// and test fixtures, but server-side authorization MUST read the role
 	// from the validated JWT claim — never from this header.
 	roleMetadataKey = "Role"
+)
+
+// ServiceName values identify JWT issuers and audiences.
+const (
+	ServiceNameServer             = "server"
+	ServiceNameUsers              = "users-service"
+	ServiceNameWorkflows          = "workflows-service"
+	ServiceNameJobs               = "jobs-service"
+	ServiceNameNotifications      = "notifications-service"
+	ServiceNameAnalytics          = "analytics-service"
+	ServiceNameSchedulingWorker   = "scheduling-worker"
+	ServiceNameWorkflowWorker     = "workflow-worker"
+	ServiceNameExecutionWorker    = "execution-worker"
+	ServiceNameRuntimeAgent       = "runtime-agent"
+	ServiceNameJoblogsProcessor   = "joblogs-processor"
+	ServiceNameAnalyticsProcessor = "analytics-processor"
+	ServiceNameOutboxRelay        = "outbox-relay"
 )
 
 // Role is the role of the audience.
@@ -489,41 +505,40 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	return outCtx, parsed, nil
 }
 
-// TrustAudiences lists every service identity trusted to issue tokens.
-// Keep it in sync with cmd/<svc>/main.go build ldflags.
-var TrustAudiences = []string{
-	"server",
-	"users-service",
-	"workflows-service",
-	"jobs-service",
-	"notifications-service",
-	"analytics-service",
-	"scheduling-worker",
-	"workflow-worker",
-	"execution-worker",
-	"runtime-agent",
-	"joblogs-processor",
-	"analytics-processor",
-	"outbox-relay",
+// Keep trustedIssuers in sync with cmd/<svc>/main.go build ldflags.
+var trustedIssuers = []string{
+	ServiceNameServer,
+	ServiceNameUsers,
+	ServiceNameWorkflows,
+	ServiceNameJobs,
+	ServiceNameNotifications,
+	ServiceNameAnalytics,
+	ServiceNameSchedulingWorker,
+	ServiceNameWorkflowWorker,
+	ServiceNameExecutionWorker,
+	ServiceNameRuntimeAgent,
+	ServiceNameJoblogsProcessor,
+	ServiceNameAnalyticsProcessor,
+	ServiceNameOutboxRelay,
 }
 
 // GatewayAudiences returns the audience set stamped into tokens the
 // gateway (server) mints or forwards. Every service the gateway may
 // forward a call to is included so the receiver can ValidateToken with
 // its own service name and the JWT remains valid. Adding a new gRPC
-// service requires updating both TrustAudiences and GatewayAudiences.
+// service requires updating trustedIssuers and GatewayAudiences.
 func GatewayAudiences() []string {
 	return []string{
-		"server",
-		"users-service",
-		"workflows-service",
-		"jobs-service",
-		"notifications-service",
-		"analytics-service",
+		ServiceNameServer,
+		ServiceNameUsers,
+		ServiceNameWorkflows,
+		ServiceNameJobs,
+		ServiceNameNotifications,
+		ServiceNameAnalytics,
 	}
 }
 
 // TrustedIssuer reports whether iss is a known platform service identity.
 func TrustedIssuer(iss string) bool {
-	return slices.Contains(TrustAudiences, iss)
+	return slices.Contains(trustedIssuers, iss)
 }

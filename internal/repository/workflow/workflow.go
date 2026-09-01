@@ -249,9 +249,9 @@ func (r *Repository) withAuthorization(parentCtx context.Context) (context.Conte
 		parentCtx,
 		r.auth,
 		authSubject,
-		"workflows-service",
-		"jobs-service",
-		"notifications-service",
+		auth.ServiceNameWorkflows,
+		auth.ServiceNameJobs,
+		auth.ServiceNameNotifications,
 	)
 }
 

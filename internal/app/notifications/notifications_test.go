@@ -123,7 +123,10 @@ func TestCreateNotification(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.CreateNotificationRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameNotifications),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateNotification(
 					gomock.Any(),
 					gomock.Any(),

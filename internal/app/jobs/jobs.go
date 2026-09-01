@@ -111,7 +111,7 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
-		newCtx, _, err := j.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		newCtx, _, err := j.auth.ValidateToken(ctx, authpkg.ServiceNameJobs)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return "", err
@@ -132,7 +132,7 @@ func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerI
 		}
 
 		ctx := authpkg.WithAuthorizationToken(stream.Context(), authToken)
-		newCtx, _, err := j.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		newCtx, _, err := j.auth.ValidateToken(ctx, authpkg.ServiceNameJobs)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return err

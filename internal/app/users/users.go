@@ -92,7 +92,7 @@ func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterce
 		}
 
 		ctx = auth.WithAuthorizationToken(ctx, authToken)
-		newCtx, _, err := u.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		newCtx, _, err := u.auth.ValidateToken(ctx, auth.ServiceNameUsers)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return "", err

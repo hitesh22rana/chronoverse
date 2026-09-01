@@ -125,7 +125,10 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameJobs),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -1080,7 +1083,10 @@ func TestStreamJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameJobs),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 
 				// Create a channel that will send a few logs then close
 				ch := make(chan *jobsmodel.JobLog, 3)

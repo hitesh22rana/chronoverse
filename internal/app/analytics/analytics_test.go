@@ -120,7 +120,10 @@ func TestGetUserAnalytics(t *testing.T) {
 				},
 			},
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameAnalytics),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetUserAnalytics(
 					gomock.Any(),
 					gomock.Any(),

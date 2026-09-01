@@ -131,7 +131,10 @@ func TestCreateWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.CreateWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameWorkflows),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().CreateWorkflow(
 					gomock.Any(),
 					gomock.Any(),

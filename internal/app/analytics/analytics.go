@@ -76,7 +76,7 @@ func (a *Analytics) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 		}
 
 		ctx = auth.WithAuthorizationToken(ctx, authToken)
-		newCtx, _, err := a.auth.ValidateToken(ctx, svcpkg.Info().GetName())
+		newCtx, _, err := a.auth.ValidateToken(ctx, auth.ServiceNameAnalytics)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return "", err

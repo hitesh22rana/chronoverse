@@ -11,7 +11,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -286,13 +285,5 @@ func TestGatewayAudiencesIncludesEveryForwardedService(t *testing.T) {
 		if _, ok := got[want]; !ok {
 			t.Fatalf("GatewayAudiences missing %q", want)
 		}
-	}
-}
-
-func TestExtractAudienceFromMetadataStillWorksForUnauthenticatedPath(t *testing.T) {
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(audienceMetadataKey, "users-service"))
-	aud, err := ExtractAudienceFromMetadata(ctx)
-	if err != nil || aud != "users-service" {
-		t.Fatalf("expected audience users-service, got aud=%q err=%v", aud, err)
 	}
 }

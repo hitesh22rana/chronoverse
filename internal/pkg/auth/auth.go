@@ -41,10 +41,8 @@ const (
 	// authorizationMetadataKey is the key for the token in the metadata.
 	authorizationMetadataKey = "Authorization"
 
-	// audienceMetadataKey is the key for the audience in the metadata.
-	// It is only honored on methods that have no token-validated audience
-	// in context (e.g. unauthenticated RegisterUser / LoginUser); for
-	// authenticated methods the audience is taken from the JWT claim.
+	// audienceMetadataKey is the key for the audience in outgoing metadata.
+	// Servers derive authenticated audiences from validated JWT claims.
 	audienceMetadataKey = "Audience"
 
 	// roleMetadataKey is the key for the role in the metadata.
@@ -241,26 +239,6 @@ func WithInternalServiceAuthorization(ctx context.Context, issuer IAuth, subject
 // WithSetAuthorizationTokenInHeaders sets the authorization token in the headers for clients.
 func WithSetAuthorizationTokenInHeaders(token string) metadata.MD {
 	return metadata.Pairs(authorizationMetadataKey, "Bearer "+token)
-}
-
-// ExtractAudienceFromMetadata extracts the audience from the metadata.
-//
-// Deprecated: server-side authorization MUST use the audience from the validated
-// JWT claim. This helper is retained for the unauthenticated RPC path
-// (RegisterUser / LoginUser) where no token exists and the only audience
-// authority is the gateway.
-func ExtractAudienceFromMetadata(ctx context.Context) (string, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", status.Error(codes.NotFound, "metadata is required")
-	}
-
-	audience := md.Get(audienceMetadataKey)
-	if len(audience) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "audience is required")
-	}
-
-	return audience[0], nil
 }
 
 // ExtractAuthorizationTokenFromMetadata extracts the authorization token from the metadata.

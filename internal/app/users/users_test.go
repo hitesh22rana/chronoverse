@@ -105,12 +105,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "success",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleAdmin,
-					)
+					return auth.WithRoleInMetadata(t.Context(), auth.RoleAdmin)
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
@@ -208,23 +203,6 @@ func TestRegisterUser(t *testing.T) {
 			res:   nil,
 			isErr: true,
 		},
-		{
-			name: "error: missing required headers in metadata",
-			args: args{
-				getCtx: func() context.Context {
-					return metadata.AppendToOutgoingContext(
-						t.Context(),
-					)
-				},
-				req: &userpb.RegisterUserRequest{
-					Email:    "test@gmail.com",
-					Password: "password12345",
-				},
-			},
-			mock:  func(_ *userpb.RegisterUserRequest) {},
-			res:   nil,
-			isErr: true,
-		},
 	}
 
 	defer ctrl.Finish()
@@ -271,12 +249,7 @@ func TestLoginUser(t *testing.T) {
 			name: "success",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleAdmin,
-					)
+					return auth.WithRoleInMetadata(t.Context(), auth.RoleAdmin)
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "test@gmail.com",
@@ -369,20 +342,6 @@ func TestLoginUser(t *testing.T) {
 					gomock.Any(),
 				).Return("", "", status.Errorf(codes.Internal, "internal server error"))
 			},
-			res:   nil,
-			isErr: true,
-		},
-		{
-			name: "error: missing required headers in metadata",
-			args: args{
-				getCtx: func() context.Context {
-					return metadata.AppendToOutgoingContext(
-						t.Context(),
-					)
-				},
-				req: &userpb.LoginUserRequest{},
-			},
-			mock:  func(_ *userpb.LoginUserRequest) {},
 			res:   nil,
 			isErr: true,
 		},

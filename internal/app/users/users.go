@@ -67,9 +67,8 @@ type Users struct {
 // authTokenInterceptor extracts and validates the authToken from the metadata.
 // On authenticated RPCs it delegates to ValidateToken which enforces the JWT
 // issuer/audience/role claims and writes them into context for downstream
-// authorization. On unauthenticated RPCs (RegisterUser/LoginUser) it seeds
-// the gateway audience from metadata and always assigns RoleUser before the
-// repository mints the session JWT.
+// authorization. On unauthenticated RPCs (RegisterUser/LoginUser) it assigns
+// RoleUser before the repository mints the session JWT.
 func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
@@ -77,15 +76,8 @@ func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterce
 			return handler(ctx, req)
 		}
 
-		// Unauthenticated RPC path: accept the gateway audience, but never a
-		// caller-provided role.
+		// Unauthenticated RPC path: never accept a caller-provided role.
 		if !isAuthRequired(info.FullMethod) {
-			audience, err := auth.ExtractAudienceFromMetadata(ctx) //nolint:staticcheck // intentional for unauthenticated Register/Login path
-			if err != nil {
-				grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-				return "", err
-			}
-			ctx = auth.WithAudience(ctx, audience)
 			ctx = auth.WithRole(ctx, auth.RoleUser.String())
 
 			return handler(ctx, req)
@@ -193,15 +185,12 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			// authToken must run before the audience/role interceptors so
+			// authToken must run before logging/role authorization so
 			// the JWT-validated audience/role are in context when the
-			// downstream interceptors read them. The unauthenticated
-			// RegisterUser/LoginUser path seeds audience/role from
-			// metadata and then returns, so the audience/role
-			// interceptors always see a populated context here.
+			// downstream interceptors read them. RegisterUser/LoginUser
+			// have no authenticated audience and receive a server-assigned role.
 			users.authTokenInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
-			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false
 			}),

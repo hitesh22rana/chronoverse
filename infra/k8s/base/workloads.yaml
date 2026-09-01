@@ -57,14 +57,14 @@ spec:
           readOnly: true
         livenessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50051", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/users-service/users-service.crt", "-tls-client-key=certs/users-service/users-service.key", "-tls-server-name=users-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50051", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/users-service/users-service.crt", "-tls-client-key=certs/users-service/users-service.key", "-tls-server-name=users-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
           initialDelaySeconds: 30
         readinessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50051", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/users-service/users-service.crt", "-tls-client-key=certs/users-service/users-service.key", "-tls-server-name=users-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50051", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/users-service/users-service.crt", "-tls-client-key=certs/users-service/users-service.key", "-tls-server-name=users-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
@@ -179,14 +179,14 @@ spec:
           readOnly: true
         livenessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50052", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/workflows-service/workflows-service.crt", "-tls-client-key=certs/workflows-service/workflows-service.key", "-tls-server-name=workflows-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50052", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/workflows-service/workflows-service.crt", "-tls-client-key=certs/workflows-service/workflows-service.key", "-tls-server-name=workflows-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
           initialDelaySeconds: 30
         readinessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50052", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/workflows-service/workflows-service.crt", "-tls-client-key=certs/workflows-service/workflows-service.key", "-tls-server-name=workflows-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50052", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/workflows-service/workflows-service.crt", "-tls-client-key=certs/workflows-service/workflows-service.key", "-tls-server-name=workflows-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
@@ -283,14 +283,14 @@ spec:
           readOnly: true
         livenessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50053", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/jobs-service/jobs-service.crt", "-tls-client-key=certs/jobs-service/jobs-service.key", "-tls-server-name=jobs-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50053", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/jobs-service/jobs-service.crt", "-tls-client-key=certs/jobs-service/jobs-service.key", "-tls-server-name=jobs-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
           initialDelaySeconds: 30
         readinessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50053", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/jobs-service/jobs-service.crt", "-tls-client-key=certs/jobs-service/jobs-service.key", "-tls-server-name=jobs-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50053", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/jobs-service/jobs-service.crt", "-tls-client-key=certs/jobs-service/jobs-service.key", "-tls-server-name=jobs-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
@@ -371,14 +371,14 @@ spec:
           readOnly: true
         livenessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50054", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/notifications-service/notifications-service.crt", "-tls-client-key=certs/notifications-service/notifications-service.key", "-tls-server-name=notifications-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50054", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/notifications-service/notifications-service.crt", "-tls-client-key=certs/notifications-service/notifications-service.key", "-tls-server-name=notifications-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
           initialDelaySeconds: 30
         readinessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50054", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/notifications-service/notifications-service.crt", "-tls-client-key=certs/notifications-service/notifications-service.key", "-tls-server-name=notifications-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50054", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/notifications-service/notifications-service.crt", "-tls-client-key=certs/notifications-service/notifications-service.key", "-tls-server-name=notifications-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
@@ -459,14 +459,14 @@ spec:
           readOnly: true
         livenessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50055", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/analytics-service/analytics-service.crt", "-tls-client-key=certs/analytics-service/analytics-service.key", "-tls-server-name=analytics-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50055", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/analytics-service/analytics-service.crt", "-tls-client-key=certs/analytics-service/analytics-service.key", "-tls-server-name=analytics-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5
           initialDelaySeconds: 30
         readinessProbe:
           exec:
-            command: ["/bin/grpc-health-probe", "-addr=localhost:50055", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/analytics-service/analytics-service.crt", "-tls-client-key=certs/analytics-service/analytics-service.key", "-tls-server-name=analytics-service", "-rpc-header=Audience:grpc_probe", "-rpc-header=Role:admin"]
+            command: ["/bin/grpc-health-probe", "-addr=localhost:50055", "-tls", "-tls-ca-cert=certs/ca/ca.crt", "-tls-client-cert=certs/analytics-service/analytics-service.crt", "-tls-client-key=certs/analytics-service/analytics-service.key", "-tls-server-name=analytics-service"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 5

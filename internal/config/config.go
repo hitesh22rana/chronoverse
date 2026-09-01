@@ -9,8 +9,7 @@ import (
 
 const (
 	envPrefix             = ""
-	productionEnvironment = "production"
-	insecureDefaultSecret = "a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?" //nolint:gosec // This known placeholder is explicitly rejected in production.
+	insecureDefaultSecret = "a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?" //nolint:gosec // This known placeholder is explicitly rejected in any environment.
 )
 
 // Environment holds the environment configuration.
@@ -36,7 +35,7 @@ func (c CommandIdempotency) validate() error {
 
 // Crypto holds the configuration for the crypto service.
 type Crypto struct {
-	Secret string `envconfig:"CRYPTO_SECRET" default:"a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?"`
+	Secret string `envconfig:"CRYPTO_SECRET" required:"true"`
 }
 
 // ClientTLS holds the TLS configuration for the client.

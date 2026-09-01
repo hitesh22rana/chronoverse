@@ -1551,6 +1551,8 @@ services:
     image: server
     container_name: server
     environment:
+      CRYPTO_SECRET: ${CRYPTO_SECRET:-a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?-dev-crypto}
+      SERVER_CSRF_HMAC_SECRET: ${SERVER_CSRF_HMAC_SECRET:-a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?-dev-csrf}
       SERVER_HOST: 0.0.0.0
       REDIS_HOST: redis
       REDIS_TLS_ENABLED: true

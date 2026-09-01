@@ -195,6 +195,7 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			// authToken must run before the audience/role interceptors so
 			// the JWT-validated audience/role are in context when the
 			// downstream interceptors read them. The unauthenticated
@@ -202,7 +203,6 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 			// metadata and then returns, so the audience/role
 			// interceptors always see a populated context here.
 			users.authTokenInterceptor(),
-			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false

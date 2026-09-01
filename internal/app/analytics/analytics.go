@@ -151,11 +151,11 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			// authToken must run before the audience/role interceptors so
 			// the JWT-validated audience/role are in context when the
 			// downstream interceptors read them.
 			analytics.authTokenInterceptor(),
-			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false

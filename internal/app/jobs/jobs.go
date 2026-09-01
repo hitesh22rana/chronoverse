@@ -174,20 +174,20 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			// authToken must run before the audience/role interceptors so
 			// the JWT-validated audience/role are in context when the
 			// downstream interceptors read them.
 			jobs.unaryAuthTokenInterceptor(),
-			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
 		),
 		grpc.ChainStreamInterceptor(
+			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			//nolint:contextcheck // stream interceptor wraps context via WrappedServerStream
 			jobs.streamAuthTokenInterceptor(),
-			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.StreamAudienceInterceptor(),
 			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.
 			grpcmiddlewares.StreamRoleInterceptor(func(_, _ string) bool {

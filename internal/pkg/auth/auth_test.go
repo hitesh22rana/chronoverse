@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -50,6 +52,7 @@ func TestValidateTokenAllowsBoundedClockSkew(t *testing.T) {
 		jwtNotBeforeClaim: now.Add(clockSkewLeeway / 2).Unix(),
 		jwtExpiryClaim:    now.Add(time.Minute).Unix(),
 		jwtRoleClaim:      string(RoleUser),
+		jwtSubjectClaim:   "user-42",
 	})
 
 	ctx := WithAuthorizationToken(context.Background(), token)
@@ -126,6 +129,7 @@ func TestValidateTokenAcceptsTrustedCrossServiceIssuer(t *testing.T) {
 		jwtNotBeforeClaim: now.Unix(),
 		jwtExpiryClaim:    now.Add(time.Minute).Unix(),
 		jwtRoleClaim:      string(RoleAdmin),
+		jwtSubjectClaim:   "worker-42",
 	})
 
 	ctx := WithAuthorizationToken(context.Background(), token)
@@ -152,6 +156,25 @@ func TestValidateTokenRejectsMissingRoleClaim(t *testing.T) {
 	}
 }
 
+func TestValidateTokenRejectsMissingSubjectClaim(t *testing.T) {
+	authService, privateKey, _ := newTestAuth(t)
+
+	now := time.Now()
+	token := signToken(t, privateKey, jwt.MapClaims{
+		jwtIssuerClaim:    testIssuer,
+		jwtAudienceClaim:  []string{"users-service"},
+		jwtNotBeforeClaim: now.Unix(),
+		jwtExpiryClaim:    now.Add(time.Minute).Unix(),
+		jwtRoleClaim:      string(RoleUser),
+	})
+
+	ctx := WithAuthorizationToken(context.Background(), token)
+	_, _, err := authService.ValidateToken(ctx, "users-service")
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("expected unauthenticated for missing subject claim, got %v", err)
+	}
+}
+
 func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
 	authService, privateKey, _ := newTestAuth(t)
 	now := time.Now()
@@ -171,6 +194,9 @@ func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
 		{name: "missing role", mutate: func(claims jwt.MapClaims) {
 			delete(claims, jwtRoleClaim)
 		}, wantCode: codes.Unauthenticated},
+		{name: "missing subject", mutate: func(claims jwt.MapClaims) {
+			delete(claims, jwtSubjectClaim)
+		}, wantCode: codes.Unauthenticated},
 		{name: "not valid yet", mutate: func(claims jwt.MapClaims) {
 			claims[jwtNotBeforeClaim] = now.Add(time.Minute).Unix()
 		}, wantCode: codes.Unauthenticated},
@@ -184,6 +210,7 @@ func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
 				jwtNotBeforeClaim: now.Add(-2 * time.Minute).Unix(),
 				jwtExpiryClaim:    now.Add(-time.Minute).Unix(),
 				jwtRoleClaim:      string(RoleUser),
+				jwtSubjectClaim:   "user-42",
 			}
 			tt.mutate(claims)
 			token := signToken(t, privateKey, claims)
@@ -194,6 +221,15 @@ func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
 				t.Fatalf("expected %s, got %v", tt.wantCode, err)
 			}
 		})
+	}
+}
+
+func TestIsOnlyTokenExpiredRejectsAdditionalValidationErrors(t *testing.T) {
+	if !isOnlyTokenExpired(errors.Join(jwt.ErrTokenInvalidClaims, jwt.ErrTokenExpired)) {
+		t.Fatal("JWT invalid-claims wrapper must not hide an otherwise valid expiration")
+	}
+	if isOnlyTokenExpired(errors.Join(jwt.ErrTokenInvalidClaims, jwt.ErrTokenExpired, jwt.ErrTokenInvalidAudience)) {
+		t.Fatal("additional validation errors must reject the expired-session exception")
 	}
 }
 
@@ -285,5 +321,15 @@ func TestGatewayAudiencesIncludesEveryForwardedService(t *testing.T) {
 		if _, ok := got[want]; !ok {
 			t.Fatalf("GatewayAudiences missing %q", want)
 		}
+	}
+}
+
+func TestIsInternalServiceIgnoresRoleMetadata(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(roleMetadataKey, RoleAdmin.String()))
+	if IsInternalService(ctx) {
+		t.Fatal("caller-controlled role metadata must not identify an internal service")
+	}
+	if !IsInternalService(WithRole(ctx, RoleAdmin.String())) {
+		t.Fatal("validated admin role should identify an internal service")
 	}
 }

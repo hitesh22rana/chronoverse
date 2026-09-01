@@ -289,22 +289,10 @@ func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
 }
 
 // IsInternalService checks if the request is from an internal service by
-// reading the role from the JWT-validated context. Falls back to metadata
-// only when no validated context exists (unauthenticated RPC path).
+// reading the role from the JWT-validated context.
 func IsInternalService(ctx context.Context) bool {
-	if role, err := roleFromContext(ctx); err == nil {
-		return role == RoleAdmin.String()
-	}
-
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return false
-	}
-	role := md.Get(roleMetadataKey)
-	if len(role) == 0 {
-		return false
-	}
-	return role[0] == RoleAdmin.String()
+	role, err := roleFromContext(ctx)
+	return err == nil && role == RoleAdmin.String()
 }
 
 // IAuth is the interface for the Auth service.
@@ -481,11 +469,13 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	if !ok || roleVal == "" {
 		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
 	}
+	subVal, ok := claims[jwtSubjectClaim].(string)
+	if !ok || subVal == "" {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token missing subject claim")
+	}
 	if expired {
 		return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
 	}
-
-	subVal, _ := claims[jwtSubjectClaim].(string) //nolint:errcheck // type assertion ok check not needed for optional sub claim
 
 	outCtx = WithAudience(ctx, expectedAudience)
 	outCtx = WithRole(outCtx, roleVal)

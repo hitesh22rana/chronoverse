@@ -33,7 +33,9 @@ func (w *WrappedServerStream) Context() context.Context {
 func StreamAudienceInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if _, err := auth.ExtractAudienceFromContext(stream.Context()); err != nil {
-			return err
+			if !isHealthCheckContext(stream.Context()) {
+				return err
+			}
 		}
 
 		return handler(srv, &WrappedServerStream{
@@ -50,6 +52,9 @@ func StreamRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.Stream
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		role, err := auth.ExtractRoleFromContext(stream.Context())
 		if err != nil {
+			if isHealthCheckContext(stream.Context()) {
+				return handler(srv, stream)
+			}
 			return err
 		}
 

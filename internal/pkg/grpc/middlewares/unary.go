@@ -34,7 +34,7 @@ func UnaryAudienceInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if _, err := auth.ExtractAudienceFromContext(ctx); err != nil {
 			if !isHealthCheckContext(ctx) {
-				return "", err
+				return nil, err
 			}
 		}
 
@@ -53,11 +53,11 @@ func UnaryRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.UnarySe
 			if isHealthCheckContext(ctx) {
 				return handler(ctx, req)
 			}
-			return "", err
+			return nil, err
 		}
 
 		if callbackFunc(info.FullMethod, role) {
-			return "", status.Error(codes.PermissionDenied, "unauthorized access")
+			return nil, status.Error(codes.PermissionDenied, "unauthorized access")
 		}
 
 		return handler(ctx, req)

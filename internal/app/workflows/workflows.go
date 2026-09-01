@@ -95,14 +95,14 @@ func (w *Workflows) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return "", err
+			return nil, err
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
 		newCtx, _, err := w.auth.ValidateToken(ctx, authpkg.ServiceNameWorkflows)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return "", err
+			return nil, err
 		}
 
 		return handler(newCtx, req)

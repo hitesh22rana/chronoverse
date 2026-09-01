@@ -107,14 +107,14 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return "", err
+			return nil, err
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
 		newCtx, _, err := j.auth.ValidateToken(ctx, authpkg.ServiceNameJobs)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return "", err
+			return nil, err
 		}
 
 		return handler(newCtx, req)
@@ -123,7 +123,11 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 
 // streamAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the streaming RPC calls.
 func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
-	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if isHealthCheckRoute(info.FullMethod) {
+			return handler(srv, stream)
+		}
+
 		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(stream.Context())
 		if err != nil {

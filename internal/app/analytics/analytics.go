@@ -72,14 +72,14 @@ func (a *Analytics) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return "", err
+			return nil, err
 		}
 
 		ctx = auth.WithAuthorizationToken(ctx, authToken)
 		newCtx, _, err := a.auth.ValidateToken(ctx, auth.ServiceNameAnalytics)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return "", err
+			return nil, err
 		}
 
 		return handler(newCtx, req)

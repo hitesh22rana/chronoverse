@@ -218,10 +218,9 @@ func WithAuthorizationTokenInMetadata(ctx context.Context, token string) context
 // ValidateToken validates that its own service name is in the list.
 func WithInternalServiceAuthorization(ctx context.Context, issuer IAuth, subject string, audiences ...string) (context.Context, error) {
 	if len(audiences) == 0 {
-		audiences = []string{svcpkg.Info().GetName()}
+		return nil, status.Error(codes.InvalidArgument, "receiver audience is required")
 	}
 
-	ctx = WithAudience(ctx, audiences[0])
 	ctx = WithRole(ctx, RoleAdmin.String())
 
 	token, err := issuer.IssueToken(ctx, subject, audiences...)
@@ -229,8 +228,6 @@ func WithInternalServiceAuthorization(ctx context.Context, issuer IAuth, subject
 		return nil, err
 	}
 
-	ctx = WithAudienceInMetadata(ctx, audiences[0])
-	ctx = WithRoleInMetadata(ctx, RoleAdmin)
 	ctx = WithAuthorizationTokenInMetadata(ctx, token)
 
 	return ctx, nil

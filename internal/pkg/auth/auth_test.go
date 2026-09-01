@@ -333,3 +333,10 @@ func TestIsInternalServiceIgnoresRoleMetadata(t *testing.T) {
 		t.Fatal("validated admin role should identify an internal service")
 	}
 }
+
+func TestWithInternalServiceAuthorizationRequiresAudience(t *testing.T) {
+	_, err := WithInternalServiceAuthorization(context.Background(), nil, "worker-42")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected invalid argument without a receiver audience, got %v", err)
+	}
+}

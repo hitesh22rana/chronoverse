@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
@@ -40,6 +41,43 @@ func TestMain(t *testing.T) {
 	}, _auth, svc)
 
 	_ = server
+}
+
+func TestHealthWatchBypassesAuthentication(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	server := jobs.New(t.Context(), &jobs.Config{Deadline: 500 * time.Millisecond},
+		authmock.NewMockIAuth(ctrl), jobsmock.NewMockService(ctrl))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		if err := server.Serve(lis); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to serve health test server: %v\n", err)
+		}
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = lis.Close()
+	})
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("create health client connection: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	stream, err := grpc_health_v1.NewHealthClient(conn).Watch(t.Context(), &grpc_health_v1.HealthCheckRequest{})
+	if err != nil {
+		t.Fatalf("watch health: %v", err)
+	}
+	response, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("receive health status: %v", err)
+	}
+	if response.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		t.Fatalf("expected serving health status, got %s", response.Status)
+	}
 }
 
 func initClient(server *grpc.Server) (client jobspb.JobsServiceClient, _close func()) {

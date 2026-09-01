@@ -192,9 +192,7 @@ func WithAudienceInMetadata(ctx context.Context, audience string) context.Contex
 }
 
 // WithRoleInMetadata sets the role in the metadata for outgoing requests.
-// Server-side authorization MUST NOT trust this header; it exists only to
-// thread the gateway-set default through internal hops where no token
-// validation has happened yet.
+// Retained for client compatibility; servers ignore this untrusted header.
 func WithRoleInMetadata(ctx context.Context, role Role) context.Context {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if ok {
@@ -263,26 +261,6 @@ func ExtractAudienceFromMetadata(ctx context.Context) (string, error) {
 	}
 
 	return audience[0], nil
-}
-
-// ExtractRoleFromMetadata extracts the role from the metadata.
-//
-// Deprecated: server-side authorization MUST use the role from the validated
-// JWT claim via ExtractRoleFromContext. This helper is retained for the
-// unauthenticated RPC path (RegisterUser / LoginUser) and for callers that
-// explicitly want to seed role/audience before a token exists.
-func ExtractRoleFromMetadata(ctx context.Context) (string, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", status.Error(codes.NotFound, "metadata is required")
-	}
-
-	role := md.Get(roleMetadataKey)
-	if len(role) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "role is required")
-	}
-
-	return role[0], nil
 }
 
 // ExtractAuthorizationTokenFromMetadata extracts the authorization token from the metadata.

@@ -109,7 +109,7 @@ func TestRegisterUser(t *testing.T) {
 						auth.WithAudienceInMetadata(
 							t.Context(), "server-test",
 						),
-						auth.RoleUser,
+						auth.RoleAdmin,
 					)
 				},
 				req: &userpb.RegisterUserRequest{
@@ -121,7 +121,12 @@ func TestRegisterUser(t *testing.T) {
 				svc.EXPECT().RegisterUser(
 					gomock.Any(),
 					gomock.Any(),
-				).Return("user1", "pat1", nil)
+				).Do(func(ctx context.Context, _ *userpb.RegisterUserRequest) {
+					role, err := auth.ExtractRoleFromContext(ctx)
+					if err != nil || role != auth.RoleUser.String() {
+						t.Errorf("expected server-assigned user role, got role=%q err=%v", role, err)
+					}
+				}).Return("user1", "pat1", nil)
 			},
 			res: &userpb.RegisterUserResponse{
 				UserId: "user1",
@@ -136,7 +141,7 @@ func TestRegisterUser(t *testing.T) {
 						auth.WithAudienceInMetadata(
 							t.Context(), "server-test",
 						),
-						auth.RoleUser,
+						auth.RoleAdmin,
 					)
 				},
 				req: &userpb.RegisterUserRequest{
@@ -270,7 +275,7 @@ func TestLoginUser(t *testing.T) {
 						auth.WithAudienceInMetadata(
 							t.Context(), "server-test",
 						),
-						auth.RoleUser,
+						auth.RoleAdmin,
 					)
 				},
 				req: &userpb.LoginUserRequest{
@@ -282,7 +287,12 @@ func TestLoginUser(t *testing.T) {
 				svc.EXPECT().LoginUser(
 					gomock.Any(),
 					gomock.Any(),
-				).Return("user1", "pat1", nil)
+				).Do(func(ctx context.Context, _ *userpb.LoginUserRequest) {
+					role, err := auth.ExtractRoleFromContext(ctx)
+					if err != nil || role != auth.RoleUser.String() {
+						t.Errorf("expected server-assigned user role, got role=%q err=%v", role, err)
+					}
+				}).Return("user1", "pat1", nil)
 			},
 			res:   &userpb.LoginUserResponse{},
 			isErr: false,

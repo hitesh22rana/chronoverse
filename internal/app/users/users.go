@@ -68,9 +68,8 @@ type Users struct {
 // On authenticated RPCs it delegates to ValidateToken which enforces the JWT
 // issuer/audience/role claims and writes them into context for downstream
 // authorization. On unauthenticated RPCs (RegisterUser/LoginUser) it seeds
-// the audience/role from metadata so the repository can mint the user's
-// session JWT — the metadata is trusted ONLY on this exempt path because
-// there is no incoming token to validate.
+// the gateway audience from metadata and always assigns RoleUser before the
+// repository mints the session JWT.
 func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
@@ -78,7 +77,8 @@ func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterce
 			return handler(ctx, req)
 		}
 
-		// Unauthenticated RPC path: seed audience/role from metadata.
+		// Unauthenticated RPC path: accept the gateway audience, but never a
+		// caller-provided role.
 		if !isAuthRequired(info.FullMethod) {
 			audience, err := auth.ExtractAudienceFromMetadata(ctx) //nolint:staticcheck // intentional for unauthenticated Register/Login path
 			if err != nil {
@@ -86,13 +86,7 @@ func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterce
 				return "", err
 			}
 			ctx = auth.WithAudience(ctx, audience)
-
-			role, err := auth.ExtractRoleFromMetadata(ctx) //nolint:staticcheck // intentional for unauthenticated Register/Login path
-			if err != nil {
-				grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-				return "", err
-			}
-			ctx = auth.WithRole(ctx, role)
+			ctx = auth.WithRole(ctx, auth.RoleUser.String())
 
 			return handler(ctx, req)
 		}

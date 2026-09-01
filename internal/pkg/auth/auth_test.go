@@ -289,17 +289,6 @@ func TestGatewayAudiencesIncludesEveryForwardedService(t *testing.T) {
 	}
 }
 
-func TestExtractRoleFromMetadataStillWorksForUnauthenticatedPath(t *testing.T) {
-	// The unauthenticated RegisterUser/LoginUser path on users-service
-	// seeds audience/role from metadata so the repo can mint a session
-	// JWT. Server-side authorization MUST NOT use this helper.
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(roleMetadataKey, string(RoleUser)))
-	role, err := ExtractRoleFromMetadata(ctx)
-	if err != nil || role != string(RoleUser) {
-		t.Fatalf("expected role %q, got role=%q err=%v", RoleUser, role, err)
-	}
-}
-
 func TestExtractAudienceFromMetadataStillWorksForUnauthenticatedPath(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(audienceMetadataKey, "users-service"))
 	aud, err := ExtractAudienceFromMetadata(ctx)

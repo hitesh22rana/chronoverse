@@ -158,7 +158,7 @@ func TestGetUserAnalytics(t *testing.T) {
 				},
 			},
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,
@@ -340,7 +340,7 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 				},
 			},
 			mock: func(_ *analyticspb.GetWorkflowAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,

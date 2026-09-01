@@ -1,5 +1,6 @@
 //go:generate mockgen -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
 
+//nolint:goconst // service names are intentionally repeated across TrustAudiences/GatewayAudiences
 package auth
 
 import (
@@ -476,7 +477,7 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
 	}
 
-	subVal, _ := claims[jwtSubjectClaim].(string)
+	subVal, _ := claims[jwtSubjectClaim].(string) //nolint:errcheck // type assertion ok check not needed for optional sub claim
 
 	outCtx = WithAudience(ctx, expectedAudience)
 	outCtx = WithRole(outCtx, roleVal)

@@ -80,13 +80,13 @@ func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
 
 		// Unauthenticated RPC path: seed audience/role from metadata.
 		if !isAuthRequired(info.FullMethod) {
-			audience, err := auth.ExtractAudienceFromMetadata(ctx)
+			audience, err := auth.ExtractAudienceFromMetadata(ctx) //nolint:staticcheck // intentional for unauthenticated Register/Login path
 			if err != nil {
 				return "", err
 			}
 			ctx = auth.WithAudience(ctx, audience)
 
-			role, err := auth.ExtractRoleFromMetadata(ctx)
+			role, err := auth.ExtractRoleFromMetadata(ctx) //nolint:staticcheck // intentional for unauthenticated Register/Login path
 			if err != nil {
 				return "", err
 			}

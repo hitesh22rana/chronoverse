@@ -46,11 +46,11 @@ func TestValidateTokenAllowsBoundedClockSkew(t *testing.T) {
 
 	now := time.Now()
 	token := signToken(t, privateKey, jwt.MapClaims{
-		jwtIssuerClaim:     testIssuer,
-		jwtAudienceClaim:   []string{"users-service"},
-		jwtNotBeforeClaim:  now.Add(clockSkewLeeway / 2).Unix(),
-		jwtExpiryClaim:     now.Add(time.Minute).Unix(),
-		jwtRoleClaim:       string(RoleUser),
+		jwtIssuerClaim:    testIssuer,
+		jwtAudienceClaim:  []string{"users-service"},
+		jwtNotBeforeClaim: now.Add(clockSkewLeeway / 2).Unix(),
+		jwtExpiryClaim:    now.Add(time.Minute).Unix(),
+		jwtRoleClaim:      string(RoleUser),
 	})
 
 	ctx := WithAuthorizationToken(context.Background(), token)
@@ -193,11 +193,11 @@ func TestIssueTokenStampsAudienceAndRole(t *testing.T) {
 		t.Fatalf("unexpected claims type %T", parsed.Claims)
 	}
 
-	if iss, _ := claims[jwtIssuerClaim].(string); iss != testIssuer {
+	if iss, _ := claims[jwtIssuerClaim].(string); iss != testIssuer { //nolint:errcheck // test type assertion
 		t.Fatalf("expected issuer %q, got %q", testIssuer, iss)
 	}
 
-	if role, _ := claims[jwtRoleClaim].(string); role != string(RoleUser) {
+	if role, _ := claims[jwtRoleClaim].(string); role != string(RoleUser) { //nolint:errcheck // test type assertion
 		t.Fatalf("expected role %q, got %q", RoleUser, role)
 	}
 }
@@ -243,4 +243,3 @@ func TestExtractAudienceFromMetadataStillWorksForUnauthenticatedPath(t *testing.
 		t.Fatalf("expected audience users-service, got aud=%q err=%v", aud, err)
 	}
 }
-

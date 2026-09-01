@@ -185,6 +185,7 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 			}),
 		),
 		grpc.ChainStreamInterceptor(
+			//nolint:contextcheck // stream interceptor wraps context via WrappedServerStream
 			jobs.streamAuthTokenInterceptor(),
 			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.StreamAudienceInterceptor(),

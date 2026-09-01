@@ -69,11 +69,28 @@ function dateHeading(iso: string) {
     return format(d, "MMM d, yyyy")
 }
 
+function escapeHtml(text: string): string {
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
 function highlightNotification(message: string): string {
-    return message.replace(
-        /'([^']+)'/g,
-        (_, p1) => `<span class="font-semibold">${p1}</span>`
-    );
+    let result = "";
+    let lastIndex = 0;
+    const regex = /'([^']+)'/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(message)) !== null) {
+        const before = message.slice(lastIndex, match.index);
+        result += escapeHtml(before);
+        const quoted = match[1] ?? "";
+        result += `<span class="font-semibold">${escapeHtml(quoted)}</span>`;
+        lastIndex = match.index + match[0].length;
+    }
+    result += escapeHtml(message.slice(lastIndex));
+    return result;
 }
 
 interface NotificationsDrawerProps {

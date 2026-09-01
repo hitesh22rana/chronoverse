@@ -304,6 +304,14 @@ func TestIssueTokenStampsAudienceAndRole(t *testing.T) {
 	}
 }
 
+func TestIssueTokenRequiresAudience(t *testing.T) {
+	authService, _, _ := newTestAuth(t)
+	_, err := authService.IssueToken(WithRole(t.Context(), RoleUser.String()), "user-42")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got %v", err)
+	}
+}
+
 func TestTrustedIssuerKnownService(t *testing.T) {
 	for _, iss := range []string{"server", "users-service", "scheduling-worker"} {
 		if !TrustedIssuer(iss) {

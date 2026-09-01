@@ -31,9 +31,9 @@ type RoleInterceptorCallbackFunc func(method, role string) bool
 // skips them and the logging fields will simply omit "audience" / "role"
 // for those calls.
 func UnaryAudienceInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if _, err := auth.ExtractAudienceFromContext(ctx); err != nil {
-			if !isHealthCheckContext(ctx) {
+			if !isHealthCheckRoute(info.FullMethod) {
 				return nil, err
 			}
 		}
@@ -50,7 +50,7 @@ func UnaryRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.UnarySe
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		role, err := auth.ExtractRoleFromContext(ctx)
 		if err != nil {
-			if isHealthCheckContext(ctx) {
+			if isHealthCheckRoute(info.FullMethod) {
 				return handler(ctx, req)
 			}
 			return nil, err
@@ -64,14 +64,10 @@ func UnaryRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.UnarySe
 	}
 }
 
-// isHealthCheckContext returns true when the gRPC method is a health check.
+// isHealthCheckRoute returns true when the gRPC method is a health check.
 // Health checks bypass ValidateToken so they have no audience/role in
 // context; the audience/role interceptors must tolerate that.
-func isHealthCheckContext(ctx context.Context) bool {
-	method, ok := grpc.Method(ctx)
-	if !ok {
-		return false
-	}
+func isHealthCheckRoute(method string) bool {
 	return strings.Contains(method, "/grpc.health.v1.Health/")
 }
 

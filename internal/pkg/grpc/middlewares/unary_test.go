@@ -63,6 +63,32 @@ func TestUnaryLoggingInterceptorDoesNotLogAuthorizationToken(t *testing.T) {
 	}
 }
 
+func TestUnaryAuthorizationInterceptorsBypassHealthWithoutTransportStream(t *testing.T) {
+	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.health.v1.Health/Check"}
+	handlerCalled := false
+	handler := func(_ context.Context, req any) (any, error) { //nolint:unparam // gRPC handler signature requires an error result.
+		handlerCalled = true
+		return req, nil
+	}
+	role := grpcmiddlewares.UnaryRoleInterceptor(func(string, string) bool {
+		t.Fatal("health check must not invoke role authorization")
+		return false
+	})
+
+	_, err := grpcmiddlewares.UnaryAudienceInterceptor()(
+		t.Context(), struct{}{}, info,
+		func(ctx context.Context, req any) (any, error) {
+			return role(ctx, req, info, handler)
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected health check to bypass authorization, got %v", err)
+	}
+	if !handlerCalled {
+		t.Fatal("expected health handler to run")
+	}
+}
+
 func TestLogAuthenticationFailure(t *testing.T) {
 	core, logs := observer.New(zapcore.WarnLevel)
 	err := status.Error(codes.Unauthenticated, "invalid token")

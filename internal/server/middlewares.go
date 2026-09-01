@@ -254,14 +254,15 @@ func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next htt
 		// is in the list — see auth.ValidateToken and SECURITY_ASSESSMENT
 		// STACK_C (C1). Metadata Role/Audience are intentionally NOT
 		// populated; the JWT claim is the sole authority.
-		authToken, err := s.auth.IssueToken(r.Context(), userID, auth.GatewayAudiences()...)
+		ctx := auth.WithRole(r.Context(), auth.RoleUser.String())
+		authToken, err := s.auth.IssueToken(ctx, userID, auth.GatewayAudiences()...)
 		if err != nil {
 			http.Error(w, "failed to issue token", http.StatusInternalServerError)
 			return
 		}
 
 		// Attach the token to the metadata for outgoing requests and call the next handler
-		ctx := auth.WithAuthorizationTokenInMetadata(r.Context(), authToken)
+		ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

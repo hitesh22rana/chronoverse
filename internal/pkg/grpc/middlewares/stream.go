@@ -31,9 +31,9 @@ func (w *WrappedServerStream) Context() context.Context {
 // context. See UnaryAudienceInterceptor for the rationale — metadata is
 // never trusted on authenticated RPCs.
 func StreamAudienceInterceptor() grpc.StreamServerInterceptor {
-	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if _, err := auth.ExtractAudienceFromContext(stream.Context()); err != nil {
-			if !isHealthCheckContext(stream.Context()) {
+			if !isHealthCheckRoute(info.FullMethod) {
 				return err
 			}
 		}
@@ -52,7 +52,7 @@ func StreamRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.Stream
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		role, err := auth.ExtractRoleFromContext(stream.Context())
 		if err != nil {
-			if isHealthCheckContext(stream.Context()) {
+			if isHealthCheckRoute(info.FullMethod) {
 				return handler(srv, stream)
 			}
 			return err

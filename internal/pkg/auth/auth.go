@@ -295,9 +295,8 @@ func New() (*Auth, error) {
 }
 
 // IssueToken issues a new token with the given subject. audiences controls
-// the JWT "aud" claim; when no audiences are provided the token is bound to
-// the issuer's own service. The role placed in context (see WithRole) is
-// stamped into the signed "role" claim.
+// the JWT "aud" claim and must name at least one receiver. The role placed in
+// context (see WithRole) is stamped into the signed "role" claim.
 func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...string) (token string, err error) {
 	ctx, span := a.tp.Start(ctx, "Auth.IssueToken")
 	defer func() {
@@ -309,7 +308,7 @@ func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...stri
 	}()
 
 	if len(audiences) == 0 {
-		audiences = []string{a.issuer}
+		return "", status.Error(codes.InvalidArgument, "receiver audience is required")
 	}
 
 	role, err := roleFromContext(ctx)

@@ -55,7 +55,7 @@ make k8s/render/production
 make k8s/dry-run/local
 make k8s/dry-run/production
 scripts/k8s/setup.sh --mode local --dry-run
-scripts/k8s/setup.sh --mode production --dry-run
+scripts/k8s/setup.sh --mode production --context <context> --dry-run
 ```
 
 The render targets work offline. The kubectl client dry runs still use API discovery and therefore need a reachable selected cluster; full OpenAPI schema validation likewise needs a live target cluster or a separate validator such as `kubeconform`. The setup-script dry runs additionally exercise prerequisite, existing-Secret inspection, and Secret preparation logic against the selected kubectl context.

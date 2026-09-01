@@ -60,8 +60,8 @@ type Analytics struct {
 	svc  Service
 }
 
-// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
-func (a *Analytics) authTokenInterceptor() grpc.UnaryServerInterceptor {
+// authTokenInterceptor extracts and validates the authToken from the metadata.
+func (a *Analytics) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
@@ -71,15 +71,18 @@ func (a *Analytics) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		// Extract the authToken from metadata.
 		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
-			return "", err
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
+			return nil, err
 		}
 
 		ctx = auth.WithAuthorizationToken(ctx, authToken)
-		if _, err := a.auth.ValidateToken(ctx); err != nil {
-			return "", err
+		newCtx, _, err := a.auth.ValidateToken(ctx, auth.ServiceNameAnalytics)
+		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
+			return nil, err
 		}
 
-		return handler(ctx, req)
+		return handler(newCtx, req)
 	}
 }
 
@@ -150,12 +153,15 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			// authToken must run before the audience/role interceptors so
+			// the JWT-validated audience/role are in context when the
+			// downstream interceptors read them.
+			analytics.authTokenInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false
 			}),
-			analytics.authTokenInterceptor(),
 		),
 	)
 

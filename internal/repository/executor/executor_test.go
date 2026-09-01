@@ -505,12 +505,12 @@ func TestRecoverExpiredLeaseBatchStartsRenewalForEveryClaimedJob(t *testing.T) {
 
 type fakeAuth struct{}
 
-func (fakeAuth) IssueToken(context.Context, string) (string, error) {
+func (fakeAuth) IssueToken(context.Context, string, ...string) (string, error) {
 	return "token", nil
 }
 
-func (fakeAuth) ValidateToken(context.Context) (*jwt.Token, error) {
-	return &jwt.Token{}, nil
+func (fakeAuth) ValidateToken(context.Context, string) (context.Context, *jwt.Token, error) {
+	return context.Background(), &jwt.Token{}, nil
 }
 
 type claimErrorJobsClient struct {

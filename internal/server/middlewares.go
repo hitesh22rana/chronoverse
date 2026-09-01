@@ -209,9 +209,14 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 		// Attach the token to the context
 		ctx := auth.WithAuthorizationToken(r.Context(), authToken)
 
-		// validate the token
-		// if the error code is DeadlineExceeded, it means the token is expired but it is still valid
-		if _, err = s.auth.ValidateToken(ctx); err != nil && status.Code(err) != codes.DeadlineExceeded {
+		// The cookie stores a token issued by users-service at
+		// login/register; its aud claim is "users-service". We accept it
+		// here so the session is recognized, but the middleware does NOT
+		// stamp audience/role into the per-request downstream context —
+		// each forwarded call re-issues a fresh token with the correct
+		// audience for the destination service (see
+		// withAttachAuthorizationTokenInMetadataHeaderMiddleware).
+		if _, _, err = s.auth.ValidateToken(ctx, svcpkg.Info().GetName()); err != nil && status.Code(err) != codes.DeadlineExceeded {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
@@ -232,26 +237,8 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 	}
 }
 
-// withAttachBasicMetadataHeaderMiddleware is a middleware that attaches the basic metadata to the context.
-// This middleware should only be called after the withVerifySessionMiddleware middleware.
-// Basic metadata includes the following:
-// - Audience.
-// - Role.
-func withAttachBasicMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Attach the audience and role to the context
-		ctx := auth.WithAudience(r.Context(), svcpkg.Info().GetName())
-		ctx = auth.WithRole(ctx, string(auth.RoleUser))
-
-		// Attach the audience and role to the metadata for outgoing requests and call the next handler
-		ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
-		ctx = auth.WithRoleInMetadata(ctx, auth.RoleUser)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	}
-}
-
 // withAttachAuthorizationTokenInMetadataHeaderMiddleware is a middleware that attaches the authorization token to the context.
-// This middleware should only be called after the withVerifySessionMiddleware and withAttachBasicMetadataHeaderMiddleware middlewares.
+// This middleware should only be called after the withVerifySessionMiddleware middleware.
 func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// There might be chances that the auth token is expired but the session is still valid, since the auth token is short-lived and the session is long-lived.
@@ -262,15 +249,19 @@ func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next htt
 			return
 		}
 
-		// Issue a new token
-		authToken, err := s.auth.IssueToken(r.Context(), userID)
+		// Issue a fresh token whose aud claim names every service the
+		// gateway may forward to. Each receiver validates its own name
+		// is in the list. Metadata Role/Audience are intentionally NOT
+		// populated; the JWT claim is the sole authority.
+		ctx := auth.WithRole(r.Context(), auth.RoleUser.String())
+		authToken, err := s.auth.IssueToken(ctx, userID, auth.GatewayAudiences()...)
 		if err != nil {
 			http.Error(w, "failed to issue token", http.StatusInternalServerError)
 			return
 		}
 
 		// Attach the token to the metadata for outgoing requests and call the next handler
-		ctx := auth.WithAuthorizationTokenInMetadata(r.Context(), authToken)
+		ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

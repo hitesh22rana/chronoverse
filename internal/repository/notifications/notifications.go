@@ -449,8 +449,9 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
+// Notification preference lookup calls users-service.
 func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
-	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject)
+	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, auth.ServiceNameUsers)
 }
 
 func encodeCursor(cursor string) string {

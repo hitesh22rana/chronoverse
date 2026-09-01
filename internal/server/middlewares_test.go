@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,12 +12,47 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 )
+
+func TestAttachAuthorizationTokenSeedsUserRole(t *testing.T) {
+	authService := authmock.NewMockIAuth(gomock.NewController(t))
+	authService.EXPECT().IssueToken(
+		gomock.Any(), "user-42",
+		auth.ServiceNameServer,
+		auth.ServiceNameUsers,
+		auth.ServiceNameWorkflows,
+		auth.ServiceNameJobs,
+		auth.ServiceNameNotifications,
+		auth.ServiceNameAnalytics,
+	).DoAndReturn(func(ctx context.Context, _ string, _ ...string) (string, error) {
+		role, err := auth.ExtractRoleFromContext(ctx)
+		if err != nil || role != auth.RoleUser.String() {
+			t.Fatalf("expected user role, got role=%q err=%v", role, err)
+		}
+		return "token", nil
+	})
+
+	s := &Server{auth: authService}
+	handler := s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) },
+	))
+	req := httptest.NewRequest(http.MethodGet, "/jobs", http.NoBody)
+	req = req.WithContext(context.WithValue(req.Context(), userIDKey{}, "user-42"))
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, res.Code)
+	}
+}
 
 func TestCORSMiddlewareAllowsIdempotencyKeyHeader(t *testing.T) {
 	s := &Server{

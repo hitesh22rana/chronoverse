@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // loggingInterceptor is a custom logging interceptor that uses zap logger.
@@ -62,6 +63,19 @@ func loggingInterceptor(l *zap.Logger) logging.Logger {
 			logger.Info(msg)
 		}
 	})
+}
+
+// LogAuthenticationFailure records errors returned before the regular RPC
+// logging interceptor can run.
+func LogAuthenticationFailure(ctx context.Context, logger *zap.Logger, err error) {
+	code := status.Code(err)
+	loggingInterceptor(logger).Log(
+		ctx,
+		serverCodeToLevel(code),
+		"",
+		"grpc.code", code.String(),
+		"grpc.error", err.Error(),
+	)
 }
 
 // serverCodeToLevel maps gRPC status codes to logging levels.

@@ -130,7 +130,7 @@ Common commands:
 kubectl kustomize infra/k8s/overlays/local
 kubectl kustomize infra/k8s/overlays/production
 scripts/k8s/setup.sh --mode local
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 The setup script preserves valid, complete pre-created Secrets and generates missing

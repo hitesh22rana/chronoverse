@@ -14,10 +14,11 @@ func TestValidateServerSecrets(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			name:        "development defaults remain available",
+			name:        "development placeholder is now rejected",
 			environment: "development",
 			crypto:      insecureDefaultSecret,
 			csrf:        insecureDefaultSecret,
+			wantErr:     true,
 		},
 		{
 			name:        "production secrets are distinct",
@@ -44,6 +45,13 @@ func TestValidateServerSecrets(t *testing.T) {
 			environment: productionEnvironment,
 			crypto:      "0123456789abcdef0123456789abcdef",
 			csrf:        "",
+			wantErr:     true,
+		},
+		{
+			name:        "development crypto is empty",
+			environment: "development",
+			crypto:      "",
+			csrf:        "abcdef0123456789abcdef0123456789",
 			wantErr:     true,
 		},
 		{

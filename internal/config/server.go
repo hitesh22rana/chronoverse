@@ -52,21 +52,20 @@ func InitServerConfig() (*ServerConfig, error) {
 }
 
 func validateServerSecrets(cfg *ServerConfig) error {
-	if cfg.Env != productionEnvironment {
-		return nil
+	if cfg.Secret == "" {
+		return errors.New("CRYPTO_SECRET must not be empty")
 	}
-
 	if cfg.Secret == insecureDefaultSecret {
-		return errors.New("CRYPTO_SECRET must not use the insecure development default in production")
+		return errors.New("CRYPTO_SECRET must not use the insecure development default")
 	}
 	if cfg.CSRFHMACSecret == "" {
-		return errors.New("SERVER_CSRF_HMAC_SECRET must not be empty in production")
+		return errors.New("SERVER_CSRF_HMAC_SECRET must not be empty")
 	}
 	if cfg.CSRFHMACSecret == insecureDefaultSecret {
-		return errors.New("SERVER_CSRF_HMAC_SECRET must not use the insecure development default in production")
+		return errors.New("SERVER_CSRF_HMAC_SECRET must not use the insecure development default")
 	}
 	if cfg.Secret == cfg.CSRFHMACSecret {
-		return errors.New("CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET must be different in production")
+		return errors.New("CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET must be different")
 	}
 
 	return nil

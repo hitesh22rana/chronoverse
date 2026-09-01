@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const testIssuer = "test-issuer"
+const testIssuer = "users-service"
 
 func newTestAuth(t *testing.T) (*Auth, ed25519.PrivateKey, ed25519.PublicKey) {
 	t.Helper()
@@ -113,6 +113,25 @@ func TestValidateTokenRejectsWrongIssuer(t *testing.T) {
 	_, _, err := authService.ValidateToken(ctx, "users-service")
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("expected unauthenticated for wrong issuer, got %v", err)
+	}
+}
+
+func TestValidateTokenAcceptsTrustedCrossServiceIssuer(t *testing.T) {
+	authService, privateKey, _ := newTestAuth(t)
+	authService.issuer = "jobs-service"
+
+	now := time.Now()
+	token := signToken(t, privateKey, jwt.MapClaims{
+		jwtIssuerClaim:    "workflow-worker",
+		jwtAudienceClaim:  []string{"jobs-service"},
+		jwtNotBeforeClaim: now.Unix(),
+		jwtExpiryClaim:    now.Add(time.Minute).Unix(),
+		jwtRoleClaim:      string(RoleAdmin),
+	})
+
+	ctx := WithAuthorizationToken(context.Background(), token)
+	if _, _, err := authService.ValidateToken(ctx, "jobs-service"); err != nil {
+		t.Fatalf("validate trusted cross-service token: %v", err)
 	}
 }
 

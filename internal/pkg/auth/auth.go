@@ -457,7 +457,6 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		},
 		jwt.WithLeeway(clockSkewLeeway),
 		jwt.WithAudience(expectedAudience),
-		jwt.WithIssuer(a.issuer),
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
@@ -470,6 +469,10 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
 		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
+	}
+	issuer, issuerErr := claims.GetIssuer()
+	if issuerErr != nil || !TrustedIssuer(issuer) {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
 	}
 
 	roleVal, ok := claims[jwtRoleClaim].(string)
@@ -486,11 +489,8 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	return outCtx, parsed, nil
 }
 
-// TrustAudiences lists every service identity whose tokens a receiver will
-// accept for the audience claim. It is used by code paths that need to
-// validate an audience claim read from raw claims (e.g. log enrichment on
-// handlers that have not yet called ValidateToken). Treat it as the source
-// of truth — keep in sync with cmd/<svc>/main.go build ldflags.
+// TrustAudiences lists every service identity trusted to issue tokens.
+// Keep it in sync with cmd/<svc>/main.go build ldflags.
 var TrustAudiences = []string{
 	"server",
 	"users-service",

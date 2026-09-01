@@ -1218,12 +1218,9 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
-// The audience set names every service this repository may forward a call to
-// — the jobs repository is used by scheduling-worker (which writes terminal
-// states to jobs-service) and execution-worker (which writes job progress
-// and terminal states to jobs-service).
+// Job-log lookups call workflows-service to enforce workflow ownership.
 func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
-	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, "jobs-service")
+	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, "workflows-service")
 }
 
 // parseTime parses the time.

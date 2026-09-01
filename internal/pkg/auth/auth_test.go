@@ -153,6 +153,51 @@ func TestValidateTokenRejectsMissingRoleClaim(t *testing.T) {
 	}
 }
 
+func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
+	authService, privateKey, _ := newTestAuth(t)
+	now := time.Now()
+
+	tests := []struct {
+		name     string
+		mutate   func(jwt.MapClaims)
+		wantCode codes.Code
+	}{
+		{name: "expired only", mutate: func(jwt.MapClaims) {}, wantCode: codes.DeadlineExceeded},
+		{name: "wrong audience", mutate: func(claims jwt.MapClaims) {
+			claims[jwtAudienceClaim] = []string{"workflows-service"}
+		}, wantCode: codes.Unauthenticated},
+		{name: "untrusted issuer", mutate: func(claims jwt.MapClaims) {
+			claims[jwtIssuerClaim] = "rogue-issuer"
+		}, wantCode: codes.Unauthenticated},
+		{name: "missing role", mutate: func(claims jwt.MapClaims) {
+			delete(claims, jwtRoleClaim)
+		}, wantCode: codes.Unauthenticated},
+		{name: "not valid yet", mutate: func(claims jwt.MapClaims) {
+			claims[jwtNotBeforeClaim] = now.Add(time.Minute).Unix()
+		}, wantCode: codes.Unauthenticated},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claims := jwt.MapClaims{
+				jwtIssuerClaim:    testIssuer,
+				jwtAudienceClaim:  []string{"users-service"},
+				jwtNotBeforeClaim: now.Add(-2 * time.Minute).Unix(),
+				jwtExpiryClaim:    now.Add(-time.Minute).Unix(),
+				jwtRoleClaim:      string(RoleUser),
+			}
+			tt.mutate(claims)
+			token := signToken(t, privateKey, claims)
+			ctx := WithAuthorizationToken(context.Background(), token)
+
+			_, _, err := authService.ValidateToken(ctx, "users-service")
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("expected %s, got %v", tt.wantCode, err)
+			}
+		})
+	}
+}
+
 func TestValidateTokenPropagatesClaimsToContext(t *testing.T) {
 	authService, privateKey, _ := newTestAuth(t)
 

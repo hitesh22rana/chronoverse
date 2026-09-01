@@ -437,6 +437,38 @@ func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...stri
 	return signed, nil
 }
 
+func isOnlyTokenExpired(err error) bool {
+	if !errors.Is(err, jwt.ErrTokenExpired) {
+		return false
+	}
+
+	var onlyExpiration func(error) bool
+	onlyExpiration = func(current error) bool {
+		//nolint:errorlint // Leaf identity is required; errors.Is would hide sibling validation failures.
+		if current == jwt.ErrTokenExpired || current == jwt.ErrTokenInvalidClaims {
+			return true
+		}
+		if joined, ok := current.(interface{ Unwrap() []error }); ok {
+			errs := joined.Unwrap()
+			if len(errs) == 0 {
+				return false
+			}
+			for _, inner := range errs {
+				if !onlyExpiration(inner) {
+					return false
+				}
+			}
+			return true
+		}
+		if inner := errors.Unwrap(current); inner != nil {
+			return onlyExpiration(inner)
+		}
+		return false
+	}
+
+	return onlyExpiration(err)
+}
+
 // ValidateToken validates the token carried in context, enforces the issuer
 // and audience claims, and writes the validated role/audience/subject into
 // the returned context for downstream authorization. expectedAudience MUST
@@ -475,10 +507,8 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		jwt.WithAudience(expectedAudience),
 		jwt.WithExpirationRequired(),
 	)
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
-		}
+	expired := isOnlyTokenExpired(err)
+	if err != nil && !expired {
 		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", err)
 	}
 
@@ -494,6 +524,9 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	roleVal, ok := claims[jwtRoleClaim].(string)
 	if !ok || roleVal == "" {
 		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
+	}
+	if expired {
+		return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
 	}
 
 	subVal, _ := claims[jwtSubjectClaim].(string) //nolint:errcheck // type assertion ok check not needed for optional sub claim

@@ -251,8 +251,7 @@ func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next htt
 
 		// Issue a fresh token whose aud claim names every service the
 		// gateway may forward to. Each receiver validates its own name
-		// is in the list — see auth.ValidateToken and SECURITY_ASSESSMENT
-		// STACK_C (C1). Metadata Role/Audience are intentionally NOT
+		// is in the list. Metadata Role/Audience are intentionally NOT
 		// populated; the JWT claim is the sole authority.
 		ctx := auth.WithRole(r.Context(), auth.RoleUser.String())
 		authToken, err := s.auth.IssueToken(ctx, userID, auth.GatewayAudiences()...)

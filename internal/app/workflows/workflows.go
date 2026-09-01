@@ -82,8 +82,7 @@ type Workflows struct {
 // authTokenInterceptor extracts and validates the authToken from the metadata.
 // ValidateToken enforces the JWT issuer/audience/role claims and writes them
 // into context; the metadata "Role" / "Audience" headers are intentionally
-// never consulted for authorization — see C2 in
-// SECURITY_ASSESSMENT_STACK_C.md.
+// never consulted for authorization.
 func (w *Workflows) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.

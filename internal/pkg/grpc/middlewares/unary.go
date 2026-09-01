@@ -44,8 +44,7 @@ func UnaryAudienceInterceptor() grpc.UnaryServerInterceptor {
 
 // UnaryRoleInterceptor reads the role from the JWT-validated context (set
 // by ValidateToken) and dispatches the callback. The metadata "Role" header
-// is intentionally NEVER consulted — see the C2 finding in
-// SECURITY_ASSESSMENT_STACK_C.md.
+// is intentionally NEVER consulted.
 func UnaryRoleInterceptor(callbackFunc RoleInterceptorCallbackFunc) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		role, err := auth.ExtractRoleFromContext(ctx)

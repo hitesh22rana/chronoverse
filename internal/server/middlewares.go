@@ -237,26 +237,8 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 	}
 }
 
-// withAttachBasicMetadataHeaderMiddleware is a middleware that attaches the basic metadata to the context.
-// This middleware should only be called after the withVerifySessionMiddleware middleware.
-// Basic metadata includes the following:
-// - Audience.
-// - Role.
-func withAttachBasicMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Attach the audience and role to the context
-		ctx := auth.WithAudience(r.Context(), svcpkg.Info().GetName())
-		ctx = auth.WithRole(ctx, string(auth.RoleUser))
-
-		// Attach the audience and role to the metadata for outgoing requests and call the next handler
-		ctx = auth.WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
-		ctx = auth.WithRoleInMetadata(ctx, auth.RoleUser)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	}
-}
-
 // withAttachAuthorizationTokenInMetadataHeaderMiddleware is a middleware that attaches the authorization token to the context.
-// This middleware should only be called after the withVerifySessionMiddleware and withAttachBasicMetadataHeaderMiddleware middlewares.
+// This middleware should only be called after the withVerifySessionMiddleware middleware.
 func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// There might be chances that the auth token is expired but the session is still valid, since the auth token is short-lived and the session is long-lived.

@@ -107,12 +107,7 @@ func TestCreateNotification(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -140,12 +135,7 @@ func TestCreateNotification(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -166,12 +156,7 @@ func TestCreateNotification(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -192,12 +177,7 @@ func TestCreateNotification(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -240,12 +220,7 @@ func TestCreateNotification(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -316,12 +291,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -345,12 +315,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -370,12 +335,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -416,12 +376,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -491,12 +446,7 @@ func TestListNotifications(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -559,12 +509,7 @@ func TestListNotifications(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -584,12 +529,7 @@ func TestListNotifications(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -630,12 +570,7 @@ func TestListNotifications(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},

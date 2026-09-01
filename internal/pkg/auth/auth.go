@@ -40,33 +40,16 @@ const (
 
 	// authorizationMetadataKey is the key for the token in the metadata.
 	authorizationMetadataKey = "Authorization"
-
-	// audienceMetadataKey is the key for the audience in outgoing metadata.
-	// Servers derive authenticated audiences from validated JWT claims.
-	audienceMetadataKey = "Audience"
-
-	// roleMetadataKey is the key for the role in the metadata.
-	// Kept as a constant for backwards-compatible client-side population
-	// and test fixtures, but server-side authorization MUST read the role
-	// from the validated JWT claim — never from this header.
-	roleMetadataKey = "Role"
 )
 
 // ServiceName values identify JWT issuers and audiences.
 const (
-	ServiceNameServer             = "server"
-	ServiceNameUsers              = "users-service"
-	ServiceNameWorkflows          = "workflows-service"
-	ServiceNameJobs               = "jobs-service"
-	ServiceNameNotifications      = "notifications-service"
-	ServiceNameAnalytics          = "analytics-service"
-	ServiceNameSchedulingWorker   = "scheduling-worker"
-	ServiceNameWorkflowWorker     = "workflow-worker"
-	ServiceNameExecutionWorker    = "execution-worker"
-	ServiceNameRuntimeAgent       = "runtime-agent"
-	ServiceNameJoblogsProcessor   = "joblogs-processor"
-	ServiceNameAnalyticsProcessor = "analytics-processor"
-	ServiceNameOutboxRelay        = "outbox-relay"
+	ServiceNameServer        = "server"
+	ServiceNameUsers         = "users-service"
+	ServiceNameWorkflows     = "workflows-service"
+	ServiceNameJobs          = "jobs-service"
+	ServiceNameNotifications = "notifications-service"
+	ServiceNameAnalytics     = "analytics-service"
 )
 
 // Role is the role of the audience.
@@ -174,31 +157,6 @@ func WithSubject(ctx context.Context, subject string) context.Context {
 // WithAuthorizationToken sets the authorization token in the context.
 func WithAuthorizationToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, tokenContextKey{}, token)
-}
-
-// WithAudienceInMetadata sets the audience in the metadata for outgoing requests.
-// The audience is honored by services only on unauthenticated RPCs; authenticated
-// RPCs must derive the audience from the JWT claim.
-func WithAudienceInMetadata(ctx context.Context, audience string) context.Context {
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if ok {
-		md = md.Copy()
-		md.Delete(audienceMetadataKey)
-		ctx = metadata.NewOutgoingContext(ctx, md)
-	}
-	return metadata.AppendToOutgoingContext(ctx, audienceMetadataKey, audience)
-}
-
-// WithRoleInMetadata sets the role in the metadata for outgoing requests.
-// Retained for client compatibility; servers ignore this untrusted header.
-func WithRoleInMetadata(ctx context.Context, role Role) context.Context {
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if ok {
-		md = md.Copy()
-		md.Delete(roleMetadataKey)
-		ctx = metadata.NewOutgoingContext(ctx, md)
-	}
-	return metadata.AppendToOutgoingContext(ctx, roleMetadataKey, string(role))
 }
 
 // WithAuthorizationTokenInMetadata sets the authorization token in the metadata for outgoing requests.
@@ -489,13 +447,13 @@ var trustedIssuers = []string{
 	ServiceNameJobs,
 	ServiceNameNotifications,
 	ServiceNameAnalytics,
-	ServiceNameSchedulingWorker,
-	ServiceNameWorkflowWorker,
-	ServiceNameExecutionWorker,
-	ServiceNameRuntimeAgent,
-	ServiceNameJoblogsProcessor,
-	ServiceNameAnalyticsProcessor,
-	ServiceNameOutboxRelay,
+	"scheduling-worker",
+	"workflow-worker",
+	"execution-worker",
+	"runtime-agent",
+	"joblogs-processor",
+	"analytics-processor",
+	"outbox-relay",
 }
 
 // GatewayAudiences returns the audience set stamped into tokens the

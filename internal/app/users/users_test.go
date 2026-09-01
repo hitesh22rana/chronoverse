@@ -105,7 +105,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "success",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(t.Context(), auth.RoleAdmin)
+					return metadata.AppendToOutgoingContext(t.Context(), "Role", auth.RoleAdmin.String())
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
@@ -132,12 +132,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleAdmin,
-					)
+					return t.Context()
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "",
@@ -157,12 +152,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "error: user already exists",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
@@ -182,12 +172,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "error: internal server error",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
@@ -249,7 +234,7 @@ func TestLoginUser(t *testing.T) {
 			name: "success",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(t.Context(), auth.RoleAdmin)
+					return metadata.AppendToOutgoingContext(t.Context(), "Role", auth.RoleAdmin.String())
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "test@gmail.com",
@@ -274,12 +259,7 @@ func TestLoginUser(t *testing.T) {
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "",
@@ -299,12 +279,7 @@ func TestLoginUser(t *testing.T) {
 			name: "error: user does not exist",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "test1@gmail.com",
@@ -324,12 +299,7 @@ func TestLoginUser(t *testing.T) {
 			name: "error: internal server error",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "test@gmail.com",
@@ -392,12 +362,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -434,12 +399,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -458,12 +418,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -502,12 +457,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -530,12 +480,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -599,12 +544,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -628,12 +568,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -653,12 +588,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -699,12 +629,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -728,12 +653,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},

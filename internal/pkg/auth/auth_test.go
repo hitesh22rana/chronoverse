@@ -188,6 +188,9 @@ func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
 		{name: "wrong audience", mutate: func(claims jwt.MapClaims) {
 			claims[jwtAudienceClaim] = []string{"workflows-service"}
 		}, wantCode: codes.Unauthenticated},
+		{name: "missing audience", mutate: func(claims jwt.MapClaims) {
+			delete(claims, jwtAudienceClaim)
+		}, wantCode: codes.Unauthenticated},
 		{name: "untrusted issuer", mutate: func(claims jwt.MapClaims) {
 			claims[jwtIssuerClaim] = "rogue-issuer"
 		}, wantCode: codes.Unauthenticated},
@@ -325,7 +328,7 @@ func TestGatewayAudiencesIncludesEveryForwardedService(t *testing.T) {
 }
 
 func TestIsInternalServiceIgnoresRoleMetadata(t *testing.T) {
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(roleMetadataKey, RoleAdmin.String()))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("Role", RoleAdmin.String()))
 	if IsInternalService(ctx) {
 		t.Fatal("caller-controlled role metadata must not identify an internal service")
 	}

@@ -111,12 +111,7 @@ func TestCreateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -150,12 +145,7 @@ func TestCreateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -180,12 +170,7 @@ func TestCreateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -235,12 +220,7 @@ func TestCreateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -315,12 +295,7 @@ func TestUpdateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -348,12 +323,7 @@ func TestUpdateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -377,12 +347,7 @@ func TestUpdateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -430,12 +395,7 @@ func TestUpdateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -509,12 +469,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -539,12 +494,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -565,12 +515,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -591,12 +536,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -639,12 +579,7 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -715,12 +650,7 @@ func TestGetWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -773,12 +703,7 @@ func TestGetWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -798,12 +723,7 @@ func TestGetWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -844,12 +764,7 @@ func TestGetWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -919,12 +834,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -978,12 +888,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1002,12 +907,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1026,12 +926,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1070,12 +965,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1144,12 +1034,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1175,12 +1060,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1206,12 +1086,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1231,12 +1106,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1256,12 +1126,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1302,12 +1167,7 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1377,12 +1237,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1406,12 +1261,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1431,12 +1281,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1456,12 +1301,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1501,12 +1341,7 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1575,12 +1410,7 @@ func TestTerminateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1604,12 +1434,7 @@ func TestTerminateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1629,12 +1454,7 @@ func TestTerminateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1675,12 +1495,7 @@ func TestTerminateWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1750,12 +1565,7 @@ func TestDeleteWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1779,12 +1589,7 @@ func TestDeleteWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1804,12 +1609,7 @@ func TestDeleteWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1850,12 +1650,7 @@ func TestDeleteWorkflow(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1925,12 +1720,7 @@ func TestListWorkflows(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1993,12 +1783,7 @@ func TestListWorkflows(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -2018,12 +1803,7 @@ func TestListWorkflows(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -2064,12 +1844,7 @@ func TestListWorkflows(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},

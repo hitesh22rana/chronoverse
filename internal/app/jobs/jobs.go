@@ -96,7 +96,7 @@ type Jobs struct {
 }
 
 // unaryAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the unary RPC calls.
-func (j *Jobs) unaryAuthTokenInterceptor() grpc.UnaryServerInterceptor {
+func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
@@ -106,12 +106,14 @@ func (j *Jobs) unaryAuthTokenInterceptor() grpc.UnaryServerInterceptor {
 		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return "", err
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
 		newCtx, _, err := j.auth.ValidateToken(ctx, svcpkg.Info().GetName())
 		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return "", err
 		}
 
@@ -120,17 +122,19 @@ func (j *Jobs) unaryAuthTokenInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // streamAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the streaming RPC calls.
-func (j *Jobs) streamAuthTokenInterceptor() grpc.StreamServerInterceptor {
+func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(stream.Context())
 		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(stream.Context(), logger, err)
 			return err
 		}
 
 		ctx := authpkg.WithAuthorizationToken(stream.Context(), authToken)
 		newCtx, _, err := j.auth.ValidateToken(ctx, svcpkg.Info().GetName())
 		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return err
 		}
 
@@ -174,20 +178,20 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			// authToken must run before the audience/role interceptors so
 			// the JWT-validated audience/role are in context when the
 			// downstream interceptors read them.
-			jobs.unaryAuthTokenInterceptor(),
+			jobs.unaryAuthTokenInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
 		),
 		grpc.ChainStreamInterceptor(
-			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			//nolint:contextcheck // stream interceptor wraps context via WrappedServerStream
-			jobs.streamAuthTokenInterceptor(),
+			jobs.streamAuthTokenInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.StreamAudienceInterceptor(),
 			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.
 			grpcmiddlewares.StreamRoleInterceptor(func(_, _ string) bool {

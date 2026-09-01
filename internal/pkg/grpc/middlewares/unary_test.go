@@ -10,7 +10,9 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
@@ -60,5 +62,21 @@ func TestUnaryLoggingInterceptorDoesNotLogAuthorizationToken(t *testing.T) {
 	}
 	if fields["role"] != "user" {
 		t.Fatalf("expected role field to remain available, got %#v", fields)
+	}
+}
+
+func TestLogAuthenticationFailure(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	err := status.Error(codes.Unauthenticated, "invalid token")
+
+	grpcmiddlewares.LogAuthenticationFailure(context.Background(), zap.New(core), err)
+
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("expected one log entry, got %d", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if fields["grpc.code"] != codes.Unauthenticated.String() || fields["grpc.error"] != err.Error() {
+		t.Fatalf("unexpected authentication failure fields: %#v", fields)
 	}
 }

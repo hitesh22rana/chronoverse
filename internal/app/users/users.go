@@ -71,7 +71,7 @@ type Users struct {
 // the audience/role from metadata so the repository can mint the user's
 // session JWT — the metadata is trusted ONLY on this exempt path because
 // there is no incoming token to validate.
-func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
+func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
@@ -82,12 +82,14 @@ func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		if !isAuthRequired(info.FullMethod) {
 			audience, err := auth.ExtractAudienceFromMetadata(ctx) //nolint:staticcheck // intentional for unauthenticated Register/Login path
 			if err != nil {
+				grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 				return "", err
 			}
 			ctx = auth.WithAudience(ctx, audience)
 
 			role, err := auth.ExtractRoleFromMetadata(ctx) //nolint:staticcheck // intentional for unauthenticated Register/Login path
 			if err != nil {
+				grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 				return "", err
 			}
 			ctx = auth.WithRole(ctx, role)
@@ -99,12 +101,14 @@ func (u *Users) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		// aud claim names this service.
 		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return "", err
 		}
 
 		ctx = auth.WithAuthorizationToken(ctx, authToken)
 		newCtx, _, err := u.auth.ValidateToken(ctx, svcpkg.Info().GetName())
 		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return "", err
 		}
 
@@ -195,14 +199,14 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
-			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			// authToken must run before the audience/role interceptors so
 			// the JWT-validated audience/role are in context when the
 			// downstream interceptors read them. The unauthenticated
 			// RegisterUser/LoginUser path seeds audience/role from
 			// metadata and then returns, so the audience/role
 			// interceptors always see a populated context here.
-			users.authTokenInterceptor(),
+			users.authTokenInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(_, _ string) bool {
 				return false

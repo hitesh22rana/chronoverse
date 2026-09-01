@@ -11,8 +11,8 @@ docker compose -f compose.prod.yaml up -d
 
 Persist these values in your secret manager and reuse them across server
 restarts. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct.
-Production startup rejects empty values, the known development placeholder, and
-reused server secrets.
+Startup rejects empty values, the known development placeholder, and reused
+server secrets in any environment.
 
 For Kubernetes, use the setup script. It preserves valid, complete pre-created Secrets and generates missing bootstrap material:
 

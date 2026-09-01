@@ -515,10 +515,11 @@ production environments should manage:
 - Database passwords and `MEILISEARCH_MASTER_KEY`.
 - Public hostnames, allowed origins, and same-site cookie policy.
 
-Production startup rejects an empty CSRF HMAC secret, the known development
-placeholder, and deployments that reuse one value for `CRYPTO_SECRET` and
-`SERVER_CSRF_HMAC_SECRET`. Persist distinct random values in your secret
-manager. The production Compose profile requires both variables explicitly.
+Startup rejects empty values, the known development placeholder, and
+deployments that reuse one value for `CRYPTO_SECRET` and
+`SERVER_CSRF_HMAC_SECRET` in any environment. Persist distinct random values
+in your secret manager. The production Compose profile requires both variables
+explicitly.
 
 Kubernetes production deployments may pre-create these Secrets to own their
 credentials and trust material. `scripts/k8s/setup.sh` preserves valid, complete

@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+unset CRYPTO_SECRET SERVER_CSRF_HMAC_SECRET
 
 command -v docker >/dev/null 2>&1 || {
   echo "docker is required to validate Compose configuration" >&2

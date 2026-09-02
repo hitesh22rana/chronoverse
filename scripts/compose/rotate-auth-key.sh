@@ -43,7 +43,8 @@ echo "🔐 Rotating key for $issuer..."
 # Generate new Ed25519 keypair (overwrite current).
 openssl genpkey -algorithm ED25519 -outform pem -out "$issuer_dir/auth.ed" 2>/dev/null
 openssl pkey -in "$issuer_dir/auth.ed" -pubout -out "$issuer_dir/auth.ed.pub" 2>/dev/null
-chmod 400 "$issuer_dir/auth.ed"
+chmod 440 "$issuer_dir/auth.ed"
+chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true
 chmod 444 "$issuer_dir/auth.ed.pub"
 
 new_kid="$issuer:$(date +%Y%m%d)-$(openssl rand -hex 2)"
@@ -75,9 +76,9 @@ jq --arg iss "$issuer" 'to_entries[] | select(.value.iss == $iss) | "\(.key): \(
 cat <<EOF
 
 Next steps:
-  1. Restart services to pick up the new bundle (Compose: docker compose up -d --force-recreate)
-  2. After grace period, prune the old kid from trusted.json:
-       jq 'del(."$old_kid")' $trusted > $trusted.tmp && mv $trusted.tmp $trusted
-     (only if old_kid was set)
+  1. Distribute the updated trusted.json to verifiers and restart verifiers before the signer (Compose: docker compose up -d --force-recreate)
+  2. After grace period (15m), prune the old kid and restart verifiers again:
+       jq 'del(."$old_kid")' $trusted > $trusted.tmp && mv $trusted.tmp $trusted && docker compose up -d --force-recreate
+     (only if old_kid was set; verifiers cache the bundle in memory and must reload to drop the old kid)
 
 EOF

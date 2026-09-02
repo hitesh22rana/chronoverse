@@ -422,7 +422,8 @@ services:
             openssl genpkey -algorithm ED25519 -outform pem -out /certs/issuers/$$iss/auth.ed
             openssl pkey -in /certs/issuers/$$iss/auth.ed -pubout -out /certs/issuers/$$iss/auth.ed.pub
           fi
-          chmod 400 /certs/issuers/$$iss/auth.ed
+          chmod 440 /certs/issuers/$$iss/auth.ed
+          chown 100:101 /certs/issuers/$$iss/auth.ed 2>/dev/null || chgrp 101 /certs/issuers/$$iss/auth.ed 2>/dev/null || true
           chmod 444 /certs/issuers/$$iss/auth.ed.pub
         done
         TRUSTED=/certs/issuers/trusted.json
@@ -434,7 +435,7 @@ services:
             kid="$$iss:$$(date +%Y%m%d)-$$(openssl rand -hex 2)"
             if [ $$first -eq 0 ]; then printf ",\n" >> "$$TRUSTED.tmp"; fi
             first=0
-            printf "  "%s": {"iss": "%s", "pub": "%s/auth.ed.pub"}" "$$kid" "$$iss" "$$iss" >> "$$TRUSTED.tmp"
+            printf "  \"%s\": {\"iss\": \"%s\", \"pub\": \"%s/auth.ed.pub\"}" "$$kid" "$$iss" "$$iss" >> "$$TRUSTED.tmp"
           done
           printf "\n}\n" >> "$$TRUSTED.tmp"
           mv "$$TRUSTED.tmp" "$$TRUSTED"

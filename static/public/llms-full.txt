@@ -1527,6 +1527,8 @@ Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafk
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
 
+Each service signs JWTs with its own Ed25519 private key and a `kid` header. The gateway and every verifier mount `certs/issuers/<issuer>/auth.ed` (0400) plus a shared `certs/issuers/trusted.json` bundle of public keys; `Auth.ValidateToken` requires the `kid` and verifies the signature only against the matching bundle entry with issuer binding. New builds inject the per-issuer paths through `Makefile` ldflags (for example `certs/issuers/users-service/auth.ed`) and both Compose profiles generate the per-issuer keys and `trusted.json` in `init-certs`, gating startup on the bundle. Kubernetes generates the same layout in `cert-bootstrap` and projects the bundle and each `issuers/<svc>/auth.ed.pub` via mounted volumes. Rotation is graceful: `scripts/compose/rotate-auth-key.sh <issuer>` adds a new key alongside the old `kid` in the bundle, signers roll first, verifiers roll second, and the old `kid` is pruned after its 15-minute expiry window; `make compose/validate` guards the wiring.
+
 Internal Ed25519 JWT validation allows at most 30 seconds of clock skew for
 `nbf` and expiry checks so ordinary multi-node time differences do not reject a
 fresh token. Keep every Kubernetes node synchronized with a reliable time

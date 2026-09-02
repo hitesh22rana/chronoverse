@@ -301,23 +301,21 @@ func New() (*Auth, error) {
 	kid := kidForKey(issuer, edPub)
 
 	bundle, bundlePath := findAndLoadBundle(publicKeyPath)
-	if bundle != nil {
-		for candKid, entry := range bundle {
-			if entry.Iss != issuer {
-				continue
-			}
-			if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && len(candPub) == len(edPub) {
-				match := true
-				for i := range candPub {
-					if candPub[i] != edPub[i] {
-						match = false
-						break
-					}
-				}
-				if match {
-					kid = candKid
+	for candKid, entry := range bundle {
+		if entry.Iss != issuer {
+			continue
+		}
+		if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && len(candPub) == len(edPub) {
+			match := true
+			for i := range candPub {
+				if candPub[i] != edPub[i] {
+					match = false
 					break
 				}
+			}
+			if match {
+				kid = candKid
+				break
 			}
 		}
 	}
@@ -417,6 +415,8 @@ func isOnlyTokenExpired(err error) bool {
 //
 // The audience claim may be a string or a string slice; either form is
 // accepted as long as expectedAudience appears in the list.
+//
+//nolint:gocyclo,nestif // ValidateToken enforces signature, expiry, issuer, kid binding, and claims in one linear flow; splitting would duplicate JWT parsing.
 func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outCtx context.Context, token *jwt.Token, err error) {
 	ctx, span := a.tp.Start(ctx, "Auth.ValidateToken")
 	defer func() {
@@ -436,7 +436,7 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		return ctx, nil, err
 	}
 
-	// Fast path: single-key mode (no bundle) preserves original behaviour but still
+	// Fast path: single-key mode (no bundle) preserves original behavior but still
 	// enforces kid-issuer binding if a kid is present and bundle is absent.
 	if a.bundle == nil {
 		parsed, perr := jwt.Parse(
@@ -524,7 +524,7 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		}
 		// Kid-issuer binding: if token carries a kid that exists in bundle, it must match issuer.
 		if kid != "" {
-			if entry, ok := a.bundle[kid]; ok && entry.Iss != issuer {
+			if entry, kidExists := a.bundle[kid]; kidExists && entry.Iss != issuer {
 				return ctx, nil, false, status.Error(codes.Unauthenticated, "kid issuer mismatch")
 			}
 		}

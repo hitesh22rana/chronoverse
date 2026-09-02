@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+//nolint:gocyclo // rotation test exercises old, new, both-bundle, new-only, and no-kid paths in one flow.
 func TestKidRotationBundle(t *testing.T) {
 	issuer := ServiceNameServer
 	audience := ServiceNameUsers
@@ -21,14 +22,20 @@ func TestKidRotationBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate old key: %v", err)
 	}
-	oldPub := oldPriv.Public().(ed25519.PublicKey)
+	oldPub, ok := oldPriv.Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatalf("old public key is not ed25519: %T", oldPriv.Public())
+	}
 	oldKid := kidForKey(issuer, oldPub)
 
 	_, newPriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate new key: %v", err)
 	}
-	newPub := newPriv.Public().(ed25519.PublicKey)
+	newPub, ok := newPriv.Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatalf("new public key is not ed25519: %T", newPriv.Public())
+	}
 	newKid := kidForKey(issuer, newPub)
 	if oldKid == newKid {
 		t.Fatalf("kids must differ for distinct keys")
@@ -52,12 +59,12 @@ func TestKidRotationBundle(t *testing.T) {
 		t.Fatalf("issue old token: %v", err)
 	}
 	// Ensure kid header is set to oldKid
-	if unverified, _, err := new(jwt.Parser).ParseUnverified(oldToken, jwt.MapClaims{}); err == nil {
+	if unverified, _, parseErr := new(jwt.Parser).ParseUnverified(oldToken, jwt.MapClaims{}); parseErr == nil {
 		if unverified.Header["kid"] != oldKid {
 			t.Fatalf("old token kid = %v, want %v", unverified.Header["kid"], oldKid)
 		}
 	}
-	if _, _, err := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), oldToken), audience); err != nil {
+	if _, _, verifyErr := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), oldToken), audience); verifyErr != nil {
 		t.Fatalf("verify old token with both-bundle verifier: %v", err)
 	}
 
@@ -66,12 +73,12 @@ func TestKidRotationBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue new token: %v", err)
 	}
-	if unverified, _, err := new(jwt.Parser).ParseUnverified(newToken, jwt.MapClaims{}); err == nil {
+	if unverified, _, parseErr2 := new(jwt.Parser).ParseUnverified(newToken, jwt.MapClaims{}); parseErr2 == nil {
 		if unverified.Header["kid"] != newKid {
 			t.Fatalf("new token kid = %v, want %v", unverified.Header["kid"], newKid)
 		}
 	}
-	if _, _, err := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), newToken), audience); err != nil {
+	if _, _, verifyErr2 := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), newToken), audience); verifyErr2 != nil {
 		t.Fatalf("verify new token with both-bundle verifier: %v", err)
 	}
 
@@ -82,11 +89,11 @@ func TestKidRotationBundle(t *testing.T) {
 	verifierNewOnly := &Auth{issuer: audience, publicKey: newPub, kid: newKid, bundle: bundleNewOnly, tp: otel.Tracer("test")}
 
 	// Old token must now be rejected (untrusted kid).
-	if _, _, err := verifierNewOnly.ValidateToken(WithAuthorizationToken(context.Background(), oldToken), audience); err == nil {
+	if _, _, verifyErr3 := verifierNewOnly.ValidateToken(WithAuthorizationToken(context.Background(), oldToken), audience); verifyErr3 == nil {
 		t.Fatalf("old token should be rejected after bundle prunes old kid")
 	}
 	// New token still valid.
-	if _, _, err := verifierNewOnly.ValidateToken(WithAuthorizationToken(context.Background(), newToken), audience); err != nil {
+	if _, _, verifyErr4 := verifierNewOnly.ValidateToken(WithAuthorizationToken(context.Background(), newToken), audience); verifyErr4 != nil {
 		t.Fatalf("new token should still verify after prune: %v", err)
 	}
 
@@ -108,7 +115,7 @@ func TestKidRotationBundle(t *testing.T) {
 		}
 		return s
 	}(oldPriv)
-	if _, _, err := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), noKidToken), audience); err == nil {
+	if _, _, verifyErr5 := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), noKidToken), audience); verifyErr5 == nil {
 		t.Fatalf("token without kid should be rejected when bundle is present")
 	}
 }

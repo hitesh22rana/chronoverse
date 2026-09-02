@@ -45,8 +45,7 @@ func bundlePathsForPublicKey(publicKeyPath string) []string {
 		dir := filepath.Dir(publicKeyPath) // certs/issuers/<issuer>
 		for dir != "." && dir != "/" {
 			if filepath.Base(dir) == "issuers" {
-				candidates = append(candidates, filepath.Join(filepath.Dir(dir), issuersDir, trustedBundleFilename))
-				candidates = append(candidates, filepath.Join(dir, trustedBundleFilename))
+				candidates = append(candidates, filepath.Join(filepath.Dir(dir), issuersDir, trustedBundleFilename), filepath.Join(dir, trustedBundleFilename))
 				break
 			}
 			next := filepath.Dir(dir)
@@ -56,9 +55,7 @@ func bundlePathsForPublicKey(publicKeyPath string) []string {
 			dir = next
 		}
 	}
-	candidates = append(candidates, filepath.Join(issuersDir, trustedBundleFilename))
-	candidates = append(candidates, filepath.Join("/certs", "issuers", trustedBundleFilename))
-	candidates = append(candidates, filepath.Join("/certs", trustedBundleFilename))
+	candidates = append(candidates, filepath.Join(issuersDir, trustedBundleFilename), "/certs/issuers/"+trustedBundleFilename, "/certs/"+trustedBundleFilename)
 	// De-duplicate
 	seen := map[string]struct{}{}
 	uniq := []string{}
@@ -96,12 +93,15 @@ func resolveBundlePubPath(bundlePath, pub string) []string {
 	if filepath.IsAbs(pub) {
 		candidates = append(candidates, pub)
 	} else {
-		candidates = append(candidates, pub)
-		candidates = append(candidates, filepath.Join(filepath.Dir(bundlePath), pub))
-		candidates = append(candidates, filepath.Join(issuersDir, pub))
-		candidates = append(candidates, filepath.Join("certs", pub))
-		candidates = append(candidates, filepath.Join("/certs", pub))
-		candidates = append(candidates, filepath.Join(filepath.Dir(bundlePath), filepath.Base(pub)))
+		candidates = append(
+			candidates,
+			pub,
+			filepath.Join(filepath.Dir(bundlePath), pub),
+			filepath.Join(issuersDir, pub),
+			filepath.Join("certs", pub),
+			"/certs/"+pub,
+			filepath.Join(filepath.Dir(bundlePath), filepath.Base(pub)),
+		)
 		// If pub is like "issuers/server/auth.ed.pub", the file as mounted is at /certs/issuers/server/auth.ed.pub
 		// which is filepath.Join("/certs", pub) => /certs/issuers/server/auth.ed.pub -> works.
 		// If pub is "server/auth.ed.pub" (relative to issuersDir), join with bundle dir.
@@ -163,7 +163,7 @@ func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {
 	return out, nil
 }
 
-func findAndLoadBundle(publicKeyPath string) (map[string]*bundleEntry, string) {
+func findAndLoadBundle(publicKeyPath string) (bundle map[string]*bundleEntry, bundlePath string) {
 	for _, cand := range bundlePathsForPublicKey(publicKeyPath) {
 		if m, err := loadBundle(cand); err == nil {
 			return m, cand
@@ -173,8 +173,8 @@ func findAndLoadBundle(publicKeyPath string) (map[string]*bundleEntry, string) {
 	if m, err := loadBundle(filepath.Join(issuersDir, trustedBundleFilename)); err == nil {
 		return m, filepath.Join(issuersDir, trustedBundleFilename)
 	}
-	if m, err := loadBundle(filepath.Join("/certs", "issuers", trustedBundleFilename)); err == nil {
-		return m, filepath.Join("/certs", "issuers", trustedBundleFilename)
+	if m, err := loadBundle("/certs/issuers/" + trustedBundleFilename); err == nil {
+		return m, "/certs/issuers/" + trustedBundleFilename
 	}
 	return nil, ""
 }

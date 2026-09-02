@@ -216,8 +216,8 @@ validate_auth_bundle() {
     echo "internal/pkg/auth/bundle.go missing kid handling" >&2
     exit 1
   fi
-  if ! grep -q 'trusted.json' "$root_dir/internal/pkg/auth/auth.go"; then
-    echo "internal/pkg/auth/auth.go missing bundle verification" >&2
+  if ! grep -q 'trusted.json' "$root_dir/internal/pkg/auth/bundle.go" && ! grep -q 'trusted.json' "$root_dir/internal/pkg/auth/auth.go"; then
+    echo "internal/pkg/auth bundle verification missing trusted.json handling" >&2
     exit 1
   fi
 }

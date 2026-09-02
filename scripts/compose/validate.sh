@@ -24,7 +24,9 @@ render_compose() {
       GF_SECURITY_ADMIN_PASSWORD=compose-validation \
       docker compose -f "$root_dir/$compose_file" config --format json > "$output_file"
   else
-    docker compose -f "$root_dir/$compose_file" config --format json > "$output_file"
+    CRYPTO_SECRET=0123456789abcdef0123456789abcdef \
+      SERVER_CSRF_HMAC_SECRET=abcdef0123456789abcdef0123456789 \
+      docker compose -f "$root_dir/$compose_file" config --format json > "$output_file"
   fi
 }
 

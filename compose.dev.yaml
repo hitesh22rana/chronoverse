@@ -1551,8 +1551,8 @@ services:
     image: server
     container_name: server
     environment:
-      CRYPTO_SECRET: ${CRYPTO_SECRET:-dev-crypto-not-for-prod-12345678}
-      SERVER_CSRF_HMAC_SECRET: ${SERVER_CSRF_HMAC_SECRET:-dev-csrf-not-for-prod-1234567890}
+      CRYPTO_SECRET: "${CRYPTO_SECRET:?set CRYPTO_SECRET to a persistent random 32-byte value}"
+      SERVER_CSRF_HMAC_SECRET: "${SERVER_CSRF_HMAC_SECRET:?set SERVER_CSRF_HMAC_SECRET to a different persistent random value}"
       SERVER_HOST: 0.0.0.0
       REDIS_HOST: redis
       REDIS_TLS_ENABLED: true

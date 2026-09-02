@@ -74,12 +74,12 @@ func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {
 	out := map[string]*bundleEntry{}
 	for kid, entry := range fileMap {
 		if kid == "" || entry.Iss == "" || entry.Pub == "" {
-			continue
+			return nil, fmt.Errorf("trusted bundle %s entry %q is missing kid/iss/pub", bundlePath, kid)
 		}
 		if strings.Contains(entry.Pub, "-----BEGIN") {
 			pub, err := jwt.ParseEdPublicKeyFromPEM([]byte(entry.Pub))
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("trusted bundle %s entry %q: invalid inline public key: %w", bundlePath, kid, err)
 			}
 			out[kid] = &bundleEntry{Iss: entry.Iss, PublicKey: pub, PubPath: bundlePath + ":" + kid}
 			continue
@@ -91,7 +91,7 @@ func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {
 		}
 		pk, _, err := loadPublicKeyFromPEM(pubPath)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("trusted bundle %s entry %q: failed to load public key %q: %w", bundlePath, kid, entry.Pub, err)
 		}
 		out[kid] = &bundleEntry{Iss: entry.Iss, PublicKey: pk, PubPath: entry.Pub}
 	}

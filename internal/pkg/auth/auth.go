@@ -319,6 +319,10 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	if bundleErr != nil {
 		return nil, status.Errorf(codes.Internal, "failed to load trusted bundle %s: %v", bundlePath, bundleErr)
 	}
+	// If a bundle is configured, the signer's key must be present.
+	// Otherwise IssueToken would mint tokens with an untrusted kid that all
+	// bundle-backed validators reject, leaving the service silently broken.
+	foundInBundle := false
 	for candKid, entry := range bundle {
 		if entry.Iss != issuer {
 			continue
@@ -333,9 +337,13 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 			}
 			if match {
 				kid = candKid
+				foundInBundle = true
 				break
 			}
 		}
+	}
+	if bundle != nil && !foundInBundle {
+		return nil, status.Errorf(codes.Internal, "trusted bundle %s has no entry for issuer %q (kid %s)", bundlePath, issuer, kid)
 	}
 
 	return &Auth{

@@ -23,18 +23,6 @@ func TestValidateServerSecrets(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "crypto secret uses default",
-			crypto:  insecureDefaultSecret,
-			csrf:    "abcdef0123456789abcdef0123456789",
-			wantErr: true,
-		},
-		{
-			name:    "csrf secret uses default",
-			crypto:  "0123456789abcdef0123456789abcdef",
-			csrf:    insecureDefaultSecret,
-			wantErr: true,
-		},
-		{
 			name:    "secrets are reused",
 			crypto:  "0123456789abcdef0123456789abcdef",
 			csrf:    "0123456789abcdef0123456789abcdef",

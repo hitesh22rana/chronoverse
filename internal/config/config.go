@@ -7,10 +7,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 )
 
-const (
-	envPrefix             = ""
-	insecureDefaultSecret = "a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?" //nolint:gosec // This known placeholder is explicitly rejected in any environment.
-)
+const envPrefix = ""
 
 // Environment holds the environment configuration.
 type Environment struct {

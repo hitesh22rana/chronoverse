@@ -83,18 +83,35 @@ fi
 if [ "$use_docker" -eq 1 ]; then
   run_in_certs "
     set -eu
+    tmp_priv=\$(mktemp)
+    tmp_pub=\$(mktemp)
+    openssl genpkey -algorithm ED25519 -outform pem -out \$tmp_priv 2>/dev/null
+    openssl pkey -in \$tmp_priv -pubout -out \$tmp_pub 2>/dev/null
+    chmod 440 \$tmp_priv
+    chmod 444 \$tmp_pub
     chmod u+w /certs/issuers 2>/dev/null || true
     chmod u+w /certs/issuers/$issuer 2>/dev/null || true
     chmod u+w /certs/issuers/$issuer/auth.ed 2>/dev/null || true
-    openssl genpkey -algorithm ED25519 -outform pem -out /certs/issuers/$issuer/auth.ed 2>/dev/null
-    openssl pkey -in /certs/issuers/$issuer/auth.ed -pubout -out /certs/issuers/$issuer/auth.ed.pub 2>/dev/null
+    chmod u+w /certs/issuers/$issuer/auth.ed.pub 2>/dev/null || true
+    mv \$tmp_priv /certs/issuers/$issuer/auth.ed
+    mv \$tmp_pub /certs/issuers/$issuer/auth.ed.pub
     chmod 440 /certs/issuers/$issuer/auth.ed
     chown 100:101 /certs/issuers/$issuer/auth.ed 2>/dev/null || chgrp 101 /certs/issuers/$issuer/auth.ed 2>/dev/null || true
     chmod 444 /certs/issuers/$issuer/auth.ed.pub
   "
 else
-  openssl genpkey -algorithm ED25519 -outform pem -out "$issuer_dir/auth.ed" 2>/dev/null
-  openssl pkey -in "$issuer_dir/auth.ed" -pubout -out "$issuer_dir/auth.ed.pub" 2>/dev/null
+  tmp_priv=$(mktemp)
+  tmp_pub=$(mktemp)
+  openssl genpkey -algorithm ED25519 -outform pem -out "$tmp_priv" 2>/dev/null || { rm -f "$tmp_priv" "$tmp_pub"; echo "openssl genpkey failed (Ed25519 not supported by host openssl; install openssl with Ed25519 or use docker helper)" >&2; exit 1; }
+  openssl pkey -in "$tmp_priv" -pubout -out "$tmp_pub" 2>/dev/null || { rm -f "$tmp_priv" "$tmp_pub"; echo "openssl pkey failed" >&2; exit 1; }
+  chmod 440 "$tmp_priv"
+  chmod 444 "$tmp_pub"
+  chmod u+w "$issuers_dir" 2>/dev/null || true
+  chmod u+w "$issuer_dir" 2>/dev/null || true
+  chmod u+w "$issuer_dir/auth.ed" 2>/dev/null || true
+  chmod u+w "$issuer_dir/auth.ed.pub" 2>/dev/null || true
+  mv "$tmp_priv" "$issuer_dir/auth.ed"
+  mv "$tmp_pub" "$issuer_dir/auth.ed.pub"
   chmod 440 "$issuer_dir/auth.ed"
   chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true
   chmod 444 "$issuer_dir/auth.ed.pub"
@@ -191,14 +208,14 @@ cat <<EOF
 
 Next steps (verifier-first):
   1. Restart verifiers with the new dual-key bundle, then the signer:
-       docker compose -f $compose_file up -d --force-recreate $verifiers
-       docker compose -f $compose_file up -d --force-recreate $issuer
+       docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
+       docker compose -f $compose_file up -d --no-deps --force-recreate $issuer
      (if you use COMPOSE_FILE env, omit -f; for dev use -f compose.dev.yaml)
   2. After grace period (15m, token expiry), prune the old kid and restart verifiers again:
-       jq 'del(."$old_kid")' $trusted > $trusted.tmp && mv $trusted.tmp $trusted && docker compose -f $compose_file up -d --force-recreate $verifiers
+       jq 'del(."$old_kid")' $trusted > $trusted.tmp && mv $trusted.tmp $trusted && docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
      (only if old_kid was set; verifiers cache the bundle in memory by Auth.New and must reload to drop the old kid)
      When rotation used the helper container, the jq above may need the same helper:
        docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.22 sh -c "apk add --no-cache jq >/dev/null 2>&1; jq 'del(.\"$old_kid\")' /certs/issuers/trusted.json > /tmp/t && mv /tmp/t /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
-       docker compose -f $compose_file up -d --force-recreate $verifiers
+       docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
 
 EOF

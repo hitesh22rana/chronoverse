@@ -72,10 +72,11 @@ Run the complete development stack with Docker Compose. Docker builds the Go ser
 ```bash
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
-export CRYPTO_SECRET="$(openssl rand -hex 16)"
-export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+test -e .env || (umask 077 && printf 'CRYPTO_SECRET=%s\nSERVER_CSRF_HMAC_SECRET=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env)
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 ## Verify readiness
 
@@ -1118,10 +1119,11 @@ Compose remains the quickest full-stack path. Kubernetes support is provided thr
 ## Start
 
 ```bash
-export CRYPTO_SECRET="$(openssl rand -hex 16)"
-export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+test -e .env || (umask 077 && printf 'CRYPTO_SECRET=%s\nSERVER_CSRF_HMAC_SECRET=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env)
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 The development stack starts one `runtime-agent` named `local-docker` beside `docker-proxy`. Container job claims use that registered runtime endpoint, so the same runtime ownership path is exercised locally even though there is only one Docker daemon.
 

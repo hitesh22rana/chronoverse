@@ -13,6 +13,9 @@ ConfigMaps and Kubernetes Secrets under `infra/k8s`.
 
 Development builds local images and exposes internal ports for debugging:
 
+Set distinct `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` values before
+rendering or starting the development stack.
+
 | Component | Host port | Notes |
 | --- | ---: | --- |
 | Dashboard | `3001` | Next.js dashboard, built with `NEXT_PUBLIC_API_URL=http://localhost:8080` |
@@ -518,8 +521,7 @@ production environments should manage:
 Startup rejects empty values, the known development placeholder, and
 deployments that reuse one value for `CRYPTO_SECRET` and
 `SERVER_CSRF_HMAC_SECRET` in any environment. Persist distinct random values
-in your secret manager. The production Compose profile requires both variables
-explicitly.
+in your secret manager. Both Compose profiles require both variables explicitly.
 
 Kubernetes production deployments may pre-create these Secrets to own their
 credentials and trust material. `scripts/k8s/setup.sh` preserves valid, complete

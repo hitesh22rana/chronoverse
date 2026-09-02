@@ -8,6 +8,8 @@ and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 ### Development
 
 ```sh
+export CRYPTO_SECRET="$(openssl rand -hex 16)"
+export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 docker compose -f compose.dev.yaml up -d
 ```
 

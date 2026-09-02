@@ -104,6 +104,8 @@ Docker-workflow runtime.
 ```sh
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
+export CRYPTO_SECRET="$(openssl rand -hex 16)"
+export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 docker compose -f compose.dev.yaml up -d
 ```
 

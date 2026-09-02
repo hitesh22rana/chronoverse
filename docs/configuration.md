@@ -13,8 +13,9 @@ ConfigMaps and Kubernetes Secrets under `infra/k8s`.
 
 Development builds local images and exposes internal ports for debugging:
 
-Set distinct `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` values before
-rendering or starting the development stack.
+Store distinct `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` values in the
+gitignored root `.env` before rendering or starting the development stack.
+Compose automatically reloads this file for later commands and restarts.
 
 | Component | Host port | Notes |
 | --- | ---: | --- |

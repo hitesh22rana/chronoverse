@@ -104,10 +104,12 @@ Docker-workflow runtime.
 ```sh
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
-export CRYPTO_SECRET="$(openssl rand -hex 16)"
-export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+test -e .env || (umask 077 && printf 'CRYPTO_SECRET=%s\nSERVER_CSRF_HMAC_SECRET=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env)
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands
+and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 Development defaults expose internal ports for debugging:
 

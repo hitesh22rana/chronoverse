@@ -8,10 +8,12 @@ and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 ### Development
 
 ```sh
-export CRYPTO_SECRET="$(openssl rand -hex 16)"
-export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
+test -e .env || (umask 077 && printf 'CRYPTO_SECRET=%s\nSERVER_CSRF_HMAC_SECRET=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env)
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file in later shells.
+Preserve it while existing encrypted sessions must remain valid.
 
 Useful endpoints:
 

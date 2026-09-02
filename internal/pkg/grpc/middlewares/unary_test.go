@@ -10,8 +10,11 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 )
 
@@ -20,11 +23,15 @@ func TestUnaryLoggingInterceptorDoesNotLogAuthorizationToken(t *testing.T) {
 
 	core, logs := observer.New(zapcore.InfoLevel)
 	interceptor := grpcmiddlewares.UnaryLoggingInterceptor(zap.New(core))
+	// Audience and role are now derived from the validated JWT context
+	// (set by auth.ValidateToken), never from the metadata header. The
+	// metadata "audience"/"role" entries are intentionally NOT logged —
+	// the validated context is the only authoritative source.
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer "+sensitiveToken,
-		"audience", "users-service",
-		"role", "user",
 	))
+	ctx = auth.WithAudience(ctx, "users-service")
+	ctx = auth.WithRole(ctx, string(auth.RoleUser))
 
 	_, err := interceptor(
 		ctx,
@@ -53,5 +60,47 @@ func TestUnaryLoggingInterceptorDoesNotLogAuthorizationToken(t *testing.T) {
 	}
 	if fields["role"] != "user" {
 		t.Fatalf("expected role field to remain available, got %#v", fields)
+	}
+}
+
+func TestUnaryAuthorizationInterceptorsBypassHealthWithoutTransportStream(t *testing.T) {
+	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.health.v1.Health/Check"}
+	handlerCalled := false
+	handler := func(_ context.Context, req any) (any, error) { //nolint:unparam // gRPC handler signature requires an error result.
+		handlerCalled = true
+		return req, nil
+	}
+	role := grpcmiddlewares.UnaryRoleInterceptor(func(string, string) bool {
+		t.Fatal("health check must not invoke role authorization")
+		return false
+	})
+
+	_, err := grpcmiddlewares.UnaryAudienceInterceptor()(
+		t.Context(), struct{}{}, info,
+		func(ctx context.Context, req any) (any, error) {
+			return role(ctx, req, info, handler)
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected health check to bypass authorization, got %v", err)
+	}
+	if !handlerCalled {
+		t.Fatal("expected health handler to run")
+	}
+}
+
+func TestLogAuthenticationFailure(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	err := status.Error(codes.Unauthenticated, "invalid token")
+
+	grpcmiddlewares.LogAuthenticationFailure(context.Background(), zap.New(core), err)
+
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("expected one log entry, got %d", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if fields["grpc.code"] != codes.Unauthenticated.String() || fields["grpc.error"] != err.Error() {
+		t.Fatalf("unexpected authentication failure fields: %#v", fields)
 	}
 }

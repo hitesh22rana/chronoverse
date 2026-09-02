@@ -104,8 +104,12 @@ Docker-workflow runtime.
 ```sh
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands
+and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 Development defaults expose internal ports for debugging:
 
@@ -142,9 +146,9 @@ docker compose -f compose.prod.yaml up -d
 
 Set all six values in the shell or copy `.env.example` to `.env` and fill it.
 Persist them in your secret manager and reuse them across server restarts.
-`CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct; production
-startup rejects empty values, the known development placeholder, and reuse of
-one value for both purposes.
+`CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct;
+startup rejects empty values and reuse of one value for both purposes in any
+environment.
 
 Production uses published images, internal service networking, resource limits,
 replicated workers, and a single Nginx entry point:
@@ -176,7 +180,7 @@ scripts/k8s/setup.sh --mode local
 For production:
 
 ```sh
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 Rotate an existing Kubernetes Docker proxy PKI with overlapping CA trust during

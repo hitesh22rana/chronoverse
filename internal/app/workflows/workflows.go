@@ -79,8 +79,11 @@ type Workflows struct {
 	svc  Service
 }
 
-// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
-func (w *Workflows) authTokenInterceptor() grpc.UnaryServerInterceptor {
+// authTokenInterceptor extracts and validates the authToken from the metadata.
+// ValidateToken enforces the JWT issuer/audience/role claims and writes them
+// into context; the metadata "Role" / "Audience" headers are intentionally
+// never consulted for authorization.
+func (w *Workflows) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
@@ -90,15 +93,18 @@ func (w *Workflows) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
-			return "", err
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
+			return nil, err
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
-		if _, err := w.auth.ValidateToken(ctx); err != nil {
-			return "", err
+		newCtx, _, err := w.auth.ValidateToken(ctx, authpkg.ServiceNameWorkflows)
+		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
+			return nil, err
 		}
 
-		return handler(ctx, req)
+		return handler(newCtx, req)
 	}
 }
 
@@ -135,12 +141,15 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			// authToken must run before the audience/role interceptors so
+			// the JWT-validated audience/role are in context when the
+			// downstream interceptors read them.
+			workflows.authTokenInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
-			workflows.authTokenInterceptor(),
 		),
 	)
 

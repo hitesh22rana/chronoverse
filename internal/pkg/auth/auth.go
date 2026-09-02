@@ -7,6 +7,7 @@ import (
 	"crypto"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,15 +33,23 @@ const (
 	clockSkewLeeway   = 30 * time.Second
 	jwtExpiryClaim    = "exp"
 	jwtNotBeforeClaim = "nbf"
-
-	// audienceMetadataKey is the key for the audience in the metadata.
-	audienceMetadataKey = "Audience"
+	jwtIssuerClaim    = "iss"
+	jwtAudienceClaim  = "aud"
+	jwtSubjectClaim   = "sub"
+	jwtRoleClaim      = "role"
 
 	// authorizationMetadataKey is the key for the token in the metadata.
 	authorizationMetadataKey = "Authorization"
+)
 
-	// roleMetadataKey is the key for the role in the metadata.
-	roleMetadataKey = "Role"
+// ServiceName values identify JWT issuers and audiences.
+const (
+	ServiceNameServer        = "server"
+	ServiceNameUsers         = "users-service"
+	ServiceNameWorkflows     = "workflows-service"
+	ServiceNameJobs          = "jobs-service"
+	ServiceNameNotifications = "notifications-service"
+	ServiceNameAnalytics     = "analytics-service"
 )
 
 // Role is the role of the audience.
@@ -66,6 +75,9 @@ type tokenContextKey struct{}
 
 // roleContextKey is the key for the role in the context.
 type roleContextKey struct{}
+
+// subjectContextKey is the key for the subject in the context.
+type subjectContextKey struct{}
 
 // audienceFromContext extracts the audience from the context.
 func audienceFromContext(ctx context.Context) (string, error) {
@@ -112,6 +124,21 @@ func roleFromContext(ctx context.Context) (string, error) {
 	return role, nil
 }
 
+// subjectFromContext extracts the subject from the context.
+func subjectFromContext(ctx context.Context) (string, error) {
+	value := ctx.Value(subjectContextKey{})
+	if value == nil {
+		return "", status.Error(codes.FailedPrecondition, "subject is required")
+	}
+
+	subject, ok := value.(string)
+	if !ok || subject == "" {
+		return "", status.Error(codes.FailedPrecondition, "subject is required")
+	}
+
+	return subject, nil
+}
+
 // WithAudience sets the audience in the context.
 func WithAudience(ctx context.Context, audience string) context.Context {
 	return context.WithValue(ctx, audienceContextKey{}, audience)
@@ -122,62 +149,43 @@ func WithRole(ctx context.Context, role string) context.Context {
 	return context.WithValue(ctx, roleContextKey{}, role)
 }
 
+// WithSubject sets the subject in the context.
+func WithSubject(ctx context.Context, subject string) context.Context {
+	return context.WithValue(ctx, subjectContextKey{}, subject)
+}
+
 // WithAuthorizationToken sets the authorization token in the context.
 func WithAuthorizationToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, tokenContextKey{}, token)
 }
 
-// WithAudienceInMetadata sets the audience in the metadata for incoming requests.
-func WithAudienceInMetadata(ctx context.Context, audience string) context.Context {
-	// Delete any existing audience metadata to avoid duplicates
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if ok {
-		md = md.Copy()
-		md.Delete(audienceMetadataKey)
-		ctx = metadata.NewOutgoingContext(ctx, md)
-	}
-	// Append the new audience metadata
-	return metadata.AppendToOutgoingContext(ctx, audienceMetadataKey, audience)
-}
-
-// WithRoleInMetadata sets the role in the metadata for incoming requests.
-func WithRoleInMetadata(ctx context.Context, role Role) context.Context {
-	// Delete any existing role metadata to avoid duplicates
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if ok {
-		md = md.Copy()
-		md.Delete(roleMetadataKey)
-		ctx = metadata.NewOutgoingContext(ctx, md)
-	}
-	// Append the new role metadata
-	return metadata.AppendToOutgoingContext(ctx, roleMetadataKey, string(role))
-}
-
-// WithAuthorizationTokenInMetadata sets the authorization token in the metadata for incoming requests.
+// WithAuthorizationTokenInMetadata sets the authorization token in the metadata for outgoing requests.
 func WithAuthorizationTokenInMetadata(ctx context.Context, token string) context.Context {
-	// Delete any existing authorization token metadata to avoid duplicates
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if ok {
 		md = md.Copy()
 		md.Delete(authorizationMetadataKey)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
-	// Append the new authorization token metadata
 	return metadata.AppendToOutgoingContext(ctx, authorizationMetadataKey, "Bearer "+token)
 }
 
-// WithInternalServiceAuthorization issues an admin token and attaches internal-service metadata.
-func WithInternalServiceAuthorization(ctx context.Context, issuer IAuth, subject string) (context.Context, error) {
-	ctx = WithAudience(ctx, svcpkg.Info().GetName())
+// WithInternalServiceAuthorization issues an admin token for the caller service and
+// attaches it as the bearer header. The audiences list MUST contain every service
+// the receiver chain is expected to authorize against; the receiver's
+// ValidateToken validates that its own service name is in the list.
+func WithInternalServiceAuthorization(ctx context.Context, issuer IAuth, subject string, audiences ...string) (context.Context, error) {
+	if len(audiences) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "receiver audience is required")
+	}
+
 	ctx = WithRole(ctx, RoleAdmin.String())
 
-	token, err := issuer.IssueToken(ctx, subject)
+	token, err := issuer.IssueToken(ctx, subject, audiences...)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx = WithAudienceInMetadata(ctx, svcpkg.Info().GetName())
-	ctx = WithRoleInMetadata(ctx, RoleAdmin)
 	ctx = WithAuthorizationTokenInMetadata(ctx, token)
 
 	return ctx, nil
@@ -186,21 +194,6 @@ func WithInternalServiceAuthorization(ctx context.Context, issuer IAuth, subject
 // WithSetAuthorizationTokenInHeaders sets the authorization token in the headers for clients.
 func WithSetAuthorizationTokenInHeaders(token string) metadata.MD {
 	return metadata.Pairs(authorizationMetadataKey, "Bearer "+token)
-}
-
-// ExtractAudienceFromMetadata extracts the audience from the metadata.
-func ExtractAudienceFromMetadata(ctx context.Context) (string, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", status.Error(codes.NotFound, "metadata is required")
-	}
-
-	audience := md.Get(audienceMetadataKey)
-	if len(audience) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "audience is required")
-	}
-
-	return audience[0], nil
 }
 
 // ExtractAuthorizationTokenFromMetadata extracts the authorization token from the metadata.
@@ -223,19 +216,16 @@ func ExtractAuthorizationTokenFromMetadata(ctx context.Context) (string, error) 
 	return parts[1], nil
 }
 
-// ExtractRoleFromMetadata extracts the role from the metadata.
-func ExtractRoleFromMetadata(ctx context.Context) (string, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", status.Error(codes.NotFound, "metadata is required")
-	}
+// ExtractRoleFromContext extracts the role placed in the context by ValidateToken.
+// Server-side authorization MUST use this helper, never the metadata header.
+func ExtractRoleFromContext(ctx context.Context) (string, error) {
+	return roleFromContext(ctx)
+}
 
-	role := md.Get(roleMetadataKey)
-	if len(role) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "role is required")
-	}
-
-	return role[0], nil
+// ExtractAudienceFromContext extracts the audience placed in the context by
+// ValidateToken (the only safe source for authenticated RPCs).
+func ExtractAudienceFromContext(ctx context.Context) (string, error) {
+	return audienceFromContext(ctx)
 }
 
 // ExtractAuthorizationTokenFromHeaders extracts the authorization token from the headers.
@@ -253,20 +243,17 @@ func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
 	return parts[1], nil
 }
 
-// IsInternalService checks if the request is from an internal service.
+// IsInternalService checks if the request is from an internal service by
+// reading the role from the JWT-validated context.
 func IsInternalService(ctx context.Context) bool {
-	role, err := ExtractRoleFromMetadata(ctx)
-	if err != nil {
-		return false
-	}
-
-	return role == RoleAdmin.String()
+	role, err := roleFromContext(ctx)
+	return err == nil && role == RoleAdmin.String()
 }
 
 // IAuth is the interface for the Auth service.
 type IAuth interface {
-	IssueToken(ctx context.Context, subject string) (token string, err error)
-	ValidateToken(ctx context.Context) (token *jwt.Token, err error)
+	IssueToken(ctx context.Context, subject string, audiences ...string) (token string, err error)
+	ValidateToken(ctx context.Context, expectedAudience string) (ctx2 context.Context, token *jwt.Token, err error)
 }
 
 // Auth is responsible for issuing and validating jwt tokens.
@@ -307,8 +294,10 @@ func New() (*Auth, error) {
 	}, nil
 }
 
-// IssueToken issues a new token with the given subject.
-func (a *Auth) IssueToken(ctx context.Context, subject string) (token string, err error) {
+// IssueToken issues a new token with the given subject. audiences controls
+// the JWT "aud" claim and must name at least one receiver. The role placed in
+// context (see WithRole) is stamped into the signed "role" claim.
+func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...string) (token string, err error) {
 	ctx, span := a.tp.Start(ctx, "Auth.IssueToken")
 	defer func() {
 		if err != nil {
@@ -318,9 +307,8 @@ func (a *Auth) IssueToken(ctx context.Context, subject string) (token string, er
 		span.End()
 	}()
 
-	audience, err := audienceFromContext(ctx)
-	if err != nil {
-		return "", err
+	if len(audiences) == 0 {
+		return "", status.Error(codes.InvalidArgument, "receiver audience is required")
 	}
 
 	role, err := roleFromContext(ctx)
@@ -330,28 +318,63 @@ func (a *Auth) IssueToken(ctx context.Context, subject string) (token string, er
 
 	now := time.Now()
 	_token := jwt.NewWithClaims(&jwt.SigningMethodEd25519{}, jwt.MapClaims{
-		"aud":             audience,
+		jwtAudienceClaim:  audiences,
 		jwtNotBeforeClaim: now.Unix(),
 		"iat":             now.Unix(),
 		jwtExpiryClaim:    now.Add(Expiry).Unix(),
-		"iss":             a.issuer,
-		"sub":             subject,
-
-		// role is the role of the audience
-		"role": role,
+		jwtIssuerClaim:    a.issuer,
+		jwtSubjectClaim:   subject,
+		jwtRoleClaim:      role,
 	})
 
-	token, err = _token.SignedString(a.privateKey)
+	signed, err := _token.SignedString(a.privateKey)
 	if err != nil {
-		err = status.Errorf(codes.Internal, "failed to sign token: %v", err)
-		return "", err
+		return "", status.Errorf(codes.Internal, "failed to sign token: %v", err)
 	}
 
-	return token, nil
+	return signed, nil
 }
 
-// ValidateToken validates and returns the token.
-func (a *Auth) ValidateToken(ctx context.Context) (token *jwt.Token, err error) {
+func isOnlyTokenExpired(err error) bool {
+	if !errors.Is(err, jwt.ErrTokenExpired) {
+		return false
+	}
+
+	var onlyExpiration func(error) bool
+	onlyExpiration = func(current error) bool {
+		//nolint:errorlint // Leaf identity is required; errors.Is would hide sibling validation failures.
+		if current == jwt.ErrTokenExpired || current == jwt.ErrTokenInvalidClaims {
+			return true
+		}
+		if joined, ok := current.(interface{ Unwrap() []error }); ok {
+			errs := joined.Unwrap()
+			if len(errs) == 0 {
+				return false
+			}
+			for _, inner := range errs {
+				if !onlyExpiration(inner) {
+					return false
+				}
+			}
+			return true
+		}
+		if inner := errors.Unwrap(current); inner != nil {
+			return onlyExpiration(inner)
+		}
+		return false
+	}
+
+	return onlyExpiration(err)
+}
+
+// ValidateToken validates the token carried in context, enforces the issuer
+// and audience claims, and writes the validated role/audience/subject into
+// the returned context for downstream authorization. expectedAudience MUST
+// match the receiver's own service name — typically svcpkg.Info().GetName().
+//
+// The audience claim may be a string or a string slice; either form is
+// accepted as long as expectedAudience appears in the list.
+func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outCtx context.Context, token *jwt.Token, err error) {
 	ctx, span := a.tp.Start(ctx, "Auth.ValidateToken")
 	defer func() {
 		if err != nil {
@@ -361,33 +384,94 @@ func (a *Auth) ValidateToken(ctx context.Context) (token *jwt.Token, err error) 
 		span.End()
 	}()
 
-	// Extract the token from the context
-	tokenString, err := tokenFromContext(ctx)
-	if err != nil {
-		return nil, err
+	if expectedAudience == "" {
+		return ctx, nil, status.Error(codes.InvalidArgument, "expected audience is required")
 	}
 
-	token, err = jwt.Parse(
+	tokenString, err := tokenFromContext(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	parsed, err := jwt.Parse(
 		tokenString,
 		func(token *jwt.Token) (any, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
 			}
-
 			return a.publicKey, nil
 		},
-		jwt.WithLeeway(clockSkewLeeway))
-	if err != nil {
-		// check if the token is expired
-		// if the token is expired, return an error with code DeadlineExceeded.
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			err = status.Error(codes.DeadlineExceeded, "token is expired")
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Unauthenticated, "failed to parse token: %v", err)
-		return nil, err
+		jwt.WithLeeway(clockSkewLeeway),
+		jwt.WithAudience(expectedAudience),
+		jwt.WithExpirationRequired(),
+	)
+	expired := isOnlyTokenExpired(err)
+	if err != nil && !expired {
+		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", err)
 	}
 
-	return token, nil
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
+	}
+	issuer, issuerErr := claims.GetIssuer()
+	if issuerErr != nil || !TrustedIssuer(issuer) {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
+	}
+
+	roleVal, ok := claims[jwtRoleClaim].(string)
+	if !ok || roleVal == "" {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
+	}
+	subVal, ok := claims[jwtSubjectClaim].(string)
+	if !ok || subVal == "" {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token missing subject claim")
+	}
+	if expired {
+		return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
+	}
+
+	outCtx = WithAudience(ctx, expectedAudience)
+	outCtx = WithRole(outCtx, roleVal)
+	outCtx = WithSubject(outCtx, subVal)
+
+	return outCtx, parsed, nil
+}
+
+// Keep trustedIssuers in sync with cmd/<svc>/main.go build ldflags.
+var trustedIssuers = []string{
+	ServiceNameServer,
+	ServiceNameUsers,
+	ServiceNameWorkflows,
+	ServiceNameJobs,
+	ServiceNameNotifications,
+	ServiceNameAnalytics,
+	"scheduling-worker",
+	"workflow-worker",
+	"execution-worker",
+	"runtime-agent",
+	"joblogs-processor",
+	"analytics-processor",
+	"outbox-relay",
+}
+
+// GatewayAudiences returns the audience set stamped into tokens the
+// gateway (server) mints or forwards. Every service the gateway may
+// forward a call to is included so the receiver can ValidateToken with
+// its own service name and the JWT remains valid. Adding a new gRPC
+// service requires updating trustedIssuers and GatewayAudiences.
+func GatewayAudiences() []string {
+	return []string{
+		ServiceNameServer,
+		ServiceNameUsers,
+		ServiceNameWorkflows,
+		ServiceNameJobs,
+		ServiceNameNotifications,
+		ServiceNameAnalytics,
+	}
+}
+
+// TrustedIssuer reports whether iss is a known platform service identity.
+func TrustedIssuer(iss string) bool {
+	return slices.Contains(trustedIssuers, iss)
 }

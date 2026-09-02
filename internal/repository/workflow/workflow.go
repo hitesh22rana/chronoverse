@@ -243,8 +243,16 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 }
 
 // withAuthorization issues the necessary headers and tokens for authorization.
+// The audience set names every service this repository may call.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
-	return auth.WithInternalServiceAuthorization(parentCtx, r.auth, authSubject)
+	return auth.WithInternalServiceAuthorization(
+		parentCtx,
+		r.auth,
+		authSubject,
+		auth.ServiceNameWorkflows,
+		auth.ServiceNameJobs,
+		auth.ServiceNameNotifications,
+	)
 }
 
 func (r *Repository) containerSvcForRuntime(runtimeNodeID, endpoint string) (ContainerSvc, error) {

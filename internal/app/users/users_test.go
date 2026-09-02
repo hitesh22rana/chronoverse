@@ -105,12 +105,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "success",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return metadata.AppendToOutgoingContext(t.Context(), "Role", auth.RoleAdmin.String())
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
@@ -121,7 +116,12 @@ func TestRegisterUser(t *testing.T) {
 				svc.EXPECT().RegisterUser(
 					gomock.Any(),
 					gomock.Any(),
-				).Return("user1", "pat1", nil)
+				).Do(func(ctx context.Context, _ *userpb.RegisterUserRequest) {
+					role, err := auth.ExtractRoleFromContext(ctx)
+					if err != nil || role != auth.RoleUser.String() {
+						t.Errorf("expected server-assigned user role, got role=%q err=%v", role, err)
+					}
+				}).Return("user1", "pat1", nil)
 			},
 			res: &userpb.RegisterUserResponse{
 				UserId: "user1",
@@ -132,12 +132,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "",
@@ -157,12 +152,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "error: user already exists",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
@@ -182,12 +172,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "error: internal server error",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.RegisterUserRequest{
 					Email:    "test@gmail.com",
@@ -200,23 +185,6 @@ func TestRegisterUser(t *testing.T) {
 					gomock.Any(),
 				).Return("", "", status.Errorf(codes.Internal, "internal server error"))
 			},
-			res:   nil,
-			isErr: true,
-		},
-		{
-			name: "error: missing required headers in metadata",
-			args: args{
-				getCtx: func() context.Context {
-					return metadata.AppendToOutgoingContext(
-						t.Context(),
-					)
-				},
-				req: &userpb.RegisterUserRequest{
-					Email:    "test@gmail.com",
-					Password: "password12345",
-				},
-			},
-			mock:  func(_ *userpb.RegisterUserRequest) {},
 			res:   nil,
 			isErr: true,
 		},
@@ -266,12 +234,7 @@ func TestLoginUser(t *testing.T) {
 			name: "success",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return metadata.AppendToOutgoingContext(t.Context(), "Role", auth.RoleAdmin.String())
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "test@gmail.com",
@@ -282,7 +245,12 @@ func TestLoginUser(t *testing.T) {
 				svc.EXPECT().LoginUser(
 					gomock.Any(),
 					gomock.Any(),
-				).Return("user1", "pat1", nil)
+				).Do(func(ctx context.Context, _ *userpb.LoginUserRequest) {
+					role, err := auth.ExtractRoleFromContext(ctx)
+					if err != nil || role != auth.RoleUser.String() {
+						t.Errorf("expected server-assigned user role, got role=%q err=%v", role, err)
+					}
+				}).Return("user1", "pat1", nil)
 			},
 			res:   &userpb.LoginUserResponse{},
 			isErr: false,
@@ -291,12 +259,7 @@ func TestLoginUser(t *testing.T) {
 			name: "error: missing required fields in request",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "",
@@ -316,12 +279,7 @@ func TestLoginUser(t *testing.T) {
 			name: "error: user does not exist",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "test1@gmail.com",
@@ -341,12 +299,7 @@ func TestLoginUser(t *testing.T) {
 			name: "error: internal server error",
 			args: args{
 				getCtx: func() context.Context {
-					return auth.WithRoleInMetadata(
-						auth.WithAudienceInMetadata(
-							t.Context(), "server-test",
-						),
-						auth.RoleUser,
-					)
+					return t.Context()
 				},
 				req: &userpb.LoginUserRequest{
 					Email:    "test@gmail.com",
@@ -359,20 +312,6 @@ func TestLoginUser(t *testing.T) {
 					gomock.Any(),
 				).Return("", "", status.Errorf(codes.Internal, "internal server error"))
 			},
-			res:   nil,
-			isErr: true,
-		},
-		{
-			name: "error: missing required headers in metadata",
-			args: args{
-				getCtx: func() context.Context {
-					return metadata.AppendToOutgoingContext(
-						t.Context(),
-					)
-				},
-				req: &userpb.LoginUserRequest{},
-			},
-			mock:  func(_ *userpb.LoginUserRequest) {},
 			res:   nil,
 			isErr: true,
 		},
@@ -423,12 +362,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -437,7 +371,10 @@ func TestGetUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameUsers),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -462,12 +399,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -476,7 +408,7 @@ func TestGetUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // mock setup line length
 			},
 			res:   nil,
 			isErr: true,
@@ -486,12 +418,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -500,7 +427,7 @@ func TestGetUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -530,12 +457,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -544,7 +466,7 @@ func TestGetUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -558,12 +480,7 @@ func TestGetUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -572,7 +489,7 @@ func TestGetUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -627,12 +544,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -642,7 +554,7 @@ func TestUpdateUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -656,12 +568,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -671,7 +578,7 @@ func TestUpdateUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // mock setup line length
 			},
 			res:   nil,
 			isErr: true,
@@ -681,12 +588,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -696,7 +598,7 @@ func TestUpdateUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -727,12 +629,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -742,7 +639,7 @@ func TestUpdateUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -756,12 +653,7 @@ func TestUpdateUser(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -771,7 +663,7 @@ func TestUpdateUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().UpdateUser(
 					gomock.Any(),
 					gomock.Any(),

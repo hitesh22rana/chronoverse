@@ -8,8 +8,12 @@ and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 ### Development
 
 ```sh
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file in later shells.
+Preserve it while existing encrypted sessions must remain valid.
 
 Useful endpoints:
 
@@ -53,7 +57,7 @@ configuration, resource limits, and replicated worker settings.
 
 ```sh
 scripts/k8s/setup.sh --mode local
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 The local strategy is self-contained for single-node validation and runs one

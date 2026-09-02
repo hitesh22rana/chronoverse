@@ -13,7 +13,6 @@ REALIP_CIDRS=""
 ALLOW_REALIP_SNAPSHOT=false
 ROTATE_DOCKER_PROXY_CERTS=false
 INGRESS_NGINX_AVAILABLE=false
-INSECURE_DEFAULT_SECRET='a&1*~#^2^#!@#$%^&*()-_=+{}[]|<>?'
 
 usage() {
   cat <<'EOF'
@@ -452,9 +451,7 @@ create_server_security_secret() {
     existing_csrf_secret="$(secret_decoded_value "$secret_name" SERVER_CSRF_HMAC_SECRET)"
     invalid_reason=""
 
-    if [ "$existing_crypto_secret" = "$INSECURE_DEFAULT_SECRET" ] || [ "$existing_csrf_secret" = "$INSECURE_DEFAULT_SECRET" ]; then
-      invalid_reason="it contains the known insecure development placeholder"
-    elif [ "$existing_crypto_secret" = "$existing_csrf_secret" ]; then
+    if [ "$existing_crypto_secret" = "$existing_csrf_secret" ]; then
       invalid_reason="CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET must be different"
     elif [ "$crypto_len" != "32" ]; then
       invalid_reason="CRYPTO_SECRET is $crypto_len bytes; expected 32"

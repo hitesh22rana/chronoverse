@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
@@ -40,6 +41,43 @@ func TestMain(t *testing.T) {
 	}, _auth, svc)
 
 	_ = server
+}
+
+func TestHealthWatchBypassesAuthentication(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	server := jobs.New(t.Context(), &jobs.Config{Deadline: 500 * time.Millisecond},
+		authmock.NewMockIAuth(ctrl), jobsmock.NewMockService(ctrl))
+	lis := bufconn.Listen(1024 * 1024)
+	go func() {
+		if err := server.Serve(lis); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to serve health test server: %v\n", err)
+		}
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = lis.Close()
+	})
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("create health client connection: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	stream, err := grpc_health_v1.NewHealthClient(conn).Watch(t.Context(), &grpc_health_v1.HealthCheckRequest{})
+	if err != nil {
+		t.Fatalf("watch health: %v", err)
+	}
+	response, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("receive health status: %v", err)
+	}
+	if response.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		t.Fatalf("expected serving health status, got %s", response.Status)
+	}
 }
 
 func initClient(server *grpc.Server) (client jobspb.JobsServiceClient, _close func()) {
@@ -109,12 +147,7 @@ func TestScheduleJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -125,7 +158,10 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameJobs),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -141,12 +177,7 @@ func TestScheduleJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -157,7 +188,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,
@@ -167,12 +198,7 @@ func TestScheduleJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -183,7 +209,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -215,12 +241,7 @@ func TestScheduleJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -231,7 +252,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -278,7 +299,7 @@ func TestCancelJob(t *testing.T) {
 			name: "success",
 			context: func(ctx context.Context) context.Context {
 				return auth.WithAuthorizationTokenInMetadata(
-					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					ctx,
 					"token",
 				)
 			},
@@ -286,7 +307,7 @@ func TestCancelJob(t *testing.T) {
 				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
 			setup: func(authService *authmock.MockIAuth, service *jobsmock.MockService) {
-				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				authService.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				service.EXPECT().CancelJob(gomock.Any(), gomock.Any()).Return(&jobsmodel.CancelJobSnapshot{
 					ID:              "job-1",
 					PreviousStatus:  jobsmodel.JobStatusRunning.ToString(),
@@ -306,21 +327,23 @@ func TestCancelJob(t *testing.T) {
 			name: "invalid role",
 			context: func(ctx context.Context) context.Context {
 				return auth.WithAuthorizationTokenInMetadata(
-					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "server"), auth.RoleUser),
+					ctx,
 					"token",
 				)
 			},
 			request: &jobspb.CancelJobRequest{
 				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
-			setup:    func(*authmock.MockIAuth, *jobsmock.MockService) {},
+			setup: func(authService *authmock.MockIAuth, _ *jobsmock.MockService) {
+				authService.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+			},
 			wantCode: codes.PermissionDenied,
 		},
 		{
 			name: "invalid token",
 			context: func(ctx context.Context) context.Context {
 				return auth.WithAuthorizationTokenInMetadata(
-					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					ctx,
 					"invalid-token",
 				)
 			},
@@ -328,7 +351,7 @@ func TestCancelJob(t *testing.T) {
 				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
 			setup: func(authService *authmock.MockIAuth, _ *jobsmock.MockService) {
-				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				authService.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			wantCode: codes.Unauthenticated,
 		},
@@ -345,7 +368,7 @@ func TestCancelJob(t *testing.T) {
 			name: "service failure",
 			context: func(ctx context.Context) context.Context {
 				return auth.WithAuthorizationTokenInMetadata(
-					auth.WithRoleInMetadata(auth.WithAudienceInMetadata(ctx, "internal-service"), auth.RoleAdmin),
+					ctx,
 					"token",
 				)
 			},
@@ -353,7 +376,7 @@ func TestCancelJob(t *testing.T) {
 				Id: "job-1", CommandId: "cancel-command", TerminalReasonCode: terminalreason.WorkflowTerminated.String(),
 			},
 			setup: func(authService *authmock.MockIAuth, service *jobsmock.MockService) {
-				authService.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				authService.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				service.EXPECT().CancelJob(gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.Internal, "cancel failed"))
 			},
 			wantCode: codes.Internal,
@@ -415,12 +438,7 @@ func TestGetJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -429,7 +447,7 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -467,12 +485,7 @@ func TestGetJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -483,7 +496,7 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,
@@ -493,12 +506,7 @@ func TestGetJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -509,7 +517,7 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -541,12 +549,7 @@ func TestGetJob(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -557,7 +560,7 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -617,12 +620,7 @@ func TestGetJobByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -631,7 +629,7 @@ func TestGetJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJobByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -671,12 +669,7 @@ func TestGetJobByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -684,7 +677,9 @@ func TestGetJobByID(t *testing.T) {
 					Id: "job_id",
 				},
 			},
-			mock:  func(_ *jobspb.GetJobByIDRequest) {},
+			mock: func(_ *jobspb.GetJobByIDRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+			},
 			res:   nil,
 			isErr: true,
 		},
@@ -693,12 +688,7 @@ func TestGetJobByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -707,7 +697,7 @@ func TestGetJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,
@@ -717,12 +707,7 @@ func TestGetJobByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -731,7 +716,7 @@ func TestGetJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJobByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -761,12 +746,7 @@ func TestGetJobByID(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -775,7 +755,7 @@ func TestGetJobByID(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobByIDRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleAdmin)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJobByID(
 					gomock.Any(),
 					gomock.Any(),
@@ -835,12 +815,7 @@ func TestGetJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -852,7 +827,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -897,12 +872,7 @@ func TestGetJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -914,7 +884,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,
@@ -924,12 +894,7 @@ func TestGetJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -941,7 +906,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -974,12 +939,7 @@ func TestGetJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -991,7 +951,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().GetJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1060,12 +1020,7 @@ func TestStreamJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1076,7 +1031,10 @@ func TestStreamJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(
+					gomock.Any(),
+					gomock.Eq(auth.ServiceNameJobs),
+				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 
 				// Create a channel that will send a few logs then close
 				ch := make(chan *jobsmodel.JobLog, 3)
@@ -1115,12 +1073,7 @@ func TestStreamJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					ctx := auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 					ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
@@ -1138,7 +1091,7 @@ func TestStreamJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 
 				// Create a channel that sends logs continuously
 				ch := make(chan *jobsmodel.JobLog)
@@ -1192,12 +1145,7 @@ func TestStreamJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1208,7 +1156,7 @@ func TestStreamJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(nil, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(context.Background(), nil, status.Error(codes.Unauthenticated, "invalid token"))
 			},
 			want: want{
 				logCount:     0,
@@ -1221,12 +1169,7 @@ func TestStreamJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1237,7 +1180,7 @@ func TestStreamJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().StreamJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1254,12 +1197,7 @@ func TestStreamJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1270,7 +1208,7 @@ func TestStreamJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().StreamJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1401,12 +1339,7 @@ func TestSearchJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1422,7 +1355,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.SearchJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1467,12 +1400,7 @@ func TestSearchJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1488,7 +1416,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.SearchJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,
@@ -1498,12 +1426,7 @@ func TestSearchJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1516,7 +1439,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.SearchJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1550,12 +1473,7 @@ func TestSearchJobLogs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1571,7 +1489,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.SearchJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1631,12 +1549,7 @@ func TestListJobs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1647,7 +1560,7 @@ func TestListJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1694,12 +1607,7 @@ func TestListJobs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleAdmin,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1710,7 +1618,7 @@ func TestListJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1759,12 +1667,7 @@ func TestListJobs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "internal-service",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"invalid-token",
 					)
 				},
@@ -1775,7 +1678,7 @@ func TestListJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
 			res:   nil,
 			isErr: true,
@@ -1785,12 +1688,7 @@ func TestListJobs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1801,7 +1699,7 @@ func TestListJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1833,12 +1731,7 @@ func TestListJobs(t *testing.T) {
 			args: args{
 				getCtx: func() context.Context {
 					return auth.WithAuthorizationTokenInMetadata(
-						auth.WithRoleInMetadata(
-							auth.WithAudienceInMetadata(
-								t.Context(), "server-test",
-							),
-							auth.RoleUser,
-						),
+						t.Context(),
 						"token",
 					)
 				},
@@ -1849,7 +1742,7 @@ func TestListJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any()).Return(&jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),

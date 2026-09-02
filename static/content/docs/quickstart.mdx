@@ -12,8 +12,11 @@ Run the complete development stack with Docker Compose. Docker builds the Go ser
 ```bash
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 ## Verify readiness
 

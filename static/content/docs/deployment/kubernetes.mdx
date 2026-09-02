@@ -6,21 +6,21 @@ Chronoverse ships Kustomize overlays and an interactive setup script under `infr
 
 ```bash
 scripts/k8s/setup.sh --mode local
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 `local` is a single-node, self-contained validation strategy. It includes PostgreSQL, Redis, ClickHouse, Kafka, Meilisearch, LGTM, hostPath storage, generated local certificate bootstrap jobs, Kafka topic initialization, one replica per application deployment, Nginx, and the Docker socket proxy with a runtime-agent sidecar. After generating certificates on the local PVC, a resource-name-scoped bootstrap Job mirrors only the CA and generic client identity into `chronoverse-ca` and `chronoverse-client-tls` Secrets so KEDA can authenticate to Kafka.
 
 `production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services, KEDA Kafka-lag scaling for consumers, runtime-agent, Docker proxy, PgBouncer, migrations, and topic initialization.
 
-The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
+The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
 
 Useful non-interactive options include:
 
 ```bash
 scripts/k8s/setup.sh --mode local --create-kind
 scripts/k8s/setup.sh --mode production --context <context> --storage-class <name>
-scripts/k8s/setup.sh --mode production --skip-apply
+scripts/k8s/setup.sh --mode production --context <context> --skip-apply
 scripts/k8s/setup.sh --mode production --context <context> --rotate-docker-proxy-certs
 ```
 
@@ -160,7 +160,7 @@ make k8s/render/production
 make k8s/dry-run/local
 make k8s/dry-run/production
 scripts/k8s/setup.sh --mode local --dry-run
-scripts/k8s/setup.sh --mode production --dry-run
+scripts/k8s/setup.sh --mode production --context <context> --dry-run
 ```
 
 The render targets work offline. Both `kubectl apply --dry-run=client` and the setup-script dry runs still use API discovery and therefore require a reachable selected cluster. Full OpenAPI schema validation requires that live cluster or an external validator such as `kubeconform`.

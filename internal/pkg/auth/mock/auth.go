@@ -42,31 +42,37 @@ func (m *MockIAuth) EXPECT() *MockIAuthMockRecorder {
 }
 
 // IssueToken mocks base method.
-func (m *MockIAuth) IssueToken(ctx context.Context, subject string) (string, error) {
+func (m *MockIAuth) IssueToken(ctx context.Context, subject string, audiences ...string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IssueToken", ctx, subject)
+	varargs := []any{ctx, subject}
+	for _, a := range audiences {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "IssueToken", varargs...)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // IssueToken indicates an expected call of IssueToken.
-func (mr *MockIAuthMockRecorder) IssueToken(ctx, subject any) *gomock.Call {
+func (mr *MockIAuthMockRecorder) IssueToken(ctx, subject any, audiences ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IssueToken", reflect.TypeOf((*MockIAuth)(nil).IssueToken), ctx, subject)
+	varargs := append([]any{ctx, subject}, audiences...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IssueToken", reflect.TypeOf((*MockIAuth)(nil).IssueToken), varargs...)
 }
 
 // ValidateToken mocks base method.
-func (m *MockIAuth) ValidateToken(ctx context.Context) (*jwt.Token, error) {
+func (m *MockIAuth) ValidateToken(ctx context.Context, expectedAudience string) (context.Context, *jwt.Token, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ValidateToken", ctx)
-	ret0, _ := ret[0].(*jwt.Token)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "ValidateToken", ctx, expectedAudience)
+	ret0, _ := ret[0].(context.Context)
+	ret1, _ := ret[1].(*jwt.Token)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // ValidateToken indicates an expected call of ValidateToken.
-func (mr *MockIAuthMockRecorder) ValidateToken(ctx any) *gomock.Call {
+func (mr *MockIAuthMockRecorder) ValidateToken(ctx, expectedAudience any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateToken", reflect.TypeOf((*MockIAuth)(nil).ValidateToken), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateToken", reflect.TypeOf((*MockIAuth)(nil).ValidateToken), ctx, expectedAudience)
 }

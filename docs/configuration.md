@@ -13,6 +13,10 @@ ConfigMaps and Kubernetes Secrets under `infra/k8s`.
 
 Development builds local images and exposes internal ports for debugging:
 
+Store distinct `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` values in the
+gitignored root `.env` before rendering or starting the development stack.
+Compose automatically reloads this file for later commands and restarts.
+
 | Component | Host port | Notes |
 | --- | ---: | --- |
 | Dashboard | `3001` | Next.js dashboard, built with `NEXT_PUBLIC_API_URL=http://localhost:8080` |
@@ -130,7 +134,7 @@ Common commands:
 kubectl kustomize infra/k8s/overlays/local
 kubectl kustomize infra/k8s/overlays/production
 scripts/k8s/setup.sh --mode local
-scripts/k8s/setup.sh --mode production
+scripts/k8s/setup.sh --mode production --context <context>
 ```
 
 The setup script preserves valid, complete pre-created Secrets and generates missing
@@ -515,16 +519,14 @@ production environments should manage:
 - Database passwords and `MEILISEARCH_MASTER_KEY`.
 - Public hostnames, allowed origins, and same-site cookie policy.
 
-Production startup rejects an empty CSRF HMAC secret, the known development
-placeholder, and deployments that reuse one value for `CRYPTO_SECRET` and
-`SERVER_CSRF_HMAC_SECRET`. Persist distinct random values in your secret
-manager. The production Compose profile requires both variables explicitly.
+Startup rejects empty values and deployments that reuse one value for
+`CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` in any environment. Persist distinct random values
+in your secret manager. Both Compose profiles require both variables explicitly.
 
 Kubernetes production deployments may pre-create these Secrets to own their
 credentials and trust material. `scripts/k8s/setup.sh` preserves valid, complete
 operator-provided Secrets and generates missing bootstrap material; it rejects
-partial Secrets, insecure server secret placeholders, reused server secrets,
-and partial internal TLS trust chains:
+partial Secrets, reused server secrets, and partial internal TLS trust chains:
 
 - `postgres-secret`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 - `postgres-app-secret`: the dedicated `chronoverse_app` non-superuser identity

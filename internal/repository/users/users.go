@@ -116,7 +116,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 		if err = tx.Commit(ctx); err != nil {
 			return nil, "", status.Errorf(codes.Internal, "failed to commit registration replay: %v", err)
 		}
-		authToken, err = r.auth.IssueToken(ctx, res.ID)
+		authToken, err = r.auth.IssueToken(ctx, res.ID, auth.GatewayAudiences()...)
 		return res, authToken, err
 	}
 
@@ -173,7 +173,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	}
 
 	// Authentication material is issued only after the account and ledger commit.
-	authToken, err = r.auth.IssueToken(ctx, res.ID)
+	authToken, err = r.auth.IssueToken(ctx, res.ID, auth.GatewayAudiences()...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -239,7 +239,7 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	}
 
 	// Issue authToken
-	authToken, err = r.auth.IssueToken(ctx, loginUserResponse.ID)
+	authToken, err = r.auth.IssueToken(ctx, loginUserResponse.ID, auth.GatewayAudiences()...)
 	if err != nil {
 		return nil, "", err
 	}

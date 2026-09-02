@@ -69,8 +69,8 @@ type Notifications struct {
 	svc  Service
 }
 
-// authTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context.
-func (n *Notifications) authTokenInterceptor() grpc.UnaryServerInterceptor {
+// authTokenInterceptor extracts and validates the authToken from the metadata.
+func (n *Notifications) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
@@ -80,15 +80,18 @@ func (n *Notifications) authTokenInterceptor() grpc.UnaryServerInterceptor {
 		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
-			return "", err
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
+			return nil, err
 		}
 
 		ctx = authpkg.WithAuthorizationToken(ctx, authToken)
-		if _, err := n.auth.ValidateToken(ctx); err != nil {
-			return "", err
+		newCtx, _, err := n.auth.ValidateToken(ctx, authpkg.ServiceNameNotifications)
+		if err != nil {
+			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
+			return nil, err
 		}
 
-		return handler(ctx, req)
+		return handler(newCtx, req)
 	}
 }
 
@@ -125,12 +128,15 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			// authToken must run before the audience/role interceptors so
+			// the JWT-validated audience/role are in context when the
+			// downstream interceptors read them.
+			notifications.authTokenInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.UnaryAudienceInterceptor(),
 			grpcmiddlewares.UnaryRoleInterceptor(func(method, role string) bool {
 				return isInternalAPI(method) && role != authpkg.RoleAdmin.String()
 			}),
-			notifications.authTokenInterceptor(),
 		),
 	)
 

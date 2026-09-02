@@ -86,6 +86,15 @@ validate_compose() {
 validate_env_init() {
   env_file="$tmp_dir/.env"
   output_file="$tmp_dir/compose.dev.env.json"
+  printf 'GRAFANA_HOST_PORT=3100\n' > "$env_file"
+  original_checksum=$(cksum "$env_file")
+  if CRYPTO_SECRET=0123456789abcdef0123456789abcdef \
+    "$root_dir/scripts/compose/init-env.sh" "$env_file" >/dev/null 2>&1; then
+    echo "dotenv initializer accepted an exported server secret" >&2
+    exit 1
+  fi
+  [ "$original_checksum" = "$(cksum "$env_file")" ]
+
   printf 'GRAFANA_HOST_PORT=3100\nexport CRYPTO_SECRET=0123456789abcdef0123456789abcdef\nSERVER_CSRF_HMAC_SECRET="" # intentionally unset\n' > "$env_file"
 
   "$root_dir/scripts/compose/init-env.sh" "$env_file"

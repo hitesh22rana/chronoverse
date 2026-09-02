@@ -4,6 +4,11 @@ set -eu
 root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 env_file="${1:-$root_dir/.env}"
 
+if [ "${CRYPTO_SECRET+x}" = x ] || [ "${SERVER_CSRF_HMAC_SECRET+x}" = x ]; then
+  echo "unset CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET before initializing .env" >&2
+  exit 1
+fi
+
 umask 077
 touch "$env_file"
 

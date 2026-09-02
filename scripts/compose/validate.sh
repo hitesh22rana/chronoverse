@@ -94,6 +94,12 @@ validate_compose() {
     exit 1
   fi
 
+  # P1: No service (except init-certs) should mount the whole ./certs tree, which would expose every issuer private key.
+  if jq -e '.services | to_entries[] | select(.key != "init-certs") | .value.volumes // [] | any(.target == "/certs" and (.source | endswith("/certs")))' "$output_file" >/dev/null; then
+    echo "$compose_file mounts whole ./certs tree (exposes all issuer private keys); mount only own private + pubs + trusted.json + needed TLS subtrees" >&2
+    exit 1
+  fi
+
   if [ "$compose_file" = "compose.prod.yaml" ] && ! jq -e '
     .services as $services
     | ($services.clickhouse.healthcheck.test[1] | contains("$${CLICKHOUSE_PASSWORD}"))

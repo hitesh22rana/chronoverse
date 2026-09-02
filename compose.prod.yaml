@@ -71,7 +71,9 @@ services:
     restart: on-failure
     volumes:
       - postgres:/var/lib/postgresql
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/postgres:/certs/postgres:ro
       - ./certs/postgres/config:/etc/postgresql
     command:
       - "postgres"
@@ -130,7 +132,9 @@ services:
     restart: on-failure
     volumes:
       - redis:/data
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/redis:/certs/redis:ro
     command:
       [
         "--port 0",
@@ -170,7 +174,9 @@ services:
       ENV: production
     volumes:
       - meilisearch:/meili_data
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/meilisearch:/certs/meilisearch:ro
     depends_on:
       init-certs:
         condition: service_completed_successfully
@@ -432,7 +438,23 @@ services:
       '
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/runtime-agent/auth.ed:/certs/issuers/runtime-agent/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
       - ./docker-proxy-certs/runtime-agent:/docker-proxy-certs:ro
     depends_on:
       postgres:
@@ -748,7 +770,23 @@ services:
       ENV: production
     restart: "no"
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/server/auth.ed:/certs/issuers/server/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -799,7 +837,24 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/users-service:/certs/users-service:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/users-service/auth.ed:/certs/issuers/users-service/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -863,7 +918,24 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/workflows-service:/certs/workflows-service:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/workflows-service/auth.ed:/certs/issuers/workflows-service/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -947,7 +1019,24 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/jobs-service:/certs/jobs-service:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/jobs-service/auth.ed:/certs/issuers/jobs-service/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -1018,7 +1107,24 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/notifications-service:/certs/notifications-service:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/notifications-service/auth.ed:/certs/issuers/notifications-service/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -1076,7 +1182,24 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/analytics-service:/certs/analytics-service:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/analytics-service/auth.ed:/certs/issuers/analytics-service/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -1127,7 +1250,23 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/scheduling-worker/auth.ed:/certs/issuers/scheduling-worker/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -1204,7 +1343,23 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/workflow-worker/auth.ed:/certs/issuers/workflow-worker/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
       - ./docker-proxy-certs/workflow-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
@@ -1306,7 +1461,23 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/execution-worker/auth.ed:/certs/issuers/execution-worker/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
       - ./docker-proxy-certs/execution-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
@@ -1384,7 +1555,23 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/joblogs-processor/auth.ed:/certs/issuers/joblogs-processor/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -1441,7 +1628,23 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/analytics-processor/auth.ed:/certs/issuers/analytics-processor/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -1493,7 +1696,23 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/outbox-relay/auth.ed:/certs/issuers/outbox-relay/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 
@@ -1559,7 +1778,23 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs:/certs:ro
+      - ./certs/ca:/certs/ca:ro
+      - ./certs/clients:/certs/clients:ro
+      - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
+      - ./certs/issuers/server/auth.ed:/certs/issuers/server/auth.ed:ro
+      - ./certs/issuers/server/auth.ed.pub:/certs/issuers/server/auth.ed.pub:ro
+      - ./certs/issuers/users-service/auth.ed.pub:/certs/issuers/users-service/auth.ed.pub:ro
+      - ./certs/issuers/workflows-service/auth.ed.pub:/certs/issuers/workflows-service/auth.ed.pub:ro
+      - ./certs/issuers/jobs-service/auth.ed.pub:/certs/issuers/jobs-service/auth.ed.pub:ro
+      - ./certs/issuers/notifications-service/auth.ed.pub:/certs/issuers/notifications-service/auth.ed.pub:ro
+      - ./certs/issuers/analytics-service/auth.ed.pub:/certs/issuers/analytics-service/auth.ed.pub:ro
+      - ./certs/issuers/scheduling-worker/auth.ed.pub:/certs/issuers/scheduling-worker/auth.ed.pub:ro
+      - ./certs/issuers/workflow-worker/auth.ed.pub:/certs/issuers/workflow-worker/auth.ed.pub:ro
+      - ./certs/issuers/execution-worker/auth.ed.pub:/certs/issuers/execution-worker/auth.ed.pub:ro
+      - ./certs/issuers/runtime-agent/auth.ed.pub:/certs/issuers/runtime-agent/auth.ed.pub:ro
+      - ./certs/issuers/joblogs-processor/auth.ed.pub:/certs/issuers/joblogs-processor/auth.ed.pub:ro
+      - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
+      - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ]; do 

@@ -83,14 +83,14 @@ fi
 if [ "$use_docker" -eq 1 ]; then
   run_in_certs "
     set -eu
-    tmp_priv=\$(mktemp)
-    tmp_pub=\$(mktemp)
+    chmod u+w /certs/issuers 2>/dev/null || true
+    chmod u+w /certs/issuers/$issuer 2>/dev/null || true
+    tmp_priv=\$(mktemp /certs/issuers/$issuer/tmp.XXXXXX)
+    tmp_pub=\$(mktemp /certs/issuers/$issuer/tmp.XXXXXX)
     openssl genpkey -algorithm ED25519 -outform pem -out \$tmp_priv 2>/dev/null
     openssl pkey -in \$tmp_priv -pubout -out \$tmp_pub 2>/dev/null
     chmod 440 \$tmp_priv
     chmod 444 \$tmp_pub
-    chmod u+w /certs/issuers 2>/dev/null || true
-    chmod u+w /certs/issuers/$issuer 2>/dev/null || true
     chmod u+w /certs/issuers/$issuer/auth.ed 2>/dev/null || true
     chmod u+w /certs/issuers/$issuer/auth.ed.pub 2>/dev/null || true
     mv \$tmp_priv /certs/issuers/$issuer/auth.ed
@@ -100,14 +100,14 @@ if [ "$use_docker" -eq 1 ]; then
     chmod 444 /certs/issuers/$issuer/auth.ed.pub
   "
 else
-  tmp_priv=$(mktemp)
-  tmp_pub=$(mktemp)
+  chmod u+w "$issuers_dir" 2>/dev/null || true
+  chmod u+w "$issuer_dir" 2>/dev/null || true
+  tmp_priv=$(mktemp "$issuer_dir/tmp.XXXXXX")
+  tmp_pub=$(mktemp "$issuer_dir/tmp.XXXXXX")
   openssl genpkey -algorithm ED25519 -outform pem -out "$tmp_priv" 2>/dev/null || { rm -f "$tmp_priv" "$tmp_pub"; echo "openssl genpkey failed (Ed25519 not supported by host openssl; install openssl with Ed25519 or use docker helper)" >&2; exit 1; }
   openssl pkey -in "$tmp_priv" -pubout -out "$tmp_pub" 2>/dev/null || { rm -f "$tmp_priv" "$tmp_pub"; echo "openssl pkey failed" >&2; exit 1; }
   chmod 440 "$tmp_priv"
   chmod 444 "$tmp_pub"
-  chmod u+w "$issuers_dir" 2>/dev/null || true
-  chmod u+w "$issuer_dir" 2>/dev/null || true
   chmod u+w "$issuer_dir/auth.ed" 2>/dev/null || true
   chmod u+w "$issuer_dir/auth.ed.pub" 2>/dev/null || true
   mv "$tmp_priv" "$issuer_dir/auth.ed"
@@ -145,13 +145,13 @@ if [ -n "$old_kid" ] && [ -n "$old_pub_pem" ]; then
       chmod u+w /certs/issuers 2>/dev/null || true
       chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
       pem=\$(printf '%s' '$b64' | base64 -d)
-      tmp=\$(mktemp)
+      tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
       jq --arg kid '$old_kid' --arg pem \"\$pem\" '.[\$kid].pub = \$pem' /certs/issuers/trusted.json > \"\$tmp\" && mv \"\$tmp\" /certs/issuers/trusted.json
       chmod 444 /certs/issuers/trusted.json
     "
     rm -f "$tmp"
   else
-    tmp=$(mktemp)
+    tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
     jq --arg kid "$old_kid" --arg pem "$old_pub_pem" \
       '.[$kid].pub = $pem' "$trusted" > "$tmp" && mv "$tmp" "$trusted"
     chmod 444 "$trusted"
@@ -165,12 +165,12 @@ if [ "$use_docker" -eq 1 ]; then
     set -eu
     chmod u+w /certs/issuers 2>/dev/null || true
     chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
-    tmp=\$(mktemp)
+    tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
     jq --arg kid '$new_kid' --arg iss '$issuer' --arg pub '$issuer/auth.ed.pub' '. + {(\$kid): {\"iss\": \$iss, \"pub\": \$pub}}' /certs/issuers/trusted.json > \"\$tmp\" && mv \"\$tmp\" /certs/issuers/trusted.json
     chmod 444 /certs/issuers/trusted.json
   "
 else
-  tmp=$(mktemp)
+  tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
   jq --arg kid "$new_kid" --arg iss "$issuer" --arg pub "$issuer/auth.ed.pub" \
     '. + {($kid): {"iss": $iss, "pub": $pub}}' "$trusted" > "$tmp" && mv "$tmp" "$trusted"
   chmod 444 "$trusted"
@@ -215,7 +215,7 @@ Next steps (verifier-first):
        jq 'del(."$old_kid")' $trusted > $trusted.tmp && mv $trusted.tmp $trusted && docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
      (only if old_kid was set; verifiers cache the bundle in memory by Auth.New and must reload to drop the old kid)
      When rotation used the helper container, the jq above may need the same helper:
-       docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.22 sh -c "apk add --no-cache jq >/dev/null 2>&1; jq 'del(.\"$old_kid\")' /certs/issuers/trusted.json > /tmp/t && mv /tmp/t /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
+       docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.22 sh -c "apk add --no-cache jq >/dev/null 2>&1; tmp=\$(mktemp /certs/issuers/tmp.XXXXXX); jq 'del(.\"$old_kid\")' /certs/issuers/trusted.json > \$tmp && mv \$tmp /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
        docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
 
 EOF

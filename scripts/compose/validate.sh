@@ -253,6 +253,42 @@ validate_rotate_helper() {
 		echo "rotate-auth-key.sh has shell syntax errors" >&2
 		exit 1
 	}
+	# Docker helper smoke — CI has docker, so exercise the exact helper path with 0440/0444.
+	# Would have caught 5f4da2b4 (syntax error + 0640) where host sh -n passed.
+	if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1; then
+		tmp_smoke=$(mktemp -d)
+		mkdir -p "$tmp_smoke/certs/issuers/smoke"
+		openssl genpkey -algorithm ED25519 -outform pem -out "$tmp_smoke/certs/issuers/smoke/auth.ed" 2>/dev/null
+		openssl pkey -in "$tmp_smoke/certs/issuers/smoke/auth.ed" -pubout -out "$tmp_smoke/certs/issuers/smoke/auth.ed.pub" 2>/dev/null
+		chmod 440 "$tmp_smoke/certs/issuers/smoke/auth.ed"
+		chmod 444 "$tmp_smoke/certs/issuers/smoke/auth.ed.pub"
+		chmod 555 "$tmp_smoke/certs" 2>/dev/null || true
+		chmod 555 "$tmp_smoke/certs/issuers" 2>/dev/null || true
+		chmod 555 "$tmp_smoke/certs/issuers/smoke" 2>/dev/null || true
+		if ! docker run --rm -v "$tmp_smoke/certs:/certs:rw" alpine:3.22 sh -c '
+			set -eu
+			apk add --no-cache openssl jq >/dev/null 2>&1
+			chmod u+w /certs/issuers 2>/dev/null || true
+			chmod u+w /certs/issuers/smoke 2>/dev/null || true
+			tmp_priv=$(mktemp /certs/issuers/smoke/tmp.XXXXXX)
+			tmp_pub=$(mktemp /certs/issuers/smoke/tmp.XXXXXX)
+			openssl genpkey -algorithm ED25519 -outform pem -out $tmp_priv 2>/dev/null
+			openssl pkey -in $tmp_priv -pubout -out $tmp_pub 2>/dev/null
+			chmod 440 $tmp_priv
+			chmod 444 $tmp_pub
+			if [ -f /certs/issuers/smoke/auth.ed ]; then if ! cp /certs/issuers/smoke/auth.ed /certs/issuers/smoke/.auth.ed.bak; then echo '\''backup of old private key failed'\'' >&2; rm -f $tmp_priv $tmp_pub; exit 1; fi; fi
+			if ! mv $tmp_priv /certs/issuers/smoke/auth.ed; then rm -f $tmp_pub; exit 1; fi
+			if ! mv $tmp_pub /certs/issuers/smoke/auth.ed.pub; then echo '\''public key install failed, restoring private key'\'' >&2; mv /certs/issuers/smoke/.auth.ed.bak /certs/issuers/smoke/auth.ed; exit 1; fi
+			# mode must stay 0440, not 0640
+			perms=$(stat -c %a /certs/issuers/smoke/auth.ed 2>/dev/null || stat -f %Lp /certs/issuers/smoke/auth.ed 2>/dev/null)
+			[ "$perms" = "440" ]
+		' >/dev/null 2>&1; then
+			echo "rotate helper docker smoke failed (quoting or 0440 handling)" >&2
+			rm -rf "$tmp_smoke"
+			exit 1
+		fi
+		rm -rf "$tmp_smoke"
+	fi
 }
 
 validate_rotate_helper

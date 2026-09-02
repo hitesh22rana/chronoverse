@@ -14,6 +14,14 @@ root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
 
+file_permissions() {
+  if stat -f '%Lp' "$1" >/dev/null 2>&1; then
+    stat -f '%Lp' "$1"
+  else
+    stat -c '%a' "$1"
+  fi
+}
+
 render_compose() {
   compose_file=$1
   output_file=$2
@@ -104,7 +112,7 @@ validate_env_init() {
     exit 1
   fi
   [ "$original_checksum" = "$(cksum "$env_file")" ]
-  [ "$(stat -f '%Lp' "$env_file" 2>/dev/null || stat -c '%a' "$env_file")" = 600 ]
+  [ "$(file_permissions "$env_file")" = 600 ]
 
   printf 'GRAFANA_HOST_PORT=3100\nexport CRYPTO_SECRET=0123456789abcdef0123456789abcdef\nSERVER_CSRF_HMAC_SECRET="" # intentionally unset\n' > "$env_file"
 
@@ -116,12 +124,7 @@ validate_env_init() {
   grep -q '^export CRYPTO_SECRET=0123456789abcdef0123456789abcdef$' "$env_file"
   grep -q '^SERVER_CSRF_HMAC_SECRET="" # intentionally unset$' "$env_file"
   [ "$(grep -c '^GRAFANA_HOST_PORT=3100$' "$env_file")" -eq 1 ]
-  if stat -f '%Lp' "$env_file" >/dev/null 2>&1; then
-    permissions=$(stat -f '%Lp' "$env_file")
-  else
-    permissions=$(stat -c '%a' "$env_file")
-  fi
-  [ "$permissions" = 600 ]
+  [ "$(file_permissions "$env_file")" = 600 ]
 
   docker compose --env-file "$env_file" -f "$root_dir/compose.dev.yaml" config --format json > "$output_file"
   jq -e '

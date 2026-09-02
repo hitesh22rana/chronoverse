@@ -38,35 +38,12 @@ func kidForKey(issuer string, pub ed25519.PublicKey) string {
 	return fmt.Sprintf("%s:%s", issuer, hex.EncodeToString(pub[:4]))
 }
 
-func bundlePathsForPublicKey(publicKeyPath string) []string {
-	candidates := []string{}
-	// Derived from publicKeyPath when it lives under issuers/<issuer>/auth.ed.pub
-	if strings.Contains(publicKeyPath, issuersDir) {
-		dir := filepath.Dir(publicKeyPath) // certs/issuers/<issuer>
-		for dir != "." && dir != "/" {
-			if filepath.Base(dir) == "issuers" {
-				candidates = append(candidates, filepath.Join(filepath.Dir(dir), issuersDir, trustedBundleFilename), filepath.Join(dir, trustedBundleFilename))
-				break
-			}
-			next := filepath.Dir(dir)
-			if next == dir {
-				break
-			}
-			dir = next
-		}
+func bundlePathsForPublicKey(_ string) []string {
+	// ponytail: two canonical locations cover local (relative) and container (/certs) mounts.
+	return []string{
+		filepath.Join(issuersDir, trustedBundleFilename),
+		"/certs/issuers/" + trustedBundleFilename,
 	}
-	candidates = append(candidates, filepath.Join(issuersDir, trustedBundleFilename), "/certs/issuers/"+trustedBundleFilename, "/certs/"+trustedBundleFilename)
-	// De-duplicate
-	seen := map[string]struct{}{}
-	uniq := []string{}
-	for _, p := range candidates {
-		if _, ok := seen[p]; ok {
-			continue
-		}
-		seen[p] = struct{}{}
-		uniq = append(uniq, p)
-	}
-	return uniq
 }
 
 func loadPublicKeyFromPEM(path string) (ed25519.PublicKey, []byte, error) {
@@ -85,40 +62,6 @@ func loadPublicKeyFromPEM(path string) (ed25519.PublicKey, []byte, error) {
 	return edPub, data, nil
 }
 
-func resolveBundlePubPath(bundlePath, pub string) []string {
-	if strings.Contains(pub, "-----BEGIN") {
-		return nil
-	}
-	candidates := []string{}
-	if filepath.IsAbs(pub) {
-		candidates = append(candidates, pub)
-	} else {
-		candidates = append(
-			candidates,
-			pub,
-			filepath.Join(filepath.Dir(bundlePath), pub),
-			filepath.Join(issuersDir, pub),
-			filepath.Join("certs", pub),
-			"/certs/"+pub,
-			filepath.Join(filepath.Dir(bundlePath), filepath.Base(pub)),
-		)
-		// If pub is like "issuers/server/auth.ed.pub", the file as mounted is at /certs/issuers/server/auth.ed.pub
-		// which is filepath.Join("/certs", pub) => /certs/issuers/server/auth.ed.pub -> works.
-		// If pub is "server/auth.ed.pub" (relative to issuersDir), join with bundle dir.
-	}
-	// de-duplicate
-	seen := map[string]struct{}{}
-	uniq := []string{}
-	for _, c := range candidates {
-		if _, ok := seen[c]; ok {
-			continue
-		}
-		seen[c] = struct{}{}
-		uniq = append(uniq, c)
-	}
-	return uniq
-}
-
 func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {
 	raw, err := os.ReadFile(bundlePath)
 	if err != nil {
@@ -133,7 +76,6 @@ func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {
 		if kid == "" || entry.Iss == "" || entry.Pub == "" {
 			continue
 		}
-		// Inline PEM?
 		if strings.Contains(entry.Pub, "-----BEGIN") {
 			pub, err := jwt.ParseEdPublicKeyFromPEM([]byte(entry.Pub))
 			if err != nil {
@@ -142,20 +84,16 @@ func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {
 			out[kid] = &bundleEntry{Iss: entry.Iss, PublicKey: pub, PubPath: bundlePath + ":" + kid}
 			continue
 		}
-		candidates := resolveBundlePubPath(bundlePath, entry.Pub)
-		var pubKey crypto.PublicKey
-		var loaded bool
-		for _, cand := range candidates {
-			if pk, _, err := loadPublicKeyFromPEM(cand); err == nil {
-				pubKey = pk
-				loaded = true
-				break
-			}
+		// Single canonical resolution: bundle dir + pub (pub is "$iss/auth.ed.pub").
+		pubPath := entry.Pub
+		if !filepath.IsAbs(pubPath) {
+			pubPath = filepath.Join(filepath.Dir(bundlePath), pubPath)
 		}
-		if !loaded {
+		pk, _, err := loadPublicKeyFromPEM(pubPath)
+		if err != nil {
 			continue
 		}
-		out[kid] = &bundleEntry{Iss: entry.Iss, PublicKey: pubKey, PubPath: entry.Pub}
+		out[kid] = &bundleEntry{Iss: entry.Iss, PublicKey: pk, PubPath: entry.Pub}
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("trusted bundle %s contains no valid entries", bundlePath)
@@ -168,13 +106,6 @@ func findAndLoadBundle(publicKeyPath string) (bundle map[string]*bundleEntry, bu
 		if m, err := loadBundle(cand); err == nil {
 			return m, cand
 		}
-	}
-	// Direct issuersDir fallback
-	if m, err := loadBundle(filepath.Join(issuersDir, trustedBundleFilename)); err == nil {
-		return m, filepath.Join(issuersDir, trustedBundleFilename)
-	}
-	if m, err := loadBundle("/certs/issuers/" + trustedBundleFilename); err == nil {
-		return m, "/certs/issuers/" + trustedBundleFilename
 	}
 	return nil, ""
 }

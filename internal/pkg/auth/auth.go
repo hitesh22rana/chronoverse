@@ -416,7 +416,7 @@ func isOnlyTokenExpired(err error) bool {
 // The audience claim may be a string or a string slice; either form is
 // accepted as long as expectedAudience appears in the list.
 //
-//nolint:gocyclo,nestif // ValidateToken enforces signature, expiry, issuer, kid binding, and claims in one linear flow; splitting would duplicate JWT parsing.
+//nolint:gocyclo // ValidateToken handles kid-bound bundle lookup and claim validation in one linear flow.
 func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outCtx context.Context, token *jwt.Token, err error) {
 	ctx, span := a.tp.Start(ctx, "Auth.ValidateToken")
 	defer func() {
@@ -436,130 +436,67 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		return ctx, nil, err
 	}
 
-	// Fast path: single-key mode (no bundle) preserves original behavior but still
-	// enforces kid-issuer binding if a kid is present and bundle is absent.
-	if a.bundle == nil {
-		parsed, perr := jwt.Parse(
-			tokenString,
-			func(token *jwt.Token) (any, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
-					return nil, status.Error(codes.Unauthenticated, "invalid signing method")
-				}
-				return a.publicKey, nil
-			},
-			jwt.WithLeeway(clockSkewLeeway),
-			jwt.WithAudience(expectedAudience),
-			jwt.WithExpirationRequired(),
-		)
-		expired := isOnlyTokenExpired(perr)
-		if perr != nil && !expired {
-			return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
-		}
-
-		claims, ok := parsed.Claims.(jwt.MapClaims)
-		if !ok {
-			return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
-		}
-		issuer, issuerErr := claims.GetIssuer()
-		if issuerErr != nil || !TrustedIssuer(issuer) {
-			return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
-		}
-
-		roleVal, ok := claims[jwtRoleClaim].(string)
-		if !ok || roleVal == "" {
-			return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
-		}
-		subVal, ok := claims[jwtSubjectClaim].(string)
-		if !ok || subVal == "" {
-			return ctx, nil, status.Error(codes.Unauthenticated, "token missing subject claim")
-		}
-		if expired {
-			return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
-		}
-
-		outCtx = WithAudience(ctx, expectedAudience)
-		outCtx = WithRole(outCtx, roleVal)
-		outCtx = WithSubject(outCtx, subVal)
-
-		return outCtx, parsed, nil
-	}
-
-	// Bundle mode: kid-aware verification with legacy fallback.
-	var kid string
-	if unverified, _, uerr := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{}); uerr == nil {
-		if kv, ok := unverified.Header["kid"].(string); ok {
-			kid = kv
-		}
-	}
-
-	// Helper to attempt verification with a specific candidate key and perform
-	// all post-parse checks. Returns (ctx, token, isExpired, err).
-	tryWithKey := func(candidate crypto.PublicKey) (context.Context, *jwt.Token, bool, error) {
-		parsed, perr := jwt.Parse(
-			tokenString,
-			func(token *jwt.Token) (any, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
-					return nil, status.Error(codes.Unauthenticated, "invalid signing method")
-				}
-				return candidate, nil
-			},
-			jwt.WithLeeway(clockSkewLeeway),
-			jwt.WithAudience(expectedAudience),
-			jwt.WithExpirationRequired(),
-		)
-		expired := isOnlyTokenExpired(perr)
-		if perr != nil && !expired {
-			return ctx, nil, false, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
-		}
-		if parsed == nil {
-			return ctx, nil, false, status.Error(codes.Unauthenticated, "invalid token")
-		}
-		claims, ok := parsed.Claims.(jwt.MapClaims)
-		if !ok {
-			return ctx, nil, false, status.Error(codes.Unauthenticated, "invalid token claims")
-		}
-		issuer, issuerErr := claims.GetIssuer()
-		if issuerErr != nil || !TrustedIssuer(issuer) {
-			return ctx, nil, false, status.Error(codes.Unauthenticated, "token has untrusted issuer")
-		}
-		// Kid-issuer binding: if token carries a kid that exists in bundle, it must match issuer.
-		if kid != "" {
-			if entry, kidExists := a.bundle[kid]; kidExists && entry.Iss != issuer {
-				return ctx, nil, false, status.Error(codes.Unauthenticated, "kid issuer mismatch")
+	var kidFromHeader string
+	parsed, perr := jwt.Parse(
+		tokenString,
+		func(token *jwt.Token) (any, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
+				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
 			}
-		}
-		roleVal, ok := claims[jwtRoleClaim].(string)
-		if !ok || roleVal == "" {
-			return ctx, nil, false, status.Error(codes.Unauthenticated, "token missing role claim")
-		}
-		subVal, ok := claims[jwtSubjectClaim].(string)
-		if !ok || subVal == "" {
-			return ctx, nil, false, status.Error(codes.Unauthenticated, "token missing subject claim")
-		}
-		if expired {
-			return ctx, nil, true, status.Error(codes.DeadlineExceeded, "token is expired")
-		}
-		out := WithAudience(ctx, expectedAudience)
-		out = WithRole(out, roleVal)
-		out = WithSubject(out, subVal)
-		return out, parsed, false, nil
+			if a.bundle != nil {
+				if khStr, ok := token.Header["kid"].(string); ok {
+					kidFromHeader = khStr
+				}
+				if kidFromHeader == "" {
+					return nil, status.Error(codes.Unauthenticated, "missing kid")
+				}
+				entry, ok := a.bundle[kidFromHeader]
+				if !ok {
+					return nil, status.Error(codes.Unauthenticated, "untrusted kid")
+				}
+				return entry.PublicKey, nil
+			}
+			return a.publicKey, nil
+		},
+		jwt.WithLeeway(clockSkewLeeway),
+		jwt.WithAudience(expectedAudience),
+		jwt.WithExpirationRequired(),
+	)
+	expired := isOnlyTokenExpired(perr)
+	if perr != nil && !expired {
+		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
 	}
-
-	if kid == "" {
-		return ctx, nil, status.Error(codes.Unauthenticated, "missing kid")
+	if parsed == nil {
+		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
 	}
-	entry, ok := a.bundle[kid]
+	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
-		return ctx, nil, status.Error(codes.Unauthenticated, "untrusted kid")
+		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
 	}
-	out, tok, isExpired, verr := tryWithKey(entry.PublicKey)
-	if verr != nil {
-		if isExpired {
-			return ctx, nil, verr
+	issuer, issuerErr := claims.GetIssuer()
+	if issuerErr != nil || !TrustedIssuer(issuer) {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
+	}
+	if kidFromHeader != "" {
+		if entry, found := a.bundle[kidFromHeader]; found && entry.Iss != issuer {
+			return ctx, nil, status.Error(codes.Unauthenticated, "kid issuer mismatch")
 		}
-		return ctx, nil, verr
 	}
-	return out, tok, nil
+	roleVal, ok := claims[jwtRoleClaim].(string)
+	if !ok || roleVal == "" {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
+	}
+	subVal, ok := claims[jwtSubjectClaim].(string)
+	if !ok || subVal == "" {
+		return ctx, nil, status.Error(codes.Unauthenticated, "token missing subject claim")
+	}
+	if expired {
+		return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
+	}
+	outCtx = WithAudience(ctx, expectedAudience)
+	outCtx = WithRole(outCtx, roleVal)
+	outCtx = WithSubject(outCtx, subVal)
+	return outCtx, parsed, nil
 }
 
 // Keep trustedIssuers in sync with cmd/<svc>/main.go build ldflags.

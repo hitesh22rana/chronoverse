@@ -115,6 +115,13 @@ validate_env_init() {
   [ "$original_checksum" = "$(cksum "$env_file")" ]
   [ "$(file_permissions "$env_file")" = 600 ]
 
+  printf 'CRYPTO_SECRET=${SEED}\nSERVER_CSRF_HMAC_SECRET=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789\n' > "$env_file"
+  SEED=ambient-only "$root_dir/scripts/compose/init-env.sh" "$env_file" >/dev/null 2>&1
+  grep -Eq '^CRYPTO_SECRET=[[:xdigit:]]{32}$' "$env_file"
+  interpolation_checksum=$(cksum "$env_file")
+  "$root_dir/scripts/compose/init-env.sh" "$env_file" >/dev/null 2>&1
+  [ "$interpolation_checksum" = "$(cksum "$env_file")" ]
+
   printf 'GRAFANA_HOST_PORT=3100\nexport CRYPTO_SECRET=0123456789abcdef0123456789abcdef\nSERVER_CSRF_HMAC_SECRET="" # intentionally unset\n' > "$env_file"
 
   "$root_dir/scripts/compose/init-env.sh" "$env_file"

@@ -3,6 +3,7 @@ set -eu
 
 root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 env_file="${1:-$root_dir/.env}"
+docker_path=$(command -v docker)
 
 if [ "${CRYPTO_SECRET+x}" = x ] || [ "${SERVER_CSRF_HMAC_SECRET+x}" = x ]; then
   echo "unset CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET before initializing .env" >&2
@@ -22,7 +23,7 @@ compose_environment=$(
     '    environment:' \
     '      CRYPTO_SECRET: ${CRYPTO_SECRET-}' \
     '      SERVER_CSRF_HMAC_SECRET: ${SERVER_CSRF_HMAC_SECRET-}' \
-    | docker compose --env-file "$env_file" -f - config --environment
+    | env -i "$docker_path" compose --env-file "$env_file" -f - config --environment
 )
 
 if ! printf '%s\n' "$compose_environment" | grep -q '^CRYPTO_SECRET=.'; then

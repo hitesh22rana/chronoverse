@@ -141,8 +141,8 @@ docker compose -f compose.prod.yaml up -d
 
 Persist these values in your secret manager and reuse them across server
 restarts. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct;
-startup rejects empty values, the known development placeholder, and reuse of
-one value for both purposes in any environment.
+startup rejects empty values and reuse of one value for both purposes in any
+environment.
 
 Production uses published images, internal service networking, resource limits,
 replicated workers, and a single Nginx entry point:

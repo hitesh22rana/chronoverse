@@ -72,8 +72,11 @@ Run the complete development stack with Docker Compose. Docker builds the Go ser
 ```bash
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 ## Verify readiness
 
@@ -1116,8 +1119,11 @@ Compose remains the quickest full-stack path. Kubernetes support is provided thr
 ## Start
 
 ```bash
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 The development stack starts one `runtime-agent` named `local-docker` beside `docker-proxy`. Container job claims use that registered runtime endpoint, so the same runtime ownership path is exercised locally even though there is only one Docker daemon.
 
@@ -1183,8 +1189,7 @@ docker compose -f compose.prod.yaml up -d
 
 Persist these values in your secret manager and reuse them across server
 restarts. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct.
-Production startup rejects empty values, the known development placeholder, and
-reused server secrets.
+Startup rejects empty values and reused server secrets in any environment.
 
 For Kubernetes, use the setup script. It preserves valid, complete pre-created Secrets and generates missing bootstrap material:
 
@@ -1273,7 +1278,7 @@ scripts/k8s/setup.sh --mode production --context <context>
 
 `production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services, KEDA Kafka-lag scaling for consumers, runtime-agent, Docker proxy, PgBouncer, migrations, and topic initialization.
 
-The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
+The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
 
 Useful non-interactive options include:
 
@@ -1470,7 +1475,7 @@ All Go processes accept `ENV` as the runtime mode label. It defaults to `develop
 
 Host and timeouts use `SERVER_HOST`, `SERVER_PORT`, request/read/header/idle timeout values, request body limit, session and CSRF expiry, host URL, allowed origins, same-site mode, `SERVER_CSRF_HMAC_SECRET`, and `CRYPTO_SECRET`.
 
-Production requires persistent, distinct values for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`. Startup rejects empty values, the known development placeholder, and reuse of one value for both purposes. The production Compose profile requires both variables explicitly; the Kubernetes setup workflow validates `chronoverse-server-security`.
+Startup requires persistent, distinct values for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` in any environment. Startup rejects empty values and reuse of one value for both purposes. Both Compose profiles require both variables explicitly; the Kubernetes setup workflow validates `chronoverse-server-security`.
 
 ## gRPC
 
@@ -1545,7 +1550,7 @@ The execution-worker identity is node-root-equivalent if its private key and tok
 
 ## Production secrets
 
-Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be persistent, distinct values; production startup rejects the known development placeholder and reuse of one value for both purposes.
+Treat generated local material as a development convenience. Production should separately manage private keys, CA lifecycle, database credentials, Meilisearch master key, CSRF HMAC secret, encryption secret, hostnames, and certificate rotation. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be persistent, distinct values; startup rejects empty or reused values.
 
 For Kubernetes, pre-create `chronoverse-server-security`, `chronoverse-auth`, `chronoverse-ca`, `chronoverse-ingress-tls`, `chronoverse-client-tls`, `chronoverse-service-tls`, `chronoverse-infra-tls`, `chronoverse-kafka-tls`, the `docker-proxy-ca`/`docker-proxy-server`/three `docker-proxy-client-*` Secrets, `postgres-secret`, `postgres-app-secret`, `clickhouse-secret`, and `meilisearch-secret` when you need to bring your own material. `postgres-secret` is restricted to PostgreSQL and role bootstrap; application workloads use the `chronoverse_app` non-superuser identity from `postgres-app-secret` through PgBouncer transaction pooling. Both PostgreSQL Secrets must name the same database; PgBouncer generates its single route from `postgres-app-secret.POSTGRES_DB`, and setup rejects mismatches or names unsafe for its configuration. The setup script validates complete pre-created server-security Secrets before preserving them. Internal TLS trust-chain and Docker proxy PKI Secrets are treated as atomic sets; partial material is rejected to avoid mixing certificates from different CAs. Ingress TLS is edge-facing and can be managed independently. Otherwise `scripts/k8s/setup.sh --mode production` generates missing fallback Secrets.
 

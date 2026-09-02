@@ -3,8 +3,11 @@
 ## Start
 
 ```bash
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
 
 The development stack starts one `runtime-agent` named `local-docker` beside `docker-proxy`. Container job claims use that registered runtime endpoint, so the same runtime ownership path is exercised locally even though there is only one Docker daemon.
 

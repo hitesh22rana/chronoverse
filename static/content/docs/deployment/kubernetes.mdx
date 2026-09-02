@@ -13,7 +13,7 @@ scripts/k8s/setup.sh --mode production --context <context>
 
 `production` is the self-hosted Chronoverse strategy for your Kubernetes infrastructure. It includes the same infrastructure dependencies in-cluster, plus production-oriented PVCs, HorizontalPodAutoscalers for stateless services, KEDA Kafka-lag scaling for consumers, runtime-agent, Docker proxy, PgBouncer, migrations, and topic initialization.
 
-The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects the known development placeholder, rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
+The script keeps valid, complete operator-provided Secrets and generates only missing bootstrap material. Partial Secrets fail with a clear missing-key error. For `chronoverse-server-security`, it also rejects reuse of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires `CRYPTO_SECRET` to be exactly 32 bytes. It also creates `docker-proxy-auth` (`DOCKER_PROXY_TOKEN`) and the `docker-proxy` mTLS material (`docker-proxy-ca` `ca.crt`, `docker-proxy-server` `server.pem`, and per-client `docker-proxy-client-*` `tls.crt`/`tls.key` for `runtime-agent`/`workflow-worker`/`execution-worker`).
 
 Useful non-interactive options include:
 

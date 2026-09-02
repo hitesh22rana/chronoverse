@@ -156,9 +156,8 @@ so retained hostPath data can survive a resource delete/recreate without
 drifting away from regenerated Secrets. Production generated fallback
 credentials remain random.
 
-For `chronoverse-server-security`, the setup script additionally rejects the
-known development placeholder, rejects reuse of one value for
-`CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires
+For `chronoverse-server-security`, the setup script additionally rejects reuse
+of one value for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET`, and requires
 `CRYPTO_SECRET` to be exactly 32 bytes. An invalid local Secret is replaced with
 the safe local values; an invalid production Secret stops setup so the operator
 can correct it.

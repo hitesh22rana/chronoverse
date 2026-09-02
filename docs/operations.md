@@ -8,8 +8,12 @@ and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 ### Development
 
 ```sh
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
+
+Compose automatically reloads the gitignored `.env` file in later shells.
+Preserve it while existing encrypted sessions must remain valid.
 
 Useful endpoints:
 

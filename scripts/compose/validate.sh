@@ -96,7 +96,11 @@ validate_env_init() {
   [ "$(grep -c '^CRYPTO_SECRET=' "$env_file")" -eq 1 ]
   [ "$(grep -c '^SERVER_CSRF_HMAC_SECRET=' "$env_file")" -eq 1 ]
   [ "$(grep -c '^GRAFANA_HOST_PORT=3100$' "$env_file")" -eq 1 ]
-  permissions=$(stat -f '%Lp' "$env_file" 2>/dev/null || stat -c '%a' "$env_file")
+  if stat -f '%Lp' "$env_file" >/dev/null 2>&1; then
+    permissions=$(stat -f '%Lp' "$env_file")
+  else
+    permissions=$(stat -c '%a' "$env_file")
+  fi
   [ "$permissions" = 600 ]
 
   docker compose --env-file "$env_file" -f "$root_dir/compose.dev.yaml" config --format json > "$output_file"

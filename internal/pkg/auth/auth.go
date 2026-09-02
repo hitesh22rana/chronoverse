@@ -270,13 +270,14 @@ type Auth struct {
 }
 
 // New creates a new Auth instance.
+func New() (*Auth, error) {
+	return NewWithPaths(svcpkg.Info().GetName(), svcpkg.Info().GetAuthPrivateKeyPath(), svcpkg.Info().GetAuthPublicKeyPath())
+}
+
+// NewWithPaths creates a new Auth instance from explicit key paths (test helper).
 //
 //nolint:gocyclo // key load + bundle resolution + kid selection is linear, split would add indirection
-func New() (*Auth, error) {
-	issuer := svcpkg.Info().GetName()
-	privateKeyPath := svcpkg.Info().GetAuthPrivateKeyPath()
-	publicKeyPath := svcpkg.Info().GetAuthPublicKeyPath()
-
+func NewWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read private key: %v", err)
@@ -344,7 +345,7 @@ func New() (*Auth, error) {
 		kid:        kid,
 		bundle:     bundle,
 		bundlePath: bundlePath,
-		tp:         otel.Tracer(svcpkg.Info().GetName()),
+		tp:         otel.Tracer(issuer),
 	}, nil
 }
 

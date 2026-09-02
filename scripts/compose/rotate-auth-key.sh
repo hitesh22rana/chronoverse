@@ -132,11 +132,10 @@ if [ "$use_docker" -eq 1 ]; then
     chmod 444 \$tmp_pub
     chmod u+w /certs/issuers/$issuer/auth.ed 2>/dev/null || true
     chmod u+w /certs/issuers/$issuer/auth.ed.pub 2>/dev/null || true
-    cp /certs/issuers/$issuer/auth.ed /certs/issuers/$issuer/.auth.ed.bak 2>/dev/null || true
-    cp /certs/issuers/$issuer/auth.ed.pub /certs/issuers/$issuer/.auth.ed.pub.bak 2>/dev/null || true
-    if ! mv \$tmp_priv /certs/issuers/$issuer/auth.ed; then rm -f \$tmp_pub; rm -f /certs/issuers/$issuer/.auth.ed.bak /certs/issuers/$issuer/.auth.ed.pub.bak 2>/dev/null || true; exit 1; fi
-    if ! mv \$tmp_pub /certs/issuers/$issuer/auth.ed.pub; then echo "public key install failed, restoring private key" >&2; if [ -f /certs/issuers/$issuer/.auth.ed.bak ]; then mv /certs/issuers/$issuer/.auth.ed.bak /certs/issuers/$issuer/auth.ed 2>/dev/null || true; chmod 440 /certs/issuers/$issuer/auth.ed 2>/dev/null || true; chown 100:101 /certs/issuers/$issuer/auth.ed 2>/dev/null || chgrp 101 /certs/issuers/$issuer/auth.ed 2>/dev/null || true; else rm -f /certs/issuers/$issuer/auth.ed 2>/dev/null || true; fi; rm -f /certs/issuers/$issuer/.auth.ed.pub.bak 2>/dev/null || true; exit 1; fi
-    rm -f /certs/issuers/$issuer/.auth.ed.bak /certs/issuers/$issuer/.auth.ed.pub.bak
+    if [ -f /certs/issuers/$issuer/auth.ed ]; then if ! cp /certs/issuers/$issuer/auth.ed /certs/issuers/$issuer/.auth.ed.bak; then echo "backup of old private key failed" >&2; rm -f \$tmp_priv \$tmp_pub; exit 1; fi; fi
+    if ! mv \$tmp_priv /certs/issuers/$issuer/auth.ed; then rm -f \$tmp_pub; rm -f /certs/issuers/$issuer/.auth.ed.bak 2>/dev/null || true; exit 1; fi
+    if ! mv \$tmp_pub /certs/issuers/$issuer/auth.ed.pub; then echo "public key install failed, restoring private key" >&2; if [ -f /certs/issuers/$issuer/.auth.ed.bak ]; then mv /certs/issuers/$issuer/.auth.ed.bak /certs/issuers/$issuer/auth.ed; chmod 440 /certs/issuers/$issuer/auth.ed; chown 100:101 /certs/issuers/$issuer/auth.ed 2>/dev/null || chgrp 101 /certs/issuers/$issuer/auth.ed 2>/dev/null || true; else rm -f /certs/issuers/$issuer/auth.ed; echo "no backup available, removed partial private key" >&2; fi; exit 1; fi
+    rm -f /certs/issuers/$issuer/.auth.ed.bak
     chmod 440 /certs/issuers/$issuer/auth.ed
     chown 100:101 /certs/issuers/$issuer/auth.ed 2>/dev/null || chgrp 101 /certs/issuers/$issuer/auth.ed 2>/dev/null || true
     chmod 444 /certs/issuers/$issuer/auth.ed.pub
@@ -152,11 +151,10 @@ else
   chmod 444 "$tmp_pub"
   chmod u+w "$issuer_dir/auth.ed" 2>/dev/null || true
   chmod u+w "$issuer_dir/auth.ed.pub" 2>/dev/null || true
-  cp "$issuer_dir/auth.ed" "$issuer_dir/.auth.ed.bak" 2>/dev/null || true
-  cp "$issuer_dir/auth.ed.pub" "$issuer_dir/.auth.ed.pub.bak" 2>/dev/null || true
-  if ! mv "$tmp_priv" "$issuer_dir/auth.ed"; then rm -f "$tmp_pub"; rm -f "$issuer_dir/.auth.ed.bak" "$issuer_dir/.auth.ed.pub.bak" 2>/dev/null || true; exit 1; fi
-  if ! mv "$tmp_pub" "$issuer_dir/auth.ed.pub"; then echo "public key install failed, restoring private key" >&2; if [ -f "$issuer_dir/.auth.ed.bak" ]; then mv "$issuer_dir/.auth.ed.bak" "$issuer_dir/auth.ed" 2>/dev/null || true; chmod 440 "$issuer_dir/auth.ed" 2>/dev/null || true; chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true; else rm -f "$issuer_dir/auth.ed" 2>/dev/null || true; fi; rm -f "$issuer_dir/.auth.ed.pub.bak" 2>/dev/null || true; exit 1; fi
-  rm -f "$issuer_dir/.auth.ed.bak" "$issuer_dir/.auth.ed.pub.bak"
+  if [ -f "$issuer_dir/auth.ed" ]; then if ! cp "$issuer_dir/auth.ed" "$issuer_dir/.auth.ed.bak"; then echo "backup of old private key failed" >&2; rm -f "$tmp_priv" "$tmp_pub"; exit 1; fi; fi
+  if ! mv "$tmp_priv" "$issuer_dir/auth.ed"; then rm -f "$tmp_pub"; rm -f "$issuer_dir/.auth.ed.bak" 2>/dev/null || true; exit 1; fi
+  if ! mv "$tmp_pub" "$issuer_dir/auth.ed.pub"; then echo "public key install failed, restoring private key" >&2; if [ -f "$issuer_dir/.auth.ed.bak" ]; then mv "$issuer_dir/.auth.ed.bak" "$issuer_dir/auth.ed"; chmod 440 "$issuer_dir/auth.ed"; chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true; else rm -f "$issuer_dir/auth.ed"; echo "no backup available, removed partial private key" >&2; fi; exit 1; fi
+  rm -f "$issuer_dir/.auth.ed.bak"
   chmod 440 "$issuer_dir/auth.ed"
   chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true
   chmod 444 "$issuer_dir/auth.ed.pub"

@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ed25519"
@@ -269,6 +270,8 @@ type Auth struct {
 }
 
 // New creates a new Auth instance.
+//
+//nolint:gocyclo // key load + bundle resolution + kid selection is linear, split would add indirection
 func New() (*Auth, error) {
 	issuer := svcpkg.Info().GetName()
 	privateKeyPath := svcpkg.Info().GetAuthPrivateKeyPath()
@@ -297,6 +300,17 @@ func New() (*Auth, error) {
 	edPub, ok := publicKey.(ed25519.PublicKey)
 	if !ok {
 		return nil, status.Errorf(codes.Internal, "public key is not ed25519")
+	}
+	// Verify private and public correspond — prevents signer restart with
+	// mismatched pair (e.g. rotation mv of auth.ed succeeded but auth.ed.pub
+	// failed). Without this, IssueToken would sign with new private while kid
+	// (derived from old public) selects old key for verifiers.
+	if edPriv, ok := privateKey.(ed25519.PrivateKey); ok {
+		if derivedPub, ok := edPriv.Public().(ed25519.PublicKey); ok {
+			if !bytes.Equal(derivedPub, edPub) {
+				return nil, status.Errorf(codes.Internal, "private and public key mismatch")
+			}
+		}
 	}
 	kid := kidForKey(issuer, edPub)
 

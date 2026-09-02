@@ -86,15 +86,15 @@ validate_compose() {
 validate_env_init() {
   env_file="$tmp_dir/.env"
   output_file="$tmp_dir/compose.dev.env.json"
-  printf 'GRAFANA_HOST_PORT=3100\nCRYPTO_SECRET=\nCRYPTO_SECRET=0123456789abcdef0123456789abcdef\nSERVER_CSRF_HMAC_SECRET=" "\n' > "$env_file"
+  printf 'GRAFANA_HOST_PORT=3100\nexport CRYPTO_SECRET=0123456789abcdef0123456789abcdef\nSERVER_CSRF_HMAC_SECRET="" # intentionally unset\n' > "$env_file"
 
   "$root_dir/scripts/compose/init-env.sh" "$env_file"
   first_checksum=$(cksum "$env_file")
   "$root_dir/scripts/compose/init-env.sh" "$env_file"
 
   [ "$first_checksum" = "$(cksum "$env_file")" ]
-  [ "$(grep -c '^CRYPTO_SECRET=' "$env_file")" -eq 1 ]
-  [ "$(grep -c '^SERVER_CSRF_HMAC_SECRET=' "$env_file")" -eq 1 ]
+  grep -q '^export CRYPTO_SECRET=0123456789abcdef0123456789abcdef$' "$env_file"
+  grep -q '^SERVER_CSRF_HMAC_SECRET="" # intentionally unset$' "$env_file"
   [ "$(grep -c '^GRAFANA_HOST_PORT=3100$' "$env_file")" -eq 1 ]
   if stat -f '%Lp' "$env_file" >/dev/null 2>&1; then
     permissions=$(stat -f '%Lp' "$env_file")

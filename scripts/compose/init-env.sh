@@ -11,6 +11,7 @@ fi
 
 umask 077
 touch "$env_file"
+chmod 600 "$env_file"
 
 compose_environment=$(
   unset CRYPTO_SECRET SERVER_CSRF_HMAC_SECRET
@@ -25,10 +26,12 @@ compose_environment=$(
 )
 
 if ! printf '%s\n' "$compose_environment" | grep -q '^CRYPTO_SECRET=.'; then
-  printf '\nCRYPTO_SECRET=%s\n' "$(openssl rand -hex 16)" >> "$env_file"
+  crypto_secret=$(openssl rand -hex 16)
+  [ -n "$crypto_secret" ] || { echo "OpenSSL did not generate CRYPTO_SECRET" >&2; exit 1; }
+  printf '\nCRYPTO_SECRET=%s\n' "$crypto_secret" >> "$env_file"
 fi
 if ! printf '%s\n' "$compose_environment" | grep -q '^SERVER_CSRF_HMAC_SECRET=.'; then
-  printf '\nSERVER_CSRF_HMAC_SECRET=%s\n' "$(openssl rand -hex 32)" >> "$env_file"
+  csrf_secret=$(openssl rand -hex 32)
+  [ -n "$csrf_secret" ] || { echo "OpenSSL did not generate SERVER_CSRF_HMAC_SECRET" >&2; exit 1; }
+  printf '\nSERVER_CSRF_HMAC_SECRET=%s\n' "$csrf_secret" >> "$env_file"
 fi
-
-chmod 600 "$env_file"

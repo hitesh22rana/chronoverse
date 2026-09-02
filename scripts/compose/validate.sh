@@ -95,6 +95,17 @@ validate_env_init() {
   fi
   [ "$original_checksum" = "$(cksum "$env_file")" ]
 
+  mkdir "$tmp_dir/bin"
+  printf '#!/bin/sh\nexit 1\n' > "$tmp_dir/bin/openssl"
+  chmod +x "$tmp_dir/bin/openssl"
+  chmod 644 "$env_file"
+  if PATH="$tmp_dir/bin:$PATH" "$root_dir/scripts/compose/init-env.sh" "$env_file" >/dev/null 2>&1; then
+    echo "dotenv initializer ignored an OpenSSL failure" >&2
+    exit 1
+  fi
+  [ "$original_checksum" = "$(cksum "$env_file")" ]
+  [ "$(stat -f '%Lp' "$env_file" 2>/dev/null || stat -c '%a' "$env_file")" = 600 ]
+
   printf 'GRAFANA_HOST_PORT=3100\nexport CRYPTO_SECRET=0123456789abcdef0123456789abcdef\nSERVER_CSRF_HMAC_SECRET="" # intentionally unset\n' > "$env_file"
 
   "$root_dir/scripts/compose/init-env.sh" "$env_file"

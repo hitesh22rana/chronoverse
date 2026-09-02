@@ -35,11 +35,31 @@ spec:
         - sh
         - -ec
         - |
-          if [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; then
-            openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
-            openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
+          AUTH_ISSUERS="server users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay"
+          mkdir -p /certs/issuers
+          for iss in $AUTH_ISSUERS; do
+            mkdir -p /certs/issuers/$iss
+            if [ ! -f /certs/issuers/$iss/auth.ed ] || [ ! -f /certs/issuers/$iss/auth.ed.pub ]; then
+              openssl genpkey -algorithm ED25519 -outform pem -out /certs/issuers/$iss/auth.ed
+              openssl pkey -in /certs/issuers/$iss/auth.ed -pubout -out /certs/issuers/$iss/auth.ed.pub
+            fi
+            chmod 0400 /certs/issuers/$iss/auth.ed
+            chmod 0444 /certs/issuers/$iss/auth.ed.pub
+          done
+          TRUSTED=/certs/issuers/trusted.json
+          if [ ! -f "$TRUSTED" ]; then
+            printf '{\n' > "$TRUSTED.tmp"
+            first=1
+            for iss in $AUTH_ISSUERS; do
+              kid="$iss:$(date +%Y%m%d)-$(openssl rand -hex 2)"
+              if [ $first -eq 0 ]; then printf ',\n' >> "$TRUSTED.tmp"; fi
+              first=0
+              printf '  \"%s\": {\"iss\": \"%s\", \"pub\": \"%s/auth.ed.pub\"}' "$kid" "$iss" "$iss" >> "$TRUSTED.tmp"
+            done
+            printf '\n}\n' >> "$TRUSTED.tmp"
+            mv "$TRUSTED.tmp" "$TRUSTED"
+            chmod 0444 "$TRUSTED"
           fi
-          chmod 0444 /certs/auth.ed /certs/auth.ed.pub
         resources:
           requests:
             cpu: 50m

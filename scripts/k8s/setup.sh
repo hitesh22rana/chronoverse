@@ -229,7 +229,7 @@ secret_keys() {
     docker-proxy-client-runtime-agent) echo "tls.crt tls.key" ;;
     docker-proxy-client-workflow-worker) echo "tls.crt tls.key" ;;
     docker-proxy-client-execution-worker) echo "tls.crt tls.key" ;;
-    chronoverse-auth) echo "auth.ed auth.ed.pub" ;;
+    chronoverse-auth) echo "server-auth.ed server-auth.ed.pub users-service-auth.ed users-service-auth.ed.pub workflows-service-auth.ed workflows-service-auth.ed.pub jobs-service-auth.ed jobs-service-auth.ed.pub notifications-service-auth.ed notifications-service-auth.ed.pub analytics-service-auth.ed analytics-service-auth.ed.pub scheduling-worker-auth.ed scheduling-worker-auth.ed.pub workflow-worker-auth.ed workflow-worker-auth.ed.pub execution-worker-auth.ed execution-worker-auth.ed.pub runtime-agent-auth.ed runtime-agent-auth.ed.pub joblogs-processor-auth.ed joblogs-processor-auth.ed.pub analytics-processor-auth.ed analytics-processor-auth.ed.pub outbox-relay-auth.ed outbox-relay-auth.ed.pub trusted.json" ;;
     chronoverse-ca) echo "ca.crt" ;;
     chronoverse-ingress-tls) echo "tls.crt tls.key" ;;
     chronoverse-client-tls) echo "tls.crt tls.key" ;;
@@ -552,12 +552,56 @@ create_auth_secret() {
     return
   fi
 
-  info "Generating missing production auth material"
-  openssl genpkey -algorithm ED25519 -outform pem -out "$TMP_DIR/auth.ed" >/dev/null 2>&1
-  openssl pkey -in "$TMP_DIR/auth.ed" -pubout -out "$TMP_DIR/auth.ed.pub" >/dev/null 2>&1
+  info "Generating missing production per-issuer auth material"
+  AUTH_ISSUERS="server users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay"
+  mkdir -p "$TMP_DIR/issuers"
+  for iss in $AUTH_ISSUERS; do
+    mkdir -p "$TMP_DIR/issuers/$iss"
+    openssl genpkey -algorithm ED25519 -outform pem -out "$TMP_DIR/issuers/$iss/auth.ed" >/dev/null 2>&1
+    openssl pkey -in "$TMP_DIR/issuers/$iss/auth.ed" -pubout -out "$TMP_DIR/issuers/$iss/auth.ed.pub" >/dev/null 2>&1
+  done
+  # legacy alias (server)
+  # trusted bundle
+  TRUSTED="$TMP_DIR/issuers/trusted.json"
+  printf '{\n' > "$TRUSTED.tmp"
+  first=1
+  for iss in $AUTH_ISSUERS; do
+    kid="$iss:$(date +%Y%m%d)-$(openssl rand -hex 2)"
+    if [ $first -eq 0 ]; then printf ',\n' >> "$TRUSTED.tmp"; fi
+    first=0
+    printf '  \"%s\": {\"iss\": \"%s\", \"pub\": \"%s/auth.ed.pub\"}' "$kid" "$iss" "$iss" >> "$TRUSTED.tmp"
+  done
+  printf '\n}\n' >> "$TRUSTED.tmp"
+  mv "$TRUSTED.tmp" "$TRUSTED"
+  # create secret with per-issuer keys
   create_file_secret chronoverse-auth \
-    --from-file=auth.ed="$TMP_DIR/auth.ed" \
-    --from-file=auth.ed.pub="$TMP_DIR/auth.ed.pub"
+    --from-file=trusted.json="$TRUSTED" \
+    --from-file=server-auth.ed="$TMP_DIR/issuers/server/auth.ed" \
+    --from-file=server-auth.ed.pub="$TMP_DIR/issuers/server/auth.ed.pub" \
+    --from-file=users-service-auth.ed="$TMP_DIR/issuers/users-service/auth.ed" \
+    --from-file=users-service-auth.ed.pub="$TMP_DIR/issuers/users-service/auth.ed.pub" \
+    --from-file=workflows-service-auth.ed="$TMP_DIR/issuers/workflows-service/auth.ed" \
+    --from-file=workflows-service-auth.ed.pub="$TMP_DIR/issuers/workflows-service/auth.ed.pub" \
+    --from-file=jobs-service-auth.ed="$TMP_DIR/issuers/jobs-service/auth.ed" \
+    --from-file=jobs-service-auth.ed.pub="$TMP_DIR/issuers/jobs-service/auth.ed.pub" \
+    --from-file=notifications-service-auth.ed="$TMP_DIR/issuers/notifications-service/auth.ed" \
+    --from-file=notifications-service-auth.ed.pub="$TMP_DIR/issuers/notifications-service/auth.ed.pub" \
+    --from-file=analytics-service-auth.ed="$TMP_DIR/issuers/analytics-service/auth.ed" \
+    --from-file=analytics-service-auth.ed.pub="$TMP_DIR/issuers/analytics-service/auth.ed.pub" \
+    --from-file=scheduling-worker-auth.ed="$TMP_DIR/issuers/scheduling-worker/auth.ed" \
+    --from-file=scheduling-worker-auth.ed.pub="$TMP_DIR/issuers/scheduling-worker/auth.ed.pub" \
+    --from-file=workflow-worker-auth.ed="$TMP_DIR/issuers/workflow-worker/auth.ed" \
+    --from-file=workflow-worker-auth.ed.pub="$TMP_DIR/issuers/workflow-worker/auth.ed.pub" \
+    --from-file=execution-worker-auth.ed="$TMP_DIR/issuers/execution-worker/auth.ed" \
+    --from-file=execution-worker-auth.ed.pub="$TMP_DIR/issuers/execution-worker/auth.ed.pub" \
+    --from-file=runtime-agent-auth.ed="$TMP_DIR/issuers/runtime-agent/auth.ed" \
+    --from-file=runtime-agent-auth.ed.pub="$TMP_DIR/issuers/runtime-agent/auth.ed.pub" \
+    --from-file=joblogs-processor-auth.ed="$TMP_DIR/issuers/joblogs-processor/auth.ed" \
+    --from-file=joblogs-processor-auth.ed.pub="$TMP_DIR/issuers/joblogs-processor/auth.ed.pub" \
+    --from-file=analytics-processor-auth.ed="$TMP_DIR/issuers/analytics-processor/auth.ed" \
+    --from-file=analytics-processor-auth.ed.pub="$TMP_DIR/issuers/analytics-processor/auth.ed.pub" \
+    --from-file=outbox-relay-auth.ed="$TMP_DIR/issuers/outbox-relay/auth.ed" \
+    --from-file=outbox-relay-auth.ed.pub="$TMP_DIR/issuers/outbox-relay/auth.ed.pub"
 }
 
 create_production_tls_secrets() {

@@ -79,6 +79,45 @@ if [ "$use_docker" -eq 1 ]; then
 else
   mkdir -p "$issuer_dir"
 fi
+# Ensure trusted bundle exists.
+if [ ! -f "$trusted" ]; then
+  if [ "$use_docker" -eq 1 ]; then
+    run_in_certs "printf '{}\n' > /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
+  else
+    printf '{}\n' > "$trusted"
+    chmod 444 "$trusted"
+  fi
+fi
+
+# Update bundle: preserve old kid as inline PEM (if it existed and pointed to file), add new kid.
+if [ -n "$old_kid" ] && [ -n "$old_pub_pem" ]; then
+  if [ "$use_docker" -eq 1 ]; then
+    # Escape pem for passing to container jq
+    tmp=$(mktemp)
+    printf '%s' "$old_pub_pem" > "$tmp"
+    # Use host jq to produce escaped json, then container jq to update
+    # Simpler: do the jq inside container by mounting tmp as well via stdin
+    # We pass pem via environment inside container using base64 to avoid quoting issues
+    b64=$(printf '%s' "$old_pub_pem" | base64 | tr -d '\n')
+    run_in_certs "
+      set -eu
+      chmod u+w /certs/issuers 2>/dev/null || true
+      chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
+      pem=\$(printf '%s' '$b64' | base64 -d)
+      tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
+      jq --arg kid '$old_kid' --arg pem \"\$pem\" '.[\$kid].pub = \$pem' /certs/issuers/trusted.json > \"\$tmp\" && mv \"\$tmp\" /certs/issuers/trusted.json
+      chmod 444 /certs/issuers/trusted.json
+    "
+    rm -f "$tmp"
+  else
+    tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
+    jq --arg kid "$old_kid" --arg pem "$old_pub_pem" \
+      '.[$kid].pub = $pem' "$trusted" > "$tmp" && mv "$tmp" "$trusted"
+    chmod 444 "$trusted"
+  fi
+  echo "📌 Preserved old kid $old_kid as inline PEM for grace period"
+fi
+
 # Generate new Ed25519 keypair (overwrite current).
 if [ "$use_docker" -eq 1 ]; then
   run_in_certs "
@@ -119,45 +158,6 @@ fi
 
 new_kid="$issuer:$(date +%Y%m%d)-$(openssl rand -hex 2)"
 echo "🆕 New kid: $new_kid"
-
-# Ensure trusted bundle exists.
-if [ ! -f "$trusted" ]; then
-  if [ "$use_docker" -eq 1 ]; then
-    run_in_certs "printf '{}\n' > /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
-  else
-    printf '{}\n' > "$trusted"
-    chmod 444 "$trusted"
-  fi
-fi
-
-# Update bundle: preserve old kid as inline PEM (if it existed and pointed to file), add new kid.
-if [ -n "$old_kid" ] && [ -n "$old_pub_pem" ]; then
-  if [ "$use_docker" -eq 1 ]; then
-    # Escape pem for passing to container jq
-    tmp=$(mktemp)
-    printf '%s' "$old_pub_pem" > "$tmp"
-    # Use host jq to produce escaped json, then container jq to update
-    # Simpler: do the jq inside container by mounting tmp as well via stdin
-    # We pass pem via environment inside container using base64 to avoid quoting issues
-    b64=$(printf '%s' "$old_pub_pem" | base64 | tr -d '\n')
-    run_in_certs "
-      set -eu
-      chmod u+w /certs/issuers 2>/dev/null || true
-      chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
-      pem=\$(printf '%s' '$b64' | base64 -d)
-      tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
-      jq --arg kid '$old_kid' --arg pem \"\$pem\" '.[\$kid].pub = \$pem' /certs/issuers/trusted.json > \"\$tmp\" && mv \"\$tmp\" /certs/issuers/trusted.json
-      chmod 444 /certs/issuers/trusted.json
-    "
-    rm -f "$tmp"
-  else
-    tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
-    jq --arg kid "$old_kid" --arg pem "$old_pub_pem" \
-      '.[$kid].pub = $pem' "$trusted" > "$tmp" && mv "$tmp" "$trusted"
-    chmod 444 "$trusted"
-  fi
-  echo "📌 Preserved old kid $old_kid as inline PEM for grace period"
-fi
 
 # Add new kid pointing to file path.
 if [ "$use_docker" -eq 1 ]; then

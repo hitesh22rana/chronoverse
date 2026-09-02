@@ -373,15 +373,15 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=runtime-agent
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/runtime-agent/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/runtime-agent/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
       - ./docker-proxy-certs/runtime-agent:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
+      while [ ! -f /certs/issuers/trusted.json ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -411,21 +411,39 @@ services:
       - ./scripts/compose/init-docker-proxy-certs.sh:/usr/local/bin/init-docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-        if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
-          echo "✅ Certificates already exist, skipping generation"
+        AUTH_ISSUERS="server users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay"
+        echo "🔐 Generating per-issuer Ed25519 keys..."
+        apk add --no-cache openssl >/dev/null 2>&1 || (apk update && apk add --no-cache openssl)
+        mkdir -p /certs/issuers
+        for iss in $$AUTH_ISSUERS; do
+          mkdir -p /certs/issuers/$$iss
+          if [ ! -f /certs/issuers/$$iss/auth.ed ] || [ ! -f /certs/issuers/$$iss/auth.ed.pub ]; then
+            echo "🔑 Generating key for $$iss..."
+            openssl genpkey -algorithm ED25519 -outform pem -out /certs/issuers/$$iss/auth.ed
+            openssl pkey -in /certs/issuers/$$iss/auth.ed -pubout -out /certs/issuers/$$iss/auth.ed.pub
+          fi
+          chmod 400 /certs/issuers/$$iss/auth.ed
+          chmod 444 /certs/issuers/$$iss/auth.ed.pub
+        done
+        TRUSTED=/certs/issuers/trusted.json
+        if [ ! -f "$$TRUSTED" ]; then
+          echo "🔐 Generating trusted bundle..."
+          printf "{\n" > "$$TRUSTED.tmp"
+          first=1
+          for iss in $$AUTH_ISSUERS; do
+            kid="$$iss:$$(date +%Y%m%d)-$$(openssl rand -hex 2)"
+            if [ $$first -eq 0 ]; then printf ",\n" >> "$$TRUSTED.tmp"; fi
+            first=0
+            printf "  "%s": {"iss": "%s", "pub": "%s/auth.ed.pub"}" "$$kid" "$$iss" "$$iss" >> "$$TRUSTED.tmp"
+          done
+          printf "\n}\n" >> "$$TRUSTED.tmp"
+          mv "$$TRUSTED.tmp" "$$TRUSTED"
+          chmod 444 "$$TRUSTED"
+          echo "✅ Trusted bundle generated"
         else
-          echo "🔐 Generating new certificates..."
-          apk update
-          apk add --no-cache openssl
-          openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
-          openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
-          echo "✅ Certificates generated successfully"
+          echo "✅ Trusted bundle already exists"
         fi
-
-        echo "Setting certificate permissions..."
-        chmod 444 /certs/auth.ed.pub
-        chmod 444 /certs/auth.ed
-        echo "🎉 Certificate permissions set successfully"
+        echo "✅ Per-issuer keys ready"
 
         echo "🔐 Initializing TLS certificates for services..."
 
@@ -686,14 +704,14 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=database-migration
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/server/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/server/auth.ed.pub
     restart: "no"
     volumes:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -745,8 +763,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=users-service
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/users-service/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/users-service/auth.ed.pub
     ports:
       - "50051:50051"
     restart: on-failure
@@ -754,7 +772,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -817,8 +835,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=workflows-service
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/workflows-service/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/workflows-service/auth.ed.pub
     ports:
       - "50052:50052"
     restart: on-failure
@@ -826,7 +844,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -909,8 +927,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=jobs-service
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/jobs-service/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/jobs-service/auth.ed.pub
     ports:
       - "50053:50053"
     restart: on-failure
@@ -918,7 +936,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -989,8 +1007,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=notifications-service
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/notifications-service/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/notifications-service/auth.ed.pub
     ports:
       - "50054:50054"
     restart: on-failure
@@ -998,7 +1016,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1056,8 +1074,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=analytics-service
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/analytics-service/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/analytics-service/auth.ed.pub
     ports:
       - "50055:50055"
     restart: on-failure
@@ -1065,7 +1083,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1117,14 +1135,14 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=scheduling-worker
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/scheduling-worker/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/scheduling-worker/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1201,15 +1219,15 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=workflow-worker
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/workflow-worker/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/workflow-worker/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
       - ./docker-proxy-certs/workflow-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
+      while [ ! -f /certs/issuers/trusted.json ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1309,15 +1327,15 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=execution-worker
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/execution-worker/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/execution-worker/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
       - ./docker-proxy-certs/execution-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
+      while [ ! -f /certs/issuers/trusted.json ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1394,14 +1412,14 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=joblogs-processor
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/joblogs-processor/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/joblogs-processor/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1459,14 +1477,14 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=analytics-processor
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/analytics-processor/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/analytics-processor/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1519,14 +1537,14 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=outbox-relay
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/outbox-relay/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/outbox-relay/auth.ed.pub
     restart: on-failure
     volumes:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1590,8 +1608,8 @@ services:
       args:
         - VERSION=v0.0.1
         - NAME=server
-        - PRIVATE_KEY_PATH=certs/auth.ed
-        - PUBLIC_KEY_PATH=certs/auth.ed.pub
+        - PRIVATE_KEY_PATH=certs/issuers/server/auth.ed
+        - PUBLIC_KEY_PATH=certs/issuers/server/auth.ed.pub
     ports:
       - "8080:8080"
     restart: on-failure
@@ -1599,7 +1617,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done

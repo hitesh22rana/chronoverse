@@ -423,7 +423,7 @@ services:
       ENV: production
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
+      while [ ! -f /certs/issuers/trusted.json ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -457,21 +457,39 @@ services:
       - ./scripts/compose/init-docker-proxy-certs.sh:/usr/local/bin/init-docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-        if [ -f /certs/auth.ed ] && [ -f /certs/auth.ed.pub ]; then
-          echo "✅ Certificates already exist, skipping generation"
+        AUTH_ISSUERS="server users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay"
+        echo "🔐 Generating per-issuer Ed25519 keys..."
+        apk add --no-cache openssl >/dev/null 2>&1 || (apk update && apk add --no-cache openssl)
+        mkdir -p /certs/issuers
+        for iss in $$AUTH_ISSUERS; do
+          mkdir -p /certs/issuers/$$iss
+          if [ ! -f /certs/issuers/$$iss/auth.ed ] || [ ! -f /certs/issuers/$$iss/auth.ed.pub ]; then
+            echo "🔑 Generating key for $$iss..."
+            openssl genpkey -algorithm ED25519 -outform pem -out /certs/issuers/$$iss/auth.ed
+            openssl pkey -in /certs/issuers/$$iss/auth.ed -pubout -out /certs/issuers/$$iss/auth.ed.pub
+          fi
+          chmod 400 /certs/issuers/$$iss/auth.ed
+          chmod 444 /certs/issuers/$$iss/auth.ed.pub
+        done
+        TRUSTED=/certs/issuers/trusted.json
+        if [ ! -f "$$TRUSTED" ]; then
+          echo "🔐 Generating trusted bundle..."
+          printf "{\n" > "$$TRUSTED.tmp"
+          first=1
+          for iss in $$AUTH_ISSUERS; do
+            kid="$$iss:$$(date +%Y%m%d)-$$(openssl rand -hex 2)"
+            if [ $$first -eq 0 ]; then printf ",\n" >> "$$TRUSTED.tmp"; fi
+            first=0
+            printf "  "%s": {"iss": "%s", "pub": "%s/auth.ed.pub"}" "$$kid" "$$iss" "$$iss" >> "$$TRUSTED.tmp"
+          done
+          printf "\n}\n" >> "$$TRUSTED.tmp"
+          mv "$$TRUSTED.tmp" "$$TRUSTED"
+          chmod 444 "$$TRUSTED"
+          echo "✅ Trusted bundle generated"
         else
-          echo "🔐 Generating new certificates..."
-          apk update
-          apk add --no-cache openssl
-          openssl genpkey -algorithm ED25519 -outform pem -out /certs/auth.ed
-          openssl pkey -in /certs/auth.ed -pubout -out /certs/auth.ed.pub
-          echo "✅ Certificates generated successfully"
+          echo "✅ Trusted bundle already exists"
         fi
-
-        echo "Setting certificate permissions..."
-        chmod 444 /certs/auth.ed.pub
-        chmod 444 /certs/auth.ed
-        echo "🎉 Certificate permissions set successfully"
+        echo "✅ Per-issuer keys ready"
 
         echo "🔐 Initializing TLS certificates for services..."
 
@@ -732,7 +750,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -783,7 +801,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -847,7 +865,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -931,7 +949,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1002,7 +1020,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1060,7 +1078,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1111,7 +1129,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1189,7 +1207,7 @@ services:
       - ./docker-proxy-certs/workflow-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
+      while [ ! -f /certs/issuers/trusted.json ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1291,7 +1309,7 @@ services:
       - ./docker-proxy-certs/execution-worker:/docker-proxy-certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
+      while [ ! -f /certs/issuers/trusted.json ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1368,7 +1386,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1425,7 +1443,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1477,7 +1495,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done
@@ -1543,7 +1561,7 @@ services:
       - ./certs:/certs:ro
     entrypoint: |
       sh -c '
-      while [ ! -f /certs/auth.ed ] || [ ! -f /certs/auth.ed.pub ]; do 
+      while [ ! -f /certs/issuers/trusted.json ]; do 
         echo "Waiting for certificates..."
         sleep 1
       done

@@ -78,59 +78,59 @@ mockgen: tools
 
 .PHONY: build/users-service
 build/users-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=users-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/users-service ./cmd/users-service
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=users-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/users-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/users-service/auth.ed.pub'" -o ./.bin/users-service ./cmd/users-service
 
 .PHONY: build/workflows-service
 build/workflows-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=workflows-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/workflows-service ./cmd/workflows-service
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=workflows-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/workflows-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/workflows-service/auth.ed.pub'" -o ./.bin/workflows-service ./cmd/workflows-service
 
 .PHONY: build/jobs-service
 build/jobs-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=jobs-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/jobs-service ./cmd/jobs-service
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=jobs-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/jobs-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/jobs-service/auth.ed.pub'" -o ./.bin/jobs-service ./cmd/jobs-service
 
 .PHONY: build/notifications-service
 build/notifications-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=notifications-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/notifications-service ./cmd/notifications-service
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=notifications-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/notifications-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/notifications-service/auth.ed.pub'" -o ./.bin/notifications-service ./cmd/notifications-service
 
 .PHONY: build/analytics-service
 build/analytics-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=analytics-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/analytics-service ./cmd/analytics-service
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=analytics-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/analytics-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/analytics-service/auth.ed.pub'" -o ./.bin/analytics-service ./cmd/analytics-service
 
 .PHONY: build/scheduling-worker
 build/scheduling-worker: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=scheduling-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/scheduling-worker ./cmd/scheduling-worker
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=scheduling-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/scheduling-worker/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/scheduling-worker/auth.ed.pub'" -o ./.bin/scheduling-worker ./cmd/scheduling-worker
 
 .PHONY: build/workflow-worker
 build/workflow-worker: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=workflow-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/workflow-worker ./cmd/workflow-worker
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=workflow-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/workflow-worker/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/workflow-worker/auth.ed.pub'" -o ./.bin/workflow-worker ./cmd/workflow-worker
 
 .PHONY: build/execution-worker
 build/execution-worker: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=execution-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/execution-worker ./cmd/execution-worker
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=execution-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/execution-worker/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/execution-worker/auth.ed.pub'" -o ./.bin/execution-worker ./cmd/execution-worker
 
 .PHONY: build/runtime-agent
 build/runtime-agent: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=runtime-agent' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/runtime-agent ./cmd/runtime-agent
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=runtime-agent' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/runtime-agent/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/runtime-agent/auth.ed.pub'" -o ./.bin/runtime-agent ./cmd/runtime-agent
 
 .PHONY: build/joblogs-processor
 build/joblogs-processor: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=joblogs-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/joblogs-processor ./cmd/joblogs-processor
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=joblogs-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/joblogs-processor/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/joblogs-processor/auth.ed.pub'" -o ./.bin/joblogs-processor ./cmd/joblogs-processor
 
 .PHONY: build/analytics-processor
 build/analytics-processor: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=analytics-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/analytics-processor ./cmd/analytics-processor
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=analytics-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/analytics-processor/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/analytics-processor/auth.ed.pub'" -o ./.bin/analytics-processor ./cmd/analytics-processor
 
 .PHONY: build/outbox-relay
 build/outbox-relay: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=outbox-relay' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/outbox-relay ./cmd/outbox-relay
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=outbox-relay' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/outbox-relay/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/outbox-relay/auth.ed.pub'" -o ./.bin/outbox-relay ./cmd/outbox-relay
 
 .PHONY: build/database-migration
 build/database-migration: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=database-migration' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/database-migration ./cmd/database-migration
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=database-migration' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/server/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/server/auth.ed.pub'" -o ./.bin/database-migration ./cmd/database-migration
 
 .PHONY: build/server
 build/server: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=server' -X '${PKG_PATH}.authPrivateKeyPath=certs/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/auth.ed.pub'" -o ./.bin/server ./cmd/server
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=server' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/server/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/server/auth.ed.pub'" -o ./.bin/server ./cmd/server
 
 .PHONY: build/all
 build/all: build/users-service build/workflows-service build/jobs-service build/notifications-service build/analytics-service build/scheduling-worker build/workflow-worker build/execution-worker build/runtime-agent build/joblogs-processor build/analytics-processor build/outbox-relay build/database-migration build/server

@@ -5,6 +5,7 @@ package auth
 import (
 	"context"
 	"crypto"
+	"crypto/ed25519"
 	"errors"
 	"os"
 	"slices"
@@ -261,12 +262,19 @@ type Auth struct {
 	issuer     string
 	privateKey crypto.PrivateKey
 	publicKey  crypto.PublicKey
+	kid        string
+	bundle     map[string]*bundleEntry
+	bundlePath string
 	tp         trace.Tracer
 }
 
 // New creates a new Auth instance.
 func New() (*Auth, error) {
-	privateKeyBytes, err := os.ReadFile(svcpkg.Info().GetAuthPrivateKeyPath())
+	issuer := svcpkg.Info().GetName()
+	privateKeyPath := svcpkg.Info().GetAuthPrivateKeyPath()
+	publicKeyPath := svcpkg.Info().GetAuthPublicKeyPath()
+
+	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read private key: %v", err)
 	}
@@ -276,7 +284,7 @@ func New() (*Auth, error) {
 		return nil, status.Errorf(codes.Internal, "failed to parse private key: %v", err)
 	}
 
-	publicKeyBytes, err := os.ReadFile(svcpkg.Info().GetAuthPublicKeyPath())
+	publicKeyBytes, err := os.ReadFile(publicKeyPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read public key: %v", err)
 	}
@@ -286,10 +294,41 @@ func New() (*Auth, error) {
 		return nil, status.Errorf(codes.Internal, "failed to parse public key: %v", err)
 	}
 
+	edPub, ok := publicKey.(ed25519.PublicKey)
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "public key is not ed25519")
+	}
+	kid := kidForKey(issuer, edPub)
+
+	bundle, bundlePath := findAndLoadBundle(publicKeyPath)
+	if bundle != nil {
+		for candKid, entry := range bundle {
+			if entry.Iss != issuer {
+				continue
+			}
+			if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && len(candPub) == len(edPub) {
+				match := true
+				for i := range candPub {
+					if candPub[i] != edPub[i] {
+						match = false
+						break
+					}
+				}
+				if match {
+					kid = candKid
+					break
+				}
+			}
+		}
+	}
+
 	return &Auth{
-		issuer:     svcpkg.Info().GetName(),
+		issuer:     issuer,
 		privateKey: privateKey,
 		publicKey:  publicKey,
+		kid:        kid,
+		bundle:     bundle,
+		bundlePath: bundlePath,
 		tp:         otel.Tracer(svcpkg.Info().GetName()),
 	}, nil
 }
@@ -315,7 +354,6 @@ func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...stri
 	if err != nil {
 		return "", err
 	}
-
 	now := time.Now()
 	_token := jwt.NewWithClaims(&jwt.SigningMethodEd25519{}, jwt.MapClaims{
 		jwtAudienceClaim:  audiences,
@@ -326,6 +364,11 @@ func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...stri
 		jwtSubjectClaim:   subject,
 		jwtRoleClaim:      role,
 	})
+	if a.kid != "" {
+		_token.Header["kid"] = a.kid
+		// Ensure alg is EdDSA per RFC; jwt library sets it via SigningMethod
+		_token.Header["alg"] = jwt.SigningMethodEdDSA.Alg()
+	}
 
 	signed, err := _token.SignedString(a.privateKey)
 	if err != nil {
@@ -393,49 +436,130 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		return ctx, nil, err
 	}
 
-	parsed, err := jwt.Parse(
-		tokenString,
-		func(token *jwt.Token) (any, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
-				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
+	// Fast path: single-key mode (no bundle) preserves original behaviour but still
+	// enforces kid-issuer binding if a kid is present and bundle is absent.
+	if a.bundle == nil {
+		parsed, perr := jwt.Parse(
+			tokenString,
+			func(token *jwt.Token) (any, error) {
+				if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
+					return nil, status.Error(codes.Unauthenticated, "invalid signing method")
+				}
+				return a.publicKey, nil
+			},
+			jwt.WithLeeway(clockSkewLeeway),
+			jwt.WithAudience(expectedAudience),
+			jwt.WithExpirationRequired(),
+		)
+		expired := isOnlyTokenExpired(perr)
+		if perr != nil && !expired {
+			return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
+		}
+
+		claims, ok := parsed.Claims.(jwt.MapClaims)
+		if !ok {
+			return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
+		}
+		issuer, issuerErr := claims.GetIssuer()
+		if issuerErr != nil || !TrustedIssuer(issuer) {
+			return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
+		}
+
+		roleVal, ok := claims[jwtRoleClaim].(string)
+		if !ok || roleVal == "" {
+			return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
+		}
+		subVal, ok := claims[jwtSubjectClaim].(string)
+		if !ok || subVal == "" {
+			return ctx, nil, status.Error(codes.Unauthenticated, "token missing subject claim")
+		}
+		if expired {
+			return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
+		}
+
+		outCtx = WithAudience(ctx, expectedAudience)
+		outCtx = WithRole(outCtx, roleVal)
+		outCtx = WithSubject(outCtx, subVal)
+
+		return outCtx, parsed, nil
+	}
+
+	// Bundle mode: kid-aware verification with legacy fallback.
+	var kid string
+	if unverified, _, uerr := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{}); uerr == nil {
+		if kv, ok := unverified.Header["kid"].(string); ok {
+			kid = kv
+		}
+	}
+
+	// Helper to attempt verification with a specific candidate key and perform
+	// all post-parse checks. Returns (ctx, token, isExpired, err).
+	tryWithKey := func(candidate crypto.PublicKey) (context.Context, *jwt.Token, bool, error) {
+		parsed, perr := jwt.Parse(
+			tokenString,
+			func(token *jwt.Token) (any, error) {
+				if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
+					return nil, status.Error(codes.Unauthenticated, "invalid signing method")
+				}
+				return candidate, nil
+			},
+			jwt.WithLeeway(clockSkewLeeway),
+			jwt.WithAudience(expectedAudience),
+			jwt.WithExpirationRequired(),
+		)
+		expired := isOnlyTokenExpired(perr)
+		if perr != nil && !expired {
+			return ctx, nil, false, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
+		}
+		if parsed == nil {
+			return ctx, nil, false, status.Error(codes.Unauthenticated, "invalid token")
+		}
+		claims, ok := parsed.Claims.(jwt.MapClaims)
+		if !ok {
+			return ctx, nil, false, status.Error(codes.Unauthenticated, "invalid token claims")
+		}
+		issuer, issuerErr := claims.GetIssuer()
+		if issuerErr != nil || !TrustedIssuer(issuer) {
+			return ctx, nil, false, status.Error(codes.Unauthenticated, "token has untrusted issuer")
+		}
+		// Kid-issuer binding: if token carries a kid that exists in bundle, it must match issuer.
+		if kid != "" {
+			if entry, ok := a.bundle[kid]; ok && entry.Iss != issuer {
+				return ctx, nil, false, status.Error(codes.Unauthenticated, "kid issuer mismatch")
 			}
-			return a.publicKey, nil
-		},
-		jwt.WithLeeway(clockSkewLeeway),
-		jwt.WithAudience(expectedAudience),
-		jwt.WithExpirationRequired(),
-	)
-	expired := isOnlyTokenExpired(err)
-	if err != nil && !expired {
-		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", err)
+		}
+		roleVal, ok := claims[jwtRoleClaim].(string)
+		if !ok || roleVal == "" {
+			return ctx, nil, false, status.Error(codes.Unauthenticated, "token missing role claim")
+		}
+		subVal, ok := claims[jwtSubjectClaim].(string)
+		if !ok || subVal == "" {
+			return ctx, nil, false, status.Error(codes.Unauthenticated, "token missing subject claim")
+		}
+		if expired {
+			return ctx, nil, true, status.Error(codes.DeadlineExceeded, "token is expired")
+		}
+		out := WithAudience(ctx, expectedAudience)
+		out = WithRole(out, roleVal)
+		out = WithSubject(out, subVal)
+		return out, parsed, false, nil
 	}
 
-	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if kid == "" {
+		return ctx, nil, status.Error(codes.Unauthenticated, "missing kid")
+	}
+	entry, ok := a.bundle[kid]
 	if !ok {
-		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
+		return ctx, nil, status.Error(codes.Unauthenticated, "untrusted kid")
 	}
-	issuer, issuerErr := claims.GetIssuer()
-	if issuerErr != nil || !TrustedIssuer(issuer) {
-		return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
+	out, tok, isExpired, verr := tryWithKey(entry.PublicKey)
+	if verr != nil {
+		if isExpired {
+			return ctx, nil, verr
+		}
+		return ctx, nil, verr
 	}
-
-	roleVal, ok := claims[jwtRoleClaim].(string)
-	if !ok || roleVal == "" {
-		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
-	}
-	subVal, ok := claims[jwtSubjectClaim].(string)
-	if !ok || subVal == "" {
-		return ctx, nil, status.Error(codes.Unauthenticated, "token missing subject claim")
-	}
-	if expired {
-		return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
-	}
-
-	outCtx = WithAudience(ctx, expectedAudience)
-	outCtx = WithRole(outCtx, roleVal)
-	outCtx = WithSubject(outCtx, subVal)
-
-	return outCtx, parsed, nil
+	return out, tok, nil
 }
 
 // Keep trustedIssuers in sync with cmd/<svc>/main.go build ldflags.

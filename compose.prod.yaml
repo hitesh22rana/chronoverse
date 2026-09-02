@@ -111,7 +111,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "clickhouse-client --secure --host=localhost --port=9440 --user=chronoverse-client --password=chronoverse --query 'SELECT 1'",
+          "clickhouse-client --secure --host=localhost --port=9440 --user=chronoverse-client --password=\"$${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1'",
         ]
       interval: 10s
       timeout: 5s
@@ -663,7 +663,7 @@ services:
       <clickhouse>
         <users>
           <chronoverse-client>
-            <password>chronoverse</password>
+            <password from_env="CLICKHOUSE_PASSWORD"/>
             <networks>
               <ip>::/0</ip>
               <ip>0.0.0.0/0</ip>
@@ -719,7 +719,7 @@ services:
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
@@ -906,7 +906,7 @@ services:
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
@@ -1147,7 +1147,7 @@ services:
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
@@ -1349,7 +1349,7 @@ services:
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt

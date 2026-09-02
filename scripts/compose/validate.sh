@@ -82,6 +82,21 @@ validate_compose() {
     echo "$compose_file does not isolate every Docker proxy client role" >&2
     exit 1
   fi
+
+  if [ "$compose_file" = "compose.prod.yaml" ] && ! jq -e '
+    .services as $services
+    | ($services.clickhouse.healthcheck.test[1] | contains("$${CLICKHOUSE_PASSWORD}"))
+      and ($services["init-certs"].entrypoint[2] | contains("<password from_env=\"CLICKHOUSE_PASSWORD\"/>"))
+      and ([
+        "init-database-migration",
+        "jobs-service",
+        "workflow-worker",
+        "joblogs-processor"
+      ] | all(.[]; $services[.].environment.MEILISEARCH_MASTER_KEY == "compose-validation"))
+  ' "$output_file" >/dev/null; then
+    echo "$compose_file does not propagate ClickHouse or Meilisearch credentials consistently" >&2
+    exit 1
+  fi
 }
 
 validate_compose compose.dev.yaml

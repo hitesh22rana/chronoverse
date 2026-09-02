@@ -147,9 +147,9 @@ else
   openssl pkey -in "$tmp_priv" -pubout -out "$tmp_pub" 2>/dev/null || { rm -f "$tmp_priv" "$tmp_pub"; echo "openssl pkey failed" >&2; exit 1; }
   chmod 440 "$tmp_priv"
   chmod 444 "$tmp_pub"
-  if [ -f "$issuer_dir/auth.ed" ]; then if ! cp "$issuer_dir/auth.ed" "$issuer_dir/.auth.ed.bak"; then echo "backup of old private key failed" >&2; rm -f "$tmp_priv" "$tmp_pub"; exit 1; fi; fi
+  if [ -f "$issuer_dir/auth.ed" ]; then if ! cp "$issuer_dir/auth.ed" "$issuer_dir/.auth.ed.bak"; then echo 'backup of old private key failed' >&2; rm -f "$tmp_priv" "$tmp_pub"; exit 1; fi; fi
   if ! mv "$tmp_priv" "$issuer_dir/auth.ed"; then rm -f "$tmp_pub"; rm -f "$issuer_dir/.auth.ed.bak" 2>/dev/null || true; exit 1; fi
-  if ! mv "$tmp_pub" "$issuer_dir/auth.ed.pub"; then echo "public key install failed, restoring private key" >&2; if [ -f "$issuer_dir/.auth.ed.bak" ]; then mv "$issuer_dir/.auth.ed.bak" "$issuer_dir/auth.ed"; chmod 440 "$issuer_dir/auth.ed"; chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true; else rm -f "$issuer_dir/auth.ed"; echo "no backup available, removed partial private key" >&2; fi; exit 1; fi
+  if ! mv "$tmp_pub" "$issuer_dir/auth.ed.pub"; then echo 'public key install failed, restoring private key' >&2; if [ -f "$issuer_dir/.auth.ed.bak" ]; then mv "$issuer_dir/.auth.ed.bak" "$issuer_dir/auth.ed"; chmod 440 "$issuer_dir/auth.ed"; chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true; else rm -f "$issuer_dir/auth.ed"; echo 'no backup available, removed partial private key' >&2; fi; exit 1; fi
   rm -f "$issuer_dir/.auth.ed.bak"
   chmod 440 "$issuer_dir/auth.ed"
   chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true

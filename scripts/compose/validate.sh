@@ -229,4 +229,32 @@ validate_auth_bundle() {
 }
 
 validate_auth_bundle
+
+validate_rotate_helper() {
+	# Previous quoting regression (5f4da2b4): echo "..." inside run_in_certs "..."
+	# truncated the outer sh -c argument and weakened 0440→0640. Guard it.
+	if grep -q 'echo "backup of old private key failed"' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh helper contains echo \"...\" inside run_in_certs \"...\" — use single quotes" >&2
+		exit 1
+	fi
+	if grep -q 'echo "public key install failed' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh helper contains echo \"...\" inside run_in_certs \"...\" — use single quotes" >&2
+		exit 1
+	fi
+	if grep -q 'echo "no backup available' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh helper contains echo \"...\" inside run_in_certs \"...\" — use single quotes" >&2
+		exit 1
+	fi
+	if grep -q 'chmod u+w.*auth\.ed' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh should not chmod u+w live auth.ed files — directory write suffices" >&2
+		exit 1
+	fi
+	sh -n "$root_dir/scripts/compose/rotate-auth-key.sh" || {
+		echo "rotate-auth-key.sh has shell syntax errors" >&2
+		exit 1
+	}
+}
+
+validate_rotate_helper
+
 echo "Compose configurations, development secrets, and Docker proxy credential mounts are valid"

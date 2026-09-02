@@ -83,6 +83,32 @@ validate_compose() {
   fi
 }
 
+validate_env_init() {
+  env_file="$tmp_dir/.env"
+  output_file="$tmp_dir/compose.dev.env.json"
+  printf 'GRAFANA_HOST_PORT=3100\nCRYPTO_SECRET=\nCRYPTO_SECRET=0123456789abcdef0123456789abcdef\nSERVER_CSRF_HMAC_SECRET=" "\n' > "$env_file"
+
+  "$root_dir/scripts/compose/init-env.sh" "$env_file"
+  first_checksum=$(cksum "$env_file")
+  "$root_dir/scripts/compose/init-env.sh" "$env_file"
+
+  [ "$first_checksum" = "$(cksum "$env_file")" ]
+  [ "$(grep -c '^CRYPTO_SECRET=' "$env_file")" -eq 1 ]
+  [ "$(grep -c '^SERVER_CSRF_HMAC_SECRET=' "$env_file")" -eq 1 ]
+  [ "$(grep -c '^GRAFANA_HOST_PORT=3100$' "$env_file")" -eq 1 ]
+  permissions=$(stat -f '%Lp' "$env_file" 2>/dev/null || stat -c '%a' "$env_file")
+  [ "$permissions" = 600 ]
+
+  docker compose --env-file "$env_file" -f "$root_dir/compose.dev.yaml" config --format json > "$output_file"
+  jq -e '
+    .services.server.environment.CRYPTO_SECRET | length == 32
+  ' "$output_file" >/dev/null
+  jq -e '
+    .services.server.environment.SERVER_CSRF_HMAC_SECRET | length == 64
+  ' "$output_file" >/dev/null
+}
+
+validate_env_init
 validate_compose compose.dev.yaml
 validate_compose compose.prod.yaml
-echo "Compose configurations and Docker proxy credential mounts are valid"
+echo "Compose configurations, development secrets, and Docker proxy credential mounts are valid"

@@ -104,13 +104,7 @@ Docker-workflow runtime.
 ```sh
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
-(
-  umask 077
-  touch .env
-  grep -q '^CRYPTO_SECRET=' .env || printf '\nCRYPTO_SECRET=%s\n' "$(openssl rand -hex 16)" >> .env
-  grep -q '^SERVER_CSRF_HMAC_SECRET=' .env || printf '\nSERVER_CSRF_HMAC_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
-  chmod 600 .env
-)
+scripts/compose/init-env.sh
 docker compose -f compose.dev.yaml up -d
 ```
 

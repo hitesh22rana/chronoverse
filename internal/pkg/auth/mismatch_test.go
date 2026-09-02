@@ -1,6 +1,6 @@
 // Package auth — mismatch regression test for rotation atomicity.
 //
-//nolint:testpackage // needs NewWithPaths access, same as rotation_test.go
+//nolint:testpackage // needs newWithPaths access, same as rotation_test.go
 package auth
 
 import (
@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -59,14 +60,14 @@ func TestNewWithPathsRejectsMismatchedKeypair(t *testing.T) {
 		t.Fatalf("write pub: %v", writeErr)
 	}
 
-	_, newErr := NewWithPaths("server", privPath, pubPath)
+	_, newErr := newWithPaths("server", privPath, pubPath)
 	if newErr == nil {
-		t.Fatal("expected NewWithPaths to fail on mismatched pair, got nil")
+		t.Fatal("expected newWithPaths to fail on mismatched pair, got nil")
 	}
 	if status.Code(newErr) != codes.Internal {
 		t.Fatalf("expected Internal, got %v", status.Code(newErr))
 	}
-	if got := status.Convert(newErr).Message(); got != "private and public key mismatch" && !containsStr(got, "mismatch") {
+	if got := status.Convert(newErr).Message(); got != "private and public key mismatch" && !strings.Contains(got, "mismatch") {
 		t.Fatalf("expected mismatch message, got %q", got)
 	}
 }
@@ -92,24 +93,11 @@ func TestNewWithPathsAcceptsMatchingKeypair(t *testing.T) {
 		t.Fatalf("write pub: %v", writeErr)
 	}
 
-	auth, newErr := NewWithPaths("server", privPath, pubPath)
+	auth, newErr := newWithPaths("server", privPath, pubPath)
 	if newErr != nil {
-		t.Fatalf("expected NewWithPaths to succeed on matching pair, got %v", newErr)
+		t.Fatalf("expected newWithPaths to succeed on matching pair, got %v", newErr)
 	}
 	if auth == nil || auth.kid == "" {
 		t.Fatalf("expected auth with kid, got %+v", auth)
 	}
-}
-
-func containsStr(s, substr string) bool {
-	return len(s) >= len(substr) && indexStr(s, substr) >= 0
-}
-
-func indexStr(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
 }

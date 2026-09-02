@@ -28,7 +28,10 @@ render_compose() {
   output_file=$2
 
   if [ "$compose_file" = "compose.prod.yaml" ]; then
-    CRYPTO_SECRET=0123456789abcdef0123456789abcdef \
+    POSTGRES_PASSWORD=compose-validation \
+      CLICKHOUSE_PASSWORD=compose-validation \
+      MEILI_MASTER_KEY=compose-validation \
+      CRYPTO_SECRET=0123456789abcdef0123456789abcdef \
       SERVER_CSRF_HMAC_SECRET=abcdef0123456789abcdef0123456789 \
       GF_SECURITY_ADMIN_PASSWORD=compose-validation \
       docker compose -f "$root_dir/$compose_file" config --format json > "$output_file"
@@ -88,6 +91,21 @@ validate_compose() {
       )
   ' "$output_file" >/dev/null; then
     echo "$compose_file does not isolate every Docker proxy client role" >&2
+    exit 1
+  fi
+
+  if [ "$compose_file" = "compose.prod.yaml" ] && ! jq -e '
+    .services as $services
+    | ($services.clickhouse.healthcheck.test[1] | contains("$${CLICKHOUSE_PASSWORD}"))
+      and ($services["init-certs"].entrypoint[2] | contains("<password from_env=\"CLICKHOUSE_PASSWORD\"/>"))
+      and ([
+        "init-database-migration",
+        "jobs-service",
+        "workflow-worker",
+        "joblogs-processor"
+      ] | all(.[]; $services[.].environment.MEILISEARCH_MASTER_KEY == "compose-validation"))
+  ' "$output_file" >/dev/null; then
+    echo "$compose_file does not propagate ClickHouse or Meilisearch credentials consistently" >&2
     exit 1
   fi
 }

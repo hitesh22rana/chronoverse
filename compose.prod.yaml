@@ -66,7 +66,7 @@ services:
     container_name: postgres
     environment:
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
     restart: on-failure
     volumes:
@@ -99,7 +99,7 @@ services:
     container_name: clickhouse
     environment:
       CLICKHOUSE_USER: chronoverse-client
-      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD}
     restart: on-failure
     volumes:
       - clickhouse:/var/lib/clickhouse
@@ -111,7 +111,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "clickhouse-client --secure --host=localhost --port=9440 --user=chronoverse-client --password=chronoverse --query 'SELECT 1'",
+          "clickhouse-client --secure --host=localhost --port=9440 --user=chronoverse-client --password=\"$${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1'",
         ]
       interval: 10s
       timeout: 5s
@@ -161,7 +161,7 @@ services:
     container_name: meilisearch
     restart: on-failure
     environment:
-      MEILI_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILI_SSL_AUTH_PATH: /certs/ca/ca.crt
       MEILI_SSL_REQUIRE_AUTH: true
       MEILI_SSL_CERT_PATH: /certs/meilisearch/meilisearch.crt
@@ -400,7 +400,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -663,7 +663,7 @@ services:
       <clickhouse>
         <users>
           <chronoverse-client>
-            <password>chronoverse</password>
+            <password from_env="CLICKHOUSE_PASSWORD"/>
             <networks>
               <ip>::/0</ip>
               <ip>0.0.0.0/0</ip>
@@ -704,7 +704,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -713,13 +713,13 @@ services:
       POSTGRES_MIN_CONNS: 2
       CLICKHOUSE_HOSTS: clickhouse:9440
       CLICKHOUSE_USERNAME: chronoverse-client
-      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD}
       CLICKHOUSE_TLS_ENABLED: true
       CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
@@ -757,7 +757,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -821,7 +821,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -885,7 +885,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -900,13 +900,13 @@ services:
       REDIS_TLS_KEY_FILE: certs/clients/client.key
       CLICKHOUSE_HOSTS: clickhouse:9440
       CLICKHOUSE_USERNAME: chronoverse-client
-      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD}
       CLICKHOUSE_TLS_ENABLED: true
       CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
@@ -975,7 +975,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -1040,7 +1040,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -1095,7 +1095,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -1141,13 +1141,13 @@ services:
       REDIS_TLS_KEY_FILE: certs/clients/client.key
       CLICKHOUSE_HOSTS: clickhouse:9440
       CLICKHOUSE_USERNAME: chronoverse-client
-      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD}
       CLICKHOUSE_TLS_ENABLED: true
       CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
@@ -1328,7 +1328,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -1343,13 +1343,13 @@ services:
       REDIS_TLS_KEY_FILE: certs/clients/client.key
       CLICKHOUSE_HOSTS: clickhouse:9440
       CLICKHOUSE_USERNAME: chronoverse-client
-      CLICKHOUSE_PASSWORD: chronoverse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD}
       CLICKHOUSE_TLS_ENABLED: true
       CLICKHOUSE_TLS_CA_FILE: certs/ca/ca.crt
       CLICKHOUSE_TLS_CERT_FILE: certs/clients/client.crt
       CLICKHOUSE_TLS_KEY_FILE: certs/clients/client.key
       MEILISEARCH_URI: https://meilisearch:7700
-      MEILISEARCH_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
+      MEILISEARCH_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
       MEILISEARCH_TLS_ENABLED: true
       MEILISEARCH_TLS_CA_FILE: certs/ca/ca.crt
       MEILISEARCH_TLS_CERT_FILE: certs/clients/client.crt
@@ -1400,7 +1400,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt
@@ -1451,7 +1451,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
-      POSTGRES_PASSWORD: chronoverse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: chronoverse
       POSTGRES_TLS_ENABLED: true
       POSTGRES_TLS_CA_FILE: certs/ca/ca.crt

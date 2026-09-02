@@ -135,14 +135,18 @@ Development defaults expose internal ports for debugging:
 ### Production Stack
 
 ```sh
+export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+export CLICKHOUSE_PASSWORD="$(openssl rand -hex 24)"
+export MEILI_MASTER_KEY="$(openssl rand -hex 32)"
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
 docker compose -f compose.prod.yaml up -d
 ```
 
-Persist these values in your secret manager and reuse them across server
-restarts. `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct;
+Set all six values in the shell or copy `.env.example` to `.env` and fill it.
+Persist them in your secret manager and reuse them across server restarts.
+`CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct;
 startup rejects empty values and reuse of one value for both purposes in any
 environment.
 

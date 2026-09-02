@@ -120,10 +120,60 @@ patches:
           - secret:
               name: chronoverse-auth
               items:
-              - key: auth.ed
-                path: auth.ed
-              - key: auth.ed.pub
-                path: auth.ed.pub
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: server-auth.ed
+                path: issuers/server/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed
+                path: issuers/users-service/auth.ed
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed
+                path: issuers/workflows-service/auth.ed
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed
+                path: issuers/jobs-service/auth.ed
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed
+                path: issuers/notifications-service/auth.ed
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed
+                path: issuers/analytics-service/auth.ed
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed
+                path: issuers/scheduling-worker/auth.ed
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed
+                path: issuers/workflow-worker/auth.ed
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed
+                path: issuers/execution-worker/auth.ed
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed
+                path: issuers/runtime-agent/auth.ed
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed
+                path: issuers/joblogs-processor/auth.ed
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed
+                path: issuers/analytics-processor/auth.ed
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed
+                path: issuers/outbox-relay/auth.ed
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
           - secret:
               name: chronoverse-ca
               items:
@@ -231,10 +281,60 @@ patches:
           - secret:
               name: chronoverse-auth
               items:
-              - key: auth.ed
-                path: auth.ed
-              - key: auth.ed.pub
-                path: auth.ed.pub
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: server-auth.ed
+                path: issuers/server/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed
+                path: issuers/users-service/auth.ed
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed
+                path: issuers/workflows-service/auth.ed
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed
+                path: issuers/jobs-service/auth.ed
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed
+                path: issuers/notifications-service/auth.ed
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed
+                path: issuers/analytics-service/auth.ed
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed
+                path: issuers/scheduling-worker/auth.ed
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed
+                path: issuers/workflow-worker/auth.ed
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed
+                path: issuers/execution-worker/auth.ed
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed
+                path: issuers/runtime-agent/auth.ed
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed
+                path: issuers/joblogs-processor/auth.ed
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed
+                path: issuers/analytics-processor/auth.ed
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed
+                path: issuers/outbox-relay/auth.ed
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
           - secret:
               name: chronoverse-ca
               items:

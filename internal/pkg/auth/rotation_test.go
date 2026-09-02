@@ -65,7 +65,7 @@ func TestKidRotationBundle(t *testing.T) {
 		}
 	}
 	if _, _, verifyErr := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), oldToken), audience); verifyErr != nil {
-		t.Fatalf("verify old token with both-bundle verifier: %v", err)
+		t.Fatalf("verify old token with both-bundle verifier: %v", verifyErr)
 	}
 
 	// Issue with new key, verify with both-bundle verifier -> ok.
@@ -79,7 +79,7 @@ func TestKidRotationBundle(t *testing.T) {
 		}
 	}
 	if _, _, verifyErr2 := verifierBoth.ValidateToken(WithAuthorizationToken(context.Background(), newToken), audience); verifyErr2 != nil {
-		t.Fatalf("verify new token with both-bundle verifier: %v", err)
+		t.Fatalf("verify new token with both-bundle verifier: %v", verifyErr2)
 	}
 
 	// After rotation completes, bundle contains only new key.
@@ -94,7 +94,7 @@ func TestKidRotationBundle(t *testing.T) {
 	}
 	// New token still valid.
 	if _, _, verifyErr4 := verifierNewOnly.ValidateToken(WithAuthorizationToken(context.Background(), newToken), audience); verifyErr4 != nil {
-		t.Fatalf("new token should still verify after prune: %v", err)
+		t.Fatalf("new token should still verify after prune: %v", verifyErr4)
 	}
 
 	// Token without kid must be rejected when bundle is present.

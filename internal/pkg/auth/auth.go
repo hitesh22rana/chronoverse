@@ -300,7 +300,10 @@ func New() (*Auth, error) {
 	}
 	kid := kidForKey(issuer, edPub)
 
-	bundle, bundlePath := findAndLoadBundle(publicKeyPath)
+	bundle, bundlePath, bundleErr := findAndLoadBundle(publicKeyPath)
+	if bundleErr != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load trusted bundle %s: %v", bundlePath, bundleErr)
+	}
 	for candKid, entry := range bundle {
 		if entry.Iss != issuer {
 			continue

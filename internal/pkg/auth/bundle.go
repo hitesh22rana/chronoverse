@@ -101,11 +101,15 @@ func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {
 	return out, nil
 }
 
-func findAndLoadBundle(publicKeyPath string) (bundle map[string]*bundleEntry, bundlePath string) {
+func findAndLoadBundle(publicKeyPath string) (bundle map[string]*bundleEntry, bundlePath string, bundleErr error) {
 	for _, cand := range bundlePathsForPublicKey(publicKeyPath) {
-		if m, err := loadBundle(cand); err == nil {
-			return m, cand
+		m, err := loadBundle(cand)
+		if err == nil {
+			return m, cand, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, cand, err
 		}
 	}
-	return nil, ""
+	return nil, "", nil
 }

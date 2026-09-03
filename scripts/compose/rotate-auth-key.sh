@@ -82,7 +82,7 @@ fi
 # Ensure trusted bundle exists.
 if [ ! -f "$trusted" ]; then
   if [ "$use_docker" -eq 1 ]; then
-    run_in_certs "printf '{}\n' > /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
+    run_in_certs "printf '{}\n' > /certs/issuers/trusted.json || exit 1; chmod 444 /certs/issuers/trusted.json"
   else
     printf '{}\n' > "$trusted"
     chmod 444 "$trusted"
@@ -105,14 +105,15 @@ if [ -n "$old_kid" ] && [ -n "$old_pub_pem" ]; then
       chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
       pem=\$(printf '%s' '$b64' | base64 -d)
       tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
-      jq --arg kid '$old_kid' --arg pem \"\$pem\" '.[\$kid].pub = \$pem' /certs/issuers/trusted.json > \"\$tmp\" && mv \"\$tmp\" /certs/issuers/trusted.json
+      jq --arg kid '$old_kid' --arg pem \"\$pem\" '.[\$kid].pub = \$pem' /certs/issuers/trusted.json > \"\$tmp\" || { rm -f \"\$tmp\"; exit 1; }; mv \"\$tmp\" /certs/issuers/trusted.json
       chmod 444 /certs/issuers/trusted.json
     "
     rm -f "$tmp"
   else
     tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
     jq --arg kid "$old_kid" --arg pem "$old_pub_pem" \
-      '.[$kid].pub = $pem' "$trusted" > "$tmp" && mv "$tmp" "$trusted"
+      '.[$kid].pub = $pem' "$trusted" > "$tmp" || { rm -f "$tmp"; exit 1; }
+    mv "$tmp" "$trusted"
     chmod 444 "$trusted"
   fi
   echo "📌 Preserved old kid $old_kid as inline PEM for grace period"
@@ -166,13 +167,14 @@ if [ "$use_docker" -eq 1 ]; then
     chmod u+w /certs/issuers 2>/dev/null || true
     chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
     tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
-    jq --arg kid '$new_kid' --arg iss '$issuer' --arg pub '$issuer/auth.ed.pub' '. + {(\$kid): {\"iss\": \$iss, \"pub\": \$pub}}' /certs/issuers/trusted.json > \"\$tmp\" && mv \"\$tmp\" /certs/issuers/trusted.json
+    jq --arg kid '$new_kid' --arg iss '$issuer' --arg pub '$issuer/auth.ed.pub' '. + {(\$kid): {\"iss\": \$iss, \"pub\": \$pub}}' /certs/issuers/trusted.json > \"\$tmp\" || { rm -f \"\$tmp\"; exit 1; }; mv \"\$tmp\" /certs/issuers/trusted.json
     chmod 444 /certs/issuers/trusted.json
   "
 else
   tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
   jq --arg kid "$new_kid" --arg iss "$issuer" --arg pub "$issuer/auth.ed.pub" \
-    '. + {($kid): {"iss": $iss, "pub": $pub}}' "$trusted" > "$tmp" && mv "$tmp" "$trusted"
+    '. + {($kid): {"iss": $iss, "pub": $pub}}' "$trusted" > "$tmp" || { rm -f "$tmp"; exit 1; }
+  mv "$tmp" "$trusted"
   chmod 444 "$trusted"
 fi
 

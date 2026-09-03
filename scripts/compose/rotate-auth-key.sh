@@ -72,6 +72,10 @@ if [ -f "$issuer_dir/auth.ed.pub" ] && [ -f "$trusted" ]; then
     to_entries[] | select(.value.iss == $iss and .value.pub == $pub) | .key
   ' "$trusted" 2>/dev/null | head -n1 || true)
 fi
+# old_kid comes from the bundle (hand-editable) and is interpolated into the
+# helper's sh -c; reject metacharacters before they can break out of quoting.
+# (Empty is fine: no grace entry on first rotation. $issuer is already allowlisted.)
+case "$old_kid" in *[!A-Za-z0-9_.:/-]*) echo "trusted bundle has unexpected kid for issuer \"$issuer\"; repair it before rotating" >&2; exit 1;; esac
 
 echo "🔐 Rotating key for $issuer..."
 if [ "$use_docker" -eq 1 ]; then
@@ -87,6 +91,13 @@ if [ ! -f "$trusted" ]; then
     printf '{}\n' > "$trusted"
     chmod 444 "$trusted"
   fi
+fi
+
+# Abort before touching keys: a corrupt bundle would skip grace preservation and
+# then fail the new-kid write after the keypair was already replaced (orphaning the new key).
+if ! jq empty "$trusted" 2>/dev/null; then
+  echo "trusted bundle $trusted is corrupt; repair or back it up before rotating" >&2
+  exit 1
 fi
 
 # Update bundle: preserve old kid as inline PEM (if it existed and pointed to file), add new kid.
@@ -105,7 +116,7 @@ if [ -n "$old_kid" ] && [ -n "$old_pub_pem" ]; then
       chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
       pem=\$(printf '%s' '$b64' | base64 -d)
       tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
-      jq --arg kid '$old_kid' --arg pem \"\$pem\" '.[\$kid].pub = \$pem' /certs/issuers/trusted.json > \"\$tmp\" || { rm -f \"\$tmp\"; exit 1; }; mv \"\$tmp\" /certs/issuers/trusted.json
+      jq --arg kid '$old_kid' --arg pem \"\$pem\" '.[\$kid].pub = \$pem' /certs/issuers/trusted.json > \"\$tmp\" || { rm -f \"\$tmp\"; exit 1; }; chmod 444 \"\$tmp\"; mv \"\$tmp\" /certs/issuers/trusted.json
       chmod 444 /certs/issuers/trusted.json
     "
     rm -f "$tmp"
@@ -113,6 +124,7 @@ if [ -n "$old_kid" ] && [ -n "$old_pub_pem" ]; then
     tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
     jq --arg kid "$old_kid" --arg pem "$old_pub_pem" \
       '.[$kid].pub = $pem' "$trusted" > "$tmp" || { rm -f "$tmp"; exit 1; }
+    chmod 444 "$tmp"
     mv "$tmp" "$trusted"
     chmod 444 "$trusted"
   fi
@@ -132,7 +144,7 @@ if [ "$use_docker" -eq 1 ]; then
     chmod 440 \$tmp_priv
     chmod 444 \$tmp_pub
     if [ -f /certs/issuers/$issuer/auth.ed ]; then if ! cp /certs/issuers/$issuer/auth.ed /certs/issuers/$issuer/.auth.ed.bak; then echo 'backup of old private key failed' >&2; rm -f \$tmp_priv \$tmp_pub; exit 1; fi; fi
-    if ! mv \$tmp_priv /certs/issuers/$issuer/auth.ed; then rm -f \$tmp_pub; rm -f /certs/issuers/$issuer/.auth.ed.bak 2>/dev/null || true; exit 1; fi
+    if ! mv \$tmp_priv /certs/issuers/$issuer/auth.ed; then rm -f \$tmp_priv \$tmp_pub; rm -f /certs/issuers/$issuer/.auth.ed.bak 2>/dev/null || true; exit 1; fi
     if ! mv \$tmp_pub /certs/issuers/$issuer/auth.ed.pub; then echo 'public key install failed, restoring private key' >&2; if [ -f /certs/issuers/$issuer/.auth.ed.bak ]; then mv /certs/issuers/$issuer/.auth.ed.bak /certs/issuers/$issuer/auth.ed; chmod 440 /certs/issuers/$issuer/auth.ed; chown 100:101 /certs/issuers/$issuer/auth.ed 2>/dev/null || chgrp 101 /certs/issuers/$issuer/auth.ed 2>/dev/null || true; else rm -f /certs/issuers/$issuer/auth.ed; echo 'no backup available, removed partial private key' >&2; fi; exit 1; fi
     rm -f /certs/issuers/$issuer/.auth.ed.bak
     chmod 440 /certs/issuers/$issuer/auth.ed
@@ -149,7 +161,7 @@ else
   chmod 440 "$tmp_priv"
   chmod 444 "$tmp_pub"
   if [ -f "$issuer_dir/auth.ed" ]; then if ! cp "$issuer_dir/auth.ed" "$issuer_dir/.auth.ed.bak"; then echo 'backup of old private key failed' >&2; rm -f "$tmp_priv" "$tmp_pub"; exit 1; fi; fi
-  if ! mv "$tmp_priv" "$issuer_dir/auth.ed"; then rm -f "$tmp_pub"; rm -f "$issuer_dir/.auth.ed.bak" 2>/dev/null || true; exit 1; fi
+  if ! mv "$tmp_priv" "$issuer_dir/auth.ed"; then rm -f "$tmp_priv" "$tmp_pub"; rm -f "$issuer_dir/.auth.ed.bak" 2>/dev/null || true; exit 1; fi
   if ! mv "$tmp_pub" "$issuer_dir/auth.ed.pub"; then echo 'public key install failed, restoring private key' >&2; if [ -f "$issuer_dir/.auth.ed.bak" ]; then mv "$issuer_dir/.auth.ed.bak" "$issuer_dir/auth.ed"; chmod 440 "$issuer_dir/auth.ed"; chown 100:101 "$issuer_dir/auth.ed" 2>/dev/null || chgrp 101 "$issuer_dir/auth.ed" 2>/dev/null || true; else rm -f "$issuer_dir/auth.ed"; echo 'no backup available, removed partial private key' >&2; fi; exit 1; fi
   rm -f "$issuer_dir/.auth.ed.bak"
   chmod 440 "$issuer_dir/auth.ed"
@@ -167,13 +179,14 @@ if [ "$use_docker" -eq 1 ]; then
     chmod u+w /certs/issuers 2>/dev/null || true
     chmod u+w /certs/issuers/trusted.json 2>/dev/null || true
     tmp=\$(mktemp /certs/issuers/tmp.XXXXXX)
-    jq --arg kid '$new_kid' --arg iss '$issuer' --arg pub '$issuer/auth.ed.pub' '. + {(\$kid): {\"iss\": \$iss, \"pub\": \$pub}}' /certs/issuers/trusted.json > \"\$tmp\" || { rm -f \"\$tmp\"; exit 1; }; mv \"\$tmp\" /certs/issuers/trusted.json
+    jq --arg kid '$new_kid' --arg iss '$issuer' --arg pub '$issuer/auth.ed.pub' '. + {(\$kid): {\"iss\": \$iss, \"pub\": \$pub}}' /certs/issuers/trusted.json > \"\$tmp\" || { rm -f \"\$tmp\"; exit 1; }; chmod 444 \"\$tmp\"; mv \"\$tmp\" /certs/issuers/trusted.json
     chmod 444 /certs/issuers/trusted.json
   "
 else
   tmp=$(mktemp "$issuers_dir/tmp.XXXXXX")
   jq --arg kid "$new_kid" --arg iss "$issuer" --arg pub "$issuer/auth.ed.pub" \
     '. + {($kid): {"iss": $iss, "pub": $pub}}' "$trusted" > "$tmp" || { rm -f "$tmp"; exit 1; }
+  chmod 444 "$tmp"
   mv "$tmp" "$trusted"
   chmod 444 "$trusted"
 fi

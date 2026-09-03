@@ -93,9 +93,10 @@ if [ ! -f "$trusted" ]; then
   fi
 fi
 
-# Abort before touching keys: a corrupt bundle would skip grace preservation and
-# then fail the new-kid write after the keypair was already replaced (orphaning the new key).
-if ! jq empty "$trusted" 2>/dev/null; then
+# Abort before touching keys: a corrupt or misshapen bundle would skip grace
+# preservation and then fail the new-kid write after the keypair was already
+# replaced (orphaning the new key). Require a JSON object, not just parseable JSON.
+if ! jq -e 'type == "object"' "$trusted" >/dev/null 2>&1; then
   echo "trusted bundle $trusted is corrupt; repair or back it up before rotating" >&2
   exit 1
 fi

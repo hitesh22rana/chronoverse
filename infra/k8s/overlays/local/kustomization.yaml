@@ -161,6 +161,134 @@ patches:
         persistentVolumeClaim:
           claimName: certs-pvc
 - target:
+    kind: DaemonSet
+    name: docker-proxy
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/4/name
+      value: certs
+    - op: test
+      path: /spec/template/spec/containers/1/name
+      value: runtime-agent
+    - op: replace
+      path: /spec/template/spec/containers/1/volumeMounts
+      value:
+        - name: certs
+          mountPath: /certs/issuers/runtime-agent/auth.ed
+          subPath: issuers/runtime-agent/auth.ed
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/trusted.json
+          subPath: issuers/trusted.json
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/server/auth.ed.pub
+          subPath: issuers/server/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/users-service/auth.ed.pub
+          subPath: issuers/users-service/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/workflows-service/auth.ed.pub
+          subPath: issuers/workflows-service/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/jobs-service/auth.ed.pub
+          subPath: issuers/jobs-service/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/notifications-service/auth.ed.pub
+          subPath: issuers/notifications-service/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/analytics-service/auth.ed.pub
+          subPath: issuers/analytics-service/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
+          subPath: issuers/scheduling-worker/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/workflow-worker/auth.ed.pub
+          subPath: issuers/workflow-worker/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/execution-worker/auth.ed.pub
+          subPath: issuers/execution-worker/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/runtime-agent/auth.ed.pub
+          subPath: issuers/runtime-agent/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
+          subPath: issuers/joblogs-processor/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/analytics-processor/auth.ed.pub
+          subPath: issuers/analytics-processor/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/issuers/outbox-relay/auth.ed.pub
+          subPath: issuers/outbox-relay/auth.ed.pub
+          readOnly: true
+        - name: certs
+          mountPath: /certs/ca
+          subPath: ca
+          readOnly: true
+        - name: certs
+          mountPath: /certs/clients
+          subPath: clients
+          readOnly: true
+        - name: certs
+          mountPath: /certs/postgres
+          subPath: postgres
+          readOnly: true
+        - name: certs
+          mountPath: /certs/redis
+          subPath: redis
+          readOnly: true
+        - name: certs
+          mountPath: /certs/clickhouse
+          subPath: clickhouse
+          readOnly: true
+        - name: certs
+          mountPath: /certs/kafka
+          subPath: kafka
+          readOnly: true
+        - name: certs
+          mountPath: /certs/meilisearch
+          subPath: meilisearch
+          readOnly: true
+        - name: certs
+          mountPath: /certs/users-service
+          subPath: users-service
+          readOnly: true
+        - name: certs
+          mountPath: /certs/workflows-service
+          subPath: workflows-service
+          readOnly: true
+        - name: certs
+          mountPath: /certs/jobs-service
+          subPath: jobs-service
+          readOnly: true
+        - name: certs
+          mountPath: /certs/notifications-service
+          subPath: notifications-service
+          readOnly: true
+        - name: certs
+          mountPath: /certs/analytics-service
+          subPath: analytics-service
+          readOnly: true
+        - name: certs
+          mountPath: /certs/clickhouse/clients
+          subPath: clickhouse/clients
+          readOnly: true
+        - name: docker-proxy-runtime-client-certs
+          mountPath: /docker-proxy-certs
+          readOnly: true
+- target:
     kind: Deployment
     labelSelector: chronoverse.io/certs=true
   patch: |-

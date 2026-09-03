@@ -43,9 +43,13 @@ spec:
               openssl genpkey -algorithm ED25519 -outform pem -out /certs/issuers/$iss/auth.ed
               openssl pkey -in /certs/issuers/$iss/auth.ed -pubout -out /certs/issuers/$iss/auth.ed.pub
             fi
-            chmod 0400 /certs/issuers/$iss/auth.ed
+            chown 0:101 /certs/issuers/$iss/auth.ed /certs/issuers/$iss/auth.ed.pub
+            chmod 0440 /certs/issuers/$iss/auth.ed
             chmod 0444 /certs/issuers/$iss/auth.ed.pub
+            chmod 0755 /certs/issuers/$iss
           done
+          chmod 0755 /certs/issuers
+          chown 0:101 /certs/issuers
           TRUSTED=/certs/issuers/trusted.json
           if [ ! -f "$TRUSTED" ]; then
             printf '{\n' > "$TRUSTED.tmp"
@@ -60,6 +64,8 @@ spec:
             mv "$TRUSTED.tmp" "$TRUSTED"
             chmod 0444 "$TRUSTED"
           fi
+          chown 0:101 "$TRUSTED" 2>/dev/null || true
+          chmod 0444 "$TRUSTED" 2>/dev/null || true
         resources:
           requests:
             cpu: 50m

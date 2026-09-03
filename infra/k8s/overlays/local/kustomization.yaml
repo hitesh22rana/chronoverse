@@ -135,7 +135,7 @@ patches:
       value:
       - name: wait-for-certs
         image: alpine:3.22.2
-        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ]; do echo waiting for local certificates; sleep 2; done"]
+        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ] && [ -f /certs/issuers/trusted.json ]; do echo waiting for local certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532

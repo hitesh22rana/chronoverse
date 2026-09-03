@@ -250,6 +250,12 @@ validate_rotate_helper() {
 		echo "rotate-auth-key.sh should not chmod u+w live auth.ed files — directory write suffices" >&2
 		exit 1
 	fi
+	# Bundle-derived old_kid is interpolated into the helper sh -c; it must be
+	# allowlisted first or metacharacters break out of quoting (RCE as container root).
+	if ! grep -q 'A-Za-z0-9_.:/-' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh must allowlist old_kid before helper interpolation" >&2
+		exit 1
+	fi
 	sh -n "$root_dir/scripts/compose/rotate-auth-key.sh" || {
 		echo "rotate-auth-key.sh has shell syntax errors" >&2
 		exit 1

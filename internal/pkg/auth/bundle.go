@@ -39,7 +39,7 @@ func kidForKey(issuer string, pub ed25519.PublicKey) string {
 }
 
 func bundlePathsForPublicKey(_ string) []string {
-	// ponytail: two canonical locations cover local (relative) and container (/certs) mounts.
+	// Two canonical locations cover local (relative) and container (/certs) mounts.
 	return []string{
 		filepath.Join(issuersDir, trustedBundleFilename),
 		"/certs/issuers/" + trustedBundleFilename,

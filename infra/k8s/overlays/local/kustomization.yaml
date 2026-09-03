@@ -1294,6 +1294,9 @@ patches:
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
+        - name: docker-proxy-certs
+          mountPath: /docker-proxy-certs
+          readOnly: true
 - target:
     kind: Deployment
     name: execution-worker
@@ -1415,6 +1418,9 @@ patches:
         - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
+          readOnly: true
+        - name: docker-proxy-certs
+          mountPath: /docker-proxy-certs
           readOnly: true
 - target:
     kind: Deployment

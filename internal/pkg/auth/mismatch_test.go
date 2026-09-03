@@ -82,6 +82,54 @@ func TestNewWithPathsAcceptsMatchingKeypair(t *testing.T) {
 		t.Fatalf("pub is not ed25519: %T", priv.Public())
 	}
 
+	// Bundle lookup is relative to CWD (certs/issuers/trusted.json), so lay
+	// out a full issuer tree under a temp root and chdir into it.
+	root := t.TempDir()
+	t.Chdir(root)
+	issuersDir := filepath.Join(root, "certs", "issuers", "server")
+	if mkdirErr := os.MkdirAll(issuersDir, 0o755); mkdirErr != nil {
+		t.Fatalf("mkdir issuers: %v", mkdirErr)
+	}
+	privPath := filepath.Join(issuersDir, "auth.ed")
+	pubPath := filepath.Join(issuersDir, "auth.ed.pub")
+
+	if writeErr := os.WriteFile(privPath, encodePrivPEM(t, priv), 0o600); writeErr != nil {
+		t.Fatalf("write priv: %v", writeErr)
+	}
+	if writeErr := os.WriteFile(pubPath, encodePubPEM(t, pub), 0o600); writeErr != nil {
+		t.Fatalf("write pub: %v", writeErr)
+	}
+	kid := kidForKey("server", pub)
+	bundle := `{"` + kid + `": {"iss": "server", "pub": "server/auth.ed.pub"}}`
+	if writeErr := os.WriteFile(filepath.Join(root, "certs", "issuers", "trusted.json"), []byte(bundle), 0o600); writeErr != nil {
+		t.Fatalf("write bundle: %v", writeErr)
+	}
+
+	auth, newErr := newWithPaths("server", privPath, pubPath)
+	if newErr != nil {
+		t.Fatalf("expected newWithPaths to succeed on matching pair, got %v", newErr)
+	}
+	if auth == nil || auth.kid == "" {
+		t.Fatalf("expected auth with kid, got %+v", auth)
+	}
+	if auth.kid != kid {
+		t.Fatalf("expected bundle kid %q, got %q", kid, auth.kid)
+	}
+}
+
+func TestNewWithPathsRejectsMissingBundle(t *testing.T) {
+	_, priv, genErr := ed25519.GenerateKey(rand.Reader)
+	if genErr != nil {
+		t.Fatalf("generate: %v", genErr)
+	}
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatalf("pub is not ed25519: %T", priv.Public())
+	}
+
+	// Empty CWD: no bundle at either canonical location — must fail closed
+	// instead of silently disabling kid-bound verification.
+	t.Chdir(t.TempDir())
 	dir := t.TempDir()
 	privPath := filepath.Join(dir, "auth.ed")
 	pubPath := filepath.Join(dir, "auth.ed.pub")
@@ -93,11 +141,14 @@ func TestNewWithPathsAcceptsMatchingKeypair(t *testing.T) {
 		t.Fatalf("write pub: %v", writeErr)
 	}
 
-	auth, newErr := newWithPaths("server", privPath, pubPath)
-	if newErr != nil {
-		t.Fatalf("expected newWithPaths to succeed on matching pair, got %v", newErr)
+	_, newErr := newWithPaths("server", privPath, pubPath)
+	if newErr == nil {
+		t.Fatal("expected newWithPaths to fail without a bundle, got nil")
 	}
-	if auth == nil || auth.kid == "" {
-		t.Fatalf("expected auth with kid, got %+v", auth)
+	if status.Code(newErr) != codes.Internal {
+		t.Fatalf("expected Internal, got %v", status.Code(newErr))
+	}
+	if got := status.Convert(newErr).Message(); !strings.Contains(got, "trusted bundle is required") {
+		t.Fatalf("expected required-bundle message, got %q", got)
 	}
 }

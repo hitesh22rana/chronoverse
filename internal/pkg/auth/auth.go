@@ -303,9 +303,9 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 		return nil, status.Errorf(codes.Internal, "public key is not ed25519")
 	}
 	// Verify private and public correspond — prevents signer restart with
-	// mismatched pair (e.g. rotation mv of auth.ed succeeded but auth.ed.pub
-	// failed). Without this, IssueToken would sign with new private while kid
-	// (derived from old public) selects old key for verifiers.
+	// a mismatched pair (e.g. rotation replaced auth.ed but not auth.ed.pub).
+	// kid comes from the on-disk public key, so without this check IssueToken
+	// would sign with one key while verifiers select another.
 	if edPriv, ok := privateKey.(ed25519.PrivateKey); ok {
 		if derivedPub, ok := edPriv.Public().(ed25519.PublicKey); ok {
 			if !bytes.Equal(derivedPub, edPub) {
@@ -319,9 +319,11 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	if bundleErr != nil {
 		return nil, status.Errorf(codes.Internal, "failed to load trusted bundle %s: %v", bundlePath, bundleErr)
 	}
-	// If a bundle is configured, the signer's key must be present.
+	// The bundle is mandatory: the signer's key must be present in it.
 	// Otherwise IssueToken would mint tokens with an untrusted kid that all
 	// bundle-backed validators reject, leaving the service silently broken.
+	// A missing bundle fails closed here instead of silently disabling
+	// kid-bound verification in ValidateToken.
 	foundInBundle := false
 	for candKid, entry := range bundle {
 		if entry.Iss != issuer {
@@ -342,7 +344,10 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 			}
 		}
 	}
-	if bundle != nil && !foundInBundle {
+	if !foundInBundle {
+		if bundlePath == "" {
+			return nil, status.Errorf(codes.Internal, "trusted bundle is required for issuer %q but was not found; refusing to start without kid-bound verification", issuer)
+		}
 		return nil, status.Errorf(codes.Internal, "trusted bundle %s has no entry for issuer %q (kid %s)", bundlePath, issuer, kid)
 	}
 

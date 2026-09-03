@@ -94,8 +94,9 @@ validate_compose() {
     exit 1
   fi
 
-  # P1: No service (except init-certs) should mount the whole ./certs tree, which would expose every issuer private key.
-  if jq -e '[.services | to_entries[] | select(.key != "init-certs") | .value.volumes // [] | any(.target == "/certs" and (.source | endswith("/certs")))] | any' "$output_file" >/dev/null; then
+  # No service (except init-certs) should mount the whole ./certs tree or the
+  # ./certs/issuers subtree, which would expose every issuer private key.
+  if jq -e '[.services | to_entries[] | select(.key != "init-certs") | .value.volumes // [] | any(.target == "/certs" or ((.source // "") | test("(^|/)certs(/issuers)?/?$")))] | any' "$output_file" >/dev/null; then
     echo "$compose_file mounts whole ./certs tree (exposes all issuer private keys); mount only own private + pubs + trusted.json + needed TLS subtrees" >&2
     exit 1
   fi

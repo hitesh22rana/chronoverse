@@ -131,7 +131,7 @@ func TestNewWithPathsRejectsMissingBundle(t *testing.T) {
 	// instead of silently disabling kid-bound verification.
 	t.Chdir(t.TempDir())
 	if _, err := os.Stat("/certs/issuers/trusted.json"); err == nil {
-		t.Skip("host /certs bundle present; would mask the missing-bundle path")
+		t.Skip("host /certs bundle present; would fail with wrong error message")
 	}
 	dir := t.TempDir()
 	privPath := filepath.Join(dir, "auth.ed")

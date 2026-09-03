@@ -95,7 +95,7 @@ validate_compose() {
   fi
 
   # P1: No service (except init-certs) should mount the whole ./certs tree, which would expose every issuer private key.
-  if jq -e '.services | to_entries[] | select(.key != "init-certs") | .value.volumes // [] | any(.target == "/certs" and (.source | endswith("/certs")))' "$output_file" >/dev/null; then
+  if jq -e '[.services | to_entries[] | select(.key != "init-certs") | .value.volumes // [] | any(.target == "/certs" and (.source | endswith("/certs")))] | any' "$output_file" >/dev/null; then
     echo "$compose_file mounts whole ./certs tree (exposes all issuer private keys); mount only own private + pubs + trusted.json + needed TLS subtrees" >&2
     exit 1
   fi
@@ -245,7 +245,7 @@ validate_rotate_helper() {
 		echo "rotate-auth-key.sh helper contains echo \"...\" inside run_in_certs \"...\" — use single quotes" >&2
 		exit 1
 	fi
-	if grep -q 'chmod u+w.*auth\.ed' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+	if grep -q 'chmod u+w [^;&|]*auth\.ed' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
 		echo "rotate-auth-key.sh should not chmod u+w live auth.ed files — directory write suffices" >&2
 		exit 1
 	fi

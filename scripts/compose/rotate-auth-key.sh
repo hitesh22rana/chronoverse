@@ -199,10 +199,6 @@ for iss in $all_issuers; do
     verifiers="$verifiers $iss"
   fi
 done
-# database-migration is not an issuer but verifies; include if rotating server
-if [ "$issuer" = "server" ]; then
-  verifiers="$verifiers"
-fi
 # Trim leading space
 verifiers=$(printf '%s' "$verifiers" | sed 's/^ //')
 
@@ -214,10 +210,10 @@ Next steps (verifier-first):
        docker compose -f $compose_file up -d --no-deps --force-recreate $issuer
      (if you use COMPOSE_FILE env, omit -f; for dev use -f compose.dev.yaml)
   2. After grace period (15m, token expiry), prune stale kids for this issuer (keeps only the current file-backed kid) and restart verifiers again:
-       jq --arg iss "$issuer" --arg pub "$issuer/auth.ed.pub" 'with_entries(select(.value.iss != $iss or .value.pub == $pub))' $trusted > $trusted.tmp && mv $trusted.tmp $trusted && docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
+       jq --arg iss "$issuer" --arg pub "$issuer/auth.ed.pub" 'with_entries(select(.value.iss != \$iss or .value.pub == \$pub))' $trusted > $trusted.tmp && mv $trusted.tmp $trusted && docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
      (prunes all inline grace keys even after repeated rotations without intermediate prune; verifiers cache the bundle in memory by Auth.New and must reload to drop old kids)
      When rotation used the helper container, the jq above may need the same helper:
-       docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.22 sh -c "apk add --no-cache jq >/dev/null 2>&1; tmp=\$(mktemp /certs/issuers/tmp.XXXXXX); jq --arg iss \"$issuer\" --arg pub \"$issuer/auth.ed.pub\" 'with_entries(select(.value.iss != \$iss or .value.pub == \$pub))' /certs/issuers/trusted.json > \$tmp && mv \$tmp /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
+       docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.22 sh -c "apk add --no-cache jq >/dev/null 2>&1; tmp=\\\$(mktemp /certs/issuers/tmp.XXXXXX); jq --arg iss \"$issuer\" --arg pub \"$issuer/auth.ed.pub\" 'with_entries(select(.value.iss != \\\$iss or .value.pub == \\\$pub))' /certs/issuers/trusted.json > \\\$tmp && mv \\\$tmp /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
        docker compose -f $compose_file up -d --no-deps --force-recreate $verifiers
 
 EOF

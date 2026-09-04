@@ -9,7 +9,7 @@ and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 
 ```sh
 scripts/compose/init-env.sh
-docker compose -f compose.dev.yaml up -d
+scripts/compose/up.sh
 ```
 
 Compose automatically reloads the gitignored `.env` file in later shells.
@@ -36,7 +36,7 @@ export MEILI_MASTER_KEY="$(openssl rand -hex 32)"
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
-docker compose -f compose.prod.yaml up -d
+COMPOSE_FILE=compose.prod.yaml scripts/compose/up.sh
 ```
 
 Set all six values in the shell or copy `.env.example` to `.env` and fill it.
@@ -549,7 +549,7 @@ certificate state:
 
 ```sh
 docker compose -f compose.dev.yaml down -v
-docker compose -f compose.dev.yaml up -d
+scripts/compose/up.sh
 ```
 
 This deletes local data volumes.

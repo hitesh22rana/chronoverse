@@ -73,7 +73,7 @@ Run the complete development stack with Docker Compose. Docker builds the Go ser
 git clone https://github.com/hitesh22rana/chronoverse.git
 cd chronoverse
 scripts/compose/init-env.sh
-docker compose -f compose.dev.yaml up -d
+scripts/compose/up.sh
 ```
 
 Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
@@ -1120,7 +1120,7 @@ Compose remains the quickest full-stack path. Kubernetes support is provided thr
 
 ```bash
 scripts/compose/init-env.sh
-docker compose -f compose.dev.yaml up -d
+scripts/compose/up.sh
 ```
 
 Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.
@@ -1187,7 +1187,7 @@ export MEILI_MASTER_KEY="$(openssl rand -hex 32)"
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
-docker compose -f compose.prod.yaml up -d
+COMPOSE_FILE=compose.prod.yaml scripts/compose/up.sh
 ```
 
 Set all six values in the shell or copy `.env.example` to `.env` and fill it.
@@ -1526,6 +1526,8 @@ Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafk
 ## Service authorization
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
+
+Each service signs JWTs with its own Ed25519 private key and a `kid` header. The gateway and every verifier mount only its own `certs/issuers/<issuer>/auth.ed` (0440, `fsGroup: 101` in Kubernetes) plus a shared `certs/issuers/trusted.json` bundle and the 13 public keys `certs/issuers/*/auth.ed.pub`; `Auth.ValidateToken` requires the `kid` and verifies the signature only against the matching bundle entry with issuer binding. New builds inject the per-issuer paths through `Makefile` ldflags (for example `certs/issuers/users-service/auth.ed`) and both Compose profiles generate the per-issuer keys and `trusted.json` in `init-certs` and mount only the calling service's private key plus the shared pubs/trusted bundle (and `certs/ca`/`certs/clients` for TLS) — the previous whole-tree `./certs:/certs:ro` mount is removed so a compromised service cannot read another issuer's private key — gating startup on the bundle. Infrastructure services (`postgres`, `redis`, `meilisearch`, `kafka`) mount only their own TLS subtrees and `ca`/`clients`, not the issuer keys. Kubernetes generates the same layout in `cert-bootstrap` and projects per-workload the bundle, the single `issuers/<svc>/auth.ed` private, and all `issuers/*/auth.ed.pub` via mounted volumes; the local overlay keeps issuer material on a dedicated `auth-certs-pvc`, separate from the TLS PVC mounted by infrastructure workloads. Rotation is graceful: `scripts/compose/rotate-auth-key.sh <issuer>` adds a new key alongside the old `kid` in the bundle — automatically using a privileged helper container (`docker run -v ./certs:/certs:rw alpine`) when the host operator (e.g. UID 1000) cannot write the `100:101 0440` bind-mounted keys — verifiers reload the dual-key bundle before the signer switches to the new `kid` (`docker compose -f compose.prod.yaml up -d --force-recreate <verifiers>` then `... <signer>`; `COMPOSE_FILE` is respected and `compose.yaml` does not exist), and the old `kid` is pruned after its 15-minute expiry window (all auth services restart to drop it); `make compose/validate` guards the wiring and rejects whole-tree `/certs` mounts.
 
 Internal Ed25519 JWT validation allows at most 30 seconds of clock skew for
 `nbf` and expiry checks so ordinary multi-node time differences do not reject a

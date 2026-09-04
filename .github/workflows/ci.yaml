@@ -227,8 +227,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/users-service/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/users-service/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -281,8 +281,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/workflows-service/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/workflows-service/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -335,8 +335,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/jobs-service/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/jobs-service/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -389,8 +389,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/notifications-service/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/notifications-service/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -442,8 +442,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/analytics-service/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/analytics-service/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -496,8 +496,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/scheduling-worker/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/scheduling-worker/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -550,8 +550,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/workflow-worker/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/workflow-worker/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -604,8 +604,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/execution-worker/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/execution-worker/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -658,8 +658,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/runtime-agent/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/runtime-agent/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -712,8 +712,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE_NAME} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/server/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/server/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -766,8 +766,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE_NAME} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/joblogs-processor/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/joblogs-processor/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -819,8 +819,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE_NAME} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/analytics-processor/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/analytics-processor/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -873,8 +873,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE_NAME} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/outbox-relay/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/outbox-relay/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \
@@ -927,8 +927,8 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               --build-arg NAME=${IMAGE_NAME} \
               --build-arg VERSION=${VERSION_TAG} \
-              --build-arg PRIVATE_KEY_PATH=certs/auth.ed \
-              --build-arg PUBLIC_KEY_PATH=certs/auth.ed.pub \
+              --build-arg PRIVATE_KEY_PATH=certs/issuers/server/auth.ed \
+              --build-arg PUBLIC_KEY_PATH=certs/issuers/server/auth.ed.pub \
               -t "${IMAGE_FULL_NAME_WITH_TAG}" \
               -t "ghcr.io/${OWNER_LOWERCASE}/${IMAGE_NAME_SUFFIX}:latest" \
               --push \

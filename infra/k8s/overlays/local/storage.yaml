@@ -92,6 +92,20 @@ spec:
     type: DirectoryOrCreate
 ---
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: auth-certs-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: [ReadWriteMany]
+  storageClassName: localstorage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/chronoverse-data/auth-certs
+    type: DirectoryOrCreate
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
@@ -159,6 +173,18 @@ spec:
   accessModes: [ReadWriteMany]
   storageClassName: localstorage
   volumeName: certs-pv
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: auth-certs-pvc
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: localstorage
+  volumeName: auth-certs-pv
   resources:
     requests:
       storage: 1Gi

@@ -94,6 +94,13 @@ validate_compose() {
     exit 1
   fi
 
+  # No service (except init-certs) should mount the whole ./certs tree or the
+  # ./certs/issuers subtree, which would expose every issuer private key.
+  if jq -e '[.services | to_entries[] | select(.key != "init-certs") | .value.volumes // [] | any(.target == "/certs" or ((.source // "") | test("(^|/)certs(/issuers)?/?$")))] | any' "$output_file" >/dev/null; then
+    echo "$compose_file mounts whole ./certs tree (exposes all issuer private keys); mount only own private + pubs + trusted.json + needed TLS subtrees" >&2
+    exit 1
+  fi
+
   if [ "$compose_file" = "compose.prod.yaml" ] && ! jq -e '
     .services as $services
     | ($services.clickhouse.healthcheck.test[1] | contains("$${CLICKHOUSE_PASSWORD}"))
@@ -164,4 +171,116 @@ validate_env_init() {
 validate_env_init
 validate_compose compose.dev.yaml
 validate_compose compose.prod.yaml
+
+validate_auth_bundle() {
+  # Per-issuer JWT keys must be wired through build args, Compose init-certs, and K8s volumes.
+  for svc in users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay server; do
+    if ! grep -q "PRIVATE_KEY_PATH=certs/issuers/$svc/auth.ed" "$root_dir/compose.dev.yaml"; then
+      echo "compose.dev.yaml missing per-issuer key for $svc" >&2
+      exit 1
+    fi
+    if ! grep -q "PUBLIC_KEY_PATH=certs/issuers/$svc/auth.ed.pub" "$root_dir/compose.dev.yaml"; then
+      echo "compose.dev.yaml missing per-issuer public key for $svc" >&2
+      exit 1
+    fi
+  done
+  # database-migration reuses server key; ensure it is per-issuer as well
+  if ! grep -q "PRIVATE_KEY_PATH=certs/issuers/server/auth.ed" "$root_dir/compose.dev.yaml"; then
+    echo "compose.dev.yaml missing per-issuer key for database-migration (server)" >&2
+    exit 1
+  fi
+  # init-certs must generate per-issuer keys and trusted bundle
+  for f in compose.dev.yaml compose.prod.yaml; do
+    if ! grep -q 'AUTH_ISSUERS=' "$root_dir/$f"; then
+      echo "$f init-certs does not generate per-issuer keys (missing AUTH_ISSUERS)" >&2
+      exit 1
+    fi
+    if ! grep -q 'issuers/trusted.json' "$root_dir/$f"; then
+      echo "$f init-certs does not generate trusted.json bundle" >&2
+      exit 1
+    fi
+    if grep -q 'cp -f /certs/issuers/server/auth.ed /certs/auth.ed' "$root_dir/$f"; then
+      echo "$f still contains legacy auth alias (should be per-issuer only)" >&2
+      exit 1
+    fi
+  done
+  # init-certs cert-bootstrap must also be per-issuer
+  if ! grep -q 'AUTH_ISSUERS=' "$root_dir/infra/k8s/overlays/local/cert-bootstrap.yaml"; then
+    echo "infra/k8s/overlays/local/cert-bootstrap.yaml init-certs is not per-issuer" >&2
+    exit 1
+  fi
+  if ! grep -q 'issuers/trusted.json' "$root_dir/infra/k8s/base/workloads.yaml"; then
+    echo "infra/k8s/base/workloads.yaml does not mount trusted.json bundle" >&2
+    exit 1
+  fi
+  for f in infra/k8s/overlays/local/cert-bootstrap.yaml scripts/k8s/setup.sh; do
+    if grep -Fq '\"%s\": {\"iss\":' "$root_dir/$f"; then
+      echo "$f escapes quotes inside a single-quoted printf and emits invalid JSON" >&2
+      exit 1
+    fi
+  done
+  local_kustomization="$root_dir/infra/k8s/overlays/local/kustomization.yaml"
+  issuer_mounts=$(grep -c 'subPath: issuers/' "$local_kustomization")
+  isolated_issuer_mounts=$(grep -B2 'subPath: issuers/' "$local_kustomization" | grep -c 'name: auth-certs')
+  if [ "$issuer_mounts" -ne "$isolated_issuer_mounts" ] || ! grep -q 'claimName: auth-certs-pvc' "$root_dir/infra/k8s/overlays/local/cert-bootstrap.yaml"; then
+    echo "local Kubernetes issuer material must use only the isolated auth-certs PVC" >&2
+    exit 1
+  fi
+  # Makefile must inject per-issuer private key paths
+  if ! grep -q 'certs/issuers/users-service/auth.ed' "$root_dir/Makefile"; then
+    echo "Makefile does not inject per-issuer auth key paths" >&2
+    exit 1
+  fi
+  # Auth package must expose kid-aware bundle
+  if ! grep -q 'kidForKey' "$root_dir/internal/pkg/auth/bundle.go"; then
+    echo "internal/pkg/auth/bundle.go missing kid handling" >&2
+    exit 1
+  fi
+  if ! grep -q 'trusted.json' "$root_dir/internal/pkg/auth/bundle.go" && ! grep -q 'trusted.json' "$root_dir/internal/pkg/auth/auth.go"; then
+    echo "internal/pkg/auth bundle verification missing trusted.json handling" >&2
+    exit 1
+  fi
+}
+
+validate_auth_bundle
+
+validate_rotate_helper() {
+	# Previous quoting regression (5f4da2b4): echo "..." inside run_in_certs "..."
+	# truncated the outer sh -c argument and weakened 0440→0640. Guard it.
+	if grep -q 'echo "backup of old private key failed"' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh helper contains echo \"...\" inside run_in_certs \"...\" — use single quotes" >&2
+		exit 1
+	fi
+	if grep -q 'echo "public key install failed' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh helper contains echo \"...\" inside run_in_certs \"...\" — use single quotes" >&2
+		exit 1
+	fi
+	if grep -q 'echo "no backup available' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh helper contains echo \"...\" inside run_in_certs \"...\" — use single quotes" >&2
+		exit 1
+	fi
+	if grep -q 'chmod u+w [^;&|]*auth\.ed' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh should not chmod u+w live auth.ed files — directory write suffices" >&2
+		exit 1
+	fi
+	# Bundle-derived old_kid is interpolated into the helper sh -c; it must be
+	# allowlisted first or metacharacters break out of quoting (RCE as container root).
+	if ! grep -q 'A-Za-z0-9_.:/-' "$root_dir/scripts/compose/rotate-auth-key.sh"; then
+		echo "rotate-auth-key.sh must allowlist old_kid before helper interpolation" >&2
+		exit 1
+	fi
+	if [ "$(grep -c 'force-recreate \$all_issuers' "$root_dir/scripts/compose/rotate-auth-key.sh")" -ne 2 ]; then
+		echo "rotate-auth-key.sh must restart every auth service after pruning" >&2
+		exit 1
+	fi
+	sh -n "$root_dir/scripts/compose/rotate-auth-key.sh" || {
+		echo "rotate-auth-key.sh has shell syntax errors" >&2
+		exit 1
+	}
+}
+
+validate_rotate_helper
+
+sh -n "$root_dir/scripts/compose/up.sh"
+
 echo "Compose configurations, development secrets, and Docker proxy credential mounts are valid"

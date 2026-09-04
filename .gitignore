@@ -31,6 +31,7 @@ bin/
 .bin/
 
 # keys and generated certs
+certs/issuers/*.json
 *.ed
 *.pub
 *.pem

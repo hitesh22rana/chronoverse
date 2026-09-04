@@ -107,6 +107,10 @@ patches:
         labelSelector:
           matchLabels:
             app.kubernetes.io/part-of: chronoverse
+- target:
+    kind: Deployment
+    name: users-service
+  patch: |-
     - op: test
       path: /spec/template/spec/volumes/0/name
       value: certs
@@ -120,10 +124,938 @@ patches:
           - secret:
               name: chronoverse-auth
               items:
-              - key: auth.ed
-                path: auth.ed
-              - key: auth.ed.pub
-                path: auth.ed.pub
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: users-service-auth.ed
+                path: issuers/users-service/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: workflows-service
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: workflows-service-auth.ed
+                path: issuers/workflows-service/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: jobs-service
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: jobs-service-auth.ed
+                path: issuers/jobs-service/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: notifications-service
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: notifications-service-auth.ed
+                path: issuers/notifications-service/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: analytics-service
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: analytics-service-auth.ed
+                path: issuers/analytics-service/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: server
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: server-auth.ed
+                path: issuers/server/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: scheduling-worker
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: scheduling-worker-auth.ed
+                path: issuers/scheduling-worker/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: workflow-worker
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: workflow-worker-auth.ed
+                path: issuers/workflow-worker/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: execution-worker
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: execution-worker-auth.ed
+                path: issuers/execution-worker/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: joblogs-processor
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: joblogs-processor-auth.ed
+                path: issuers/joblogs-processor/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: analytics-processor
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: analytics-processor-auth.ed
+                path: issuers/analytics-processor/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
+          - secret:
+              name: chronoverse-ca
+              items:
+              - key: ca.crt
+                path: ca/ca.crt
+          - secret:
+              name: chronoverse-client-tls
+              items:
+              - key: tls.crt
+                path: clients/client.crt
+              - key: tls.key
+                path: clients/client.key
+          - secret:
+              name: chronoverse-service-tls
+              items:
+              - key: users-service.crt
+                path: users-service/users-service.crt
+              - key: users-service.key
+                path: users-service/users-service.key
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
+- target:
+    kind: Deployment
+    name: outbox-relay
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: certs
+    - op: replace
+      path: /spec/template/spec/volumes/0
+      value:
+        name: certs
+        projected:
+          defaultMode: 0440
+          sources:
+          - secret:
+              name: chronoverse-auth
+              items:
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: outbox-relay-auth.ed
+                path: issuers/outbox-relay/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
           - secret:
               name: chronoverse-ca
               items:
@@ -231,10 +1163,36 @@ patches:
           - secret:
               name: chronoverse-auth
               items:
-              - key: auth.ed
-                path: auth.ed
-              - key: auth.ed.pub
-                path: auth.ed.pub
+              - key: trusted.json
+                path: issuers/trusted.json
+              - key: server-auth.ed
+                path: issuers/server/auth.ed
+              - key: server-auth.ed.pub
+                path: issuers/server/auth.ed.pub
+              - key: users-service-auth.ed.pub
+                path: issuers/users-service/auth.ed.pub
+              - key: workflows-service-auth.ed.pub
+                path: issuers/workflows-service/auth.ed.pub
+              - key: jobs-service-auth.ed.pub
+                path: issuers/jobs-service/auth.ed.pub
+              - key: notifications-service-auth.ed.pub
+                path: issuers/notifications-service/auth.ed.pub
+              - key: analytics-service-auth.ed.pub
+                path: issuers/analytics-service/auth.ed.pub
+              - key: scheduling-worker-auth.ed.pub
+                path: issuers/scheduling-worker/auth.ed.pub
+              - key: workflow-worker-auth.ed.pub
+                path: issuers/workflow-worker/auth.ed.pub
+              - key: execution-worker-auth.ed.pub
+                path: issuers/execution-worker/auth.ed.pub
+              - key: runtime-agent-auth.ed.pub
+                path: issuers/runtime-agent/auth.ed.pub
+              - key: joblogs-processor-auth.ed.pub
+                path: issuers/joblogs-processor/auth.ed.pub
+              - key: analytics-processor-auth.ed.pub
+                path: issuers/analytics-processor/auth.ed.pub
+              - key: outbox-relay-auth.ed.pub
+                path: issuers/outbox-relay/auth.ed.pub
           - secret:
               name: chronoverse-ca
               items:

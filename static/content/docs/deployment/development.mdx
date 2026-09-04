@@ -4,7 +4,7 @@
 
 ```bash
 scripts/compose/init-env.sh
-docker compose -f compose.dev.yaml up -d
+scripts/compose/up.sh
 ```
 
 Compose automatically reloads the gitignored `.env` file for later commands and restarts. Preserve it while existing encrypted sessions must remain valid.

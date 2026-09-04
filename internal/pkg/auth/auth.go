@@ -3,8 +3,10 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto"
+	"crypto/ed25519"
 	"errors"
 	"os"
 	"slices"
@@ -261,12 +263,22 @@ type Auth struct {
 	issuer     string
 	privateKey crypto.PrivateKey
 	publicKey  crypto.PublicKey
+	kid        string
+	bundle     map[string]*bundleEntry
+	bundlePath string
 	tp         trace.Tracer
 }
 
 // New creates a new Auth instance.
 func New() (*Auth, error) {
-	privateKeyBytes, err := os.ReadFile(svcpkg.Info().GetAuthPrivateKeyPath())
+	return newWithPaths(svcpkg.Info().GetName(), svcpkg.Info().GetAuthPrivateKeyPath(), svcpkg.Info().GetAuthPublicKeyPath())
+}
+
+// newWithPaths creates a new Auth instance from explicit key paths (test helper).
+//
+//nolint:gocyclo // key load + bundle resolution + kid selection is linear, split would add indirection
+func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
+	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read private key: %v", err)
 	}
@@ -276,7 +288,7 @@ func New() (*Auth, error) {
 		return nil, status.Errorf(codes.Internal, "failed to parse private key: %v", err)
 	}
 
-	publicKeyBytes, err := os.ReadFile(svcpkg.Info().GetAuthPublicKeyPath())
+	publicKeyBytes, err := os.ReadFile(publicKeyPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read public key: %v", err)
 	}
@@ -286,11 +298,67 @@ func New() (*Auth, error) {
 		return nil, status.Errorf(codes.Internal, "failed to parse public key: %v", err)
 	}
 
+	edPub, ok := publicKey.(ed25519.PublicKey)
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "public key is not ed25519")
+	}
+	// Verify private and public correspond — prevents signer restart with
+	// a mismatched pair (e.g. rotation replaced auth.ed but not auth.ed.pub).
+	// kid comes from the on-disk public key, so without this check IssueToken
+	// would sign with one key while verifiers select another.
+	if edPriv, ok := privateKey.(ed25519.PrivateKey); ok {
+		if derivedPub, ok := edPriv.Public().(ed25519.PublicKey); ok {
+			if !bytes.Equal(derivedPub, edPub) {
+				return nil, status.Errorf(codes.Internal, "private and public key mismatch")
+			}
+		}
+	}
+	kid := kidForKey(issuer, edPub)
+
+	bundle, bundlePath, bundleErr := findAndLoadBundle(publicKeyPath)
+	if bundleErr != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load trusted bundle %s: %v", bundlePath, bundleErr)
+	}
+	// The bundle is mandatory: the signer's key must be present in it.
+	// Otherwise IssueToken would mint tokens with an untrusted kid that all
+	// bundle-backed validators reject, leaving the service silently broken.
+	// A missing bundle fails closed here instead of silently disabling
+	// kid-bound verification in ValidateToken.
+	foundInBundle := false
+	for candKid, entry := range bundle {
+		if entry.Iss != issuer {
+			continue
+		}
+		if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && len(candPub) == len(edPub) {
+			match := true
+			for i := range candPub {
+				if candPub[i] != edPub[i] {
+					match = false
+					break
+				}
+			}
+			if match {
+				kid = candKid
+				foundInBundle = true
+				break
+			}
+		}
+	}
+	if !foundInBundle {
+		if bundlePath == "" {
+			return nil, status.Errorf(codes.Internal, "trusted bundle is required for issuer %q but was not found; refusing to start without kid-bound verification", issuer)
+		}
+		return nil, status.Errorf(codes.Internal, "trusted bundle %s has no entry for issuer %q (kid %s)", bundlePath, issuer, kid)
+	}
+
 	return &Auth{
-		issuer:     svcpkg.Info().GetName(),
+		issuer:     issuer,
 		privateKey: privateKey,
 		publicKey:  publicKey,
-		tp:         otel.Tracer(svcpkg.Info().GetName()),
+		kid:        kid,
+		bundle:     bundle,
+		bundlePath: bundlePath,
+		tp:         otel.Tracer(issuer),
 	}, nil
 }
 
@@ -315,7 +383,6 @@ func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...stri
 	if err != nil {
 		return "", err
 	}
-
 	now := time.Now()
 	_token := jwt.NewWithClaims(&jwt.SigningMethodEd25519{}, jwt.MapClaims{
 		jwtAudienceClaim:  audiences,
@@ -326,6 +393,11 @@ func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...stri
 		jwtSubjectClaim:   subject,
 		jwtRoleClaim:      role,
 	})
+	if a.kid != "" {
+		_token.Header["kid"] = a.kid
+		// Ensure alg is EdDSA per RFC; jwt library sets it via SigningMethod
+		_token.Header["alg"] = jwt.SigningMethodEdDSA.Alg()
+	}
 
 	signed, err := _token.SignedString(a.privateKey)
 	if err != nil {
@@ -374,6 +446,8 @@ func isOnlyTokenExpired(err error) bool {
 //
 // The audience claim may be a string or a string slice; either form is
 // accepted as long as expectedAudience appears in the list.
+//
+//nolint:gocyclo // ValidateToken handles kid-bound bundle lookup and claim validation in one linear flow.
 func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outCtx context.Context, token *jwt.Token, err error) {
 	ctx, span := a.tp.Start(ctx, "Auth.ValidateToken")
 	defer func() {
@@ -393,11 +467,25 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		return ctx, nil, err
 	}
 
-	parsed, err := jwt.Parse(
+	var kidFromHeader string
+	parsed, perr := jwt.Parse(
 		tokenString,
 		func(token *jwt.Token) (any, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
+			}
+			if a.bundle != nil {
+				if khStr, ok := token.Header["kid"].(string); ok {
+					kidFromHeader = khStr
+				}
+				if kidFromHeader == "" {
+					return nil, status.Error(codes.Unauthenticated, "missing kid")
+				}
+				entry, ok := a.bundle[kidFromHeader]
+				if !ok {
+					return nil, status.Error(codes.Unauthenticated, "untrusted kid")
+				}
+				return entry.PublicKey, nil
 			}
 			return a.publicKey, nil
 		},
@@ -405,11 +493,13 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		jwt.WithAudience(expectedAudience),
 		jwt.WithExpirationRequired(),
 	)
-	expired := isOnlyTokenExpired(err)
-	if err != nil && !expired {
-		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", err)
+	expired := isOnlyTokenExpired(perr)
+	if perr != nil && !expired {
+		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
 	}
-
+	if parsed == nil {
+		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
+	}
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
 		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
@@ -418,7 +508,11 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	if issuerErr != nil || !TrustedIssuer(issuer) {
 		return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
 	}
-
+	if kidFromHeader != "" {
+		if entry, found := a.bundle[kidFromHeader]; found && entry.Iss != issuer {
+			return ctx, nil, status.Error(codes.Unauthenticated, "kid issuer mismatch")
+		}
+	}
 	roleVal, ok := claims[jwtRoleClaim].(string)
 	if !ok || roleVal == "" {
 		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
@@ -430,11 +524,9 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	if expired {
 		return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
 	}
-
 	outCtx = WithAudience(ctx, expectedAudience)
 	outCtx = WithRole(outCtx, roleVal)
 	outCtx = WithSubject(outCtx, subVal)
-
 	return outCtx, parsed, nil
 }
 

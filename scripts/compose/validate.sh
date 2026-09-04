@@ -219,6 +219,13 @@ validate_auth_bundle() {
       exit 1
     fi
   done
+  local_kustomization="$root_dir/infra/k8s/overlays/local/kustomization.yaml"
+  issuer_mounts=$(grep -c 'subPath: issuers/' "$local_kustomization")
+  isolated_issuer_mounts=$(grep -B2 'subPath: issuers/' "$local_kustomization" | grep -c 'name: auth-certs')
+  if [ "$issuer_mounts" -ne "$isolated_issuer_mounts" ] || ! grep -q 'claimName: auth-certs-pvc' "$root_dir/infra/k8s/overlays/local/cert-bootstrap.yaml"; then
+    echo "local Kubernetes issuer material must use only the isolated auth-certs PVC" >&2
+    exit 1
+  fi
   # Makefile must inject per-issuer private key paths
   if ! grep -q 'certs/issuers/users-service/auth.ed' "$root_dir/Makefile"; then
     echo "Makefile does not inject per-issuer auth key paths" >&2

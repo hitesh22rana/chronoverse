@@ -135,7 +135,7 @@ patches:
       value:
       - name: wait-for-certs
         image: alpine:3.22.2
-        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ] && [ -f /certs/issuers/trusted.json ]; do echo waiting for local certificates; sleep 2; done"]
+        command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ] && [ -f /trusted.json ]; do echo waiting for local certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532
@@ -147,6 +147,10 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
+        - name: auth-certs
+          mountPath: /trusted.json
+          subPath: issuers/trusted.json
+          readOnly: true
     # certs sits at index 4 in the base DaemonSet (after docker-socket,
     # docker-proxy-config, and the two isolated Docker proxy identities); keep
     # this patch aligned with the base volume order. The test op guards
@@ -160,6 +164,12 @@ patches:
         name: certs
         persistentVolumeClaim:
           claimName: certs-pvc
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: auth-certs
+        persistentVolumeClaim:
+          claimName: auth-certs-pvc
 - target:
     kind: DaemonSet
     name: docker-proxy
@@ -173,63 +183,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/1/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed
           subPath: issuers/runtime-agent/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -297,7 +307,7 @@ patches:
       value:
       - name: wait-for-certs
         image: alpine:3.22.2
-        command: ["sh", "-c", "until [ -f /certs/issuers/trusted.json ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
+        command: ["sh", "-c", "until [ -f /trusted.json ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532
@@ -309,6 +319,10 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
+        - name: auth-certs
+          mountPath: /trusted.json
+          subPath: issuers/trusted.json
+          readOnly: true
     - op: test
       path: /spec/template/spec/volumes/0/name
       value: certs
@@ -318,6 +332,12 @@ patches:
         name: certs
         persistentVolumeClaim:
           claimName: certs-pvc
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: auth-certs
+        persistentVolumeClaim:
+          claimName: auth-certs-pvc
 - target:
     kind: Deployment
     name: server
@@ -328,63 +348,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed
           subPath: issuers/server/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -450,63 +470,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed
           subPath: issuers/users-service/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -572,63 +592,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed
           subPath: issuers/workflows-service/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -694,63 +714,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed
           subPath: issuers/jobs-service/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -816,63 +836,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed
           subPath: issuers/notifications-service/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -938,63 +958,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed
           subPath: issuers/analytics-service/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1060,63 +1080,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed
           subPath: issuers/scheduling-worker/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1182,63 +1202,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed
           subPath: issuers/workflow-worker/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1307,63 +1327,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed
           subPath: issuers/execution-worker/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1432,63 +1452,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed
           subPath: issuers/joblogs-processor/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1554,63 +1574,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed
           subPath: issuers/analytics-processor/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1676,63 +1696,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed
           subPath: issuers/outbox-relay/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1798,63 +1818,63 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/volumeMounts
       value:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed
           subPath: issuers/server/auth.ed
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/trusted.json
           subPath: issuers/trusted.json
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/server/auth.ed.pub
           subPath: issuers/server/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/users-service/auth.ed.pub
           subPath: issuers/users-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflows-service/auth.ed.pub
           subPath: issuers/workflows-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/jobs-service/auth.ed.pub
           subPath: issuers/jobs-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/notifications-service/auth.ed.pub
           subPath: issuers/notifications-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-service/auth.ed.pub
           subPath: issuers/analytics-service/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/scheduling-worker/auth.ed.pub
           subPath: issuers/scheduling-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/workflow-worker/auth.ed.pub
           subPath: issuers/workflow-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/execution-worker/auth.ed.pub
           subPath: issuers/execution-worker/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/runtime-agent/auth.ed.pub
           subPath: issuers/runtime-agent/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/joblogs-processor/auth.ed.pub
           subPath: issuers/joblogs-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/analytics-processor/auth.ed.pub
           subPath: issuers/analytics-processor/auth.ed.pub
           readOnly: true
-        - name: certs
+        - name: auth-certs
           mountPath: /certs/issuers/outbox-relay/auth.ed.pub
           subPath: issuers/outbox-relay/auth.ed.pub
           readOnly: true
@@ -1919,7 +1939,7 @@ patches:
       value:
       - name: wait-for-certs
         image: alpine:3.22.2
-        command: ["sh", "-c", "until [ -f /certs/issuers/trusted.json ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
+        command: ["sh", "-c", "until [ -f /trusted.json ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
           runAsUser: 65532
@@ -1931,6 +1951,10 @@ patches:
         volumeMounts:
         - name: certs
           mountPath: /certs
+        - name: auth-certs
+          mountPath: /trusted.json
+          subPath: issuers/trusted.json
+          readOnly: true
       - name: wait-for-datastores
         # Use the postgres image so we get pg_isready/psql out of the box
         # and can wait for both the TCP port and the chronoverse_app role
@@ -1992,6 +2016,12 @@ patches:
         name: certs
         persistentVolumeClaim:
           claimName: certs-pvc
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: auth-certs
+        persistentVolumeClaim:
+          claimName: auth-certs-pvc
 - target:
     kind: Job
     name: init-kafka-topics

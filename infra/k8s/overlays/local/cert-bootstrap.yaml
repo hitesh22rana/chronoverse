@@ -22,7 +22,7 @@ spec:
           runAsUser: 0
           runAsGroup: 0
         volumeMounts:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs
       containers:
       - name: init-certs
@@ -74,12 +74,12 @@ spec:
             cpu: 200m
             memory: 128Mi
         volumeMounts:
-        - name: certs
+        - name: auth-certs
           mountPath: /certs
       volumes:
-      - name: certs
+      - name: auth-certs
         persistentVolumeClaim:
-          claimName: certs-pvc
+          claimName: auth-certs-pvc
 ---
 apiVersion: batch/v1
 kind: Job
@@ -175,7 +175,6 @@ spec:
           chown -R 0:101 /certs
           chown -R 101:101 /certs/clickhouse
           chown 70:70 /certs/postgres/postgres.key
-          # Keep issuers private keys 0440 (not world-readable); a+rX would expose every issuer.
           find /certs -type d -exec chmod 0755 {} \; 2>/dev/null || true
           find /certs -type f -exec chmod 0644 {} \; 2>/dev/null || true
           chmod 0600 /certs/postgres/postgres.key /certs/clients/client.key
@@ -183,10 +182,6 @@ spec:
           chmod 0640 /certs/clients/client.key
           chmod 0640 /certs/clickhouse/clickhouse.key /certs/clickhouse/clients/client.key
           chmod 0644 /certs/clickhouse/clickhouse.crt /certs/clickhouse/clients/client.crt
-          chmod 0440 /certs/issuers/*/auth.ed 2>/dev/null || true
-          chmod 0444 /certs/issuers/*/auth.ed.pub /certs/issuers/trusted.json 2>/dev/null || true
-          chmod 0755 /certs/issuers 2>/dev/null || true
-          for d in /certs/issuers/*; do [ -d "$d" ] && chmod 0755 "$d"; done
         resources:
           requests:
             cpu: 100m

@@ -262,6 +262,10 @@ validate_rotate_helper() {
 		echo "rotate-auth-key.sh must allowlist old_kid before helper interpolation" >&2
 		exit 1
 	fi
+	if [ "$(grep -c 'force-recreate \$all_issuers' "$root_dir/scripts/compose/rotate-auth-key.sh")" -ne 2 ]; then
+		echo "rotate-auth-key.sh must restart every auth service after pruning" >&2
+		exit 1
+	fi
 	sh -n "$root_dir/scripts/compose/rotate-auth-key.sh" || {
 		echo "rotate-auth-key.sh has shell syntax errors" >&2
 		exit 1

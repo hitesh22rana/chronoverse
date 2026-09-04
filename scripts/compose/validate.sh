@@ -213,6 +213,12 @@ validate_auth_bundle() {
     echo "infra/k8s/base/workloads.yaml does not mount trusted.json bundle" >&2
     exit 1
   fi
+  for f in infra/k8s/overlays/local/cert-bootstrap.yaml scripts/k8s/setup.sh; do
+    if grep -Fq '\"%s\": {\"iss\":' "$root_dir/$f"; then
+      echo "$f escapes quotes inside a single-quoted printf and emits invalid JSON" >&2
+      exit 1
+    fi
+  done
   # Makefile must inject per-issuer private key paths
   if ! grep -q 'certs/issuers/users-service/auth.ed' "$root_dir/Makefile"; then
     echo "Makefile does not inject per-issuer auth key paths" >&2

@@ -569,7 +569,7 @@ create_auth_secret() {
     kid="$iss:$(date +%Y%m%d)-$(openssl rand -hex 4)"
     if [ $first -eq 0 ]; then printf ',\n' >> "$TRUSTED.tmp"; fi
     first=0
-    printf '  \"%s\": {\"iss\": \"%s\", \"pub\": \"%s/auth.ed.pub\"}' "$kid" "$iss" "$iss" >> "$TRUSTED.tmp"
+    printf '  "%s": {"iss": "%s", "pub": "%s/auth.ed.pub"}' "$kid" "$iss" "$iss" >> "$TRUSTED.tmp"
   done
   printf '\n}\n' >> "$TRUSTED.tmp"
   mv "$TRUSTED.tmp" "$TRUSTED"

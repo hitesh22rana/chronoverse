@@ -270,4 +270,6 @@ validate_rotate_helper() {
 
 validate_rotate_helper
 
+sh -n "$root_dir/scripts/compose/up.sh"
+
 echo "Compose configurations, development secrets, and Docker proxy credential mounts are valid"

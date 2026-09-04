@@ -71,7 +71,7 @@ services:
     restart: on-failure
     volumes:
       - postgres:/var/lib/postgresql
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/postgres:/certs/postgres:ro
       - ./certs/postgres/config:/etc/postgresql
@@ -106,7 +106,7 @@ services:
     volumes:
       - clickhouse:/var/lib/clickhouse
       - ./certs/clickhouse:/etc/clickhouse-server/certs:ro
-      - ./certs/ca:/etc/clickhouse-server/ca:ro
+      - ./certs/ca/ca.crt:/etc/clickhouse-server/ca/ca.crt:ro
       - ./certs/clickhouse/config:/etc/clickhouse-server/conf.d:ro
       - ./certs/clickhouse/clients/config.xml:/etc/clickhouse-client/config.xml:ro
     healthcheck:
@@ -132,7 +132,7 @@ services:
     restart: on-failure
     volumes:
       - redis:/data
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/redis:/certs/redis:ro
     command:
@@ -174,7 +174,7 @@ services:
       ENV: production
     volumes:
       - meilisearch:/meili_data
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/meilisearch:/certs/meilisearch:ro
     depends_on:
@@ -438,7 +438,7 @@ services:
       '
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/runtime-agent/auth.ed:/certs/issuers/runtime-agent/auth.ed:ro
@@ -583,6 +583,10 @@ services:
           -keystore /certs/kafka/kafka.truststore.jks \
           -storepass chronoverse -noprompt
 
+        # PKCS12 bundle holds the private key in transportable form; the JKS
+        # keystore above is the only runtime consumer, so remove it.
+        rm -f /certs/kafka/kafka.p12
+
         # Client certificate for mTLS
         echo "🔐 Generating client certificate for mTLS..."
         mkdir -p /certs/clients
@@ -610,23 +614,58 @@ services:
         echo "🔐 Setting permissions for all certificates..."
 
         chmod 444 /certs/ca/ca.crt
-        chmod 444 /certs/ca/ca.key
+        # CA private key signs certificates but is never needed at runtime
+        # (services mount only ca.crt now); root-only.
+        chmod 600 /certs/ca/ca.key
 
-        chmod 444 /certs/kafka/kafka.crt /certs/kafka/kafka.key /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
+        chmod 444 /certs/kafka/kafka.crt
+        # Kafka broker and topic bootstrap run as appuser (1000:1000).
+        chown 1000:1000 /certs/kafka/kafka.key /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
+        chmod 440 /certs/kafka/kafka.key /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
 
         echo "🔐 Creating Kafka keystore credentials files..."
         echo "chronoverse" > /certs/kafka/keystore_creds.txt
         echo "chronoverse" > /certs/kafka/truststore_creds.txt
         echo "chronoverse" > /certs/kafka/key_creds.txt
-        chmod 444 /certs/kafka/*_creds.txt
+        chown 1000:1000 /certs/kafka/*_creds.txt
+        chmod 440 /certs/kafka/*_creds.txt
 
         for svc in $$SERVICES; do
           chmod 444 /certs/$$svc/$$svc.crt
-          chmod 444 /certs/$$svc/$$svc.key
+          case "$$svc" in
+            clickhouse)
+              # ClickHouse key perms are set explicitly below (chown 101:101, chmod 640).
+              ;;
+            postgres)
+              # PostgreSQL server drops to postgres (70:70); entrypoint stays root.
+              chown 70:70 /certs/$$svc/$$svc.key
+              chmod 600 /certs/$$svc/$$svc.key
+              ;;
+            redis)
+              # Redis image ships a redis user (999:1000); keep group-readable.
+              chown 999:1000 /certs/$$svc/$$svc.key
+              chmod 440 /certs/$$svc/$$svc.key
+              ;;
+            kafka)
+              # Broker and topic bootstrap run as appuser (1000:1000).
+              chown 1000:1000 /certs/$$svc/$$svc.key
+              chmod 440 /certs/$$svc/$$svc.key
+              ;;
+            meilisearch)
+              # Meilisearch runs as root; root-only.
+              chmod 600 /certs/$$svc/$$svc.key
+              ;;
+            *)
+              # Chronoverse application services run as app (100:101).
+              chown 100:101 /certs/$$svc/$$svc.key
+              chmod 440 /certs/$$svc/$$svc.key
+              ;;
+          esac
         done
 
-        chmod 600 /certs/postgres/postgres.key
-        chmod 600 /certs/clients/client.key
+        # Shared mTLS client identity is consumed by UID 100 application containers.
+        chown 100:101 /certs/clients/client.key
+        chmod 440 /certs/clients/client.key
 
         chmod 444 /certs/clients/client.crt
 
@@ -770,7 +809,7 @@ services:
       ENV: production
     restart: "no"
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/server/auth.ed:/certs/issuers/server/auth.ed:ro
@@ -837,7 +876,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/users-service:/certs/users-service:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
@@ -918,7 +957,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/workflows-service:/certs/workflows-service:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
@@ -1019,7 +1058,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/jobs-service:/certs/jobs-service:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
@@ -1107,7 +1146,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/notifications-service:/certs/notifications-service:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
@@ -1182,7 +1221,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/analytics-service:/certs/analytics-service:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
@@ -1250,7 +1289,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/scheduling-worker/auth.ed:/certs/issuers/scheduling-worker/auth.ed:ro
@@ -1343,7 +1382,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/workflow-worker/auth.ed:/certs/issuers/workflow-worker/auth.ed:ro
@@ -1461,7 +1500,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/execution-worker/auth.ed:/certs/issuers/execution-worker/auth.ed:ro
@@ -1555,7 +1594,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/joblogs-processor/auth.ed:/certs/issuers/joblogs-processor/auth.ed:ro
@@ -1628,7 +1667,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/analytics-processor/auth.ed:/certs/issuers/analytics-processor/auth.ed:ro
@@ -1696,7 +1735,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/outbox-relay/auth.ed:/certs/issuers/outbox-relay/auth.ed:ro
@@ -1778,7 +1817,7 @@ services:
       ENV: production
     restart: on-failure
     volumes:
-      - ./certs/ca:/certs/ca:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/clients:/certs/clients:ro
       - ./certs/issuers/trusted.json:/certs/issuers/trusted.json:ro
       - ./certs/issuers/server/auth.ed:/certs/issuers/server/auth.ed:ro

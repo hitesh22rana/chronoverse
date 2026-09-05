@@ -283,7 +283,9 @@ validate_key_permissions() {
 
   # The checks below need a generated tree; CI checks out clean.
   if [ ! -f "$root_dir/certs/ca/ca.key" ]; then
-    echo "note: ./certs not generated; skipping key permission smoke test"
+    # Static ownership/mode pins above run everywhere including CI; the live
+    # tree checks below are local verification where certs were generated.
+    echo "note: ./certs not generated; skipping live key permission smoke test"
     return 0
   fi
 
@@ -335,7 +337,7 @@ validate_key_permissions() {
   # there), so UID readability checks only enforce on Linux; modes persist
   # everywhere and are always checked.
   if [ "$(uname -s)" != "Linux" ]; then
-    echo "note: skipping UID readability checks (require Linux bind-mount enforcement)"
+    echo "note: skipping UID readability checks on non-Linux (mode checks above still apply)"
     return 0
   fi
   if ! docker run --rm alpine:3.22 true >/dev/null 2>&1; then

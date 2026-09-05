@@ -43,11 +43,6 @@ type AnalyticEvent struct {
 	Data       json.RawMessage
 }
 
-// NewAnalyticEventBytes creates a new AnalyticEvent and marshals it to bytes.
-func NewAnalyticEventBytes(userID, workflowID string, eventType EventType, data any) ([]byte, error) {
-	return NewAnalyticEventBytesWithKey("", userID, workflowID, eventType, data)
-}
-
 // NewAnalyticEventBytesWithKey creates a new AnalyticEvent with an event key and marshals it to bytes.
 func NewAnalyticEventBytesWithKey(eventKey, userID, workflowID string, eventType EventType, data any) ([]byte, error) {
 	dataBytes, err := json.Marshal(data)

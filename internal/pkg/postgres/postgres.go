@@ -204,20 +204,3 @@ func (db *Postgres) Query(ctx context.Context, query string, args ...any) (pgx.R
 func (db *Postgres) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	return db.pool.Exec(ctx, query, args...)
 }
-
-// ExecBatch executes multiple queries in a batch.
-func (db *Postgres) ExecBatch(ctx context.Context, batch *pgx.Batch) error {
-	br := db.pool.SendBatch(ctx, batch)
-	defer br.Close()
-
-	if _, err := br.Exec(); err != nil {
-		return status.Errorf(codes.Internal, "failed to execute batch: %v", err)
-	}
-
-	return nil
-}
-
-// Stats returns connection pool statistics.
-func (db *Postgres) Stats() *pgxpool.Stat {
-	return db.pool.Stat()
-}

@@ -86,14 +86,6 @@ jobs:
       - name: Run tests
         run: make test/short
 
-      - name: Check if PR can be merged
-        if: github.event_name == 'pull_request'
-        run: |
-          if [ $? -ne 0 ]; then
-            echo "Tests failed, PR cannot be merged!"
-            exit 1
-          fi
-
   integration:
     name: Integration tests (Docker)
     permissions:

@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"os"
-	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc/codes"
@@ -14,38 +13,21 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/config"
 )
 
-// IsolationLevel represents the Kafka isolation level.
-type IsolationLevel string
-
-const (
-	initTimeout time.Duration = 10 * time.Second
-
-	// ReadUncommitted means that the consumer will read all messages, even those that are in the process of being written.
-	ReadUncommitted IsolationLevel = "read_uncommitted"
-	// ReadCommitted means that the consumer will only read messages that have been committed.
-	ReadCommitted IsolationLevel = "read_committed"
-)
-
 // Config represents the configuration for a Kafka client.
 type Config struct {
-	Brokers             []string
-	ConsumeTopics       []string
-	ConsumerGroup       string
-	TransactionalID     string
-	FetchIsolationLevel IsolationLevel
-	DisableAutoCommit   bool
-	PartitionLifecycle  *PartitionLifecycle
-	TLS                 *tls.Config
+	Brokers            []string
+	ConsumeTopics      []string
+	ConsumerGroup      string
+	DisableAutoCommit  bool
+	PartitionLifecycle *PartitionLifecycle
+	TLS                *tls.Config
 }
 
 // Option is a functional option type that allows to configure the Kafka client.
 type Option func(*Config)
 
 // New creates a new Kafka client.
-func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
-	_, cancel := context.WithTimeout(ctx, initTimeout)
-	defer cancel()
-
+func New(_ context.Context, options ...Option) (*kgo.Client, error) {
 	c := &Config{}
 
 	for _, opt := range options {
@@ -70,22 +52,6 @@ func New(ctx context.Context, options ...Option) (*kgo.Client, error) {
 
 	if c.ConsumerGroup != "" {
 		opts = append(opts, kgo.ConsumerGroup(c.ConsumerGroup))
-	}
-
-	if c.TransactionalID != "" {
-		opts = append(opts, kgo.TransactionalID(c.TransactionalID))
-	}
-
-	if c.FetchIsolationLevel != "" {
-		// Default to read uncommitted if not set
-		var fetchIsolationLevel kgo.IsolationLevel
-		if c.FetchIsolationLevel == ReadCommitted {
-			fetchIsolationLevel = kgo.ReadCommitted()
-		} else {
-			fetchIsolationLevel = kgo.ReadUncommitted()
-		}
-
-		opts = append(opts, kgo.FetchIsolationLevel(fetchIsolationLevel))
 	}
 
 	if c.DisableAutoCommit {
@@ -120,20 +86,6 @@ func WithConsumeTopics(topic ...string) Option {
 func WithConsumerGroup(group string) Option {
 	return func(c *Config) {
 		c.ConsumerGroup = group
-	}
-}
-
-// WithTransactionalID sets the Kafka transactional ID.
-func WithTransactionalID(id string) Option {
-	return func(c *Config) {
-		c.TransactionalID = id
-	}
-}
-
-// WithFetchIsolationLevel sets the Kafka fetch isolation level.
-func WithFetchIsolationLevel(isolationLevel IsolationLevel) Option {
-	return func(c *Config) {
-		c.FetchIsolationLevel = isolationLevel
 	}
 }
 

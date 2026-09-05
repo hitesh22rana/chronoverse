@@ -231,26 +231,3 @@ func reconcileRunningJobsQuery() string {
         WHERE rn.id = $1;
     `
 }
-
-// RunHeartbeats heartbeats until the context is canceled.
-func (r *Repository) RunHeartbeats(ctx context.Context, interval time.Duration) error {
-	if interval <= 0 {
-		interval = 5 * time.Second
-	}
-	if err := r.RegisterReady(ctx); err != nil {
-		return err
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := r.Heartbeat(ctx); err != nil {
-				return err
-			}
-		}
-	}
-}

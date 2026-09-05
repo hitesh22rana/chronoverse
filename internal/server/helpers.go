@@ -159,10 +159,6 @@ type gzipResponseWriter struct {
 	status     int
 }
 
-func (w *gzipResponseWriter) Header() http.Header {
-	return w.ResponseWriter.Header()
-}
-
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 	w.status = statusCode
 	w.Header().Set("Content-Encoding", "gzip")

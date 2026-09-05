@@ -27,19 +27,6 @@ import (
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 )
 
-func TestMain(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	svc := notificationsmock.NewMockService(ctrl)
-	_auth := authmock.NewMockIAuth(ctrl)
-
-	server := notifications.New(t.Context(), &notifications.Config{
-		Deadline: 500 * time.Millisecond,
-	}, _auth, svc)
-
-	_ = server
-}
-
 func initClient(server *grpc.Server) (client notificationspb.NotificationsServiceClient, _close func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

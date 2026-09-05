@@ -101,6 +101,13 @@ validate_compose() {
     exit 1
   fi
 
+  # No runtime service may mount the ./certs/ca directory (it holds ca.key);
+  # mount ca.crt as a file instead. init-certs needs the directory rw.
+  if jq -e '[.services | to_entries[] | select(.key != "init-certs") | .value.volumes // [] | any((.source // "") | endswith("/certs/ca"))] | any' "$output_file" >/dev/null; then
+    echo "$compose_file mounts ./certs/ca directory into a runtime service (exposes ca.key); mount ca.crt as a file" >&2
+    exit 1
+  fi
+
   if [ "$compose_file" = "compose.prod.yaml" ] && ! jq -e '
     .services as $services
     | ($services.clickhouse.healthcheck.test[1] | contains("$${CLICKHOUSE_PASSWORD}"))
@@ -243,6 +250,130 @@ validate_auth_bundle() {
 }
 
 validate_auth_bundle
+
+validate_key_permissions() {
+  # init-certs must give every private key an explicit owner and a
+  # restrictive mode (never world-readable).
+  for f in compose.dev.yaml compose.prod.yaml; do
+    for pattern in \
+      'chmod 600 /certs/ca/ca.key' \
+      'chown 70:70' \
+      'chown 999:1000' \
+      'chown 1000:1000' \
+      'chown 100:101 /certs/clients/client.key' \
+      'rm -f /certs/kafka/kafka.p12' \
+      'certs/ca/ca.crt:/certs/ca/ca.crt:ro' \
+    ; do
+      if ! grep -Fq "$pattern" "$root_dir/$f"; then
+        echo "$f init-certs missing private-key hardening ($pattern)" >&2
+        exit 1
+      fi
+    done
+    for bad in \
+      'chmod 444 /certs/ca/ca.key' \
+      'chmod 444 /certs/kafka/kafka.key' \
+      'chmod 444 /certs/$$svc/$$svc.key' \
+    ; do
+      if grep -Fq "$bad" "$root_dir/$f"; then
+        echo "$f leaves a private key world-readable ($bad)" >&2
+        exit 1
+      fi
+    done
+  done
+
+  # The checks below need a generated tree; CI checks out clean.
+  if [ ! -f "$root_dir/certs/ca/ca.key" ]; then
+    # Static ownership/mode pins above run everywhere including CI; the live
+    # tree checks below are local verification where certs were generated.
+    echo "note: ./certs not generated; skipping live key permission smoke test"
+    return 0
+  fi
+
+  # Mode bits persist on every platform: no private key may be other-readable.
+  check_mode() {
+    # $1 = path relative to certs/, $2... = acceptable modes
+    rel="$1"; shift
+    f="$root_dir/certs/$rel"
+    if [ ! -f "$f" ]; then
+      echo "key permission smoke: missing $rel (regenerate with a fresh init-certs run)" >&2
+      exit 1
+    fi
+    got="$(file_permissions "$f")"
+    for want in "$@"; do
+      if [ "$got" = "$want" ]; then
+        return 0
+      fi
+    done
+    echo "key permission smoke: $rel has mode $got, want one of: $*" >&2
+    exit 1
+  }
+  for iss in "$root_dir"/certs/issuers/*/auth.ed; do
+    rel="issuers/$(basename "$(dirname "$iss")")/auth.ed"
+    check_mode "$rel" 440
+  done
+  check_mode ca/ca.key 600
+  check_mode kafka/kafka.key 440
+  check_mode kafka/kafka.keystore.jks 440
+  check_mode kafka/kafka.truststore.jks 440
+  for creds in "$root_dir"/certs/kafka/*_creds.txt; do
+    check_mode "kafka/$(basename "$creds")" 440
+  done
+  if [ -e "$root_dir/certs/kafka/kafka.p12" ]; then
+    echo "key permission smoke: kafka.p12 transport bundle should be removed after import" >&2
+    exit 1
+  fi
+  check_mode postgres/postgres.key 600
+  check_mode redis/redis.key 440
+  check_mode meilisearch/meilisearch.key 600
+  check_mode clients/client.key 440
+  for svc in users-service workflows-service jobs-service notifications-service analytics-service; do
+    check_mode "$svc/$svc.key" 440
+    check_mode "$svc/$svc.crt" 444
+  done
+  check_mode clickhouse/clickhouse.key 640
+  check_mode clickhouse/clients/client.key 640
+
+  # Ownership does not survive macOS bind mounts (observed non-deterministic
+  # there), so UID readability checks only enforce on Linux; modes persist
+  # everywhere and are always checked.
+  if [ "$(uname -s)" != "Linux" ]; then
+    echo "note: skipping UID readability checks on non-Linux (mode checks above still apply)"
+    return 0
+  fi
+  if ! docker run --rm alpine:3.22 true >/dev/null 2>&1; then
+    echo "note: docker unavailable for UID readability checks; skipping"
+    return 0
+  fi
+  check_can_read() {
+    # $1 = uid:gid, $2... = paths relative to certs/
+    id="$1"; shift
+    for rel in "$@"; do
+      if ! docker run --rm -u "$id" -v "$root_dir/certs:/certs:ro" alpine:3.22 test -r "/certs/$rel" >/dev/null 2>&1; then
+        echo "key permission smoke: $id cannot read $rel" >&2
+        exit 1
+      fi
+    done
+  }
+  check_cannot_read() {
+    id="$1"; shift
+    for rel in "$@"; do
+      if docker run --rm -u "$id" -v "$root_dir/certs:/certs:ro" alpine:3.22 test -r "/certs/$rel" >/dev/null 2>&1; then
+        echo "key permission smoke: $id can read $rel (should be denied)" >&2
+        exit 1
+      fi
+    done
+  }
+  check_can_read 100:101 issuers/users-service/auth.ed issuers/trusted.json clients/client.key clients/client.crt ca/ca.crt users-service/users-service.key users-service/users-service.crt
+  check_cannot_read 100:101 ca/ca.key postgres/postgres.key
+  check_can_read 70:70 postgres/postgres.key postgres/postgres.crt ca/ca.crt
+  check_cannot_read 70:70 clients/client.key issuers/users-service/auth.ed
+  check_can_read 1000:1000 kafka/kafka.keystore.jks kafka/keystore_creds.txt
+  check_cannot_read 1000:1000 clients/client.key
+  check_can_read 101:101 clickhouse/clickhouse.key
+  check_can_read 999:1000 redis/redis.key
+}
+
+validate_key_permissions
 
 validate_rotate_helper() {
 	# Previous quoting regression (5f4da2b4): echo "..." inside run_in_certs "..."

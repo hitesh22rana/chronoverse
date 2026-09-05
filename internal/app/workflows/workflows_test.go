@@ -31,19 +31,6 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
-func TestMain(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	svc := workflowsmock.NewMockService(ctrl)
-	_auth := authmock.NewMockIAuth(ctrl)
-
-	server := workflows.New(t.Context(), &workflows.Config{
-		Deadline: 500 * time.Millisecond,
-	}, _auth, svc)
-
-	_ = server
-}
-
 func initClient(server *grpc.Server) (client workflowspb.WorkflowsServiceClient, _close func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

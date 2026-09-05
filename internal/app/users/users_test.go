@@ -26,19 +26,6 @@ import (
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 )
 
-func TestMain(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	svc := usersmock.NewMockService(ctrl)
-	_auth := authmock.NewMockIAuth(ctrl)
-
-	server := users.New(t.Context(), &users.Config{
-		Deadline: 500 * time.Millisecond,
-	}, _auth, svc)
-
-	_ = server
-}
-
 func initClient(server *grpc.Server) (client userpb.UsersServiceClient, _close func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

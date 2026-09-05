@@ -30,19 +30,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
-func TestMain(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	svc := jobsmock.NewMockService(ctrl)
-	_auth := authmock.NewMockIAuth(ctrl)
-
-	server := jobs.New(t.Context(), &jobs.Config{
-		Deadline: 500 * time.Millisecond,
-	}, _auth, svc)
-
-	_ = server
-}
-
 func TestHealthWatchBypassesAuthentication(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	server := jobs.New(t.Context(), &jobs.Config{Deadline: 500 * time.Millisecond},

@@ -68,7 +68,6 @@ func (a *Analytics) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return handler(ctx, req)
 		}
 
-		// Extract the authToken from metadata.
 		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)

@@ -242,7 +242,6 @@ func (u *Users) RegisterUser(ctx context.Context, req *userpb.RegisterUserReques
 		return nil, err
 	}
 
-	// Append the authToken in the headers.
 	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(authToken)); err != nil {
 		return nil, err
 	}
@@ -275,7 +274,6 @@ func (u *Users) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (re
 		return nil, err
 	}
 
-	// Append the authToken in the headers.
 	if err = grpc.SendHeader(ctx, auth.WithSetAuthorizationTokenInHeaders(authToken)); err != nil {
 		return nil, err
 	}

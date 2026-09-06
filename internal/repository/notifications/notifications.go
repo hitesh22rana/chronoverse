@@ -347,7 +347,6 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 		span.End()
 	}()
 
-	// Issue necessary headers and tokens for authorization
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr

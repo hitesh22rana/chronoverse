@@ -642,7 +642,6 @@ func (r *Repository) GetJobLogs(
 		span.End()
 	}()
 
-	// Issue necessary headers and tokens for authorization
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
@@ -765,7 +764,6 @@ func (r *Repository) GetJobLogs(
 			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
 		}
 
-		// Check if there are more logs
 		if len(tmp) > r.cfg.LogsFetchLimit {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
 			tmp = tmp[:r.cfg.LogsFetchLimit]
@@ -800,9 +798,7 @@ func (r *Repository) GetJobLogs(
 		return nil, "", err
 	}
 
-	// Buffer-based status override:
-	// If the job just completed within the buffer window, we may not have all logs yet.
-	// Treat it as "RUNNING" temporarily.
+	// Logs may lag a just-completed job; report RUNNING within the buffer window.
 	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
 		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
 	}
@@ -826,7 +822,6 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		span.End()
 	}()
 
-	// Issue necessary headers and tokens for authorization
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
@@ -936,7 +931,6 @@ func (r *Repository) SearchJobLogs(
 		span.End()
 	}()
 
-	// Issue necessary headers and tokens for authorization
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
@@ -1078,7 +1072,6 @@ func (r *Repository) SearchJobLogs(
 			})
 		}
 
-		// Check if there are more logs
 		if len(tmp) > r.cfg.LogsFetchLimit {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
 			tmp = tmp[:r.cfg.LogsFetchLimit]
@@ -1113,9 +1106,7 @@ func (r *Repository) SearchJobLogs(
 		return nil, "", err
 	}
 
-	// Buffer-based status override:
-	// If the job just completed within the buffer window, we may not have all logs yet.
-	// Treat it as "RUNNING" temporarily.
+	// Logs may lag a just-completed job; report RUNNING within the buffer window.
 	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
 		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
 	}

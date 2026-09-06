@@ -25,7 +25,7 @@ type Config struct {
 	TLS       *tls.Config
 }
 
-// Option is a functional option type that allows to configure the MeiliSearch client.
+// Option configures the MeiliSearch client.
 type Option func(*Config)
 
 // New creates a new MeiliSearch client.

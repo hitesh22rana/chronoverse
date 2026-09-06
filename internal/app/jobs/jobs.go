@@ -103,7 +103,6 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return handler(ctx, req)
 		}
 
-		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
@@ -128,7 +127,6 @@ func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerI
 			return handler(srv, stream)
 		}
 
-		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(stream.Context())
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(stream.Context(), logger, err)
@@ -564,7 +562,7 @@ func (j *Jobs) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *jobs
 }
 
 // GetJobByID returns the job details by ID.
-// This is an internal method used by internal services, and it should not be exposed to the public.
+// Internal only; not public API.
 func (j *Jobs) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest) (res *jobspb.GetJobByIDResponse, err error) {
 	ctx, span := j.tp.Start(
 		ctx,

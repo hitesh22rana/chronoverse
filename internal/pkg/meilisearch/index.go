@@ -1,7 +1,6 @@
 package meilisearch
 
-// Index represents the configuration for a MeiliSearch index, including its name, primary key,
-// and lists of searchable, filterable, and sortable attributes.
+// Index configures a MeiliSearch index: name, primary key, and searchable/filterable/sortable attributes.
 type Index struct {
 	// Name is the unique name of the MeiliSearch index.
 	Name string

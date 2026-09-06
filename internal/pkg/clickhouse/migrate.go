@@ -51,7 +51,7 @@ func Migrate(ctx context.Context, client *Client) error {
 	return nil
 }
 
-// createSchemaMigrationsTable creates the schema_migrations table if it does not exist.
+// Ensures the schema_migrations table exists.
 func createSchemaMigrationsTable(ctx context.Context, client *Client) error {
 	query := `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -92,11 +92,11 @@ func getAppliedMigrations(ctx context.Context, client *Client) (map[int]bool, er
 	return applied, rows.Err()
 }
 
-// getPendingMigrations returns the embedded migrations that have not been applied yet.
+// Returns unapplied embedded migrations.
 func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 	var migrations []migration
 
-	// Read migration files from the embedded filesystem.
+	// Walk embedded migration files.
 	err := fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

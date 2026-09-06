@@ -13,31 +13,23 @@ import (
 )
 
 var (
-	// version is the service version.
 	version string
 
-	// name is the name of the service.
 	name string
 
-	// authPrivateKeyPath is the path to the private key.
 	authPrivateKeyPath string
 
-	// authPublicKeyPath is the path to the public key.
 	authPublicKeyPath string
 )
 
 // Svc contains the service information.
 type Svc struct {
-	// version is the service version.
 	version string
 
-	// name is the name of the service.
 	name string
 
-	// authPrivateKeyPath is the path to the private key.
 	authPrivateKeyPath string
 
-	// authPublicKeyPath is the path to the public key.
 	authPublicKeyPath string
 }
 

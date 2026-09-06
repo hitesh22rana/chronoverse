@@ -13,9 +13,7 @@ const (
 	heartbeatWorkflowMaxRequestTimeout     = 5 * time.Minute
 )
 
-// Details encapsulates the configuration required to perform a heartbeat check
-// against a specified endpoint. It includes the request timeout, target endpoint URL,
-// the expected HTTP status code for a successful heartbeat, and any custom headers
+// Details configures a heartbeat check: timeout, endpoint URL, expected status, and headers.
 // to be included in the request.
 type Details struct {
 	TimeOut            time.Duration       // Maximum duration to wait for the heartbeat request to complete

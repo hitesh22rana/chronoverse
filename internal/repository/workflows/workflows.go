@@ -73,7 +73,6 @@ func (r *Repository) CreateWorkflow(
 		return nil, err
 	}
 
-	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -177,7 +176,6 @@ func (r *Repository) CreateWorkflow(
 		return nil, completeErr
 	}
 
-	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -253,7 +251,6 @@ func (r *Repository) UpdateWorkflow(
 		return err
 	}
 
-	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -470,7 +467,6 @@ func (r *Repository) UpdateWorkflow(
 		return completeErr
 	}
 
-	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -931,7 +927,6 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 		span.End()
 	}()
 
-	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -1011,7 +1006,6 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 		return insertErr
 	}
 
-	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -1041,7 +1035,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		span.End()
 	}()
 
-	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -1173,7 +1166,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		return insertErr
 	}
 
-	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())

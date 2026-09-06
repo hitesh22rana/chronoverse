@@ -256,6 +256,7 @@ func TestListReadyRuntimeNodesQueryReturnsEveryReadyNode(t *testing.T) {
 
 	assertContains(t, query, "WHERE status = 'READY'")
 	assertContains(t, query, "last_heartbeat_at >")
+	assertContains(t, query, "ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC")
 	assertNotContains(t, query, "LIMIT")
 	assertNotContains(t, query, "running_jobs < max_concurrency")
 }

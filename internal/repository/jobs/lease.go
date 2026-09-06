@@ -423,12 +423,14 @@ func (r *Repository) ListReadyRuntimeNodes(ctx context.Context) (nodes []*jobsmo
 }
 
 func listReadyRuntimeNodesQuery() string {
+	// Still every node (no LIMIT/filtering); ordered like claim preference so a
+	// capped prefetch prefix covers the most likely claim targets.
 	return fmt.Sprintf(`
 		SELECT id, docker_endpoint
 		FROM %s
 		WHERE status = 'READY'
 			AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($1::int * interval '1 second')
-		ORDER BY id ASC;
+		ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC;
 	`, postgres.TableRuntimeNodes)
 }
 

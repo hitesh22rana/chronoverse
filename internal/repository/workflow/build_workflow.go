@@ -317,7 +317,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 
 	// Best-effort fan-out: warm every other READY node off the critical path.
 	// Execution-time Ensure is the correctness fallback, so prefetch never fails the build.
-	if r.svc.ImagePrefetch.Enabled && resolvedImageRef != "" {
+	// Prefetch the immutable digest (what the executor Ensures), not the mutable tag.
+	prefetchImage := resolvedImageDigest
+	if prefetchImage == "" {
+		prefetchImage = resolvedImageRef
+	}
+	if r.svc.ImagePrefetch.Enabled && prefetchImage != "" {
 		if authCtx, err := r.withAuthorization(context.WithoutCancel(parentCtx)); err == nil {
 			timeout := r.svc.ImagePrefetch.Timeout
 			if timeout <= 0 {
@@ -326,7 +331,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			prefetchCtx, cancel := context.WithTimeout(authCtx, timeout)
 			go func() {
 				defer cancel()
-				r.prefetchImageToNodes(prefetchCtx, resolvedImageRef, warmedNodeID)
+				r.prefetchImageToNodes(prefetchCtx, prefetchImage, warmedNodeID)
 			}()
 		}
 	}

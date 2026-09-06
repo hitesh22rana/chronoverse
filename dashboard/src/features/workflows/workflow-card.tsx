@@ -26,16 +26,13 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
     const failureCount = workflow.consecutive_job_failures_count ?? 0
     const failureLimit = workflow.max_consecutive_job_failures_allowed ?? 1
 
-    // Determine status
     const status = workflow.terminated_at ? "TERMINATED" : workflow.build_status
 
-    // Format dates
     const updatedAt = formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })
     const statusMeta = getStatusMeta(status)
 
     const StatusIcon = statusMeta.icon
 
-    // Format interval for display
     const interval = workflow.interval === 1440
         ? "daily"
         : workflow.interval % 60 === 0 && workflow.interval >= 60

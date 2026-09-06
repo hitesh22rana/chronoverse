@@ -81,7 +81,7 @@ export default function WorkflowDetailsAndJobsPage() {
     const router = useRouter()
     const searchParams = useSearchParams()
 
-    // Local state for filter inputs (to be applied when "Apply Filters" is clicked)
+    // Pending filter inputs; applied on Apply.
     const [filterState, setFilterState] = useState({
         status: "",
         trigger: "",
@@ -120,13 +120,10 @@ export default function WorkflowDetailsAndJobsPage() {
     const [showTerminateWorkflowDialog, setShowTerminateWorkflowDialog] = useState(false)
     const [showDeleteWorkflowDialog, setShowDeleteWorkflowDialog] = useState(false)
 
-    // Determine status
     const status = workflow?.terminated_at ? "TERMINATED" : workflow?.build_status
 
-    // Get status meta (unified)
     const statusMeta = getStatusMeta(status)
 
-    // Format interval for display
     const interval = workflow?.interval
         ? workflow.interval === 1440
             ? "daily"
@@ -154,7 +151,6 @@ export default function WorkflowDetailsAndJobsPage() {
         setIsFiltersOpen(nextOpen)
     }
 
-    // Handle tab change
     const handleTabsChange = (value: string) => {
         const params = new URLSearchParams(searchParams.toString())
         if (value === "details") {
@@ -185,7 +181,6 @@ export default function WorkflowDetailsAndJobsPage() {
         setIsFiltersOpen(false)
     }
 
-    // Count active filters
     const activeFiltersCount = [
         statusFilter,
         triggerFilter,
@@ -559,7 +554,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                 {urlTabFilter === "details" && isWorkflowLoading ? (
                     <WorkflowDetailsSkeleton />
                 ) : (urlTabFilter === "details" && !isWorkflowLoading && !workflowError) && (
-                    // Details Tab
                     <TabsContent value="details" className="h-full w-full">
                         {/* UpdateWorkflow Dialog */}
                         <UpdateWorkflowDialog

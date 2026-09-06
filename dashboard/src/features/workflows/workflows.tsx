@@ -54,7 +54,7 @@ export function Workflows() {
     const [isFiltersOpen, setIsFiltersOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
 
-    // Local state for filter inputs (to be applied when "Apply Filters" is clicked)
+    // Pending filter inputs; applied on Apply.
     const [filterState, setFilterState] = useState({
         status: "",
         kind: "",
@@ -80,7 +80,6 @@ export function Workflows() {
 
     const [searchInput, setSearchInput] = useState(searchQuery)
 
-    // Debounced search update
     useEffect(() => {
         const timer = setTimeout(() => {
             if (searchInput !== searchQuery) {
@@ -93,7 +92,6 @@ export function Workflows() {
         return () => clearTimeout(timer)
     }, [searchInput, searchQuery, updateSearchQuery])
 
-    // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === "f") {
@@ -142,7 +140,6 @@ export function Workflows() {
         setIsFiltersOpen(false)
     }
 
-    // Count active filters
     const activeFiltersCount = [
         statusFilter,
         kindFilter,

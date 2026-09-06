@@ -47,7 +47,6 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         intervalMax = normalizeIntervalFilter(searchParams.get("interval_max"))
     }
 
-    // Build query parameters for the get workflows request
     const getWorkflowQueryParams = (() => {
         const params = new URLSearchParams()
 
@@ -134,7 +133,6 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         router.push(`?${params.toString()}`)
     }
 
-    // Update search query in URL params
     const updateSearchQuery = (newSearchQuery: string) => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when searching
@@ -148,7 +146,6 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         router.push(`?${params.toString()}`)
     }
 
-    // Apply all filters and search query
     const applyAllFilters = (filters: unknown) => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
@@ -194,9 +191,7 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         router.push(`?${params.toString()}`)
     }
 
-    // Clear all filters
     const clearAllFilters = () => {
-        // Get the search query if it exists
         const oldParams = new URLSearchParams(searchParams.toString())
         const query = oldParams.get("query")
 
@@ -243,7 +238,6 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         isCreating: createWorkflowMutation.isPending,
         refetch: getWorkflowQuery.refetch,
         refetchLoading: getWorkflowQuery.isRefetching,
-        // Search and filter functions
         searchQuery,
         statusFilter,
         kindFilter,

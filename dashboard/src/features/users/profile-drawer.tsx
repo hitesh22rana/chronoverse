@@ -63,7 +63,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
     const { logout, isLogoutLoading } = useAuth()
     const { refetch: refetchNotifications } = useNotifications()
 
-    // State for password confirmation dialog
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
     const [newPreference, setNewPreference] = useState("")
 
@@ -77,7 +76,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
             .slice(0, 2)
         : "U"
 
-    // Handler for notification preference change
     const handlePreferenceChange = (value: string) => {
         if (value === user?.notification_preference) return
 
@@ -85,7 +83,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
         setConfirmDialogOpen(true)
     }
 
-    // Handler for password confirmation and update
     const handleConfirmUpdate = () => {
         updateUser({
             notification_preference: newPreference
@@ -97,7 +94,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
         })
     }
 
-    // Handler for sign out
     const handleSignOut = () => {
         logout()
     }

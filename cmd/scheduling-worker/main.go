@@ -22,9 +22,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -33,11 +31,9 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -45,14 +41,12 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the scheduling service configuration
 	cfg, err := config.InitSchedulingJobConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the PostgreSQL database
 	pdb, err := postgres.New(ctx, &postgres.Config{
 		Host:        cfg.Postgres.Host,
 		Port:        cfg.Postgres.Port,
@@ -77,7 +71,6 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the scheduling job components
 	repo := schedulerrepo.New(&schedulerrepo.Config{
 		BatchSize: cfg.SchedulingWorkerConfig.BatchSize,
 	}, pdb)
@@ -87,7 +80,6 @@ func run() int {
 		ContextTimeout: cfg.SchedulingWorkerConfig.ContextTimeout,
 	}, svc)
 
-	// Log the job information
 	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
@@ -98,7 +90,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Run the scheduling job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

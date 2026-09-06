@@ -31,9 +31,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -42,25 +40,21 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Load the jobs service configuration
 	cfg, err := config.InitJobsServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the auth issuer
 	auth, err := auth.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the PostgreSQL database
 	pdb, err := postgres.New(ctx, &postgres.Config{
 		Host:        cfg.Postgres.Host,
 		Port:        cfg.Postgres.Port,
@@ -85,7 +79,6 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
 		Port:                     cfg.Redis.Port,
@@ -111,7 +104,6 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	// Initialize the ClickHouse database
 	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
 		Hosts:           cfg.ClickHouse.Hosts,
 		Database:        cfg.ClickHouse.Database,
@@ -134,7 +126,6 @@ func run() int {
 	}
 	defer cdb.Close()
 
-	// Initialize the MeiliSearch client
 	msdb, err := meilisearch.New(
 		ctx,
 		meilisearch.WithURI(cfg.MeiliSearch.URI),
@@ -147,7 +138,6 @@ func run() int {
 	}
 	defer msdb.Close()
 
-	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.WorkflowsService.Host,
@@ -168,7 +158,6 @@ func run() int {
 	}
 	defer workflowsConn.Close()
 
-	// Initialize the jobs repository
 	repo := jobsrepo.New(&jobsrepo.Config{
 		FetchLimit:            cfg.JobsServiceConfig.FetchLimit,
 		LogsFetchLimit:        cfg.JobsServiceConfig.LogsFetchLimit,
@@ -179,13 +168,10 @@ func run() int {
 		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
 	})
 
-	// Initialize the validator utility
 	validator := validator.New()
 
-	// Initialize the jobs service
 	svc := jobssvc.New(validator, repo, rdb)
 
-	// Initialize the jobs application
 	app := jobs.New(ctx, &jobs.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
 		Environment: cfg.Environment.Env,
@@ -197,7 +183,6 @@ func run() int {
 		},
 	}, auth, svc)
 
-	// Create a TCP listener
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Grpc.Port))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create listener: %v\n", err)
@@ -206,7 +191,6 @@ func run() int {
 
 	go grpcserverpkg.GracefulStop(ctx, app, 20*time.Second)
 
-	// Log the service information
 	loggerpkg.FromContext(ctx).Info(
 		"starting service",
 		zap.Any("ctx", ctx),
@@ -219,7 +203,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Serve the gRPC service
 	if err := app.Serve(listener); err != nil {
 		if ctx.Err() != nil {
 			return ExitOk

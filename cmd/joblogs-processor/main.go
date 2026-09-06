@@ -26,9 +26,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -37,11 +35,9 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -49,14 +45,12 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the joblogs service configuration
 	cfg, err := config.InitJobLogsProcessorConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
 		Port:                     cfg.Redis.Port,
@@ -82,7 +76,6 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	// Initialize the PostgreSQL database
 	pg, err := postgres.New(ctx, &postgres.Config{
 		Host:        cfg.Postgres.Host,
 		Port:        cfg.Postgres.Port,
@@ -107,7 +100,6 @@ func run() int {
 	}
 	defer pg.Close()
 
-	// Initialize the ClickHouse database
 	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
 		Hosts:           cfg.ClickHouse.Hosts,
 		Database:        cfg.ClickHouse.Database,
@@ -130,7 +122,6 @@ func run() int {
 	}
 	defer cdb.Close()
 
-	// Initialize the MeiliSearch client
 	msdb, err := meilisearch.New(
 		ctx,
 		meilisearch.WithURI(cfg.MeiliSearch.URI),
@@ -143,7 +134,6 @@ func run() int {
 	}
 	defer msdb.Close()
 
-	// Initialize the kafka client
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
@@ -159,7 +149,6 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	// Initialize the joblogs job components
 	repo := joblogsrepo.New(&joblogsrepo.Config{
 		BatchJobLogsSizeLimit:    cfg.JobLogsProcessorConfig.BatchJobLogsSizeLimit,
 		BatchJobLogsTimeInterval: cfg.JobLogsProcessorConfig.BatchJobLogsTimeInterval,
@@ -167,7 +156,6 @@ func run() int {
 	svc := joblogssvc.New(repo)
 	app := joblogs.New(ctx, svc)
 
-	// Log the job information
 	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
@@ -178,7 +166,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Run the joblogs job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

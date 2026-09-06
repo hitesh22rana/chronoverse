@@ -24,9 +24,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -35,11 +33,9 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -47,14 +43,13 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the database migration service configuration
 	cfg, err := config.InitDatabaseMigrationConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// DSN's for database connections
+	// DSNs for database connections
 	pgDSN := fmt.Sprintf(
 		"postgresql://%s:%s@%s:%d/%s",
 		url.QueryEscape(cfg.Postgres.User),
@@ -78,11 +73,9 @@ func run() int {
 			pgDSN += fmt.Sprintf("&sslkey=%s", url.QueryEscape(cfg.Postgres.TLS.KeyFile))
 		}
 	} else {
-		// Use a non-TLS DSN if TLS is not enabled
 		pgDSN += fmt.Sprintf("?sslmode=%s", "disable")
 	}
 
-	// Initialize the ClickHouse database client
 	clickhouseClient, err := clickhouse.New(ctx, &clickhouse.Config{
 		Hosts:           cfg.ClickHouse.Hosts,
 		Database:        cfg.ClickHouse.Database,
@@ -105,7 +98,6 @@ func run() int {
 	}
 	defer clickhouseClient.Close()
 
-	// Initialize the MeiliSearch client
 	meilisearchClient, err := meilisearch.New(
 		ctx,
 		meilisearch.WithURI(cfg.MeiliSearch.URI),
@@ -117,7 +109,6 @@ func run() int {
 		return ExitError
 	}
 
-	// Initialize the database migration components
 	repo := databasemigrationrepo.New(&databasemigrationrepo.Config{
 		PostgresDSN:       pgDSN,
 		ClickHouseClient:  clickhouseClient,
@@ -126,7 +117,6 @@ func run() int {
 	svc := databasemigrationsvc.New(repo)
 	app := databasemigration.New(ctx, svc)
 
-	// Log the job information
 	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
@@ -137,7 +127,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Run the scheduling job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

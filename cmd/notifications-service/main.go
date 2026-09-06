@@ -28,9 +28,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -39,25 +37,21 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Load the notifications service configuration
 	cfg, err := config.InitNotificationsServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the auth issuer
 	auth, err := auth.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Connect to the users service
 	usersConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.UsersService.Host,
@@ -78,7 +72,6 @@ func run() int {
 	}
 	defer usersConn.Close()
 
-	// Initialize the PostgreSQL database
 	pdb, err := postgres.New(ctx, &postgres.Config{
 		Host:        cfg.Postgres.Host,
 		Port:        cfg.Postgres.Port,
@@ -103,7 +96,6 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the notifications repository
 	repo := notificationsrepo.New(&notificationsrepo.Config{
 		FetchLimit:            cfg.NotificationsServiceConfig.FetchLimit,
 		EventCommandRetention: cfg.CommandIdempotency.EventRetention,
@@ -111,13 +103,10 @@ func run() int {
 		UsersService: userspb.NewUsersServiceClient(usersConn),
 	})
 
-	// Initialize the validator utility
 	validator := validator.New()
 
-	// Initialize the notifications service
 	svc := notificationssvc.New(validator, repo)
 
-	// Initialize the notifications application
 	app := notifications.New(ctx, &notifications.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
 		Environment: cfg.Environment.Env,
@@ -129,7 +118,6 @@ func run() int {
 		},
 	}, auth, svc)
 
-	// Create a TCP listener
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Grpc.Port))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create listener: %v\n", err)
@@ -138,7 +126,6 @@ func run() int {
 
 	go grpcserverpkg.GracefulStop(ctx, app, 20*time.Second)
 
-	// Log the service information
 	loggerpkg.FromContext(ctx).Info(
 		"starting service",
 		zap.Any("ctx", ctx),
@@ -151,7 +138,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Serve the gRPC service
 	if err := app.Serve(listener); err != nil {
 		if ctx.Err() != nil {
 			return ExitOk

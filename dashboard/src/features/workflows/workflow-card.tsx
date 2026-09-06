@@ -23,8 +23,11 @@ interface WorkflowCardProps {
 }
 
 export function WorkflowCard({ workflow }: WorkflowCardProps) {
+    const failureCount = workflow.consecutive_job_failures_count ?? 0
+    const failureLimit = workflow.max_consecutive_job_failures_allowed ?? 1
+
     // Determine status
-    const status = workflow?.terminated_at ? "TERMINATED" : workflow.build_status
+    const status = workflow.terminated_at ? "TERMINATED" : workflow.build_status
 
     // Format dates
     const updatedAt = formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })
@@ -102,7 +105,7 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                                 <span className="text-xs font-medium">Failures</span>
                             </div>
                             <span className="text-xs font-medium">
-                                {workflow?.consecutive_job_failures_count ?? 0} / {workflow?.max_consecutive_job_failures_allowed ?? 1}
+                                {failureCount} / {failureLimit}
                             </span>
                         </div>
 
@@ -110,7 +113,7 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                             <div
                                 className="bg-orange-500 h-1 rounded-full"
                                 style={{
-                                    width: `${(workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1) * 100}%`
+                                    width: `${(failureCount) / (failureLimit) * 100}%`
                                 }}
                             />
                         </div>

@@ -40,16 +40,11 @@ type DownloadLogsOptions = {
 }
 
 const kindsWithLogs = ['CONTAINER']
-const terminalJobStatus = ['COMPLETED', 'FAILED', 'CANCELED']
+const statusesWithLogs = ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED']
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
-    const pathname = usePathname()
-    const router = useRouter()
-    const searchParams = useSearchParams()
-
-    const searchQuery = searchParams.get("q") || ""
-    const streamFilter = searchParams.get("stream") || ""
+    const { searchQuery, streamFilter, updateSearchQuery, applyStreamFilter, getSearchQueryParams } = useLogFilters()
 
     const [liveLogs, setLiveLogs] = useState<JobLog[]>([])
 
@@ -59,59 +54,14 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const searchURL = apiEndpoints.workflows.jobs.searchLogs(workflowId, jobId)
 
     const isRunning = jobStatus === "RUNNING"
-    const isCompleted = terminalJobStatus.includes(jobStatus)
+    const hasLogs = statusesWithLogs.includes(jobStatus)
     const workflowKind = workflow?.kind || ""
-    const isLogsUnsupportedForKind = Boolean(workflow && !kindsWithLogs.includes(workflow.kind))
-    const isRetentionDisabled = Boolean(workflow && !isLogsUnsupportedForKind && !workflow.log_retention)
-    const shouldFetch = Boolean(
-        workflow &&
-        !isLogsUnsupportedForKind &&
-        workflow.log_retention &&
-        (isCompleted || isRunning)
-    )
+    const supportsLogs = kindsWithLogs.includes(workflowKind)
+    const isLogsUnsupportedForKind = Boolean(workflow) && !supportsLogs
+    const isRetentionDisabled = supportsLogs && !workflow.log_retention
+    const shouldFetch = supportsLogs && !isRetentionDisabled && hasLogs
 
-    // Update search query in URL params
-    const updateSearchQuery = (newSearchQuery: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-
-        if (newSearchQuery) {
-            params.set("q", newSearchQuery)
-        } else {
-            params.delete("q")
-        }
-
-        const query = params.toString()
-        router.push(buildLogViewerUrl(pathname, query, ""))
-    }
-
-    // Apply stream filter in URL params
-    const applyStreamFilter = (newStreamFilter: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-
-        if (newStreamFilter) {
-            params.set("stream", newStreamFilter)
-        } else {
-            params.delete("stream")
-        }
-
-        const query = params.toString()
-        router.push(buildLogViewerUrl(pathname, query, ""))
-    }
-
-    // Build query parameters for the search job logs request
-    const getSearchQueryParams = (() => {
-        const params = new URLSearchParams()
-
-        if (searchQuery) {
-            params.set("q", searchQuery)
-        }
-
-        if (streamFilter) {
-            params.set("stream", streamFilter)
-        }
-
-        return params.toString()
-    })()
+    const canFetch = shouldFetch && Boolean(workflowId) && Boolean(jobId)
 
     // Download raw logs from backend and trigger browser file download
     const downloadLogsMutation = useMutation({
@@ -169,7 +119,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
         refetchOnMount: "always",
-        enabled: shouldFetch && !getSearchQueryParams && Boolean(workflowId) && Boolean(jobId),
+        enabled: canFetch && !getSearchQueryParams,
     })
 
     // Search job logs query
@@ -199,7 +149,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
         refetchOnMount: "always",
-        enabled: shouldFetch && Boolean(getSearchQueryParams) && Boolean(workflowId) && Boolean(jobId),
+        enabled: canFetch && Boolean(getSearchQueryParams),
     });
 
     // Handle SSE connection for running jobs
@@ -251,17 +201,23 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error])
 
     const isSearching = shouldFetch && Boolean(getSearchQueryParams)
-    const query = isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery
-    const hasLogs = isSearching || isCompleted || isRunning
-    const logs = hasLogs ? logsFromPages(query.data?.pages) : []
+    const query = hasLogs ? (isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery) : {
+        data: undefined,
+        isLoading: false,
+        error: null,
+        fetchNextPage: () => Promise.resolve(),
+        isFetchingNextPage: false,
+        hasNextPage: false,
+    }
+    const logs = logsFromPages(query.data?.pages)
 
     return {
         logs: isRunning && !isSearching ? mergeLiveLogs(logs, liveLogs) : logs,
-        isLoading: hasLogs ? query.isLoading : false,
-        error: hasLogs ? query.error : null,
-        fetchNextPage: hasLogs ? query.fetchNextPage : () => Promise.resolve(),
-        isFetchingNextPage: hasLogs ? query.isFetchingNextPage : false,
-        hasNextPage: hasLogs ? query.hasNextPage : false,
+        isLoading: query.isLoading,
+        error: query.error,
+        fetchNextPage: query.fetchNextPage,
+        isFetchingNextPage: query.isFetchingNextPage,
+        hasNextPage: query.hasNextPage,
         searchQuery,
         updateSearchQuery,
         streamFilter,
@@ -272,5 +228,36 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         isLogsUnsupportedForKind,
         workflowKind,
         isWorkflowLoading,
+    }
+}
+
+function useLogFilters() {
+    const pathname = usePathname()
+    const router = useRouter()
+    const searchParams = useSearchParams()
+
+    const searchQuery = searchParams.get("q") || ""
+    const streamFilter = searchParams.get("stream") || ""
+
+    const updateFilter = (name: string, value: string) => {
+        const params = new URLSearchParams(searchParams.toString())
+        if (value) {
+            params.set(name, value)
+        } else {
+            params.delete(name)
+        }
+        router.push(buildLogViewerUrl(pathname, params.toString(), ""))
+    }
+
+    const params = new URLSearchParams()
+    if (searchQuery) params.set("q", searchQuery)
+    if (streamFilter) params.set("stream", streamFilter)
+
+    return {
+        searchQuery,
+        streamFilter,
+        updateSearchQuery: (value: string) => updateFilter("q", value),
+        applyStreamFilter: (value: string) => updateFilter("stream", value),
+        getSearchQueryParams: params.toString(),
     }
 }

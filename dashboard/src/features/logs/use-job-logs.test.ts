@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
     query: vi.fn(),
     params: new URLSearchParams(),
     setLogs: vi.fn(),
+    push: vi.fn(),
+    workflow: undefined as { kind: string, log_retention: boolean } | undefined,
 }))
 
 vi.mock("react", () => ({
@@ -13,7 +15,7 @@ vi.mock("react", () => ({
 }))
 vi.mock("next/navigation", () => ({
     usePathname: () => "/workflows/w/jobs/j",
-    useRouter: () => ({ push: vi.fn() }),
+    useRouter: () => ({ push: mocks.push }),
     useSearchParams: () => mocks.params,
 }))
 vi.mock("@tanstack/react-query", () => ({
@@ -21,7 +23,7 @@ vi.mock("@tanstack/react-query", () => ({
     useMutation: () => ({ isPending: false }),
 }))
 vi.mock("@/features/workflows/use-workflow-details", () => ({
-    useWorkflowDetails: () => ({ workflow: { kind: "CONTAINER", log_retention: true } }),
+    useWorkflowDetails: () => ({ workflow: mocks.workflow }),
 }))
 vi.mock("@/lib/api/client", () => ({ fetchApi: vi.fn(), fetchApiJson: vi.fn() }))
 
@@ -32,6 +34,8 @@ const retained = { data: { pages: [{ logs: [log] }] }, fetchNextPage: vi.fn(), i
 const searched = { ...retained, data: { pages: [{ logs: [{ ...log, message: "found" }] }] } }
 
 beforeEach(() => {
+    mocks.workflow = { kind: "CONTAINER", log_retention: true }
+    mocks.push.mockClear()
     mocks.effects.length = 0
     mocks.params = new URLSearchParams()
     mocks.setLogs.mockClear()
@@ -86,4 +90,32 @@ it.each(["COMPLETED", "QUEUED", "filtered"])("does not open a stream for %s", (s
     useJobLogs("w", "j", state === "filtered" ? "RUNNING" : state)
     expect(mocks.effects[0]()).toBeUndefined()
     expect(constructor).not.toHaveBeenCalled()
+})
+
+it.each([
+    [undefined, false, false],
+    [{ kind: "HEARTBEAT", log_retention: false }, true, false],
+    [{ kind: "CONTAINER", log_retention: false }, false, true],
+] as const)("does not fetch unavailable logs for %j", (workflow, unsupported, disabled) => {
+    mocks.workflow = workflow
+    const result = useJobLogs("w", "j", "RUNNING")
+    expect(result.isLogsUnsupportedForKind).toBe(unsupported)
+    expect(result.isRetentionDisabled).toBe(disabled)
+    expect(mocks.query.mock.calls.map(([options]) => options.enabled)).toEqual([false, false])
+    expect(mocks.effects[0]()).toBeUndefined()
+})
+
+it("updates and clears filters while preserving unrelated URL parameters", () => {
+    mocks.params = new URLSearchParams("json=true&q=old&stream=stderr")
+    const result = useJobLogs("w", "j", "RUNNING")
+    result.updateSearchQuery("new value")
+    result.updateSearchQuery("")
+    result.applyStreamFilter("stdout")
+    result.applyStreamFilter("")
+    expect(mocks.push.mock.calls.flat()).toEqual([
+        "/workflows/w/jobs/j?json=true&q=new+value&stream=stderr",
+        "/workflows/w/jobs/j?json=true&stream=stderr",
+        "/workflows/w/jobs/j?json=true&q=old&stream=stdout",
+        "/workflows/w/jobs/j?json=true&q=old",
+    ])
 })

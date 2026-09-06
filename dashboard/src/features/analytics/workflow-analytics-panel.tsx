@@ -49,11 +49,6 @@ export function WorkflowAnalyticsPanel({
     onRetry,
     workflowKind,
 }: WorkflowAnalyticsPanelProps) {
-    const totalJobs = analytics?.total_jobs ?? 0
-    const totalLogs = analytics?.total_joblogs ?? 0
-    const totalRuntime = analytics?.total_job_execution_duration ?? 0
-    const averageRuntime = divide(totalRuntime, totalJobs)
-
     return (
         <section className="flex flex-col gap-3" aria-labelledby="workflow-analytics-title">
             <div className="flex items-start justify-between gap-4">
@@ -72,68 +67,7 @@ export function WorkflowAnalyticsPanel({
                 ) : null}
             </div>
 
-            {isLoading ? (
-                <WorkflowAnalyticsCardsSkeleton />
-            ) : error ? (
-                <Card className="gap-4 py-4">
-                    <CardHeader className="px-4">
-                        <CardTitle className="text-sm">Analytics unavailable</CardTitle>
-                        <CardDescription>{error.message}</CardDescription>
-                        <CardAction>
-                            <Button variant="outline" size="sm" onClick={onRetry} disabled={isFetching}>
-                                <RefreshCw data-icon="inline-start" className={cn(isFetching && "animate-spin")} />
-                                Try again
-                            </Button>
-                        </CardAction>
-                    </CardHeader>
-                </Card>
-            ) : analytics ? (
-                <>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <AnalyticsMetricCard
-                            label="Job executions"
-                            value={formatInteger(totalJobs)}
-                            helper="Recorded after reaching a final state"
-                            icon={Activity}
-                        />
-                        <AnalyticsMetricCard
-                            label="Total runtime"
-                            value={formatSeconds(totalRuntime)}
-                            helper="Combined execution time"
-                            icon={Clock3}
-                        />
-                        <AnalyticsMetricCard
-                            label="Average runtime"
-                            value={formatSeconds(Math.round(averageRuntime))}
-                            helper="Per recorded job execution"
-                            icon={Gauge}
-                        />
-                        <AnalyticsMetricCard
-                            label="Generated logs"
-                            value={formatInteger(totalLogs)}
-                            helper={getLogHelper(workflowKind, logRetention, totalLogs, totalJobs)}
-                            icon={ScrollText}
-                        />
-                    </div>
-                    {!logRetention && (
-                        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <ScrollText className="size-3.5 shrink-0" />
-                            {workflowKind === "CONTAINER"
-                                ? "Generated logs are counted for analytics but are not retained for retrieval."
-                                : "This workflow kind does not retain execution logs."}
-                        </p>
-                    )}
-                </>
-            ) : (
-                <Card className="gap-4 py-4">
-                    <CardHeader className="px-4">
-                        <CardTitle className="text-sm">No analytics yet</CardTitle>
-                        <CardDescription>
-                            Metrics will appear after this workflow records its first completed execution.
-                        </CardDescription>
-                    </CardHeader>
-                </Card>
-            )}
+            <WorkflowAnalyticsContent analytics={analytics} error={error} isLoading={isLoading} isFetching={isFetching} logRetention={logRetention} onRetry={onRetry} workflowKind={workflowKind} />
         </section>
     )
 }
@@ -148,4 +82,75 @@ function getLogHelper(workflowKind: string, logRetention: boolean, totalLogs: nu
     }
 
     return formatLogsPerJob(totalLogs, totalJobs) ?? "No logs generated"
+}
+
+function WorkflowAnalyticsContent({ analytics, error, isLoading, isFetching, logRetention, onRetry, workflowKind }: WorkflowAnalyticsPanelProps) {
+    if (isLoading) return <WorkflowAnalyticsCardsSkeleton />
+    if (error) return (
+        <Card className="gap-4 py-4">
+            <CardHeader className="px-4">
+                <CardTitle className="text-sm">Analytics unavailable</CardTitle>
+                <CardDescription>{error.message}</CardDescription>
+                <CardAction>
+                    <Button variant="outline" size="sm" onClick={onRetry} disabled={isFetching}>
+                        <RefreshCw data-icon="inline-start" className={cn(isFetching && "animate-spin")} />
+                        Try again
+                    </Button>
+                </CardAction>
+            </CardHeader>
+        </Card>
+    )
+    if (!analytics) return (
+        <Card className="gap-4 py-4">
+            <CardHeader className="px-4">
+                <CardTitle className="text-sm">No analytics yet</CardTitle>
+                <CardDescription>
+                    Metrics will appear after this workflow records its first completed execution.
+                </CardDescription>
+            </CardHeader>
+        </Card>
+    )
+    const totalJobs = analytics?.total_jobs ?? 0
+    const totalLogs = analytics?.total_joblogs ?? 0
+    const totalRuntime = analytics?.total_job_execution_duration ?? 0
+    const averageRuntime = divide(totalRuntime, totalJobs)
+
+    return (
+        <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <AnalyticsMetricCard
+                    label="Job executions"
+                    value={formatInteger(totalJobs)}
+                    helper="Recorded after reaching a final state"
+                    icon={Activity}
+                />
+                <AnalyticsMetricCard
+                    label="Total runtime"
+                    value={formatSeconds(totalRuntime)}
+                    helper="Combined execution time"
+                    icon={Clock3}
+                />
+                <AnalyticsMetricCard
+                    label="Average runtime"
+                    value={formatSeconds(Math.round(averageRuntime))}
+                    helper="Per recorded job execution"
+                    icon={Gauge}
+                />
+                <AnalyticsMetricCard
+                    label="Generated logs"
+                    value={formatInteger(totalLogs)}
+                    helper={getLogHelper(workflowKind, logRetention, totalLogs, totalJobs)}
+                    icon={ScrollText}
+                />
+            </div>
+            {!logRetention && (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <ScrollText className="size-3.5 shrink-0" />
+                    {workflowKind === "CONTAINER"
+                        ? "Generated logs are counted for analytics but are not retained for retrieval."
+                        : "This workflow kind does not retain execution logs."}
+                </p>
+            )}
+        </>
+    )
 }

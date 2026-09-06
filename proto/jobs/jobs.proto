@@ -73,6 +73,14 @@ message GetReadyRuntimeNodeResponse {
   string runtime_endpoint = 2; // Docker endpoint selected for Docker data plane work
 }
 
+// ListReadyRuntimeNodesRequest contains the details needed to list runtime nodes.
+message ListReadyRuntimeNodesRequest {}
+
+// ListReadyRuntimeNodesResponse contains every fresh READY runtime node.
+message ListReadyRuntimeNodesResponse {
+  repeated GetReadyRuntimeNodeResponse nodes = 1; // All fresh READY runtime nodes
+}
+
 // RenewJobLeaseRequest contains the details needed to renew a running job lease.
 message RenewJobLeaseRequest {
   string id                     = 1; // ID of the job
@@ -344,6 +352,10 @@ service JobsService {
     // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
     // This is an internal API and should not be exposed to the public.
   rpc GetReadyRuntimeNode(GetReadyRuntimeNodeRequest) returns (GetReadyRuntimeNodeResponse) {}
+
+    // ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
+    // This is an internal API and should not be exposed to the public.
+  rpc ListReadyRuntimeNodes(ListReadyRuntimeNodesRequest) returns (ListReadyRuntimeNodesResponse) {}
 
     // RenewJobLease renews a running job lease.
     // This is an internal API and should not be exposed to the public.

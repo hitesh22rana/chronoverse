@@ -251,6 +251,15 @@ func TestGetReadyRuntimeNodeQueryIgnoresExecutionCapacity(t *testing.T) {
 	assertNotContains(t, query, "running_jobs < max_concurrency")
 }
 
+func TestListReadyRuntimeNodesQueryReturnsEveryReadyNode(t *testing.T) {
+	query := listReadyRuntimeNodesQuery()
+
+	assertContains(t, query, "WHERE status = 'READY'")
+	assertContains(t, query, "last_heartbeat_at >")
+	assertNotContains(t, query, "LIMIT")
+	assertNotContains(t, query, "running_jobs < max_concurrency")
+}
+
 func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJobs(t *testing.T) {
 	query := queuedContainerJobMissingRuntimeQuery()
 

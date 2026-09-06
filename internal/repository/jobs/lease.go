@@ -390,6 +390,48 @@ func getReadyRuntimeNodeQuery() string {
 	`, postgres.TableRuntimeNodes)
 }
 
+// ListReadyRuntimeNodes returns every fresh READY runtime node. Dumb list only:
+// filtering, fanout caps, and warmed-node skips are the caller's job.
+func (r *Repository) ListReadyRuntimeNodes(ctx context.Context) (nodes []*jobsmodel.RuntimeNode, err error) {
+	ctx, span := r.tp.Start(ctx, "Repository.ListReadyRuntimeNodes")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	rows, err := r.pg.Query(ctx, listReadyRuntimeNodesQuery(), int64(r.cfg.RuntimeHeartbeatTTL.Seconds()))
+	if err != nil {
+		return nil, r.mapJobLeaseReadError(err, "list ready runtime nodes")
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		node := &jobsmodel.RuntimeNode{}
+		if err := rows.Scan(&node.RuntimeNodeID, &node.RuntimeEndpoint); err != nil {
+			return nil, r.mapJobLeaseReadError(err, "list ready runtime nodes")
+		}
+		nodes = append(nodes, node)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapJobLeaseReadError(err, "list ready runtime nodes")
+	}
+
+	return nodes, nil
+}
+
+func listReadyRuntimeNodesQuery() string {
+	return fmt.Sprintf(`
+		SELECT id, docker_endpoint
+		FROM %s
+		WHERE status = 'READY'
+			AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($1::int * interval '1 second')
+		ORDER BY id ASC;
+	`, postgres.TableRuntimeNodes)
+}
+
 // RenewJobLease renews a running job lease.
 func (r *Repository) RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) (expiresAt time.Time, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.RenewJobLease")

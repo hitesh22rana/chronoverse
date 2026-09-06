@@ -23,6 +23,7 @@ const (
 	JobsService_CancelJob_FullMethodName               = "/jobs.JobsService/CancelJob"
 	JobsService_ClaimJob_FullMethodName                = "/jobs.JobsService/ClaimJob"
 	JobsService_GetReadyRuntimeNode_FullMethodName     = "/jobs.JobsService/GetReadyRuntimeNode"
+	JobsService_ListReadyRuntimeNodes_FullMethodName   = "/jobs.JobsService/ListReadyRuntimeNodes"
 	JobsService_RenewJobLease_FullMethodName           = "/jobs.JobsService/RenewJobLease"
 	JobsService_AttachJobContainer_FullMethodName      = "/jobs.JobsService/AttachJobContainer"
 	JobsService_CompleteJob_FullMethodName             = "/jobs.JobsService/CompleteJob"
@@ -55,6 +56,9 @@ type JobsServiceClient interface {
 	// GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
 	// This is an internal API and should not be exposed to the public.
 	GetReadyRuntimeNode(ctx context.Context, in *GetReadyRuntimeNodeRequest, opts ...grpc.CallOption) (*GetReadyRuntimeNodeResponse, error)
+	// ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
+	// This is an internal API and should not be exposed to the public.
+	ListReadyRuntimeNodes(ctx context.Context, in *ListReadyRuntimeNodesRequest, opts ...grpc.CallOption) (*ListReadyRuntimeNodesResponse, error)
 	// RenewJobLease renews a running job lease.
 	// This is an internal API and should not be exposed to the public.
 	RenewJobLease(ctx context.Context, in *RenewJobLeaseRequest, opts ...grpc.CallOption) (*RenewJobLeaseResponse, error)
@@ -133,6 +137,16 @@ func (c *jobsServiceClient) GetReadyRuntimeNode(ctx context.Context, in *GetRead
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetReadyRuntimeNodeResponse)
 	err := c.cc.Invoke(ctx, JobsService_GetReadyRuntimeNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ListReadyRuntimeNodes(ctx context.Context, in *ListReadyRuntimeNodesRequest, opts ...grpc.CallOption) (*ListReadyRuntimeNodesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReadyRuntimeNodesResponse)
+	err := c.cc.Invoke(ctx, JobsService_ListReadyRuntimeNodes_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -295,6 +309,9 @@ type JobsServiceServer interface {
 	// GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
 	// This is an internal API and should not be exposed to the public.
 	GetReadyRuntimeNode(context.Context, *GetReadyRuntimeNodeRequest) (*GetReadyRuntimeNodeResponse, error)
+	// ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
+	// This is an internal API and should not be exposed to the public.
+	ListReadyRuntimeNodes(context.Context, *ListReadyRuntimeNodesRequest) (*ListReadyRuntimeNodesResponse, error)
 	// RenewJobLease renews a running job lease.
 	// This is an internal API and should not be exposed to the public.
 	RenewJobLease(context.Context, *RenewJobLeaseRequest) (*RenewJobLeaseResponse, error)
@@ -349,6 +366,9 @@ func (UnimplementedJobsServiceServer) ClaimJob(context.Context, *ClaimJobRequest
 }
 func (UnimplementedJobsServiceServer) GetReadyRuntimeNode(context.Context, *GetReadyRuntimeNodeRequest) (*GetReadyRuntimeNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetReadyRuntimeNode not implemented")
+}
+func (UnimplementedJobsServiceServer) ListReadyRuntimeNodes(context.Context, *ListReadyRuntimeNodesRequest) (*ListReadyRuntimeNodesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListReadyRuntimeNodes not implemented")
 }
 func (UnimplementedJobsServiceServer) RenewJobLease(context.Context, *RenewJobLeaseRequest) (*RenewJobLeaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RenewJobLease not implemented")
@@ -477,6 +497,24 @@ func _JobsService_GetReadyRuntimeNode_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(JobsServiceServer).GetReadyRuntimeNode(ctx, req.(*GetReadyRuntimeNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ListReadyRuntimeNodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReadyRuntimeNodesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).ListReadyRuntimeNodes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_ListReadyRuntimeNodes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).ListReadyRuntimeNodes(ctx, req.(*ListReadyRuntimeNodesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -730,6 +768,10 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetReadyRuntimeNode",
 			Handler:    _JobsService_GetReadyRuntimeNode_Handler,
+		},
+		{
+			MethodName: "ListReadyRuntimeNodes",
+			Handler:    _JobsService_ListReadyRuntimeNodes_Handler,
 		},
 		{
 			MethodName: "RenewJobLease",

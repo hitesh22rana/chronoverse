@@ -323,7 +323,13 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		prefetchImage = resolvedImageRef
 	}
 	if r.svc.ImagePrefetch.Enabled && prefetchImage != "" {
-		if authCtx, err := r.withAuthorization(context.WithoutCancel(parentCtx)); err == nil {
+		authCtx, authErr := r.withAuthorization(context.WithoutCancel(parentCtx))
+		if authErr != nil {
+			loggerpkg.FromContext(parentCtx).Warn("image prefetch: authorization failed",
+				zap.String("workflow_id", workflowID),
+				zap.Error(authErr),
+			)
+		} else {
 			timeout := r.svc.ImagePrefetch.Timeout
 			if timeout <= 0 {
 				timeout = defaultImagePrefetchTimeout
@@ -488,13 +494,20 @@ func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNode
 		maxFanout = defaultImagePrefetchMaxFanout
 	}
 
-	sem := make(chan struct{}, maxFanout)
-	var wg sync.WaitGroup
+	// Eligible targets in claim-preference order; cap the total fan-out, not just concurrency.
+	var targets []*jobspb.GetReadyRuntimeNodeResponse
 	for _, node := range nodes.GetNodes() {
 		if node.GetRuntimeNodeId() == "" || node.GetRuntimeNodeId() == warmedNodeID {
 			continue
 		}
+		targets = append(targets, node)
+		if len(targets) >= maxFanout {
+			break
+		}
+	}
 
+	var wg sync.WaitGroup
+	for _, node := range targets {
 		csvc, err := r.containerSvcForRuntime(node.GetRuntimeNodeId(), node.GetRuntimeEndpoint())
 		if err != nil {
 			loggerpkg.FromContext(ctx).Warn("image prefetch: container service failed",
@@ -505,11 +518,9 @@ func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNode
 			continue
 		}
 
-		sem <- struct{}{}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { <-sem }()
 			if err := csvc.Build(ctx, image); err != nil {
 				loggerpkg.FromContext(ctx).Warn("image prefetch failed",
 					zap.String("image", image),

@@ -294,6 +294,38 @@ func TestPrefetchImageToNodesSkipsWarmedNode(t *testing.T) {
 		t.Fatalf("builds = %v, want 2 prefetch builds", got)
 	}
 
+	// MaxFanout caps the total warmed, not just concurrency: first node in list order wins.
+	cappedBuilds := &orderedEvents{}
+	cappedFactories := &orderedEvents{}
+	capped := &Repository{
+		auth: testAuth{},
+		svc: &Services{
+			Jobs: &testJobsClient{
+				listReadyRuntimeNodes: func(context.Context, *jobspb.ListReadyRuntimeNodesRequest) (*jobspb.ListReadyRuntimeNodesResponse, error) {
+					return &jobspb.ListReadyRuntimeNodesResponse{
+						Nodes: []*jobspb.GetReadyRuntimeNodeResponse{
+							{RuntimeNodeId: "runtime-1", RuntimeEndpoint: "tcp://node-1:2376"},
+							{RuntimeNodeId: "runtime-2", RuntimeEndpoint: "tcp://node-2:2376"},
+							{RuntimeNodeId: "runtime-3", RuntimeEndpoint: "tcp://node-3:2376"},
+						},
+					}, nil
+				},
+			},
+			CsvcForEndpoint: func(nodeID, _ string) (ContainerSvc, error) {
+				cappedFactories.add(nodeID)
+				return &testContainerSvc{builds: cappedBuilds}, nil
+			},
+			ImagePrefetch: ImagePrefetchConfig{Enabled: true, MaxFanout: 1},
+		},
+	}
+
+	capped.prefetchImageToNodes(t.Context(), "img:test", "runtime-1")
+
+	assertEvents(t, cappedFactories.items(), []string{"runtime-2"})
+	if got := cappedBuilds.items(); len(got) != 1 {
+		t.Fatalf("capped builds = %v, want 1 prefetch build", got)
+	}
+
 	// Empty image pulls nothing.
 	empty := &Repository{auth: testAuth{}, svc: &Services{Jobs: &testJobsClient{}}}
 	empty.prefetchImageToNodes(t.Context(), "", "runtime-1")

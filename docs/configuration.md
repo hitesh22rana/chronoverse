@@ -418,7 +418,7 @@ The batch size controls how many due workflows are scanned per polling pass.
 These settings coordinate Docker image pulls for replicated workflow workers
 that share a runtime node. The lock is scoped by runtime node and exact image
 string; Docker host is used as a fallback when a request omits an explicit
-runtime scope. Compose defaults are `10m`, `10m`, and `500ms`.
+runtime scope. Compose defaults are `10m`, `10m`, `500ms`, `true`, and `8`.
 Workflow workers do not
 launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
 not apply to this image-pull path. For `CONTAINER` workflows, successful build

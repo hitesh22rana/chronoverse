@@ -5,7 +5,6 @@ package notifications
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 
 	"github.com/go-playground/validator/v10"
@@ -17,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
+	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
@@ -177,7 +177,7 @@ func (s *Service) ListNotifications(
 		},
 	)
 
-	res, err = waitSingleflightResult[*notificationsmodel.ListNotificationsResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*notificationsmodel.ListNotificationsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -192,28 +192,4 @@ func decodeCursor(token string) (string, error) {
 	}
 
 	return string(decoded), nil
-}
-
-func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
-	var zero T
-
-	select {
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
-		}
-
-		return zero, status.Error(codes.Canceled, ctx.Err().Error())
-	case result := <-resultCh:
-		if result.Err != nil {
-			return zero, result.Err
-		}
-
-		typed, ok := result.Val.(T)
-		if !ok {
-			return zero, status.Error(codes.Internal, "invalid singleflight result type")
-		}
-
-		return typed, nil
-	}
 }

@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
@@ -125,7 +126,7 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-	imagePullLockConfig := executorrepo.ImagePullLockConfig{
+	imagePullLockConfig := imagepull.Config{
 		TTL:           cfg.ImagePullLockTTL,
 		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
 		RetryInterval: cfg.ImagePullLockRetryInterval,

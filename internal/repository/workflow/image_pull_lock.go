@@ -2,25 +2,16 @@ package workflow
 
 import (
 	"context"
-	"time"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 )
 
-// ImagePullLockConfig configures distributed Docker image pull coordination.
-type ImagePullLockConfig struct {
-	TTL           time.Duration
-	WaitTimeout   time.Duration
-	RetryInterval time.Duration
-	LockScope     string
-}
-
 // NewImagePullLockedContainerSvc wraps a container service with Redis-backed image pull coordination.
-func NewImagePullLockedContainerSvc(inner ContainerSvc, locks imagepull.LockStore, cfg ImagePullLockConfig) ContainerSvc {
+func NewImagePullLockedContainerSvc(inner ContainerSvc, locks imagepull.LockStore, cfg imagepull.Config) ContainerSvc {
 	return &imagePullLockedContainerSvc{
 		ContainerSvc: inner,
 		locks:        locks,
-		cfg:          imagepull.Config(cfg),
+		cfg:          cfg,
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	kafkapkg "github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
@@ -23,7 +24,7 @@ func TestIntegrationImagePullLockSerializesBuilds(t *testing.T) {
 	ctx := context.Background()
 	inner := testkit.NewFakeContainerSvc(200 * time.Millisecond)
 
-	svc := NewImagePullLockedContainerSvc(inner, testkit.Redis(t), ImagePullLockConfig{
+	svc := NewImagePullLockedContainerSvc(inner, testkit.Redis(t), imagepull.Config{
 		TTL:           5 * time.Second,
 		WaitTimeout:   10 * time.Second,
 		RetryInterval: 10 * time.Millisecond,

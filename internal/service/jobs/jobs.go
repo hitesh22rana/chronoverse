@@ -560,7 +560,7 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 		return s.repo.GetJobByID(ctx, req.GetId())
 	})
 
-	res, err = waitSingleflightResult[*jobsmodel.GetJobByIDResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.GetJobByIDResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -682,7 +682,7 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		return _res, nil
 	})
 
-	res, err = waitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -890,7 +890,7 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		return _res, nil
 	})
 
-	res, err = waitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -967,7 +967,7 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		return s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, filters)
 	})
 
-	res, err = waitSingleflightResult[*jobsmodel.ListJobsResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.ListJobsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -1059,28 +1059,4 @@ func decodeListJobsCursor(token string) (string, error) {
 	}
 
 	return string(decoded), nil
-}
-
-func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
-	var zero T
-
-	select {
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
-		}
-
-		return zero, status.Error(codes.Canceled, ctx.Err().Error())
-	case result := <-resultCh:
-		if result.Err != nil {
-			return zero, result.Err
-		}
-
-		typed, ok := result.Val.(T)
-		if !ok {
-			return zero, status.Error(codes.Internal, "invalid singleflight result type")
-		}
-
-		return typed, nil
-	}
 }

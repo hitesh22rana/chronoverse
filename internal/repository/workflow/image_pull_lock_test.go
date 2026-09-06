@@ -7,6 +7,7 @@ import (
 	"time"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 	workflowrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflow"
 )
 
@@ -15,7 +16,7 @@ func TestImagePullLockedContainerSvcBuildDelegatesToSharedEnsure(t *testing.T) {
 
 	inner := &fakeContainerSvc{dockerHost: "tcp://docker-a:2375"}
 	locks := &fakeImagePullLockStore{acquireResults: []bool{true}}
-	svc := workflowrepo.NewImagePullLockedContainerSvc(inner, locks, workflowrepo.ImagePullLockConfig{
+	svc := workflowrepo.NewImagePullLockedContainerSvc(inner, locks, imagepull.Config{
 		TTL:           time.Minute,
 		WaitTimeout:   time.Minute,
 		RetryInterval: time.Millisecond,

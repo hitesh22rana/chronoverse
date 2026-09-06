@@ -428,7 +428,7 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 		return _res, nil
 	})
 
-	res, err = waitSingleflightResult[*workflowsmodel.GetWorkflowResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*workflowsmodel.GetWorkflowResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkf
 		return s.repo.GetWorkflowByID(ctx, req.GetId())
 	})
 
-	res, err = waitSingleflightResult[*workflowsmodel.GetWorkflowByIDResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*workflowsmodel.GetWorkflowByIDResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -801,7 +801,7 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		return _res, nil
 	})
 
-	res, err = waitSingleflightResult[*workflowsmodel.ListWorkflowsResponse](ctx, resultCh)
+	res, err = cachepkg.WaitSingleflightResult[*workflowsmodel.ListWorkflowsResponse](ctx, resultCh)
 	if err != nil {
 		return nil, err
 	}
@@ -920,29 +920,5 @@ func (s *Service) invalidateWorkflowsCache(ctx context.Context, userID string, l
 			zap.String("user_id", userID),
 			zap.String("cache_key", cacheKey),
 			zap.Int64("count", count))
-	}
-}
-
-func waitSingleflightResult[T any](ctx context.Context, resultCh <-chan singleflight.Result) (T, error) {
-	var zero T
-
-	select {
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return zero, status.Error(codes.DeadlineExceeded, ctx.Err().Error())
-		}
-
-		return zero, status.Error(codes.Canceled, ctx.Err().Error())
-	case result := <-resultCh:
-		if result.Err != nil {
-			return zero, result.Err
-		}
-
-		typed, ok := result.Val.(T)
-		if !ok {
-			return zero, status.Error(codes.Internal, "invalid singleflight result type")
-		}
-
-		return typed, nil
 	}
 }

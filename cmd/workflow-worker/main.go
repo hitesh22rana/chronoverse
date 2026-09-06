@@ -12,6 +12,7 @@ import (
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 	jobpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -149,7 +150,7 @@ func run() int {
 
 	// Workflow workers resolve image metadata through the runtime registry.
 	// Runtime identity scopes image pull locks to the owning Docker daemon.
-	imagePullLockConfig := workflowrepo.ImagePullLockConfig{
+	imagePullLockConfig := imagepull.Config{
 		TTL:           cfg.ImagePullLockTTL,
 		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
 		RetryInterval: cfg.ImagePullLockRetryInterval,

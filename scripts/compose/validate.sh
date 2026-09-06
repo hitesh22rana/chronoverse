@@ -233,11 +233,19 @@ validate_auth_bundle() {
     echo "local Kubernetes issuer material must use only the isolated auth-certs PVC" >&2
     exit 1
   fi
-  # Makefile must inject per-issuer private key paths
-  if ! grep -q 'certs/issuers/users-service/auth.ed' "$root_dir/Makefile"; then
-    echo "Makefile does not inject per-issuer auth key paths" >&2
-    exit 1
-  fi
+  # Check expanded recipes so shared Make rules retain each binary's issuer.
+  for cmd_dir in "$root_dir"/cmd/*; do
+    svc=${cmd_dir##*/}
+    issuer=$svc
+    [ "$svc" != database-migration ] || issuer=server
+    recipe=$(make -s -n -C "$root_dir" -o dependencies "build/$svc")
+    for key in "authPrivateKeyPath=certs/issuers/$issuer/auth.ed'" "authPublicKeyPath=certs/issuers/$issuer/auth.ed.pub'"; do
+      if ! printf '%s\n' "$recipe" | grep -Fq "$key"; then
+        echo "Makefile does not inject $key for $svc" >&2
+        exit 1
+      fi
+    done
+  done
   # Auth package must expose kid-aware bundle
   if ! grep -q 'kidForKey' "$root_dir/internal/pkg/auth/bundle.go"; then
     echo "internal/pkg/auth/bundle.go missing kid handling" >&2

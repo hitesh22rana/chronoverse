@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { AuthInput } from "./auth-input"
 import {
   Card,
   CardContent,
@@ -15,14 +15,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/card"
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage
-} from "@/components/ui/form"
+import { Form } from "@/components/ui/form"
 
 import { useAuth } from "@/features/auth/use-auth"
 import { loginSchema, type LoginValues } from "@/features/auth/auth-schemas"
@@ -55,33 +48,9 @@ export default function LoginPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter your email address" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <AuthInput name="email" label="Email" placeholder="Enter your email address" />
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="••••••••" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <AuthInput name="password" label="Password" type="password" placeholder="••••••••" />
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? (

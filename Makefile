@@ -76,118 +76,20 @@ tools:
 mockgen: tools
 	@go generate -v ./...
 
-.PHONY: build/users-service
-build/users-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=users-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/users-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/users-service/auth.ed.pub'" -o ./.bin/users-service ./cmd/users-service
+SERVICES := users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay database-migration server
+BUILD_TARGETS := $(addprefix build/,$(SERVICES))
+RUN_TARGETS := $(addprefix run/,$(SERVICES))
 
-.PHONY: build/workflows-service
-build/workflows-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=workflows-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/workflows-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/workflows-service/auth.ed.pub'" -o ./.bin/workflows-service ./cmd/workflows-service
+.PHONY: $(BUILD_TARGETS) $(RUN_TARGETS) build/all
 
-.PHONY: build/jobs-service
-build/jobs-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=jobs-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/jobs-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/jobs-service/auth.ed.pub'" -o ./.bin/jobs-service ./cmd/jobs-service
+ISSUER = $*
+build/database-migration: ISSUER = server
 
-.PHONY: build/notifications-service
-build/notifications-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=notifications-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/notifications-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/notifications-service/auth.ed.pub'" -o ./.bin/notifications-service ./cmd/notifications-service
+$(BUILD_TARGETS): build/%: dependencies
+	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=$*' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/$(ISSUER)/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/$(ISSUER)/auth.ed.pub'" -o ./.bin/$* ./cmd/$*
 
-.PHONY: build/analytics-service
-build/analytics-service: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=analytics-service' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/analytics-service/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/analytics-service/auth.ed.pub'" -o ./.bin/analytics-service ./cmd/analytics-service
-
-.PHONY: build/scheduling-worker
-build/scheduling-worker: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=scheduling-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/scheduling-worker/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/scheduling-worker/auth.ed.pub'" -o ./.bin/scheduling-worker ./cmd/scheduling-worker
-
-.PHONY: build/workflow-worker
-build/workflow-worker: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=workflow-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/workflow-worker/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/workflow-worker/auth.ed.pub'" -o ./.bin/workflow-worker ./cmd/workflow-worker
-
-.PHONY: build/execution-worker
-build/execution-worker: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=execution-worker' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/execution-worker/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/execution-worker/auth.ed.pub'" -o ./.bin/execution-worker ./cmd/execution-worker
-
-.PHONY: build/runtime-agent
-build/runtime-agent: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=runtime-agent' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/runtime-agent/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/runtime-agent/auth.ed.pub'" -o ./.bin/runtime-agent ./cmd/runtime-agent
-
-.PHONY: build/joblogs-processor
-build/joblogs-processor: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=joblogs-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/joblogs-processor/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/joblogs-processor/auth.ed.pub'" -o ./.bin/joblogs-processor ./cmd/joblogs-processor
-
-.PHONY: build/analytics-processor
-build/analytics-processor: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=analytics-processor' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/analytics-processor/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/analytics-processor/auth.ed.pub'" -o ./.bin/analytics-processor ./cmd/analytics-processor
-
-.PHONY: build/outbox-relay
-build/outbox-relay: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=outbox-relay' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/outbox-relay/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/outbox-relay/auth.ed.pub'" -o ./.bin/outbox-relay ./cmd/outbox-relay
-
-.PHONY: build/database-migration
-build/database-migration: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=database-migration' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/server/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/server/auth.ed.pub'" -o ./.bin/database-migration ./cmd/database-migration
-
-.PHONY: build/server
-build/server: dependencies
-	@CGO_ENABLED=0 go build -ldflags "-X '${PKG_PATH}.version=${APP_VERSION}' -X '${PKG_PATH}.name=server' -X '${PKG_PATH}.authPrivateKeyPath=certs/issuers/server/auth.ed' -X '${PKG_PATH}.authPublicKeyPath=certs/issuers/server/auth.ed.pub'" -o ./.bin/server ./cmd/server
-
-.PHONY: build/all
-build/all: build/users-service build/workflows-service build/jobs-service build/notifications-service build/analytics-service build/scheduling-worker build/workflow-worker build/execution-worker build/runtime-agent build/joblogs-processor build/analytics-processor build/outbox-relay build/database-migration build/server
+build/all: $(BUILD_TARGETS)
 	@echo "All services and workers built successfully."
 
-.PHONY: run/users-service
-run/users-service: build/users-service
-	@./.bin/users-service
-
-.PHONY: run/workflows-service
-run/workflows-service: build/workflows-service
-	@./.bin/workflows-service
-
-.PHONY: run/jobs-service
-run/jobs-service: build/jobs-service
-	@./.bin/jobs-service
-
-.PHONY: run/notifications-service
-run/notifications-service: build/notifications-service
-	@./.bin/notifications-service
-
-.PHONY: run/analytics-service
-run/analytics-service: build/analytics-service
-	@./.bin/analytics-service
-
-.PHONY: run/scheduling-worker
-run/scheduling-worker: build/scheduling-worker
-	@./.bin/scheduling-worker
-
-.PHONY: run/workflow-worker
-run/workflow-worker: build/workflow-worker
-	@./.bin/workflow-worker
-
-.PHONY: run/execution-worker
-run/execution-worker: build/execution-worker
-	@./.bin/execution-worker
-
-.PHONY: run/runtime-agent
-run/runtime-agent: build/runtime-agent
-	@./.bin/runtime-agent
-
-.PHONY: run/joblogs-processor
-run/joblogs-processor: build/joblogs-processor
-	@./.bin/joblogs-processor
-
-.PHONY: run/analytics-processor
-run/analytics-processor: build/analytics-processor
-	@./.bin/analytics-processor
-
-.PHONY: run/outbox-relay
-run/outbox-relay: build/outbox-relay
-	@./.bin/outbox-relay
-
-.PHONY: run/database-migration
-run/database-migration: build/database-migration
-	@./.bin/database-migration
-
-.PHONY: run/server
-run/server: build/server
-	@./.bin/server
+$(RUN_TARGETS): run/%: build/%
+	@./.bin/$*

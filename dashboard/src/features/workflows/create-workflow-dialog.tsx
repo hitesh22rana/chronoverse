@@ -1,5 +1,7 @@
 "use client"
 
+import { WorkflowNumberField, ContainerListField } from "./workflow-form-fields"
+
 import { Fragment } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, useWatch, type Resolver } from "react-hook-form"
@@ -343,12 +345,7 @@ function renderCreateWorkflowDialogView(model: any) {
                 </DialogHeader>
 
                 <Form {...form}>
-                    <form onSubmit={(e) => {
-                        e.preventDefault();
-                        form.handleSubmit((data: WorkflowFormValues) => {
-                            handleSubmit(data);
-                        })(e);
-                    }} className="space-y-6 pt-2">
+                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 pt-2">
                         <FormField
                             control={form.control}
                             name="name"
@@ -426,31 +423,7 @@ function renderCreateWorkflowDialogView(model: any) {
                                             )}
                                         />
 
-                                        <FormField
-                                            control={form.control}
-                                            name="heartbeatPayload.expectedStatusCode"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Expected Status Code</FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            type="number"
-                                                            min={100}
-                                                            max={599}
-                                                            {...field}
-                                                            value={field.value === undefined ? "" : field.value}
-                                                            onChange={(e) => {
-                                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
-                                                            }}
-                                                        />
-                                                    </FormControl>
-                                                    <FormDescription>
-                                                        The HTTP status code expected from the endpoint (default: 200)
-                                                    </FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
+                                        <WorkflowNumberField name="heartbeatPayload.expectedStatusCode" />
 
                                         <div className="space-y-2">
                                             <FormLabel>
@@ -481,6 +454,7 @@ function renderCreateWorkflowDialogView(model: any) {
                                                         name={`heartbeatPayload.headers.${index}.key`}
                                                         render={({ field }) => (
                                                             <FormItem className="flex-1">
+                                                                <FormLabel className="sr-only">Header {index + 1} name</FormLabel>
                                                                 <FormControl>
                                                                     <Input
                                                                         placeholder="Header name"
@@ -497,6 +471,7 @@ function renderCreateWorkflowDialogView(model: any) {
                                                         name={`heartbeatPayload.headers.${index}.value`}
                                                         render={({ field }) => (
                                                             <FormItem className="flex-1">
+                                                                <FormLabel className="sr-only">Header {index + 1} value</FormLabel>
                                                                 <FormControl>
                                                                     <Input
                                                                         placeholder="Value"
@@ -519,6 +494,7 @@ function renderCreateWorkflowDialogView(model: any) {
                                                         }}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
+                                                        <span className="sr-only">Remove header {index + 1}</span>
                                                     </Button>
                                                 </div>
                                             ))}
@@ -570,131 +546,9 @@ function renderCreateWorkflowDialogView(model: any) {
                                             )}
                                         />
 
-                                        <div className="space-y-2">
-                                            <FormLabel>
-                                                Command (optional)
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="ml-2"
-                                                    onClick={() => {
-                                                        form.setValue("containerPayload.cmd", [
-                                                            ...cmdFields,
-                                                            ""
-                                                        ])
-                                                        form.setValue("containerPayload.cmdIds", [
-                                                            ...cmdFieldIds,
-                                                            crypto.randomUUID()
-                                                        ])
-                                                    }}
-                                                >
-                                                    <Plus className="mr-1 h-3 w-3" /> Add argument
-                                                </Button>
-                                            </FormLabel>
-                                            <FormDescription>
-                                                Optional command and arguments to run in the container
-                                            </FormDescription>
+                                        <ContainerListField name="cmd" values={cmdFields} ids={cmdFieldIds} />
 
-                                            {cmdFields?.map((_: string, index: number) => (
-                                                <div key={cmdFieldIds[index]} className="flex items-center gap-2 mt-2">
-                                                    <FormField
-                                                        control={form.control}
-                                                        name={`containerPayload.cmd.${index}`}
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex-1">
-                                                                <FormControl>
-                                                                    <Input
-                                                                        placeholder={"sh -c 'echo hello'"}
-                                                                        {...field}
-                                                                        value={field.value || ""}
-                                                                    />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            const updatedCmds = [...cmdFields]
-                                                            const updatedCmdIds = [...cmdFieldIds]
-                                                            updatedCmds.splice(index, 1)
-                                                            updatedCmdIds.splice(index, 1)
-                                                            form.setValue("containerPayload.cmd", updatedCmds)
-                                                            form.setValue("containerPayload.cmdIds", updatedCmdIds)
-                                                        }}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <FormLabel>
-                                                Environment variables (optional)
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="ml-2"
-                                                    onClick={() => {
-                                                        form.setValue("containerPayload.env", [
-                                                            ...envFields,
-                                                            ""
-                                                        ])
-                                                        form.setValue("containerPayload.envIds", [
-                                                            ...envFieldIds,
-                                                            crypto.randomUUID()
-                                                        ])
-                                                    }}
-                                                >
-                                                    <Plus className="mr-1 h-3 w-3" /> Add variable
-                                                </Button>
-                                            </FormLabel>
-                                            <FormDescription>
-                                                Optional environment variables to set in the container
-                                            </FormDescription>
-
-                                            {envFields.map((_: string, index: number) => (
-                                                <div key={envFieldIds[index]} className="flex items-center gap-2 mt-2">
-                                                    <FormField
-                                                        control={form.control}
-                                                        name={`containerPayload.env.${index}`}
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex-1">
-                                                                <FormControl>
-                                                                    <Input
-                                                                        placeholder={"MY_ENV=VALUE"}
-                                                                        {...field}
-                                                                        value={field.value || ""}
-                                                                    />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            const updatedEnvs = [...envFields]
-                                                            const updatedEnvIds = [...envFieldIds]
-                                                            updatedEnvs.splice(index, 1)
-                                                            updatedEnvIds.splice(index, 1)
-                                                            form.setValue("containerPayload.env", updatedEnvs)
-                                                            form.setValue("containerPayload.envIds", updatedEnvIds)
-                                                        }}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            ))}
-                                        </div>
+                                        <ContainerListField name="env" values={envFields} ids={envFieldIds} />
 
                                         <FormField
                                             control={form.control}
@@ -721,55 +575,9 @@ function renderCreateWorkflowDialogView(model: any) {
                             </CardContent>
                         </Card>
 
-                        <FormField
-                            control={form.control}
-                            name="interval"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Interval (minutes)</FormLabel>
-                                    <FormControl>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            {...field}
-                                            value={field.value === undefined ? "" : field.value}
-                                            onChange={(e) => {
-                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <FormDescription>
-                                        How often to run this workflow.
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <WorkflowNumberField name="interval" />
 
-                        <FormField
-                            control={form.control}
-                            name="maxConsecutiveJobFailuresAllowed"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Max consecutive failures allowed</FormLabel>
-                                    <FormControl>
-                                        <Input
-                                            type="number"
-                                            min={3}
-                                            {...field}
-                                            value={field.value === undefined ? "" : field.value}
-                                            onChange={(e) => {
-                                                field.onChange(e.target.value === "" ? "" : Number(e.target.value));
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <FormDescription>
-                                        Maximum number of consecutive failures before the workflow is auto-disabled (default: 3).
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <WorkflowNumberField name="maxConsecutiveJobFailuresAllowed" />
 
                         {selectedKind === "CONTAINER" && (
                             <FormField

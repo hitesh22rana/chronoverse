@@ -551,21 +551,10 @@ export function LogsViewer({
 
 function LogsViewerView({ model }: { model: any }) {
     const {
+        streamFilter,
         jobStatus,
         logs,
-        isLogsLoading,
-        isWorkflowLoading,
-        logsError,
-        isLogsUnsupportedForKind,
-        workflowKind,
-        isRetentionDisabled,
-        searchQuery,
-        streamFilter,
         isFetchingNextPage,
-        virtuosoRef,
-        renderLogRow,
-        handleEndReached,
-        handleRenderedRangeChanged,
         parseJson,
         updateJsonRendering,
         completedAt,
@@ -756,63 +745,7 @@ function LogsViewerView({ model }: { model: any }) {
             </CardHeader>
 
             <CardContent className="flex flex-col flex-1 w-full h-full font-mono text-sm md:p-2 p-0">
-                {isLogsLoading || !jobStatus || isWorkflowLoading ? (
-                    <div className="flex items-center justify-center h-full m-auto">
-                        <div className="flex items-center gap-2">
-                            <Loader2 className="h-6 w-6 animate-spin" />
-                            <span>Loading logs...</span>
-                        </div>
-                    </div>
-                ) : logsError ? (
-                    <div className="flex items-center justify-center h-full m-auto">
-                        <div className="text-center">
-                            <div className="text-red-500 mb-2">Error loading logs</div>
-                            <div className="text-sm text-muted-foreground">{logsError.message}</div>
-                        </div>
-                    </div>
-                ) : logs.length > 0 ? (
-                    <Virtuoso
-                        ref={virtuosoRef}
-                        totalCount={logs.length}
-                        itemContent={renderLogRow}
-                        endReached={handleEndReached}
-                        rangeChanged={handleRenderedRangeChanged}
-                        overscan={200}
-                        className="flex flex-1 w-full h-full"
-                    />
-                ) : isLogsUnsupportedForKind ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
-                        <div className="text-lg mb-2">No logs available</div>
-                        <div className="text-sm text-center">
-                            Logs are not available for <span className="dark:text-white text-black font-semibold">{workflowKind?.charAt(0) + workflowKind?.substring(1).toLowerCase()}</span> workflows.
-                        </div>
-                    </div>
-                ) : isRetentionDisabled ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
-                        <div className="text-lg mb-2">No logs available</div>
-                        <div className="text-sm text-center">Log retention is disabled for this <span className="dark:text-white text-black font-semibold">{workflowKind?.charAt(0) + workflowKind?.substring(1).toLowerCase()}</span> workflow</div>
-                    </div>
-                ) : (!!searchQuery || !!streamFilter) ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
-                        <div className="text-lg mb-2">No logs found</div>
-                        <div className="text-sm text-center">Try adjusting your search query or filters</div>
-                    </div>
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
-                        <div className="text-lg mb-2">No logs available</div>
-                        <div className="text-sm text-center">
-                            {jobStatus === "RUNNING"
-                                ? "Logs will appear here as the job executes"
-                                : jobStatus === "PENDING" || jobStatus === "QUEUED"
-                                    ? "Job is waiting to start"
-                                    : jobStatus === "FAILED"
-                                        ? "Job failed to execute, no logs available"
-                                        : jobStatus === "COMPLETED"
-                                            ? "Job completed successfully, but no logs were produced"
-                                            : "This job did not produce any logs"}
-                        </div>
-                    </div>
-                )}
+                <LogResults model={model} />
                 {isFetchingNextPage && (
                     <div className="flex items-center justify-center py-4">
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -821,5 +754,62 @@ function LogsViewerView({ model }: { model: any }) {
                 )}
             </CardContent>
         </Card>
+    )
+}
+
+const emptyLogMessages: Record<string, string> = {
+    RUNNING: "Logs will appear here as the job executes",
+    PENDING: "Job is waiting to start",
+    QUEUED: "Job is waiting to start",
+    FAILED: "Job failed to execute, no logs available",
+    COMPLETED: "Job completed successfully, but no logs were produced",
+}
+
+function LogResults({ model }: { model: any }) {
+    const { isLogsLoading, jobStatus, isWorkflowLoading, logsError, logs, virtuosoRef, renderLogRow, handleEndReached, handleRenderedRangeChanged, isLogsUnsupportedForKind, isRetentionDisabled, workflowKind, searchQuery, streamFilter } = model
+    if (isLogsLoading || !jobStatus || isWorkflowLoading) return (
+        <div className="flex items-center justify-center h-full m-auto">
+            <div className="flex items-center gap-2">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <span>Loading logs...</span>
+            </div>
+        </div>
+    )
+    if (logsError) return (
+        <div className="flex items-center justify-center h-full m-auto">
+            <div className="text-center">
+                <div className="text-red-500 mb-2">Error loading logs</div>
+                <div className="text-sm text-muted-foreground">{logsError.message}</div>
+            </div>
+        </div>
+    )
+    if (logs.length > 0) return (
+        <Virtuoso
+            ref={virtuosoRef}
+            totalCount={logs.length}
+            itemContent={renderLogRow}
+            endReached={handleEndReached}
+            rangeChanged={handleRenderedRangeChanged}
+            overscan={200}
+            className="flex flex-1 w-full h-full"
+        />
+    )
+
+    let title = "No logs available"
+    let description: React.ReactNode = emptyLogMessages[jobStatus] ?? "This job did not produce any logs"
+    const kind = <span className="dark:text-white text-black font-semibold">{workflowKind?.charAt(0) + workflowKind?.substring(1).toLowerCase()}</span>
+    if (isLogsUnsupportedForKind) {
+        description = <>Logs are not available for {kind} workflows.</>
+    } else if (isRetentionDisabled) {
+        description = <>Log retention is disabled for this {kind} workflow</>
+    } else if (searchQuery || streamFilter) {
+        title = "No logs found"
+        description = "Try adjusting your search query or filters"
+    }
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-muted-foreground m-auto">
+            <div className="text-lg mb-2">{title}</div>
+            <div className="text-sm text-center">{description}</div>
+        </div>
     )
 }

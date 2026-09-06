@@ -24,6 +24,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { LogsViewer } from "@/features/logs/logs-viewer"
 import { JobStatusBadge } from "@/features/jobs/job-status-badge"
 
+import type { Job } from "./types"
+
 import { useJobDetails } from "@/features/jobs/use-job-details"
 
 export default function JobDetailsAndLogsPage() {
@@ -149,57 +151,7 @@ export default function JobDetailsAndLogsPage() {
                                 </div>
                             </Fragment>
                         ) : job && (
-                            <Fragment>
-                                {/* Timing Information */}
-                                <div className="space-y-3">
-                                    <h3 className="font-medium text-sm">Timeline</h3>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-muted-foreground">Created:</span>
-                                            <span>{format(new Date(job.created_at), "MMM d, yyyy HH:mm:ss")}</span>
-                                        </div>
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-muted-foreground">Scheduled:</span>
-                                            <span>{format(new Date(job.scheduled_at), "MMM d, yyyy HH:mm:ss")}</span>
-                                        </div>
-                                        {job.started_at ? (
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-muted-foreground">Started:</span>
-                                                <span>{format(new Date(job.started_at), "MMM d, yyyy HH:mm:ss")}</span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-muted-foreground">Started:</span>
-                                                <span className="text-gray-400">Not started yet</span>
-                                            </div>
-                                        )}
-                                        {job.completed_at ? (
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-muted-foreground">Completed:</span>
-                                                <span>{format(new Date(job.completed_at), "MMM d, yyyy HH:mm:ss")}</span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-muted-foreground">Completed:</span>
-                                                <span className="text-gray-400">Not completed yet</span>
-                                            </div>
-                                        )}
-                                        {(job.started_at && job.completed_at) ? (
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-muted-foreground">Duration:</span>
-                                                <span>
-                                                    {formatDuration(new Date(job.started_at), new Date(job.completed_at))}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-muted-foreground">Duration:</span>
-                                                <span className="text-gray-400">Not available</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </Fragment>
+                            <JobTimeline job={job} />
                         )}
                     </CardContent>
                 </Card>
@@ -236,4 +188,31 @@ function formatDuration(start: Date, end: Date): string {
     const remainingMinutes = minutes % 60;
 
     return `${hours} hour${hours !== 1 ? 's' : ''} ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+}
+
+function JobTimeline({ job }: { job: Job }) {
+    const timestamps = [
+        { label: "Created", date: job.created_at, empty: "" },
+        { label: "Scheduled", date: job.scheduled_at, empty: "" },
+        { label: "Started", date: job.started_at, empty: "Not started yet" },
+        { label: "Completed", date: job.completed_at, empty: "Not completed yet" },
+    ]
+    const duration = job.started_at && job.completed_at ? formatDuration(new Date(job.started_at), new Date(job.completed_at)) : null
+    return (
+        <div className="space-y-3">
+            <h3 className="font-medium text-sm">Timeline</h3>
+            <div className="space-y-2">
+                {timestamps.map(({ label, date, empty }) => (
+                    <div key={label} className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{label}:</span>
+                        <span className={date ? undefined : "text-gray-400"}>{date ? format(new Date(date), "MMM d, yyyy HH:mm:ss") : empty}</span>
+                    </div>
+                ))}
+                <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Duration:</span>
+                    <span className={duration ? undefined : "text-gray-400"}>{duration ?? "Not available"}</span>
+                </div>
+            </div>
+        </div>
+    )
 }

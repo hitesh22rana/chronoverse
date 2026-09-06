@@ -2,7 +2,6 @@
 
 import {
     useEffect,
-    useRef,
     useState,
 } from "react"
 import {
@@ -14,11 +13,6 @@ import {
     useInfiniteQuery,
     useMutation,
 } from "@tanstack/react-query"
-import {
-    EventSourcePolyfill,
-    type Event as EventSourceEvent,
-    type MessageEvent as EventSourceMessageEvent,
-} from "event-source-polyfill"
 import { toast } from "sonner"
 
 import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
@@ -46,20 +40,13 @@ type DownloadLogsOptions = {
 }
 
 const kindsWithLogs = ['CONTAINER']
-const terminalJobStatus = ['COMPLETED', 'FAILED', 'CANCELED']
+const statusesWithLogs = ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED']
 
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
-    const pathname = usePathname()
-    const router = useRouter()
-    const searchParams = useSearchParams()
+    const { searchQuery, streamFilter, updateSearchQuery, applyStreamFilter, getSearchQueryParams } = useLogFilters()
 
-    const searchQuery = searchParams.get("q") || ""
-    const streamFilter = searchParams.get("stream") || ""
-
-    const [isConnected, setIsConnected] = useState(false)
     const [liveLogs, setLiveLogs] = useState<JobLog[]>([])
-    const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
     const logsURL = apiEndpoints.workflows.jobs.logs(workflowId, jobId)
     const sseURL = apiEndpoints.workflows.jobs.logEvents(workflowId, jobId)
@@ -67,59 +54,14 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const searchURL = apiEndpoints.workflows.jobs.searchLogs(workflowId, jobId)
 
     const isRunning = jobStatus === "RUNNING"
-    const isCompleted = terminalJobStatus.includes(jobStatus)
+    const hasLogs = statusesWithLogs.includes(jobStatus)
     const workflowKind = workflow?.kind || ""
-    const isLogsUnsupportedForKind = Boolean(workflow && !kindsWithLogs.includes(workflow.kind))
-    const isRetentionDisabled = Boolean(workflow && !isLogsUnsupportedForKind && !workflow.log_retention)
-    const shouldFetch = Boolean(
-        workflow &&
-        !isLogsUnsupportedForKind &&
-        workflow.log_retention &&
-        (isCompleted || isRunning)
-    )
+    const supportsLogs = kindsWithLogs.includes(workflowKind)
+    const isLogsUnsupportedForKind = Boolean(workflow) && !supportsLogs
+    const isRetentionDisabled = supportsLogs && !workflow.log_retention
+    const shouldFetch = supportsLogs && !isRetentionDisabled && hasLogs
 
-    // Update search query in URL params
-    const updateSearchQuery = (newSearchQuery: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-
-        if (newSearchQuery) {
-            params.set("q", newSearchQuery)
-        } else {
-            params.delete("q")
-        }
-
-        const query = params.toString()
-        router.push(buildLogViewerUrl(pathname, query, ""))
-    }
-
-    // Apply stream filter in URL params
-    const applyStreamFilter = (newStreamFilter: string) => {
-        const params = new URLSearchParams(searchParams.toString())
-
-        if (newStreamFilter) {
-            params.set("stream", newStreamFilter)
-        } else {
-            params.delete("stream")
-        }
-
-        const query = params.toString()
-        router.push(buildLogViewerUrl(pathname, query, ""))
-    }
-
-    // Build query parameters for the search job logs request
-    const getSearchQueryParams = (() => {
-        const params = new URLSearchParams()
-
-        if (searchQuery) {
-            params.set("q", searchQuery)
-        }
-
-        if (streamFilter) {
-            params.set("stream", streamFilter)
-        }
-
-        return params.toString()
-    })()
+    const canFetch = shouldFetch && Boolean(workflowId) && Boolean(jobId)
 
     // Download raw logs from backend and trigger browser file download
     const downloadLogsMutation = useMutation({
@@ -177,7 +119,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
         refetchOnMount: "always",
-        enabled: shouldFetch && !getSearchQueryParams && Boolean(workflowId) && Boolean(jobId),
+        enabled: canFetch && !getSearchQueryParams,
     })
 
     // Search job logs query
@@ -207,7 +149,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
         refetchOnMount: "always",
-        enabled: shouldFetch && Boolean(getSearchQueryParams) && Boolean(workflowId) && Boolean(jobId),
+        enabled: canFetch && Boolean(getSearchQueryParams),
     });
 
     // Handle SSE connection for running jobs
@@ -216,20 +158,13 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             return
         }
 
-        const eventSource = new EventSourcePolyfill(sseURL, {
+        const eventSource = new EventSource(sseURL, {
             withCredentials: true,
         })
 
-        eventSourceRef.current = eventSource
-
-        eventSource.onopen = () => {
-            setIsConnected(true)
-        }
-
-        const handleLog = (event: EventSourceEvent) => {
+        const handleLog = (event: MessageEvent<string>) => {
             try {
-                const messageEvent = event as EventSourceMessageEvent
-                const logData = normalizeJobLog(JSON.parse(messageEvent.data) as JobLogWire)
+                const logData = normalizeJobLog(JSON.parse(event.data) as JobLogWire)
 
                 setLiveLogs((existingLogs) => mergeLiveLogs(existingLogs, [logData]))
             } catch { /* ignore parsing errors */ }
@@ -239,17 +174,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             toast.error('Log streaming error occurred')
         }
 
-        const handleEnd = () => {
-            setIsConnected(false)
-        }
-
         eventSource.addEventListener('log', handleLog)
         eventSource.addEventListener('error', handleError)
-        eventSource.addEventListener('end', handleEnd)
 
         eventSource.onerror = () => {
-            setIsConnected(false)
-
             // No error toast for normal disconnections
             if (eventSource.readyState !== EventSource.CLOSED) {
                 toast.error('Lost connection to log stream')
@@ -259,10 +187,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         return () => {
             eventSource.removeEventListener('log', handleLog)
             eventSource.removeEventListener('error', handleError)
-            eventSource.removeEventListener('end', handleEnd)
             eventSource.close()
-            eventSourceRef.current = null
-            setIsConnected(false)
         }
     }, [sseURL, isRunning, shouldFetch, getSearchQueryParams, workflowId, jobId])
 
@@ -275,117 +200,64 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         }
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error])
 
-    const retainedLogs = logsFromPages(jobLogsInfiniteQuery.data?.pages)
-    const runningLogs = mergeLiveLogs(retainedLogs, liveLogs)
-    const searchLogs = logsFromPages(jobLogsSearchInfiniteQuery.data?.pages)
-
-    if (shouldFetch && Boolean(getSearchQueryParams)) {
-        return {
-            logs: searchLogs,
-            isLoading: jobLogsSearchInfiniteQuery.isLoading,
-            error: jobLogsSearchInfiniteQuery.error,
-            fetchNextPage: jobLogsSearchInfiniteQuery.fetchNextPage,
-            isFetchingNextPage: jobLogsSearchInfiniteQuery.isFetchingNextPage,
-            hasNextPage: jobLogsSearchInfiniteQuery.hasNextPage,
-            refetch: jobLogsSearchInfiniteQuery.refetch,
-            searchQuery: searchQuery,
-            updateSearchQuery: updateSearchQuery,
-            streamFilter: streamFilter,
-            applyStreamFilter: applyStreamFilter,
-            downloadLogsMutation,
-            isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
-            isDownloadLogsMutationError: downloadLogsMutation.error,
-            isRetentionDisabled,
-            isLogsUnsupportedForKind,
-            workflowKind,
-            isWorkflowLoading,
-        };
-    }
-
-    if (isCompleted) {
-        return {
-            logs: retainedLogs,
-            isLoading: jobLogsInfiniteQuery.isLoading,
-            error: jobLogsInfiniteQuery.error,
-            fetchNextPage: jobLogsInfiniteQuery.fetchNextPage,
-            isFetchingNextPage: jobLogsInfiniteQuery.isFetchingNextPage,
-            hasNextPage: jobLogsInfiniteQuery.hasNextPage,
-            refetch: jobLogsInfiniteQuery.refetch,
-            searchQuery: searchQuery,
-            updateSearchQuery: updateSearchQuery,
-            streamFilter: streamFilter,
-            applyStreamFilter: applyStreamFilter,
-            isConnected: false,
-            isSSEEnabled: false,
-            disconnect: () => { },
-            getMaxSequenceNum: () => 0,
-            downloadLogsMutation,
-            isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
-            isDownloadLogsMutationError: downloadLogsMutation.error,
-            isRetentionDisabled,
-            isLogsUnsupportedForKind,
-            workflowKind,
-            isWorkflowLoading,
-        }
-    }
-
-    if (isRunning) {
-        const isSSEEnabled = shouldFetch && !getSearchQueryParams
-
-        return {
-            logs: runningLogs,
-            isLoading: jobLogsInfiniteQuery.isLoading,
-            error: jobLogsInfiniteQuery.error,
-            fetchNextPage: jobLogsInfiniteQuery.fetchNextPage,
-            isFetchingNextPage: jobLogsInfiniteQuery.isFetchingNextPage,
-            hasNextPage: jobLogsInfiniteQuery.hasNextPage,
-            refetch: jobLogsInfiniteQuery.refetch,
-            searchQuery: searchQuery,
-            updateSearchQuery: updateSearchQuery,
-            streamFilter: streamFilter,
-            applyStreamFilter: applyStreamFilter,
-            isConnected,
-            isSSEEnabled,
-            disconnect: () => {
-                if (eventSourceRef.current) {
-                    eventSourceRef.current.close()
-                    eventSourceRef.current = null
-                    setIsConnected(false)
-                }
-            },
-            downloadLogsMutation,
-            isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
-            isDownloadLogsMutationError: downloadLogsMutation.error,
-            isRetentionDisabled,
-            isLogsUnsupportedForKind,
-            workflowKind,
-            isWorkflowLoading,
-        }
-    }
-
-    // For PENDING and QUEUED - return empty state
-    return {
-        logs: [],
+    const isSearching = shouldFetch && Boolean(getSearchQueryParams)
+    const query = hasLogs ? (isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery) : {
+        data: undefined,
         isLoading: false,
         error: null,
         fetchNextPage: () => Promise.resolve(),
         isFetchingNextPage: false,
         hasNextPage: false,
-        refetch: () => Promise.resolve(),
-        searchQuery: searchQuery,
-        updateSearchQuery: updateSearchQuery,
-        streamFilter: streamFilter,
-        applyStreamFilter: applyStreamFilter,
-        isConnected: false,
-        isSSEEnabled: false,
-        disconnect: () => { },
-        getMaxSequenceNum: () => 0,
+    }
+    const logs = logsFromPages(query.data?.pages)
+
+    return {
+        logs: isRunning && !isSearching ? mergeLiveLogs(logs, liveLogs) : logs,
+        isLoading: query.isLoading,
+        error: query.error,
+        fetchNextPage: query.fetchNextPage,
+        isFetchingNextPage: query.isFetchingNextPage,
+        hasNextPage: query.hasNextPage,
+        searchQuery,
+        updateSearchQuery,
+        streamFilter,
+        applyStreamFilter,
         downloadLogsMutation,
         isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
-        isDownloadLogsMutationError: downloadLogsMutation.error,
         isRetentionDisabled,
         isLogsUnsupportedForKind,
         workflowKind,
         isWorkflowLoading,
+    }
+}
+
+function useLogFilters() {
+    const pathname = usePathname()
+    const router = useRouter()
+    const searchParams = useSearchParams()
+
+    const searchQuery = searchParams.get("q") || ""
+    const streamFilter = searchParams.get("stream") || ""
+
+    const updateFilter = (name: string, value: string) => {
+        const params = new URLSearchParams(searchParams.toString())
+        if (value) {
+            params.set(name, value)
+        } else {
+            params.delete(name)
+        }
+        router.push(buildLogViewerUrl(pathname, params.toString(), ""))
+    }
+
+    const params = new URLSearchParams()
+    if (searchQuery) params.set("q", searchQuery)
+    if (streamFilter) params.set("stream", streamFilter)
+
+    return {
+        searchQuery,
+        streamFilter,
+        updateSearchQuery: (value: string) => updateFilter("q", value),
+        applyStreamFilter: (value: string) => updateFilter("stream", value),
+        getSearchQueryParams: params.toString(),
     }
 }

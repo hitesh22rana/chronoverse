@@ -412,6 +412,8 @@ The batch size controls how many due workflows are scanned per polling pass.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+- `WORKFLOW_WORKER_IMAGE_PREFETCH_ENABLED`
+- `WORKFLOW_WORKER_IMAGE_PREFETCH_MAX_FANOUT`
 
 These settings coordinate Docker image pulls for replicated workflow workers
 that share a runtime node. The lock is scoped by runtime node and exact image

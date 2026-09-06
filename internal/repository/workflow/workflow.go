@@ -56,6 +56,14 @@ type Services struct {
 	Jobs            jobspb.JobsServiceClient
 	Notifications   notificationspb.NotificationsServiceClient
 	CsvcForEndpoint ContainerSvcFactory
+	ImagePrefetch   ImagePrefetchConfig
+}
+
+// ImagePrefetchConfig tunes best-effort image fan-out to every READY node.
+type ImagePrefetchConfig struct {
+	Enabled   bool
+	MaxFanout int
+	Timeout   time.Duration
 }
 
 type kafkaProducer interface {

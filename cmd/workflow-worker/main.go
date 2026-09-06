@@ -238,6 +238,11 @@ func run() int {
 		Jobs:            jobpb.NewJobsServiceClient(jobsConn),
 		Notifications:   notificationspb.NewNotificationsServiceClient(notificationsConn),
 		CsvcForEndpoint: containerSvcForEndpoint,
+		ImagePrefetch: workflowrepo.ImagePrefetchConfig{
+			Enabled:   cfg.ImagePrefetchEnabled,
+			MaxFanout: cfg.ImagePrefetchMaxFanout,
+			Timeout:   cfg.ImagePullLockWaitTimeout,
+		},
 	})
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)

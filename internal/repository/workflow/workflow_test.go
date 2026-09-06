@@ -253,6 +253,52 @@ func TestBuildWorkflowNonTransientBuildErrorsFailWorkflow(t *testing.T) {
 	}
 }
 
+func TestPrefetchImageToNodesSkipsWarmedNode(t *testing.T) {
+	t.Parallel()
+
+	builds := &orderedEvents{}
+	factories := &orderedEvents{}
+	repo := &Repository{
+		auth: testAuth{},
+		svc: &Services{
+			Jobs: &testJobsClient{
+				listReadyRuntimeNodes: func(context.Context, *jobspb.ListReadyRuntimeNodesRequest) (*jobspb.ListReadyRuntimeNodesResponse, error) {
+					return &jobspb.ListReadyRuntimeNodesResponse{
+						Nodes: []*jobspb.GetReadyRuntimeNodeResponse{
+							{RuntimeNodeId: "runtime-1", RuntimeEndpoint: "tcp://node-1:2376"},
+							{RuntimeNodeId: "runtime-2", RuntimeEndpoint: "tcp://node-2:2376"},
+							{RuntimeNodeId: "runtime-3", RuntimeEndpoint: "tcp://node-3:2376"},
+						},
+					}, nil
+				},
+			},
+			CsvcForEndpoint: func(nodeID, _ string) (ContainerSvc, error) {
+				factories.add(nodeID)
+				return &testContainerSvc{builds: builds}, nil
+			},
+			ImagePrefetch: ImagePrefetchConfig{Enabled: true, MaxFanout: 2},
+		},
+	}
+
+	repo.prefetchImageToNodes(t.Context(), "img:test", "runtime-1")
+
+	for _, node := range []string{"runtime-2", "runtime-3"} {
+		if !containsEvent(factories.items(), node) {
+			t.Fatalf("prefetch missed node %s, factories = %v", node, factories.items())
+		}
+	}
+	if containsEvent(factories.items(), "runtime-1") {
+		t.Fatalf("prefetch hit warmed node, factories = %v", factories.items())
+	}
+	if got := builds.items(); len(got) != 2 {
+		t.Fatalf("builds = %v, want 2 prefetch builds", got)
+	}
+
+	// Empty image pulls nothing.
+	empty := &Repository{auth: testAuth{}, svc: &Services{Jobs: &testJobsClient{}}}
+	empty.prefetchImageToNodes(t.Context(), "", "runtime-1")
+}
+
 func TestCancelJobsMarksAllJobsCanceledBeforeContainerCleanup(t *testing.T) {
 	t.Parallel()
 
@@ -701,10 +747,11 @@ func (testAuth) ValidateToken(context.Context, string) (context.Context, *jwt.To
 
 type testJobsClient struct {
 	jobspb.JobsServiceClient
-	cancelJob           func(context.Context, *jobspb.CancelJobRequest) error
-	scheduleJob         func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
-	listJobs            func(context.Context, *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error)
-	getReadyRuntimeNode func(context.Context, *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
+	cancelJob             func(context.Context, *jobspb.CancelJobRequest) error
+	scheduleJob           func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
+	listJobs              func(context.Context, *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error)
+	getReadyRuntimeNode   func(context.Context, *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
+	listReadyRuntimeNodes func(context.Context, *jobspb.ListReadyRuntimeNodesRequest) (*jobspb.ListReadyRuntimeNodesResponse, error)
 }
 
 func (c *testJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest, _ ...grpc.CallOption) (*jobspb.CancelJobResponse, error) {
@@ -743,6 +790,13 @@ func (c *testJobsClient) GetReadyRuntimeNode(ctx context.Context, req *jobspb.Ge
 		RuntimeNodeId:   "runtime-1",
 		RuntimeEndpoint: "tcp://docker-proxy:2375",
 	}, nil
+}
+
+func (c *testJobsClient) ListReadyRuntimeNodes(ctx context.Context, req *jobspb.ListReadyRuntimeNodesRequest, _ ...grpc.CallOption) (*jobspb.ListReadyRuntimeNodesResponse, error) {
+	if c.listReadyRuntimeNodes != nil {
+		return c.listReadyRuntimeNodes(ctx, req)
+	}
+	return &jobspb.ListReadyRuntimeNodesResponse{}, nil
 }
 
 type testWorkflowsClient struct {

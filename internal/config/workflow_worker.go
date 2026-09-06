@@ -27,6 +27,8 @@ type WorkflowWorkerConfig struct {
 	ImagePullLockTTL           time.Duration `envconfig:"WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL" default:"10m"`
 	ImagePullLockWaitTimeout   time.Duration `envconfig:"WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT" default:"10m"`
 	ImagePullLockRetryInterval time.Duration `envconfig:"WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL" default:"500ms"`
+	ImagePrefetchEnabled       bool          `envconfig:"WORKFLOW_WORKER_IMAGE_PREFETCH_ENABLED" default:"true"`
+	ImagePrefetchMaxFanout     int           `envconfig:"WORKFLOW_WORKER_IMAGE_PREFETCH_MAX_FANOUT" default:"8"`
 }
 
 // InitWorkflowWorkerConfig initializes the workflow worker configuration.

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -21,11 +23,14 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
 )
 
 const (
 	buildWorkflowDefaultExpirationTimeout = 5 * time.Minute
+	defaultImagePrefetchMaxFanout         = 8
+	defaultImagePrefetchTimeout           = 10 * time.Minute
 )
 
 var transientBuildRetryErrorCodes = []codes.Code{
@@ -220,7 +225,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	)
 
 	// Execute the build process with retry enabled
-	var resolvedImageRef, resolvedImageDigest string
+	var resolvedImageRef, resolvedImageDigest, warmedNodeID string
 	workflowErr := retrypkg.Do(ctx, 2, retryBackoff, func() error {
 		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
 		if err != nil {
@@ -237,6 +242,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return err
 		}
 
+		warmedNodeID = runtimeNode.GetRuntimeNodeId()
 		resolvedImageRef, resolvedImageDigest, err = csvc.ResolveImageDigest(ctx, details.Image)
 		return err
 	})
@@ -307,6 +313,22 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	}
 	if !scheduled {
 		return nil
+	}
+
+	// Best-effort fan-out: warm every other READY node off the critical path.
+	// Execution-time Ensure is the correctness fallback, so prefetch never fails the build.
+	if r.svc.ImagePrefetch.Enabled && resolvedImageRef != "" {
+		if authCtx, err := r.withAuthorization(context.WithoutCancel(parentCtx)); err == nil {
+			timeout := r.svc.ImagePrefetch.Timeout
+			if timeout <= 0 {
+				timeout = defaultImagePrefetchTimeout
+			}
+			prefetchCtx, cancel := context.WithTimeout(authCtx, timeout)
+			go func() {
+				defer cancel()
+				r.prefetchImageToNodes(prefetchCtx, resolvedImageRef, warmedNodeID)
+			}()
+		}
 	}
 
 	// Send notification for the workflow build completed event
@@ -437,4 +459,60 @@ func (r *Repository) scheduleAutomaticJob(ctx context.Context, workflow *workflo
 	}
 
 	return err
+}
+
+// prefetchImageToNodes pulls image on every READY node except the warmed one.
+// Best-effort only: all errors are log-only, the execution-time Ensure stays the fallback.
+// ponytail: in-memory fan-out, not a durable queue; add one if loss measurably hurts hit-rate.
+func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNodeID string) {
+	if image == "" {
+		return
+	}
+
+	nodes, err := r.svc.Jobs.ListReadyRuntimeNodes(ctx, &jobspb.ListReadyRuntimeNodesRequest{})
+	if err != nil {
+		loggerpkg.FromContext(ctx).Warn("image prefetch: list runtime nodes failed",
+			zap.String("image", image),
+			zap.Error(err),
+		)
+		return
+	}
+
+	maxFanout := r.svc.ImagePrefetch.MaxFanout
+	if maxFanout <= 0 {
+		maxFanout = defaultImagePrefetchMaxFanout
+	}
+
+	sem := make(chan struct{}, maxFanout)
+	var wg sync.WaitGroup
+	for _, node := range nodes.GetNodes() {
+		if node.GetRuntimeNodeId() == "" || node.GetRuntimeNodeId() == warmedNodeID {
+			continue
+		}
+
+		csvc, err := r.containerSvcForRuntime(node.GetRuntimeNodeId(), node.GetRuntimeEndpoint())
+		if err != nil {
+			loggerpkg.FromContext(ctx).Warn("image prefetch: container service failed",
+				zap.String("image", image),
+				zap.String("runtime_node_id", node.GetRuntimeNodeId()),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := csvc.Build(ctx, image); err != nil {
+				loggerpkg.FromContext(ctx).Warn("image prefetch failed",
+					zap.String("image", image),
+					zap.String("runtime_node_id", node.GetRuntimeNodeId()),
+					zap.Error(err),
+				)
+			}
+		}()
+	}
+	wg.Wait()
 }

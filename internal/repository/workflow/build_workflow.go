@@ -315,7 +315,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return nil
 	}
 
-	// Best-effort fan-out: warm every other READY node off the critical path.
+	// Best-effort fan-out: warm up to MaxFanout other READY nodes off the critical path.
 	// Execution-time Ensure is the correctness fallback, so prefetch never fails the build.
 	// Prefetch the immutable digest (what the executor Ensures), not the mutable tag.
 	prefetchImage := resolvedImageDigest
@@ -472,7 +472,7 @@ func (r *Repository) scheduleAutomaticJob(ctx context.Context, workflow *workflo
 	return err
 }
 
-// prefetchImageToNodes pulls image on every READY node except the warmed one.
+// prefetchImageToNodes pulls image on up to MaxFanout READY nodes except the warmed one.
 // Best-effort only: all errors are log-only, the execution-time Ensure stays the fallback.
 // ponytail: in-memory fan-out, not a durable queue; add one if loss measurably hurts hit-rate.
 func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNodeID string) {

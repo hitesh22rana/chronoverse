@@ -59,7 +59,7 @@ type Services struct {
 	ImagePrefetch   ImagePrefetchConfig
 }
 
-// ImagePrefetchConfig tunes best-effort image fan-out to every READY node.
+// ImagePrefetchConfig tunes best-effort image fan-out to READY nodes.
 type ImagePrefetchConfig struct {
 	Enabled   bool
 	MaxFanout int

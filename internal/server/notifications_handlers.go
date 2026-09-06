@@ -8,9 +8,7 @@ import (
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
 
-// handleListNotifications handles the list notifications request.
 func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request) {
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -23,7 +21,6 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Get cursor from the query parameters
 	cursor := r.URL.Query().Get("cursor")
 
 	// ListNotifications lists the notifications.
@@ -36,7 +33,6 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
@@ -47,7 +43,6 @@ type markNotificationsReadRequest struct {
 	IDs []string `json:"ids"`
 }
 
-// handleMarkNotificationsRead handles the mark notifications read request.
 func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
 	var req markNotificationsReadRequest
 	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
@@ -55,7 +50,6 @@ func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -78,6 +72,5 @@ func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Write the response
 	w.WriteHeader(http.StatusNoContent)
 }

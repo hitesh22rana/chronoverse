@@ -90,7 +90,6 @@ func (w *Workflows) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return handler(ctx, req)
 		}
 
-		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
@@ -286,7 +285,7 @@ func (w *Workflows) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateW
 }
 
 // UpdateWorkflowBuildStatus updates the job build status.
-// This is an internal method used by internal services, and it should not be exposed to the public.
+// Internal only; not public API.
 func (w *Workflows) UpdateWorkflowBuildStatus(
 	ctx context.Context,
 	req *workflowspb.UpdateWorkflowBuildStatusRequest,
@@ -349,7 +348,7 @@ func (w *Workflows) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflo
 }
 
 // GetWorkflowByID returns the job details by ID.
-// This is an internal method used by internal services, and it should not be exposed to the public.
+// Internal only; not public API.
 func (w *Workflows) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowspb.GetWorkflowByIDResponse, err error) {
 	ctx, span := w.tp.Start(
 		ctx,
@@ -378,7 +377,7 @@ func (w *Workflows) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWor
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive job failures count.
-// This is an internal method used by internal services, and it should not be exposed to the public.
+// Internal only; not public API.
 func (w *Workflows) IncrementWorkflowConsecutiveJobFailuresCount(
 	ctx context.Context,
 	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
@@ -413,7 +412,7 @@ func (w *Workflows) IncrementWorkflowConsecutiveJobFailuresCount(
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the consecutive job failures count.
-// This is an internal method used by internal services, and it should not be exposed to the public.
+// Internal only; not public API.
 func (w *Workflows) ResetWorkflowConsecutiveJobFailuresCount(
 	ctx context.Context,
 	req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest,

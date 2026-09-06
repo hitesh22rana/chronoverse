@@ -113,7 +113,6 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		logRetentionEnabled = req.GetLogRetention()
 	}
 
-	// Validate the request
 	err = s.validator.Struct(&CreateWorkflowRequest{
 		UserID:                           req.GetUserId(),
 		Name:                             req.GetName(),
@@ -167,13 +166,11 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", err
 	}
 
-	// Cache the response in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 
 		if res.IdempotencyReplay {
@@ -226,7 +223,6 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		span.End()
 	}()
 
-	// Validate the request
 	if err = s.validator.Struct(&UpdateWorkflowRequest{
 		ID:                               req.GetId(),
 		UserID:                           req.GetUserId(),
@@ -264,17 +260,13 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		return err
 	}
 
-	// Invalidate the cache in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
-		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Invalidate specific workflow cache
 		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
 
-		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 	}()
 
@@ -305,7 +297,6 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&UpdateWorkflowBuildStatusRequest{
 		ID:          req.GetId(),
 		UserID:      req.GetUserId(),
@@ -337,17 +328,13 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		return err
 	}
 
-	// Invalidate the cache in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
-		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Invalidate specific workflow cache
 		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
 
-		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 	}()
 
@@ -374,7 +361,6 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&GetWorkflowRequest{
 		ID:     req.GetId(),
 		UserID: req.GetUserId(),
@@ -393,7 +379,6 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 			return nil, err
 		}
 	} else {
-		// Cache hit, return cached response
 		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 		return cacheRes.(*workflowsmodel.GetWorkflowResponse), nil
 	}
@@ -453,7 +438,6 @@ func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkf
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&GetWorkflowByIDRequest{
 		ID: req.GetId(),
 	})
@@ -498,7 +482,6 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&IncrementWorkflowConsecutiveJobFailuresCountRequest{
 		ID:     req.GetId(),
 		UserID: req.GetUserId(),
@@ -515,17 +498,13 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 		return false, err
 	}
 
-	// Invalidate the cache in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
-		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Invalidate specific workflow cache
 		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
 
-		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 	}()
 
@@ -553,7 +532,6 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&ResetWorkflowConsecutiveJobFailuresCountRequest{
 		ID:     req.GetId(),
 		UserID: req.GetUserId(),
@@ -570,17 +548,13 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 		return err
 	}
 
-	// Invalidate the cache in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
-		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Invalidate specific workflow cache
 		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
 
-		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 	}()
 
@@ -609,7 +583,6 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&TerminateWorkflowRequest{
 		ID:     req.GetId(),
 		UserID: req.GetUserId(),
@@ -625,17 +598,13 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 		return err
 	}
 
-	// Invalidate the cache in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
-		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Invalidate specific workflow cache
 		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
 
-		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 	}()
 
@@ -664,7 +633,6 @@ func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWor
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&DeleteWorkflowRequest{
 		ID:     req.GetId(),
 		UserID: req.GetUserId(),
@@ -680,17 +648,13 @@ func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWor
 		return err
 	}
 
-	// Invalidate the cache in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
-		// Cache invalidation for the following:
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Invalidate specific workflow cache
 		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
 
-		// Invalidate all list entries for the user
 		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
 	}()
 
@@ -732,7 +696,6 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		filters = &workflowsmodel.ListWorkflowsFilters{}
 	}
 
-	// Validate the request
 	err = s.validator.Struct(&ListWorkflowsRequest{
 		UserID:  req.GetUserId(),
 		Cursor:  req.GetCursor(),
@@ -769,7 +732,6 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 			return nil, err
 		}
 	} else {
-		// Cache hit, return cached response
 		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 		return cacheRes.(*workflowsmodel.ListWorkflowsResponse), nil
 	}
@@ -888,7 +850,6 @@ func generateListWorkflowsCacheKey(userID, cursor string, filters *workflowsmode
 
 // invalidateWorkflowCache handles cache invalidation for a specific workflow for a user.
 func (s *Service) invalidateWorkflowCache(ctx context.Context, workflowID, userID string, logger *zap.Logger) {
-	// Invalidate specific workflow cache
 	// The key is in the format "workflow:{user_id}:{job_id}".
 	cacheKey := fmt.Sprintf("workflow:%s:%s", userID, workflowID)
 	if err := s.cache.Delete(ctx, cacheKey); err != nil &&
@@ -906,7 +867,6 @@ func (s *Service) invalidateWorkflowCache(ctx context.Context, workflowID, userI
 
 // invalidateWorkflowsCache handles cache invalidation for all workflows for a user.
 func (s *Service) invalidateWorkflowsCache(ctx context.Context, userID string, logger *zap.Logger) {
-	// Invalidate all list entries for the user
 	// We use the user ID as the key, and '*' as the pattern.
 	cacheKey := fmt.Sprintf("workflows:%s:*", userID)
 	count, err := s.cache.DeleteByPattern(ctx, cacheKey)

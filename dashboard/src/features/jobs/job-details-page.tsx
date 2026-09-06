@@ -32,7 +32,6 @@ export default function JobDetailsAndLogsPage() {
     const { workflowId, jobId } = useParams() as { workflowId: string, jobId: string }
     const router = useRouter()
 
-    // Fetch job details and logs
     const {
         job,
         isLoading: isJobLoading,
@@ -40,7 +39,6 @@ export default function JobDetailsAndLogsPage() {
         refetch: refetchJob
     } = useJobDetails(workflowId, jobId)
 
-    // Handle manual refresh
     const handleRefresh = () => {
         refetchJob()
     }
@@ -169,7 +167,6 @@ export default function JobDetailsAndLogsPage() {
     )
 }
 
-// Helper function to format duration between two dates
 function formatDuration(start: Date, end: Date): string {
     const diffInSeconds = Math.floor((end.getTime() - start.getTime()) / 1000);
 

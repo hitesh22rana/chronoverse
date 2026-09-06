@@ -28,13 +28,9 @@ export type StatusMeta = {
         workflow?: string
         job?: string
     }
-    // Tailwind classes for text & background of a badge/pill
     badgeClass: string
-    // Optional fancy shadow/border class used by some cards
     glowClass?: string
-    // Optional icon animation class (e.g. spinning)
     iconClass?: string
-    // Optional dot color used by some cards
     dotColor?: string
 }
 

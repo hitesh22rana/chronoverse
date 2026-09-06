@@ -130,7 +130,6 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&ScheduleJobRequest{
 		WorkflowID:         req.GetWorkflowId(),
 		UserID:             req.GetUserId(),
@@ -511,7 +510,6 @@ func (s *Service) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *j
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&GetJobRequest{
 		ID:         req.GetId(),
 		WorkflowID: req.GetWorkflowId(),
@@ -547,7 +545,6 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&GetJobByIDRequest{
 		ID: req.GetId(),
 	})
@@ -601,7 +598,6 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		filters = &jobsmodel.GetJobLogsFilters{}
 	}
 
-	// Validate the request
 	err = s.validator.Struct(&GetJobLogsRequest{
 		ID:         req.GetId(),
 		WorkflowID: req.GetWorkflowId(),
@@ -617,7 +613,6 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 
-	// Check if the job logs are cached
 	cacheKey := fmt.Sprintf(
 		"job_logs:%s:%s:%s:%s:%d",
 		req.GetUserId(),
@@ -635,7 +630,6 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 				return nil, err
 			}
 		} else {
-			// Cache hit, return cached response
 			//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 			return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 		}
@@ -708,7 +702,6 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&StreamJobLogsRequest{
 		ID:         req.GetId(),
 		WorkflowID: req.GetWorkflowId(),
@@ -822,7 +815,6 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 	disableHighlight := req.GetDisableHighlight()
 
-	// Check if the job logs are cached
 	cacheKey := fmt.Sprintf(
 		"job_logs:search:%s:%s:%s:%s:%s:%d:%t",
 		req.GetUserId(),
@@ -842,7 +834,6 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 				return nil, err
 			}
 		} else {
-			// Cache hit, return cached response
 			//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 			return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
 		}
@@ -927,7 +918,6 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		filters = &jobsmodel.ListJobsFilters{}
 	}
 
-	// Validate the request
 	err = s.validator.Struct(&ListJobsRequest{
 		WorkflowID: req.GetWorkflowId(),
 		UserID:     req.GetUserId(),

@@ -48,24 +48,20 @@ func circuitBreakerStreamInterceptor(cb *breaker.Breaker) grpc.StreamClientInter
 		})
 
 		if cbErr != nil {
-			// If the underlying RPC returned an error that we treat as a circuit-breaker error,
-			// return that error (breaker counted it). If cbErr is non-nil but the RPC error
-			// was nil, it's likely the breaker is open - return the breaker error.
+			// Prefer the RPC error when counted; otherwise the breaker is open.
 			if streamErr != nil {
 				return stream, streamErr
 			}
 			return stream, cbErr
 		}
 
-		// cbErr == nil. If the RPC returned a non-circuit-breaker error, return it to caller
-		// but it won't be counted by the breaker.
+		// Uncounted RPC error; return as-is.
 		return stream, streamErr
 	}
 }
 
-// isCircuitBreakerError determines whether an error should be counted against the circuit
-// breaker. Only treat internal server errors, deadline/timeouts and network timeouts as
-// circuit-breaker errors.
+// isCircuitBreakerError reports whether err should count against the circuit.
+// Only internal, deadline/timeout, and network-timeout failures count.
 func isCircuitBreakerError(err error) bool {
 	if err == nil {
 		return false

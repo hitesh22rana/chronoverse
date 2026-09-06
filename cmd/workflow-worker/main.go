@@ -33,9 +33,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -44,11 +42,9 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -56,21 +52,18 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the workflow service configuration
 	cfg, err := config.InitWorkflowWorkerConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the auth issuer
 	auth, err := auth.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
 		Port:                     cfg.Redis.Port,
@@ -96,7 +89,6 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	// Initialize the ClickHouse database
 	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
 		Hosts:           cfg.ClickHouse.Hosts,
 		Database:        cfg.ClickHouse.Database,
@@ -119,7 +111,6 @@ func run() int {
 	}
 	defer cdb.Close()
 
-	// Initialize the MeiliSearch client
 	msdb, err := meilisearch.New(
 		ctx,
 		meilisearch.WithURI(cfg.MeiliSearch.URI),
@@ -132,7 +123,6 @@ func run() int {
 	}
 	msdb.Close()
 
-	// Initialize the kafka client
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
@@ -183,7 +173,6 @@ func run() int {
 		return workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, cfg), nil
 	}
 
-	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.WorkflowsService.Host,
@@ -204,7 +193,6 @@ func run() int {
 	}
 	defer workflowsConn.Close()
 
-	// Connect to the jobs service
 	jobsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.JobsService.Host,
@@ -225,7 +213,6 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
-	// Connect to the notifications service
 	notificationsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.NotificationsService.Host,
@@ -246,7 +233,6 @@ func run() int {
 	}
 	defer notificationsConn.Close()
 
-	// Initialize the workflow job components
 	repo := workflowrepo.New(auth, rdb, cdb, msdb, kfk, kafkaLifecycle, &workflowrepo.Services{
 		Workflows:       workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:            jobpb.NewJobsServiceClient(jobsConn),
@@ -256,7 +242,6 @@ func run() int {
 	svc := workflowsvc.New(repo)
 	app := workflow.New(ctx, svc)
 
-	// Log the job information
 	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
@@ -267,7 +252,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Run the workflow job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

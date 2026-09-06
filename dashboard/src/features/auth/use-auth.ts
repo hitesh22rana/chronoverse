@@ -30,7 +30,6 @@ export function useAuth() {
   const queryClient = useQueryClient()
   const signupAttemptRef = useRef<SignupAttempt | null>(null)
 
-  // Login mutation
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginCredentials) => {
       await fetchApi(apiEndpoints.auth.login, "failed to login", {
@@ -47,7 +46,6 @@ export function useAuth() {
     },
   })
 
-  // Signup mutation
   const signupMutation = useMutation({
     mutationFn: async (command: SignupCommand) => {
       await fetchApi(apiEndpoints.auth.signup, "failed to signup", {
@@ -68,7 +66,6 @@ export function useAuth() {
     },
   })
 
-  // Logout mutation
   const logoutMutation = useMutation({
     mutationFn: async () => {
       await fetchApi(apiEndpoints.auth.logout, "failed to logout", {

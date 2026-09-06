@@ -670,7 +670,6 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 			if msg != "" {
 				select {
 				case logMessages <- &jobsmodel.JobLog{Timestamp: time.Now(), Message: msg, SequenceNum: atomic.LoadUint32(&sequenceNum), Stream: "stdout"}:
-					// Atomic increment the sequence number for each log entry
 					atomic.AddUint32(&sequenceNum, 1)
 				case <-ctx.Done():
 					return
@@ -689,7 +688,6 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 			if msg != "" {
 				select {
 				case logMessages <- &jobsmodel.JobLog{Timestamp: time.Now(), Message: msg, SequenceNum: atomic.LoadUint32(&sequenceNum), Stream: "stderr"}:
-					// Atomic increment the sequence number for each log entry
 					atomic.AddUint32(&sequenceNum, 1)
 				case <-ctx.Done():
 					return

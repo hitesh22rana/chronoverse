@@ -67,7 +67,6 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		span.End()
 	}()
 
-	// Start transaction
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
@@ -250,7 +249,6 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		return 0, nil
 	}
 
-	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
 		return 0, err

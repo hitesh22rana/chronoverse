@@ -22,7 +22,7 @@ const (
 	defaultPartitionRunnerChannelBuffer = 1024
 )
 
-// RecordProcessor processes one Kafka record. Retruning a retryable gRPC status
+// RecordProcessor processes one Kafka record. Returning a retryable gRPC status
 // keeps the record uncommitted and retries it in the same partition lane.
 type RecordProcessor func(context.Context, *kgo.Record) error
 
@@ -282,7 +282,7 @@ func NewPartitionRunner(
 	return runner
 }
 
-// NewPartitionBatchRunner creates a partition-aware runner for partition-local bacthes.
+// NewPartitionBatchRunner creates a partition-aware runner for partition-local batches.
 func NewPartitionBatchRunner(
 	client partitionClient,
 	processBatch RecordBatchProcessor,

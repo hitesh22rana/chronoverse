@@ -102,14 +102,14 @@ func (r *Repository) sendJobCanceledNotification(
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	job *jobspb.JobsResponse,
 ) {
-	// This context is used for sending notifications, as we don't want to propagate the cancellation.
+	// Detached context for notifications; ignores cancellation.
 	notificationCtx, err := r.withAuthorization(context.WithoutCancel(parentCtx))
 	if err != nil {
 		return
 	}
 
 	// Send notification for the job termination.
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete.
+	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution.
 	go r.sendNotification(
 		notificationCtx,
@@ -130,14 +130,14 @@ func (r *Repository) sendWorkflowTerminatedNotification(
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	workflowEvent *workflowsmodel.WorkflowEvent,
 ) {
-	// This context is used for sending notifications, as we don't want to propagate the cancellation.
+	// Detached context for notifications; ignores cancellation.
 	notificationCtx, err := r.withAuthorization(context.WithoutCancel(parentCtx))
 	if err != nil {
 		return
 	}
 
 	// Send notification for the workflow termination.
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete.
+	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution.
 	go r.sendNotification(
 		notificationCtx,
@@ -502,7 +502,6 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 	workflowID := workflowEvent.ID
 	userID := workflowEvent.UserID
 
-	// Issue necessary headers and tokens for authorization
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
 		return err

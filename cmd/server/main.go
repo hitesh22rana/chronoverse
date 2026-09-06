@@ -27,9 +27,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -38,32 +36,27 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Load the server configuration
 	cfg, err := config.InitServerConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the auth issuer
 	auth, err := authpkg.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the crypto module
 	crypto, err := crypto.New(cfg.Crypto.Secret)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Connect to the users service
 	usersConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.UsersService.Host,
@@ -84,7 +77,6 @@ func run() int {
 	}
 	defer usersConn.Close()
 
-	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.WorkflowsService.Host,
@@ -105,7 +97,6 @@ func run() int {
 	}
 	defer workflowsConn.Close()
 
-	// Connect to the jobs service
 	jobsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.JobsService.Host,
@@ -126,7 +117,6 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
-	// Connect to the notifications service
 	notificationsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.NotificationsService.Host,
@@ -147,7 +137,6 @@ func run() int {
 	}
 	defer notificationsConn.Close()
 
-	// Connect to the analytics service
 	analyticsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.AnalyticsService.Host,
@@ -168,7 +157,6 @@ func run() int {
 	}
 	defer analyticsConn.Close()
 
-	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
 		Port:                     cfg.Redis.Port,
@@ -223,7 +211,6 @@ func run() int {
 		analyticspb.NewAnalyticsServiceClient(analyticsConn),
 	)
 
-	// Log the server information
 	loggerpkg.FromContext(ctx).Info(
 		"starting server",
 		zap.Any("ctx", ctx),
@@ -236,7 +223,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Start the http server
 	if err := srv.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

@@ -86,7 +86,6 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&RegisterUserRequest{
 		Email:          req.GetEmail(),
 		Password:       req.GetPassword(),
@@ -102,13 +101,11 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		return "", "", err
 	}
 
-	// Cache the response in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
 		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
@@ -148,7 +145,6 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&LoginUserRequest{
 		Email:    req.GetEmail(),
 		Password: req.GetPassword(),
@@ -163,13 +159,11 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		return "", "", normalizeLoginError(err)
 	}
 
-	// Cache the response in the background
-	// This is a fire-and-forget operation, so we don't wait for it to complete.
+	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
 
-		// Cache the LoginUser response
 		// The key is in the format "user:{user_id}"
 		cacheKey := fmt.Sprintf("user:%s", res.ID)
 		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
@@ -208,7 +202,6 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&GetUserRequest{
 		ID: req.GetId(),
 	})
@@ -226,7 +219,6 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 			return nil, err
 		}
 	} else {
-		// Cache hit, return cached response
 		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
 		return cacheRes.(*usersmodel.GetUserResponse), nil
 	}
@@ -287,7 +279,6 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&UpdateUserRequest{
 		ID:                     req.GetId(),
 		NotificationPreference: req.GetNotificationPreference(),

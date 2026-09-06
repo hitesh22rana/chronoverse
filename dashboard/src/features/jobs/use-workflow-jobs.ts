@@ -24,7 +24,6 @@ export function useWorkflowJobs(
 
     const isNotWorkflowPath = path !== `/workflows/${workflowId}`
 
-    // Get URL parameters
     let currentCursor = ""
     let statusFilter = ""
     let triggerFilter = ""
@@ -40,7 +39,6 @@ export function useWorkflowJobs(
         triggerFilter = searchParams.get("trigger") || ""
     }
 
-    // Build query parameters for the get jobs request
     const getJobQueryParams = (() => {
         const params = new URLSearchParams()
 
@@ -75,7 +73,6 @@ export function useWorkflowJobs(
         staleTime: queryStaleTimes.workflowJobs,
     })
 
-    // Pagination functions
     const goToNextPage = () => {
         const nextCursor = getJobQuery.data?.cursor
         if (!nextCursor) return false
@@ -97,7 +94,6 @@ export function useWorkflowJobs(
         router.push(`?${params.toString()}`)
     }
 
-    // Apply all filters to the jobs
     const applyAllFilters = (filters: unknown) => {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
@@ -119,7 +115,6 @@ export function useWorkflowJobs(
         router.push(`?${params.toString()}`)
     }
 
-    // Clear all filters
     const clearAllFilters = () => {
         const oldParams = new URLSearchParams(searchParams.toString())
         const tab = oldParams.get("tab")

@@ -77,7 +77,6 @@ func (n *Notifications) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServe
 			return handler(ctx, req)
 		}
 
-		// Extract the authToken from metadata.
 		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(ctx)
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
@@ -205,7 +204,7 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 }
 
 // CreateNotification creates a new notification.
-// This is an internal method used by internal services, and it should not be exposed to the public.
+// Internal only; not public API.
 func (n *Notifications) CreateNotification(
 	ctx context.Context,
 	req *notificationspb.CreateNotificationRequest,

@@ -17,7 +17,6 @@ type registerRequest struct {
 	Password string `json:"password"`
 }
 
-// handleRegisterUser handles the register request.
 func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 	idempotencyKey, ok := idempotencyKeyFromHeader(r)
 	if !ok {
@@ -76,7 +75,6 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// handleLoginUser handles the login request.
 func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
@@ -123,13 +121,11 @@ func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// handleLogout handles the logout request.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Delete the csrf and session cookies
 	setCookie(w, csrfCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, -1, s.hostConfig.SameSite)
 	setCookie(w, sessionCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, -1, s.hostConfig.SameSite)
 
-	// Get the session from the context
 	session, err := sessionFromContext(r.Context())
 	if err != nil {
 		http.Error(w, "session not found in context", http.StatusUnauthorized)
@@ -145,14 +141,11 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleValidate handles the validate request.
 func (s *Server) handleValidate(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleGetUser handles the get user request.
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -184,7 +177,6 @@ type updateUserRequest struct {
 	NotificationPreference string `json:"notification_preference"`
 }
 
-// handleUpdateUser handles the update user request.
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	var req updateUserRequest
 	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
@@ -192,7 +184,6 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)

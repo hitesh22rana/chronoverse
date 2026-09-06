@@ -44,14 +44,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	occurrenceKey := workflowOccurrenceKey(workflowEvent)
 	scheduleIdempotencyKey := idempotency.AutomaticScheduleEventKey(occurrenceKey)
 
-	// Issue necessary headers and tokens for authorization
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
 		return err
 	}
 
-	// This context is used for sending notifications, as we don't want to propagate the cancellation
-	// This context does not use the parent context
+	// Detached context for notifications; ignores cancellation.
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
 	notificationCtx, _ := r.withAuthorization(context.Background())
 
@@ -166,7 +164,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		}
 
 		// Send notification for the workflow build skipped event
-		// This is a fire-and-forget operation, so we don't need to wait for it to complete
+		// Fire-and-forget; do not wait.
 		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
 			notificationCtx,
@@ -207,7 +205,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	}
 
 	// Send notification for the workflow build start event
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
+	// Fire-and-forget; do not wait.
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 	go r.sendNotification(
 		notificationCtx,
@@ -250,8 +248,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
 	ctx, _ = r.withAuthorization(ctx)
 
-	// This context is used for sending notifications, as we don't want to propagate the cancellation
-	// This context does not use the parent context
+	// Detached context for notifications; ignores cancellation.
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
 	notificationCtx, _ = r.withAuthorization(context.Background())
 
@@ -278,7 +275,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		}
 
 		// Send notification for the workflow build failed event
-		// This is a fire-and-forget operation, so we don't need to wait for it to complete
+		// Fire-and-forget; do not wait.
 		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
 			notificationCtx,
@@ -313,7 +310,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	}
 
 	// Send notification for the workflow build completed event
-	// This is a fire-and-forget operation, so we don't need to wait for it to complete
+	// Fire-and-forget; do not wait.
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
 	go r.sendNotification(
 		notificationCtx,

@@ -63,7 +63,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     const canFetch = shouldFetch && Boolean(workflowId) && Boolean(jobId)
 
-    // Download raw logs from backend and trigger browser file download
     const downloadLogsMutation = useMutation({
         mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
             const params = new URLSearchParams(getSearchQueryParams)
@@ -122,7 +121,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         enabled: canFetch && !getSearchQueryParams,
     })
 
-    // Search job logs query
     const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
         queryKey: queryKeys.job.logSearch(workflowId, jobId, searchQuery, streamFilter),
         queryFn: async ({ pageParam }) => {
@@ -152,7 +150,6 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         enabled: canFetch && Boolean(getSearchQueryParams),
     });
 
-    // Handle SSE connection for running jobs
     useEffect(() => {
         if (!shouldFetch || !isRunning || Boolean(getSearchQueryParams) || !workflowId || !jobId) {
             return
@@ -178,7 +175,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         eventSource.addEventListener('error', handleError)
 
         eventSource.onerror = () => {
-            // No error toast for normal disconnections
+            // Silent on normal disconnects.
             if (eventSource.readyState !== EventSource.CLOSED) {
                 toast.error('Lost connection to log stream')
             }

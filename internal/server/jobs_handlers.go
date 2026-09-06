@@ -31,16 +31,13 @@ type jobLogsDownloadRequest struct {
 	SearchQuery string
 }
 
-// handleListJobs handles the list jobs by job ID request.
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
-	// Get the job ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -53,10 +50,8 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get cursor from the query parameters
 	cursor := r.URL.Query().Get("cursor")
 
-	// Get status from the query parameters
 	status := r.URL.Query().Get("status")
 	if status != "" {
 		// Validate the job status
@@ -91,23 +86,19 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleManualScheduleJob handles the manual schedule job request.
 func (s *Server) handleManualScheduleJob(w http.ResponseWriter, r *http.Request) {
-	// Get the job ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -139,30 +130,25 @@ func (s *Server) handleManualScheduleJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	//nolint:errcheck // The error is always nil
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleGetJob handles the get job by job ID request.
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	// Get the job ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the job ID from the path parameters
 	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -186,7 +172,6 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	if isTerminalJobStatus(res.GetStatus()) {
 		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
@@ -197,23 +182,19 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleGetJobLogs handles the get job logs by job ID request.
 func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
-	// Get the job ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the job ID from the path parameters
 	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -226,7 +207,6 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get cursor from the query parameters
 	cursor := r.URL.Query().Get("cursor")
 
 	// GetJobLogs gets the job logs by job ID.
@@ -244,7 +224,6 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	setJobLogsCacheControl(w, cursor, res.GetCursor())
 
@@ -253,23 +232,19 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleSearchJobLogs handles the search job logs by job ID and filters request.
 func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
-	// Get the job ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the job ID from the path parameters
 	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -282,10 +257,8 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get cursor from the query parameters
 	cursor := r.URL.Query().Get("cursor")
 
-	// Get status from the query parameters
 	stream, err := getJobLogsStreamType(r.URL.Query().Get("stream"))
 	if err != nil {
 		http.Error(w, "invalid log stream type", http.StatusBadRequest)
@@ -327,7 +300,6 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
 	w.Header().Set("Content-Type", "application/json")
 	setJobLogsCacheControl(w, cursor, res.GetCursor())
 
@@ -644,23 +616,19 @@ func writeJobLogsDownloadError(w io.Writer, format, message string, err error) {
 	}
 }
 
-// handleJobEvents handles the job events by job ID request.
 func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
-	// Get the workflow ID from the path parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "workflow ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the job ID from the path parameters
 	jobID := r.PathValue("job_id")
 	if jobID == "" {
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)

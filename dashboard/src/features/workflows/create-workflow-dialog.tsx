@@ -51,7 +51,6 @@ import {
 
 import { useWorkflows } from "@/features/workflows/use-workflows"
 
-// Base schema for common fields
 const baseCreateWorkflowSchema = z.object({
     name: z.string().trim().min(3, "Name must be at least 3 characters").max(50, "Name must be at most 50 characters"),
     interval: z.union([
@@ -68,7 +67,6 @@ const baseCreateWorkflowSchema = z.object({
     retainLogs: z.boolean().default(true)
 })
 
-// Heartbeat payload schema
 const heartbeatPayloadSchema = z.object({
     endpoint: z.url().trim().refine(val => val !== "", {
         message: "Please enter a valid URL"
@@ -94,7 +92,6 @@ const heartbeatPayloadSchema = z.object({
         }, "Timeout must be a valid duration (e.g., '30s', '1m') max up to 5 minutes")
 })
 
-// Container payload schema
 const containerPayloadSchema = z.object({
     image: z.string().trim().min(1, "Container image is required"),
     cmd: z.array(z.string().trim())
@@ -117,7 +114,6 @@ const containerPayloadSchema = z.object({
         }, "Timeout must be a valid duration (e.g., '30s', '5m') max up to 1 hour")
 })
 
-// Complete workflow schemas with discriminated union
 const heartbeatWorkflowSchema = baseCreateWorkflowSchema.extend({
     kind: z.literal("HEARTBEAT"),
     heartbeatPayload: heartbeatPayloadSchema,
@@ -131,7 +127,6 @@ const containerWorkflowSchema = baseCreateWorkflowSchema.extend({
     containerPayload: containerPayloadSchema,
 })
 
-// Union the schemas to handle different kinds
 const workflowSchema = z.discriminatedUnion("kind", [
     heartbeatWorkflowSchema,
     containerWorkflowSchema
@@ -253,7 +248,6 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
                 env: [],
                 timeout: "",
             }
-            // parse env in key=value format and map to object
             const envObject = env.reduce((acc, item) => {
                 const [key, value] = item.split("=")
                 if (key) {
@@ -270,7 +264,6 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
             })
         }
 
-        // Submit the workflow with the constructed payload
         createWorkflow({
             name: data.name,
             kind: data.kind,
@@ -283,7 +276,6 @@ export function CreateWorkflowDialog({ open, onOpenChange }: CreateWorkflowDialo
         onOpenChange(false)
     }
 
-    // Get current field values based on selected kind
     const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
     const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
     const watchedCmdIds = useWatch({ control: form.control, name: "containerPayload.cmdIds" })
@@ -331,7 +323,6 @@ function renderCreateWorkflowDialogView(model: any) {
         <Dialog
             open={open}
             onOpenChange={(newOpen) => {
-                // Prevent closing if creating
                 if (isCreating && !newOpen) return;
                 onOpenChange(newOpen)
             }}

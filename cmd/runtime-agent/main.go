@@ -23,9 +23,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 

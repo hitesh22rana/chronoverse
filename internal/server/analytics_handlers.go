@@ -7,9 +7,7 @@ import (
 	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 )
 
-// handleGetUserAnalytics handles the get user analytics request.
 func (s *Server) handleGetUserAnalytics(w http.ResponseWriter, r *http.Request) {
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -36,7 +34,6 @@ func (s *Server) handleGetUserAnalytics(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(newUserAnalyticsHTTPResponse(res))
 }
 
-// handleGetWorkflowAnalytics handles the get workflow analytics request.
 func (s *Server) handleGetWorkflowAnalytics(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
@@ -44,7 +41,6 @@ func (s *Server) handleGetWorkflowAnalytics(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)

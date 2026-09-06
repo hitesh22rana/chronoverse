@@ -26,9 +26,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -37,25 +35,21 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Load the users service configuration
 	cfg, err := config.InitUsersServiceConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the auth issuer
 	auth, err := auth.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the postgres store
 	pdb, err := postgres.New(ctx, &postgres.Config{
 		Host:        cfg.Postgres.Host,
 		Port:        cfg.Postgres.Port,
@@ -80,7 +74,6 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	// Initialize the redis store
 	rdb, err := redis.New(ctx, &redis.Config{
 		Host:                     cfg.Redis.Host,
 		Port:                     cfg.Redis.Port,
@@ -106,16 +99,12 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	// Initialize the users repository
 	repo := usersrepo.New(auth, pdb)
 
-	// Initialize the validator utility
 	validator := validator.New()
 
-	// Initialize the users service
 	svc := userssvc.New(validator, repo, rdb)
 
-	// Initialize the users application
 	app := users.New(ctx, &users.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
 		Environment: cfg.Environment.Env,
@@ -127,7 +116,6 @@ func run() int {
 		},
 	}, auth, svc)
 
-	// Create a TCP listener
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Grpc.Port))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create listener: %v\n", err)
@@ -136,7 +124,6 @@ func run() int {
 
 	go grpcserverpkg.GracefulStop(ctx, app, 20*time.Second)
 
-	// Log the service information
 	loggerpkg.FromContext(ctx).Info(
 		"starting service",
 		zap.Any("ctx", ctx),
@@ -149,7 +136,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Start the gRPC server
 	if err := app.Serve(listener); err != nil {
 		if ctx.Err() != nil {
 			return ExitOk

@@ -19,7 +19,6 @@ type createWorkflowRequest struct {
 	LogRetention                     *bool  `json:"log_retention"`
 }
 
-// handleCreateWorkflow handles the create workflow request.
 func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req createWorkflowRequest
 	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
@@ -27,7 +26,6 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -56,12 +54,11 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey:                   idempotencyKey,
 	}
 
-	// If log retention is provided, set it in the proto request, otherwise it will be set to the default value in the service layer.
+	// Forward log retention only when set; service applies default otherwise.
 	if req.LogRetention != nil {
 		protoReq.LogRetention = req.LogRetention
 	}
 
-	// CreateWorkflow creates a new workflow.
 	res, err := s.workflowsClient.CreateWorkflow(r.Context(), protoReq)
 	if err != nil {
 		handleError(w, err, "failed to create workflow")
@@ -81,7 +78,6 @@ type updateWorkflowRequest struct {
 	MaxConsecutiveJobFailuresAllowed int32  `json:"max_consecutive_job_failures_allowed"`
 }
 
-// handleUpdateWorkflow handles the update workflow request.
 func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req updateWorkflowRequest
 	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
@@ -89,14 +85,12 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the workflow ID from the path parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "workflow ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -115,7 +109,6 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// UpdateWorkflow updates the workflow details.
 	_, err := s.workflowsClient.UpdateWorkflow(r.Context(), &workflowspb.UpdateWorkflowRequest{
 		Id:                               workflowID,
 		UserId:                           userID,
@@ -133,16 +126,13 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleGetWorkflow handles the get workflow by ID and user ID request.
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
-	// Get the workflow ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "workflow ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -155,7 +145,6 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GetWorkflow gets the workflow by ID.
 	res, err := s.workflowsClient.GetWorkflow(r.Context(), &workflowspb.GetWorkflowRequest{
 		Id:     workflowID,
 		UserId: userID,
@@ -171,16 +160,13 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleTerminateWorkflow handles the terminate workflow by ID and user ID request.
 func (s *Server) handleTerminateWorkflow(w http.ResponseWriter, r *http.Request) {
-	// Get the workflow ID from the path	parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "workflow ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -193,7 +179,6 @@ func (s *Server) handleTerminateWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TerminateWorkflow terminates the workflow by ID.
 	_, err := s.workflowsClient.TerminateWorkflow(r.Context(), &workflowspb.TerminateWorkflowRequest{
 		Id:     workflowID,
 		UserId: userID,
@@ -206,16 +191,13 @@ func (s *Server) handleTerminateWorkflow(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleDeleteWorkflow handles the delete workflow by ID and user ID request.
 func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
-	// Get the workflow ID from the path parameters
 	workflowID := r.PathValue("workflow_id")
 	if workflowID == "" {
 		http.Error(w, "workflow ID not found", http.StatusBadRequest)
 		return
 	}
 
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -228,7 +210,6 @@ func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DeleteWorkflow deletes the workflow by ID.
 	_, err := s.workflowsClient.DeleteWorkflow(r.Context(), &workflowspb.DeleteWorkflowRequest{
 		Id:     workflowID,
 		UserId: userID,
@@ -241,11 +222,9 @@ func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListWorkflows handles the list workflows by user ID request.
 //
 //nolint:gocyclo // This function is complex and can be simplified further.
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
-	// Get the user ID from the context
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -258,7 +237,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get cursor from the query parameters
 	cursor := r.URL.Query().Get("cursor")
 
 	// 1. query
@@ -267,7 +245,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	// 2. kind
 	kind := r.URL.Query().Get("kind")
 	if kind != "" {
-		// Validate kind
 		if !isValidKind(kind) {
 			http.Error(w, "invalid kind", http.StatusBadRequest)
 			return
@@ -277,7 +254,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	// 3. build_status
 	buildStatus := r.URL.Query().Get("build_status")
 	if buildStatus != "" {
-		// Validate build status
 		if !isValidBuildStatus(buildStatus) {
 			http.Error(w, "invalid build status", http.StatusBadRequest)
 			return
@@ -315,7 +291,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ListWorkflows lists the workflows by user ID.
 	res, err := s.workflowsClient.ListWorkflows(r.Context(), &workflowspb.ListWorkflowsRequest{
 		UserId: userID,
 		Cursor: cursor,

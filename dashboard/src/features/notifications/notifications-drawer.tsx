@@ -112,7 +112,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         hasNextPage,
     } = useNotifications()
 
-    // Group notifications by date and flatten with headings
     const flat: FlatRow[] = (() => {
         if (notifications.length === 0) return []
         const groups = new Map<string, Notification[]>()
@@ -132,7 +131,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         return result
     })()
 
-    // Bulk selection
     const [selected, setSelected] = useState<Set<string>>(new Set())
     const notificationIds = new Set(notifications.map((notification) => notification.id))
     const visibleSelected = new Set([...selected].filter((id) => notificationIds.has(id)))
@@ -192,7 +190,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         onClose()
     }
 
-    // Item renderer
     const renderRow = (index: number) => {
         const d = flat[index]
         if (!d) return null

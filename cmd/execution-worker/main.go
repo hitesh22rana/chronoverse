@@ -35,9 +35,7 @@ import (
 )
 
 const (
-	// ExitOk and ExitError are the exit codes.
 	ExitOk = iota
-	// ExitError is the exit code for errors.
 	ExitError
 )
 
@@ -46,11 +44,9 @@ func main() {
 }
 
 func run() int {
-	// Initialize the service with, all necessary components
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	// Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -58,7 +54,6 @@ func run() int {
 		cancel()
 	}()
 
-	// Load the execution service configuration
 	cfg, err := config.InitExecutionJobConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -73,14 +68,12 @@ func run() int {
 		return ExitError
 	}
 
-	// Initialize the auth issuer
 	auth, err := auth.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	// Initialize the kafka client
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
 	kfk, err := kafka.New(ctx,
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
@@ -151,7 +144,6 @@ func run() int {
 		}
 	}()
 
-	// Connect to the workflows service
 	workflowsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.WorkflowsService.Host,
@@ -172,7 +164,6 @@ func run() int {
 	}
 	defer workflowsConn.Close()
 
-	// Connect to the jobs service
 	jobsConn, err := grpcclient.NewClient(
 		&grpcclient.ServiceConfig{
 			Host: cfg.JobsService.Host,
@@ -193,7 +184,6 @@ func run() int {
 	}
 	defer jobsConn.Close()
 
-	// Initialize the execution job components
 	repo, err := executorrepo.New(&executorrepo.Config{
 		WorkerID:                    cfg.ExecutionWorkerConfig.WorkerID,
 		Concurrency:                 cfg.ExecutionWorkerConfig.Concurrency,
@@ -233,7 +223,6 @@ func run() int {
 	svc := executorsvc.New(repo)
 	app := executor.New(ctx, svc)
 
-	// Log the job information
 	loggerpkg.FromContext(ctx).Info(
 		"starting job",
 		zap.Any("ctx", ctx),
@@ -244,7 +233,6 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	// Run the execution job
 	if err := app.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

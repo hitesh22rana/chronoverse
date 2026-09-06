@@ -65,7 +65,6 @@ func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.C
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&CreateNotificationRequest{
 		UserID:         req.GetUserId(),
 		Kind:           req.GetKind(),
@@ -115,7 +114,6 @@ func (s *Service) MarkNotificationsRead(ctx context.Context, req *notificationsp
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&MarkNotificationsRead{
 		IDs:    req.GetIds(),
 		UserID: req.GetUserId(),
@@ -150,7 +148,6 @@ func (s *Service) ListNotifications(
 		span.End()
 	}()
 
-	// Validate the request
 	err = s.validator.Struct(&ListNotificationsRequest{
 		UserID: req.GetUserId(),
 		Cursor: req.GetCursor(),

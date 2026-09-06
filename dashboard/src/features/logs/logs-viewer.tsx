@@ -500,7 +500,6 @@ export function LogsViewer({
         />
     )
 
-    // Trigger pagination only when user reaches bottom of the Virtuoso viewport
     const handleEndReached = () => {
         if (hasNextPage && !isFetchingNextPage) {
             fetchNextPage()

@@ -22,17 +22,14 @@ import (
 func TestService_CreateNotification(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := notificationsmock.NewMockRepository(ctrl)
 
-	// Create a new service
 	s := notifications.New(validator.New(), repo)
 
 	type want struct {
 		notificationID string
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *notificationspb.CreateNotificationRequest
@@ -173,17 +170,14 @@ func TestService_CreateNotificationRejectsNonObjectPayload(t *testing.T) {
 func TestService_MarkNotificationsRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := notificationsmock.NewMockRepository(ctrl)
 
-	// Create a new service
 	s := notifications.New(validator.New(), repo)
 
 	type want struct {
 		err error
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *notificationspb.MarkNotificationsReadRequest
@@ -277,10 +271,8 @@ func TestService_MarkNotificationsRead(t *testing.T) {
 func TestService_ListNotifications(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := notificationsmock.NewMockRepository(ctrl)
 
-	// Create a new service
 	s := notifications.New(validator.New(), repo)
 
 	type want struct {
@@ -295,7 +287,6 @@ func TestService_ListNotifications(t *testing.T) {
 		singleflightReleaseChan chan struct{}
 	)
 
-	// Test cases
 	tests := []struct {
 		name    string
 		req     *notificationspb.ListNotificationsRequest

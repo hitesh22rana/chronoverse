@@ -16,10 +16,8 @@ import (
 func TestRun(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	mockRepo := analyticsprocessormock.NewMockRepository(ctrl)
 
-	// Create a new service
 	s := analyticsprocessor.New(mockRepo)
 
 	type want struct {

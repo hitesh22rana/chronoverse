@@ -15,10 +15,8 @@ import (
 func TestRun(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	mockRepo := joblogsmock.NewMockRepository(ctrl)
 
-	// Create a new service
 	s := joblogs.New(mockRepo)
 
 	type want struct {

@@ -21,11 +21,9 @@ import (
 func TestRegisterUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
 	cache := usersmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := users.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -33,7 +31,6 @@ func TestRegisterUser(t *testing.T) {
 		pat    string
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *userspb.RegisterUserRequest
@@ -62,7 +59,6 @@ func TestRegisterUser(t *testing.T) {
 					UpdatedAt:              time.Now(),
 				}, "token", nil)
 
-				// Simulate cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -154,11 +150,9 @@ func TestRegisterUser(t *testing.T) {
 func TestLoginUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
 	cache := usersmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := users.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -167,7 +161,6 @@ func TestLoginUser(t *testing.T) {
 		code   codes.Code
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *userspb.LoginUserRequest
@@ -194,7 +187,6 @@ func TestLoginUser(t *testing.T) {
 					UpdatedAt:              time.Now(),
 				}, "token", nil)
 
-				// Simulate cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -301,11 +293,9 @@ func TestLoginUser(t *testing.T) {
 func TestGetUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
 	cache := usersmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := users.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -319,7 +309,6 @@ func TestGetUser(t *testing.T) {
 		singleflightReleaseChan chan struct{}
 	)
 
-	// Test cases
 	tests := []struct {
 		name    string
 		req     *userspb.GetUserRequest
@@ -334,7 +323,6 @@ func TestGetUser(t *testing.T) {
 				Id: "userID",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				// Simulate cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -352,7 +340,6 @@ func TestGetUser(t *testing.T) {
 					UpdatedAt:              updatedAt,
 				}, nil)
 
-				// Simulate cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -377,7 +364,6 @@ func TestGetUser(t *testing.T) {
 				Id: "userID",
 			},
 			mock: func(_ *userspb.GetUserRequest) {
-				// Simulate cache hit
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -492,7 +478,6 @@ func TestGetUser(t *testing.T) {
 				Id: "invalid_user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				// Simulate cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -513,7 +498,6 @@ func TestGetUser(t *testing.T) {
 				Id: "invalid_user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				// Simulate cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -534,7 +518,6 @@ func TestGetUser(t *testing.T) {
 				Id: "user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				// Simulate cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -582,11 +565,9 @@ func TestGetUser(t *testing.T) {
 func TestUpdateUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := usersmock.NewMockRepository(ctrl)
 	cache := usersmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := users.New(validator.New(), repo, cache)
 
 	tests := []struct {
@@ -608,7 +589,6 @@ func TestUpdateUser(t *testing.T) {
 					req.GetNotificationPreference(),
 				).Return(nil)
 
-				// Simulate cache invalidation
 				cache.EXPECT().Delete(
 					gomock.Any(),
 					gomock.Any(),

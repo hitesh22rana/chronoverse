@@ -26,18 +26,15 @@ import (
 func TestScheduleJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		jobID string
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *jobspb.ScheduleJobRequest
@@ -406,11 +403,9 @@ func TestTerminalReasonValidation(t *testing.T) {
 func TestGetJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -431,7 +426,6 @@ func TestGetJob(t *testing.T) {
 		}
 	)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *jobspb.GetJobRequest
@@ -590,11 +584,9 @@ func TestGetJob(t *testing.T) {
 func TestGetJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -615,7 +607,6 @@ func TestGetJobByID(t *testing.T) {
 		}
 	)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *jobspb.GetJobByIDRequest
@@ -724,11 +715,9 @@ func TestGetJobByID(t *testing.T) {
 func TestGetJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -741,7 +730,6 @@ func TestGetJobLogs(t *testing.T) {
 		singleflightReleaseChan chan struct{}
 	)
 
-	// Test cases
 	tests := []struct {
 		name    string
 		req     *jobspb.GetJobLogsRequest
@@ -1332,18 +1320,15 @@ func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 func TestStreamJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
 		channelType string
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *jobspb.StreamJobLogsRequest
@@ -1369,7 +1354,6 @@ func TestStreamJobLogs(t *testing.T) {
 					req.GetUserId(),
 				).Return(sub, nil)
 
-				// Simulate sending logs to the channel
 				go func() {
 					redisMock.Publish(t.Context(), "job_logs", &jobsmodel.JobLog{
 						Timestamp:   time.Now(),
@@ -1517,11 +1501,9 @@ func searchJobLogsOptionsForTest(req *jobspb.SearchJobLogsRequest) jobsmodel.Sea
 func TestSearchJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -1530,7 +1512,6 @@ func TestSearchJobLogs(t *testing.T) {
 
 	timestamp := time.Now()
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *jobspb.SearchJobLogsRequest
@@ -2006,11 +1987,9 @@ func TestSearchJobLogs(t *testing.T) {
 func TestListJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := jobsmock.NewMockRepository(ctrl)
 	cache := jobsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := jobs.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -2031,7 +2010,6 @@ func TestListJobs(t *testing.T) {
 		}
 	)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *jobspb.ListJobsRequest

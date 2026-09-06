@@ -26,18 +26,15 @@ func boolPtr(b bool) *bool {
 func TestCreateWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
 		workflowID string
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.CreateWorkflowRequest
@@ -86,13 +83,11 @@ func TestCreateWorkflow(t *testing.T) {
 					LogRetention: false,
 				}, nil)
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(int64(0), nil).AnyTimes()
 
-				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -145,13 +140,11 @@ func TestCreateWorkflow(t *testing.T) {
 					LogRetention: true,
 				}, nil)
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(int64(0), nil).AnyTimes()
 
-				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -205,13 +198,11 @@ func TestCreateWorkflow(t *testing.T) {
 					LogRetention: false,
 				}, nil)
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(int64(0), nil).AnyTimes()
 
-				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -265,13 +256,11 @@ func TestCreateWorkflow(t *testing.T) {
 					LogRetention: true,
 				}, nil)
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(int64(0), nil).AnyTimes()
 
-				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -325,13 +314,11 @@ func TestCreateWorkflow(t *testing.T) {
 					LogRetention: false,
 				}, nil)
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(int64(0), nil).AnyTimes()
 
-				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -462,14 +449,11 @@ func TestCreateWorkflow(t *testing.T) {
 func TestUpdateWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.UpdateWorkflowRequest
@@ -499,13 +483,11 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetIdempotencyKey(),
 				).Return(nil)
 
-				// Simulate a cache delete
 				cache.EXPECT().Delete(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
@@ -625,14 +607,11 @@ func TestUpdateWorkflow(t *testing.T) {
 func TestUpdateWorkflowBuildStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.UpdateWorkflowBuildStatusRequest
@@ -660,13 +639,11 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetResolvedImageDigest(),
 				).Return(nil)
 
-				// Simulate a cache delete
 				cache.EXPECT().Delete(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
@@ -776,11 +753,9 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 func TestGetWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -798,7 +773,6 @@ func TestGetWorkflow(t *testing.T) {
 		}
 	)
 
-	// Test cases
 	tests := []struct {
 		name    string
 		req     *workflowspb.GetWorkflowRequest
@@ -814,7 +788,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				// Simulate a cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -840,13 +813,11 @@ func TestGetWorkflow(t *testing.T) {
 					LogRetention:                     true,
 				}, nil)
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(int64(0), nil).AnyTimes()
 
-				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -879,7 +850,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				// Simulate a cache hit
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -1031,7 +1001,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "invalid_user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				// Simulate a cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -1054,7 +1023,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				// Simulate a cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -1077,7 +1045,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				// Simulate a cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -1126,11 +1093,9 @@ func TestGetWorkflow(t *testing.T) {
 func TestGetWorkflowByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -1146,7 +1111,6 @@ func TestGetWorkflowByID(t *testing.T) {
 		}
 	)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.GetWorkflowByIDRequest
@@ -1263,18 +1227,15 @@ func TestGetWorkflowByID(t *testing.T) {
 func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
 		thresholdReached bool
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest
@@ -1297,13 +1258,11 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					req.GetJobId(),
 				).Return(false, nil)
 
-				// Simulate a cache delete
 				cache.EXPECT().Delete(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
@@ -1413,14 +1372,11 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest
@@ -1442,13 +1398,11 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					req.GetJobId(),
 				).Return(nil)
 
-				// Simulate a cache delete
 				cache.EXPECT().Delete(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
@@ -1526,14 +1480,11 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 func TestTerminateWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.TerminateWorkflowRequest
@@ -1553,13 +1504,11 @@ func TestTerminateWorkflow(t *testing.T) {
 					req.GetUserId(),
 				).Return(nil)
 
-				// Simulate a cache delete
 				cache.EXPECT().Delete(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
@@ -1641,14 +1590,11 @@ func TestTerminateWorkflow(t *testing.T) {
 func TestDeleteWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.DeleteWorkflowRequest
@@ -1668,13 +1614,11 @@ func TestDeleteWorkflow(t *testing.T) {
 					req.GetUserId(),
 				).Return(nil)
 
-				// Simulate a cache delete
 				cache.EXPECT().Delete(
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil).AnyTimes()
 
-				// Simulate a cache delete by pattern
 				cache.EXPECT().DeleteByPattern(
 					gomock.Any(),
 					gomock.Any(),
@@ -1757,11 +1701,9 @@ func TestDeleteWorkflow(t *testing.T) {
 func TestListWorkflows(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := workflowsmock.NewMockRepository(ctrl)
 	cache := workflowsmock.NewMockCache(ctrl)
 
-	// Create a new service
 	s := workflows.New(validator.New(), repo, cache)
 
 	type want struct {
@@ -1777,7 +1719,6 @@ func TestListWorkflows(t *testing.T) {
 		}
 	)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *workflowspb.ListWorkflowsRequest
@@ -1792,7 +1733,6 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
-				// Simulate a cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -1824,7 +1764,6 @@ func TestListWorkflows(t *testing.T) {
 					Cursor: "",
 				}, nil)
 
-				// Simulate a cache set
 				cache.EXPECT().Set(
 					gomock.Any(),
 					gomock.Any(),
@@ -1862,7 +1801,6 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				// Simulate a cache hit using a pre-defined response
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
@@ -1927,14 +1865,12 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
-				// Simulate a cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),
 					gomock.Any(),
 				).Return(nil, status.Error(codes.NotFound, "cache miss"))
 
-				// Simulate a repository call
 				// This should return an error
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
@@ -1953,7 +1889,6 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
-				// Simulate a cache miss
 				cache.EXPECT().Get(
 					gomock.Any(),
 					gomock.Any(),

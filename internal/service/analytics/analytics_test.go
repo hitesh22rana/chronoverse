@@ -22,10 +22,8 @@ import (
 func TestGetUserAnalytics(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := analyticsmock.NewMockRepository(ctrl)
 
-	// Create a new service
 	s := analytics.New(validator.New(), repo)
 
 	var (
@@ -33,7 +31,6 @@ func TestGetUserAnalytics(t *testing.T) {
 		singleflightReleaseChan chan struct{}
 	)
 
-	// Test cases
 	tests := []struct {
 		name    string
 		req     *analyticspb.GetUserAnalyticsRequest
@@ -195,13 +192,10 @@ func TestGetUserAnalytics(t *testing.T) {
 func TestGetWorkflowAnalytics(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	// Create a mock repository
 	repo := analyticsmock.NewMockRepository(ctrl)
 
-	// Create a new service
 	s := analytics.New(validator.New(), repo)
 
-	// Test cases
 	tests := []struct {
 		name  string
 		req   *analyticspb.GetWorkflowAnalyticsRequest

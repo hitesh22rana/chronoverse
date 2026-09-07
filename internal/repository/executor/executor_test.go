@@ -177,6 +177,20 @@ func TestClassifyExecutionFailure(t *testing.T) {
 			kind:      jobsmodel.FailureKindUser.ToString(),
 			reason:    terminalreason.NonZeroExit.String(),
 		},
+		{
+			name:      "http 429 is retryable system failure",
+			err:       status.Error(codes.ResourceExhausted, "unexpected status code: got 429, want 200"),
+			retryable: true,
+			kind:      jobsmodel.FailureKindSystem.ToString(),
+			reason:    terminalreason.SystemError.String(),
+		},
+		{
+			name:      "unexpected status is user failure",
+			err:       terminalreason.Wrap(terminalreason.UnexpectedStatusCode, status.Error(codes.FailedPrecondition, "unexpected status code: got 500, want 200")),
+			retryable: false,
+			kind:      jobsmodel.FailureKindUser.ToString(),
+			reason:    terminalreason.UnexpectedStatusCode.String(),
+		},
 	}
 
 	for _, tt := range tests {
@@ -513,6 +527,45 @@ func (fakeAuth) ValidateToken(context.Context, string) (context.Context, *jwt.To
 	return context.Background(), &jwt.Token{}, nil
 }
 
+func TestReleaseClaimForSystemRetryExhaustionReachesTerminalFailure(t *testing.T) {
+	t.Parallel()
+
+	jobsClient := &retryExhaustionJobsClient{}
+	repo := &Repository{
+		cfg:  Config{SystemRetryLimit: 3, SystemRetryBackoff: time.Millisecond},
+		auth: fakeAuth{},
+		svc:  &Services{Jobs: jobsClient},
+	}
+	claim := &jobspb.ClaimJobResponse{Id: "job-1", WorkflowId: "workflow-1", LeaseToken: "lease-1", Attempts: 3}
+	if err := repo.releaseClaimForSystemRetry(context.Background(), claim, status.Error(codes.Unavailable, "docker down")); err == nil {
+		t.Fatal("releaseClaimForSystemRetry() error = nil, want terminal failure")
+	}
+	if got := jobsClient.fails.Load(); got != 1 {
+		t.Fatalf("FailJob calls = %d, want 1", got)
+	}
+	if got := jobsClient.releases.Load(); got != 0 {
+		t.Fatalf("ReleaseJobForRetry calls = %d, want 0 after exhaustion", got)
+	}
+}
+
+func TestReleaseClaimForSystemRetryUsesBoundedBackoff(t *testing.T) {
+	t.Parallel()
+
+	jobsClient := &retryExhaustionJobsClient{}
+	repo := &Repository{
+		cfg:  Config{SystemRetryLimit: 3, SystemRetryBackoff: 30 * time.Second},
+		auth: fakeAuth{},
+		svc:  &Services{Jobs: jobsClient},
+	}
+	claim := &jobspb.ClaimJobResponse{Id: "job-1", WorkflowId: "workflow-1", LeaseToken: "lease-1", Attempts: 2}
+	if err := repo.releaseClaimForSystemRetry(context.Background(), claim, status.Error(codes.Unavailable, "docker down")); err != nil {
+		t.Fatalf("releaseClaimForSystemRetry() error = %v", err)
+	}
+	if got := jobsClient.releases.Load(); got != 1 {
+		t.Fatalf("ReleaseJobForRetry calls = %d, want 1", got)
+	}
+}
+
 type claimErrorJobsClient struct {
 	jobspb.JobsServiceClient
 
@@ -738,4 +791,21 @@ func (*recordingContainerSvc) Remove(context.Context, string) error {
 
 func (*recordingContainerSvc) Terminate(context.Context, string) error {
 	return nil
+}
+
+type retryExhaustionJobsClient struct {
+	jobspb.JobsServiceClient
+
+	releases atomic.Int32
+	fails    atomic.Int32
+}
+
+func (c *retryExhaustionJobsClient) ReleaseJobForRetry(context.Context, *jobspb.ReleaseJobForRetryRequest, ...grpc.CallOption) (*jobspb.ReleaseJobForRetryResponse, error) {
+	c.releases.Add(1)
+	return &jobspb.ReleaseJobForRetryResponse{}, nil
+}
+
+func (c *retryExhaustionJobsClient) FailJob(context.Context, *jobspb.FailJobRequest, ...grpc.CallOption) (*jobspb.FailJobResponse, error) {
+	c.fails.Add(1)
+	return &jobspb.FailJobResponse{}, status.Error(codes.Internal, "docker down")
 }

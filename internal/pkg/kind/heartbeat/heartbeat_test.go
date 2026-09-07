@@ -18,10 +18,15 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
+
+func statusCodeString(err error) string {
+	return status.Code(err).String()
+}
 
 // unguarded returns a HeartBeat whose outbound dialer has no egress guard and
 // whose destination validator accepts anything. It lets these tests exercise
@@ -286,6 +291,21 @@ func TestHeartBeat_Execute_BlockedByDefaultEgressGuard(t *testing.T) {
 	err := heartbeat.New().Execute(t.Context(), 5*time.Second, server.URL, http.StatusOK, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not allowed")
+}
+
+func TestHeartBeat_Execute_TooManyRequestsIsRetryable(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	err := unguarded().Execute(t.Context(), 5*time.Second, server.URL, http.StatusOK, nil)
+	assert.Error(t, err)
+	assert.Equal(t, "ResourceExhausted", statusCodeString(err))
+	_, hasReason := terminalreason.FromError(err)
+	assert.False(t, hasReason, "429 must not carry a terminal user reason")
 }
 
 func TestHeartBeat_Execute_CleansUpTransport(t *testing.T) {

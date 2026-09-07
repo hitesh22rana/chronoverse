@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/component: role
 rules:
 - apiGroups: [""]
-  resources: ["pods", "services", "configmaps", "secrets"]
+  resources: ["pods", "services", "configmaps"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "daemonsets"]

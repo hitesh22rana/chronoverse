@@ -204,6 +204,21 @@ func (mr *MockServiceMockRecorder) ListJobs(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListJobs", reflect.TypeOf((*MockService)(nil).ListJobs), ctx, req)
 }
 
+// ListReadyRuntimeNodes mocks base method.
+func (m *MockService) ListReadyRuntimeNodes(ctx context.Context, req *jobs0.ListReadyRuntimeNodesRequest) (*jobs0.ListReadyRuntimeNodesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListReadyRuntimeNodes", ctx, req)
+	ret0, _ := ret[0].(*jobs0.ListReadyRuntimeNodesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListReadyRuntimeNodes indicates an expected call of ListReadyRuntimeNodes.
+func (mr *MockServiceMockRecorder) ListReadyRuntimeNodes(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReadyRuntimeNodes", reflect.TypeOf((*MockService)(nil).ListReadyRuntimeNodes), ctx, req)
+}
+
 // RecoverExpiredJobLeases mocks base method.
 func (m *MockService) RecoverExpiredJobLeases(ctx context.Context, req *jobs0.RecoverExpiredJobLeasesRequest) ([]*jobs.ExpiredJobLease, error) {
 	m.ctrl.T.Helper()

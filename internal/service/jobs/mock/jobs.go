@@ -207,6 +207,21 @@ func (mr *MockRepositoryMockRecorder) ListJobs(ctx, workflowID, userID, cursor, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListJobs", reflect.TypeOf((*MockRepository)(nil).ListJobs), ctx, workflowID, userID, cursor, filters)
 }
 
+// ListReadyRuntimeNodes mocks base method.
+func (m *MockRepository) ListReadyRuntimeNodes(ctx context.Context) ([]*jobs.RuntimeNode, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListReadyRuntimeNodes", ctx)
+	ret0, _ := ret[0].([]*jobs.RuntimeNode)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListReadyRuntimeNodes indicates an expected call of ListReadyRuntimeNodes.
+func (mr *MockRepositoryMockRecorder) ListReadyRuntimeNodes(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReadyRuntimeNodes", reflect.TypeOf((*MockRepository)(nil).ListReadyRuntimeNodes), ctx)
+}
+
 // RecoverExpiredJobLeases mocks base method.
 func (m *MockRepository) RecoverExpiredJobLeases(ctx context.Context, batchSize int32, workerID, processInstanceID, commandID string, leaseDuration time.Duration) ([]*jobs.ExpiredJobLease, error) {
 	m.ctrl.T.Helper()

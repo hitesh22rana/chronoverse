@@ -412,11 +412,13 @@ The batch size controls how many due workflows are scanned per polling pass.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+- `WORKFLOW_WORKER_IMAGE_PREFETCH_ENABLED`
+- `WORKFLOW_WORKER_IMAGE_PREFETCH_MAX_FANOUT`
 
 These settings coordinate Docker image pulls for replicated workflow workers
 that share a runtime node. The lock is scoped by runtime node and exact image
 string; Docker host is used as a fallback when a request omits an explicit
-runtime scope. Compose defaults are `10m`, `10m`, and `500ms`.
+runtime scope. Compose defaults are `10m`, `10m`, `500ms`, `true`, and `8`.
 Workflow workers do not
 launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
 not apply to this image-pull path. For `CONTAINER` workflows, successful build

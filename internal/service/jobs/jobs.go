@@ -44,6 +44,7 @@ type Repository interface {
 	CancelJob(ctx context.Context, jobID, commandID, terminalReasonCode string) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, jobID, workflowID, workerID, processInstanceID, commandID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobsmodel.ClaimedJob, bool, string, error)
 	GetReadyRuntimeNode(ctx context.Context) (*jobsmodel.RuntimeNode, error)
+	ListReadyRuntimeNodes(ctx context.Context) ([]*jobsmodel.RuntimeNode, error)
 	RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) (time.Time, error)
 	AttachJobContainer(ctx context.Context, jobID, leaseToken, containerID, runtimeNodeID, commandID string) error
 	CompleteJob(ctx context.Context, jobID, leaseToken, commandID string) error
@@ -245,6 +246,33 @@ func (s *Service) GetReadyRuntimeNode(ctx context.Context, _ *jobspb.GetReadyRun
 	}
 
 	return node.ToProto(), nil
+}
+
+// ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
+func (s *Service) ListReadyRuntimeNodes(ctx context.Context, _ *jobspb.ListReadyRuntimeNodesRequest) (res *jobspb.ListReadyRuntimeNodesResponse, err error) {
+	ctx, span := s.tp.Start(ctx, "Service.ListReadyRuntimeNodes")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	nodes, err := s.repo.ListReadyRuntimeNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	res = &jobspb.ListReadyRuntimeNodesResponse{}
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		res.Nodes = append(res.Nodes, node.ToProto())
+	}
+
+	return res, nil
 }
 
 // RenewJobLeaseRequest holds the request parameters for renewing a job lease.

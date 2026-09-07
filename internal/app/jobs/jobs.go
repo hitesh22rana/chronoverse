@@ -40,6 +40,7 @@ var internalAPIs = map[string]bool{
 	"CancelJob":               true,
 	"ClaimJob":                true,
 	"GetReadyRuntimeNode":     true,
+	"ListReadyRuntimeNodes":   true,
 	"RenewJobLease":           true,
 	"AttachJobContainer":      true,
 	"CompleteJob":             true,
@@ -56,6 +57,7 @@ type Service interface {
 	CancelJob(ctx context.Context, req *jobspb.CancelJobRequest) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (*jobspb.ClaimJobResponse, error)
 	GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRuntimeNodeRequest) (*jobspb.GetReadyRuntimeNodeResponse, error)
+	ListReadyRuntimeNodes(ctx context.Context, req *jobspb.ListReadyRuntimeNodesRequest) (*jobspb.ListReadyRuntimeNodesResponse, error)
 	RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest) (time.Time, error)
 	AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest) error
 	CompleteJob(ctx context.Context, req *jobspb.CompleteJobRequest) error
@@ -350,6 +352,23 @@ func (j *Jobs) GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRunt
 	defer cancel()
 
 	return j.svc.GetReadyRuntimeNode(ctx, req)
+}
+
+// ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
+func (j *Jobs) ListReadyRuntimeNodes(ctx context.Context, req *jobspb.ListReadyRuntimeNodesRequest) (res *jobspb.ListReadyRuntimeNodesResponse, err error) {
+	ctx, span := j.tp.Start(ctx, "App.ListReadyRuntimeNodes")
+	defer func() {
+		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
+	defer cancel()
+
+	return j.svc.ListReadyRuntimeNodes(ctx, req)
 }
 
 // RenewJobLease renews a running job lease.

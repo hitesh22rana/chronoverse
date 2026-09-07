@@ -78,3 +78,23 @@ func TestNormalizeConcurrencyFallbackHasFloor(t *testing.T) {
 		t.Fatalf("normalizeConcurrency().Concurrency = %d, want at least 1", cfg.Concurrency)
 	}
 }
+
+func TestSystemRetryBackoffIsBoundedExponential(t *testing.T) {
+	t.Parallel()
+
+	r := &Repository{cfg: defaultConfig()}
+	// default backoff is 30s: 30, 60, 120, 240, capped at 240.
+	want := map[int32]int64{
+		1:  30,
+		2:  60,
+		3:  120,
+		4:  240,
+		5:  240,
+		10: 240,
+	}
+	for attempt, seconds := range want {
+		if got := r.systemRetryBackoff(attempt); int64(got.Seconds()) != seconds {
+			t.Fatalf("systemRetryBackoff(%d) = %v, want %ds", attempt, got, seconds)
+		}
+	}
+}

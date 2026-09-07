@@ -247,10 +247,15 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 		defer r.releaseExecutionSlot()
 
 		execCtx := r.newExecutionContext(ctxWithTrace)
+		start := time.Now()
 		if runErr := r.runClaimedWorkflow(execCtx, claim, scheduledJob.lastScheduledAt, scheduledJob.workflowGeneration); runErr != nil {
 			logger.Warn("claimed job execution finished with error",
 				zap.String("job_id", claim.GetId()),
 				zap.String("workflow_id", claim.GetWorkflowId()),
+				zap.Int32("attempts", claim.GetAttempts()),
+				zap.Int32("dispatch_attempt", scheduledJob.dispatchAttempt),
+				zap.Duration("execution_delay", time.Since(start)),
+				zap.String("error_code", status.Code(runErr).String()),
 				zap.Error(runErr),
 			)
 		}
@@ -263,6 +268,10 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 		zap.Int32("partition", record.Partition),
 		zap.String("job_id", scheduledJob.jobID),
 		zap.String("workflow_id", scheduledJob.workflowID),
+		zap.Int32("dispatch_attempt", scheduledJob.dispatchAttempt),
+		zap.Int32("attempts", claim.GetAttempts()),
+		// ponytail: queue delay distinguishes scheduler wait from execution time.
+		zap.Duration("queue_delay", time.Since(scheduledJob.lastScheduledAt)),
 	)
 
 	return nil
@@ -482,7 +491,8 @@ func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobs
 		return err
 	}
 
-	nextAttemptAt := time.Now().Add(r.systemRetryBackoff(claim.GetAttempts())).Format(time.RFC3339Nano)
+	backoff := r.systemRetryBackoff(claim.GetAttempts())
+	nextAttemptAt := time.Now().Add(backoff).Format(time.RFC3339Nano)
 	_, err = r.svc.Jobs.ReleaseJobForRetry(authCtx, &jobspb.ReleaseJobForRetryRequest{
 		Id:            claim.GetId(),
 		LeaseToken:    claim.GetLeaseToken(),
@@ -493,6 +503,15 @@ func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobs
 	})
 	if err == nil {
 		r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
+		// ponytail: retry delay distinguishes dependency backoff from queue wait.
+		loggerpkg.FromContext(ctx).Info("job released for system retry",
+			zap.String("job_id", claim.GetId()),
+			zap.String("workflow_id", claim.GetWorkflowId()),
+			zap.Int32("attempts", claim.GetAttempts()),
+			zap.Int("retry_limit", r.cfg.SystemRetryLimit),
+			zap.Duration("retry_delay", backoff),
+			zap.String("error_code", status.Code(cause).String()),
+		)
 	}
 	return err
 }
@@ -535,6 +554,15 @@ func (r *Repository) failClaimedJob(
 		return err
 	}
 	r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
+	// ponytail: terminal signal distinguishes dependency failure from user failure.
+	loggerpkg.FromContext(ctx).Info("job reached terminal failure",
+		zap.String("job_id", claim.GetId()),
+		zap.String("workflow_id", claim.GetWorkflowId()),
+		zap.Int32("attempts", claim.GetAttempts()),
+		zap.String("failure_kind", decision.Kind),
+		zap.String("terminal_reason", decision.ReasonCode),
+		zap.String("error_code", status.Code(executeErr).String()),
+	)
 
 	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, containerID); cleanupErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job failure",

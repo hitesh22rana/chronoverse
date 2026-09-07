@@ -13,6 +13,7 @@ REALIP_CIDRS=""
 ALLOW_REALIP_SNAPSHOT=false
 ROTATE_DOCKER_PROXY_CERTS=false
 INGRESS_NGINX_AVAILABLE=false
+CHRONOVERSE_IMAGE_TAG="${CHRONOVERSE_IMAGE_TAG:-latest}"
 
 usage() {
   cat <<'EOF'
@@ -35,6 +36,7 @@ Options:
   --create-kind                 Create the local kind cluster before applying local.
   --rotate-docker-proxy-certs  After a successful apply, rotate the existing
                                 Docker proxy PKI with overlapping CA trust.
+  CHRONOVERSE_IMAGE_TAG       Image tag for Chronoverse workloads (default: latest).
   -h, --help                    Show this help.
 EOF
 }
@@ -151,6 +153,9 @@ EOF
 
 [ -n "$MODE" ] || select_mode
 [ "$MODE" = "local" ] || [ "$MODE" = "production" ] || die "--mode must be local or production"
+case "$CHRONOVERSE_IMAGE_TAG" in
+  ""|*[!A-Za-z0-9._-]*) die "CHRONOVERSE_IMAGE_TAG contains unsafe characters" ;;
+esac
 if [ "$ROTATE_DOCKER_PROXY_CERTS" = true ] && { [ "$DRY_RUN" = true ] || [ "$SKIP_APPLY" = true ]; }; then
   die "--rotate-docker-proxy-certs requires a real manifest apply; do not combine it with --dry-run or --skip-apply"
 fi
@@ -200,6 +205,7 @@ if [ "$CREATE_KIND" = true ]; then
 fi
 
 info "Using kubectl context: ${CURRENT_CONTEXT:-default}"
+info "Using Chronoverse image tag: $CHRONOVERSE_IMAGE_TAG"
 
 if [ "$DRY_RUN" = false ]; then
   info "Ensuring namespace $NAMESPACE exists"
@@ -1152,20 +1158,17 @@ fi
 
 delete_bootstrap_jobs
 
+render_manifests() {
+  kubectl_cmd kustomize --load-restrictor=LoadRestrictionsNone "$KUSTOMIZE_DIR" |
+    sed "s#ghcr.io/hitesh22rana/chronoverse/\([^:[:space:]]*\):latest#ghcr.io/hitesh22rana/chronoverse/\1:$CHRONOVERSE_IMAGE_TAG#g"
+}
+
 if [ "$DRY_RUN" = true ]; then
   info "Running dry-run apply for $MODE"
-  if [ "$USE_PATCH_DIR" = true ]; then
-    kubectl_cmd kustomize --load-restrictor=LoadRestrictionsNone "$KUSTOMIZE_DIR" | kubectl_cmd apply --dry-run=client --validate=false -f -
-  else
-    kubectl_cmd apply --dry-run=client --validate=false -k "$KUSTOMIZE_DIR"
-  fi
+  render_manifests | kubectl_cmd apply --dry-run=client --validate=false -f -
 else
   info "Applying $MODE overlay"
-  if [ "$USE_PATCH_DIR" = true ]; then
-    kubectl_cmd kustomize --load-restrictor=LoadRestrictionsNone "$KUSTOMIZE_DIR" | kubectl_cmd apply -f -
-  else
-    kubectl_cmd apply -k "$KUSTOMIZE_DIR"
-  fi
+  render_manifests | kubectl_cmd apply -f -
 
   # ConfigMap volume updates reach the mounted file only via kubelet sync,
   # and nginx never re-reads configuration on its own. When the realip trust

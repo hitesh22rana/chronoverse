@@ -469,11 +469,27 @@ ineligible.
 
 Keep the lease duration comfortably above the renewal interval. Increase
 concurrency only when Docker host capacity, per-workload resource limits, Kafka
-partitions, and downstream services can support it. These per-workload limits
+partitions, and downstream services can support it. Measure queue delay before
+adding capacity. These per-workload limits
 are applied only when execution-worker creates Docker job containers. Execution
 image pulls use the same runtime-node-scoped lock model as workflow-worker
 digest resolution: workers sharing one runtime daemon serialize the same image
 pull, while different runtime nodes may pull independently.
+
+Retry contract: `SYSTEM_RETRY_LIMIT=3` with `SYSTEM_RETRY_BACKOFF=30s`
+(`30s, 60s, 120s`, capped at `240s`) applies only to infrastructure codes
+(`Canceled`, `Internal`, `ResourceExhausted`, `Unavailable`,
+`DeadlineExceeded`), including transient Docker ping failures. Unexpected HTTP
+statuses, including `429`, remain `USER` `UNEXPECTED_STATUS_CODE` terminal
+failures without retry: the probed endpoint throttling us is endpoint behavior,
+not platform infrastructure. After exhaustion the
+job persists as terminal `FAILED` (`SYSTEM_ERROR` for infrastructure,
+user reason otherwise). `ReleaseJobForRetry` moves a concurrently terminated
+workflow's job to `CANCELED` (`WORKFLOW_TERMINATED`) instead of `PENDING`, and
+the scheduler re-checks `terminated_at` at `UPDATE` time, so termination cannot
+leave orphan `PENDING` rows. Distinguish delays via logs: `queue_delay`
+(scheduled-to-claim), `execution_delay` (claim-to-finish), `retry_delay`
+(backoff), plus `failure_kind`/`terminal_reason`/`error_code`.
 
 ### Outbox Relay
 

@@ -121,7 +121,7 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-	msdb.Close()
+	defer msdb.Close()
 
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
 	kfk, err := kafka.New(ctx,

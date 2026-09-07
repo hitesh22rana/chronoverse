@@ -46,7 +46,7 @@ type Postgres struct {
 	Host        string        `envconfig:"POSTGRES_HOST" default:"localhost"`
 	Port        int           `envconfig:"POSTGRES_PORT" default:"5432"`
 	User        string        `envconfig:"POSTGRES_USER" default:"postgres"`
-	Password    string        `envconfig:"POSTGRES_PASSWORD" default:"postgres"`
+	Password    string        `envconfig:"POSTGRES_PASSWORD" default:""`
 	Database    string        `envconfig:"POSTGRES_DB" default:"chronoverse"`
 	MaxConns    int32         `envconfig:"POSTGRES_MAX_CONNS" default:"10"`
 	MinConns    int32         `envconfig:"POSTGRES_MIN_CONNS" default:"0"`

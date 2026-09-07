@@ -33,6 +33,18 @@ func TestValidateServerSecrets(t *testing.T) {
 			crypto: "0123456789abcdef0123456789abcdef",
 			csrf:   "abcdef0123456789abcdef0123456789",
 		},
+		{
+			name:    "crypto secret wrong length",
+			crypto:  "short",
+			csrf:    "abcdef0123456789abcdef0123456789",
+			wantErr: true,
+		},
+		{
+			name:    "csrf secret too short",
+			crypto:  "0123456789abcdef0123456789abcdef",
+			csrf:    "x",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

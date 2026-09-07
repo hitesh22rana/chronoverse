@@ -61,6 +61,12 @@ func validateServerSecrets(cfg *ServerConfig) error {
 	if cfg.Secret == cfg.CSRFHMACSecret {
 		return errors.New("CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET must be different")
 	}
+	if len(cfg.Secret) != 32 {
+		return errors.New("CRYPTO_SECRET must be 32 bytes long")
+	}
+	if len(cfg.CSRFHMACSecret) < 32 {
+		return errors.New("SERVER_CSRF_HMAC_SECRET must be at least 32 bytes long")
+	}
 
 	return nil
 }

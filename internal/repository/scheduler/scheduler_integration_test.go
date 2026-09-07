@@ -211,3 +211,30 @@ func mustUserID(ctx context.Context, t *testing.T, pg *postgres.Postgres, workfl
 	}
 	return userID
 }
+
+func TestIntegrationScheduleSkipsTerminatedWorkflows(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := New(&Config{BatchSize: 10}, pg)
+
+	workflowID, jobID := seedUserWorkflowJob(ctx, t, pg, -time.Minute)
+	if _, err := pg.Exec(ctx, `UPDATE workflows SET terminated_at = now() AT TIME ZONE 'utc' WHERE id = $1`, workflowID); err != nil {
+		t.Fatalf("terminate workflow: %v", err)
+	}
+
+	total, err := repo.Run(ctx)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("Run scheduled %d jobs, want 0 for terminated workflow", total)
+	}
+
+	var status string
+	if err := pg.QueryRow(ctx, `SELECT status FROM jobs WHERE id = $1`, jobID).Scan(&status); err != nil {
+		t.Fatalf("fetch job: %v", err)
+	}
+	if status != "PENDING" {
+		t.Fatalf("terminated job status = %q, want %q", status, "PENDING")
+	}
+}

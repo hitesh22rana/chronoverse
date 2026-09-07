@@ -744,6 +744,10 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 }
 
 // ReleaseJobForRetry releases a running claimed job back to pending for a later retry.
+// If the owning workflow terminated concurrently, the job is moved to CANCELED
+// with WORKFLOW_TERMINATED instead of PENDING so scheduler never resurrects it.
+//
+//nolint:gocyclo // Transactional reserve/replay/release branches mirror FailJob/CompleteJob.
 func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage, commandID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ReleaseJobForRetry")
 	defer func() {
@@ -781,6 +785,24 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 		return tx.Commit(ctx)
 	}
 
+	// ponytail: single terminated check in shared release path; callers must not re-check.
+	terminated, termErr := r.isWorkflowTerminated(ctx, tx, jobID)
+	if termErr != nil {
+		return termErr
+	}
+	if terminated {
+		if cancelErr := r.cancelTerminatedRelease(ctx, tx, jobID, leaseToken); cancelErr != nil {
+			return cancelErr
+		}
+		if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobReleaseForRetry, commandID, requestHash); completeErr != nil {
+			return completeErr
+		}
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return r.mapJobLeaseWriteError(commitErr, "commit terminated release transaction")
+		}
+		return nil
+	}
+
 	var releasedCount int
 	var decrementedCount int
 	err = tx.QueryRow(
@@ -802,8 +824,8 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 	if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobReleaseForRetry, commandID, requestHash); completeErr != nil {
 		return completeErr
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return r.mapJobLeaseWriteError(err, "commit release job for retry transaction")
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		return r.mapJobLeaseWriteError(commitErr, "commit release job for retry transaction")
 	}
 	return nil
 }
@@ -1038,6 +1060,47 @@ func releaseJobForRetryQuery() string {
             (SELECT COUNT(*) FROM released),
             (SELECT COUNT(*) FROM decrement_runtime);
     `, postgres.TableJobs, postgres.TableJobs, postgres.TableRuntimeNodes)
+}
+
+func (r *Repository) isWorkflowTerminated(ctx context.Context, tx pgx.Tx, jobID string) (bool, error) {
+	query := fmt.Sprintf(`
+        SELECT w.terminated_at IS NOT NULL
+        FROM %s AS w
+        JOIN %s AS j ON j.workflow_id = w.id
+        WHERE j.id = $1
+        LIMIT 1;
+    `, postgres.TableWorkflows, postgres.TableJobs)
+	var terminated bool
+	if err := tx.QueryRow(ctx, query, jobID).Scan(&terminated); err != nil {
+		if r.pg.IsNoRows(err) {
+			return false, nil
+		}
+		return false, r.mapJobLeaseReadError(err, "check workflow termination")
+	}
+	return terminated, nil
+}
+
+func (r *Repository) cancelTerminatedRelease(ctx context.Context, tx pgx.Tx, jobID, leaseToken string) error {
+	query := fmt.Sprintf(`
+        UPDATE %s
+        SET status = 'CANCELED',
+            completed_at = now() AT TIME ZONE 'utc',
+            lease_token = NULL,
+            leased_by = NULL,
+            lease_process_instance_id = NULL,
+            lease_expires_at = NULL,
+            last_heartbeat_at = NULL,
+            terminal_reason_code = 'WORKFLOW_TERMINATED'
+        WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING';
+    `, postgres.TableJobs)
+	ct, err := tx.Exec(ctx, query, jobID, leaseToken)
+	if err != nil {
+		return r.mapJobLeaseWriteError(err, "cancel terminated release")
+	}
+	if ct.RowsAffected() == 0 {
+		return status.Errorf(grpccodes.FailedPrecondition, "%s: job lease not held", "cancel terminated release")
+	}
+	return r.decrementRuntimeSlotForJob(ctx, tx, jobID)
 }
 
 func reserveJobCommand(

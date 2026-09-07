@@ -1063,12 +1063,17 @@ func releaseJobForRetryQuery() string {
 }
 
 func (r *Repository) isWorkflowTerminated(ctx context.Context, tx pgx.Tx, jobID string) (bool, error) {
+	// Lock the workflow row so this check serializes with TerminateWorkflow,
+	// which takes the same lock: either this release waits and then sees the
+	// termination (job goes CANCELED), or termination waits and its async
+	// handler later cancels the PENDING job this release creates.
 	query := fmt.Sprintf(`
         SELECT w.terminated_at IS NOT NULL
         FROM %s AS w
         JOIN %s AS j ON j.workflow_id = w.id
         WHERE j.id = $1
-        LIMIT 1;
+        LIMIT 1
+        FOR UPDATE OF w;
     `, postgres.TableWorkflows, postgres.TableJobs)
 	var terminated bool
 	if err := tx.QueryRow(ctx, query, jobID).Scan(&terminated); err != nil {

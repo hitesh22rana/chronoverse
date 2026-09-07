@@ -479,9 +479,10 @@ pull, while different runtime nodes may pull independently.
 Retry contract: `SYSTEM_RETRY_LIMIT=3` with `SYSTEM_RETRY_BACKOFF=30s`
 (`30s, 60s, 120s`, capped at `240s`) applies only to infrastructure codes
 (`Canceled`, `Internal`, `ResourceExhausted`, `Unavailable`,
-`DeadlineExceeded`), including transient Docker ping failures and HTTP `429`
-(`ResourceExhausted`). Other unexpected HTTP statuses remain `USER`
-`UNEXPECTED_STATUS_CODE` terminal failures without retry. After exhaustion the
+`DeadlineExceeded`), including transient Docker ping failures. Unexpected HTTP
+statuses, including `429`, remain `USER` `UNEXPECTED_STATUS_CODE` terminal
+failures without retry: the probed endpoint throttling us is endpoint behavior,
+not platform infrastructure. After exhaustion the
 job persists as terminal `FAILED` (`SYSTEM_ERROR` for infrastructure,
 user reason otherwise). `ReleaseJobForRetry` moves a concurrently terminated
 workflow's job to `CANCELED` (`WORKFLOW_TERMINATED`) instead of `PENDING`, and

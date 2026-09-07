@@ -178,13 +178,6 @@ func TestClassifyExecutionFailure(t *testing.T) {
 			reason:    terminalreason.NonZeroExit.String(),
 		},
 		{
-			name:      "http 429 is retryable system failure",
-			err:       status.Error(codes.ResourceExhausted, "unexpected status code: got 429, want 200"),
-			retryable: true,
-			kind:      jobsmodel.FailureKindSystem.ToString(),
-			reason:    terminalreason.SystemError.String(),
-		},
-		{
 			name:      "unexpected status is user failure",
 			err:       terminalreason.Wrap(terminalreason.UnexpectedStatusCode, status.Error(codes.FailedPrecondition, "unexpected status code: got 500, want 200")),
 			retryable: false,

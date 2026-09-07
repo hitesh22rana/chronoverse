@@ -452,10 +452,6 @@ func (h *HeartBeat) Execute(
 
 	// Check for expected status code
 	if resp.StatusCode != expectedStatusCode {
-		// ponytail: 429 is infrastructure backpressure, not user error; retry as SYSTEM.
-		if resp.StatusCode == http.StatusTooManyRequests {
-			return status.Errorf(codes.ResourceExhausted, "unexpected status code: got %d, want %d", resp.StatusCode, expectedStatusCode)
-		}
 		return terminalreason.Wrap(terminalreason.UnexpectedStatusCode, status.Errorf(codes.FailedPrecondition, "unexpected status code: got %d, want %d", resp.StatusCode, expectedStatusCode))
 	}
 

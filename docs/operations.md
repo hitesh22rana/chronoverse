@@ -469,11 +469,8 @@ ineligible.
 
 Keep the lease duration comfortably above the renewal interval. Increase
 concurrency only when Docker host capacity, per-workload resource limits, Kafka
-partitions, and downstream services can support it. Production sets
-`EXECUTION_WORKER_CONCURRENCY=2` with two replicas (four execution slots); a
-`CONTAINER` workflow averaging ~51s every minute needs roughly one slot per
-workflow, so nine such workflows queue behind four slots with 160–320s delays
-by Little's law — add capacity only after measuring queue delay. These per-workload limits
+partitions, and downstream services can support it. Measure queue delay before
+adding capacity. These per-workload limits
 are applied only when execution-worker creates Docker job containers. Execution
 image pulls use the same runtime-node-scoped lock model as workflow-worker
 digest resolution: workers sharing one runtime daemon serialize the same image

@@ -1,3 +1,7 @@
+# Local-development profile only. Every host-published port binds 127.0.0.1 and
+# services use well-known default credentials — never expose this profile past
+# localhost / your firewall. Production uses compose.prod.yaml with
+# operator-provided secrets (${VAR:?} enforced).
 name: chronoverse
 services:
   postgres:
@@ -8,7 +12,7 @@ services:
       POSTGRES_PASSWORD: chronoverse
       POSTGRES_DB: chronoverse
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     restart: on-failure
     volumes:
       - postgres:/var/lib/postgresql
@@ -43,7 +47,7 @@ services:
       CLICKHOUSE_USER: chronoverse-client
       CLICKHOUSE_PASSWORD: chronoverse
     ports:
-      - "9440:9440"
+      - "127.0.0.1:9440:9440"
     restart: on-failure
     volumes:
       - clickhouse:/var/lib/clickhouse
@@ -71,7 +75,7 @@ services:
     image: redis:8.2.1-alpine
     container_name: redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     restart: on-failure
     volumes:
       - redis:/data
@@ -107,7 +111,7 @@ services:
     image: getmeili/meilisearch:v1.45.2
     container_name: meilisearch
     ports:
-      - "7700:7700"
+      - "127.0.0.1:7700:7700"
     restart: on-failure
     environment:
       MEILI_MASTER_KEY: 35b09c3c7b1001ed1fbed7db29a155d0201ab22d527b41bfba9003da7bb3b404
@@ -144,8 +148,8 @@ services:
     hostname: kafka
     container_name: kafka
     ports:
-      - "9094:9094"
-      - "9093:9093"
+      - "127.0.0.1:9094:9094"
+      - "127.0.0.1:9093:9093"
     restart: on-failure
     environment:
       KAFKA_KRAFT_MODE: "true"
@@ -322,7 +326,7 @@ services:
     volumes:
       - lgtm:/data
     ports:
-      - "4317:4317"
+      - "127.0.0.1:4317:4317"
     networks:
       - chronoverse
 
@@ -844,7 +848,7 @@ services:
         - PRIVATE_KEY_PATH=certs/issuers/users-service/auth.ed
         - PUBLIC_KEY_PATH=certs/issuers/users-service/auth.ed.pub
     ports:
-      - "50051:50051"
+      - "127.0.0.1:50051:50051"
     restart: on-failure
     volumes:
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
@@ -933,7 +937,7 @@ services:
         - PRIVATE_KEY_PATH=certs/issuers/workflows-service/auth.ed
         - PUBLIC_KEY_PATH=certs/issuers/workflows-service/auth.ed.pub
     ports:
-      - "50052:50052"
+      - "127.0.0.1:50052:50052"
     restart: on-failure
     volumes:
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
@@ -1042,7 +1046,7 @@ services:
         - PRIVATE_KEY_PATH=certs/issuers/jobs-service/auth.ed
         - PUBLIC_KEY_PATH=certs/issuers/jobs-service/auth.ed.pub
     ports:
-      - "50053:50053"
+      - "127.0.0.1:50053:50053"
     restart: on-failure
     volumes:
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
@@ -1139,7 +1143,7 @@ services:
         - PRIVATE_KEY_PATH=certs/issuers/notifications-service/auth.ed
         - PUBLIC_KEY_PATH=certs/issuers/notifications-service/auth.ed.pub
     ports:
-      - "50054:50054"
+      - "127.0.0.1:50054:50054"
     restart: on-failure
     volumes:
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
@@ -1223,7 +1227,7 @@ services:
         - PRIVATE_KEY_PATH=certs/issuers/analytics-service/auth.ed
         - PUBLIC_KEY_PATH=certs/issuers/analytics-service/auth.ed.pub
     ports:
-      - "50055:50055"
+      - "127.0.0.1:50055:50055"
     restart: on-failure
     volumes:
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
@@ -1872,7 +1876,7 @@ services:
         - PRIVATE_KEY_PATH=certs/issuers/server/auth.ed
         - PUBLIC_KEY_PATH=certs/issuers/server/auth.ed.pub
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     restart: on-failure
     volumes:
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
@@ -1929,7 +1933,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8080
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     restart: on-failure
     depends_on:
       server:

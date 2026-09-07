@@ -169,7 +169,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
                 dispatch_attempts = dispatch_attempts + 1
             FROM selected
             WHERE j.id = selected.id
-                -- ponytail: re-check termination at UPDATE so a concurrent terminate cannot resurrect PENDING.
+                -- Re-check termination at UPDATE so a concurrent terminate cannot resurrect PENDING.
                 AND EXISTS (
                     SELECT 1
                     FROM %s AS w

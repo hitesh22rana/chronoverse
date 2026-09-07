@@ -474,7 +474,7 @@ func (r *Repository) scheduleAutomaticJob(ctx context.Context, workflow *workflo
 
 // prefetchImageToNodes pulls image on up to MaxFanout READY nodes except the warmed one.
 // Best-effort only: all errors are log-only, the execution-time Ensure stays the fallback.
-// ponytail: in-memory fan-out, not a durable queue; add one if loss measurably hurts hit-rate.
+// In-memory fan-out, not a durable queue; add one if loss measurably hurts hit-rate.
 func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNodeID string) {
 	if image == "" {
 		return

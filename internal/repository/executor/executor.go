@@ -270,7 +270,7 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 		zap.String("workflow_id", scheduledJob.workflowID),
 		zap.Int32("dispatch_attempt", scheduledJob.dispatchAttempt),
 		zap.Int32("attempts", claim.GetAttempts()),
-		// ponytail: queue delay distinguishes scheduler wait from execution time.
+		// Queue delay distinguishes scheduler wait from execution time.
 		zap.Duration("queue_delay", time.Since(scheduledJob.lastScheduledAt)),
 	)
 
@@ -503,7 +503,7 @@ func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobs
 	})
 	if err == nil {
 		r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
-		// ponytail: retry delay distinguishes dependency backoff from queue wait.
+		// Retry delay distinguishes dependency backoff from queue wait.
 		loggerpkg.FromContext(ctx).Info("job released for system retry",
 			zap.String("job_id", claim.GetId()),
 			zap.String("workflow_id", claim.GetWorkflowId()),
@@ -554,7 +554,7 @@ func (r *Repository) failClaimedJob(
 		return err
 	}
 	r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
-	// ponytail: terminal signal distinguishes dependency failure from user failure.
+	// Terminal signal distinguishes dependency failure from user failure.
 	loggerpkg.FromContext(ctx).Info("job reached terminal failure",
 		zap.String("job_id", claim.GetId()),
 		zap.String("workflow_id", claim.GetWorkflowId()),

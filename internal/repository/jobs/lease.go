@@ -785,7 +785,7 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 		return tx.Commit(ctx)
 	}
 
-	// ponytail: single terminated check in shared release path; callers must not re-check.
+	// Single terminated check in shared release path; callers must not re-check.
 	terminated, termErr := r.isWorkflowTerminated(ctx, tx, jobID)
 	if termErr != nil {
 		return termErr

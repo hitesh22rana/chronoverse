@@ -670,11 +670,17 @@ The first worker acquires the lock and pulls or inspects the image. Other worker
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
+- `WORKFLOW_WORKER_IMAGE_PREFETCH_ENABLED`
+- `WORKFLOW_WORKER_IMAGE_PREFETCH_MAX_FANOUT`
 - `EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL`
 - `EXECUTION_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT`
 - `EXECUTION_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL`
 
 Set the TTL and wait timeout above normal large-image pull time. Aggressive polling increases Redis pressure.
+
+## Prefetch fan-out
+
+After a build resolves the image digest on one runtime node, the workflow worker best-effort pulls that digest on up to `WORKFLOW_WORKER_IMAGE_PREFETCH_MAX_FANOUT` other READY nodes (least-loaded first) in the background. Execution-time pulls remain the fallback, so a prefetch failure only costs a cold pull later. Disable with `WORKFLOW_WORKER_IMAGE_PREFETCH_ENABLED=false`.
 
 ## Failure behavior
 

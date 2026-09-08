@@ -107,6 +107,20 @@ kubectl apply -k infra/k8s/overlays/local
 kubectl apply -k infra/k8s/overlays/production
 ```
 
+Because host-network runtime agents may reach PgBouncer as node IPs, direct
+production applies must also carry the private JSON6902 patches described in
+`docs/operations.md`, replacing the reserved TEST-NET entry in both
+`NetworkPolicy/chronoverse-runtime-agent-postgres` and
+`NetworkPolicy/chronoverse-runtime-agent-telemetry` with the stable
+Docker-node CIDR(s). Keep those patches in the operator overlay and apply them
+every time; the base placeholders are intentionally fail-closed. The supported
+setup path is:
+
+```sh
+scripts/k8s/setup.sh --mode production --context <context> \
+  --runtime-node-cidrs '<stable-node-pool-cidr> <stable-pod-cidr>'
+```
+
 ## gRPC Service Discovery
 
 The users, workflows, jobs, notifications, and analytics Services are headless.
@@ -137,6 +151,11 @@ Those nodes must expose Docker Engine at `/var/run/docker.sock`. Docker
 Desktop's built-in `docker-desktop` Kubernetes context is not sufficient for the
 Docker-backed worker path because it does not expose a Docker Engine socket to
 pods.
+
+Workers reach node-local Docker proxies on TCP `2376`. The proxy DaemonSet uses
+`hostNetwork`, so newly labeled nodes work automatically without a node-CIDR
+snapshot or a generated NetworkPolicy. Restrict node-to-node TCP `2376` at the
+infrastructure firewall layer.
 
 For kind validation:
 
@@ -267,8 +286,9 @@ Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent`
 sidecar. Workers do not need the Docker node label and can schedule anywhere.
 
 Official overlays register an IPv4/IPv6-safe `NODE_IP:2376` endpoint through
-the Docker proxy `hostPort`, not a load-balanced ClusterIP. This keeps running job cleanup valid
-across proxy pod restarts on the same node. The DaemonSet's HAProxy binds
+the Docker proxy `hostNetwork`, not a load-balanced ClusterIP. This keeps
+running job cleanup valid across proxy pod restarts on the same node. The
+DaemonSet's HAProxy binds
 `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
 plus the `X-Chronoverse-Docker-Proxy-Token` header and an exact Docker
 method/path allowlist; runtime-agent health probes `tcp://127.0.0.1:2376`
@@ -288,15 +308,14 @@ key readability or expose another role's private key. TLS clients reload the CA
 bundle and keypair on new handshakes, and endpoint clients are bounded to 256
 entries with idle/LRU eviction to avoid unbounded growth as runtime nodes churn.
 
-Multi-node kind and similar Docker-container-based Kubernetes emulators may not
-route one emulator node's hostPort from pods on another emulator node. If you
-choose that topology, use a pod-IP runtime endpoint override as an
-emulator-specific workaround. Real single-node and multi-node Kubernetes
-clusters should use node-stable runtime endpoints.
+Multi-node kind and similar Docker-container-based Kubernetes emulators may
+still have topology-specific routing limitations. Use a pod-IP runtime endpoint
+override only for emulator-specific validation. Real single-node and multi-node
+Kubernetes clusters should use node-stable runtime endpoints.
 
 Worker pods need egress to TCP `2376` on runtime node IPs. The base
-NetworkPolicy allows that port, but `hostPort` bypasses `NetworkPolicy` across
-CNI implementations — production must restrict `2376` at the infrastructure
+NetworkPolicy allows that port, but `hostNetwork` bypasses pod NetworkPolicy —
+production must restrict `2376` at the infrastructure
 layer (node firewall / security group / CNI host policy) in addition to the
 mTLS + token + allowlist. Do not expose `2376` publicly.
 
@@ -308,7 +327,7 @@ The supported runtime matrix is explicit:
 | Kubernetes single-node | Supported when the node exposes `/var/run/docker.sock` and carries the Docker workload label. |
 | Kubernetes multi-node | Supported when every labeled runtime node exposes Docker Engine and worker pods can route to every labeled node IP on `2376`. |
 | containerd-only Kubernetes or Docker Desktop's built-in Kubernetes | Not supported for Docker-backed workflows because the required Docker Engine socket is absent. |
-| Multi-node kind-like emulators | Conditional: some emulator networks cannot route cross-node hostPorts; validate first or use the documented pod-IP override only for that emulator. |
+| Multi-node kind-like emulators | Conditional: validate emulator routing first; use the documented pod-IP override only for that emulator. |
 
 The execution-worker role can create containers and is therefore
 node-root-equivalent if both that role key and token are compromised. mTLS
@@ -333,7 +352,7 @@ The rotation script installs an old+new CA bundle, rolls the DaemonSet, rotates
 the three client-role Secrets, rotates the server Secret, then removes the old
 CA and rolls all proxy clients again. This order works for single-node and
 multi-node clusters without a mixed-issuer authentication gap. A single-node
-DaemonSet still has a brief proxy interruption while its hostPort pod restarts.
+DaemonSet still has a brief proxy interruption while its host-networked pod restarts.
 Use `scripts/k8s/rotate-docker-proxy-certs.sh --context <context>` directly when
 the manifests do not need to be reapplied. Setup rejects rotation with
 `--dry-run`/`--skip-apply` and requires an existing proxy and worker deployment.

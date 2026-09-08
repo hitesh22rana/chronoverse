@@ -273,6 +273,12 @@ Kafka auto topic creation is disabled in compose. `init-kafka-topics` creates or
 expands the expected topics: `workflows`, `jobs`, `job_logs`, and `analytics`.
 The Kubernetes overlays include the same topic initializer.
 
+In the production overlay, KEDA scales Kafka consumers by current consumer-group
+lag. `execution-worker` keeps a minimum of four replicas (maximum twelve) so
+the default two-job-per-worker concurrency provides capacity for the Docker
+runtime nodes; the other Kafka consumers retain their overlay-specific floors
+and ceilings. These are lag targets, not time-window or arrival-rate metrics.
+
 ## Domain and Worker Settings
 
 ### Workflows Service
@@ -335,7 +341,7 @@ PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2376`.
 In Kubernetes, run one agent as a sidecar beside each node-local Docker proxy
 (`DaemonSet` on `chronoverse.io/docker-workloads=true` nodes) and register a
-node-stable endpoint on `NODE_IP:2376` via `hostPort: 2376` — not a pod IP or
+node-stable endpoint on `NODE_IP:2376` via `hostNetwork` — not a pod IP or
 load-balanced `tcp://docker-proxy:2376` `ClusterIP`. The DaemonSet is per-node by design;
 a `ClusterIP` would load-balance to a random backend and break the invariant
 that `ClaimJob` (`internal/repository/jobs/lease.go:254`) selects one `runtime_nodes`
@@ -344,7 +350,7 @@ row and workers later dial its stored `runtime_endpoint` (`internal/repository/e
 binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
 plus the `X-Chronoverse-Docker-Proxy-Token` header allowlist and an exact
 Docker method/path allowlist before forwarding to the host socket. Runtime-agent
-health probes `tcp://127.0.0.1:2376` (loopback, no `hostPort` needed); the
+health probes `tcp://127.0.0.1:2376` (loopback); the
 advertised endpoint is constructed from
 `RUNTIME_AGENT_DOCKER_ADVERTISE_HOST`/`PORT` with IPv6-safe brackets. Workers
 and the agent use a bounded custom Docker HTTP transport with mTLS
@@ -352,6 +358,11 @@ and the agent use a bounded custom Docker HTTP transport with mTLS
 plus the token second factor. The CA bundle and client keypair are reloaded on
 each new TLS handshake so staged certificate rotation does not leave cached
 clients pinned to old files.
+
+The proxy DaemonSet uses `hostNetwork` rather than CNI host-port DNAT. This
+makes the node endpoint reachable across nodes and remains valid when nodes are
+added or replaced; restrict node-to-node TCP 2376 at the infrastructure
+firewall layer.
 
 When mTLS is configured, the shared Docker client also normalizes a legacy
 `tcp://<same-host>:2375` endpoint to
@@ -381,8 +392,8 @@ a smaller blast radius. The workflow role cannot create containers, but its
 log/stop/delete cleanup calls are not tenant-scoped by HAProxy; a compromised
 workflow identity can affect a known container ID on any reachable runtime.
 Per-container authorization requires a purpose-built broker rather than direct
-Docker API access. `hostPort` bypasses `NetworkPolicy`, so restrict TCP `2376`
-at the infrastructure layer (node firewall / security group / CNI host policy).
+Docker API access. `hostNetwork` bypasses pod `NetworkPolicy`, so restrict TCP
+`2376` at the infrastructure layer (node firewall / security group / host policy).
 Multi-node kind and similar Docker-container-based Kubernetes emulators can
 make node host ports reachable only from pods on the same emulator node. In that
 specific topology, use a pod-IP endpoint override as an emulator workaround; do

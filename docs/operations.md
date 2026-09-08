@@ -103,19 +103,19 @@ for Docker-backed workers because its node does not expose Docker Engine at
 cluster whose nodes really provide that socket.
 
 The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
-Docker-capable node. Official overlays construct an IPv4/IPv6-safe node endpoint on `2376` via
-`hostPort:2376` so running job cleanup survives proxy pod restarts on the same
-node. Health probes use `tcp://127.0.0.1:2376` (loopback) while the advertised
+Docker-capable node. Official overlays use `hostNetwork` and construct an
+IPv4/IPv6-safe node endpoint on `2376`, so running job cleanup survives proxy
+pod restarts on the same node and cross-node workers avoid CNI host-port DNAT.
+Health probes use `tcp://127.0.0.1:2376` (loopback) while the advertised
 endpoint remains node-stable. The proxy binds
 `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
 plus the `X-Chronoverse-Docker-Proxy-Token` and exact certificate-role and
 method/path ACLs. Runtime-agent receives health APIs only, workflow-worker gets
 image and cancellation-cleanup calls, and execution-worker gets the execution
 surface. The server and each role use separate private-key mounts; workload
-containers receive neither token nor certificate. Multi-node kind and other Docker-container-based Kubernetes emulators
-can have a specific hostPort routing limitation where pods on one emulator node
-cannot reach another emulator node's host port; if you choose that topology,
-use a pod-IP endpoint override as an emulator-only workaround.
+containers receive neither token nor certificate. Multi-node kind and other
+Docker-container-based Kubernetes emulators can have topology-specific routing
+limitations; use a pod-IP endpoint override only for emulator-only validation.
 `workflow-worker` and `execution-worker` do not need the Docker node label;
 they can schedule anywhere with network access to TCP `2376` on registered
 runtime endpoints.
@@ -150,7 +150,7 @@ This requires an existing deployment. The standalone
 `scripts/k8s/rotate-docker-proxy-certs.sh --context <context>` command skips the
 manifest apply. Both rotate the three clients before the server and remove the
 old CA only after all identities trust the replacement. Run in a maintenance
-window; a single-node hostPort DaemonSet briefly interrupts Docker calls while
+window; a single-node host-networked DaemonSet briefly interrupts Docker calls while
 its pod restarts.
 
 Compose rotation requires a stopped stack because it replaces the dedicated
@@ -586,12 +586,37 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   generated or operator-provided Secrets match the target cluster.
 - Confirm Docker-capable nodes expose Docker Engine at `/var/run/docker.sock`
   and have the `chronoverse.io/docker-workloads=true` label.
-- Confirm workers can reach runtime node IPs on TCP `2376` (`hostPort` bypasses
-  `NetworkPolicy` — restrict `2376` at infra layer); the proxy requires
+- Confirm workers can reach runtime node IPs on TCP `2376`. The Docker proxy
+  uses `hostNetwork` so CNI host-port DNAT and pod NetworkPolicy do not break
+  cross-node access; restrict node-to-node TCP `2376` at the infrastructure
+  firewall layer. The proxy still requires
   `docker-proxy-ca`/`server`/`client-*` Secrets plus `docker-proxy-auth`
   `DOCKER_PROXY_TOKEN` (mTLS `verify required` + token second factor — missing
   or mismatched material fails closed and workers cannot ping `127.0.0.1:2376`
   or `$(NODE_IP):2376`).
+- Host-network runtime-agent connections to PgBouncer are allowed only from
+  the declared source CIDRs. Depending on the CNI, host-network traffic may
+  reach pods with a node/WireGuard source or the node's pod CIDR; include both
+  stable ranges in production (for example,
+  `scripts/k8s/setup.sh --mode production --runtime-node-cidrs '10.250.0.0/24 10.42.0.0/16'`)
+  so node replacement and scale-out remain covered. The setup script refuses
+  to guess a production range; local mode may snapshot current node addresses,
+  but pod CIDRs still need to be supplied when the CNI uses them. Update the
+  ranges and rerun setup when the node pool or CNI network changes. Never
+  replace this with `0.0.0.0/0`.
+- The base policy intentionally uses the reserved `192.0.2.1/32` placeholder
+  and is fail-closed. If your platform applies Kustomize directly instead of
+  using `setup.sh`, keep the CIDR in a private overlay under source control:
+  add a JSON6902 patch targeting
+  `NetworkPolicy/chronoverse-runtime-agent-postgres` that replaces
+  `/spec/ingress/0/from` with `podSelector: {}` plus one `ipBlock` per stable
+  Docker-node CIDR. Apply that same overlay on every run; do not edit the
+  generated base or run setup without the matching `--runtime-node-cidrs`, or
+  the generated patch will be replaced on the next apply.
+- The same declared node CIDRs are applied to
+  `NetworkPolicy/chronoverse-runtime-agent-telemetry`, allowing only TCP 4317
+  into LGTM for runtime-agent OTLP telemetry. Direct overlays must patch both
+  policies; do not broaden LGTM ingress to all sources.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

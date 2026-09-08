@@ -12,6 +12,8 @@ resources:
 - configmaps.yaml
 - rbac.yaml
 - network-policy.yaml
+- runtime-agent-postgres-network-policy.yaml
+- runtime-agent-telemetry-network-policy.yaml
 - docker-proxy.yaml
 - services.yaml
 - workloads.yaml

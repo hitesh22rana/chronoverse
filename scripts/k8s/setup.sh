@@ -10,6 +10,7 @@ SKIP_APPLY=false
 CREATE_KIND=false
 STORAGE_CLASS=""
 REALIP_CIDRS=""
+RUNTIME_NODE_CIDRS="${RUNTIME_NODE_CIDRS:-}"
 ALLOW_REALIP_SNAPSHOT=false
 ROTATE_DOCKER_PROXY_CERTS=false
 INGRESS_NGINX_AVAILABLE=false
@@ -33,6 +34,13 @@ Options:
                                  static clusters; scalable production should use
                                  --realip-cidrs with the cluster's pod range
                                  (e.g. --cluster-cidr) so new nodes remain trusted.
+  --runtime-node-cidrs <list>   Source CIDRs allowed to reach PgBouncer and LGTM
+                                 from host-network runtime-agent traffic
+                                 (comma/space separated). Include node and CNI
+                                 pod CIDRs; pass stable ranges for scale-out.
+                                 Local mode defaults to current node InternalIPs
+                                 as /32 (/128 for IPv6), but pod CIDRs still
+                                 need to be supplied when the CNI uses them.
   --create-kind                 Create the local kind cluster before applying local.
   --rotate-docker-proxy-certs  After a successful apply, rotate the existing
                                 Docker proxy PKI with overlapping CA trust.
@@ -104,6 +112,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --realip-cidrs)
       REALIP_CIDRS="${2:-}"
+      shift 2
+      ;;
+    --runtime-node-cidrs)
+      RUNTIME_NODE_CIDRS="${2:-}"
       shift 2
       ;;
     --allow-realip-snapshot)
@@ -978,9 +990,101 @@ if [ "$MODE" = "production" ]; then
 fi
 create_docker_proxy_tls_secrets
 
+# Prerequisite-only runs do not render or apply the runtime-agent policies, so
+# they must not require deployment-time node CIDR configuration.
 if [ "$SKIP_APPLY" = true ]; then
   info "Skipping manifest apply"
   exit 0
+fi
+
+# Host-network runtime-agent traffic is seen as node traffic by some CNIs.
+# Keep PgBouncer closed to arbitrary sources and allow only the nodes that can
+# run the Docker proxy. Production requires a stable operator-supplied node
+# CIDR so node replacement/scale-out remains covered; local mode may use a
+# current-node snapshot for convenience.
+append_runtime_node_prefix() {
+  case "$1" in
+    *:*) echo "$1/128" ;;
+    *)   echo "$1/32" ;;
+  esac
+}
+validate_runtime_cidr() {
+  local cidr="$1" address prefix octet group compressed nonempty
+  case "$cidr" in
+    */*) ;;
+    *) die "runtime node entries must be CIDRs (for example 10.0.0.0/16): $cidr" ;;
+  esac
+  address="${cidr%/*}"
+  prefix="${cidr##*/}"
+  case "$prefix" in
+    ''|*[!0-9]*) die "invalid runtime node CIDR prefix: $cidr" ;;
+  esac
+  [ "$prefix" -gt 0 ] || die "runtime node CIDR must not be /0: $cidr"
+  case "$address" in
+    *:*)
+      [ "$prefix" -le 128 ] || die "invalid IPv6 runtime node CIDR: $cidr"
+      case "$address" in *[!0-9A-Fa-f:]*|'') die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
+      case "$address" in *:::*) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
+      case "$address" in
+        :*) case "$address" in ::*) ;; *) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac ;;
+      esac
+      case "$address" in
+        *:) case "$address" in *::) ;; *) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac ;;
+      esac
+      compressed=false
+      case "$address" in *::* ) compressed=true ;; esac
+      case "${address/::/}" in *::* ) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
+      IFS=: read -r -a group_array <<< "$address"
+      local group_count="${#group_array[@]}"
+      if [ "$compressed" = true ]; then
+        nonempty=0
+        for group in "${group_array[@]}"; do
+          [ -n "$group" ] && nonempty=$((nonempty + 1))
+        done
+        [ "$nonempty" -le 7 ] || die "invalid IPv6 runtime node CIDR: $cidr"
+      else
+        [ "$group_count" -eq 8 ] || die "invalid IPv6 runtime node CIDR: $cidr"
+        for group in "${group_array[@]}"; do
+          [ -n "$group" ] || die "invalid IPv6 runtime node CIDR: $cidr"
+        done
+      fi
+      for group in "${group_array[@]}"; do
+        [ -z "$group" ] && continue
+        [ "${#group}" -le 4 ] || die "invalid IPv6 runtime node CIDR: $cidr"
+      done
+      ;;
+    *)
+      [ "$prefix" -le 32 ] || die "invalid IPv4 runtime node CIDR: $cidr"
+      case "$address" in .*|*.|*..*) die "invalid IPv4 runtime node CIDR: $cidr" ;; esac
+      local octets=()
+      IFS=. read -r -a octets <<< "$address"
+      [ "${#octets[@]}" -eq 4 ] || die "invalid IPv4 runtime node CIDR: $cidr"
+      for octet in "${octets[@]}"; do
+        case "$octet" in ''|*[!0-9]*) die "invalid IPv4 runtime node CIDR: $cidr" ;; esac
+        [ "$octet" -le 255 ] || die "invalid IPv4 runtime node CIDR: $cidr"
+      done
+      ;;
+  esac
+}
+
+RUNTIME_NODE_CIDRS="$(echo "$RUNTIME_NODE_CIDRS" | tr ',[:space:]' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+if [ -z "$RUNTIME_NODE_CIDRS" ]; then
+  if [ "$MODE" = "production" ]; then
+    die "production requires --runtime-node-cidrs with the stable node-pool CIDR(s) used by host-network runtime-agent"
+  fi
+  if ! RUNTIME_NODE_IPS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"; then
+    RUNTIME_NODE_IPS=""
+  fi
+  if [ -z "$RUNTIME_NODE_IPS" ]; then
+    die "cannot determine node InternalIPs for host-network runtime-agent PostgreSQL access — pass --runtime-node-cidrs <list>"
+  fi
+  RUNTIME_NODE_CIDRS="$(for ip in $RUNTIME_NODE_IPS; do append_runtime_node_prefix "$ip"; done | tr '\n' ' ' | sed 's/ $//')"
+  warn "PgBouncer host-network access uses a current-node CIDR snapshot ($RUNTIME_NODE_CIDRS); pass --runtime-node-cidrs with a stable node range for scale-out"
+else
+  for cidr in $RUNTIME_NODE_CIDRS; do
+    validate_runtime_cidr "$cidr"
+  done
+  info "Using operator-provided runtime-agent node CIDRs: $RUNTIME_NODE_CIDRS"
 fi
 
 # Detect the cluster's node pod CIDRs so the nginx ingress can recover real
@@ -1106,7 +1210,7 @@ EOF
 fi
 
 USE_PATCH_DIR=false
-if [ -n "$STORAGE_CLASS" ] || [ -n "$REALIP_CIDRS" ]; then
+if [ -n "$STORAGE_CLASS" ] || [ -n "$REALIP_CIDRS" ] || [ -n "$RUNTIME_NODE_CIDRS" ]; then
   USE_PATCH_DIR=true
   PATCH_DIR="$(mktemp -d "$ROOT_DIR/.k8s-setup.XXXXXX")"
   mkdir -p "$PATCH_DIR"
@@ -1131,6 +1235,22 @@ EOF
     if [ -n "$REALIP_CIDRS" ]; then
       echo "- path: nginx-realip-patch.yaml"
     fi
+    if [ -n "$RUNTIME_NODE_CIDRS" ]; then
+      cat <<'EOF'
+- target:
+    group: networking.k8s.io
+    version: v1
+    kind: NetworkPolicy
+    name: chronoverse-runtime-agent-postgres
+  path: runtime-agent-postgres-network-policy-patch.yaml
+- target:
+    group: networking.k8s.io
+    version: v1
+    kind: NetworkPolicy
+    name: chronoverse-runtime-agent-telemetry
+  path: runtime-agent-telemetry-network-policy-patch.yaml
+EOF
+    fi
   } > "$PATCH_DIR/kustomization.yaml"
   if [ -n "$REALIP_CIDRS" ]; then
     {
@@ -1147,6 +1267,22 @@ EOF
       echo "    real_ip_header X-Forwarded-For;"
       echo "    real_ip_recursive on;"
     } > "$PATCH_DIR/nginx-realip-patch.yaml"
+  fi
+  if [ -n "$RUNTIME_NODE_CIDRS" ]; then
+    {
+      cat <<'EOF'
+- op: replace
+  path: /spec/ingress/0/from
+  value:
+  - podSelector: {}
+EOF
+      for cidr in $RUNTIME_NODE_CIDRS; do
+        echo "  - ipBlock:"
+        echo "      cidr: $cidr"
+      done
+    } > "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml"
+    cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
+      "$PATCH_DIR/runtime-agent-telemetry-network-policy-patch.yaml"
   fi
   KUSTOMIZE_DIR="$PATCH_DIR"
 fi

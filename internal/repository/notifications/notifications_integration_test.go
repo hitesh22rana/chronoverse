@@ -3,6 +3,7 @@ package notifications
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"testing"
 
@@ -47,7 +48,7 @@ func (f *fakeUsersService) UpdateUser(context.Context, *userspb.UpdateUserReques
 
 // newTestRepository builds a notifications repository against the shared
 // PostgreSQL container.
-func newTestRepository(t *testing.T, preference string) *Repository {
+func newTestRepository(t *testing.T, preference string, fetchLimit int) *Repository {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
@@ -57,12 +58,12 @@ func newTestRepository(t *testing.T, preference string) *Repository {
 		Return("test-token", nil).
 		AnyTimes()
 
-	return New(&Config{FetchLimit: 20}, _auth, testkit.Postgres(t), &Services{UsersService: &fakeUsersService{preference: preference}})
+	return New(&Config{FetchLimit: fetchLimit}, _auth, testkit.Postgres(t), &Services{UsersService: &fakeUsersService{preference: preference}})
 }
 
 func TestIntegrationCreateListMarkReadNotifications(t *testing.T) {
 	ctx := context.Background()
-	repo := newTestRepository(t, "ALERTS")
+	repo := newTestRepository(t, "ALERTS", 20)
 
 	userID := seedUser(ctx, t, testkit.Postgres(t))
 
@@ -119,7 +120,7 @@ func TestIntegrationCreateListMarkReadNotifications(t *testing.T) {
 
 func TestIntegrationListNotificationsHonorsNonePreference(t *testing.T) {
 	ctx := context.Background()
-	repo := newTestRepository(t, "NONE")
+	repo := newTestRepository(t, "NONE", 20)
 
 	userID := seedUser(ctx, t, testkit.Postgres(t))
 	if _, err := repo.CreateNotification(ctx, userID, notificationsmodel.KindWebAlert.ToString(), `{"message":"ignored"}`, "idem-none-"+t.Name()); err != nil {
@@ -141,4 +142,105 @@ func seedUser(ctx context.Context, t *testing.T, pg *postgres.Postgres) string {
 	t.Helper()
 
 	return testkit.SeedUser(ctx, t, pg, fmt.Sprintf("notifications-%s@chronoverse.test", t.Name()))
+}
+
+func TestIntegrationListNotificationsHonorsAllPreference(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepository(t, "ALL", 20)
+
+	userID := seedUser(ctx, t, testkit.Postgres(t))
+
+	kinds := []string{
+		notificationsmodel.KindWebAlert.ToString(),
+		notificationsmodel.KindWebInfo.ToString(),
+		notificationsmodel.KindWebError.ToString(),
+	}
+	for i, kind := range kinds {
+		if _, err := repo.CreateNotification(ctx, userID, kind, `{"message":"hello"}`, fmt.Sprintf("idem-all-%s-%d", t.Name(), i)); err != nil {
+			t.Fatalf("CreateNotification(%s): %v", kind, err)
+		}
+	}
+
+	list, err := repo.ListNotifications(ctx, userID, "")
+	if err != nil {
+		t.Fatalf("ListNotifications: %v", err)
+	}
+	if len(list.Notifications) != len(kinds) {
+		t.Fatalf("ListNotifications returned %d notifications, want %d", len(list.Notifications), len(kinds))
+	}
+	if list.Cursor != "" {
+		t.Fatalf("expected no cursor, got %q", list.Cursor)
+	}
+}
+
+func TestIntegrationListNotificationsPaginatesWithoutDuplicatesOrSkips(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepository(t, "ALERTS", 2)
+
+	userID := seedUser(ctx, t, testkit.Postgres(t))
+
+	const total = 5
+	want := make(map[string]struct{}, total)
+	for i := range total {
+		id, err := repo.CreateNotification(ctx, userID, notificationsmodel.KindWebAlert.ToString(), fmt.Sprintf(`{"message":"alert-%d"}`, i), fmt.Sprintf("idem-page-%s-%d", t.Name(), i))
+		if err != nil {
+			t.Fatalf("CreateNotification: %v", err)
+		}
+		want[id] = struct{}{}
+	}
+
+	var pages int
+	cursor := ""
+	for {
+		page, err := repo.ListNotifications(ctx, userID, cursor)
+		if err != nil {
+			t.Fatalf("ListNotifications: %v", err)
+		}
+		pages++
+		if len(page.Notifications) > 2 {
+			t.Fatalf("page returned %d notifications, want at most 2", len(page.Notifications))
+		}
+		for _, n := range page.Notifications {
+			if _, ok := want[n.ID]; !ok {
+				t.Fatalf("unexpected notification id %q", n.ID)
+			}
+			delete(want, n.ID)
+		}
+		if page.Cursor == "" {
+			break
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Cursor)
+		if err != nil {
+			t.Fatalf("decode cursor: %v", err)
+		}
+		cursor = string(decoded)
+		if pages > total {
+			t.Fatal("pagination did not terminate")
+		}
+	}
+
+	if len(want) != 0 {
+		t.Fatalf("pagination skipped %d notifications", len(want))
+	}
+	if pages != 3 {
+		t.Fatalf("pagination took %d pages, want 3", pages)
+	}
+}
+
+func TestIntegrationListNotificationsRejectsMalformedCursor(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepository(t, "ALERTS", 20)
+
+	userID := seedUser(ctx, t, testkit.Postgres(t))
+
+	cursors := map[string]string{
+		"missing delimiter": "not-a-cursor",
+		"malformed id":      "not-a-uuid$2024-01-01T00:00:00Z",
+		"malformed time":    "123e4567-e89b-12d3-a456-426614174000$not-a-time",
+	}
+	for name, cursor := range cursors {
+		if _, err := repo.ListNotifications(ctx, userID, cursor); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("%s: ListNotifications err code = %v, want %v", name, status.Code(err), codes.InvalidArgument)
+		}
+	}
 }

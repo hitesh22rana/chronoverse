@@ -3,7 +3,6 @@ package client
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
 	"os"
 	"time"
 
@@ -154,9 +153,11 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
 	)
 
+	ensureDNSPollRegistered()
+
 	// Connect to the service
 	conn, err := grpc.NewClient(
-		fmt.Sprintf("%s:%d", svcCfg.Host, svcCfg.Port),
+		buildDialTarget(svcCfg.Host, svcCfg.Port),
 		opts...,
 	)
 	if err != nil {

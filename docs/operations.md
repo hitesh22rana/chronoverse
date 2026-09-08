@@ -594,6 +594,14 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   `DOCKER_PROXY_TOKEN` (mTLS `verify required` + token second factor — missing
   or mismatched material fails closed and workers cannot ping `127.0.0.1:2376`
   or `$(NODE_IP):2376`).
+- Host-network runtime-agent connections to PgBouncer are allowed only from
+  the declared Docker-capable node CIDRs. In production, pass a stable node
+  pool range to setup (for example,
+  `scripts/k8s/setup.sh --mode production --runtime-node-cidrs 10.250.0.0/24`)
+  so node replacement and scale-out remain covered. The setup script refuses
+  to guess a production range; local mode may snapshot current node addresses.
+  Update the range and rerun setup when the node pool moves to a different
+  network. Never replace this with `0.0.0.0/0`.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

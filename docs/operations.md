@@ -602,6 +602,15 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   to guess a production range; local mode may snapshot current node addresses.
   Update the range and rerun setup when the node pool moves to a different
   network. Never replace this with `0.0.0.0/0`.
+- The base policy intentionally uses the reserved `192.0.2.1/32` placeholder
+  and is fail-closed. If your platform applies Kustomize directly instead of
+  using `setup.sh`, keep the CIDR in a private overlay under source control:
+  add a JSON6902 patch targeting
+  `NetworkPolicy/chronoverse-runtime-agent-postgres` that replaces
+  `/spec/ingress/0/from` with `podSelector: {}` plus one `ipBlock` per stable
+  Docker-node CIDR. Apply that same overlay on every run; do not edit the
+  generated base or run setup without the matching `--runtime-node-cidrs`, or
+  the generated patch will be replaced on the next apply.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

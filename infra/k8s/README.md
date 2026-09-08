@@ -108,11 +108,13 @@ kubectl apply -k infra/k8s/overlays/production
 ```
 
 Because host-network runtime agents may reach PgBouncer as node IPs, direct
-production applies must also carry the private JSON6902 patch described in
-`docs/operations.md`, replacing the reserved TEST-NET entry in
-`NetworkPolicy/chronoverse-runtime-agent-postgres` with the stable Docker-node
-CIDR(s). Keep that patch in the operator overlay and apply it every time; the
-base placeholder is intentionally fail-closed. The supported setup path is:
+production applies must also carry the private JSON6902 patches described in
+`docs/operations.md`, replacing the reserved TEST-NET entry in both
+`NetworkPolicy/chronoverse-runtime-agent-postgres` and
+`NetworkPolicy/chronoverse-runtime-agent-telemetry` with the stable
+Docker-node CIDR(s). Keep those patches in the operator overlay and apply them
+every time; the base placeholders are intentionally fail-closed. The supported
+setup path is:
 
 ```sh
 scripts/k8s/setup.sh --mode production --context <context> \

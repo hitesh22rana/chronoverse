@@ -611,6 +611,10 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   Docker-node CIDR. Apply that same overlay on every run; do not edit the
   generated base or run setup without the matching `--runtime-node-cidrs`, or
   the generated patch will be replaced on the next apply.
+- The same declared node CIDRs are applied to
+  `NetworkPolicy/chronoverse-runtime-agent-telemetry`, allowing only TCP 4317
+  into LGTM for runtime-agent OTLP telemetry. Direct overlays must patch both
+  policies; do not broaden LGTM ingress to all sources.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

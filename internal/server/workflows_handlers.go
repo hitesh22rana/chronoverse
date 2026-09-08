@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
@@ -21,7 +20,7 @@ type createWorkflowRequest struct {
 
 func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req createWorkflowRequest
-	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
+	if err := decodeJSONRequest(r, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -80,7 +79,7 @@ type updateWorkflowRequest struct {
 
 func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req updateWorkflowRequest
-	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
+	if err := decodeJSONRequest(r, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

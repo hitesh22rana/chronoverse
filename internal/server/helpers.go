@@ -13,6 +13,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -66,6 +67,17 @@ type userIDKey struct{}
 func idempotencyKeyFromHeader(r *http.Request) (string, bool) {
 	key := r.Header.Get(idempotencyKeyHeader)
 	return key, key != ""
+}
+
+// decodeJSONRequest rejects non-JSON bodies before parsing. Requiring
+// application/json forces a CORS preflight on cross-site browser requests,
+// which the allowlist denies, blocking login CSRF via simple text/plain forms.
+func decodeJSONRequest(r *http.Request, destination any) error {
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]))
+	if contentType != "application/json" {
+		return status.Error(codes.InvalidArgument, "content-type must be application/json")
+	}
+	return idempotency.DecodeUniqueJSON(r.Body, destination)
 }
 
 // sessionFromContext returns the session from the context.

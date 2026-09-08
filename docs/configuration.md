@@ -353,6 +353,11 @@ plus the token second factor. The CA bundle and client keypair are reloaded on
 each new TLS handshake so staged certificate rotation does not leave cached
 clients pinned to old files.
 
+The proxy DaemonSet uses `hostNetwork` rather than CNI host-port DNAT. This
+makes the node endpoint reachable across nodes and remains valid when nodes are
+added or replaced; restrict node-to-node TCP 2376 at the infrastructure
+firewall layer.
+
 When mTLS is configured, the shared Docker client also normalizes a legacy
 `tcp://<same-host>:2375` endpoint to
 `tcp://<same-host>:2376`. The exact DNS name, IPv4 address, or bracketed IPv6

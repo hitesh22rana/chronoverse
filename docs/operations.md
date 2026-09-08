@@ -586,8 +586,10 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   generated or operator-provided Secrets match the target cluster.
 - Confirm Docker-capable nodes expose Docker Engine at `/var/run/docker.sock`
   and have the `chronoverse.io/docker-workloads=true` label.
-- Confirm workers can reach runtime node IPs on TCP `2376` (`hostPort` bypasses
-  `NetworkPolicy` — restrict `2376` at infra layer); the proxy requires
+- Confirm workers can reach runtime node IPs on TCP `2376`. The Docker proxy
+  uses `hostNetwork` so CNI host-port DNAT and pod NetworkPolicy do not break
+  cross-node access; restrict node-to-node TCP `2376` at the infrastructure
+  firewall layer. The proxy still requires
   `docker-proxy-ca`/`server`/`client-*` Secrets plus `docker-proxy-auth`
   `DOCKER_PROXY_TOKEN` (mTLS `verify required` + token second factor — missing
   or mismatched material fails closed and workers cannot ping `127.0.0.1:2376`

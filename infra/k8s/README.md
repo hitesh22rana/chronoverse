@@ -138,6 +138,11 @@ Desktop's built-in `docker-desktop` Kubernetes context is not sufficient for the
 Docker-backed worker path because it does not expose a Docker Engine socket to
 pods.
 
+Workers reach node-local Docker proxies on TCP `2376`. The proxy DaemonSet uses
+`hostNetwork`, so newly labeled nodes work automatically without a node-CIDR
+snapshot or a generated NetworkPolicy. Restrict node-to-node TCP `2376` at the
+infrastructure firewall layer.
+
 For kind validation:
 
 ```sh

@@ -335,6 +335,19 @@ func (r *Repository) mapNotificationReadDatabaseError(err error, operation strin
 	return status.Errorf(codes.Internal, "failed to %s: %v", operation, err)
 }
 
+func (r *Repository) mapListNotificationsDatabaseError(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	}
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, err.Error())
+	}
+	if r.pg.IsInvalidTextRepresentation(err) {
+		return status.Errorf(codes.InvalidArgument, "invalid user ID or cursor: %v", err)
+	}
+	return status.Errorf(codes.Internal, "failed to list all notifications: %v", err)
+}
+
 // ListNotifications returns notifications by user ID.
 // By default, it only returns the unread notifications.
 func (r *Repository) ListNotifications(ctx context.Context, userID, cursor string) (res *notificationsmodel.ListNotificationsResponse, err error) {
@@ -413,29 +426,14 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
-	} else if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid user ID or cursor: %v", err)
-			return nil, err
-		}
-		err = status.Errorf(codes.Internal, "failed to list all notifications: %v", err)
+	if err != nil {
+		err = r.mapListNotificationsDatabaseError(err)
 		return nil, err
 	}
 
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[notificationsmodel.NotificationResponse])
 	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to list all notifications: %v", err)
+		err = r.mapListNotificationsDatabaseError(err)
 		return nil, err
 	}
 

@@ -38,6 +38,7 @@ type dnsPollBuilder struct{}
 
 func (dnsPollBuilder) Scheme() string { return dnsPollScheme }
 
+//nolint:hugeParam // Signature fixed by grpc resolver.Builder interface.
 func (dnsPollBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {
 	target.URL.Scheme = "dns"
 	r, err := resolver.Get("dns").Build(target, cc, opts)

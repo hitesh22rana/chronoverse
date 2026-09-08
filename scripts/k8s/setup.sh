@@ -1239,6 +1239,12 @@ EOF
     kind: NetworkPolicy
     name: chronoverse-runtime-agent-postgres
   path: runtime-agent-postgres-network-policy-patch.yaml
+- target:
+    group: networking.k8s.io
+    version: v1
+    kind: NetworkPolicy
+    name: chronoverse-runtime-agent-telemetry
+  path: runtime-agent-telemetry-network-policy-patch.yaml
 EOF
     fi
   } > "$PATCH_DIR/kustomization.yaml"
@@ -1271,6 +1277,8 @@ EOF
         echo "      cidr: $cidr"
       done
     } > "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml"
+    cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
+      "$PATCH_DIR/runtime-agent-telemetry-network-policy-patch.yaml"
   fi
   KUSTOMIZE_DIR="$PATCH_DIR"
 fi

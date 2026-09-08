@@ -1016,6 +1016,10 @@ validate_runtime_cidr() {
       [ "$prefix" -le 128 ] || die "invalid IPv6 runtime node CIDR: $cidr"
       case "$address" in *[!0-9A-Fa-f:]*|'') die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
       case "$address" in *:::*) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
+      case "$address" in
+        :*) case "$address" in ::*) ;; *) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac ;;
+        *:) case "$address" in *::) ;; *) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac ;;
+      esac
       compressed=false
       case "$address" in *::* ) compressed=true ;; esac
       case "${address/::/}" in *::* ) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac

@@ -1018,6 +1018,8 @@ validate_runtime_cidr() {
       case "$address" in *:::*) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
       case "$address" in
         :*) case "$address" in ::*) ;; *) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac ;;
+      esac
+      case "$address" in
         *:) case "$address" in *::) ;; *) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac ;;
       esac
       compressed=false

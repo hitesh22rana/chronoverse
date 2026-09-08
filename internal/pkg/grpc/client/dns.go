@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/grpc/resolver"
@@ -24,17 +23,15 @@ const (
 	dnsMinResolutionInterval = 10 * time.Second
 )
 
-var registerDNSPollOnce sync.Once
-
-// ensureDNSPollRegistered registers the polling DNS resolver once: the
-// registry panics on duplicates and every process dials several services.
+// init registers the polling resolver before main: both calls mutate
+// process-wide, non-thread-safe gRPC globals (bare-map registry,
+// watcher-read interval), so a lazy sync.Once at first dial is too late —
+// it cannot serialize against OTEL exporter or future handler-path dials.
 // It also lowers the re-resolution floor, otherwise the 15s tick is
 // throttled by the 30s stock default.
-func ensureDNSPollRegistered() {
-	registerDNSPollOnce.Do(func() {
-		grpcDNS.SetMinResolutionInterval(dnsMinResolutionInterval)
-		resolver.Register(dnsPollBuilder{})
-	})
+func init() {
+	grpcDNS.SetMinResolutionInterval(dnsMinResolutionInterval)
+	resolver.Register(dnsPollBuilder{})
 }
 
 type dnsPollBuilder struct{}

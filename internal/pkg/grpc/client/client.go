@@ -153,8 +153,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
 	)
 
-	ensureDNSPollRegistered()
-
 	// Connect to the service
 	conn, err := grpc.NewClient(
 		buildDialTarget(svcCfg.Host, svcCfg.Port),

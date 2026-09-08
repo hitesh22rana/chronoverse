@@ -988,6 +988,13 @@ if [ "$MODE" = "production" ]; then
 fi
 create_docker_proxy_tls_secrets
 
+# Prerequisite-only runs do not render or apply the runtime-agent policies, so
+# they must not require deployment-time node CIDR configuration.
+if [ "$SKIP_APPLY" = true ]; then
+  info "Skipping manifest apply"
+  exit 0
+fi
+
 # Host-network runtime-agent traffic is seen as node traffic by some CNIs.
 # Keep PgBouncer closed to arbitrary sources and allow only the nodes that can
 # run the Docker proxy. Production requires a stable operator-supplied node
@@ -1076,11 +1083,6 @@ else
     validate_runtime_cidr "$cidr"
   done
   info "Using operator-provided runtime-agent node CIDRs: $RUNTIME_NODE_CIDRS"
-fi
-
-if [ "$SKIP_APPLY" = true ]; then
-  info "Skipping manifest apply"
-  exit 0
 fi
 
 # Detect the cluster's node pod CIDRs so the nginx ingress can recover real

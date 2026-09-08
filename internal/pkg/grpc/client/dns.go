@@ -47,9 +47,8 @@ func (dnsPollBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts
 	}
 
 	ctx, stop := context.WithCancel(context.Background())
-	pr := &dnsPollResolver{Resolver: r, stop: stop}
 	go pollResolveNow(ctx, r)
-	return pr, nil
+	return &dnsPollResolver{Resolver: r, stop: stop}, nil
 }
 
 type dnsPollResolver struct {

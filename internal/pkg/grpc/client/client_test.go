@@ -15,6 +15,10 @@ import (
 func TestNewClient_NormalizesDialTarget(t *testing.T) {
 	t.Parallel()
 
+	if resolver.Get("dns-poll") == nil {
+		t.Fatal(`resolver.Get("dns-poll") = nil, want registered builder`)
+	}
+
 	tests := []struct {
 		name string
 		host string
@@ -42,23 +46,20 @@ func TestNewClient_NormalizesDialTarget(t *testing.T) {
 			if got := conn.Target(); got != tt.want {
 				t.Errorf("conn.Target() = %q, want %q", got, tt.want)
 			}
-			if resolver.Get("dns-poll") == nil {
-				t.Error(`resolver.Get("dns-poll") = nil, want registered builder`)
-			}
 		})
 	}
 }
 
 // stubClientConn records resolver updates without opening connections.
 type stubClientConn struct {
-	mu     sync.Mutex
-	states []resolver.State
+	mu    sync.Mutex
+	addrs int
 }
 
 func (s *stubClientConn) UpdateState(st resolver.State) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.states = append(s.states, st)
+	s.addrs += len(st.Addresses)
 	return nil
 }
 
@@ -71,11 +72,30 @@ func (s *stubClientConn) ParseServiceConfig(string) *serviceconfig.ParseResult {
 func (s *stubClientConn) addressCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n := 0
-	for _, st := range s.states {
-		n += len(st.Addresses)
+	return s.addrs
+}
+
+// buildTestResolver builds a dns-poll resolver for rawurl against a stub.
+// Registration needs no client: init() runs on package import.
+func buildTestResolver(t *testing.T, rawurl string) (*stubClientConn, error) {
+	t.Helper()
+
+	b := resolver.Get("dns-poll")
+	if b == nil {
+		t.Fatal(`resolver.Get("dns-poll") = nil, want registered builder`)
 	}
-	return n
+
+	targetURL, err := url.Parse(rawurl)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	cc := &stubClientConn{}
+	r, err := b.Build(resolver.Target{URL: *targetURL}, cc, resolver.BuildOptions{})
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(r.Close)
+	return cc, nil
 }
 
 // TestDNSPollBuilder_ResolvesAddresses guards the dial-target shape: the host
@@ -84,31 +104,10 @@ func (s *stubClientConn) addressCount() int {
 func TestDNSPollBuilder_ResolvesAddresses(t *testing.T) {
 	t.Parallel()
 
-	conn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{Host: "localhost", Port: 50051, TLS: &grpcclient.TLSConfig{}},
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
-	}
-	defer conn.Close()
-
-	b := resolver.Get("dns-poll")
-	if b == nil {
-		t.Fatal(`resolver.Get("dns-poll") = nil, want registered builder`)
-	}
-
-	targetURL, err := url.Parse("dns-poll:///localhost:50051")
-	if err != nil {
-		t.Fatalf("url.Parse() error = %v", err)
-	}
-	cc := &stubClientConn{}
-	r, err := b.Build(resolver.Target{URL: *targetURL}, cc, resolver.BuildOptions{})
+	cc, err := buildTestResolver(t, "dns-poll:///localhost:50051")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	defer r.Close()
 
 	deadline := time.Now().Add(10 * time.Second)
 	for cc.addressCount() == 0 {
@@ -122,34 +121,13 @@ func TestDNSPollBuilder_ResolvesAddresses(t *testing.T) {
 func TestDNSPollBuilder_AuthoritySlotYieldsNoAddresses(t *testing.T) {
 	t.Parallel()
 
-	conn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{Host: "localhost", Port: 50051, TLS: &grpcclient.TLSConfig{}},
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
-	}
-	defer conn.Close()
-
-	b := resolver.Get("dns-poll")
-	if b == nil {
-		t.Fatal(`resolver.Get("dns-poll") = nil, want registered builder`)
-	}
-
 	// Host in the authority slot leaves the endpoint empty, which can never
 	// resolve. Accept either a build error or zero addresses: both mean the
 	// channel would serve every RPC from an empty picker.
-	badURL, err := url.Parse("dns-poll://localhost:50051")
-	if err != nil {
-		t.Fatalf("url.Parse() error = %v", err)
-	}
-	cc := &stubClientConn{}
-	r, err := b.Build(resolver.Target{URL: *badURL}, cc, resolver.BuildOptions{})
+	cc, err := buildTestResolver(t, "dns-poll://localhost:50051")
 	if err != nil {
 		return
 	}
-	defer r.Close()
 
 	time.Sleep(time.Second)
 	if n := cc.addressCount(); n != 0 {

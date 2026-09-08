@@ -103,19 +103,19 @@ for Docker-backed workers because its node does not expose Docker Engine at
 cluster whose nodes really provide that socket.
 
 The `docker-proxy` DaemonSet runs one `runtime-agent` sidecar per labeled
-Docker-capable node. Official overlays construct an IPv4/IPv6-safe node endpoint on `2376` via
-`hostPort:2376` so running job cleanup survives proxy pod restarts on the same
-node. Health probes use `tcp://127.0.0.1:2376` (loopback) while the advertised
+Docker-capable node. Official overlays use `hostNetwork` and construct an
+IPv4/IPv6-safe node endpoint on `2376`, so running job cleanup survives proxy
+pod restarts on the same node and cross-node workers avoid CNI host-port DNAT.
+Health probes use `tcp://127.0.0.1:2376` (loopback) while the advertised
 endpoint remains node-stable. The proxy binds
 `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
 plus the `X-Chronoverse-Docker-Proxy-Token` and exact certificate-role and
 method/path ACLs. Runtime-agent receives health APIs only, workflow-worker gets
 image and cancellation-cleanup calls, and execution-worker gets the execution
 surface. The server and each role use separate private-key mounts; workload
-containers receive neither token nor certificate. Multi-node kind and other Docker-container-based Kubernetes emulators
-can have a specific hostPort routing limitation where pods on one emulator node
-cannot reach another emulator node's host port; if you choose that topology,
-use a pod-IP endpoint override as an emulator-only workaround.
+containers receive neither token nor certificate. Multi-node kind and other
+Docker-container-based Kubernetes emulators can have topology-specific routing
+limitations; use a pod-IP endpoint override only for emulator-only validation.
 `workflow-worker` and `execution-worker` do not need the Docker node label;
 they can schedule anywhere with network access to TCP `2376` on registered
 runtime endpoints.
@@ -150,7 +150,7 @@ This requires an existing deployment. The standalone
 `scripts/k8s/rotate-docker-proxy-certs.sh --context <context>` command skips the
 manifest apply. Both rotate the three clients before the server and remove the
 old CA only after all identities trust the replacement. Run in a maintenance
-window; a single-node hostPort DaemonSet briefly interrupts Docker calls while
+window; a single-node host-networked DaemonSet briefly interrupts Docker calls while
 its pod restarts.
 
 Compose rotation requires a stopped stack because it replaces the dedicated

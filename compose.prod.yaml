@@ -280,13 +280,14 @@ services:
         replication_factor="$${KAFKA_TOPIC_REPLICATION_FACTOR:-1}"
         client_config="/tmp/kafka-client.properties"
 
-        cat > "$$client_config" <<'PROPERTIES'
+        umask 077
+        cat > "$$client_config" <<PROPERTIES
         security.protocol=SSL
         ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.jks
-        ssl.truststore.password=chronoverse
+        ssl.truststore.password=$$(cat /etc/kafka/secrets/truststore_creds.txt)
         ssl.keystore.location=/etc/kafka/secrets/kafka.keystore.jks
-        ssl.keystore.password=chronoverse
-        ssl.key.password=chronoverse
+        ssl.keystore.password=$$(cat /etc/kafka/secrets/keystore_creds.txt)
+        ssl.key.password=$$(cat /etc/kafka/secrets/key_creds.txt)
         PROPERTIES
 
         kafka_topics() {
@@ -473,12 +474,22 @@ services:
   init-certs:
     image: alpine:3.22.2
     container_name: init-certs
+    environment:
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_SSL_KEYSTORE_PASSWORD:?Set KAFKA_SSL_KEYSTORE_PASSWORD}
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD:?Set KAFKA_SSL_TRUSTSTORE_PASSWORD}
     volumes:
       - ./certs:/certs:rw
       - ./docker-proxy-certs:/docker-proxy-certs:rw
       - ./scripts/compose/init-docker-proxy-certs.sh:/usr/local/bin/init-docker-proxy-certs:ro
     entrypoint: |
-      sh -c '
+      sh -ec '
+        # Hex passwords work unchanged in Java properties and Confluent credential files.
+        for password in "$$KAFKA_SSL_KEYSTORE_PASSWORD" "$$KAFKA_SSL_TRUSTSTORE_PASSWORD"; do
+          case "$$password" in
+            *[!0-9a-fA-F]*|"") echo "Kafka TLS passwords must be hexadecimal" >&2; exit 1 ;;
+          esac
+          [ "$${#password}" -ge 32 ] || { echo "Kafka TLS passwords need at least 32 hex characters" >&2; exit 1; }
+        done
         AUTH_ISSUERS="server users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay"
         echo "🔐 Generating per-issuer Ed25519 keys..."
         apk add --no-cache openssl >/dev/null 2>&1 || (apk update && apk add --no-cache openssl)
@@ -555,6 +566,9 @@ services:
           fi
         done
 
+        # Rebuild derived stores so reruns and password changes do not reuse old passwords.
+        rm -f /certs/kafka/kafka.keystore.new.jks /certs/kafka/kafka.truststore.new.jks
+
         # Convert Kafka PEM to PKCS12
         echo "🔄 Converting Kafka PEM to PKCS12..."
         openssl pkcs12 -export \
@@ -563,25 +577,28 @@ services:
           -certfile /certs/ca/ca.crt \
           -out /certs/kafka/kafka.p12 \
           -name kafka \
-          -password pass:chronoverse
+          -password env:KAFKA_SSL_KEYSTORE_PASSWORD
 
         # Import PKCS12 to JKS keystore
         echo "🔄 Importing PKCS12 to JKS keystore..."
         keytool -importkeystore \
-          -deststorepass chronoverse \
-          -destkeypass chronoverse \
-          -destkeystore /certs/kafka/kafka.keystore.jks \
+          -deststorepass:env KAFKA_SSL_KEYSTORE_PASSWORD \
+          -destkeypass:env KAFKA_SSL_KEYSTORE_PASSWORD \
+          -destkeystore /certs/kafka/kafka.keystore.new.jks \
           -srckeystore /certs/kafka/kafka.p12 \
           -srcstoretype PKCS12 \
-          -srcstorepass chronoverse \
+          -srcstorepass:env KAFKA_SSL_KEYSTORE_PASSWORD \
           -alias kafka
 
         # Create Kafka truststore
         echo "🔄 Creating Kafka truststore..."
         keytool -import -trustcacerts -alias CARoot \
           -file /certs/ca/ca.crt \
-          -keystore /certs/kafka/kafka.truststore.jks \
-          -storepass chronoverse -noprompt
+          -keystore /certs/kafka/kafka.truststore.new.jks \
+          -storepass:env KAFKA_SSL_TRUSTSTORE_PASSWORD -noprompt
+
+        mv -f /certs/kafka/kafka.keystore.new.jks /certs/kafka/kafka.keystore.jks
+        mv -f /certs/kafka/kafka.truststore.new.jks /certs/kafka/kafka.truststore.jks
 
         # PKCS12 bundle holds the private key in transportable form; the JKS
         # keystore above is the only runtime consumer, so remove it.
@@ -624,9 +641,9 @@ services:
         chmod 440 /certs/kafka/kafka.key /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
 
         echo "🔐 Creating Kafka keystore credentials files..."
-        echo "chronoverse" > /certs/kafka/keystore_creds.txt
-        echo "chronoverse" > /certs/kafka/truststore_creds.txt
-        echo "chronoverse" > /certs/kafka/key_creds.txt
+        echo "$$KAFKA_SSL_KEYSTORE_PASSWORD" > /certs/kafka/keystore_creds.txt
+        echo "$$KAFKA_SSL_TRUSTSTORE_PASSWORD" > /certs/kafka/truststore_creds.txt
+        echo "$$KAFKA_SSL_KEYSTORE_PASSWORD" > /certs/kafka/key_creds.txt
         chown 1000:1000 /certs/kafka/*_creds.txt
         chmod 440 /certs/kafka/*_creds.txt
 

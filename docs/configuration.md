@@ -273,6 +273,12 @@ Kafka auto topic creation is disabled in compose. `init-kafka-topics` creates or
 expands the expected topics: `workflows`, `jobs`, `job_logs`, and `analytics`.
 The Kubernetes overlays include the same topic initializer.
 
+In the production overlay, KEDA scales Kafka consumers by current consumer-group
+lag. `execution-worker` keeps a minimum of four replicas (maximum twelve) so
+the default two-job-per-worker concurrency provides capacity for the Docker
+runtime nodes; the other Kafka consumers retain their overlay-specific floors
+and ceilings. These are lag targets, not time-window or arrival-rate metrics.
+
 ## Domain and Worker Settings
 
 ### Workflows Service

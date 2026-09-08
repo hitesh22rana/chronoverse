@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-runtime-agent-postgres
+  labels:
+    app.kubernetes.io/name: chronoverse-runtime-agent-postgres
+    app.kubernetes.io/part-of: chronoverse
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pgbouncer
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector: {}
+    # setup.sh replaces this with the cluster's node CIDRs. The reserved
+    # TEST-NET value keeps direct kustomize builds closed by default.
+    - ipBlock:
+        cidr: 192.0.2.1/32
+    ports:
+    - protocol: TCP
+      port: 5432

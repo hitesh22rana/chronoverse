@@ -1249,10 +1249,17 @@ patches:
             echo waiting for redis certificates
             sleep 2
           done
-          cp -R /source-certs/. /certs/
+          # Copy only certificate files; never copy Kubernetes projected-volume symlinks.
+          rm -rf /certs/ca /certs/redis /certs/clients
+          mkdir -p /certs/ca /certs/redis /certs/clients
+          cp /source-certs/ca/ca.crt /certs/ca/ca.crt
+          cp /source-certs/redis/redis.crt /certs/redis/redis.crt
+          cp /source-certs/redis/redis.key /certs/redis/redis.key
+          cp /source-certs/clients/client.crt /certs/clients/client.crt
+          cp /source-certs/clients/client.key /certs/clients/client.key
           chown -R 999:999 /certs
-          find /certs -type d -exec chmod 0750 {} \;
-          find /certs -type f -exec chmod 0640 {} \;
+          find /certs -type d -exec chmod 0750 {} +
+          find /certs -type f -exec chmod 0640 {} +
         securityContext:
           runAsUser: 0
           runAsGroup: 0

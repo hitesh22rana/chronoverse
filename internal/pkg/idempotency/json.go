@@ -22,10 +22,15 @@ func DecodeUniqueJSON(reader io.Reader, destination any) error {
 	return json.Unmarshal(canonical, destination)
 }
 
+// maxJSONNestingDepth bounds recursion in decodeUniqueValue so a small
+// deeply-nested body cannot exhaust gateway memory. 100 is far beyond any
+// legitimate request or workflow payload shape.
+const maxJSONNestingDepth = 100
+
 func parseUniqueJSON(reader io.Reader) (any, error) {
 	decoder := json.NewDecoder(reader)
 	decoder.UseNumber()
-	value, err := decodeUniqueValue(decoder)
+	value, err := decodeUniqueValue(decoder, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +66,7 @@ func CanonicalJSONObject(raw string) ([]byte, error) {
 	return json.Marshal(value)
 }
 
-func decodeUniqueValue(decoder *json.Decoder) (any, error) {
+func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 	token, err := decoder.Token()
 	if err != nil {
 		return nil, err
@@ -69,6 +74,9 @@ func decodeUniqueValue(decoder *json.Decoder) (any, error) {
 	delimiter, composite := token.(json.Delim)
 	if !composite {
 		return token, nil
+	}
+	if depth >= maxJSONNestingDepth {
+		return nil, fmt.Errorf("JSON nesting exceeds maximum depth of %d", maxJSONNestingDepth)
 	}
 
 	switch delimiter {
@@ -86,7 +94,7 @@ func decodeUniqueValue(decoder *json.Decoder) (any, error) {
 			if _, duplicate := object[key]; duplicate {
 				return nil, fmt.Errorf("duplicate JSON key %q", key)
 			}
-			value, valueErr := decodeUniqueValue(decoder)
+			value, valueErr := decodeUniqueValue(decoder, depth+1)
 			if valueErr != nil {
 				return nil, valueErr
 			}
@@ -99,7 +107,7 @@ func decodeUniqueValue(decoder *json.Decoder) (any, error) {
 	case '[':
 		array := make([]any, 0)
 		for decoder.More() {
-			value, valueErr := decodeUniqueValue(decoder)
+			value, valueErr := decodeUniqueValue(decoder, depth+1)
 			if valueErr != nil {
 				return nil, valueErr
 			}

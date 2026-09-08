@@ -31,6 +31,30 @@ func TestSetCookieDeletesExpiredCookie(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONRequestRequiresJSONContentType(t *testing.T) {
+	newRequest := func(contentType, body string) *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		return req
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	if err := decodeJSONRequest(newRequest("text/plain", `{"email":"a@b.c"}`), &req); err == nil {
+		t.Fatal("text/plain body was accepted")
+	}
+	if err := decodeJSONRequest(newRequest("", `{"email":"a@b.c"}`), &req); err == nil {
+		t.Fatal("missing content-type was accepted")
+	}
+	if err := decodeJSONRequest(newRequest("application/json; charset=utf-8", `{"email":"a@b.c"}`), &req); err != nil {
+		t.Fatalf("json content-type was rejected: %v", err)
+	}
+}
+
 func TestSetCookieKeepsPositiveDuration(t *testing.T) {
 	recorder := httptest.NewRecorder()
 

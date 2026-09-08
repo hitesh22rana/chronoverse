@@ -8,7 +8,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
@@ -25,7 +24,7 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req registerRequest
-	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
+	if err := decodeJSONRequest(r, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -77,7 +76,7 @@ type loginRequest struct {
 
 func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
+	if err := decodeJSONRequest(r, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -179,7 +178,7 @@ type updateUserRequest struct {
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	var req updateUserRequest
-	if err := idempotency.DecodeUniqueJSON(r.Body, &req); err != nil {
+	if err := decodeJSONRequest(r, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

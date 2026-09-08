@@ -1,6 +1,7 @@
 package idempotency_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
@@ -34,5 +35,19 @@ func TestCanonicalJSONObject(t *testing.T) {
 		if _, err = idempotency.CanonicalJSONObject(payload); err == nil {
 			t.Fatalf("non-object payload %s was accepted", payload)
 		}
+	}
+}
+
+func TestCanonicalJSONRejectsDeepNesting(t *testing.T) {
+	t.Parallel()
+
+	deep := strings.Repeat("[", 1000) + strings.Repeat("]", 1000)
+	if _, err := idempotency.CanonicalJSON(deep); err == nil {
+		t.Fatal("deeply nested payload was accepted")
+	}
+
+	shallow := strings.Repeat("[", 10) + strings.Repeat("]", 10)
+	if _, err := idempotency.CanonicalJSON(shallow); err != nil {
+		t.Fatalf("shallow payload was rejected: %v", err)
 	}
 }

@@ -1000,7 +1000,7 @@ append_runtime_node_prefix() {
   esac
 }
 validate_runtime_cidr() {
-  local cidr="$1" address prefix octet group compressed
+  local cidr="$1" address prefix octet group compressed nonempty
   case "$cidr" in
     */*) ;;
     *) die "runtime node entries must be CIDRs (for example 10.0.0.0/16): $cidr" ;;
@@ -1015,15 +1015,23 @@ validate_runtime_cidr() {
     *:*)
       [ "$prefix" -le 128 ] || die "invalid IPv6 runtime node CIDR: $cidr"
       case "$address" in *[!0-9A-Fa-f:]*|'') die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
+      case "$address" in *:::*) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
       compressed=false
       case "$address" in *::* ) compressed=true ;; esac
-      case "$address" in *::*::* ) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
+      case "${address/::/}" in *::* ) die "invalid IPv6 runtime node CIDR: $cidr" ;; esac
       IFS=: read -r -a group_array <<< "$address"
       local group_count="${#group_array[@]}"
       if [ "$compressed" = true ]; then
-        [ "$group_count" -lt 8 ] || die "invalid IPv6 runtime node CIDR: $cidr"
+        nonempty=0
+        for group in "${group_array[@]}"; do
+          [ -n "$group" ] && nonempty=$((nonempty + 1))
+        done
+        [ "$nonempty" -le 7 ] || die "invalid IPv6 runtime node CIDR: $cidr"
       else
         [ "$group_count" -eq 8 ] || die "invalid IPv6 runtime node CIDR: $cidr"
+        for group in "${group_array[@]}"; do
+          [ -n "$group" ] || die "invalid IPv6 runtime node CIDR: $cidr"
+        done
       fi
       for group in "${group_array[@]}"; do
         [ -z "$group" ] && continue
@@ -1032,6 +1040,7 @@ validate_runtime_cidr() {
       ;;
     *)
       [ "$prefix" -le 32 ] || die "invalid IPv4 runtime node CIDR: $cidr"
+      case "$address" in .*|*.|*..*) die "invalid IPv4 runtime node CIDR: $cidr" ;; esac
       local octets=()
       IFS=. read -r -a octets <<< "$address"
       [ "${#octets[@]}" -eq 4 ] || die "invalid IPv4 runtime node CIDR: $cidr"
@@ -1043,7 +1052,7 @@ validate_runtime_cidr() {
   esac
 }
 
-RUNTIME_NODE_CIDRS="$(echo "$RUNTIME_NODE_CIDRS" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+RUNTIME_NODE_CIDRS="$(echo "$RUNTIME_NODE_CIDRS" | tr ',[:space:]' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
 if [ -z "$RUNTIME_NODE_CIDRS" ]; then
   if [ "$MODE" = "production" ]; then
     die "production requires --runtime-node-cidrs with the stable node-pool CIDR(s) used by host-network runtime-agent"

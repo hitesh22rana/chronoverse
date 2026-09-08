@@ -335,6 +335,19 @@ func (r *Repository) mapNotificationReadDatabaseError(err error, operation strin
 	return status.Errorf(codes.Internal, "failed to %s: %v", operation, err)
 }
 
+func (r *Repository) mapListNotificationsDatabaseError(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	}
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, err.Error())
+	}
+	if r.pg.IsInvalidTextRepresentation(err) {
+		return status.Errorf(codes.InvalidArgument, "invalid user ID or cursor: %v", err)
+	}
+	return status.Errorf(codes.Internal, "failed to list all notifications: %v", err)
+}
+
 // ListNotifications returns notifications by user ID.
 // By default, it only returns the unread notifications.
 func (r *Repository) ListNotifications(ctx context.Context, userID, cursor string) (res *notificationsmodel.ListNotificationsResponse, err error) {
@@ -363,15 +376,11 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 	}
 
 	var notificationsPreferences []string
+	filterByKind := true
 	switch user.GetNotificationPreference() {
 	case "ALL":
-		notificationsPreferences = []string{
-			notificationsmodel.KindWebAlert.ToString(),
-			notificationsmodel.KindWebError.ToString(),
-			notificationsmodel.KindWebWarn.ToString(),
-			notificationsmodel.KindWebInfo.ToString(),
-			notificationsmodel.KindWebSuccess.ToString(),
-		}
+		// Every kind matches, so skip the kind predicate entirely.
+		filterByKind = false
 	case "ALERTS":
 		notificationsPreferences = []string{
 			notificationsmodel.KindWebAlert.ToString(),
@@ -391,9 +400,14 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 	query := fmt.Sprintf(`
         SELECT id, kind, payload, read_at, created_at, updated_at
         FROM %s
-        WHERE user_id = $1 AND read_at IS NULL AND kind = ANY($2)
+        WHERE user_id = $1 AND read_at IS NULL
     `, postgres.TableNotifications)
-	args := []any{userID, notificationsPreferences}
+	args := []any{userID}
+
+	if filterByKind {
+		args = append(args, notificationsPreferences)
+		query += fmt.Sprintf(` AND kind = ANY($%d)`, len(args))
+	}
 
 	// Add cursor pagination
 	if cursor != "" {
@@ -403,29 +417,23 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 			return nil, err
 		}
 
-		query += ` AND (created_at, id) <= ($3, $4)`
 		args = append(args, createdAt, id)
+		// Inclusive: the cursor points at the first unreturned row, so the
+		// next page must include it.
+		query += fmt.Sprintf(` AND (created_at, id) <= ($%d, $%d)`, len(args)-1, len(args))
 	}
 
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
+	if err != nil {
+		err = r.mapListNotificationsDatabaseError(err)
 		return nil, err
 	}
 
 	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[notificationsmodel.NotificationResponse])
 	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to list all notifications: %v", err)
+		err = r.mapListNotificationsDatabaseError(err)
 		return nil, err
 	}
 
@@ -467,10 +475,15 @@ func extractDataFromCursor(cursor string) (string, time.Time, error) {
 		return "", time.Time{}, status.Error(codes.InvalidArgument, "invalid cursor: expected two parts")
 	}
 
+	id, err := uuid.Parse(string(parts[0]))
+	if err != nil {
+		return "", time.Time{}, status.Errorf(codes.InvalidArgument, "invalid cursor ID: %v", err)
+	}
+
 	createdAt, err := time.Parse(time.RFC3339Nano, string(parts[1]))
 	if err != nil {
 		return "", time.Time{}, status.Errorf(codes.InvalidArgument, "invalid timestamp: %v", err)
 	}
 
-	return string(parts[0]), createdAt, nil
+	return id.String(), createdAt, nil
 }

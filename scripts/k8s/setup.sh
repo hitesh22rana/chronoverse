@@ -34,11 +34,13 @@ Options:
                                  static clusters; scalable production should use
                                  --realip-cidrs with the cluster's pod range
                                  (e.g. --cluster-cidr) so new nodes remain trusted.
-  --runtime-node-cidrs <list>   Node CIDRs allowed to reach PgBouncer from the
-                                 host-network runtime-agent (comma/space separated).
-                                 Defaults to the current node InternalIPs as /32
-                                 (/128 for IPv6); pass a stable node CIDR for
-                                 production scale-out.
+  --runtime-node-cidrs <list>   Source CIDRs allowed to reach PgBouncer and LGTM
+                                 from host-network runtime-agent traffic
+                                 (comma/space separated). Include node and CNI
+                                 pod CIDRs; pass stable ranges for scale-out.
+                                 Local mode defaults to current node InternalIPs
+                                 as /32 (/128 for IPv6), but pod CIDRs still
+                                 need to be supplied when the CNI uses them.
   --create-kind                 Create the local kind cluster before applying local.
   --rotate-docker-proxy-certs  After a successful apply, rotate the existing
                                 Docker proxy PKI with overlapping CA trust.

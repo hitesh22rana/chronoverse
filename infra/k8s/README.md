@@ -118,7 +118,7 @@ setup path is:
 
 ```sh
 scripts/k8s/setup.sh --mode production --context <context> \
-  --runtime-node-cidrs <stable-node-pool-cidr>
+  --runtime-node-cidrs '<stable-node-pool-cidr> <stable-pod-cidr>'
 ```
 
 ## gRPC Service Discovery

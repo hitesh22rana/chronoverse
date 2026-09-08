@@ -595,13 +595,15 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   or mismatched material fails closed and workers cannot ping `127.0.0.1:2376`
   or `$(NODE_IP):2376`).
 - Host-network runtime-agent connections to PgBouncer are allowed only from
-  the declared Docker-capable node CIDRs. In production, pass a stable node
-  pool range to setup (for example,
-  `scripts/k8s/setup.sh --mode production --runtime-node-cidrs 10.250.0.0/24`)
+  the declared source CIDRs. Depending on the CNI, host-network traffic may
+  reach pods with a node/WireGuard source or the node's pod CIDR; include both
+  stable ranges in production (for example,
+  `scripts/k8s/setup.sh --mode production --runtime-node-cidrs '10.250.0.0/24 10.42.0.0/16'`)
   so node replacement and scale-out remain covered. The setup script refuses
-  to guess a production range; local mode may snapshot current node addresses.
-  Update the range and rerun setup when the node pool moves to a different
-  network. Never replace this with `0.0.0.0/0`.
+  to guess a production range; local mode may snapshot current node addresses,
+  but pod CIDRs still need to be supplied when the CNI uses them. Update the
+  ranges and rerun setup when the node pool or CNI network changes. Never
+  replace this with `0.0.0.0/0`.
 - The base policy intentionally uses the reserved `192.0.2.1/32` placeholder
   and is fail-closed. If your platform applies Kustomize directly instead of
   using `setup.sh`, keep the CIDR in a private overlay under source control:

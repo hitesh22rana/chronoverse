@@ -1266,7 +1266,7 @@ patches:
           allowPrivilegeEscalation: false
           capabilities:
             drop: ["ALL"]
-            add: ["CHOWN", "FOWNER"]
+            add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
         resources:
           requests:
             cpu: 25m

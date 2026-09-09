@@ -121,6 +121,13 @@ type LegacyIdentity struct {
 	RequestHash string
 }
 
+const (
+	// idempotencyKeyMinLength is the minimum normalized idempotency key length in bytes.
+	idempotencyKeyMinLength = 1
+	// idempotencyKeyMaxLength is the maximum normalized idempotency key length in bytes.
+	idempotencyKeyMaxLength = 255
+)
+
 // NormalizeKey validates and applies the published ASCII-space normalization.
 func NormalizeKey(raw string) (string, error) {
 	if !utf8.ValidString(raw) {
@@ -140,7 +147,7 @@ func NormalizeKey(raw string) (string, error) {
 		end--
 	}
 	key := raw[start:end]
-	if len(key) < 1 || len(key) > 255 {
+	if len(key) < idempotencyKeyMinLength || len(key) > idempotencyKeyMaxLength {
 		return "", status.Error(codes.InvalidArgument, "idempotency key must be between 1 and 255 UTF-8 bytes")
 	}
 	return key, nil

@@ -24,6 +24,9 @@ const (
 	// maxCreateTopicsAttempts bounds EnsureTopics retries (2s apart, so at
 	// most ~1 minute of waiting for the broker to answer admin requests).
 	maxCreateTopicsAttempts = 30
+
+	// createTopicsTimeoutMillis bounds a single CreateTopics admin request.
+	createTopicsTimeoutMillis = 10000
 )
 
 // EnsureTopics creates the given topics with a single partition, retrying until
@@ -53,7 +56,7 @@ func EnsureTopics(ctx context.Context, client *kgo.Client, topics ...string) err
 
 // createTopicsOnce issues a single CreateTopics request.
 func createTopicsOnce(ctx context.Context, client *kgo.Client, topics ...string) error {
-	req := &kmsg.CreateTopicsRequest{TimeoutMillis: 10000}
+	req := &kmsg.CreateTopicsRequest{TimeoutMillis: createTopicsTimeoutMillis}
 	for _, topic := range topics {
 		req.Topics = append(req.Topics, kmsg.CreateTopicsRequestTopic{
 			Topic:             topic,

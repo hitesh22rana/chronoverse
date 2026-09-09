@@ -1184,8 +1184,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 }
 
 // ListWorkflows returns workflows by user ID.
-//
-//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (res *workflowsmodel.ListWorkflowsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListWorkflows")
 	defer func() {

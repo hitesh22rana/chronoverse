@@ -12,7 +12,7 @@ func Trim[T any](data []T, limit int) ([]T, bool) {
 
 // TrimWithCursor trims the over-fetched page and builds the next cursor from
 // the first unreturned row. It returns an empty cursor when there is no next page.
-func TrimWithCursor[T any](data []T, limit int, cursorOf func(T) string) ([]T, string) {
+func TrimWithCursor[T any](data []T, limit int, cursorOf func(T) string) (page []T, cursor string) {
 	if len(data) > limit {
 		return data[:limit], cursorOf(data[limit])
 	}

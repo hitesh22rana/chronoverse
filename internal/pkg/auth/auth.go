@@ -268,8 +268,6 @@ func New() (*Auth, error) {
 }
 
 // newWithPaths creates a new Auth instance from explicit key paths (test helper).
-//
-//nolint:gocyclo // key load + bundle resolution + kid selection is linear, split would add indirection
 func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {

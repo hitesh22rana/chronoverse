@@ -28,7 +28,9 @@ render_compose() {
   output_file=$2
 
   if [ "$compose_file" = "compose.prod.yaml" ]; then
-    POSTGRES_PASSWORD=compose-validation \
+    KAFKA_SSL_KEYSTORE_PASSWORD=0123456789abcdef0123456789abcdef \
+      KAFKA_SSL_TRUSTSTORE_PASSWORD=abcdef0123456789abcdef0123456789 \
+      POSTGRES_PASSWORD=compose-validation \
       CLICKHOUSE_PASSWORD=compose-validation \
       MEILI_MASTER_KEY=compose-validation \
       CRYPTO_SECRET=0123456789abcdef0123456789abcdef \
@@ -178,6 +180,28 @@ validate_env_init() {
 validate_env_init
 validate_compose compose.dev.yaml
 validate_compose compose.prod.yaml
+
+# Exercise the production password guard before any certificate files are touched.
+prod_json="$tmp_dir/compose.prod.yaml.json"
+jq -r '.services["init-certs"].entrypoint[2]' "$prod_json" | sed 's/\$\$/$/g; /AUTH_ISSUERS=/,$d' > "$tmp_dir/kafka-password-guard.sh"
+for bad_password in '' chronoverse 0123456789abcdef0123456789abcdefZ; do
+  for bad_variable in KAFKA_SSL_KEYSTORE_PASSWORD KAFKA_SSL_TRUSTSTORE_PASSWORD; do
+    if env KAFKA_SSL_KEYSTORE_PASSWORD=0123456789abcdef0123456789abcdef \
+      KAFKA_SSL_TRUSTSTORE_PASSWORD=abcdef0123456789abcdef0123456789 \
+      "$bad_variable=$bad_password" sh -e "$tmp_dir/kafka-password-guard.sh" >/dev/null 2>&1; then
+      echo "production Kafka accepted an invalid $bad_variable" >&2
+      exit 1
+    fi
+  done
+done
+KAFKA_SSL_KEYSTORE_PASSWORD=0123456789abcdef0123456789abcdef \
+  KAFKA_SSL_TRUSTSTORE_PASSWORD=abcdef0123456789abcdef0123456789 \
+  sh -e "$tmp_dir/kafka-password-guard.sh"
+jq -e '
+  .services["init-certs"].environment.KAFKA_SSL_KEYSTORE_PASSWORD == "0123456789abcdef0123456789abcdef"
+  and .services["init-certs"].environment.KAFKA_SSL_TRUSTSTORE_PASSWORD == "abcdef0123456789abcdef0123456789"
+  and (.services["init-kafka-topics"].entrypoint[2] | contains("cat /etc/kafka/secrets/keystore_creds.txt") and contains("cat /etc/kafka/secrets/truststore_creds.txt") and contains("cat /etc/kafka/secrets/key_creds.txt"))
+' "$prod_json" >/dev/null
 
 validate_auth_bundle() {
   # Per-issuer JWT keys must be wired through build args, Compose init-certs, and K8s volumes.

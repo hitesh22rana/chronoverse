@@ -69,16 +69,17 @@ func Message(code Code) (string, bool) {
 
 // ValidateFailure validates that value belongs to the failure reason family.
 func ValidateFailure(value string) error {
-	if _, ok := failureCodes[Code(value)]; !ok {
-		return fmt.Errorf("invalid failure reason code %q", value)
-	}
-	return nil
+	return validateCode(value, failureCodes, "failure reason code")
 }
 
 // ValidateCancellation validates that value belongs to the cancellation reason family.
 func ValidateCancellation(value string) error {
-	if _, ok := cancellationCodes[Code(value)]; !ok {
-		return fmt.Errorf("invalid cancellation reason code %q", value)
+	return validateCode(value, cancellationCodes, "cancellation reason code")
+}
+
+func validateCode(value string, set map[Code]struct{}, kind string) error {
+	if _, ok := set[Code(value)]; !ok {
+		return fmt.Errorf("invalid %s %q", kind, value)
 	}
 	return nil
 }

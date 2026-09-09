@@ -185,24 +185,29 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.gzipWriter.Write(b)
 }
 
+// isValidValue reports whether value belongs to the valid set.
+func isValidValue(value string, valid []string) bool {
+	return slices.Contains(valid, value)
+}
+
 // isValidKind checks if the given kind is valid.
 func isValidKind(kind string) bool {
-	return slices.Contains(validKinds, kind)
+	return isValidValue(kind, validKinds)
 }
 
 // isValidBuildStatus checks if the given build status is valid.
 func isValidBuildStatus(buildStatus string) bool {
-	return slices.Contains(validBuildStatuses, buildStatus)
+	return isValidValue(buildStatus, validBuildStatuses)
 }
 
 // isValidJobStatus checks if the given job status is valid.
 func isValidJobStatus(status string) bool {
-	return slices.Contains(validJobStatuses, status)
+	return isValidValue(status, validJobStatuses)
 }
 
 // isValidJobTrigger checks if the given job trigger is valid.
 func isValidJobTrigger(trigger string) bool {
-	return slices.Contains(validJobTriggers, trigger)
+	return isValidValue(trigger, validJobTriggers)
 }
 
 // getJobLogsStreamType returns the joblogs stream type.
@@ -221,5 +226,5 @@ func getJobLogsStreamType(stream string) (jobspb.LogStream, error) {
 
 // isTerminalJobStatus checks if the given job status is terminal(will no longer change).
 func isTerminalJobStatus(status string) bool {
-	return slices.Contains(terminalJobStatuses, status)
+	return isValidValue(status, terminalJobStatuses)
 }

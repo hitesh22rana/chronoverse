@@ -32,6 +32,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/paginate"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -764,9 +765,10 @@ func (r *Repository) GetJobLogs(
 			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
 		}
 
-		if len(tmp) > r.cfg.LogsFetchLimit {
+		trimmed, hasMore := paginate.Trim(tmp, r.cfg.LogsFetchLimit)
+		tmp = trimmed
+		if hasMore {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
-			tmp = tmp[:r.cfg.LogsFetchLimit]
 		}
 		logs = tmp
 		return nil
@@ -1072,9 +1074,10 @@ func (r *Repository) SearchJobLogs(
 			})
 		}
 
-		if len(tmp) > r.cfg.LogsFetchLimit {
+		trimmed, hasMore := paginate.Trim(tmp, r.cfg.LogsFetchLimit)
+		tmp = trimmed
+		if hasMore {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
-			tmp = tmp[:r.cfg.LogsFetchLimit]
 		}
 		logs = tmp
 		return nil
@@ -1191,16 +1194,14 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	}
 
 	// Check if there are more jobs
-	cursor = ""
-	if len(data) > r.cfg.FetchLimit {
-		cursor = fmt.Sprintf(
+	data, cursor = paginate.TrimWithCursor(data, r.cfg.FetchLimit, func(v *jobsmodel.JobByWorkflowIDResponse) string {
+		return fmt.Sprintf(
 			"%s%c%s",
-			data[r.cfg.FetchLimit].ID,
+			v.ID,
 			delimiter,
-			data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
+			v.CreatedAt.Format(time.RFC3339Nano),
 		)
-		data = data[:r.cfg.FetchLimit]
-	}
+	})
 
 	return &jobsmodel.ListJobsResponse{
 		Jobs:   data,

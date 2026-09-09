@@ -19,6 +19,7 @@ import (
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/paginate"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
@@ -1286,16 +1287,14 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 	}
 
 	// Check if there are more workflows
-	cursor = ""
-	if len(data) > r.cfg.FetchLimit {
-		cursor = fmt.Sprintf(
+	data, cursor = paginate.TrimWithCursor(data, r.cfg.FetchLimit, func(v *workflowsmodel.WorkflowByUserIDResponse) string {
+		return fmt.Sprintf(
 			"%s%c%s",
-			data[r.cfg.FetchLimit].ID,
+			v.ID,
 			delimiter,
-			data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
+			v.CreatedAt.Format(time.RFC3339Nano),
 		)
-		data = data[:r.cfg.FetchLimit]
-	}
+	})
 
 	return &workflowsmodel.ListWorkflowsResponse{
 		Workflows: data,

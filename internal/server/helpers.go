@@ -92,21 +92,17 @@ func sessionFromContext(ctx context.Context) (string, error) {
 
 // setCookie sets a cookie in the response.
 func setCookie(w http.ResponseWriter, name, value, host string, secure bool, expires time.Duration, sameSite http.SameSite) {
-	maxAge := int(expires.Seconds())
-	if expires < 0 {
-		maxAge = -1
-	}
-
 	cookie := &http.Cookie{ //nolint:gosec // Secure is configurable so local HTTP development remains supported.
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
-		MaxAge:   maxAge,
+		MaxAge:   int(expires.Seconds()),
 		SameSite: sameSite,
 	}
 	if expires < 0 {
+		cookie.MaxAge = -1
 		cookie.Expires = time.Unix(0, 0).UTC()
 	}
 
@@ -119,49 +115,42 @@ func setCookie(w http.ResponseWriter, name, value, host string, secure bool, exp
 	http.SetCookie(w, cookie)
 }
 
-//nolint:gocyclo // handleErrors is a helper function to handle gRPC errors.
+// grpcToHTTPStatus maps gRPC codes to HTTP statuses. codes.OK is absent on
+// purpose: like the switch it replaces, OK and unmapped codes write nothing.
+var grpcToHTTPStatus = map[codes.Code]int{
+	codes.Unauthenticated:    http.StatusUnauthorized,
+	codes.PermissionDenied:   http.StatusForbidden,
+	codes.NotFound:           http.StatusNotFound,
+	codes.AlreadyExists:      http.StatusConflict,
+	codes.Aborted:            http.StatusConflict,
+	codes.InvalidArgument:    http.StatusBadRequest,
+	codes.Unimplemented:      http.StatusNotImplemented,
+	codes.Unavailable:        http.StatusServiceUnavailable,
+	codes.FailedPrecondition: http.StatusPreconditionFailed,
+	codes.ResourceExhausted:  http.StatusTooManyRequests,
+	codes.Canceled:           http.StatusRequestTimeout,
+	codes.DeadlineExceeded:   http.StatusGatewayTimeout,
+	codes.Internal:           http.StatusInternalServerError,
+	codes.DataLoss:           http.StatusInternalServerError,
+	codes.OutOfRange:         http.StatusInternalServerError,
+	codes.Unknown:            http.StatusInternalServerError,
+}
+
 func handleError(w http.ResponseWriter, err error, message ...string) {
 	msg := err.Error()
 	if len(message) > 0 {
 		msg = strings.Join(message, " ")
 	}
 
-	switch status.Code(err) {
-	case codes.OK:
+	code := status.Code(err)
+	if code == codes.OK {
 		return
-	case codes.Unauthenticated:
-		http.Error(w, msg, http.StatusUnauthorized)
-	case codes.PermissionDenied:
-		http.Error(w, msg, http.StatusForbidden)
-	case codes.NotFound:
-		http.Error(w, msg, http.StatusNotFound)
-	case codes.AlreadyExists:
-		http.Error(w, msg, http.StatusConflict)
-	case codes.InvalidArgument:
-		http.Error(w, msg, http.StatusBadRequest)
-	case codes.Unimplemented:
-		http.Error(w, msg, http.StatusNotImplemented)
-	case codes.Unavailable:
-		http.Error(w, msg, http.StatusServiceUnavailable)
-	case codes.FailedPrecondition:
-		http.Error(w, msg, http.StatusPreconditionFailed)
-	case codes.ResourceExhausted:
-		http.Error(w, msg, http.StatusTooManyRequests)
-	case codes.Canceled:
-		http.Error(w, msg, http.StatusRequestTimeout)
-	case codes.DeadlineExceeded:
-		http.Error(w, msg, http.StatusGatewayTimeout)
-	case codes.Internal:
-		http.Error(w, msg, http.StatusInternalServerError)
-	case codes.DataLoss:
-		http.Error(w, msg, http.StatusInternalServerError)
-	case codes.Aborted:
-		http.Error(w, msg, http.StatusConflict)
-	case codes.OutOfRange:
-		http.Error(w, msg, http.StatusInternalServerError)
-	case codes.Unknown:
-		http.Error(w, msg, http.StatusInternalServerError)
 	}
+	httpStatus, ok := grpcToHTTPStatus[code]
+	if !ok {
+		return
+	}
+	http.Error(w, msg, httpStatus)
 }
 
 // gzipResponseWriter combines gzip compression with status code capture.

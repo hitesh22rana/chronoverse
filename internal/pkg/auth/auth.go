@@ -317,27 +317,9 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	// bundle-backed validators reject, leaving the service silently broken.
 	// A missing bundle fails closed here instead of silently disabling
 	// kid-bound verification in ValidateToken.
-	foundInBundle := false
-	for candKid, entry := range bundle {
-		if entry.Iss != issuer {
-			continue
-		}
-		if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && len(candPub) == len(edPub) {
-			match := true
-			for i := range candPub {
-				if candPub[i] != edPub[i] {
-					match = false
-					break
-				}
-			}
-			if match {
-				kid = candKid
-				foundInBundle = true
-				break
-			}
-		}
-	}
-	if !foundInBundle {
+	if bundleKid, ok := findBundleKid(bundle, issuer, edPub); ok {
+		kid = bundleKid
+	} else {
 		if bundlePath == "" {
 			return nil, status.Errorf(codes.Internal, "trusted bundle is required for issuer %q but was not found; refusing to start without kid-bound verification", issuer)
 		}
@@ -353,6 +335,20 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 		bundlePath: bundlePath,
 		tp:         otel.Tracer(issuer),
 	}, nil
+}
+
+// findBundleKid returns the bundle kid whose issuer matches and whose ed25519
+// public key equals edPub.
+func findBundleKid(bundle map[string]*bundleEntry, issuer string, edPub ed25519.PublicKey) (string, bool) {
+	for candKid, entry := range bundle {
+		if entry.Iss != issuer {
+			continue
+		}
+		if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && bytes.Equal(candPub, edPub) {
+			return candKid, true
+		}
+	}
+	return "", false
 }
 
 // IssueToken issues a new token with the given subject. audiences controls

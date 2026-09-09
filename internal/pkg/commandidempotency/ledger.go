@@ -237,13 +237,17 @@ func Reserve(
 }
 
 func requestHashMatches(storedHash string, storedAliases []string, requestHash string, requestAliases []string) bool {
-	stored := append([]string{storedHash}, storedAliases...)
-	requested := append([]string{requestHash}, requestAliases...)
-	for _, storedCandidate := range stored {
-		for _, requestedCandidate := range requested {
-			if storedCandidate == requestedCandidate {
-				return true
-			}
+	wanted := make(map[string]struct{}, len(requestAliases)+1)
+	wanted[requestHash] = struct{}{}
+	for _, h := range requestAliases {
+		wanted[h] = struct{}{}
+	}
+	if _, ok := wanted[storedHash]; ok {
+		return true
+	}
+	for _, h := range storedAliases {
+		if _, ok := wanted[h]; ok {
+			return true
 		}
 	}
 	return false

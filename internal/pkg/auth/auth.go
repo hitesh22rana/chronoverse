@@ -205,17 +205,7 @@ func ExtractAuthorizationTokenFromMetadata(ctx context.Context) (string, error) 
 		return "", status.Error(codes.NotFound, "metadata is required")
 	}
 
-	data := md.Get(authorizationMetadataKey)
-	if len(data) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
-	}
-
-	parts := strings.Split(data[0], " ")
-	if len(parts) < 2 || parts[0] != "Bearer" {
-		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
-	}
-
-	return parts[1], nil
+	return parseBearerToken(md.Get(authorizationMetadataKey))
 }
 
 // ExtractRoleFromContext extracts the role placed in the context by ValidateToken.
@@ -232,7 +222,10 @@ func ExtractAudienceFromContext(ctx context.Context) (string, error) {
 
 // ExtractAuthorizationTokenFromHeaders extracts the authorization token from the headers.
 func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
-	data := headers.Get(authorizationMetadataKey)
+	return parseBearerToken(headers.Get(authorizationMetadataKey))
+}
+
+func parseBearerToken(data []string) (string, error) {
 	if len(data) == 0 {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
 	}

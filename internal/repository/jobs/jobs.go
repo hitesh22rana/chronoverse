@@ -765,8 +765,7 @@ func (r *Repository) GetJobLogs(
 			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
 		}
 
-		trimmed, hasMore := paginate.Trim(tmp, r.cfg.LogsFetchLimit)
-		tmp = trimmed
+		tmp, hasMore := paginate.Trim(tmp, r.cfg.LogsFetchLimit)
 		if hasMore {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
 		}
@@ -1074,8 +1073,7 @@ func (r *Repository) SearchJobLogs(
 			})
 		}
 
-		trimmed, hasMore := paginate.Trim(tmp, r.cfg.LogsFetchLimit)
-		tmp = trimmed
+		tmp, hasMore := paginate.Trim(tmp, r.cfg.LogsFetchLimit)
 		if hasMore {
 			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
 		}

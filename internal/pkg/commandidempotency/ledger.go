@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
@@ -64,12 +65,12 @@ const (
 
 // WorkflowUpdateOperation returns the stable workflow-update operation name.
 func WorkflowUpdateOperation(workflowID string) string {
-	return workflowUpdateOperationPrefix + canonicalUUIDText(workflowID)
+	return workflowUpdateOperationPrefix + idempotency.CanonicalUUIDText(workflowID)
 }
 
 // ManualScheduleOperation returns the stable manual-schedule operation name.
 func ManualScheduleOperation(workflowID string) string {
-	return manualScheduleOperationPrefix + canonicalUUIDText(workflowID)
+	return manualScheduleOperationPrefix + idempotency.CanonicalUUIDText(workflowID)
 }
 
 // LegacyWorkflowUpdateOperation returns the exact pre-shared-ledger operation
@@ -80,18 +81,20 @@ func LegacyWorkflowUpdateOperation(rawWorkflowID string) string {
 }
 
 // UserScope returns a user command scope.
-func UserScope(userID string) string { return userScopePrefix + canonicalUUIDText(userID) }
+func UserScope(userID string) string { return userScopePrefix + idempotency.CanonicalUUIDText(userID) }
 
 // WorkflowScope returns a workflow command scope.
 func WorkflowScope(workflowID string) string {
-	return workflowScopePrefix + canonicalUUIDText(workflowID)
+	return workflowScopePrefix + idempotency.CanonicalUUIDText(workflowID)
 }
 
 // JobScope returns a job command scope.
-func JobScope(jobID string) string { return jobScopePrefix + canonicalUUIDText(jobID) }
+func JobScope(jobID string) string { return jobScopePrefix + idempotency.CanonicalUUIDText(jobID) }
 
 // WorkerScope returns a process-specific worker command scope.
-func WorkerScope(processID string) string { return workerScopePrefix + canonicalUUIDText(processID) }
+func WorkerScope(processID string) string {
+	return workerScopePrefix + idempotency.CanonicalUUIDText(processID)
+}
 
 // CanonicalUUID validates a UUID identity and returns PostgreSQL's canonical
 // lowercase, hyphenated spelling. Ledger callers must use the returned value
@@ -102,14 +105,6 @@ func CanonicalUUID(raw, field string) (string, error) {
 		return "", status.Errorf(codes.InvalidArgument, "%s must be a valid UUID: %v", field, err)
 	}
 	return id.String(), nil
-}
-
-func canonicalUUIDText(raw string) string {
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	return id.String()
 }
 
 // Reservation is a fresh command reservation or a completed replay.
@@ -125,6 +120,13 @@ type LegacyIdentity struct {
 	Operation   string
 	RequestHash string
 }
+
+const (
+	// idempotencyKeyMinLength is the minimum normalized idempotency key length in bytes.
+	idempotencyKeyMinLength = 1
+	// idempotencyKeyMaxLength is the maximum normalized idempotency key length in bytes.
+	idempotencyKeyMaxLength = 255
+)
 
 // NormalizeKey validates and applies the published ASCII-space normalization.
 func NormalizeKey(raw string) (string, error) {
@@ -145,7 +147,7 @@ func NormalizeKey(raw string) (string, error) {
 		end--
 	}
 	key := raw[start:end]
-	if len(key) < 1 || len(key) > 255 {
+	if len(key) < idempotencyKeyMinLength || len(key) > idempotencyKeyMaxLength {
 		return "", status.Error(codes.InvalidArgument, "idempotency key must be between 1 and 255 UTF-8 bytes")
 	}
 	return key, nil
@@ -235,13 +237,17 @@ func Reserve(
 }
 
 func requestHashMatches(storedHash string, storedAliases []string, requestHash string, requestAliases []string) bool {
-	stored := append([]string{storedHash}, storedAliases...)
-	requested := append([]string{requestHash}, requestAliases...)
-	for _, storedCandidate := range stored {
-		for _, requestedCandidate := range requested {
-			if storedCandidate == requestedCandidate {
-				return true
-			}
+	wanted := make(map[string]struct{}, len(requestAliases)+1)
+	wanted[requestHash] = struct{}{}
+	for _, h := range requestAliases {
+		wanted[h] = struct{}{}
+	}
+	if _, ok := wanted[storedHash]; ok {
+		return true
+	}
+	for _, h := range storedAliases {
+		if _, ok := wanted[h]; ok {
+			return true
 		}
 	}
 	return false

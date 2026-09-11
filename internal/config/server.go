@@ -51,6 +51,14 @@ func InitServerConfig() (*ServerConfig, error) {
 	return &cfg, nil
 }
 
+// Secret length requirements for server authentication.
+const (
+	// cryptoSecretLength is the exact required CRYPTO_SECRET length in bytes.
+	cryptoSecretLength = 32
+	// minCSRFHMACSecretLength is the minimum SERVER_CSRF_HMAC_SECRET length in bytes.
+	minCSRFHMACSecretLength = 32
+)
+
 func validateServerSecrets(cfg *ServerConfig) error {
 	if cfg.Secret == "" {
 		return errors.New("CRYPTO_SECRET must not be empty")
@@ -61,10 +69,10 @@ func validateServerSecrets(cfg *ServerConfig) error {
 	if cfg.Secret == cfg.CSRFHMACSecret {
 		return errors.New("CRYPTO_SECRET and SERVER_CSRF_HMAC_SECRET must be different")
 	}
-	if len(cfg.Secret) != 32 {
+	if len(cfg.Secret) != cryptoSecretLength {
 		return errors.New("CRYPTO_SECRET must be 32 bytes long")
 	}
-	if len(cfg.CSRFHMACSecret) < 32 {
+	if len(cfg.CSRFHMACSecret) < minCSRFHMACSecretLength {
 		return errors.New("SERVER_CSRF_HMAC_SECRET must be at least 32 bytes long")
 	}
 

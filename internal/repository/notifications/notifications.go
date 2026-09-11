@@ -22,6 +22,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/paginate"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
@@ -438,16 +439,14 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 	}
 
 	// Check if there are more notifications
-	cursor = ""
-	if len(data) > r.cfg.FetchLimit {
-		cursor = fmt.Sprintf(
+	data, cursor = paginate.TrimWithCursor(data, r.cfg.FetchLimit, func(v *notificationsmodel.NotificationResponse) string {
+		return fmt.Sprintf(
 			"%s%c%s",
-			data[r.cfg.FetchLimit].ID,
+			v.ID,
 			delimiter,
-			data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
+			v.CreatedAt.Format(time.RFC3339Nano),
 		)
-		data = data[:r.cfg.FetchLimit]
-	}
+	})
 
 	return &notificationsmodel.ListNotificationsResponse{
 		Notifications: data,

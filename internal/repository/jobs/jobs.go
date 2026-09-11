@@ -32,6 +32,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/paginate"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -734,8 +735,8 @@ func (r *Repository) GetJobLogs(
 		}
 		defer rows.Close()
 
-		tmp := make([]*jobsmodel.JobLog, 0, r.cfg.LogsFetchLimit+1)
-		tmpCursors := make([]jobLogsCursor, 0, r.cfg.LogsFetchLimit+1)
+		fetched := make([]*jobsmodel.JobLog, 0, r.cfg.LogsFetchLimit+1)
+		fetchedCursors := make([]jobLogsCursor, 0, r.cfg.LogsFetchLimit+1)
 		for rows.Next() {
 			var (
 				ts      time.Time
@@ -747,14 +748,14 @@ func (r *Repository) GetJobLogs(
 			if scanErr := rows.Scan(&ts, &msg, &seq, &strm, &eventID); scanErr != nil {
 				return status.Errorf(codes.Internal, "failed to scan logs: %v", scanErr)
 			}
-			tmp = append(tmp, &jobsmodel.JobLog{
+			fetched = append(fetched, &jobsmodel.JobLog{
 				EventID:     eventID,
 				Timestamp:   ts,
 				Message:     msg,
 				SequenceNum: seq,
 				Stream:      strm,
 			})
-			tmpCursors = append(tmpCursors, jobLogsCursor{
+			fetchedCursors = append(fetchedCursors, jobLogsCursor{
 				SequenceNum: seq,
 				Stream:      strm,
 				EventID:     eventID,
@@ -764,11 +765,11 @@ func (r *Repository) GetJobLogs(
 			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
 		}
 
-		if len(tmp) > r.cfg.LogsFetchLimit {
-			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
-			tmp = tmp[:r.cfg.LogsFetchLimit]
+		fetched, hasMore := paginate.Trim(fetched, r.cfg.LogsFetchLimit)
+		if hasMore {
+			nextCursor = fetchedCursors[r.cfg.LogsFetchLimit]
 		}
-		logs = tmp
+		logs = fetched
 		return nil
 	})
 
@@ -1023,8 +1024,8 @@ func (r *Repository) SearchJobLogs(
 			return status.Errorf(codes.Internal, "failed to search job logs: %v", searchErr)
 		}
 
-		tmp := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
-		tmpCursors := make([]jobLogsCursor, 0, len(searchRes.Hits))
+		fetched := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
+		fetchedCursors := make([]jobLogsCursor, 0, len(searchRes.Hits))
 		for _, hit := range searchRes.Hits {
 			source, scanErr := searchHitSource(hit)
 			if scanErr != nil {
@@ -1064,19 +1065,19 @@ func (r *Repository) SearchJobLogs(
 				log.Stream = stream
 			}
 
-			tmp = append(tmp, log)
-			tmpCursors = append(tmpCursors, jobLogsCursor{
+			fetched = append(fetched, log)
+			fetchedCursors = append(fetchedCursors, jobLogsCursor{
 				SequenceNum: log.SequenceNum,
 				Stream:      log.Stream,
 				EventID:     searchHitString(source, "id"),
 			})
 		}
 
-		if len(tmp) > r.cfg.LogsFetchLimit {
-			nextCursor = tmpCursors[r.cfg.LogsFetchLimit]
-			tmp = tmp[:r.cfg.LogsFetchLimit]
+		fetched, hasMore := paginate.Trim(fetched, r.cfg.LogsFetchLimit)
+		if hasMore {
+			nextCursor = fetchedCursors[r.cfg.LogsFetchLimit]
 		}
-		logs = tmp
+		logs = fetched
 		return nil
 	})
 
@@ -1191,16 +1192,14 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	}
 
 	// Check if there are more jobs
-	cursor = ""
-	if len(data) > r.cfg.FetchLimit {
-		cursor = fmt.Sprintf(
+	data, cursor = paginate.TrimWithCursor(data, r.cfg.FetchLimit, func(v *jobsmodel.JobByWorkflowIDResponse) string {
+		return fmt.Sprintf(
 			"%s%c%s",
-			data[r.cfg.FetchLimit].ID,
+			v.ID,
 			delimiter,
-			data[r.cfg.FetchLimit].CreatedAt.Format(time.RFC3339Nano),
+			v.CreatedAt.Format(time.RFC3339Nano),
 		)
-		data = data[:r.cfg.FetchLimit]
-	}
+	})
 
 	return &jobsmodel.ListJobsResponse{
 		Jobs:   data,

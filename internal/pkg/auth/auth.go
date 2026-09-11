@@ -205,17 +205,7 @@ func ExtractAuthorizationTokenFromMetadata(ctx context.Context) (string, error) 
 		return "", status.Error(codes.NotFound, "metadata is required")
 	}
 
-	data := md.Get(authorizationMetadataKey)
-	if len(data) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
-	}
-
-	parts := strings.Split(data[0], " ")
-	if len(parts) < 2 || parts[0] != "Bearer" {
-		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
-	}
-
-	return parts[1], nil
+	return parseBearerToken(md.Get(authorizationMetadataKey))
 }
 
 // ExtractRoleFromContext extracts the role placed in the context by ValidateToken.
@@ -232,7 +222,10 @@ func ExtractAudienceFromContext(ctx context.Context) (string, error) {
 
 // ExtractAuthorizationTokenFromHeaders extracts the authorization token from the headers.
 func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
-	data := headers.Get(authorizationMetadataKey)
+	return parseBearerToken(headers.Get(authorizationMetadataKey))
+}
+
+func parseBearerToken(data []string) (string, error) {
 	if len(data) == 0 {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
 	}
@@ -275,8 +268,6 @@ func New() (*Auth, error) {
 }
 
 // newWithPaths creates a new Auth instance from explicit key paths (test helper).
-//
-//nolint:gocyclo // key load + bundle resolution + kid selection is linear, split would add indirection
 func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
@@ -324,27 +315,9 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	// bundle-backed validators reject, leaving the service silently broken.
 	// A missing bundle fails closed here instead of silently disabling
 	// kid-bound verification in ValidateToken.
-	foundInBundle := false
-	for candKid, entry := range bundle {
-		if entry.Iss != issuer {
-			continue
-		}
-		if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && len(candPub) == len(edPub) {
-			match := true
-			for i := range candPub {
-				if candPub[i] != edPub[i] {
-					match = false
-					break
-				}
-			}
-			if match {
-				kid = candKid
-				foundInBundle = true
-				break
-			}
-		}
-	}
-	if !foundInBundle {
+	if bundleKid, ok := findBundleKid(bundle, issuer, edPub); ok {
+		kid = bundleKid
+	} else {
 		if bundlePath == "" {
 			return nil, status.Errorf(codes.Internal, "trusted bundle is required for issuer %q but was not found; refusing to start without kid-bound verification", issuer)
 		}
@@ -360,6 +333,20 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 		bundlePath: bundlePath,
 		tp:         otel.Tracer(issuer),
 	}, nil
+}
+
+// findBundleKid returns the bundle kid whose issuer matches and whose ed25519
+// public key equals edPub.
+func findBundleKid(bundle map[string]*bundleEntry, issuer string, edPub ed25519.PublicKey) (string, bool) {
+	for candKid, entry := range bundle {
+		if entry.Iss != issuer {
+			continue
+		}
+		if candPub, ok := entry.PublicKey.(ed25519.PublicKey); ok && bytes.Equal(candPub, edPub) {
+			return candKid, true
+		}
+	}
+	return "", false
 }
 
 // IssueToken issues a new token with the given subject. audiences controls

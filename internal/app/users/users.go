@@ -4,9 +4,6 @@ package users
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"os"
 	"strings"
 	"time"
 
@@ -27,6 +24,7 @@ import (
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
+	grpcserverpkg "github.com/hitesh22rana/chronoverse/internal/pkg/grpcserver"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -139,44 +137,10 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 
 	var serverOpts []grpc.ServerOption
 	if cfg.TLSConfig != nil && cfg.TLSConfig.Enabled {
-		// Load CA certificate
-		caCert, err := os.ReadFile(cfg.TLSConfig.CAFile)
+		config, err := grpcserverpkg.LoadTLSConfig(cfg.TLSConfig.CAFile, cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile)
 		if err != nil {
-			loggerpkg.FromContext(ctx).Fatal(
-				"failed to read CA certificate file",
-				zap.Error(err),
-				zap.String("ca_file", cfg.TLSConfig.CAFile),
-			)
+			loggerpkg.FromContext(ctx).Fatal("failed to load TLS credentials", zap.Error(err))
 			return nil
-		}
-
-		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
-			loggerpkg.FromContext(ctx).Fatal(
-				"failed to append CA certificate to pool",
-				zap.String("ca_file", cfg.TLSConfig.CAFile),
-				zap.Error(err),
-			)
-			return nil
-		}
-
-		// Server certificate and private key
-		serverCert, err := tls.LoadX509KeyPair(cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile)
-		if err != nil {
-			loggerpkg.FromContext(ctx).Fatal(
-				"failed to load server certificate and key",
-				zap.Error(err),
-				zap.String("cert_file", cfg.TLSConfig.CertFile),
-				zap.String("key_file", cfg.TLSConfig.KeyFile),
-			)
-			return nil
-		}
-
-		config := &tls.Config{
-			Certificates: []tls.Certificate{serverCert},
-			ClientAuth:   tls.RequireAndVerifyClientCert,
-			ClientCAs:    caCertPool,
-			MinVersion:   tls.VersionTLS12,
 		}
 
 		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(config)))

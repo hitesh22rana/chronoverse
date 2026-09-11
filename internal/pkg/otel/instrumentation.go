@@ -8,7 +8,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/stats"
@@ -113,9 +112,4 @@ func GRPCClientHandler(opts ...otelgrpc.Option) stats.Handler {
 	)
 
 	return otelgrpc.NewClientHandler(append(defaultOpts, opts...)...)
-}
-
-// Meter returns a meter from the configured global OpenTelemetry provider.
-func Meter(scope string, opts ...metric.MeterOption) metric.Meter {
-	return otel.GetMeterProvider().Meter(scope, opts...)
 }

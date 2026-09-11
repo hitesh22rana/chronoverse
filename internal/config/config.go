@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
+	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
 const envPrefix = ""
@@ -198,4 +202,139 @@ type DockerProxy struct {
 		ServerName string `envconfig:"DOCKER_PROXY_TLS_SERVER_NAME" default:"docker-proxy"`
 	}
 	Token string `envconfig:"DOCKER_PROXY_TOKEN" default:""`
+}
+
+// ClientConfig converts Postgres settings to the client configuration.
+func (c *Postgres) ClientConfig() *postgres.Config {
+	return &postgres.Config{
+		Host:        c.Host,
+		Port:        c.Port,
+		User:        c.User,
+		Password:    c.Password,
+		Database:    c.Database,
+		MaxConns:    c.MaxConns,
+		MinConns:    c.MinConns,
+		MaxConnLife: c.MaxConnLife,
+		MaxConnIdle: c.MaxConnIdle,
+		DialTimeout: c.DialTimeout,
+		TLSConfig: &postgres.TLSConfig{
+			Enabled:  c.TLS.Enabled,
+			CAFile:   c.TLS.CAFile,
+			CertFile: c.TLS.CertFile,
+			KeyFile:  c.TLS.KeyFile,
+		},
+	}
+}
+
+// ClientConfig converts Redis settings to the client configuration.
+func (c *Redis) ClientConfig() *redis.Config {
+	return &redis.Config{
+		Host:                     c.Host,
+		Port:                     c.Port,
+		Password:                 c.Password,
+		DB:                       c.DB,
+		PoolSize:                 c.PoolSize,
+		MinIdleConns:             c.MinIdleConns,
+		ReadTimeout:              c.ReadTimeout,
+		WriteTimeout:             c.WriteTimeout,
+		MaxMemory:                c.MaxMemory,
+		EvictionPolicy:           c.EvictionPolicy,
+		EvictionPolicySampleSize: c.EvictionPolicySampleSize,
+		TLSConfig: &redis.TLSConfig{
+			Enabled:  c.TLS.Enabled,
+			CAFile:   c.TLS.CAFile,
+			CertFile: c.TLS.CertFile,
+			KeyFile:  c.TLS.KeyFile,
+		},
+	}
+}
+
+// ClientConfig converts ClickHouse settings to the client configuration.
+func (c *ClickHouse) ClientConfig() *clickhouse.Config {
+	return &clickhouse.Config{
+		Hosts:           c.Hosts,
+		Database:        c.Database,
+		Username:        c.Username,
+		Password:        c.Password,
+		MaxOpenConns:    c.MaxOpenConns,
+		MaxIdleConns:    c.MaxIdleConns,
+		ConnMaxLifetime: c.ConnMaxLifetime,
+		DialTimeout:     c.DialTimeout,
+		TLSConfig: &clickhouse.TLSConfig{
+			Enabled:  c.TLS.Enabled,
+			CAFile:   c.TLS.CAFile,
+			CertFile: c.TLS.CertFile,
+			KeyFile:  c.TLS.KeyFile,
+		},
+	}
+}
+
+// ClientConfig combines the UsersService endpoint with the calling service's certificate.
+func (c UsersService) ClientConfig(clientTLS ClientTLS) *grpcclient.ServiceConfig {
+	return &grpcclient.ServiceConfig{
+		Host: c.Host,
+		Port: c.Port,
+		TLS: &grpcclient.TLSConfig{
+			Enabled:        c.TLS.Enabled,
+			CAFile:         c.TLS.CAFile,
+			ClientCertFile: clientTLS.CertFile,
+			ClientKeyFile:  clientTLS.KeyFile,
+		},
+	}
+}
+
+// ClientConfig combines the WorkflowsService endpoint with the calling service's certificate.
+func (c WorkflowsService) ClientConfig(clientTLS ClientTLS) *grpcclient.ServiceConfig {
+	return &grpcclient.ServiceConfig{
+		Host: c.Host,
+		Port: c.Port,
+		TLS: &grpcclient.TLSConfig{
+			Enabled:        c.TLS.Enabled,
+			CAFile:         c.TLS.CAFile,
+			ClientCertFile: clientTLS.CertFile,
+			ClientKeyFile:  clientTLS.KeyFile,
+		},
+	}
+}
+
+// ClientConfig combines the JobsService endpoint with the calling service's certificate.
+func (c JobsService) ClientConfig(clientTLS ClientTLS) *grpcclient.ServiceConfig {
+	return &grpcclient.ServiceConfig{
+		Host: c.Host,
+		Port: c.Port,
+		TLS: &grpcclient.TLSConfig{
+			Enabled:        c.TLS.Enabled,
+			CAFile:         c.TLS.CAFile,
+			ClientCertFile: clientTLS.CertFile,
+			ClientKeyFile:  clientTLS.KeyFile,
+		},
+	}
+}
+
+// ClientConfig combines the NotificationsService endpoint with the calling service's certificate.
+func (c NotificationsService) ClientConfig(clientTLS ClientTLS) *grpcclient.ServiceConfig {
+	return &grpcclient.ServiceConfig{
+		Host: c.Host,
+		Port: c.Port,
+		TLS: &grpcclient.TLSConfig{
+			Enabled:        c.TLS.Enabled,
+			CAFile:         c.TLS.CAFile,
+			ClientCertFile: clientTLS.CertFile,
+			ClientKeyFile:  clientTLS.KeyFile,
+		},
+	}
+}
+
+// ClientConfig combines the AnalyticsService endpoint with the calling service's certificate.
+func (c AnalyticsService) ClientConfig(clientTLS ClientTLS) *grpcclient.ServiceConfig {
+	return &grpcclient.ServiceConfig{
+		Host: c.Host,
+		Port: c.Port,
+		TLS: &grpcclient.TLSConfig{
+			Enabled:        c.TLS.Enabled,
+			CAFile:         c.TLS.CAFile,
+			ClientCertFile: clientTLS.CertFile,
+			ClientKeyFile:  clientTLS.KeyFile,
+		},
+	}
 }

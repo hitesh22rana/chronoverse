@@ -55,71 +55,29 @@ func run() int {
 		return ExitError
 	}
 
-	pdb, err := postgres.New(ctx, &postgres.Config{
-		Host:        cfg.Postgres.Host,
-		Port:        cfg.Postgres.Port,
-		User:        cfg.Postgres.User,
-		Password:    cfg.Postgres.Password,
-		Database:    cfg.Postgres.Database,
-		MaxConns:    cfg.Postgres.MaxConns,
-		MinConns:    cfg.Postgres.MinConns,
-		MaxConnLife: cfg.Postgres.MaxConnLife,
-		MaxConnIdle: cfg.Postgres.MaxConnIdle,
-		DialTimeout: cfg.Postgres.DialTimeout,
-		TLSConfig: &postgres.TLSConfig{
-			Enabled:  cfg.Postgres.TLS.Enabled,
-			CAFile:   cfg.Postgres.TLS.CAFile,
-			CertFile: cfg.Postgres.TLS.CertFile,
-			KeyFile:  cfg.Postgres.TLS.KeyFile,
-		},
-	})
+	pdb, err := postgres.New(ctx, cfg.Postgres.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer pdb.Close()
 
-	rdb, err := redis.New(ctx, &redis.Config{
-		Host:                     cfg.Redis.Host,
-		Port:                     cfg.Redis.Port,
-		Password:                 cfg.Redis.Password,
-		DB:                       cfg.Redis.DB,
-		PoolSize:                 cfg.Redis.PoolSize,
-		MinIdleConns:             cfg.Redis.MinIdleConns,
-		ReadTimeout:              cfg.Redis.ReadTimeout,
-		WriteTimeout:             cfg.Redis.WriteTimeout,
-		MaxMemory:                cfg.Redis.MaxMemory,
-		EvictionPolicy:           cfg.Redis.EvictionPolicy,
-		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
-		TLSConfig: &redis.TLSConfig{
-			Enabled:  cfg.Redis.TLS.Enabled,
-			CAFile:   cfg.Redis.TLS.CAFile,
-			CertFile: cfg.Redis.TLS.CertFile,
-			KeyFile:  cfg.Redis.TLS.KeyFile,
-		},
-	})
+	rdb, err := redis.New(ctx, cfg.Redis.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer rdb.Close()
 
-	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
-		Hosts:           cfg.ClickHouse.Hosts,
-		Database:        cfg.ClickHouse.Database,
-		Username:        cfg.ClickHouse.Username,
-		Password:        cfg.ClickHouse.Password,
-		MaxOpenConns:    cfg.ClickHouse.MaxOpenConns,
-		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
-		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
-		DialTimeout:     cfg.ClickHouse.DialTimeout,
-		TLSConfig: &clickhouse.TLSConfig{
-			Enabled:  cfg.Redis.TLS.Enabled,
-			CAFile:   cfg.Redis.TLS.CAFile,
-			CertFile: cfg.Redis.TLS.CertFile,
-			KeyFile:  cfg.Redis.TLS.KeyFile,
-		},
-	})
+	clickhouseCfg := cfg.ClickHouse.ClientConfig()
+	// Preserve the existing jobs-service TLS source during config deduplication.
+	clickhouseCfg.TLSConfig = &clickhouse.TLSConfig{
+		Enabled:  cfg.Redis.TLS.Enabled,
+		CAFile:   cfg.Redis.TLS.CAFile,
+		CertFile: cfg.Redis.TLS.CertFile,
+		KeyFile:  cfg.Redis.TLS.KeyFile,
+	}
+	cdb, err := clickhouse.New(ctx, clickhouseCfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -139,16 +97,7 @@ func run() int {
 	defer msdb.Close()
 
 	workflowsConn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{
-			Host: cfg.WorkflowsService.Host,
-			Port: cfg.WorkflowsService.Port,
-			TLS: &grpcclient.TLSConfig{
-				Enabled:        cfg.WorkflowsService.TLS.Enabled,
-				CAFile:         cfg.WorkflowsService.TLS.CAFile,
-				ClientCertFile: cfg.ClientTLS.CertFile,
-				ClientKeyFile:  cfg.ClientTLS.KeyFile,
-			},
-		},
+		cfg.WorkflowsService.ClientConfig(cfg.ClientTLS),
 		grpcclient.DefaultCircuitBreakerConfig(),
 		grpcclient.DefaultRetryConfig(),
 	)

@@ -4,7 +4,6 @@ export {
   CartesianGrid,
   Cell,
   Label,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -14,7 +13,6 @@ export {
 } from "recharts"
 
 export type {
-  DefaultLegendContentProps,
   DefaultTooltipContentProps,
   TooltipValueType,
 } from "recharts"

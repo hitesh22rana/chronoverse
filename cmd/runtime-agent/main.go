@@ -53,24 +53,7 @@ func run() int {
 		return ExitError
 	}
 
-	pdb, err := postgres.New(ctx, &postgres.Config{
-		Host:        cfg.Postgres.Host,
-		Port:        cfg.Postgres.Port,
-		User:        cfg.Postgres.User,
-		Password:    cfg.Postgres.Password,
-		Database:    cfg.Postgres.Database,
-		MaxConns:    cfg.Postgres.MaxConns,
-		MinConns:    cfg.Postgres.MinConns,
-		MaxConnLife: cfg.Postgres.MaxConnLife,
-		MaxConnIdle: cfg.Postgres.MaxConnIdle,
-		DialTimeout: cfg.Postgres.DialTimeout,
-		TLSConfig: &postgres.TLSConfig{
-			Enabled:  cfg.Postgres.TLS.Enabled,
-			CAFile:   cfg.Postgres.TLS.CAFile,
-			CertFile: cfg.Postgres.TLS.CertFile,
-			KeyFile:  cfg.Postgres.TLS.KeyFile,
-		},
-	})
+	pdb, err := postgres.New(ctx, cfg.Postgres.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

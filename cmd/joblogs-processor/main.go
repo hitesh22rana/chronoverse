@@ -51,71 +51,21 @@ func run() int {
 		return ExitError
 	}
 
-	rdb, err := redis.New(ctx, &redis.Config{
-		Host:                     cfg.Redis.Host,
-		Port:                     cfg.Redis.Port,
-		Password:                 cfg.Redis.Password,
-		DB:                       cfg.Redis.DB,
-		PoolSize:                 cfg.Redis.PoolSize,
-		MinIdleConns:             cfg.Redis.MinIdleConns,
-		ReadTimeout:              cfg.Redis.ReadTimeout,
-		WriteTimeout:             cfg.Redis.WriteTimeout,
-		MaxMemory:                cfg.Redis.MaxMemory,
-		EvictionPolicy:           cfg.Redis.EvictionPolicy,
-		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
-		TLSConfig: &redis.TLSConfig{
-			Enabled:  cfg.Redis.TLS.Enabled,
-			CAFile:   cfg.Redis.TLS.CAFile,
-			CertFile: cfg.Redis.TLS.CertFile,
-			KeyFile:  cfg.Redis.TLS.KeyFile,
-		},
-	})
+	rdb, err := redis.New(ctx, cfg.Redis.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer rdb.Close()
 
-	pg, err := postgres.New(ctx, &postgres.Config{
-		Host:        cfg.Postgres.Host,
-		Port:        cfg.Postgres.Port,
-		User:        cfg.Postgres.User,
-		Password:    cfg.Postgres.Password,
-		Database:    cfg.Postgres.Database,
-		MaxConns:    cfg.Postgres.MaxConns,
-		MinConns:    cfg.Postgres.MinConns,
-		MaxConnLife: cfg.Postgres.MaxConnLife,
-		MaxConnIdle: cfg.Postgres.MaxConnIdle,
-		DialTimeout: cfg.Postgres.DialTimeout,
-		TLSConfig: &postgres.TLSConfig{
-			Enabled:  cfg.Postgres.TLS.Enabled,
-			CAFile:   cfg.Postgres.TLS.CAFile,
-			CertFile: cfg.Postgres.TLS.CertFile,
-			KeyFile:  cfg.Postgres.TLS.KeyFile,
-		},
-	})
+	pg, err := postgres.New(ctx, cfg.Postgres.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer pg.Close()
 
-	cdb, err := clickhouse.New(ctx, &clickhouse.Config{
-		Hosts:           cfg.ClickHouse.Hosts,
-		Database:        cfg.ClickHouse.Database,
-		Username:        cfg.ClickHouse.Username,
-		Password:        cfg.ClickHouse.Password,
-		MaxOpenConns:    cfg.ClickHouse.MaxOpenConns,
-		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
-		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
-		DialTimeout:     cfg.ClickHouse.DialTimeout,
-		TLSConfig: &clickhouse.TLSConfig{
-			Enabled:  cfg.ClickHouse.TLS.Enabled,
-			CAFile:   cfg.ClickHouse.TLS.CAFile,
-			CertFile: cfg.ClickHouse.TLS.CertFile,
-			KeyFile:  cfg.ClickHouse.TLS.KeyFile,
-		},
-	})
+	cdb, err := clickhouse.New(ctx, cfg.ClickHouse.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

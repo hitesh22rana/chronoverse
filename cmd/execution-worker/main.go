@@ -89,25 +89,7 @@ func run() int {
 	}
 	defer kfk.Close()
 
-	rdb, err := redis.New(ctx, &redis.Config{
-		Host:                     cfg.Redis.Host,
-		Port:                     cfg.Redis.Port,
-		Password:                 cfg.Redis.Password,
-		DB:                       cfg.Redis.DB,
-		PoolSize:                 cfg.Redis.PoolSize,
-		MinIdleConns:             cfg.Redis.MinIdleConns,
-		ReadTimeout:              cfg.Redis.ReadTimeout,
-		WriteTimeout:             cfg.Redis.WriteTimeout,
-		MaxMemory:                cfg.Redis.MaxMemory,
-		EvictionPolicy:           cfg.Redis.EvictionPolicy,
-		EvictionPolicySampleSize: cfg.Redis.EvictionPolicySampleSize,
-		TLSConfig: &redis.TLSConfig{
-			Enabled:  cfg.Redis.TLS.Enabled,
-			CAFile:   cfg.Redis.TLS.CAFile,
-			CertFile: cfg.Redis.TLS.CertFile,
-			KeyFile:  cfg.Redis.TLS.KeyFile,
-		},
-	})
+	rdb, err := redis.New(ctx, cfg.Redis.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -145,16 +127,7 @@ func run() int {
 	}()
 
 	workflowsConn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{
-			Host: cfg.WorkflowsService.Host,
-			Port: cfg.WorkflowsService.Port,
-			TLS: &grpcclient.TLSConfig{
-				Enabled:        cfg.WorkflowsService.TLS.Enabled,
-				CAFile:         cfg.WorkflowsService.TLS.CAFile,
-				ClientCertFile: cfg.ClientTLS.CertFile,
-				ClientKeyFile:  cfg.ClientTLS.KeyFile,
-			},
-		},
+		cfg.WorkflowsService.ClientConfig(cfg.ClientTLS),
 		grpcclient.DefaultCircuitBreakerConfig(),
 		executionWorkerRetryConfig(),
 	)
@@ -165,16 +138,7 @@ func run() int {
 	defer workflowsConn.Close()
 
 	jobsConn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{
-			Host: cfg.JobsService.Host,
-			Port: cfg.JobsService.Port,
-			TLS: &grpcclient.TLSConfig{
-				Enabled:        cfg.JobsService.TLS.Enabled,
-				CAFile:         cfg.JobsService.TLS.CAFile,
-				ClientCertFile: cfg.ClientTLS.CertFile,
-				ClientKeyFile:  cfg.ClientTLS.KeyFile,
-			},
-		},
+		cfg.JobsService.ClientConfig(cfg.ClientTLS),
 		grpcclient.DefaultCircuitBreakerConfig(),
 		executionWorkerRetryConfig(),
 	)

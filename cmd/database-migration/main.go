@@ -76,22 +76,7 @@ func run() int {
 		pgDSN += fmt.Sprintf("?sslmode=%s", "disable")
 	}
 
-	clickhouseClient, err := clickhouse.New(ctx, &clickhouse.Config{
-		Hosts:           cfg.ClickHouse.Hosts,
-		Database:        cfg.ClickHouse.Database,
-		Username:        cfg.ClickHouse.Username,
-		Password:        cfg.ClickHouse.Password,
-		MaxOpenConns:    cfg.ClickHouse.MaxOpenConns,
-		MaxIdleConns:    cfg.ClickHouse.MaxIdleConns,
-		ConnMaxLifetime: cfg.ClickHouse.ConnMaxLifetime,
-		DialTimeout:     cfg.ClickHouse.DialTimeout,
-		TLSConfig: &clickhouse.TLSConfig{
-			Enabled:  cfg.ClickHouse.TLS.Enabled,
-			CAFile:   cfg.ClickHouse.TLS.CAFile,
-			CertFile: cfg.ClickHouse.TLS.CertFile,
-			KeyFile:  cfg.ClickHouse.TLS.KeyFile,
-		},
-	})
+	clickhouseClient, err := clickhouse.New(ctx, cfg.ClickHouse.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

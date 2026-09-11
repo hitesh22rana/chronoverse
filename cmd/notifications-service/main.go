@@ -53,16 +53,7 @@ func run() int {
 	}
 
 	usersConn, err := grpcclient.NewClient(
-		&grpcclient.ServiceConfig{
-			Host: cfg.UsersService.Host,
-			Port: cfg.UsersService.Port,
-			TLS: &grpcclient.TLSConfig{
-				Enabled:        cfg.UsersService.TLS.Enabled,
-				CAFile:         cfg.UsersService.TLS.CAFile,
-				ClientCertFile: cfg.ClientTLS.CertFile,
-				ClientKeyFile:  cfg.ClientTLS.KeyFile,
-			},
-		},
+		cfg.UsersService.ClientConfig(cfg.ClientTLS),
 		grpcclient.DefaultCircuitBreakerConfig(),
 		grpcclient.DefaultRetryConfig(),
 	)
@@ -72,24 +63,7 @@ func run() int {
 	}
 	defer usersConn.Close()
 
-	pdb, err := postgres.New(ctx, &postgres.Config{
-		Host:        cfg.Postgres.Host,
-		Port:        cfg.Postgres.Port,
-		User:        cfg.Postgres.User,
-		Password:    cfg.Postgres.Password,
-		Database:    cfg.Postgres.Database,
-		MaxConns:    cfg.Postgres.MaxConns,
-		MinConns:    cfg.Postgres.MinConns,
-		MaxConnLife: cfg.Postgres.MaxConnLife,
-		MaxConnIdle: cfg.Postgres.MaxConnIdle,
-		DialTimeout: cfg.Postgres.DialTimeout,
-		TLSConfig: &postgres.TLSConfig{
-			Enabled:  cfg.Postgres.TLS.Enabled,
-			CAFile:   cfg.Postgres.TLS.CAFile,
-			CertFile: cfg.Postgres.TLS.CertFile,
-			KeyFile:  cfg.Postgres.TLS.KeyFile,
-		},
-	})
+	pdb, err := postgres.New(ctx, cfg.Postgres.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

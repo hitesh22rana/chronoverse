@@ -91,8 +91,9 @@ func sessionFromContext(ctx context.Context) (string, error) {
 	return session, nil
 }
 
-// setCookie sets a cookie in the response.
-func setCookie(w http.ResponseWriter, name, value, host string, secure bool, expires time.Duration, sameSite http.SameSite) {
+// setCookie sets a host-only cookie. Domain is omitted so subdomains
+// never receive session material.
+func setCookie(w http.ResponseWriter, name, value, _ string, secure bool, expires time.Duration, sameSite http.SameSite) {
 	cookie := &http.Cookie{ //nolint:gosec // Secure is configurable so local HTTP development remains supported.
 		Name:     name,
 		Value:    value,
@@ -105,11 +106,6 @@ func setCookie(w http.ResponseWriter, name, value, host string, secure bool, exp
 	if expires < 0 {
 		cookie.MaxAge = -1
 		cookie.Expires = time.Unix(0, 0).UTC()
-	}
-
-	// Only set Domain for non-localhost and non-127.0.0.1
-	if !strings.Contains(host, "localhost") && !strings.Contains(host, "127.0.0.1") {
-		cookie.Domain = host
 	}
 
 	// Set the cookie in the response

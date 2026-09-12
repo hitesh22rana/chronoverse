@@ -361,7 +361,7 @@ Dashboard commands:
 
 ```sh
 cd dashboard
-npm install
+npm ci
 npm run dev:port
 npm run build
 npm run lint

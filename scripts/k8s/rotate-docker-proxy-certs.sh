@@ -14,7 +14,7 @@ Usage: scripts/k8s/rotate-docker-proxy-certs.sh [options]
 Rotates the dedicated Docker proxy CA, server identity, and three client-role
 identities with an overlapping trust bundle and staged Kubernetes rollouts.
 Run during a maintenance window because a single-node DaemonSet has a brief
-proxy interruption while its hostPort pod restarts.
+proxy interruption while its host-networked pod restarts.
 
 Options:
   --context <name>       kubectl context to use.

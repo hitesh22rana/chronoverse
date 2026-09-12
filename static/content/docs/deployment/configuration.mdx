@@ -8,7 +8,7 @@ All Go processes accept `ENV` as the runtime mode label. It defaults to `develop
 
 ## HTTP server
 
-Host and timeouts use `SERVER_HOST`, `SERVER_PORT`, request/read/header/idle timeout values, request body limit, session and CSRF expiry, host URL, allowed origins, same-site mode, `SERVER_CSRF_HMAC_SECRET`, and `CRYPTO_SECRET`.
+Host and timeouts use `SERVER_HOST`, `SERVER_PORT`, request/read/header/idle timeout values, request body limit, session and CSRF expiry, host URL, allowed origins, same-site mode, optional cookie domain for subdomain sharing, `SERVER_CSRF_HMAC_SECRET`, and `CRYPTO_SECRET`.
 
 Startup requires persistent, distinct values for `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` in any environment. Startup rejects empty values and reuse of one value for both purposes. Both Compose profiles require both variables explicitly; the Kubernetes setup workflow validates `chronoverse-server-security`.
 

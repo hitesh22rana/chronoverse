@@ -222,7 +222,7 @@
                         "uid": "prometheus"
                     },
                     "editorMode": "code",
-                    "expr": "100 * sum(rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[5m])) / sum(rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\"}[5m]))",
+                    "expr": "100 * (sum(rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[5m])) or sum(rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\"}[5m])) * 0) / sum(rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\"}[5m]))",
                     "instant": false,
                     "range": true,
                     "refId": "A"
@@ -1749,7 +1749,7 @@
                         "uid": "prometheus"
                     },
                     "editorMode": "code",
-                    "expr": "topk(8, 100 * sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[5m])) / sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\"}[5m])))",
+                    "expr": "topk(8, 100 * (sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[5m])) or sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\"}[5m])) * 0) / sum by (http_route) (rate(http_server_request_duration_seconds_count{http_route!=\"\",service_name=~\"$service\"}[5m])))",
                     "instant": false,
                     "legendFormat": "{{http_route}}",
                     "range": true,
@@ -2032,7 +2032,7 @@
                         "type": "prometheus",
                         "uid": "prometheus"
                     },
-                    "expr": "max by (service_name) (go_memory_used_bytes{service_name=~\"$service\"})",
+                    "expr": "sum by (service_name) (go_memory_used_bytes{service_name=~\"$service\"})",
                     "format": "table",
                     "instant": true,
                     "range": false,

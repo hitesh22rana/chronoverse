@@ -25,6 +25,15 @@ resources:
 - kafka-scaling.yaml
 - keda-kafka-network-policy.yaml
 
+configMapGenerator:
+- name: grafana-dashboards
+  files:
+  - chronoverse.json=grafana-dashboards/chronoverse.json
+  - chronoverse.yaml=grafana-dashboards/chronoverse.yaml
+  - defaults-off.yaml=grafana-dashboards/defaults-off.yaml
+  options:
+    disableNameSuffixHash: true
+
 patches:
 - target:
     kind: Deployment

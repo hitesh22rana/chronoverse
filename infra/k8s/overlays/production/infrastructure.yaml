@@ -769,6 +769,19 @@ spec:
               name: grafana-secret
               key: GF_SECURITY_ADMIN_PASSWORD
               optional: false
+        volumeMounts:
+        - name: grafana-dashboards
+          mountPath: /otel-lgtm/dashboards/chronoverse.json
+          subPath: chronoverse.json
+          readOnly: true
+        - name: grafana-dashboards
+          mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/chronoverse.yaml
+          subPath: chronoverse.yaml
+          readOnly: true
+        - name: grafana-dashboards
+          mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml
+          subPath: defaults-off.yaml
+          readOnly: true
         resources:
           requests:
             cpu: 500m
@@ -776,6 +789,10 @@ spec:
           limits:
             cpu: "2"
             memory: 2Gi
+      volumes:
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboards
 ---
 apiVersion: v1
 kind: Service

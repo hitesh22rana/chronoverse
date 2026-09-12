@@ -11,7 +11,8 @@ async function resolveCsrfToken(url: string): Promise<string> {
         return fromCookie
     }
     try {
-        const res = await fetch(new URL("/auth/csrf", url).href, {
+        // Resolve against the browser origin so relative API URLs work too.
+        const res = await fetch(new URL("/auth/csrf", new URL(url, window.location.origin)).href, {
             credentials: "include",
         })
         if (res.ok) {

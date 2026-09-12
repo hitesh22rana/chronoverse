@@ -31,6 +31,7 @@ describe("fetchApi", () => {
 
     it("fetches the token over CORS when the cookie is unreadable", async () => {
         vi.stubGlobal("document", { cookie: "" })
+        vi.stubGlobal("window", { location: { origin: "http://app.example.com" } })
         const calls: Array<{ url: string; headers: Headers }> = []
         vi.stubGlobal(
             "fetch",
@@ -53,6 +54,7 @@ describe("fetchApi", () => {
 
     it("refetches per mutation instead of reusing a stale token", async () => {
         vi.stubGlobal("document", { cookie: "" })
+        vi.stubGlobal("window", { location: { origin: "http://app.example.com" } })
         const csrfCalls: string[] = []
         const mutationTokens: Array<string | null> = []
         vi.stubGlobal(
@@ -73,6 +75,29 @@ describe("fetchApi", () => {
             await fetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
             expect(csrfCalls).toHaveLength(2)
             expect(mutationTokens).toEqual(["tok1", "tok2"])
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it("resolves relative API URLs against the browser origin", async () => {
+        vi.stubGlobal("document", { cookie: "" })
+        vi.stubGlobal("window", { location: { origin: "http://app.example.com" } })
+        const calls: Array<{ url: string; headers: Headers }> = []
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string, opts: RequestInit = {}) => {
+                calls.push({ url, headers: new Headers(opts.headers) })
+                if (url.endsWith("/auth/csrf")) {
+                    return new Response(JSON.stringify({ csrfToken: "same-origin" }), { status: 200 })
+                }
+                return new Response("{}", { status: 200 })
+            }),
+        )
+        try {
+            await fetchApi("/workflows", "boom", { method: "POST" })
+            expect(calls[0].url).toBe("http://app.example.com/auth/csrf")
+            expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("same-origin")
         } finally {
             vi.unstubAllGlobals()
         }

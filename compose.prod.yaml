@@ -376,6 +376,9 @@ services:
     restart: on-failure
     volumes:
       - lgtm:/data
+      - ./infra/k8s/base/grafana-dashboards:/otel-lgtm/dashboards:ro
+      - ./infra/k8s/base/grafana-dashboards/chronoverse.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/chronoverse.yaml:ro
+      - ./infra/k8s/base/grafana-dashboards/defaults-off.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml:ro
     networks:
       - chronoverse
 

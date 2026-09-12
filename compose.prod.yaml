@@ -405,7 +405,7 @@ services:
 
   runtime-agent:
     <<: *services-limit
-    image: runtime-agent
+    image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
     container_name: runtime-agent
     environment:
       POSTGRES_HOST: postgres
@@ -800,7 +800,7 @@ services:
 
   init-database-migration:
     <<: *services-limit
-    image: database-migration
+    image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
     container_name: init-database-migration
     environment:
       POSTGRES_HOST: postgres
@@ -869,7 +869,7 @@ services:
 
   users-service:
     <<: *services-limit
-    image: users-service
+    image: ghcr.io/hitesh22rana/chronoverse/users-service:latest
     container_name: users-service
     environment:
       POSTGRES_HOST: postgres
@@ -950,7 +950,7 @@ services:
 
   workflows-service:
     <<: *services-limit
-    image: workflows-service
+    image: ghcr.io/hitesh22rana/chronoverse/workflows-service:latest
     container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
@@ -1031,7 +1031,7 @@ services:
 
   jobs-service:
     <<: *services-limit
-    image: jobs-service
+    image: ghcr.io/hitesh22rana/chronoverse/jobs-service:latest
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
@@ -1138,7 +1138,7 @@ services:
 
   notifications-service:
     <<: *services-limit
-    image: notifications-service
+    image: ghcr.io/hitesh22rana/chronoverse/notifications-service:latest
     container_name: notifications-service
     environment:
       POSTGRES_HOST: postgres
@@ -1220,7 +1220,7 @@ services:
 
   analytics-service:
     <<: *services-limit
-    image: analytics-service
+    image: ghcr.io/hitesh22rana/chronoverse/analytics-service:latest
     container_name: analytics-service
     environment:
       POSTGRES_HOST: postgres
@@ -1293,7 +1293,7 @@ services:
 
   scheduling-worker:
     <<: *low-resources-workers-limit
-    image: scheduling-worker
+    image: ghcr.io/hitesh22rana/chronoverse/scheduling-worker:latest
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1349,7 +1349,7 @@ services:
 
   workflow-worker:
     <<: *mid-resources-workers-limit
-    image: workflow-worker
+    image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
     environment:
       REDIS_HOST: redis
       REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
@@ -1462,7 +1462,7 @@ services:
 
   execution-worker:
     <<: *high-resources-workers-limit
-    image: execution-worker
+    image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
     environment:
       REDIS_HOST: redis
       REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
@@ -1576,7 +1576,7 @@ services:
 
   joblogs-processor:
     <<: *mid-resources-workers-limit
-    image: joblogs-processor
+    image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1664,7 +1664,7 @@ services:
 
   analytics-processor:
     <<: *low-resources-workers-limit
-    image: analytics-processor
+    image: ghcr.io/hitesh22rana/chronoverse/analytics-processor:latest
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1731,7 +1731,7 @@ services:
 
   outbox-relay:
     <<: *low-resources-workers-limit
-    image: outbox-relay
+    image: ghcr.io/hitesh22rana/chronoverse/outbox-relay:latest
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1800,7 +1800,7 @@ services:
 
   server:
     <<: *services-limit
-    image: server
+    image: ghcr.io/hitesh22rana/chronoverse/server:latest
     container_name: server
     environment:
       CRYPTO_SECRET: "${CRYPTO_SECRET:?set CRYPTO_SECRET to a persistent random 32-byte value}"
@@ -1886,7 +1886,7 @@ services:
       - chronoverse
 
   dashboard:
-    image: dashboard
+    image: ghcr.io/hitesh22rana/chronoverse/dashboard:latest
     container_name: dashboard
     restart: on-failure
     depends_on:

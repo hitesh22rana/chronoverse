@@ -21,6 +21,7 @@ const (
 	serverShutdownTimeout = 10 * time.Second
 	csrfCookieName        = "csrf"
 	sessionCookieName     = "session"
+	csrfHeaderName        = "X-CSRF-Token"
 	idempotencyKeyHeader  = "Idempotency-Key"
 	logStreamStdout       = "stdout"
 	workflowKindHeartbeat = "HEARTBEAT"

@@ -100,7 +100,7 @@ histogram_quantile(
 
 # gRPC requests per second by service and method
 sum by (rpc_service, rpc_method) (
-  rate(rpc_server_call_duration_milliseconds_count[5m])
+  rate(rpc_server_call_duration_seconds_count[5m])
 )
 ```
 

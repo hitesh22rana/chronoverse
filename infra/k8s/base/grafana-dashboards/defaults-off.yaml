@@ -1,0 +1,8 @@
+# Mounted over the LGTM image's bundled demo-dashboard providers
+# (/otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml).
+# Those JVM/RED demo dashboards are provisioned (allowUiUpdates=false), which is
+# why they cannot be deleted from the Grafana UI. Neutralizing their provider
+# file removes them; our dashboards are provisioned by chronoverse.yaml instead.
+apiVersion: 1
+
+providers: []

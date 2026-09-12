@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: chronoverse
+    type: file
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /otel-lgtm/dashboards
+      foldersFromFilesStructure: false

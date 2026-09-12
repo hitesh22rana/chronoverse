@@ -22,8 +22,30 @@ describe("fetchApi", () => {
             }),
         )
         try {
-            await fetchApi("http://x/", "boom")
+            await fetchApi("http://x/", "boom", { method: "POST" })
             expect(seen.get("X-CSRF-Token")).toBe("tok123")
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it("fetches the token over CORS when the cookie is unreadable", async () => {
+        vi.stubGlobal("document", { cookie: "" })
+        const calls: Array<{ url: string; headers: Headers }> = []
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string, opts: RequestInit = {}) => {
+                calls.push({ url, headers: new Headers(opts.headers) })
+                if (url.endsWith("/auth/csrf")) {
+                    return new Response(JSON.stringify({ csrfToken: "fresh" }), { status: 200 })
+                }
+                return new Response("{}", { status: 200 })
+            }),
+        )
+        try {
+            await fetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
+            expect(calls[0].url).toBe("http://api.example.com/auth/csrf")
+            expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("fresh")
         } finally {
             vi.unstubAllGlobals()
         }

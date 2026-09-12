@@ -5,14 +5,43 @@ function getCookie(name: string) {
         ?.split("=")[1] ?? ""
 }
 
+let cachedCsrf = ""
+
+async function resolveCsrfToken(url: string): Promise<string> {
+    const fromCookie = getCookie("csrf")
+    if (fromCookie) {
+        return fromCookie
+    }
+    if (cachedCsrf) {
+        return cachedCsrf
+    }
+    try {
+        const res = await fetch(new URL("/auth/csrf", url).href, {
+            credentials: "include",
+        })
+        if (res.ok) {
+            const data = (await res.json()) as { csrfToken?: string }
+            if (data.csrfToken) {
+                cachedCsrf = data.csrfToken
+            }
+        }
+    } catch {
+        // No token available; caller sends the request without it.
+    }
+    return cachedCsrf
+}
+
 async function fetchWithCredentials(url: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers)
     if (!headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json")
     }
-    const csrf = typeof document !== "undefined" ? getCookie("csrf") : ""
-    if (csrf && !headers.has("X-CSRF-Token")) {
-        headers.set("X-CSRF-Token", csrf)
+    const method = (options.method ?? "GET").toUpperCase()
+    if (!headers.has("X-CSRF-Token") && method !== "GET" && method !== "HEAD" && typeof document !== "undefined") {
+        const csrf = await resolveCsrfToken(url)
+        if (csrf) {
+            headers.set("X-CSRF-Token", csrf)
+        }
     }
 
     return fetch(url, {

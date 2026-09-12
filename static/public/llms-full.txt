@@ -175,6 +175,7 @@ Register through the API and tell curl to store the returned session and CSRF co
 ```bash
 curl -c cookies.txt -X POST http://localhost:8080/auth/register \
   -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: operator-signup-v1' \
   -d '{
     "email": "operator@example.com",
     "password": "password12345"
@@ -590,7 +591,7 @@ Job leases provide exclusive, time-bounded execution ownership.
 
 ## Claim
 
-An execution worker presents the expected workflow generation and dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible. For `CONTAINER` jobs, claim also selects a fresh `READY` runtime node and returns its Docker endpoint. `HEARTBEAT` jobs do not receive runtime ownership.
+An execution worker presents the expected dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible. For `CONTAINER` jobs, claim also selects a fresh `READY` runtime node and returns its Docker endpoint. `HEARTBEAT` jobs do not receive runtime ownership.
 
 ## Protected mutations
 
@@ -927,6 +928,7 @@ Send `Content-Type: application/json` for JSON request bodies. SSE log streams u
 
 The following commands require `Idempotency-Key`:
 
+- `POST /auth/register`
 - `POST /workflows`
 - `PUT /workflows/{workflow_id}`
 - `POST /workflows/{workflow_id}/jobs/schedule`
@@ -1145,7 +1147,7 @@ The development stack starts one `runtime-agent` named `local-docker` beside `do
 | ClickHouse TLS | `9440` |
 | Redis TLS | `6379` |
 | Meilisearch HTTPS | `7700` |
-| Kafka SSL | `9094` |
+| Kafka SSL | `9094` (broker), `9093` (controller) |
 | gRPC services | `50051`–`50055` |
 
 ## Inspect
@@ -1193,10 +1195,12 @@ export MEILI_MASTER_KEY="$(openssl rand -hex 32)"
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
+export KAFKA_SSL_KEYSTORE_PASSWORD="$(openssl rand -hex 32)"
+export KAFKA_SSL_TRUSTSTORE_PASSWORD="$(openssl rand -hex 32)"
 COMPOSE_FILE=compose.prod.yaml scripts/compose/up.sh
 ```
 
-Set all six values in the shell or copy `.env.example` to `.env` and fill it.
+Set all eight values in the shell or copy `.env.example` to `.env` and fill it.
 Persist them in your secret manager and reuse them across server restarts.
 `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct. Startup rejects
 empty values and reused server secrets in any environment.
@@ -1223,7 +1227,7 @@ The production Ingress references `chronoverse-ingress-tls`; replace the
 generated self-signed fallback with a trusted certificate before exposing real
 traffic.
 
-Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2376` via `hostPort:2376` (`127.0.0.1:2376` health); workers can schedule anywhere and route Docker work through the runtime registry. Kubernetes setup generates `docker-proxy-ca`/`server`/`client-*` mTLS material plus `docker-proxy-auth` token — the proxy binds `:2376 ssl ... verify required` and enforces token + exact method/path allowlist via `WithDockerProxyTLS`/`WithDockerProxyToken`.
+Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2376` via `hostNetwork` (`127.0.0.1:2376` health); workers can schedule anywhere and route Docker work through the runtime registry. Kubernetes setup generates `docker-proxy-ca`/`server`/`client-*` mTLS material plus `docker-proxy-auth` token — the proxy binds `:2376 ssl ... verify required` and enforces token + exact method/path allowlist via `WithDockerProxyTLS`/`WithDockerProxyToken`.
 
 ## Maintenance-window upgrades
 
@@ -1268,7 +1272,7 @@ The production profile declares replicated workers and resource reservations. Ef
 - Configure the public host URL, allowed origins, secure cookies, and same-site policy.
 - Pin reviewed image tags instead of relying on mutable `latest` in controlled environments.
 - Restrict access to the LGTM dashboard.
-- Restrict Docker proxy `hostPort:2376` (bypasses `NetworkPolicy` across CNIs) to trusted Chronoverse traffic at infra layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + `docker-proxy-auth` token + exact allowlist.
+- Restrict Docker proxy `:2376` on node IPs (`hostNetwork` bypasses pod `NetworkPolicy`) to trusted Chronoverse traffic at infra layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + `docker-proxy-auth` token + exact allowlist.
 - Define backup, restore, and retention procedures for PostgreSQL and ClickHouse.
 </doc>
 
@@ -1404,7 +1408,7 @@ Kubernetes does not provide deployment startup ordering for long-running pods. C
 
 ## Docker execution model
 
-Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register an IPv4/IPv6-safe node endpoint on `2376` via `hostPort:2376`; a load-balanced ClusterIP cannot preserve runtime ownership. Health probes use `tcp://127.0.0.1:2376` while the advertised endpoint uses the node IP. The proxy binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required` plus `X-Chronoverse-Docker-Proxy-Token` and exact role/method/path ACLs. Runtime-agent gets ping/version only; workflow-worker gets image operations and container log/stop/delete cleanup; execution-worker additionally gets container execution and network inspect/create. Unknown certificate subjects and cross-role operations are denied, and workload containers have neither token nor certificate.
+Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register an IPv4/IPv6-safe node endpoint on `2376` via `hostNetwork`; a load-balanced ClusterIP cannot preserve runtime ownership. Health probes use `tcp://127.0.0.1:2376` while the advertised endpoint uses the node IP. The proxy binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required` plus `X-Chronoverse-Docker-Proxy-Token` and exact role/method/path ACLs. Runtime-agent gets ping/version only; workflow-worker gets image operations and container log/stop/delete cleanup; execution-worker additionally gets container execution and network inspect/create. Unknown certificate subjects and cross-role operations are denied, and workload containers have neither token nor certificate.
 
 The proxy server identity and runtime-agent client identity are separate projected volumes. Workers mount only their own client-role Secret with explicit non-root UID/GID and `fsGroup` ownership. Go clients reload the projected CA and client keypair on new handshakes and bound endpoint clients with idle/LRU eviction, so certificate rotation and runtime-node churn do not require an unbounded cache.
 
@@ -1412,9 +1416,9 @@ The proxy server identity and runtime-agent client identity are separate project
 
 During an upgrade from plaintext `2375`, deploy matching runtime-agent, workflow-worker, and execution-worker images. With proxy mTLS configured, runtime-agent normalizes its configured health endpoint, while both workers preserve the stored runtime host and normalize only a legacy `tcp://<host>:2375` endpoint before cache lookup. This covers historical job and idempotency snapshots on both single-node and multi-node clusters without rewriting PostgreSQL. Endpoints remain unchanged when proxy TLS is disabled.
 
-Workers must be able to reach runtime node IPs on TCP `2376`. The base NetworkPolicy allows that egress port, but `hostPort` bypasses `NetworkPolicy` across CNIs — production must restrict `2376` at the infrastructure layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + token + allowlist. Never expose `2376` publicly.
+Workers must be able to reach runtime node IPs on TCP `2376`. The base NetworkPolicy allows that egress port, but `hostNetwork` bypasses pod `NetworkPolicy` — production must restrict `2376` at the infrastructure layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + token + allowlist. Never expose `2376` publicly.
 
-Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's hostPort from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.
+Multi-node kind and similar Docker-container-based Kubernetes emulators may not route one emulator node's host-networked port from pods on another emulator node. If you choose that topology, use a pod-IP runtime endpoint override as an emulator-only workaround. Real single-node and multi-node Kubernetes clusters should use node-stable runtime endpoints.
 
 Single-node and multi-node Kubernetes are supported only when every labeled runtime node exposes Docker Engine at `/var/run/docker.sock` and workers can route to each labeled node IP on `2376`. containerd-only clusters and Docker Desktop's built-in Kubernetes do not provide that Docker Engine contract. The execution-worker identity remains node-root-equivalent if its key and token are compromised because container creation against a host daemon is privileged. The workflow role cannot create, but can read logs and stop/delete a known container ID. Role ACLs reduce service privilege; they do not make Docker a tenant isolation boundary.
 
@@ -1425,7 +1429,7 @@ scripts/k8s/setup.sh --mode production --context <context> \
   --rotate-docker-proxy-certs
 ```
 
-The workflow first publishes an old+new CA bundle, then rotates the three clients, the server, and finally removes the old trust root with rollouts at each safe boundary. Use `scripts/k8s/rotate-docker-proxy-certs.sh` directly if no manifest apply is needed. A single-node hostPort DaemonSet has a brief interruption while its pod restarts.
+The workflow first publishes an old+new CA bundle, then rotates the three clients, the server, and finally removes the old trust root with rollouts at each safe boundary. Use `scripts/k8s/rotate-docker-proxy-certs.sh` directly if no manifest apply is needed. A single-node host-networked DaemonSet has a brief interruption while its pod restarts.
 
 ## Validation
 
@@ -1533,7 +1537,7 @@ Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafk
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
 
-Each service signs JWTs with its own Ed25519 private key and a `kid` header. The gateway and every verifier mount only its own `certs/issuers/<issuer>/auth.ed` (0440, `fsGroup: 101` in Kubernetes) plus a shared `certs/issuers/trusted.json` bundle and the 13 public keys `certs/issuers/*/auth.ed.pub`; `Auth.ValidateToken` requires the `kid` and verifies the signature only against the matching bundle entry with issuer binding. New builds inject the per-issuer paths through `Makefile` ldflags (for example `certs/issuers/users-service/auth.ed`) and both Compose profiles generate the per-issuer keys and `trusted.json` in `init-certs` and mount only the calling service's private key plus the shared pubs/trusted bundle (and `certs/ca`/`certs/clients` for TLS) — the previous whole-tree `./certs:/certs:ro` mount is removed so a compromised service cannot read another issuer's private key — gating startup on the bundle. Infrastructure services (`postgres`, `redis`, `meilisearch`, `kafka`) mount only their own TLS subtrees and `ca`/`clients`, not the issuer keys. Kubernetes generates the same layout in `cert-bootstrap` and projects per-workload the bundle, the single `issuers/<svc>/auth.ed` private, and all `issuers/*/auth.ed.pub` via mounted volumes; the local overlay keeps issuer material on a dedicated `auth-certs-pvc`, separate from the TLS PVC mounted by infrastructure workloads. Rotation is graceful: `scripts/compose/rotate-auth-key.sh <issuer>` adds a new key alongside the old `kid` in the bundle — automatically using a privileged helper container (`docker run -v ./certs:/certs:rw alpine`) when the host operator (e.g. UID 1000) cannot write the `100:101 0440` bind-mounted keys — verifiers reload the dual-key bundle before the signer switches to the new `kid` (`docker compose -f compose.prod.yaml up -d --force-recreate <verifiers>` then `... <signer>`; `COMPOSE_FILE` is respected and `compose.yaml` does not exist), and the old `kid` is pruned after its 15-minute expiry window (all auth services restart to drop it); `make compose/validate` guards the wiring and rejects whole-tree `/certs` mounts.
+Each service signs JWTs with its own Ed25519 private key and a `kid` header. The gateway and every verifier mount only its own `certs/issuers/<issuer>/auth.ed` (0440, `fsGroup: 101` in Kubernetes) plus a shared `certs/issuers/trusted.json` bundle and the 13 public keys `certs/issuers/*/auth.ed.pub`; `Auth.ValidateToken` requires the `kid` and verifies the signature only against the matching bundle entry with issuer binding. New builds inject the per-issuer paths through `Makefile` ldflags (for example `certs/issuers/users-service/auth.ed`) and both Compose profiles generate the per-issuer keys and `trusted.json` in `init-certs` and mount only the calling service's private key plus the shared pubs/trusted bundle (and `certs/ca`/`certs/clients` for TLS) — the previous whole-tree `./certs:/certs:ro` mount is removed so a compromised service cannot read another issuer's private key — gating startup on the bundle. Infrastructure services (`postgres`, `redis`, `meilisearch`, `kafka`) mount only their own TLS subtrees and `ca`/`clients`, not the issuer keys. Kubernetes generates the same layout in `cert-bootstrap` and projects per-workload the bundle, the single `issuers/<svc>/auth.ed` private, and all `issuers/*/auth.ed.pub` via mounted volumes; the local overlay keeps issuer material on a dedicated `auth-certs-pvc`, separate from the TLS PVC mounted by infrastructure workloads. Rotation is graceful: `scripts/compose/rotate-auth-key.sh <issuer>` adds a new key alongside the old `kid` in the bundle — automatically using a privileged helper container (`docker run -v ./certs:/certs:rw alpine`) when the host operator (e.g. UID 1000) cannot write the `100:101 0440` bind-mounted keys — verifiers reload the dual-key bundle before the signer switches to the new `kid` (`docker compose -f compose.prod.yaml up -d --no-deps --force-recreate <verifiers>` then `... <signer>`; `COMPOSE_FILE` is respected and `compose.yaml` does not exist), and the old `kid` is pruned after its 15-minute expiry window (all auth services restart to drop it); `make compose/validate` guards the wiring and rejects whole-tree `/certs` mounts.
 
 Internal Ed25519 JWT validation allows at most 30 seconds of clock skew for
 `nbf` and expiry checks so ordinary multi-node time differences do not reject a
@@ -2394,6 +2398,18 @@ return `401` and the configured credentials return `200`. Do not delete the
 `lgtm` volume for this migration: `/data` contains the Grafana database and
 dashboards, Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
+## Built-in dashboard
+
+Every environment file-provisions a `chronoverse` Grafana dashboard from
+`infra/k8s/base/grafana-dashboards/chronoverse.json` (Compose bind-mounts the
+directory; Kubernetes serves it from hashed ConfigMaps that Grafana re-polls
+every 30 seconds). It covers HTTP/gRPC request rates, p95 latency, latency
+heatmaps, 5xx ratios, Go runtime (goroutines, memory, CPU), log volume and
+error logs, and a fleet table, with links into Explore for traces and logs.
+The LGTM image's bundled demo dashboards are disabled by an empty provider
+(`defaults-off.yaml`) because provisioned dashboards cannot be removed through
+the Grafana UI.
+
 ## Traces
 
 Trace context crosses HTTP, gRPC, and Kafka. Use a single trace to follow an API mutation into outbox publication, worker processing, domain RPCs, and follow-up events.
@@ -2414,9 +2430,7 @@ Outbound heartbeat requests emit the corresponding `http.client.*` metrics. HTTP
 
 All gRPC servers and clients emit:
 
-- `rpc.server.duration` and `rpc.client.duration`
-- `rpc.server.request.size` and `rpc.client.request.size`
-- `rpc.server.response.size` and `rpc.client.response.size`
+- `rpc.server.call.duration` and `rpc.client.call.duration`
 - per-RPC request and response message counts
 
 Useful dimensions include HTTP method, route, and response status, plus gRPC service, method, and status code. Unary and streaming RPCs are both recorded.
@@ -2442,7 +2456,7 @@ histogram_quantile(
 
 # gRPC requests per second by service and method
 sum by (rpc_service, rpc_method) (
-  rate(rpc_server_duration_milliseconds_count[5m])
+  rate(rpc_server_call_duration_seconds_count[5m])
 )
 ```
 
@@ -2476,7 +2490,7 @@ Execution workers do not need to run on the same node as the Docker daemon. They
 
 Run one runtime agent beside each Docker-capable daemon. New container claims only use fresh `READY` runtime rows. Missing heartbeats pause new claims for that runtime, while expired-lease recovery uses the stored job owner to decide whether to clean up or retry.
 
-Kubernetes runtime endpoints are node IPs on mTLS `hostPort:2376`, not a load-balanced Service. Every labeled node must expose Docker Engine and be routable from every worker. Client caches are bounded to 256 endpoints with 30-minute idle and LRU eviction, so node churn does not grow worker memory without limit. containerd-only clusters are not Docker-workflow runtimes; multi-node kind-like emulators require an explicit cross-node hostPort reachability test.
+Kubernetes runtime endpoints are node IPs on mTLS `:2376` via `hostNetwork`, not a load-balanced Service. Every labeled node must expose Docker Engine and be routable from every worker. Client caches are bounded to 256 endpoints with 30-minute idle and LRU eviction, so node churn does not grow worker memory without limit. containerd-only clusters are not Docker-workflow runtimes; multi-node kind-like emulators require an explicit cross-node reachability test.
 
 Role certificates scale with replicas: workflow-worker replicas share the workflow role and execution-worker replicas share the execution role, while each role is mounted separately. This separates privilege classes, not individual pod identities. A compromised execution role remains node-root-equivalent because it can create containers; use isolated/rootless runtime pools when that shared role blast radius is unacceptable.
 

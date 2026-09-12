@@ -9,6 +9,7 @@ Register through the API and tell curl to store the returned session and CSRF co
 ```bash
 curl -c cookies.txt -X POST http://localhost:8080/auth/register \
   -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: operator-signup-v1' \
   -d '{
     "email": "operator@example.com",
     "password": "password12345"

@@ -42,6 +42,18 @@ return `401` and the configured credentials return `200`. Do not delete the
 `lgtm` volume for this migration: `/data` contains the Grafana database and
 dashboards, Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
+## Built-in dashboard
+
+Every environment file-provisions a `chronoverse` Grafana dashboard from
+`infra/k8s/base/grafana-dashboards/chronoverse.json` (Compose bind-mounts the
+directory; Kubernetes serves it from hashed ConfigMaps that Grafana re-polls
+every 30 seconds). It covers HTTP/gRPC request rates, p95 latency, latency
+heatmaps, 5xx ratios, Go runtime (goroutines, memory, CPU), log volume and
+error logs, and a fleet table, with links into Explore for traces and logs.
+The LGTM image's bundled demo dashboards are disabled by an empty provider
+(`defaults-off.yaml`) because provisioned dashboards cannot be removed through
+the Grafana UI.
+
 ## Traces
 
 Trace context crosses HTTP, gRPC, and Kafka. Use a single trace to follow an API mutation into outbox publication, worker processing, domain RPCs, and follow-up events.
@@ -62,9 +74,7 @@ Outbound heartbeat requests emit the corresponding `http.client.*` metrics. HTTP
 
 All gRPC servers and clients emit:
 
-- `rpc.server.duration` and `rpc.client.duration`
-- `rpc.server.request.size` and `rpc.client.request.size`
-- `rpc.server.response.size` and `rpc.client.response.size`
+- `rpc.server.call.duration` and `rpc.client.call.duration`
 - per-RPC request and response message counts
 
 Useful dimensions include HTTP method, route, and response status, plus gRPC service, method, and status code. Unary and streaming RPCs are both recorded.
@@ -90,7 +100,7 @@ histogram_quantile(
 
 # gRPC requests per second by service and method
 sum by (rpc_service, rpc_method) (
-  rate(rpc_server_duration_milliseconds_count[5m])
+  rate(rpc_server_call_duration_seconds_count[5m])
 )
 ```
 

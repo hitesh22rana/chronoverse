@@ -9,9 +9,7 @@ fleet. It combines an HTTP dashboard/API, gRPC microservices, Kafka workers,
 transactional persistence, retained/searchable job logs, notifications, and
 analytics into one self-hosted stack.
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/hitesh22rana/chronoverse)](https://goreportcard.com/report/github.com/hitesh22rana/chronoverse)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hitesh22rana/chronoverse)
 
 **[Website](https://hitesh22rana.github.io/chronoverse/)** · **[Documentation](https://hitesh22rana.github.io/chronoverse/docs/)** · **[API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/)**
 
@@ -29,7 +27,7 @@ analytics into one self-hosted stack.
 - **Retention controls**: per-workflow log retention with explicit behavior for non-log-producing or retention-disabled workflows.
 - **Notifications and analytics**: user notifications, workflow/job analytics, generated log counts, and execution duration summaries.
 - **Security by default in compose**: generated certificates, TLS/mTLS across infrastructure and gRPC services, CSRF-protected session cookies, and Ed25519 JWTs for service authorization.
-- **Observability**: OpenTelemetry traces, metrics, and logs exported to the bundled Grafana OTEL LGTM stack.
+- **Observability**: OpenTelemetry traces, metrics, and logs exported to the bundled Grafana OTEL LGTM stack, with a pre-provisioned Chronoverse dashboard.
 
 ## Architecture
 
@@ -141,10 +139,12 @@ export MEILI_MASTER_KEY="$(openssl rand -hex 32)"
 export CRYPTO_SECRET="$(openssl rand -hex 16)"
 export SERVER_CSRF_HMAC_SECRET="$(openssl rand -hex 32)"
 export GF_SECURITY_ADMIN_PASSWORD="$(openssl rand -hex 24)"
+export KAFKA_SSL_KEYSTORE_PASSWORD="$(openssl rand -hex 32)"
+export KAFKA_SSL_TRUSTSTORE_PASSWORD="$(openssl rand -hex 32)"
 COMPOSE_FILE=compose.prod.yaml scripts/compose/up.sh
 ```
 
-Set all six values in the shell or copy `.env.example` to `.env` and fill it.
+Set all eight values in the shell or copy `.env.example` to `.env` and fill it.
 Persist them in your secret manager and reuse them across server restarts.
 `CRYPTO_SECRET` and `SERVER_CSRF_HMAC_SECRET` must be distinct;
 startup rejects empty values and reuse of one value for both purposes in any

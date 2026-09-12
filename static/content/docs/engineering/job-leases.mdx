@@ -4,7 +4,7 @@ Job leases provide exclusive, time-bounded execution ownership.
 
 ## Claim
 
-An execution worker presents the expected workflow generation and dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible. For `CONTAINER` jobs, claim also selects a fresh `READY` runtime node and returns its Docker endpoint. `HEARTBEAT` jobs do not receive runtime ownership.
+An execution worker presents the expected dispatch attempt. The jobs service checks current state and returns a lease token only when the job is eligible. For `CONTAINER` jobs, claim also selects a fresh `READY` runtime node and returns its Docker endpoint. `HEARTBEAT` jobs do not receive runtime ownership.
 
 ## Protected mutations
 

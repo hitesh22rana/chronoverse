@@ -62,9 +62,7 @@ Outbound heartbeat requests emit the corresponding `http.client.*` metrics. HTTP
 
 All gRPC servers and clients emit:
 
-- `rpc.server.duration` and `rpc.client.duration`
-- `rpc.server.request.size` and `rpc.client.request.size`
-- `rpc.server.response.size` and `rpc.client.response.size`
+- `rpc.server.call.duration` and `rpc.client.call.duration`
 - per-RPC request and response message counts
 
 Useful dimensions include HTTP method, route, and response status, plus gRPC service, method, and status code. Unary and streaming RPCs are both recorded.
@@ -90,7 +88,7 @@ histogram_quantile(
 
 # gRPC requests per second by service and method
 sum by (rpc_service, rpc_method) (
-  rate(rpc_server_duration_milliseconds_count[5m])
+  rate(rpc_server_call_duration_milliseconds_count[5m])
 )
 ```
 

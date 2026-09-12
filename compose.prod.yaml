@@ -405,7 +405,7 @@ services:
 
   runtime-agent:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
+    image: runtime-agent
     container_name: runtime-agent
     environment:
       POSTGRES_HOST: postgres
@@ -644,6 +644,7 @@ services:
         chmod 440 /certs/kafka/kafka.key /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
 
         echo "🔐 Creating Kafka keystore credentials files..."
+        rm -f /certs/kafka/keystore_creds.txt /certs/kafka/truststore_creds.txt /certs/kafka/key_creds.txt
         echo "$$KAFKA_SSL_KEYSTORE_PASSWORD" > /certs/kafka/keystore_creds.txt
         echo "$$KAFKA_SSL_TRUSTSTORE_PASSWORD" > /certs/kafka/truststore_creds.txt
         echo "$$KAFKA_SSL_KEYSTORE_PASSWORD" > /certs/kafka/key_creds.txt
@@ -799,7 +800,7 @@ services:
 
   init-database-migration:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/database-migration:latest
+    image: database-migration
     container_name: init-database-migration
     environment:
       POSTGRES_HOST: postgres
@@ -868,7 +869,7 @@ services:
 
   users-service:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/users-service:latest
+    image: users-service
     container_name: users-service
     environment:
       POSTGRES_HOST: postgres
@@ -949,7 +950,7 @@ services:
 
   workflows-service:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/workflows-service:latest
+    image: workflows-service
     container_name: workflows-service
     environment:
       POSTGRES_HOST: postgres
@@ -1030,7 +1031,7 @@ services:
 
   jobs-service:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/jobs-service:latest
+    image: jobs-service
     container_name: jobs-service
     environment:
       POSTGRES_HOST: postgres
@@ -1137,7 +1138,7 @@ services:
 
   notifications-service:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/notifications-service:latest
+    image: notifications-service
     container_name: notifications-service
     environment:
       POSTGRES_HOST: postgres
@@ -1219,7 +1220,7 @@ services:
 
   analytics-service:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/analytics-service:latest
+    image: analytics-service
     container_name: analytics-service
     environment:
       POSTGRES_HOST: postgres
@@ -1292,7 +1293,7 @@ services:
 
   scheduling-worker:
     <<: *low-resources-workers-limit
-    image: ghcr.io/hitesh22rana/chronoverse/scheduling-worker:latest
+    image: scheduling-worker
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1348,7 +1349,7 @@ services:
 
   workflow-worker:
     <<: *mid-resources-workers-limit
-    image: ghcr.io/hitesh22rana/chronoverse/workflow-worker:latest
+    image: workflow-worker
     environment:
       REDIS_HOST: redis
       REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
@@ -1461,7 +1462,7 @@ services:
 
   execution-worker:
     <<: *high-resources-workers-limit
-    image: ghcr.io/hitesh22rana/chronoverse/execution-worker:latest
+    image: execution-worker
     environment:
       REDIS_HOST: redis
       REDIS_MAX_MEMORY: ${REDIS_MAX_MEMORY:-768mb}
@@ -1575,7 +1576,7 @@ services:
 
   joblogs-processor:
     <<: *mid-resources-workers-limit
-    image: ghcr.io/hitesh22rana/chronoverse/joblogs-processor:latest
+    image: joblogs-processor
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1663,7 +1664,7 @@ services:
 
   analytics-processor:
     <<: *low-resources-workers-limit
-    image: ghcr.io/hitesh22rana/chronoverse/analytics-processor:latest
+    image: analytics-processor
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1730,7 +1731,7 @@ services:
 
   outbox-relay:
     <<: *low-resources-workers-limit
-    image: ghcr.io/hitesh22rana/chronoverse/outbox-relay:latest
+    image: outbox-relay
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: primary
@@ -1799,7 +1800,7 @@ services:
 
   server:
     <<: *services-limit
-    image: ghcr.io/hitesh22rana/chronoverse/server:latest
+    image: server
     container_name: server
     environment:
       CRYPTO_SECRET: "${CRYPTO_SECRET:?set CRYPTO_SECRET to a persistent random 32-byte value}"
@@ -1885,7 +1886,7 @@ services:
       - chronoverse
 
   dashboard:
-    image: ghcr.io/hitesh22rana/chronoverse/dashboard:latest
+    image: dashboard
     container_name: dashboard
     restart: on-failure
     depends_on:

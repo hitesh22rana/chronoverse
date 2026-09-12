@@ -1,3 +1,5 @@
+import { apiEndpoints } from "./endpoints"
+
 function getCookie(name: string) {
     return document.cookie
         .split("; ")
@@ -5,14 +7,14 @@ function getCookie(name: string) {
         ?.split("=")[1] ?? ""
 }
 
-async function resolveCsrfToken(url: string): Promise<string> {
+async function resolveCsrfToken(): Promise<string> {
     const fromCookie = getCookie("csrf")
     if (fromCookie) {
         return fromCookie
     }
     try {
-        // Resolve against the browser origin so relative API URLs work too.
-        const res = await fetch(new URL("/auth/csrf", new URL(url, window.location.origin)).href, {
+        // Configured base keeps edge path prefixes (e.g. /api).
+        const res = await fetch(apiEndpoints.auth.csrf, {
             credentials: "include",
         })
         if (res.ok) {
@@ -32,7 +34,7 @@ async function fetchWithCredentials(url: string, options: RequestInit = {}) {
     }
     const method = (options.method ?? "GET").toUpperCase()
     if (!headers.has("X-CSRF-Token") && method !== "GET" && method !== "HEAD" && typeof document !== "undefined") {
-        const csrf = await resolveCsrfToken(url)
+        const csrf = await resolveCsrfToken()
         if (csrf) {
             headers.set("X-CSRF-Token", csrf)
         }

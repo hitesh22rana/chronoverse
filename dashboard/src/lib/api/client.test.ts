@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { createIdempotencyKey, fetchApi } from "./client"
+import { apiEndpoints } from "./endpoints"
 
 describe("createIdempotencyKey", () => {
     it("creates cryptographically secure UUID command identities", () => {
@@ -31,7 +32,6 @@ describe("fetchApi", () => {
 
     it("fetches the token over CORS when the cookie is unreadable", async () => {
         vi.stubGlobal("document", { cookie: "" })
-        vi.stubGlobal("window", { location: { origin: "http://app.example.com" } })
         const calls: Array<{ url: string; headers: Headers }> = []
         vi.stubGlobal(
             "fetch",
@@ -45,7 +45,7 @@ describe("fetchApi", () => {
         )
         try {
             await fetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
-            expect(calls[0].url).toBe("http://api.example.com/auth/csrf")
+            expect(calls[0].url).toBe(apiEndpoints.auth.csrf)
             expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("fresh")
         } finally {
             vi.unstubAllGlobals()
@@ -54,7 +54,6 @@ describe("fetchApi", () => {
 
     it("refetches per mutation instead of reusing a stale token", async () => {
         vi.stubGlobal("document", { cookie: "" })
-        vi.stubGlobal("window", { location: { origin: "http://app.example.com" } })
         const csrfCalls: string[] = []
         const mutationTokens: Array<string | null> = []
         vi.stubGlobal(
@@ -80,24 +79,23 @@ describe("fetchApi", () => {
         }
     })
 
-    it("resolves relative API URLs against the browser origin", async () => {
+    it("uses the configured base so edge path prefixes are kept", async () => {
         vi.stubGlobal("document", { cookie: "" })
-        vi.stubGlobal("window", { location: { origin: "http://app.example.com" } })
         const calls: Array<{ url: string; headers: Headers }> = []
         vi.stubGlobal(
             "fetch",
             vi.fn(async (url: string, opts: RequestInit = {}) => {
                 calls.push({ url, headers: new Headers(opts.headers) })
                 if (url.endsWith("/auth/csrf")) {
-                    return new Response(JSON.stringify({ csrfToken: "same-origin" }), { status: 200 })
+                    return new Response(JSON.stringify({ csrfToken: "prefixed" }), { status: 200 })
                 }
                 return new Response("{}", { status: 200 })
             }),
         )
         try {
             await fetchApi("/workflows", "boom", { method: "POST" })
-            expect(calls[0].url).toBe("http://app.example.com/auth/csrf")
-            expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("same-origin")
+            expect(calls[0].url).toBe(apiEndpoints.auth.csrf)
+            expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("prefixed")
         } finally {
             vi.unstubAllGlobals()
         }

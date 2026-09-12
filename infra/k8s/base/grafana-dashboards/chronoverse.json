@@ -1463,7 +1463,7 @@
             },
             "id": 23,
             "options": {
-                "content": "Tempo search is flaky as an embedded panel in this stack, use one click:\n\n- [Search traces (Tempo)](/explore?left=%7B%22datasource%22%3A%20%22tempo%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22tempo%22%2C%20%22uid%22%3A%20%22tempo%22%7D%2C%20%22queryType%22%3A%20%22traceqlSearch%22%2C%20%22query%22%3A%20%22%7B%20resource.service.name%20%3D~%20%5C%22%24service%5C%22%20%7D%22%2C%20%22limit%22%3A%2020%7D%5D%7D)\n- In Explore > Tempo, paste a `trace_id` from any log line above for the full waterfall.\n- Tip: HTTP 5xx spikes in \"HTTP by status\" + error logs at the same time = the trace to open.",
+                "content": "Trace search lives in Explore (this LGTM build can't render Tempo search inside dashboards):\n\n- [Search traces (Tempo)](/explore?left=%7B%22datasource%22%3A%20%22tempo%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22tempo%22%2C%20%22uid%22%3A%20%22tempo%22%7D%2C%20%22queryType%22%3A%20%22traceqlSearch%22%2C%20%22query%22%3A%20%22%7B%20resource.service.name%20%3D~%20%5C%22%24service%5C%22%20%7D%22%2C%20%22limit%22%3A%2020%7D%5D%7D)\n- In Explore > Tempo, paste a `trace_id` from any log line above for the full waterfall.\n- Tip: HTTP 5xx spikes in \"HTTP by status\" + error logs at the same time = the trace to open.",
                 "mode": "markdown"
             },
             "targets": [],

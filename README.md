@@ -27,7 +27,7 @@ analytics into one self-hosted stack.
 - **Retention controls**: per-workflow log retention with explicit behavior for non-log-producing or retention-disabled workflows.
 - **Notifications and analytics**: user notifications, workflow/job analytics, generated log counts, and execution duration summaries.
 - **Security by default in compose**: generated certificates, TLS/mTLS across infrastructure and gRPC services, CSRF-protected session cookies, and Ed25519 JWTs for service authorization.
-- **Observability**: OpenTelemetry traces, metrics, and logs exported to the bundled Grafana OTEL LGTM stack.
+- **Observability**: OpenTelemetry traces, metrics, and logs exported to the bundled Grafana OTEL LGTM stack, with a pre-provisioned Chronoverse dashboard.
 
 ## Architecture
 

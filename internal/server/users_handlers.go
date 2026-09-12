@@ -144,6 +144,34 @@ func (s *Server) handleValidate(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+type csrfTokenResponse struct {
+	CSRFToken string `json:"csrfToken"`
+}
+
+// Issues a readable CSRF token for the current session. Lets dashboards
+// that cannot read the API-host cookie (cross-host) fetch the header value
+// over CORS instead.
+func (s *Server) handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
+	session, err := sessionFromContext(r.Context())
+	if err != nil {
+		http.Error(w, "session not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
+	if err != nil {
+		handleError(w, err, "failed to generate CSRF token")
+		return
+	}
+
+	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.Host, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(csrfTokenResponse{CSRFToken: csrfToken})
+}
+
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	value := r.Context().Value(userIDKey{})
 	if value == nil {

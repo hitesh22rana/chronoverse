@@ -190,6 +190,15 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			),
 		),
 	)
+	router.HandleFunc(
+		"/auth/csrf",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				s.handleGetCSRFToken,
+			),
+		),
+	)
 
 	// Users routes
 	router.HandleFunc(

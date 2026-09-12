@@ -137,6 +137,7 @@ func run() int {
 			HostURL:        cfg.Server.HostURL,
 			AllowedOrigins: cfg.AllowedOrigins,
 			SameSiteMode:   cfg.SameSiteMode,
+			CookieDomain:   cfg.Server.CookieDomain,
 		},
 		auth,
 		crypto,

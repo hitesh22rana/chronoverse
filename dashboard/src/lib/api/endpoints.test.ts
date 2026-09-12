@@ -25,6 +25,13 @@ describe("createApiEndpoints", () => {
     it("supports same-origin API routes when no base URL is configured", () => {
         expect(createApiEndpoints().workflows.list).toBe("/workflows")
     })
+
+    it("keeps edge path prefixes on the csrf endpoint", () => {
+        expect(createApiEndpoints("https://example.com/api").auth.csrf).toBe(
+            "https://example.com/api/auth/csrf",
+        )
+        expect(createApiEndpoints().auth.csrf).toBe("/auth/csrf")
+    })
 })
 
 describe("withQuery", () => {

@@ -759,16 +759,10 @@ spec:
               optional: false
         volumeMounts:
         - name: grafana-dashboards
-          mountPath: /otel-lgtm/dashboards/chronoverse.json
-          subPath: chronoverse.json
+          mountPath: /otel-lgtm/dashboards
           readOnly: true
-        - name: grafana-dashboards
-          mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/chronoverse.yaml
-          subPath: chronoverse.yaml
-          readOnly: true
-        - name: grafana-dashboards
-          mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml
-          subPath: defaults-off.yaml
+        - name: grafana-provisioning
+          mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards
           readOnly: true
         resources:
           requests:
@@ -781,6 +775,9 @@ spec:
       - name: grafana-dashboards
         configMap:
           name: grafana-dashboards
+      - name: grafana-provisioning
+        configMap:
+          name: grafana-provisioning
 ---
 apiVersion: v1
 kind: Service

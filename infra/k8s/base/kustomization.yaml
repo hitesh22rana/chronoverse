@@ -26,13 +26,17 @@ resources:
 - keda-kafka-network-policy.yaml
 
 configMapGenerator:
+# Two ConfigMaps so each can be mounted as a directory (directory mounts
+# receive ConfigMap updates live; subPath mounts do not). Re-enabling the
+# default name hash additionally triggers a rollout whenever dashboard
+# content changes.
 - name: grafana-dashboards
   files:
   - chronoverse.json=grafana-dashboards/chronoverse.json
+- name: grafana-provisioning
+  files:
   - chronoverse.yaml=grafana-dashboards/chronoverse.yaml
   - defaults-off.yaml=grafana-dashboards/defaults-off.yaml
-  options:
-    disableNameSuffixHash: true
 
 patches:
 - target:

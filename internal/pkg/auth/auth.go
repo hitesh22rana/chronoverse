@@ -517,6 +517,7 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	return outCtx, parsed, nil
 }
 
+// Gateway JWTs are per-service, never broad. New services need an entry here.
 // Keep trustedIssuers in sync with cmd/<svc>/main.go build ldflags.
 var trustedIssuers = []string{
 	ServiceNameServer,
@@ -533,9 +534,6 @@ var trustedIssuers = []string{
 	"analytics-processor",
 	"outbox-relay",
 }
-
-// Gateway tokens are scoped per destination service, never broad.
-// Adding a new gRPC service requires updating trustedIssuers.
 
 // TrustedIssuer reports whether iss is a known platform service identity.
 func TrustedIssuer(iss string) bool {

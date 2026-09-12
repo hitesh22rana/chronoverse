@@ -221,9 +221,22 @@ func TestSecurityHeadersHSTSOnlyWhenSecure(t *testing.T) {
 
 func TestSetCookieIsHostOnly(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	setCookie(recorder, sessionCookieName, "v", "example.com", true, time.Hour, http.SameSiteStrictMode)
+	setCookie(recorder, sessionCookieName, "v", "example.com", true, true, time.Hour, http.SameSiteStrictMode)
 	if d := recorder.Result().Cookies()[0].Domain; d != "" {
 		t.Fatalf("expected empty Domain, got %q", d)
+	}
+}
+
+func TestCsrfCookieReadableSessionNot(t *testing.T) {
+	csrf := httptest.NewRecorder()
+	setCookie(csrf, csrfCookieName, "v", "example.com", true, false, time.Hour, http.SameSiteStrictMode)
+	if strings.Contains(csrf.Header().Get("Set-Cookie"), "HttpOnly") {
+		t.Fatal("csrf cookie must be readable by JS for header binding")
+	}
+	sess := httptest.NewRecorder()
+	setCookie(sess, sessionCookieName, "v", "example.com", true, true, time.Hour, http.SameSiteStrictMode)
+	if !strings.Contains(sess.Header().Get("Set-Cookie"), "HttpOnly") {
+		t.Fatal("session cookie must stay HttpOnly")
 	}
 }
 

@@ -63,8 +63,8 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
-	setCookie(w, sessionCookieName, session, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
+	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.Host, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
+	setCookie(w, sessionCookieName, session, s.hostConfig.Host, s.hostConfig.Secure, true, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
 
 	w.WriteHeader(http.StatusCreated)
 }
@@ -114,16 +114,16 @@ func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
-	setCookie(w, sessionCookieName, session, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
+	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.Host, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
+	setCookie(w, sessionCookieName, session, s.hostConfig.Host, s.hostConfig.Secure, true, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
 
 	w.WriteHeader(http.StatusCreated)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Delete the csrf and session cookies
-	setCookie(w, csrfCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, -1, s.hostConfig.SameSite)
-	setCookie(w, sessionCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, -1, s.hostConfig.SameSite)
+	setCookie(w, csrfCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, false, -1, s.hostConfig.SameSite)
+	setCookie(w, sessionCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, true, -1, s.hostConfig.SameSite)
 
 	session, err := sessionFromContext(r.Context())
 	if err != nil {

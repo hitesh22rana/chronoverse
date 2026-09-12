@@ -12,7 +12,7 @@ import (
 func TestSetCookieDeletesExpiredCookie(t *testing.T) {
 	recorder := httptest.NewRecorder()
 
-	setCookie(recorder, sessionCookieName, "", "localhost", false, -1, http.SameSiteStrictMode)
+	setCookie(recorder, sessionCookieName, "", "localhost", false, true, -1, http.SameSiteStrictMode)
 
 	cookies := recorder.Result().Cookies()
 	if len(cookies) != 1 {
@@ -58,7 +58,7 @@ func TestDecodeJSONRequestRequiresJSONContentType(t *testing.T) {
 func TestSetCookieKeepsPositiveDuration(t *testing.T) {
 	recorder := httptest.NewRecorder()
 
-	setCookie(recorder, sessionCookieName, "value", "localhost", false, time.Hour, http.SameSiteStrictMode)
+	setCookie(recorder, sessionCookieName, "value", "localhost", false, true, time.Hour, http.SameSiteStrictMode)
 
 	cookies := recorder.Result().Cookies()
 	if len(cookies) != 1 {

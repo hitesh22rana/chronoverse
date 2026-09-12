@@ -159,7 +159,7 @@ func (s *Server) handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reuse the presented token while valid so concurrent tabs share one value.
-	if csrfCookie, err := r.Cookie(csrfCookieName); err == nil {
+	if csrfCookie, cookieErr := r.Cookie(csrfCookieName); cookieErr == nil {
 		if verifyCSRFToken(csrfCookie.Value, session, s.validationCfg.CSRFHMACSecret, s.validationCfg.CSRFExpiry) == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)

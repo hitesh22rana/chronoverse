@@ -179,8 +179,8 @@ func TestVerifyCSRFMiddlewareRequiresHeader(t *testing.T) {
 	}
 	newReq := func(header string) *http.Request {
 		req := httptest.NewRequest(http.MethodPost, "/workflows", http.NoBody)
-		req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
-		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "sess"})
+		req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "sess", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		if header != "" {
 			req.Header.Set(csrfHeaderName, header)
 		}
@@ -210,7 +210,7 @@ func TestSecurityHeadersHSTSOnlyWhenSecure(t *testing.T) {
 		want   bool
 	}{{false, false}, {true, true}} {
 		s := &Server{hostConfig: &HostConfig{Secure: tc.secure}}
-		h := s.withSecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+		h := s.withSecurityHeadersMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 		res := httptest.NewRecorder()
 		h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 		if got := res.Header().Get("Strict-Transport-Security") != ""; got != tc.want {

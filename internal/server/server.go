@@ -53,10 +53,11 @@ type ValidationConfig struct {
 
 // HostConfig represents the configuration of the backend host.
 type HostConfig struct {
-	URL      string
-	Host     string
-	Secure   bool
-	SameSite http.SameSite
+	URL          string
+	Host         string
+	Secure       bool
+	SameSite     http.SameSite
+	CookieDomain string
 }
 
 // Config represents the configuration of the HTTP server.
@@ -72,6 +73,7 @@ type Config struct {
 	HostURL           string
 	AllowedOrigins    []string
 	SameSiteMode      string
+	CookieDomain      string
 }
 
 // New creates a new HTTP server.
@@ -126,10 +128,11 @@ func New(
 		},
 		validationCfg: cfg.ValidationConfig,
 		hostConfig: &HostConfig{
-			URL:      cfg.HostURL,
-			Host:     host.Hostname(),
-			Secure:   host.Scheme == "https",
-			SameSite: sameSite,
+			URL:          cfg.HostURL,
+			Host:         host.Hostname(),
+			Secure:       host.Scheme == "https",
+			SameSite:     sameSite,
+			CookieDomain: cfg.CookieDomain,
 		},
 		allowedOrigins: allowedOrigins,
 	}

@@ -91,13 +91,14 @@ func sessionFromContext(ctx context.Context) (string, error) {
 	return session, nil
 }
 
-// Host-only cookie (no Domain). csrf is JS-readable for header echo,
-// session stays HttpOnly.
-func setCookie(w http.ResponseWriter, name, value, _ string, secure, httpOnly bool, expires time.Duration, sameSite http.SameSite) {
+// Host-only cookie unless CookieDomain is set for subdomain sharing.
+// csrf is JS-readable for header echo, session stays HttpOnly.
+func setCookie(w http.ResponseWriter, name, value, cookieDomain string, secure, httpOnly bool, expires time.Duration, sameSite http.SameSite) {
 	cookie := &http.Cookie{ //nolint:gosec // Secure is configurable so local HTTP development remains supported.
 		Name:     name,
 		Value:    value,
 		Path:     "/",
+		Domain:   cookieDomain,
 		HttpOnly: httpOnly,
 		Secure:   secure,
 		MaxAge:   int(expires.Seconds()),

@@ -200,7 +200,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameUsers,
 							s.handleGetUser,
 						),
 					),
@@ -210,7 +210,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPut,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameUsers,
 								s.handleUpdateUser,
 							),
 						),
@@ -231,7 +231,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 							s.handleListWorkflows,
 						),
 					),
@@ -241,7 +241,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPost,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleCreateWorkflow,
 							),
 						),
@@ -259,7 +259,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 							s.handleGetWorkflow,
 						),
 					),
@@ -269,7 +269,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPut,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleUpdateWorkflow,
 							),
 						),
@@ -280,7 +280,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPatch,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleTerminateWorkflow,
 							),
 						),
@@ -291,7 +291,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodDelete,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleDeleteWorkflow,
 							),
 						),
@@ -309,7 +309,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleListJobs,
 				),
 			),
@@ -321,7 +321,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			http.MethodPost,
 			s.withVerifyCSRFMiddleware(
 				s.withVerifySessionMiddleware(
-					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 						s.handleManualScheduleJob,
 					),
 				),
@@ -333,7 +333,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleGetJob,
 				),
 			),
@@ -344,7 +344,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleGetJobLogs,
 				),
 			),
@@ -355,7 +355,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleSearchJobLogs,
 				),
 			),
@@ -366,7 +366,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleDownloadJobLogs,
 				),
 			),
@@ -377,7 +377,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleJobEvents,
 				),
 			),
@@ -393,7 +393,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameNotifications,
 							s.handleListNotifications,
 						),
 					),
@@ -403,7 +403,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPut,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameNotifications,
 								s.handleMarkNotificationsRead,
 							),
 						),
@@ -419,7 +419,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameAnalytics,
 					s.handleGetUserAnalytics,
 				),
 			),
@@ -431,7 +431,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameAnalytics,
 					s.handleGetWorkflowAnalytics,
 				),
 			),

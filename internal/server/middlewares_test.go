@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -26,12 +27,7 @@ func TestAttachAuthorizationTokenSeedsUserRole(t *testing.T) {
 	authService := authmock.NewMockIAuth(gomock.NewController(t))
 	authService.EXPECT().IssueToken(
 		gomock.Any(), "user-42",
-		auth.ServiceNameServer,
-		auth.ServiceNameUsers,
-		auth.ServiceNameWorkflows,
 		auth.ServiceNameJobs,
-		auth.ServiceNameNotifications,
-		auth.ServiceNameAnalytics,
 	).DoAndReturn(func(ctx context.Context, _ string, _ ...string) (string, error) {
 		role, err := auth.ExtractRoleFromContext(ctx)
 		if err != nil || role != auth.RoleUser.String() {
@@ -41,7 +37,7 @@ func TestAttachAuthorizationTokenSeedsUserRole(t *testing.T) {
 	})
 
 	s := &Server{auth: authService}
-	handler := s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(http.HandlerFunc(
+	handler := s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs, http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) },
 	))
 	req := httptest.NewRequest(http.MethodGet, "/jobs", http.NoBody)
@@ -80,6 +76,9 @@ func TestCORSMiddlewareAllowsIdempotencyKeyHeader(t *testing.T) {
 	allowedHeaders := strings.ToLower(res.Header().Get("Access-Control-Allow-Headers"))
 	if !strings.Contains(allowedHeaders, "idempotency-key") {
 		t.Fatalf("expected idempotency-key in CORS allowed headers, got %q", allowedHeaders)
+	}
+	if !strings.Contains(allowedHeaders, "x-csrf-token") {
+		t.Fatalf("expected x-csrf-token in CORS allowed headers, got %q", allowedHeaders)
 	}
 }
 
@@ -165,6 +164,66 @@ func TestRequestLoggingMiddlewarePreservesFlusher(t *testing.T) {
 
 	if !flusherAvailable {
 		t.Fatal("expected request logging middleware to preserve http.Flusher")
+	}
+}
+
+func TestVerifyCSRFMiddlewareRequiresHeader(t *testing.T) {
+	s := &Server{validationCfg: &ValidationConfig{CSRFHMACSecret: "test-secret-0123456789abcdef", CSRFExpiry: time.Hour}}
+	next := s.withVerifyCSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	token, err := generateCSRFToken("sess", "test-secret-0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newReq := func(header string) *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/workflows", http.NoBody)
+		req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "sess"})
+		if header != "" {
+			req.Header.Set(csrfHeaderName, header)
+		}
+		return req
+	}
+
+	res := httptest.NewRecorder()
+	next.ServeHTTP(res, newReq(""))
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("missing header: got %d, want 403", res.Code)
+	}
+	res = httptest.NewRecorder()
+	next.ServeHTTP(res, newReq("wrong"))
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("wrong header: got %d, want 403", res.Code)
+	}
+	res = httptest.NewRecorder()
+	next.ServeHTTP(res, newReq(token))
+	if res.Code != http.StatusOK {
+		t.Fatalf("matching header: got %d, want 200", res.Code)
+	}
+}
+
+func TestSecurityHeadersHSTSOnlyWhenSecure(t *testing.T) {
+	for _, tc := range []struct {
+		secure bool
+		want   bool
+	}{{false, false}, {true, true}} {
+		s := &Server{hostConfig: &HostConfig{Secure: tc.secure}}
+		h := s.withSecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+		res := httptest.NewRecorder()
+		h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+		if got := res.Header().Get("Strict-Transport-Security") != ""; got != tc.want {
+			t.Fatalf("secure=%v: hsts present=%v", tc.secure, got)
+		}
+	}
+}
+
+func TestSetCookieIsHostOnly(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	setCookie(recorder, sessionCookieName, "v", "example.com", true, time.Hour, http.SameSiteStrictMode)
+	if d := recorder.Result().Cookies()[0].Domain; d != "" {
+		t.Fatalf("expected empty Domain, got %q", d)
 	}
 }
 

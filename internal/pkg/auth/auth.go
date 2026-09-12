@@ -534,21 +534,8 @@ var trustedIssuers = []string{
 	"outbox-relay",
 }
 
-// GatewayAudiences returns the audience set stamped into tokens the
-// gateway (server) mints or forwards. Every service the gateway may
-// forward a call to is included so the receiver can ValidateToken with
-// its own service name and the JWT remains valid. Adding a new gRPC
-// service requires updating trustedIssuers and GatewayAudiences.
-func GatewayAudiences() []string {
-	return []string{
-		ServiceNameServer,
-		ServiceNameUsers,
-		ServiceNameWorkflows,
-		ServiceNameJobs,
-		ServiceNameNotifications,
-		ServiceNameAnalytics,
-	}
-}
+// Gateway tokens are scoped per destination service, never broad.
+// Adding a new gRPC service requires updating trustedIssuers.
 
 // TrustedIssuer reports whether iss is a known platform service identity.
 func TrustedIssuer(iss string) bool {

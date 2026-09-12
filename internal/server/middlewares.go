@@ -248,9 +248,10 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 	}
 }
 
-// withAttachAuthorizationTokenInMetadataHeaderMiddleware is a middleware that attaches the authorization token to the context.
-// This middleware should only be called after the withVerifySessionMiddleware middleware.
-func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// Attaches a short-lived JWT scoped to one destination service.
+// Call only after withVerifySessionMiddleware. Redis holds the session;
+// logout revokes it while outstanding JWTs expire in 15m.
+func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(audience string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// There might be chances that the auth token is expired but the session is still valid, since the auth token is short-lived and the session is long-lived.
 		// So, we need to re-issue the auth token.
@@ -260,12 +261,9 @@ func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next htt
 			return
 		}
 
-		// Issue a fresh token whose aud claim names every service the
-		// gateway may forward to. Each receiver validates its own name
-		// is in the list. Metadata Role/Audience are intentionally NOT
-		// populated; the JWT claim is the sole authority.
+		// Fresh token scoped to the destination service only.
 		ctx := auth.WithRole(r.Context(), auth.RoleUser.String())
-		authToken, err := s.auth.IssueToken(ctx, userID, auth.GatewayAudiences()...)
+		authToken, err := s.auth.IssueToken(ctx, userID, audience)
 		if err != nil {
 			http.Error(w, "failed to issue token", http.StatusInternalServerError)
 			return

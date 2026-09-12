@@ -70,3 +70,37 @@ func TestHandleGetCSRFToken(t *testing.T) {
 		t.Fatalf("csrf cookie must stay readable, got %q", setCookieHeader)
 	}
 }
+
+func TestHandleGetCSRFTokenReusesValidCookie(t *testing.T) {
+	s := &Server{
+		validationCfg: &ValidationConfig{CSRFHMACSecret: "test-secret-0123456789abcdef", CSRFExpiry: time.Hour},
+		hostConfig:    &HostConfig{Host: "api.example.com", Secure: true, SameSite: http.SameSiteNoneMode},
+	}
+
+	token, err := generateCSRFToken("sess", "test-secret-0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/csrf", http.NoBody)
+	req = req.WithContext(context.WithValue(req.Context(), sessionKey{}, "sess"))
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	res := httptest.NewRecorder()
+	s.handleGetCSRFToken(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", res.Code)
+	}
+
+	var body struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.CSRFToken != token {
+		t.Fatal("valid presented token must be reused, not rotated")
+	}
+	if setCookie := res.Header().Get("Set-Cookie"); setCookie != "" {
+		t.Fatalf("reused token must not overwrite the cookie, got %q", setCookie)
+	}
+}

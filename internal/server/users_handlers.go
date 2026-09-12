@@ -158,6 +158,17 @@ func (s *Server) handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reuse the presented token while valid so concurrent tabs share one value.
+	if csrfCookie, err := r.Cookie(csrfCookieName); err == nil {
+		if verifyCSRFToken(csrfCookie.Value, session, s.validationCfg.CSRFHMACSecret, s.validationCfg.CSRFExpiry) == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			//nolint:errcheck // The error is always nil
+			json.NewEncoder(w).Encode(csrfTokenResponse{CSRFToken: csrfCookie.Value})
+			return
+		}
+	}
+
 	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
 	if err != nil {
 		handleError(w, err, "failed to generate CSRF token")

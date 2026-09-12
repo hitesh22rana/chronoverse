@@ -5,15 +5,10 @@ function getCookie(name: string) {
         ?.split("=")[1] ?? ""
 }
 
-let cachedCsrf = ""
-
 async function resolveCsrfToken(url: string): Promise<string> {
     const fromCookie = getCookie("csrf")
     if (fromCookie) {
         return fromCookie
-    }
-    if (cachedCsrf) {
-        return cachedCsrf
     }
     try {
         const res = await fetch(new URL("/auth/csrf", url).href, {
@@ -21,14 +16,12 @@ async function resolveCsrfToken(url: string): Promise<string> {
         })
         if (res.ok) {
             const data = (await res.json()) as { csrfToken?: string }
-            if (data.csrfToken) {
-                cachedCsrf = data.csrfToken
-            }
+            return data.csrfToken ?? ""
         }
     } catch {
         // No token available; caller sends the request without it.
     }
-    return cachedCsrf
+    return ""
 }
 
 async function fetchWithCredentials(url: string, options: RequestInit = {}) {

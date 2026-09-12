@@ -50,4 +50,31 @@ describe("fetchApi", () => {
             vi.unstubAllGlobals()
         }
     })
+
+    it("refetches per mutation instead of reusing a stale token", async () => {
+        vi.stubGlobal("document", { cookie: "" })
+        const csrfCalls: string[] = []
+        const mutationTokens: Array<string | null> = []
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string, opts: RequestInit = {}) => {
+                if (url.endsWith("/auth/csrf")) {
+                    csrfCalls.push(url)
+                    return new Response(JSON.stringify({ csrfToken: `tok${csrfCalls.length}` }), {
+                        status: 200,
+                    })
+                }
+                mutationTokens.push(new Headers(opts.headers).get("X-CSRF-Token"))
+                return new Response("{}", { status: 200 })
+            }),
+        )
+        try {
+            await fetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
+            await fetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
+            expect(csrfCalls).toHaveLength(2)
+            expect(mutationTokens).toEqual(["tok1", "tok2"])
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
 })

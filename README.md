@@ -9,9 +9,7 @@ fleet. It combines an HTTP dashboard/API, gRPC microservices, Kafka workers,
 transactional persistence, retained/searchable job logs, notifications, and
 analytics into one self-hosted stack.
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/hitesh22rana/chronoverse)](https://goreportcard.com/report/github.com/hitesh22rana/chronoverse)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hitesh22rana/chronoverse)
 
 **[Website](https://hitesh22rana.github.io/chronoverse/)** · **[Documentation](https://hitesh22rana.github.io/chronoverse/docs/)** · **[API reference](https://hitesh22rana.github.io/chronoverse/docs/api/reference/)**
 

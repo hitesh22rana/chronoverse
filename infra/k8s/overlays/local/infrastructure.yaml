@@ -757,6 +757,13 @@ spec:
               name: grafana-secret
               key: GF_SECURITY_ADMIN_PASSWORD
               optional: false
+        volumeMounts:
+        - name: grafana-dashboards
+          mountPath: /otel-lgtm/dashboards
+          readOnly: true
+        - name: grafana-provisioning
+          mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards
+          readOnly: true
         resources:
           requests:
             cpu: 250m
@@ -764,6 +771,13 @@ spec:
           limits:
             cpu: "1"
             memory: 1024Mi
+      volumes:
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboards
+      - name: grafana-provisioning
+        configMap:
+          name: grafana-provisioning
 ---
 apiVersion: v1
 kind: Service

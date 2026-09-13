@@ -200,7 +200,9 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 //
 //nolint:errcheck // Best-effort observability; New must not fail over it.
 func registerEvictedKeysGauge(store *Store) {
-	meter := otel.Meter("github.com/hitesh22rana/chronoverse/internal/pkg/redis")
+	// Share redisotel's instrumentation scope so all Redis signals export
+	// under one identity.
+	meter := otel.Meter("github.com/redis/go-redis/extra/redisotel")
 	meter.Int64ObservableGauge(
 		"redis.evicted_keys",
 		metric.WithDescription("Cumulative number of keys evicted by Redis maxmemory policy."),

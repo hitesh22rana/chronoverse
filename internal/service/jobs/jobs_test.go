@@ -2,8 +2,10 @@ package jobs_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -768,14 +770,7 @@ func TestGetJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%d",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetStream(),
-					jobsmodel.JobLogsSortOrderDesc,
-				)
+				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -841,14 +836,7 @@ func TestGetJobLogs(t *testing.T) {
 			mock: func(req *jobspb.GetJobLogsRequest) {
 				cache.EXPECT().Get(
 					gomock.Any(),
-					fmt.Sprintf(
-						"job_logs:%s:%s:%s:%s:%d",
-						req.GetUserId(),
-						req.GetId(),
-						req.GetCursor(),
-						req.GetFilters().GetStream(),
-						jobsmodel.JobLogsSortOrderDesc,
-					),
+					getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc),
 					gomock.Any(),
 				).Return(&jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
@@ -924,14 +912,7 @@ func TestGetJobLogs(t *testing.T) {
 					},
 					Cursor: "cursor",
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%d",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetStream(),
-					jobsmodel.JobLogsSortOrderDesc,
-				)
+				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -1008,14 +989,7 @@ func TestGetJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%d",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetStream(),
-					jobsmodel.JobLogsSortOrderDesc,
-				)
+				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
 				cache.EXPECT().
 					Get(gomock.Any(), cacheKey, gomock.Any()).
@@ -1057,14 +1031,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%d",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetStream(),
-					jobsmodel.JobLogsSortOrderDesc,
-				)
+				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
 
 				cache.EXPECT().
@@ -1166,14 +1133,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%d",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetStream(),
-					jobsmodel.JobLogsSortOrderDesc,
-				)
+				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -1212,14 +1172,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
-				cacheKey := fmt.Sprintf(
-					"job_logs:%s:%s:%s:%s:%d",
-					req.GetUserId(),
-					req.GetId(),
-					req.GetCursor(),
-					req.GetFilters().GetStream(),
-					jobsmodel.JobLogsSortOrderDesc,
-				)
+				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -1294,14 +1247,7 @@ func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 		},
 	}
 	filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
-	cacheKey := fmt.Sprintf(
-		"job_logs:%s:%s:%s:%s:%d",
-		req.GetUserId(),
-		req.GetId(),
-		req.GetCursor(),
-		req.GetFilters().GetStream(),
-		jobsmodel.JobLogsSortOrderAsc,
-	)
+	cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderAsc)
 
 	cache.EXPECT().Get(gomock.Any(), cacheKey, gomock.Any()).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 	repo.EXPECT().
@@ -1474,16 +1420,25 @@ func TestStreamJobLogs(t *testing.T) {
 func searchJobLogsCacheKeyForTest(req *jobspb.SearchJobLogsRequest) string {
 	options := searchJobLogsOptionsForTest(req)
 
-	return fmt.Sprintf(
-		"job_logs:search:%s:%s:%s:%s:%s:%d:%t",
-		req.GetUserId(),
+	sum := sha256.Sum256([]byte(strings.Join([]string{
 		req.GetId(),
 		req.GetCursor(),
 		req.GetFilters().GetMessage(),
-		req.GetFilters().GetStream(),
-		options.SortOrder,
-		options.DisableHighlight,
-	)
+		req.GetFilters().GetStream().String(),
+		fmt.Sprint(options.SortOrder),
+		fmt.Sprint(options.DisableHighlight),
+	}, "|")))
+	return fmt.Sprintf("job_logs:search:%s:%x", req.GetUserId(), sum)
+}
+
+func getJobLogsCacheKeyForTest(req *jobspb.GetJobLogsRequest, sortOrder jobsmodel.JobLogsSortOrder) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		req.GetId(),
+		req.GetCursor(),
+		req.GetFilters().GetStream().String(),
+		fmt.Sprint(sortOrder),
+	}, "|")))
+	return fmt.Sprintf("job_logs:%s:%x", req.GetUserId(), sum)
 }
 
 func searchJobLogsOptionsForTest(req *jobspb.SearchJobLogsRequest) jobsmodel.SearchJobLogsOptions {

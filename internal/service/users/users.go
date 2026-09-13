@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -65,6 +66,44 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 	}
 }
 
+// normalizeEmail lowercases and trims email for case-insensitive uniqueness.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// weakPassword blocks common passwords and requires 3 of 4 character classes; use zxcvbn/HIBP if stuffing matters.
+var weakPasswords = map[string]struct{}{
+	"password": {}, "password1": {}, "password123": {}, "password12345": {},
+	"12345678": {}, "123456789": {}, "qwerty123": {}, "letmein123": {},
+	"welcome123": {}, "admin12345": {}, "chronoverse": {}, "chronoverse1": {},
+}
+
+func weakPassword(password string) bool {
+	if _, ok := weakPasswords[strings.ToLower(password)]; ok {
+		return true
+	}
+	var lower, upper, digit, symbol bool
+	for _, r := range password {
+		switch {
+		case 'a' <= r && r <= 'z':
+			lower = true
+		case 'A' <= r && r <= 'Z':
+			upper = true
+		case '0' <= r && r <= '9':
+			digit = true
+		default:
+			symbol = true
+		}
+	}
+	classes := 0
+	for _, has := range []bool{lower, upper, digit, symbol} {
+		if has {
+			classes++
+		}
+	}
+	return classes < 3
+}
+
 // RegisterUserRequest holds the request parameters for registering a new user.
 type RegisterUserRequest struct {
 	Email          string `validate:"required,email"`
@@ -87,7 +126,7 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 	}()
 
 	err = s.validator.Struct(&RegisterUserRequest{
-		Email:          req.GetEmail(),
+		Email:          normalizeEmail(req.GetEmail()),
 		Password:       req.GetPassword(),
 		IdempotencyKey: req.GetIdempotencyKey(),
 	})
@@ -96,7 +135,11 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		return "", "", err
 	}
 
-	res, authToken, err := s.repo.RegisterUser(ctx, req.GetEmail(), req.GetPassword(), req.GetIdempotencyKey())
+	if weakPassword(req.GetPassword()) {
+		return "", "", status.Errorf(codes.InvalidArgument, "password too weak or too common")
+	}
+
+	res, authToken, err := s.repo.RegisterUser(ctx, normalizeEmail(req.GetEmail()), req.GetPassword(), req.GetIdempotencyKey())
 	if err != nil {
 		return "", "", err
 	}
@@ -146,7 +189,7 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 	}()
 
 	err = s.validator.Struct(&LoginUserRequest{
-		Email:    req.GetEmail(),
+		Email:    normalizeEmail(req.GetEmail()),
 		Password: req.GetPassword(),
 	})
 	if err != nil {
@@ -154,7 +197,7 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		return "", "", err
 	}
 
-	res, authToken, err := s.repo.LoginUser(ctx, req.GetEmail(), req.GetPassword())
+	res, authToken, err := s.repo.LoginUser(ctx, normalizeEmail(req.GetEmail()), req.GetPassword())
 	if err != nil {
 		return "", "", normalizeLoginError(err)
 	}
@@ -262,7 +305,7 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 // UpdateUserRequest holds the request parameters for updating a user.
 type UpdateUserRequest struct {
 	ID                     string `validate:"required"`
-	NotificationPreference string `validate:"required"`
+	NotificationPreference string `validate:"required,oneof=ALERTS ALL NONE"`
 }
 
 // UpdateUser updates a user.

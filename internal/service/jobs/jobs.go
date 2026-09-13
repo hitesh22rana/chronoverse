@@ -4,10 +4,12 @@ package jobs
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -641,12 +643,11 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 
-	cacheKey := fmt.Sprintf(
-		"job_logs:%s:%s:%s:%s:%d",
+	cacheKey := jobLogsCacheKey(
 		req.GetUserId(),
 		req.GetId(),
 		req.GetCursor(),
-		req.GetFilters().GetStream(),
+		req.GetFilters().GetStream().String(),
 		sortOrder,
 	)
 	isCursorPage := req.GetCursor() != ""
@@ -843,13 +844,12 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 	disableHighlight := req.GetDisableHighlight()
 
-	cacheKey := fmt.Sprintf(
-		"job_logs:search:%s:%s:%s:%s:%s:%d:%t",
+	cacheKey := searchJobLogsCacheKey(
 		req.GetUserId(),
 		req.GetId(),
 		req.GetCursor(),
 		req.GetFilters().GetMessage(),
-		req.GetFilters().GetStream(),
+		req.GetFilters().GetStream().String(),
 		sortOrder,
 		disableHighlight,
 	)
@@ -1042,6 +1042,18 @@ func normalizeJobLogsSortOrder(sortOrder jobsmodel.JobLogsSortOrder) jobsmodel.J
 	}
 
 	return jobsmodel.JobLogsSortOrderDesc
+}
+
+// jobLogsCacheKey hashes unbounded read inputs (cursor) into a fixed-size key.
+func jobLogsCacheKey(userID, jobID, cursor, stream string, sortOrder jobsmodel.JobLogsSortOrder) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, stream, fmt.Sprint(sortOrder)}, "\x00")))
+	return fmt.Sprintf("job_logs:%s:%x", userID, sum)
+}
+
+// searchJobLogsCacheKey hashes unbounded search inputs (cursor, message) into a fixed-size key.
+func searchJobLogsCacheKey(userID, jobID, cursor, message, stream string, sortOrder jobsmodel.JobLogsSortOrder, disableHighlight bool) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, message, stream, fmt.Sprint(sortOrder), fmt.Sprint(disableHighlight)}, "\x00")))
+	return fmt.Sprintf("job_logs:search:%s:%x", userID, sum)
 }
 
 func isTerminalJobStatus(jobStatus string) bool {

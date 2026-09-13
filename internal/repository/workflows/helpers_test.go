@@ -130,6 +130,23 @@ func TestWorkflowRequestHashesPreserveLegacyPayloadCompatibility(t *testing.T) {
 	}
 }
 
+func TestEscapeLikeQueryNeutralizesWildcards(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		`%_%`:   `\%\_\%`,
+		`100%`:  `100\%`,
+		`a_b`:   `a\_b`,
+		`a\b`:   `a\\b`,
+		`plain`: `plain`,
+	}
+	for query, want := range cases {
+		if got := escapeLikeQuery(query); got != want {
+			t.Fatalf("escapeLikeQuery(%q) = %q, want %q", query, got, want)
+		}
+	}
+}
+
 func TestIsLegacyWorkflowCreateResponse(t *testing.T) {
 	t.Parallel()
 

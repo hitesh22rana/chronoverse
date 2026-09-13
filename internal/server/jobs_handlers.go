@@ -1,12 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 
@@ -18,7 +23,6 @@ const (
 	jobLogsDownloadFormatJSON  = "json"
 	jobLogsDownloadFormatJSONL = "jsonl"
 	jobLogsDownloadStreamAll   = "all"
-	jobLogsDownloadErrorField  = "error"
 )
 
 type jobLogsDownloadRequest struct {
@@ -362,6 +366,11 @@ func parseJobLogsDownloadRequest(w http.ResponseWriter, r *http.Request) (jobLog
 		http.Error(w, "job ID not found", http.StatusBadRequest)
 		return jobLogsDownloadRequest{}, false
 	}
+	// Gate the Content-Disposition filename value before any use.
+	if _, err := uuid.Parse(jobID); err != nil {
+		http.Error(w, "invalid job ID", http.StatusBadRequest)
+		return jobLogsDownloadRequest{}, false
+	}
 	value := r.Context().Value(userIDKey{})
 	if value == nil {
 		http.Error(w, "user ID not found", http.StatusBadRequest)
@@ -456,7 +465,7 @@ func (s *Server) streamJobLogsDownload(
 	for {
 		res, err := s.fetchJobLogsDownloadPage(r, downloadReq, cursor)
 		if err != nil {
-			writeJobLogsDownloadError(w, downloadReq.Format, "failed to fetch logs", err)
+			s.writeJobLogsDownloadError(r.Context(), w, downloadReq.Format, "failed to fetch logs", err)
 			rc.Flush()
 			return true
 		}
@@ -464,7 +473,7 @@ func (s *Server) streamJobLogsDownload(
 		for _, log := range res.GetLogs() {
 			writeErr := writeJobLogsDownloadLog(w, downloadReq.Format, log, &isFirstJSONLog)
 			if writeErr != nil {
-				writeJobLogsDownloadError(w, downloadReq.Format, "failed to write log", writeErr)
+				s.writeJobLogsDownloadError(r.Context(), w, downloadReq.Format, "failed to write log", writeErr)
 				rc.Flush()
 				return true
 			}
@@ -592,28 +601,27 @@ func writeJobLogsDownloadLog(w io.Writer, format string, log *jobspb.Log, isFirs
 	}
 }
 
-func writeJobLogsDownloadError(w io.Writer, format, message string, err error) {
+// writeJobLogsDownloadError logs backend detail server-side and sends only a
+// generic message so infra strings never reach the client.
+func (s *Server) writeJobLogsDownloadError(ctx context.Context, w io.Writer, format, message string, err error) {
+	s.logStreamError(ctx, message, err)
 	switch format {
 	case jobLogsDownloadFormatJSON:
-		encoded, jsonErr := json.Marshal(map[string]string{
-			"message":                 message,
-			jobLogsDownloadErrorField: err.Error(),
-		})
-		if jsonErr != nil {
-			return
-		}
-		fmt.Fprintf(w, `],"error":%s}`, encoded)
+		fmt.Fprint(w, `],"error":{"message":"stream failed"}}`)
 	case jobLogsDownloadFormatJSONL:
-		encodeErr := json.NewEncoder(w).Encode(map[string]string{
-			"message":                 message,
-			jobLogsDownloadErrorField: err.Error(),
-		})
-		if encodeErr != nil {
-			return
-		}
+		fmt.Fprint(w, "{\"message\":\"stream failed\"}\n")
 	default:
-		fmt.Fprintf(w, "\n--- ERROR: %s ---\n%s\n", message, err.Error())
+		fmt.Fprint(w, "\n--- ERROR: stream failed ---\n")
 	}
+}
+
+// logStreamError records stream failures with the trace ID for correlation.
+func (s *Server) logStreamError(ctx context.Context, message string, err error) {
+	log := s.logger
+	if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
+		log = log.With(zap.String("trace_id", spanCtx.TraceID().String()))
+	}
+	log.Error(message, zap.Error(err))
 }
 
 func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
@@ -667,8 +675,9 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 		UserId:     userID,
 	})
 	if err != nil {
-		// Send an error event to the client
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+		// Send a generic error event to the client
+		s.logStreamError(ctx, "failed to stream job logs", err)
+		fmt.Fprint(w, "event: error\ndata: {\"message\":\"stream failed\"}\n\n")
 		rc.Flush()
 		return
 	}
@@ -694,7 +703,8 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 				}
 
 				// Send error event and close
-				fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+				s.logStreamError(ctx, "job logs stream failed", err)
+				fmt.Fprint(w, "event: error\ndata: {\"message\":\"stream failed\"}\n\n")
 				rc.Flush()
 				return
 			}

@@ -4,11 +4,13 @@ package workflows
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
@@ -799,6 +801,10 @@ func validateFilters(filters *workflowsmodel.ListWorkflowsFilters) error {
 		return nil
 	}
 
+	if utf8.RuneCountInString(filters.Query) > 100 {
+		return status.Errorf(codes.InvalidArgument, "invalid query: exceeds 100 characters")
+	}
+
 	if filters.Kind != "" {
 		if err := validateKind(filters.Kind); err != nil {
 			return err
@@ -845,7 +851,10 @@ func generateListWorkflowsCacheKey(userID, cursor string, filters *workflowsmode
 		fmt.Sprintf("interval_max=%d", filters.IntervalMax),
 	}
 
-	return fmt.Sprintf("workflows:%s:cursor=%s&%s", userID, cursor, strings.Join(allFilters, "&"))
+	// Hash the unbounded cursor and query so they cannot become oversize Redis keys.
+	// Join on NUL (not "&"/"|") so user-controlled query text cannot shift fields.
+	sum := sha256.Sum256([]byte("cursor=" + cursor + "\x00" + strings.Join(allFilters, "\x00")))
+	return fmt.Sprintf("workflows:%s:%x", userID, sum)
 }
 
 // invalidateWorkflowCache handles cache invalidation for a specific workflow for a user.

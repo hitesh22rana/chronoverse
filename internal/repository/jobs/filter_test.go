@@ -1,0 +1,114 @@
+//nolint:testpackage // Tests unexported filter helpers directly.
+package jobs
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestValidateJobLogsFilterIDs(t *testing.T) {
+	t.Parallel()
+
+	valid := "550e8400-e29b-41d4-a716-446655440000"
+	if err := validateJobLogsFilterIDs(valid, valid, valid); err != nil {
+		t.Fatalf("validateJobLogsFilterIDs() error = %v", err)
+	}
+
+	for _, ids := range [][3]string{
+		{`" OR "1"="1`, valid, valid},
+		{valid, `workflow\" OR`, valid},
+		{valid, valid, `job\`},
+	} {
+		if err := validateJobLogsFilterIDs(ids[0], ids[1], ids[2]); err == nil {
+			t.Fatalf("validateJobLogsFilterIDs(%q) expected error", ids)
+		}
+	}
+}
+
+func TestMeiliFilterValueKeepsSingleTenantScope(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		`" OR "1"="1`:     `\" OR \"1\"=\"1`,
+		`a\b`:             `a\\b`,
+		`"`:               `\"`,
+		`\`:               `\\`,
+		`plain-uuid-part`: `plain-uuid-part`,
+	}
+	for probe, want := range cases {
+		if got := meiliFilterValue(probe); got != want {
+			t.Fatalf("meiliFilterValue(%q) = %q, want %q", probe, got, want)
+		}
+	}
+
+	// Every quote or backslash in the output must be escaped, so the value
+	// cannot break out of its quoted filter string.
+	for _, probe := range []string{`" OR "1"="1`, `a\b"x`, `\"`} {
+		escaped := meiliFilterValue(probe)
+		for i := 0; i < len(escaped); i++ {
+			switch escaped[i] {
+			case '\\':
+				i++
+				if i >= len(escaped) || (escaped[i] != '\\' && escaped[i] != '"') {
+					t.Fatalf("meiliFilterValue(%q) = %q, bad escape at %d", probe, escaped, i)
+				}
+			case '"':
+				t.Fatalf("meiliFilterValue(%q) = %q, bare quote at %d", probe, escaped, i)
+			}
+		}
+	}
+}
+
+func TestAppendJobLogsCursorFilter(t *testing.T) {
+	t.Parallel()
+
+	base := `user_id = "u" AND workflow_id = "w" AND job_id = "j"`
+
+	tests := []struct {
+		name             string
+		sequenceOperator string
+		sequenceNum      uint32
+		idOperator       string
+		eventID          string
+		want             string
+	}{
+		{
+			name:             "descending page",
+			sequenceOperator: "<",
+			sequenceNum:      42,
+			idOperator:       ">=",
+			eventID:          "log:job:stdout:42",
+			want:             base + ` AND (sequence_num < 42 OR (sequence_num = 42 AND id >= "log:job:stdout:42"))`,
+		},
+		{
+			name:             "ascending page",
+			sequenceOperator: ">",
+			sequenceNum:      7,
+			idOperator:       ">=",
+			eventID:          "log:job:stderr:7",
+			want:             base + ` AND (sequence_num > 7 OR (sequence_num = 7 AND id >= "log:job:stderr:7"))`,
+		},
+		{
+			name:             "event ID is escaped, not re-quoted",
+			sequenceOperator: "<",
+			sequenceNum:      1,
+			idOperator:       ">=",
+			eventID:          `a"b\c`,
+			want:             base + ` AND (sequence_num < 1 OR (sequence_num = 1 AND id >= "a\"b\\c"))`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := appendJobLogsCursorFilter(base, test.sequenceOperator, test.sequenceNum, test.idOperator, test.eventID)
+			if got != test.want {
+				t.Fatalf("appendJobLogsCursorFilter() = %q, want %q", got, test.want)
+			}
+			if opens, closes := strings.Count(got, "("), strings.Count(got, ")"); opens != closes {
+				t.Fatalf("appendJobLogsCursorFilter() has unbalanced parentheses: %d opens, %d closes in %q", opens, closes, got)
+			}
+		})
+	}
+}

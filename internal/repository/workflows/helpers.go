@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -218,6 +219,14 @@ func insertWorkflowOutboxEvent(ctx context.Context, tx pgx.Tx, event *workflowsm
 		EventKey: event.EventKey,
 		Payload:  event,
 	})
+}
+
+// escapeLikeQuery neutralizes `%`, `_`, and the escape character itself so a
+// search query cannot widen an ILIKE match or force a full scan.
+func escapeLikeQuery(query string) string {
+	query = strings.ReplaceAll(query, `\`, `\\`)
+	query = strings.ReplaceAll(query, `%`, `\%`)
+	return strings.ReplaceAll(query, `_`, `\_`)
 }
 
 func encodeCursor(cursor string) string {

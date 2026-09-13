@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/meilisearch/meilisearch-go"
 	goredis "github.com/redis/go-redis/v9"
@@ -952,12 +954,16 @@ func (r *Repository) SearchJobLogs(
 		return nil, "", err
 	}
 
-	filter := fmt.Sprintf(
-		`user_id = %q AND workflow_id = %q AND job_id = %q`,
-		userID,
-		workflowID,
-		jobID,
-	)
+	// Re-validate IDs immediately before filter build so a relaxed caller
+	// can never turn filter interpolation into cross-tenant filter injection.
+	// The cursor EventID is a composite log key, not a UUID, so it is only escaped.
+	if filterErr := validateJobLogsFilterIDs(userID, workflowID, jobID); filterErr != nil {
+		return nil, "", filterErr
+	}
+
+	filter := `user_id = "` + meiliFilterValue(userID) +
+		`" AND workflow_id = "` + meiliFilterValue(workflowID) +
+		`" AND job_id = "` + meiliFilterValue(jobID) + `"`
 
 	switch searchJobLogsFilters.Stream {
 	case 1:
@@ -980,14 +986,7 @@ func (r *Repository) SearchJobLogs(
 		if ascending {
 			sequenceOperator = ">"
 		}
-		filter += fmt.Sprintf(
-			` AND (sequence_num %s %d OR (sequence_num = %d AND id %s %q))`,
-			sequenceOperator,
-			logsCursor.SequenceNum,
-			logsCursor.SequenceNum,
-			idOperator,
-			logsCursor.EventID,
-		)
+		filter = appendJobLogsCursorFilter(filter, sequenceOperator, logsCursor.SequenceNum, idOperator, logsCursor.EventID)
 	}
 
 	statusQueryArgs := []any{jobID, workflowID, userID}
@@ -1277,6 +1276,36 @@ func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options
 	}
 
 	return req
+}
+
+// validateJobLogsFilterIDs re-validates tenant-scoping IDs before Meili filter build.
+func validateJobLogsFilterIDs(userID, workflowID, jobID string) error {
+	for _, id := range []string{userID, workflowID, jobID} {
+		if _, err := uuid.Parse(id); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid ID: %v", err)
+		}
+	}
+	return nil
+}
+
+// meiliFilterValue escapes backslashes and quotes so `"` concatenation into a
+// Meili filter cannot break out of its quoted string.
+func meiliFilterValue(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	return strings.ReplaceAll(value, `"`, `\"`)
+}
+
+// appendJobLogsCursorFilter appends the keyset-pagination clause for a decoded
+// cursor. The clause opens two groups (the OR group and the inner AND group),
+// so the EventID suffix must close both parentheses.
+func appendJobLogsCursorFilter(filter, sequenceOperator string, sequenceNum uint32, idOperator, eventID string) string {
+	return filter + fmt.Sprintf(
+		` AND (sequence_num %s %d OR (sequence_num = %d AND id %s `,
+		sequenceOperator,
+		sequenceNum,
+		sequenceNum,
+		idOperator,
+	) + `"` + meiliFilterValue(eventID) + `"))`
 }
 
 // extractDataFromGetJobLogsCursor extracts the data from the cursor.

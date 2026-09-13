@@ -618,6 +618,9 @@ func (s *Server) writeJobLogsDownloadError(ctx context.Context, w io.Writer, for
 // logStreamError records stream failures with the trace ID for correlation.
 func (s *Server) logStreamError(ctx context.Context, message string, err error) {
 	log := s.logger
+	if log == nil {
+		log = zap.NewNop()
+	}
 	if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
 		log = log.With(zap.String("trace_id", spanCtx.TraceID().String()))
 	}

@@ -73,7 +73,8 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-// commonPasswords is the bundled zxcvbn dictionary for exact-match rejection.
+// commonPasswords is the bundled zxcvbn dictionary; exact matches are rejected
+// outright (all of them also score below 3 today — this holds if scoring changes).
 var commonPasswords = toPasswordSet(frequency.Lists["Passwords"].List)
 
 func toPasswordSet(passwords []string) map[string]struct{} {

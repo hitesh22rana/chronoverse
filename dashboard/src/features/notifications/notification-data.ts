@@ -31,11 +31,9 @@ export const removeNotificationsFromPages = (
     }))
 }
 
-// Same-origin paths only, decided by the URL parser against a fixed origin.
-// Prefix checks miss "//host" (protocol-relative), "\" (reads as "/" for
-// http(s)), and tab/CR/LF (stripped pre-parse). Return the normalized path,
-// never the raw input: "http://localhost//evil" parses same-origin but its
-// path would navigate protocol-relative.
+// Parser-decided same-origin paths; return normalized, never raw:
+// prefixes miss //host, backslash-as-slash, and stripped tab/CR/LF, and
+// "http://localhost//evil" parses same-origin with an escaping path.
 export const safeActionUrl = (actionUrl: string): string => {
     if (!actionUrl) {
         return "/"

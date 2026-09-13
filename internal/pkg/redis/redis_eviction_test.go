@@ -15,8 +15,7 @@ import (
 	redispkg "github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
-// newTestStore starts a throwaway Redis with the given memory/policy and
-// returns a store on it.
+// newTestStore starts a throwaway Redis with the given memory/policy.
 func newTestStore(ctx context.Context, t *testing.T, maxMemory, evictionPolicy string) *redispkg.Store {
 	t.Helper()
 
@@ -64,9 +63,8 @@ func newTestStore(ctx context.Context, t *testing.T, maxMemory, evictionPolicy s
 	return store
 }
 
-// TestExpireCannotRecreateDeletedSession replays the logout race: a request
-// reads the session, logout deletes it, then the request's refresh must
-// report absence instead of resurrecting the session for another 2h.
+// TestExpireCannotRecreateDeletedSession replays the logout race: refresh
+// after concurrent delete must report absence, not resurrect the session.
 func TestExpireCannotRecreateDeletedSession(t *testing.T) {
 	ctx := t.Context()
 	store := newTestStore(ctx, t, "100mb", "volatile-ttl")
@@ -103,10 +101,9 @@ func TestExpireCannotRecreateDeletedSession(t *testing.T) {
 	}
 }
 
-// With a full instance the sliding-refreshed 2h session survives while 30m
-// cache keys are sacrificed. The session is the idlest key throughout, so
-// any LRU policy evicts it; periodic Expire models the middleware sliding
-// live sessions back to full TTL. evicted_keys > 0 proves real pressure.
+// Under pressure the sliding-refreshed 2h session (idlest key throughout,
+// so any LRU policy evicts it) survives while 30m caches are sacrificed.
+// evicted_keys > 0 proves real pressure.
 func TestVolatileTTLKeepsSessionsUnderPressure(t *testing.T) {
 	ctx := t.Context()
 	store := newTestStore(ctx, t, "5mb", "volatile-ttl")

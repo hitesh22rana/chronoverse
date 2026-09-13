@@ -44,7 +44,7 @@ func TestExtractAndValidateHeartbeatDetailsHeaderGuard(t *testing.T) {
 	for _, name := range []string{
 		"host", "HOST", "Content-Length", "content-length",
 		"Transfer-Encoding", "connection", "Upgrade", "keep-alive",
-		"trailer", "Proxy-Authorization", "proxy-connection",
+		"trailer", "TE", "te", "Proxy-Authorization", "proxy-connection",
 	} {
 		t.Run("denied header "+name, func(t *testing.T) {
 			t.Parallel()
@@ -96,4 +96,32 @@ func TestExtractAndValidateHeartbeatDetailsHeaderGuard(t *testing.T) {
 			t.Fatal("9KiB header accepted, want rejection")
 		}
 	})
+}
+
+func TestExtractAndValidateHeartbeatDetailsHeaderNames(t *testing.T) {
+	t.Parallel()
+
+	t.Run("padded header name stored trimmed", func(t *testing.T) {
+		t.Parallel()
+
+		details, err := heartbeat.ExtractAndValidateHeartbeatDetails(heartbeatPayload(t, map[string]any{
+			"  X-Custom  ": "value",
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := details.Headers["X-Custom"]; len(got) != 1 || got[0] != "value" {
+			t.Fatalf("X-Custom headers = %q, want trimmed name with value preserved", got)
+		}
+	})
+
+	for _, name := range []string{"X Bad", "Bad\tName", "X\nBad", "X-Custom:"} {
+		t.Run(fmt.Sprintf("invalid header name %q", name), func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := heartbeat.ExtractAndValidateHeartbeatDetails(heartbeatPayload(t, map[string]any{name: "v"})); err == nil {
+				t.Fatalf("header name %q accepted, want rejection", name)
+			}
+		})
+	}
 }

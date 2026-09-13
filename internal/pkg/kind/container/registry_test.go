@@ -25,6 +25,8 @@ func TestIsAllowedContainerRegistry(t *testing.T) {
 		"mcr.microsoft.com", "quay.io", "registry.k8s.io",
 		"us-docker.pkg.dev", "europe-west1-docker.pkg.dev",
 		"myregistry.azurecr.io",
+		"docker.io:443", "ghcr.io:443", "myregistry.azurecr.io:443",
+		"us-docker.pkg.dev:443",
 	}
 	for _, host := range allowed {
 		if !isAllowedContainerRegistry(host) {
@@ -39,6 +41,7 @@ func TestIsAllowedContainerRegistry(t *testing.T) {
 		"localhost:5000", "my.azurecr.io.evil.com",
 		"evil-docker.pkg.dev.evil.com", "a.b-docker.pkg.dev",
 		"a.b.azurecr.io", ".azurecr.io",
+		"evil.com:443", "docker.io:443.evil.com", "docker.io:http",
 	}
 	for _, host := range rejected {
 		if isAllowedContainerRegistry(host) {
@@ -53,6 +56,7 @@ func TestExtractAndValidateContainerDetailsRegistryGuard(t *testing.T) {
 	allowed := []string{
 		"alpine:3.21",
 		"docker.io/library/alpine:3.21",
+		"docker.io:443/library/alpine:3.21",
 		"ghcr.io/owner/image:tag",
 		"public.ecr.aws/nginx/nginx:stable",
 		"gcr.io/project/image",

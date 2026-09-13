@@ -39,6 +39,13 @@ func validateContainerImage(image string) error {
 // (<location>-docker.pkg.dev) and per-registry Azure (<registry>.azurecr.io) hosts match on a single non-empty label.
 func isAllowedContainerRegistry(host string) bool {
 	host = strings.ToLower(host)
+	// Strip an explicit numeric port (registry:443). Anything else stays
+	// and fails closed, so host:port tricks cannot match the allowlist.
+	if i := strings.LastIndexByte(host, ':'); i >= 0 {
+		if port := host[i+1:]; port != "" && strings.Trim(port, "0123456789") == "" {
+			host = host[:i]
+		}
+	}
 	if _, ok := allowedContainerRegistries[host]; ok {
 		return true
 	}

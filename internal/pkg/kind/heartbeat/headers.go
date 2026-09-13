@@ -23,6 +23,7 @@ var deniedHeartbeatHeaders = map[string]struct{}{
 	"upgrade":           {},
 	"keep-alive":        {},
 	"trailer":           {},
+	"te":                {},
 }
 
 // isDeniedHeartbeatHeader reports whether a header name is denied.
@@ -32,6 +33,19 @@ func isDeniedHeartbeatHeader(name string) bool {
 		return true
 	}
 	return strings.HasPrefix(lower, "proxy-")
+}
+
+// isValidHeartbeatHeaderName reports whether name is an RFC 7230 token.
+func isValidHeartbeatHeaderName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		if c := name[i]; c < '!' || c > '~' || strings.IndexByte("()<>@,;:\\\"/[]?={} \t", c) >= 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // parseHeartbeatHeaders validates custom headers: denies hop-by-hop names, caps count and size.
@@ -44,11 +58,12 @@ func parseHeartbeatHeaders(raw any) (map[string][]string, error) {
 	headers := make(map[string][]string)
 	headerBytes := 0
 	for k, v := range headersRaw {
-		if strings.TrimSpace(k) == "" {
-			return nil, status.Error(codes.InvalidArgument, "header name must not be empty")
+		name := strings.TrimSpace(k)
+		if !isValidHeartbeatHeaderName(name) {
+			return nil, status.Errorf(codes.InvalidArgument, "header name %q is invalid", k)
 		}
-		if isDeniedHeartbeatHeader(k) {
-			return nil, status.Errorf(codes.InvalidArgument, "header %q is not allowed", k)
+		if isDeniedHeartbeatHeader(name) {
+			return nil, status.Errorf(codes.InvalidArgument, "header %q is not allowed", name)
 		}
 		if len(headers) >= heartbeatMaxHeaders {
 			return nil, status.Errorf(codes.InvalidArgument, "too many headers: at most %d allowed", heartbeatMaxHeaders)
@@ -62,14 +77,14 @@ func parseHeartbeatHeaders(raw any) (map[string][]string, error) {
 					return nil, status.Errorf(codes.InvalidArgument, "header value must be string")
 				}
 				strValues[i] = strValue
-				headerBytes += len(k) + len(strValue)
+				headerBytes += len(name) + len(strValue)
 			}
-			headers[k] = strValues
+			headers[name] = strValues
 		case string:
-			headers[k] = []string{val}
-			headerBytes += len(k) + len(val)
+			headers[name] = []string{val}
+			headerBytes += len(name) + len(val)
 		default:
-			return nil, status.Errorf(codes.InvalidArgument, "invalid header value for %s", k)
+			return nil, status.Errorf(codes.InvalidArgument, "invalid header value for %s", name)
 		}
 		if headerBytes > heartbeatMaxHeaderBytes {
 			return nil, status.Errorf(codes.InvalidArgument, "headers exceed maximum size of %d bytes", heartbeatMaxHeaderBytes)

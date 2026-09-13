@@ -31,14 +31,18 @@ export const removeNotificationsFromPages = (
     }))
 }
 
-// Same-origin paths only: "//host" is protocol-relative, and browsers read
-// "\" as "/" for http(s), so both escape origin.
+// Same-origin paths only, decided by the URL parser: "//host" is
+// protocol-relative, "\" reads as "/" for http(s), and tab/CR/LF are
+// stripped before parsing, so prefixes alone miss all three.
 export const safeActionUrl = (actionUrl: string): string => {
-    if (
-        !actionUrl.startsWith("/") ||
-        actionUrl.startsWith("//") ||
-        actionUrl.includes("\\")
-    ) {
+    if (!actionUrl) {
+        return "/"
+    }
+    try {
+        if (new URL(actionUrl, "http://localhost").origin !== "http://localhost") {
+            return "/"
+        }
+    } catch {
         return "/"
     }
     return actionUrl

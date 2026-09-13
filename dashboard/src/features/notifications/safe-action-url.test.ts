@@ -24,6 +24,15 @@ describe("safeActionUrl", () => {
     it("falls back to / for backslash origin escapes", () => {
         expect(safeActionUrl("/\\evil.example/path")).toBe("/")
         expect(safeActionUrl("/\\/evil.example/path")).toBe("/")
-        expect(safeActionUrl("/workflows\\evil.example")).toBe("/")
+    })
+
+    it("passes mid-path backslashes through: they stay same-origin", () => {
+        expect(safeActionUrl("/workflows\\evil.example")).toBe("/workflows\\evil.example")
+    })
+
+    it("falls back to / for control characters stripped before parsing", () => {
+        expect(safeActionUrl("/\t/evil.example")).toBe("/")
+        expect(safeActionUrl("/\n/evil.example")).toBe("/")
+        expect(safeActionUrl("/\r/evil.example")).toBe("/")
     })
 })

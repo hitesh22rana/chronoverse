@@ -234,6 +234,22 @@ func (s *Store) EvictedKeys(ctx context.Context) (int64, error) {
 	return 0, status.Errorf(codes.Internal, "evicted_keys missing from redis stats")
 }
 
+// Expire refreshes a key's TTL without touching its value. It reports
+// whether the key existed: unlike Set it cannot recreate a key deleted
+// concurrently (e.g. by logout), so refresh never outlives revocation.
+func (s *Store) Expire(ctx context.Context, key string, expiration time.Duration) (bool, error) {
+	if expiration <= 0 {
+		return false, status.Errorf(codes.InvalidArgument, "expiration must be positive, got %s", expiration)
+	}
+
+	refreshed, err := s.client.Expire(ctx, key, expiration).Result()
+	if err != nil {
+		return false, status.Errorf(codes.Internal, "failed to refresh expiration: %v", err)
+	}
+
+	return refreshed, nil
+}
+
 // Close closes the Redis store.
 func (s *Store) Close() error {
 	return s.client.Close()

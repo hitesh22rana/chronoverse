@@ -234,9 +234,10 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 		}
 
 		// Re-set full expiry per request: volatile-ttl evicts by remaining
-		// TTL, so live sessions must stay longest-lived. Refresh failure
+		// TTL, so live sessions must stay longest-lived. Expire (not Set)
+		// cannot recreate a key logout deleted concurrently. Refresh failure
 		// must not fail a valid session.
-		if err = s.rdb.Set(r.Context(), session, userID, s.validationCfg.SessionExpiry); err != nil {
+		if _, err = s.rdb.Expire(r.Context(), session, s.validationCfg.SessionExpiry); err != nil {
 			s.logger.Warn("failed to refresh session expiry", zap.Error(err))
 		}
 

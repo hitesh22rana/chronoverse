@@ -365,7 +365,23 @@ func TestHandleDownloadJobLogsRejectsInvalidFormat(t *testing.T) {
 func newJobLogsHandlerRequest(target string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, target, http.NoBody)
 	req.SetPathValue("workflow_id", "workflow_id")
-	req.SetPathValue("job_id", "job_id")
+	req.SetPathValue("job_id", "550e8400-e29b-41d4-a716-446655440000")
 
 	return req.WithContext(context.WithValue(req.Context(), userIDKey{}, "user_id"))
+}
+
+func TestHandleDownloadJobLogsRejectsNonUUIDJobID(t *testing.T) {
+	client := &fakeJobsServiceClient{
+		getJobResponse: &jobspb.GetJobResponse{Status: "COMPLETED"},
+	}
+	s := &Server{jobsClient: client}
+
+	req := newJobLogsHandlerRequest("/workflows/workflow_id/jobs/job_id/logs/raw")
+	req.SetPathValue("job_id", "job_id")
+	res := httptest.NewRecorder()
+	s.handleDownloadJobLogs(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
+	}
 }

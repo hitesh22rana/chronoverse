@@ -961,12 +961,9 @@ func (r *Repository) SearchJobLogs(
 		return nil, "", filterErr
 	}
 
-	filter := fmt.Sprintf(
-		`user_id = "%s" AND workflow_id = "%s" AND job_id = "%s"`,
-		meiliFilterValue(userID),
-		meiliFilterValue(workflowID),
-		meiliFilterValue(jobID),
-	)
+	filter := `user_id = "` + meiliFilterValue(userID) +
+		`" AND workflow_id = "` + meiliFilterValue(workflowID) +
+		`" AND job_id = "` + meiliFilterValue(jobID) + `"`
 
 	switch searchJobLogsFilters.Stream {
 	case 1:
@@ -990,13 +987,12 @@ func (r *Repository) SearchJobLogs(
 			sequenceOperator = ">"
 		}
 		filter += fmt.Sprintf(
-			` AND (sequence_num %s %d OR (sequence_num = %d AND id %s "%s"))`,
+			` AND (sequence_num %s %d OR (sequence_num = %d AND id %s `,
 			sequenceOperator,
 			logsCursor.SequenceNum,
 			logsCursor.SequenceNum,
 			idOperator,
-			meiliFilterValue(logsCursor.EventID),
-		)
+		) + `"` + meiliFilterValue(logsCursor.EventID) + `")`
 	}
 
 	statusQueryArgs := []any{jobID, workflowID, userID}

@@ -957,8 +957,8 @@ func (r *Repository) SearchJobLogs(
 	// Re-validate IDs immediately before filter build so a relaxed caller
 	// can never turn `%q` interpolation into cross-tenant filter injection.
 	// The cursor EventID is a composite log key, not a UUID, so it is only escaped.
-	if err = validateJobLogsFilterIDs(userID, workflowID, jobID); err != nil {
-		return nil, "", err
+	if filterErr := validateJobLogsFilterIDs(userID, workflowID, jobID); filterErr != nil {
+		return nil, "", filterErr
 	}
 
 	filter := fmt.Sprintf(

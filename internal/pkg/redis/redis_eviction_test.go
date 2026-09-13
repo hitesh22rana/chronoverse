@@ -12,11 +12,9 @@ import (
 	redispkg "github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
-// TestVolatileTTLKeepsSessionsUnderPressure proves the B5.1 property: with a
-// full instance, the idle 2h session survives while 30m cache keys are
-// sacrificed. The session is written first and never touched again, so it is
-// the idlest key throughout — any LRU policy evicts it, TTL priority spares
-// it. evicted_keys > 0 proves the run actually applied pressure.
+// With a full instance the idle 2h session (idlest key throughout, so any
+// LRU policy evicts it) survives while 30m cache keys are sacrificed.
+// evicted_keys > 0 proves the run applied real pressure.
 func TestVolatileTTLKeepsSessionsUnderPressure(t *testing.T) {
 	ctx := t.Context()
 

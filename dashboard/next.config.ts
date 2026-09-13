@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
-// Browsers ignore HSTS over plain HTTP, so this is inert for local dev and
-// active behind TLS in prod. connect-src stays scheme-wide because the API
-// origin is deployment-specific (NEXT_PUBLIC_API_URL); EventSource/SSE to the
-// API falls under connect-src as well.
+// HSTS is ignored over plain HTTP (inert locally, active in prod).
+// connect-src stays scheme-wide: the API origin is NEXT_PUBLIC_API_URL.
+// script-src needs 'unsafe-inline': Next inlines bootstrap + __next_f flight
+// data; strict nonces would need per-request middleware plumbing.
 const securityHeaders = [
     {
         key: "Strict-Transport-Security",
@@ -25,7 +25,7 @@ const securityHeaders = [
         key: "Content-Security-Policy",
         value: [
             "default-src 'self'",
-            "script-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https:",
             "font-src 'self' data:",

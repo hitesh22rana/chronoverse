@@ -192,23 +192,19 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 	return store, nil
 }
 
-// registerEvictedKeysGauge exports the cumulative evicted_keys count on the
-// global meter so memory pressure that threatens sessions (2h TTL, longest
-// lived) can alert. Best effort: scrape failures stay silent, and duplicate
-// registration (one New per service process, several in tests) keeps the
-// first callback.
+// registerEvictedKeysGauge exports cumulative evicted_keys for alerting on
+// memory pressure. Best effort: scrape failures stay silent, duplicate
+// registration keeps the first callback.
 //
 //nolint:errcheck // Best-effort observability; New must not fail over it.
 func registerEvictedKeysGauge(store *Store) {
-	// Share redisotel's instrumentation scope so all Redis signals export
-	// under one identity.
+	// Share redisotel's scope so all Redis signals export under one identity.
 	meter := otel.Meter("github.com/redis/go-redis/extra/redisotel")
 	meter.Int64ObservableGauge(
 		"redis.evicted_keys",
 		metric.WithDescription("Cumulative number of keys evicted by Redis maxmemory policy."),
 		metric.WithUnit("{key}"),
 		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
-			// Best effort: a failed scrape simply skips this collection.
 			if evicted, err := store.EvictedKeys(ctx); err == nil {
 				o.Observe(evicted)
 			}
@@ -217,10 +213,8 @@ func registerEvictedKeysGauge(store *Store) {
 	)
 }
 
-// EvictedKeys returns the cumulative number of keys evicted by the maxmemory
-// policy (INFO stats). A rising count under volatile-ttl means cache/short-TTL
-// keys are being sacrificed; sustained growth toward session TTLs warrants a
-// maxmemory increase.
+// EvictedKeys returns cumulative maxmemory evictions (INFO stats). Rising
+// counts mean pressure is eating longer-lived keys: raise REDIS_MAX_MEMORY.
 func (s *Store) EvictedKeys(ctx context.Context) (int64, error) {
 	info, err := s.client.Info(ctx, "stats").Result()
 	if err != nil {
@@ -245,9 +239,8 @@ func (s *Store) Close() error {
 	return s.client.Close()
 }
 
-// Set stores a value with expiration. Expiration must be positive: every key
-// on the shared instance carries a TTL so volatile-ttl can always sacrifice
-// short-lived cache keys before long-lived sessions.
+// Set stores a value with expiration, which must be positive: every key
+// needs a TTL so volatile-ttl always has short-lived keys to sacrifice.
 func (s *Store) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	if expiration <= 0 {
 		return status.Errorf(codes.InvalidArgument, "expiration must be positive, got %s", expiration)
@@ -349,8 +342,7 @@ func (s *Store) Exists(ctx context.Context, key string) (bool, error) {
 	return result > 0, nil
 }
 
-// SetNX sets a value if it does not exist (atomic operation). Expiration
-// must be positive, same as Set.
+// SetNX is Set-if-absent; expiration must be positive, same as Set.
 func (s *Store) SetNX(ctx context.Context, key string, value any, expiration time.Duration) (bool, error) {
 	if expiration <= 0 {
 		return false, status.Errorf(codes.InvalidArgument, "expiration must be positive, got %s", expiration)

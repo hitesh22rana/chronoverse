@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
     useNotifications,
 } from "@/features/notifications/use-notifications"
+import { safeActionUrl } from "@/features/notifications/notification-data"
 import type { Notification, NotificationPayload } from "@/features/notifications/types"
 
 import { cn } from "@/lib/utils"
@@ -91,12 +92,6 @@ function highlightNotification(message: string): string {
     }
     result += escapeHtml(message.slice(lastIndex));
     return result;
-}
-
-// Server generates same-origin /workflows/{uuid} paths; fall back to "/" so
-// a future absolute or javascript: action_url can never become a link target.
-function safeActionUrl(actionUrl: string): string {
-    return actionUrl.startsWith("/") ? actionUrl : "/";
 }
 
 interface NotificationsDrawerProps {

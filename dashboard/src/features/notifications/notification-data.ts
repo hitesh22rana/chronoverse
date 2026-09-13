@@ -30,3 +30,16 @@ export const removeNotificationsFromPages = (
         notifications: page.notifications.filter((notification) => !removedIds.has(notification.id)),
     }))
 }
+
+// Same-origin paths only: "//host" is protocol-relative, and browsers read
+// "\" as "/" for http(s), so both escape origin.
+export const safeActionUrl = (actionUrl: string): string => {
+    if (
+        !actionUrl.startsWith("/") ||
+        actionUrl.startsWith("//") ||
+        actionUrl.includes("\\")
+    ) {
+        return "/"
+    }
+    return actionUrl
+}

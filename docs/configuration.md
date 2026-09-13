@@ -245,6 +245,10 @@ code default of `100mb`.
 
 The default eviction policy is `volatile-ttl`: under memory pressure the
 shortest-TTL keys (locks, 30m caches) are sacrificed before the 2h sessions.
+volatile-ttl compares *remaining* TTL, so the session middleware re-sets the
+full 2h expiry on every authenticated request — live sessions stay the
+longest-lived keys and are evicted last. Sessions idle long enough to age
+below cache TTLs remain sacrificial (they are near natural expiry anyway).
 Every write path carries a TTL (`Store.Set`/`SetNX` reject non-positive
 expirations), so there is always a sacrificial key. Watch the `redis.evicted_keys`
 counter (exported over OTEL): sustained growth means pressure is eating cache,

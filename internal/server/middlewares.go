@@ -233,6 +233,13 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 			return
 		}
 
+		// Re-set full expiry per request: volatile-ttl evicts by remaining
+		// TTL, so live sessions must stay longest-lived. Refresh failure
+		// must not fail a valid session.
+		if err = s.rdb.Set(r.Context(), session, userID, s.validationCfg.SessionExpiry); err != nil {
+			s.logger.Warn("failed to refresh session expiry", zap.Error(err))
+		}
+
 		// Attach the required information to the context
 		ctx = context.WithValue(ctx, sessionKey{}, session)
 		ctx = context.WithValue(ctx, userIDKey{}, userID)

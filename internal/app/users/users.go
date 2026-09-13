@@ -183,8 +183,7 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 	return server
 }
 
-// hashEmail returns the hex-encoded SHA-256 of an email for spans and logs:
-// enough to correlate traces without persisting PII.
+// hashEmail hashes an email for spans/logs: correlatable, no PII.
 func hashEmail(email string) string {
 	sum := sha256.Sum256([]byte(email))
 	return hex.EncodeToString(sum[:])

@@ -211,7 +211,6 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateUserRequest struct {
-	Password               string `json:"password"`
 	NotificationPreference string `json:"notification_preference"`
 }
 

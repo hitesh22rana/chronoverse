@@ -4,6 +4,7 @@ package workflows
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -799,6 +800,10 @@ func validateFilters(filters *workflowsmodel.ListWorkflowsFilters) error {
 		return nil
 	}
 
+	if len(filters.Query) > 100 {
+		return status.Errorf(codes.InvalidArgument, "invalid query: exceeds 100 characters")
+	}
+
 	if filters.Kind != "" {
 		if err := validateKind(filters.Kind); err != nil {
 			return err
@@ -845,7 +850,9 @@ func generateListWorkflowsCacheKey(userID, cursor string, filters *workflowsmode
 		fmt.Sprintf("interval_max=%d", filters.IntervalMax),
 	}
 
-	return fmt.Sprintf("workflows:%s:cursor=%s&%s", userID, cursor, strings.Join(allFilters, "&"))
+	// Hash the unbounded inputs so a 1MB query cannot become a 1MB Redis key.
+	sum := sha256.Sum256([]byte("cursor=" + cursor + "&" + strings.Join(allFilters, "&")))
+	return fmt.Sprintf("workflows:%s:%x", userID, sum)
 }
 
 // invalidateWorkflowCache handles cache invalidation for a specific workflow for a user.

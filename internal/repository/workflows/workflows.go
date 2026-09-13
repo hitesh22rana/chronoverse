@@ -1211,8 +1211,8 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 	if filters != nil {
 		// Text search on workflow name
 		if filters.Query != "" {
-			query += fmt.Sprintf(` AND name ILIKE $%d`, paramIndex)
-			args = append(args, "%"+filters.Query+"%")
+			query += fmt.Sprintf(` AND name ILIKE $%d ESCAPE '\'`, paramIndex)
+			args = append(args, "%"+escapeLikeQuery(filters.Query)+"%")
 			paramIndex++
 		}
 

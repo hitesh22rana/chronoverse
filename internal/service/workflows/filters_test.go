@@ -2,6 +2,7 @@
 package workflows
 
 import (
+	"strings"
 	"testing"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
@@ -50,6 +51,15 @@ func TestValidateFiltersIntervalRange(t *testing.T) {
 			filters: &workflowsmodel.ListWorkflowsFilters{IntervalMax: -1},
 			wantErr: true,
 		},
+		{
+			name:    "query at 100 characters",
+			filters: &workflowsmodel.ListWorkflowsFilters{Query: strings.Repeat("a", 100)},
+		},
+		{
+			name:    "query over 100 characters",
+			filters: &workflowsmodel.ListWorkflowsFilters{Query: strings.Repeat("a", 101)},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -64,5 +74,22 @@ func TestValidateFiltersIntervalRange(t *testing.T) {
 				t.Fatalf("unexpected validation error: %v", err)
 			}
 		})
+	}
+}
+
+func TestGenerateListWorkflowsCacheKeyIsFixedSize(t *testing.T) {
+	t.Parallel()
+
+	filters := &workflowsmodel.ListWorkflowsFilters{Query: strings.Repeat("a", 1000000)}
+	key := generateListWorkflowsCacheKey("user1", "cursor", filters)
+	if len(key) > 100 {
+		t.Fatalf("cache key length = %d, want fixed-size", len(key))
+	}
+	other := generateListWorkflowsCacheKey("user1", "cursor", &workflowsmodel.ListWorkflowsFilters{Query: "other"})
+	if key == other {
+		t.Fatal("different queries produced the same cache key")
+	}
+	if again := generateListWorkflowsCacheKey("user1", "cursor", filters); again != key {
+		t.Fatal("cache key is not deterministic")
 	}
 }

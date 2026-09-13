@@ -1046,13 +1046,13 @@ func normalizeJobLogsSortOrder(sortOrder jobsmodel.JobLogsSortOrder) jobsmodel.J
 
 // jobLogsCacheKey hashes unbounded read inputs (cursor) into a fixed-size key.
 func jobLogsCacheKey(userID, jobID, cursor, stream string, sortOrder jobsmodel.JobLogsSortOrder) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, stream, fmt.Sprint(sortOrder)}, "|")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, stream, fmt.Sprint(sortOrder)}, "\x00")))
 	return fmt.Sprintf("job_logs:%s:%x", userID, sum)
 }
 
 // searchJobLogsCacheKey hashes unbounded search inputs (cursor, message) into a fixed-size key.
 func searchJobLogsCacheKey(userID, jobID, cursor, message, stream string, sortOrder jobsmodel.JobLogsSortOrder, disableHighlight bool) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, message, stream, fmt.Sprint(sortOrder), fmt.Sprint(disableHighlight)}, "|")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, message, stream, fmt.Sprint(sortOrder), fmt.Sprint(disableHighlight)}, "\x00")))
 	return fmt.Sprintf("job_logs:search:%s:%x", userID, sum)
 }
 

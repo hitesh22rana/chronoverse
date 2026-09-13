@@ -1427,7 +1427,7 @@ func searchJobLogsCacheKeyForTest(req *jobspb.SearchJobLogsRequest) string {
 		req.GetFilters().GetStream().String(),
 		fmt.Sprint(options.SortOrder),
 		fmt.Sprint(options.DisableHighlight),
-	}, "|")))
+	}, "\x00")))
 	return fmt.Sprintf("job_logs:search:%s:%x", req.GetUserId(), sum)
 }
 
@@ -1437,7 +1437,7 @@ func getJobLogsCacheKeyForTest(req *jobspb.GetJobLogsRequest, sortOrder jobsmode
 		req.GetCursor(),
 		req.GetFilters().GetStream().String(),
 		fmt.Sprint(sortOrder),
-	}, "|")))
+	}, "\x00")))
 	return fmt.Sprintf("job_logs:%s:%x", req.GetUserId(), sum)
 }
 

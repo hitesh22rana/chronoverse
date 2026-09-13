@@ -852,7 +852,8 @@ func generateListWorkflowsCacheKey(userID, cursor string, filters *workflowsmode
 	}
 
 	// Hash the unbounded cursor and query so they cannot become oversize Redis keys.
-	sum := sha256.Sum256([]byte("cursor=" + cursor + "&" + strings.Join(allFilters, "&")))
+	// Join on NUL (not "&"/"|") so user-controlled query text cannot shift fields.
+	sum := sha256.Sum256([]byte("cursor=" + cursor + "\x00" + strings.Join(allFilters, "\x00")))
 	return fmt.Sprintf("workflows:%s:%x", userID, sum)
 }
 

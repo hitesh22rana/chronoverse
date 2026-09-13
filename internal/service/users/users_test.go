@@ -42,7 +42,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "success",
 			req: &userspb.RegisterUserRequest{
 				Email:          "test@gmail.com",
-				Password:       "Str0ng!Pass-42",
+				Password:       "BlueFalcon$22Dances!",
 				IdempotencyKey: "register-key",
 			},
 			mock: func(req *userspb.RegisterUserRequest) {
@@ -106,6 +106,17 @@ func TestRegisterUser(t *testing.T) {
 			isErr: true,
 		},
 		{
+			name: "error: weak predictable password scores below 3",
+			req: &userspb.RegisterUserRequest{
+				Email:          "test@gmail.com",
+				Password:       "Password123",
+				IdempotencyKey: "register-key",
+			},
+			mock:  func(_ *userspb.RegisterUserRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
 			name: "error: weak password with letters and digits only",
 			req: &userspb.RegisterUserRequest{
 				Email:          "test@gmail.com",
@@ -117,7 +128,7 @@ func TestRegisterUser(t *testing.T) {
 			isErr: true,
 		},
 		{
-			name: "error: weak password misses character classes",
+			name: "error: weak sequential password",
 			req: &userspb.RegisterUserRequest{
 				Email:          "test@gmail.com",
 				Password:       "abcdefghij",
@@ -131,14 +142,14 @@ func TestRegisterUser(t *testing.T) {
 			name: "success: email case and whitespace normalized",
 			req: &userspb.RegisterUserRequest{
 				Email:          "  Test@Gmail.COM  ",
-				Password:       "Str0ng!Pass-42",
+				Password:       "BlueFalcon$22Dances!",
 				IdempotencyKey: "register-key",
 			},
 			mock: func(_ *userspb.RegisterUserRequest) {
 				repo.EXPECT().RegisterUser(
 					gomock.Any(),
 					"test@gmail.com",
-					"Str0ng!Pass-42",
+					"BlueFalcon$22Dances!",
 					"register-key",
 				).Return(&usersmodel.GetUserResponse{
 					ID:                     "userID",
@@ -165,7 +176,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "error: already exists",
 			req: &userspb.RegisterUserRequest{
 				Email:          "test@gmail.com",
-				Password:       "Str0ng!Pass-42",
+				Password:       "BlueFalcon$22Dances!",
 				IdempotencyKey: "register-key",
 			},
 			mock: func(req *userspb.RegisterUserRequest) {

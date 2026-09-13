@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ccojocar/zxcvbn-go"
+	"github.com/ccojocar/zxcvbn-go/frequency"
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -71,28 +73,23 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-// weakPassword requires 3 of 4 character classes (lowercase, uppercase, digit, symbol).
-func weakPassword(password string) bool {
-	var lower, upper, digit, symbol bool
-	for _, r := range password {
-		switch {
-		case 'a' <= r && r <= 'z':
-			lower = true
-		case 'A' <= r && r <= 'Z':
-			upper = true
-		case '0' <= r && r <= '9':
-			digit = true
-		default:
-			symbol = true
-		}
+// commonPasswords is the bundled zxcvbn dictionary for exact-match rejection.
+var commonPasswords = toPasswordSet(frequency.Lists["Passwords"].List)
+
+func toPasswordSet(passwords []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(passwords))
+	for _, password := range passwords {
+		set[strings.ToLower(password)] = struct{}{}
 	}
-	classes := 0
-	for _, has := range []bool{lower, upper, digit, symbol} {
-		if has {
-			classes++
-		}
+	return set
+}
+
+// weakPassword rejects bundled-dictionary matches and passwords scoring below 3.
+func weakPassword(password, email string) bool {
+	if _, ok := commonPasswords[strings.ToLower(password)]; ok {
+		return true
 	}
-	return classes < 3
+	return zxcvbn.PasswordStrength(password, []string{email}).Score < 3
 }
 
 // RegisterUserRequest holds the request parameters for registering a new user.
@@ -126,7 +123,7 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		return "", "", err
 	}
 
-	if weakPassword(req.GetPassword()) {
+	if weakPassword(req.GetPassword(), normalizeEmail(req.GetEmail())) {
 		return "", "", status.Errorf(codes.InvalidArgument, "password too weak")
 	}
 

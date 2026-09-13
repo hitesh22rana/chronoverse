@@ -71,13 +71,13 @@ Body:
 ```json
 {
   "email": "user@example.com",
-  "password": "Str0ng!Pass-42"
+  "password": "BlueFalcon$22Dances!"
 }
 ```
 
 Creates the user, issues a session cookie, and returns `201 Created`. Emails are
-trimmed and lowercased; registration passwords need 8–72 characters with 3 of 4
-character classes (lowercase, uppercase, digit, symbol).
+trimmed and lowercased; registration passwords need 8–72 characters with a
+zxcvbn score of at least 3 and must not match the bundled common-password dictionary.
 A replay
 returns the same account but always issues fresh authentication material.
 
@@ -90,7 +90,7 @@ Body:
 ```json
 {
   "email": "user@example.com",
-  "password": "Str0ng!Pass-42"
+  "password": "BlueFalcon$22Dances!"
 }
 ```
 

@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.47.0
 	github.com/KimMachineGun/automemlimit v0.7.5
+	github.com/ccojocar/zxcvbn-go v1.0.4
 	github.com/containerd/errdefs v1.0.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/docker v28.5.2+incompatible

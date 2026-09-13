@@ -452,7 +452,7 @@ components:
       required: [email, password]
       properties:
         email: {type: string, format: email}
-        password: {type: string, format: password, minLength: 8, maxLength: 72, description: Registration requires 3 of 4 character classes (lowercase, uppercase, digit, symbol)}
+        password: {type: string, format: password, minLength: 8, maxLength: 72, description: Registration requires a zxcvbn score of at least 3 and rejects bundled-dictionary passwords}
     User:
       type: object
       required: [email, notification_preference, created_at, updated_at]

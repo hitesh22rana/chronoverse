@@ -178,7 +178,7 @@ curl -c cookies.txt -X POST http://localhost:8080/auth/register \
   -H 'Idempotency-Key: operator-signup-v1' \
   -d '{
     "email": "operator@example.com",
-    "password": "password12345"
+    "password": "Str0ng!Pass-42"
   }'
 ```
 
@@ -951,7 +951,7 @@ Chronoverse uses browser-oriented session authentication rather than exposing se
 
 ## Register
 
-`POST /auth/register` accepts email and password, creates the user, and issues session and CSRF cookies.
+`POST /auth/register` accepts email and password, creates the user, and issues session and CSRF cookies. Emails are trimmed and lowercased; registration passwords need 8–72 characters with 3 of 4 character classes (lowercase, uppercase, digit, symbol) and must not be common.
 
 ## Login
 
@@ -1688,7 +1688,7 @@ paths:
               properties:
                 notification_preference:
                   type: string
-                  enum: [ALL, NONE]
+                  enum: [ALERTS, ALL, NONE]
               required: [notification_preference]
       responses:
         '204': {description: User preferences updated}
@@ -2037,20 +2037,20 @@ components:
       required: [email, password]
       properties:
         email: {type: string, format: email}
-        password: {type: string, format: password, minLength: 8, maxLength: 72}
+        password: {type: string, format: password, minLength: 8, maxLength: 72, description: Registration rejects common passwords and requires 3 of 4 character classes (lowercase, uppercase, digit, symbol)}
     User:
       type: object
       required: [email, notification_preference, created_at, updated_at]
       properties:
         email: {type: string, format: email}
-        notification_preference: {type: string, enum: [ALL, NONE]}
+        notification_preference: {type: string, enum: [ALERTS, ALL, NONE]}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     WorkflowInput:
       type: object
       required: [name, payload, kind, interval, max_consecutive_job_failures_allowed]
       properties:
-        name: {type: string}
+        name: {type: string, minLength: 1, maxLength: 255}
         payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
         kind: {type: string, enum: [HEARTBEAT, CONTAINER]}
         interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
@@ -2060,7 +2060,7 @@ components:
       type: object
       required: [name, payload, interval, max_consecutive_job_failures_allowed]
       properties:
-        name: {type: string}
+        name: {type: string, minLength: 1, maxLength: 255}
         payload: {type: string, description: Workflow-kind-specific JSON encoded as a string}
         interval: {type: integer, minimum: 1, maximum: 10080, description: Schedule interval in minutes}
         max_consecutive_job_failures_allowed: {type: integer, minimum: 3, maximum: 100}

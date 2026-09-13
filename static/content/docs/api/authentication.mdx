@@ -4,7 +4,7 @@ Chronoverse uses browser-oriented session authentication rather than exposing se
 
 ## Register
 
-`POST /auth/register` accepts email and password, creates the user, and issues session and CSRF cookies.
+`POST /auth/register` accepts email and password, creates the user, and issues session and CSRF cookies. Emails are trimmed and lowercased; registration passwords need 8–72 characters with 3 of 4 character classes (lowercase, uppercase, digit, symbol) and must not be common.
 
 ## Login
 

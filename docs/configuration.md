@@ -243,6 +243,13 @@ compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` on every Redis
 client process so one late-starting service does not reset Redis back to the
 code default of `100mb`.
 
+The default eviction policy is `volatile-ttl`: under memory pressure the
+shortest-TTL keys (locks, 30m caches) are sacrificed before the 2h sessions.
+Every write path carries a TTL (`Store.Set`/`SetNX` reject non-positive
+expirations), so there is always a sacrificial key. Watch the `redis.evicted_keys`
+counter (exported over OTEL): sustained growth means pressure is eating cache,
+growth approaching session lifetimes means `REDIS_MAX_MEMORY` is too small.
+
 ### Meilisearch
 
 Common settings:

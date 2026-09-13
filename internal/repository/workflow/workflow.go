@@ -163,7 +163,6 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 			attribute.Int64("offset", record.Offset),
 			attribute.Int64("partition", int64(record.Partition)),
 			attribute.String("key", string(record.Key)),
-			attribute.String("value", string(record.Value)),
 		),
 	)
 	defer span.End()
@@ -191,7 +190,6 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 			zap.String("topic", record.Topic),
 			zap.Int64("offset", record.Offset),
 			zap.Int32("partition", record.Partition),
-			zap.String("value", string(record.Value)),
 		)
 		return nil
 	}

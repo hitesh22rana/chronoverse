@@ -94,7 +94,7 @@ type Redis struct {
 	ReadTimeout              time.Duration `envconfig:"REDIS_READ_TIMEOUT" default:"5s"`
 	WriteTimeout             time.Duration `envconfig:"REDIS_WRITE_TIMEOUT" default:"5s"`
 	MaxMemory                string        `envconfig:"REDIS_MAX_MEMORY" default:"100mb"`
-	EvictionPolicy           string        `envconfig:"REDIS_EVICTION_POLICY" default:"allkeys-lru"`
+	EvictionPolicy           string        `envconfig:"REDIS_EVICTION_POLICY" default:"volatile-ttl"`
 	EvictionPolicySampleSize int           `envconfig:"REDIS_EVICTION_POLICY_SAMPLE_SIZE" default:"5"`
 	TLS                      struct {
 		Enabled  bool   `envconfig:"REDIS_TLS_ENABLED" default:"false"`

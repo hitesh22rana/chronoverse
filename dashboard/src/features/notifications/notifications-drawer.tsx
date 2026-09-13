@@ -93,6 +93,12 @@ function highlightNotification(message: string): string {
     return result;
 }
 
+// Server generates same-origin /workflows/{uuid} paths; fall back to "/" so
+// a future absolute or javascript: action_url can never become a link target.
+function safeActionUrl(actionUrl: string): string {
+    return actionUrl.startsWith("/") ? actionUrl : "/";
+}
+
 interface NotificationsDrawerProps {
     open: boolean
     onClose: () => void
@@ -222,7 +228,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 />
 
                 <Link
-                    href={payload.action_url}
+                    href={safeActionUrl(payload.action_url)}
                     prefetch={false}
                     className="flex-1 min-w-0 flex flex-col gap-2"
                     onClick={() => handleNotificationClick(n)}

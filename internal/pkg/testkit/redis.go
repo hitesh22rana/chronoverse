@@ -36,7 +36,7 @@ func startRedis(ctx context.Context, s *suite) (*redispkg.Store, error) {
 		// Mirror the production defaults; an empty MaxMemory makes
 		// CONFIG SET maxmemory fail on Redis 8.
 		MaxMemory:                "100mb",
-		EvictionPolicy:           "allkeys-lru",
+		EvictionPolicy:           "volatile-ttl",
 		EvictionPolicySampleSize: 5,
 		TLSConfig:                &redispkg.TLSConfig{Enabled: false},
 	})

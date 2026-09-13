@@ -8,11 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -182,7 +186,56 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 		return nil, status.Errorf(codes.Internal, "failed to instrument metrics: %v", err)
 	}
 
-	return &Store{client: client}, nil
+	store := &Store{client: client}
+	registerEvictedKeysGauge(store)
+
+	return store, nil
+}
+
+// registerEvictedKeysGauge exports the cumulative evicted_keys count on the
+// global meter so memory pressure that threatens sessions (2h TTL, longest
+// lived) can alert. Best effort: scrape failures stay silent, and duplicate
+// registration (one New per service process, several in tests) keeps the
+// first callback.
+//
+//nolint:errcheck // Best-effort observability; New must not fail over it.
+func registerEvictedKeysGauge(store *Store) {
+	meter := otel.Meter("github.com/hitesh22rana/chronoverse/internal/pkg/redis")
+	meter.Int64ObservableGauge(
+		"redis.evicted_keys",
+		metric.WithDescription("Cumulative number of keys evicted by Redis maxmemory policy."),
+		metric.WithUnit("{key}"),
+		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
+			// Best effort: a failed scrape simply skips this collection.
+			if evicted, err := store.EvictedKeys(ctx); err == nil {
+				o.Observe(evicted)
+			}
+			return nil
+		}),
+	)
+}
+
+// EvictedKeys returns the cumulative number of keys evicted by the maxmemory
+// policy (INFO stats). A rising count under volatile-ttl means cache/short-TTL
+// keys are being sacrificed; sustained growth toward session TTLs warrants a
+// maxmemory increase.
+func (s *Store) EvictedKeys(ctx context.Context) (int64, error) {
+	info, err := s.client.Info(ctx, "stats").Result()
+	if err != nil {
+		return 0, status.Errorf(codes.Internal, "failed to read redis stats: %v", err)
+	}
+
+	for line := range strings.Lines(strings.TrimSpace(info)) {
+		if value, found := strings.CutPrefix(line, "evicted_keys:"); found {
+			evicted, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+			if err != nil {
+				return 0, status.Errorf(codes.Internal, "failed to parse evicted_keys: %v", err)
+			}
+			return evicted, nil
+		}
+	}
+
+	return 0, status.Errorf(codes.Internal, "evicted_keys missing from redis stats")
 }
 
 // Close closes the Redis store.
@@ -190,8 +243,14 @@ func (s *Store) Close() error {
 	return s.client.Close()
 }
 
-// Set stores a value with optional expiration.
+// Set stores a value with expiration. Expiration must be positive: every key
+// on the shared instance carries a TTL so volatile-ttl can always sacrifice
+// short-lived cache keys before long-lived sessions.
 func (s *Store) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
+	if expiration <= 0 {
+		return status.Errorf(codes.InvalidArgument, "expiration must be positive, got %s", expiration)
+	}
+
 	data, err := json.Marshal(value)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to marshal value: %v", err)
@@ -288,8 +347,13 @@ func (s *Store) Exists(ctx context.Context, key string) (bool, error) {
 	return result > 0, nil
 }
 
-// SetNX sets a value if it does not exist (atomic operation).
+// SetNX sets a value if it does not exist (atomic operation). Expiration
+// must be positive, same as Set.
 func (s *Store) SetNX(ctx context.Context, key string, value any, expiration time.Duration) (bool, error) {
+	if expiration <= 0 {
+		return false, status.Errorf(codes.InvalidArgument, "expiration must be positive, got %s", expiration)
+	}
+
 	data, err := json.Marshal(value)
 	if err != nil {
 		return false, status.Errorf(codes.Internal, "failed to marshal value: %v", err)

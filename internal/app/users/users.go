@@ -4,6 +4,8 @@ package users
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -181,6 +183,13 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 	return server
 }
 
+// hashEmail returns the hex-encoded SHA-256 of an email for spans and logs:
+// enough to correlate traces without persisting PII.
+func hashEmail(email string) string {
+	sum := sha256.Sum256([]byte(email))
+	return hex.EncodeToString(sum[:])
+}
+
 // RegisterUser registers a new user.
 //
 //nolint:dupl,gocritic // It's okay to have similar code for different methods.
@@ -188,7 +197,7 @@ func (u *Users) RegisterUser(ctx context.Context, req *userpb.RegisterUserReques
 	ctx, span := u.tp.Start(
 		ctx,
 		"App.RegisterUser",
-		trace.WithAttributes(attribute.String("email", req.GetEmail())),
+		trace.WithAttributes(attribute.String("email_hash", hashEmail(req.GetEmail()))),
 	)
 	defer func() {
 		if err != nil {
@@ -220,7 +229,7 @@ func (u *Users) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (re
 	ctx, span := u.tp.Start(
 		ctx,
 		"App.LoginUser",
-		trace.WithAttributes(attribute.String("email", req.GetEmail())),
+		trace.WithAttributes(attribute.String("email_hash", hashEmail(req.GetEmail()))),
 	)
 	defer func() {
 		if err != nil {

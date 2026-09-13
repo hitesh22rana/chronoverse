@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/meilisearch/meilisearch-go"
 	goredis "github.com/redis/go-redis/v9"
@@ -952,11 +954,18 @@ func (r *Repository) SearchJobLogs(
 		return nil, "", err
 	}
 
+	// Re-validate IDs immediately before filter build so a relaxed caller
+	// can never turn `%q` interpolation into cross-tenant filter injection.
+	// The cursor EventID is a composite log key, not a UUID, so it is only escaped.
+	if err = validateJobLogsFilterIDs(userID, workflowID, jobID); err != nil {
+		return nil, "", err
+	}
+
 	filter := fmt.Sprintf(
 		`user_id = %q AND workflow_id = %q AND job_id = %q`,
-		userID,
-		workflowID,
-		jobID,
+		meiliFilterValue(userID),
+		meiliFilterValue(workflowID),
+		meiliFilterValue(jobID),
 	)
 
 	switch searchJobLogsFilters.Stream {
@@ -986,7 +995,7 @@ func (r *Repository) SearchJobLogs(
 			logsCursor.SequenceNum,
 			logsCursor.SequenceNum,
 			idOperator,
-			logsCursor.EventID,
+			meiliFilterValue(logsCursor.EventID),
 		)
 	}
 
@@ -1277,6 +1286,23 @@ func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options
 	}
 
 	return req
+}
+
+// validateJobLogsFilterIDs re-validates tenant-scoping IDs before Meili filter build.
+func validateJobLogsFilterIDs(userID, workflowID, jobID string) error {
+	for _, id := range []string{userID, workflowID, jobID} {
+		if _, err := uuid.Parse(id); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid ID: %v", err)
+		}
+	}
+	return nil
+}
+
+// meiliFilterValue escapes backslashes and quotes so `%q` interpolation into a
+// Meili filter cannot break out of its quoted string.
+func meiliFilterValue(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	return strings.ReplaceAll(value, `"`, `\"`)
 }
 
 // extractDataFromGetJobLogsCursor extracts the data from the cursor.

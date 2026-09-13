@@ -53,10 +53,11 @@ type ValidationConfig struct {
 
 // HostConfig represents the configuration of the backend host.
 type HostConfig struct {
-	URL      string
-	Host     string
-	Secure   bool
-	SameSite http.SameSite
+	URL          string
+	Host         string
+	Secure       bool
+	SameSite     http.SameSite
+	CookieDomain string
 }
 
 // Config represents the configuration of the HTTP server.
@@ -72,6 +73,7 @@ type Config struct {
 	HostURL           string
 	AllowedOrigins    []string
 	SameSiteMode      string
+	CookieDomain      string
 }
 
 // New creates a new HTTP server.
@@ -126,10 +128,11 @@ func New(
 		},
 		validationCfg: cfg.ValidationConfig,
 		hostConfig: &HostConfig{
-			URL:      cfg.HostURL,
-			Host:     host.Hostname(),
-			Secure:   host.Scheme == "https",
-			SameSite: sameSite,
+			URL:          cfg.HostURL,
+			Host:         host.Hostname(),
+			Secure:       host.Scheme == "https",
+			SameSite:     sameSite,
+			CookieDomain: cfg.CookieDomain,
 		},
 		allowedOrigins: allowedOrigins,
 	}
@@ -190,6 +193,15 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			),
 		),
 	)
+	router.HandleFunc(
+		"/auth/csrf",
+		s.withAllowedMethodMiddleware(
+			http.MethodGet,
+			s.withVerifySessionMiddleware(
+				s.handleGetCSRFToken,
+			),
+		),
+	)
 
 	// Users routes
 	router.HandleFunc(
@@ -200,7 +212,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameUsers,
 							s.handleGetUser,
 						),
 					),
@@ -210,7 +222,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPut,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameUsers,
 								s.handleUpdateUser,
 							),
 						),
@@ -231,7 +243,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 							s.handleListWorkflows,
 						),
 					),
@@ -241,7 +253,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPost,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleCreateWorkflow,
 							),
 						),
@@ -259,7 +271,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 							s.handleGetWorkflow,
 						),
 					),
@@ -269,7 +281,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPut,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleUpdateWorkflow,
 							),
 						),
@@ -280,7 +292,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPatch,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleTerminateWorkflow,
 							),
 						),
@@ -291,7 +303,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodDelete,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameWorkflows,
 								s.handleDeleteWorkflow,
 							),
 						),
@@ -309,7 +321,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleListJobs,
 				),
 			),
@@ -321,7 +333,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 			http.MethodPost,
 			s.withVerifyCSRFMiddleware(
 				s.withVerifySessionMiddleware(
-					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+					s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 						s.handleManualScheduleJob,
 					),
 				),
@@ -333,7 +345,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleGetJob,
 				),
 			),
@@ -344,7 +356,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleGetJobLogs,
 				),
 			),
@@ -355,7 +367,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleSearchJobLogs,
 				),
 			),
@@ -366,7 +378,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleDownloadJobLogs,
 				),
 			),
@@ -377,7 +389,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameJobs,
 					s.handleJobEvents,
 				),
 			),
@@ -393,7 +405,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
-						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+						s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameNotifications,
 							s.handleListNotifications,
 						),
 					),
@@ -403,7 +415,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					http.MethodPut,
 					s.withVerifyCSRFMiddleware(
 						s.withVerifySessionMiddleware(
-							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+							s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameNotifications,
 								s.handleMarkNotificationsRead,
 							),
 						),
@@ -419,7 +431,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameAnalytics,
 					s.handleGetUserAnalytics,
 				),
 			),
@@ -431,7 +443,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		s.withAllowedMethodMiddleware(
 			http.MethodGet,
 			s.withVerifySessionMiddleware(
-				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(
+				s.withAttachAuthorizationTokenInMetadataHeaderMiddleware(auth.ServiceNameAnalytics,
 					s.handleGetWorkflowAnalytics,
 				),
 			),

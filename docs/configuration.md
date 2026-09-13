@@ -161,6 +161,9 @@ The public HTTP server reads:
 - `SERVER_HOST_URL`
 - `SERVER_ALLOWED_ORIGINS`
 - `SERVER_SAME_SITE_MODE`
+- `SERVER_COOKIE_DOMAIN` (optional; shares session/CSRF cookies with
+  subdomains, e.g. dashboard at `app.example.com` with API at
+  `example.com`; must match or parent the host URL; default host-only)
 - `CRYPTO_SECRET`
 
 In development the dashboard calls the server directly. In production, Nginx

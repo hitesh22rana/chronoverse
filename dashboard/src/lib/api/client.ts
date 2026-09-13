@@ -1,7 +1,43 @@
+import { apiEndpoints } from "./endpoints"
+
+function getCookie(name: string) {
+    return document.cookie
+        .split("; ")
+        .find((c) => c.startsWith(name + "="))
+        ?.split("=")[1] ?? ""
+}
+
+async function resolveCsrfToken(): Promise<string> {
+    const fromCookie = getCookie("csrf")
+    if (fromCookie) {
+        return fromCookie
+    }
+    try {
+        // Configured base keeps edge path prefixes (e.g. /api).
+        const res = await fetch(apiEndpoints.auth.csrf, {
+            credentials: "include",
+        })
+        if (res.ok) {
+            const data = (await res.json()) as { csrfToken?: string }
+            return data.csrfToken ?? ""
+        }
+    } catch {
+        // No token available; caller sends the request without it.
+    }
+    return ""
+}
+
 async function fetchWithCredentials(url: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers)
     if (!headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json")
+    }
+    const method = (options.method ?? "GET").toUpperCase()
+    if (!headers.has("X-CSRF-Token") && method !== "GET" && method !== "HEAD" && typeof document !== "undefined") {
+        const csrf = await resolveCsrfToken()
+        if (csrf) {
+            headers.set("X-CSRF-Token", csrf)
+        }
     }
 
     return fetch(url, {

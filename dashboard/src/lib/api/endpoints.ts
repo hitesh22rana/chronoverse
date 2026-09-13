@@ -14,6 +14,7 @@ export function createApiEndpoints(baseUrl?: string) {
             login: route("/auth/login"),
             signup: route("/auth/register"),
             logout: route("/auth/logout"),
+            csrf: route("/auth/csrf"),
         },
         users: route("/users"),
         notifications: route("/notifications"),

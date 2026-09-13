@@ -66,3 +66,34 @@ func TestValidateServerSecrets(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateCookieDomain(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		hostURL string
+		domain  string
+		wantErr bool
+	}{
+		{name: "empty stays host-only", hostURL: "https://api.example.com", domain: ""},
+		{name: "exact match", hostURL: "https://example.com", domain: "example.com"},
+		{name: "parent domain", hostURL: "https://api.example.com", domain: "example.com"},
+		{name: "sibling rejected", hostURL: "https://api.example.com", domain: "other.com", wantErr: true},
+		{name: "suffix trick rejected", hostURL: "https://evilexample.com", domain: "example.com", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateCookieDomain(tt.hostURL, tt.domain)
+			if tt.wantErr && err == nil {
+				t.Fatal("validateCookieDomain() error = nil, want an error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("validateCookieDomain() error = %v", err)
+			}
+		})
+	}
+}

@@ -585,6 +585,7 @@ services:
         chmod 440 /certs/kafka/kafka.key /certs/kafka/kafka.keystore.jks /certs/kafka/kafka.truststore.jks
 
         echo "🔐 Creating Kafka keystore credentials files..."
+        rm -f /certs/kafka/keystore_creds.txt /certs/kafka/truststore_creds.txt /certs/kafka/key_creds.txt
         echo "chronoverse" > /certs/kafka/keystore_creds.txt
         echo "chronoverse" > /certs/kafka/truststore_creds.txt
         echo "chronoverse" > /certs/kafka/key_creds.txt

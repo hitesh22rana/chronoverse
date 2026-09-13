@@ -4,7 +4,7 @@ Chronoverse uses separate mechanisms for browser request authenticity and retry 
 
 ## CSRF validation
 
-Authenticated mutations require CSRF validation in addition to the session cookie. Login and registration establish the browser cookie state used by later requests.
+Authenticated mutations require CSRF validation in addition to the session cookie. Login and registration establish the browser cookie state used by later requests. Mutating requests must echo the readable `csrf` cookie in the `X-CSRF-Token` header; the `session` cookie stays `HttpOnly` and is never exposed to JavaScript. Dashboards served from a different host than the API cannot read that cookie, so they fetch the token from `GET /auth/csrf` (session-authenticated) instead.
 
 ## Idempotency keys
 

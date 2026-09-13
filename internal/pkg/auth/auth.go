@@ -517,6 +517,7 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	return outCtx, parsed, nil
 }
 
+// Gateway JWTs are per-service, never broad. New services need an entry here.
 // Keep trustedIssuers in sync with cmd/<svc>/main.go build ldflags.
 var trustedIssuers = []string{
 	ServiceNameServer,
@@ -532,22 +533,6 @@ var trustedIssuers = []string{
 	"joblogs-processor",
 	"analytics-processor",
 	"outbox-relay",
-}
-
-// GatewayAudiences returns the audience set stamped into tokens the
-// gateway (server) mints or forwards. Every service the gateway may
-// forward a call to is included so the receiver can ValidateToken with
-// its own service name and the JWT remains valid. Adding a new gRPC
-// service requires updating trustedIssuers and GatewayAudiences.
-func GatewayAudiences() []string {
-	return []string{
-		ServiceNameServer,
-		ServiceNameUsers,
-		ServiceNameWorkflows,
-		ServiceNameJobs,
-		ServiceNameNotifications,
-		ServiceNameAnalytics,
-	}
 }
 
 // TrustedIssuer reports whether iss is a known platform service identity.

@@ -21,6 +21,7 @@ const (
 	serverShutdownTimeout = 10 * time.Second
 	csrfCookieName        = "csrf"
 	sessionCookieName     = "session"
+	csrfHeaderName        = "X-CSRF-Token"
 	idempotencyKeyHeader  = "Idempotency-Key"
 	logStreamStdout       = "stdout"
 	workflowKindHeartbeat = "HEARTBEAT"
@@ -90,13 +91,15 @@ func sessionFromContext(ctx context.Context) (string, error) {
 	return session, nil
 }
 
-// setCookie sets a cookie in the response.
-func setCookie(w http.ResponseWriter, name, value, host string, secure bool, expires time.Duration, sameSite http.SameSite) {
+// Host-only cookie unless CookieDomain is set for subdomain sharing.
+// csrf is JS-readable for header echo, session stays HttpOnly.
+func setCookie(w http.ResponseWriter, name, value, cookieDomain string, secure, httpOnly bool, expires time.Duration, sameSite http.SameSite) {
 	cookie := &http.Cookie{ //nolint:gosec // Secure is configurable so local HTTP development remains supported.
 		Name:     name,
 		Value:    value,
 		Path:     "/",
-		HttpOnly: true,
+		Domain:   cookieDomain,
+		HttpOnly: httpOnly,
 		Secure:   secure,
 		MaxAge:   int(expires.Seconds()),
 		SameSite: sameSite,
@@ -106,12 +109,6 @@ func setCookie(w http.ResponseWriter, name, value, host string, secure bool, exp
 		cookie.Expires = time.Unix(0, 0).UTC()
 	}
 
-	// Only set Domain for non-localhost and non-127.0.0.1
-	if !strings.Contains(host, "localhost") && !strings.Contains(host, "127.0.0.1") {
-		cookie.Domain = host
-	}
-
-	// Set the cookie in the response
 	http.SetCookie(w, cookie)
 }
 

@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
@@ -37,6 +39,7 @@ type Server struct {
 	HostURL           string        `envconfig:"SERVER_HOST_URL" default:"http://localhost:8080"`
 	AllowedOrigins    []string      `envconfig:"SERVER_ALLOWED_ORIGINS" default:"http://localhost:3001,"`
 	SameSiteMode      string        `envconfig:"SERVER_SAME_SITE_MODE" default:"STRICT"`
+	CookieDomain      string        `envconfig:"SERVER_COOKIE_DOMAIN" default:""`
 }
 
 // InitServerConfig initializes the server configuration.
@@ -75,6 +78,21 @@ func validateServerSecrets(cfg *ServerConfig) error {
 	if len(cfg.CSRFHMACSecret) < minCSRFHMACSecretLength {
 		return errors.New("SERVER_CSRF_HMAC_SECRET must be at least 32 bytes long")
 	}
+	return validateCookieDomain(cfg.HostURL, cfg.CookieDomain)
+}
 
+// validateCookieDomain keeps cookies host-only by default. An explicit domain
+// must match or parent the public host, else browsers drop the cookies.
+func validateCookieDomain(hostURL, domain string) error {
+	if domain == "" {
+		return nil
+	}
+	u, err := url.Parse(hostURL)
+	if err != nil {
+		return errors.New("SERVER_HOST_URL must be a valid URL to use SERVER_COOKIE_DOMAIN")
+	}
+	if host := u.Hostname(); host != domain && !strings.HasSuffix(host, "."+domain) {
+		return errors.New("SERVER_COOKIE_DOMAIN must match or parent the SERVER_HOST_URL host")
+	}
 	return nil
 }

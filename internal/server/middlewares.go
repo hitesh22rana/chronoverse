@@ -3,6 +3,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -73,6 +74,9 @@ func (s *Server) withSecurityHeadersMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		if s.hostConfig != nil && s.hostConfig.Secure {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -85,9 +89,9 @@ func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
 			if _, ok := s.allowedOrigins[origin]; ok {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key, X-CSRF-Token")
 				w.Header().Set("Access-Control-Allow-Credentials", "true") // Critical for cookies
-				w.Header().Set("Access-Control-Max-Age", "86400")          // 24 hours
+				w.Header().Set("Access-Control-Max-Age", "86400")
 
 				// Handle preflight requests
 				if r.Method == http.MethodOptions {
@@ -184,6 +188,12 @@ func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFun
 			return
 		}
 
+		// Cookie-to-header bind; cross-site pages can't set headers.
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get(csrfHeaderName)), []byte(csrfToken)) != 1 {
+			http.Error(w, "csrf mismatch", http.StatusForbidden)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	}
 }
@@ -209,13 +219,8 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 		// Attach the token to the context
 		ctx := auth.WithAuthorizationToken(r.Context(), authToken)
 
-		// The cookie stores a token issued by users-service at
-		// login/register; its aud claim is "users-service". We accept it
-		// here so the session is recognized, but the middleware does NOT
-		// stamp audience/role into the per-request downstream context —
-		// each forwarded call re-issues a fresh token with the correct
-		// audience for the destination service (see
-		// withAttachAuthorizationTokenInMetadataHeaderMiddleware).
+		// The cookie holds a server-audience token minted at login/register.
+		// Role/audience for downstream calls are re-issued per service below.
 		if _, _, err = s.auth.ValidateToken(ctx, svcpkg.Info().GetName()); err != nil && status.Code(err) != codes.DeadlineExceeded {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
@@ -237,30 +242,25 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 	}
 }
 
-// withAttachAuthorizationTokenInMetadataHeaderMiddleware is a middleware that attaches the authorization token to the context.
-// This middleware should only be called after the withVerifySessionMiddleware middleware.
-func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// Issues a short-lived JWT for one service; call after session check.
+// Redis is the session truth, JWTs expire in 15m.
+func (s *Server) withAttachAuthorizationTokenInMetadataHeaderMiddleware(audience string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// There might be chances that the auth token is expired but the session is still valid, since the auth token is short-lived and the session is long-lived.
-		// So, we need to re-issue the auth token.
+		// Session outlives the token, so re-issue here.
 		userID, ok := r.Context().Value(userIDKey{}).(string)
 		if !ok {
 			http.Error(w, "user ID not found in context", http.StatusUnauthorized)
 			return
 		}
 
-		// Issue a fresh token whose aud claim names every service the
-		// gateway may forward to. Each receiver validates its own name
-		// is in the list. Metadata Role/Audience are intentionally NOT
-		// populated; the JWT claim is the sole authority.
 		ctx := auth.WithRole(r.Context(), auth.RoleUser.String())
-		authToken, err := s.auth.IssueToken(ctx, userID, auth.GatewayAudiences()...)
+		authToken, err := s.auth.IssueToken(ctx, userID, audience)
 		if err != nil {
 			http.Error(w, "failed to issue token", http.StatusInternalServerError)
 			return
 		}
 
-		// Attach the token to the metadata for outgoing requests and call the next handler
+		// Forward as bearer metadata.
 		ctx = auth.WithAuthorizationTokenInMetadata(ctx, authToken)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}

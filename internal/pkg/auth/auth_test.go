@@ -323,14 +323,10 @@ func TestTrustedIssuerKnownService(t *testing.T) {
 	}
 }
 
-func TestGatewayAudiencesIncludesEveryForwardedService(t *testing.T) {
-	got := map[string]struct{}{}
-	for _, a := range GatewayAudiences() {
-		got[a] = struct{}{}
-	}
+func TestServiceNameConstants(t *testing.T) {
 	for _, want := range []string{"server", "users-service", "workflows-service", "jobs-service", "notifications-service", "analytics-service"} {
-		if _, ok := got[want]; !ok {
-			t.Fatalf("GatewayAudiences missing %q", want)
+		if !TrustedIssuer(want) {
+			t.Fatalf("missing service %q", want)
 		}
 	}
 }

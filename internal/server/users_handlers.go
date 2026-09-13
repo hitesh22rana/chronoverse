@@ -63,8 +63,8 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
-	setCookie(w, sessionCookieName, session, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
+	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.CookieDomain, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
+	setCookie(w, sessionCookieName, session, s.hostConfig.CookieDomain, s.hostConfig.Secure, true, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
 
 	w.WriteHeader(http.StatusCreated)
 }
@@ -114,16 +114,16 @@ func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
-	setCookie(w, sessionCookieName, session, s.hostConfig.Host, s.hostConfig.Secure, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
+	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.CookieDomain, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
+	setCookie(w, sessionCookieName, session, s.hostConfig.CookieDomain, s.hostConfig.Secure, true, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
 
 	w.WriteHeader(http.StatusCreated)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Delete the csrf and session cookies
-	setCookie(w, csrfCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, -1, s.hostConfig.SameSite)
-	setCookie(w, sessionCookieName, "", s.hostConfig.Host, s.hostConfig.Secure, -1, s.hostConfig.SameSite)
+	setCookie(w, csrfCookieName, "", s.hostConfig.CookieDomain, s.hostConfig.Secure, false, -1, s.hostConfig.SameSite)
+	setCookie(w, sessionCookieName, "", s.hostConfig.CookieDomain, s.hostConfig.Secure, true, -1, s.hostConfig.SameSite)
 
 	session, err := sessionFromContext(r.Context())
 	if err != nil {
@@ -142,6 +142,45 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleValidate(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+type csrfTokenResponse struct {
+	CSRFToken string `json:"csrfToken"`
+}
+
+// Issues a readable CSRF token for the current session. Lets dashboards
+// that cannot read the API-host cookie (cross-host) fetch the header value
+// over CORS instead.
+func (s *Server) handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
+	session, err := sessionFromContext(r.Context())
+	if err != nil {
+		http.Error(w, "session not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	// Reuse the presented token while valid so concurrent tabs share one value.
+	if csrfCookie, cookieErr := r.Cookie(csrfCookieName); cookieErr == nil {
+		if verifyCSRFToken(csrfCookie.Value, session, s.validationCfg.CSRFHMACSecret, s.validationCfg.CSRFExpiry) == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			//nolint:errcheck // The error is always nil
+			json.NewEncoder(w).Encode(csrfTokenResponse{CSRFToken: csrfCookie.Value})
+			return
+		}
+	}
+
+	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
+	if err != nil {
+		handleError(w, err, "failed to generate CSRF token")
+		return
+	}
+
+	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.CookieDomain, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	//nolint:errcheck // The error is always nil
+	json.NewEncoder(w).Encode(csrfTokenResponse{CSRFToken: csrfToken})
 }
 
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {

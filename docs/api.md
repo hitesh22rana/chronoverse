@@ -152,7 +152,7 @@ Build statuses:
 Query parameters:
 
 - `cursor`: pagination cursor.
-- `query`: text query.
+- `query`: text query, max 100 characters.
 - `kind`: `HEARTBEAT` or `CONTAINER`.
 - `build_status`: one of the build statuses above.
 - `terminated`: boolean string.
@@ -330,7 +330,9 @@ Log streams:
 Log APIs are available only when the workflow supports logs and log retention is
 enabled. `HEARTBEAT` workflows do not produce execution logs. If retention is
 disabled, retained log read/search routes return `412 Precondition Failed`; live
-SSE streams report the failure as an `event: error` frame.
+SSE streams report the failure as an `event: error` frame. Stream and download
+failures return a generic `stream failed` message; details are logged
+server-side with the trace ID.
 
 ### Get Logs
 

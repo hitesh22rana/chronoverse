@@ -118,7 +118,7 @@ paths:
       security: [{cookieSession: []}]
       parameters:
         - {$ref: '#/components/parameters/Cursor'}
-        - {name: query, in: query, schema: {type: string}, description: Workflow name search}
+        - {name: query, in: query, schema: {type: string, maxLength: 100}, description: Workflow name search}
         - {name: kind, in: query, schema: {type: string, enum: [HEARTBEAT, CONTAINER]}}
         - {name: build_status, in: query, schema: {$ref: '#/components/schemas/BuildStatus'}}
         - {name: terminated, in: query, schema: {type: boolean, default: false}}
@@ -345,7 +345,7 @@ paths:
         - {$ref: '#/components/parameters/JobId'}
       responses:
         '200':
-          description: "Server-Sent Events stream. Errors after headers are written use event:error frames."
+          description: "Server-Sent Events stream. Errors after headers are written use event:error frames with a generic message."
           content: {text/event-stream: {schema: {type: string}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {$ref: '#/components/responses/TooManyRequests'}

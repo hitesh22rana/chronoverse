@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
@@ -800,7 +801,7 @@ func validateFilters(filters *workflowsmodel.ListWorkflowsFilters) error {
 		return nil
 	}
 
-	if len(filters.Query) > 100 {
+	if utf8.RuneCountInString(filters.Query) > 100 {
 		return status.Errorf(codes.InvalidArgument, "invalid query: exceeds 100 characters")
 	}
 

@@ -986,13 +986,7 @@ func (r *Repository) SearchJobLogs(
 		if ascending {
 			sequenceOperator = ">"
 		}
-		filter += fmt.Sprintf(
-			` AND (sequence_num %s %d OR (sequence_num = %d AND id %s `,
-			sequenceOperator,
-			logsCursor.SequenceNum,
-			logsCursor.SequenceNum,
-			idOperator,
-		) + `"` + meiliFilterValue(logsCursor.EventID) + `")`
+		filter = appendJobLogsCursorFilter(filter, sequenceOperator, logsCursor.SequenceNum, idOperator, logsCursor.EventID)
 	}
 
 	statusQueryArgs := []any{jobID, workflowID, userID}
@@ -1294,11 +1288,24 @@ func validateJobLogsFilterIDs(userID, workflowID, jobID string) error {
 	return nil
 }
 
-// meiliFilterValue escapes backslashes and quotes so `"%s"` interpolation into a
+// meiliFilterValue escapes backslashes and quotes so `"` concatenation into a
 // Meili filter cannot break out of its quoted string.
 func meiliFilterValue(value string) string {
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	return strings.ReplaceAll(value, `"`, `\"`)
+}
+
+// appendJobLogsCursorFilter appends the keyset-pagination clause for a decoded
+// cursor. The clause opens two groups (the OR group and the inner AND group),
+// so the EventID suffix must close both parentheses.
+func appendJobLogsCursorFilter(filter, sequenceOperator string, sequenceNum uint32, idOperator, eventID string) string {
+	return filter + fmt.Sprintf(
+		` AND (sequence_num %s %d OR (sequence_num = %d AND id %s `,
+		sequenceOperator,
+		sequenceNum,
+		sequenceNum,
+		idOperator,
+	) + `"` + meiliFilterValue(eventID) + `"))`
 }
 
 // extractDataFromGetJobLogsCursor extracts the data from the cursor.

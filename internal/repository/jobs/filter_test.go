@@ -2,6 +2,7 @@
 package jobs
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,59 @@ func TestMeiliFilterValueKeepsSingleTenantScope(t *testing.T) {
 				t.Fatalf("meiliFilterValue(%q) = %q, bare quote at %d", probe, escaped, i)
 			}
 		}
+	}
+}
+
+func TestAppendJobLogsCursorFilter(t *testing.T) {
+	t.Parallel()
+
+	base := `user_id = "u" AND workflow_id = "w" AND job_id = "j"`
+
+	tests := []struct {
+		name             string
+		sequenceOperator string
+		sequenceNum      uint32
+		idOperator       string
+		eventID          string
+		want             string
+	}{
+		{
+			name:             "descending page",
+			sequenceOperator: "<",
+			sequenceNum:      42,
+			idOperator:       ">=",
+			eventID:          "log:job:stdout:42",
+			want:             base + ` AND (sequence_num < 42 OR (sequence_num = 42 AND id >= "log:job:stdout:42"))`,
+		},
+		{
+			name:             "ascending page",
+			sequenceOperator: ">",
+			sequenceNum:      7,
+			idOperator:       ">=",
+			eventID:          "log:job:stderr:7",
+			want:             base + ` AND (sequence_num > 7 OR (sequence_num = 7 AND id >= "log:job:stderr:7"))`,
+		},
+		{
+			name:             "event ID is escaped, not re-quoted",
+			sequenceOperator: "<",
+			sequenceNum:      1,
+			idOperator:       ">=",
+			eventID:          `a"b\c`,
+			want:             base + ` AND (sequence_num < 1 OR (sequence_num = 1 AND id >= "a\"b\\c"))`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := appendJobLogsCursorFilter(base, test.sequenceOperator, test.sequenceNum, test.idOperator, test.eventID)
+			if got != test.want {
+				t.Fatalf("appendJobLogsCursorFilter() = %q, want %q", got, test.want)
+			}
+			if opens, closes := strings.Count(got, "("), strings.Count(got, ")"); opens != closes {
+				t.Fatalf("appendJobLogsCursorFilter() has unbalanced parentheses: %d opens, %d closes in %q", opens, closes, got)
+			}
+		})
 	}
 }

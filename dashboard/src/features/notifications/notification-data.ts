@@ -31,19 +31,26 @@ export const removeNotificationsFromPages = (
     }))
 }
 
-// Same-origin paths only, decided by the URL parser: "//host" is
-// protocol-relative, "\" reads as "/" for http(s), and tab/CR/LF are
-// stripped before parsing, so prefixes alone miss all three.
+// Same-origin paths only, decided by the URL parser against a fixed origin.
+// Prefix checks miss "//host" (protocol-relative), "\" (reads as "/" for
+// http(s)), and tab/CR/LF (stripped pre-parse). Return the normalized path,
+// never the raw input: "http://localhost//evil" parses same-origin but its
+// path would navigate protocol-relative.
 export const safeActionUrl = (actionUrl: string): string => {
     if (!actionUrl) {
         return "/"
     }
     try {
-        if (new URL(actionUrl, "http://localhost").origin !== "http://localhost") {
+        const parsed = new URL(actionUrl, "http://localhost")
+        if (parsed.origin !== "http://localhost") {
             return "/"
         }
+        const path = `${parsed.pathname}${parsed.search}${parsed.hash}`
+        if (!path.startsWith("/") || path.startsWith("//")) {
+            return "/"
+        }
+        return path
     } catch {
         return "/"
     }
-    return actionUrl
 }

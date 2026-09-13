@@ -26,8 +26,18 @@ describe("safeActionUrl", () => {
         expect(safeActionUrl("/\\/evil.example/path")).toBe("/")
     })
 
-    it("passes mid-path backslashes through: they stay same-origin", () => {
-        expect(safeActionUrl("/workflows\\evil.example")).toBe("/workflows\\evil.example")
+    it("passes mid-path backslashes through normalized: they stay same-origin", () => {
+        expect(safeActionUrl("/workflows\\evil.example")).toBe("/workflows/evil.example")
+    })
+
+    it("normalizes synthetic-origin URLs to origin-relative paths", () => {
+        expect(safeActionUrl("//localhost/path")).toBe("/path")
+        expect(safeActionUrl("http://localhost/path")).toBe("/path")
+        expect(safeActionUrl("/\t/localhost/path")).toBe("/path")
+    })
+
+    it("falls back to / when the normalized path itself is protocol-relative", () => {
+        expect(safeActionUrl("http://localhost//evil")).toBe("/")
     })
 
     it("falls back to / for control characters stripped before parsing", () => {

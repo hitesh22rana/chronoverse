@@ -103,9 +103,10 @@ func TestExpireCannotRecreateDeletedSession(t *testing.T) {
 	}
 }
 
-// With a full instance the idle 2h session (idlest key throughout, so any
-// LRU policy evicts it) survives while 30m cache keys are sacrificed.
-// evicted_keys > 0 proves the run applied real pressure.
+// With a full instance the sliding-refreshed 2h session survives while 30m
+// cache keys are sacrificed. The session is the idlest key throughout, so
+// any LRU policy evicts it; periodic Expire models the middleware sliding
+// live sessions back to full TTL. evicted_keys > 0 proves real pressure.
 func TestVolatileTTLKeepsSessionsUnderPressure(t *testing.T) {
 	ctx := t.Context()
 	store := newTestStore(ctx, t, "5mb", "volatile-ttl")
@@ -118,6 +119,16 @@ func TestVolatileTTLKeepsSessionsUnderPressure(t *testing.T) {
 	for i := range 4000 {
 		if floodErr := store.Set(ctx, fmt.Sprintf("cache:%d", i), filler, 30*time.Minute); floodErr != nil {
 			t.Fatalf("flood cache key %d: %v", i, floodErr)
+		}
+		// Live request activity: slide the session back to full expiry.
+		if i%500 == 499 {
+			refreshed, expireErr := store.Expire(ctx, "session:victim", 2*time.Hour)
+			if expireErr != nil {
+				t.Fatalf("Expire() error at key %d = %v", i, expireErr)
+			}
+			if !refreshed {
+				t.Fatalf("session evicted mid-flood at key %d despite sliding refresh", i)
+			}
 		}
 	}
 

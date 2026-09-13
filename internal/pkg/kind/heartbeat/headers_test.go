@@ -98,6 +98,29 @@ func TestExtractAndValidateHeartbeatDetailsHeaderGuard(t *testing.T) {
 	})
 }
 
+func TestExtractAndValidateHeartbeatDetailsEmptyArrays(t *testing.T) {
+	t.Parallel()
+
+	// 20 empty arrays stay within the count cap but exceed 8KiB in names alone.
+	headers := make(map[string]any, 20)
+	for i := 0; i < 20; i++ {
+		headers[fmt.Sprintf("X-Pad-%02d-%s", i, strings.Repeat("a", 480))] = []any{}
+	}
+	if _, err := heartbeat.ExtractAndValidateHeartbeatDetails(heartbeatPayload(t, headers)); err == nil {
+		t.Fatal("empty-array headers exceeding size cap accepted, want rejection")
+	}
+
+	details, err := heartbeat.ExtractAndValidateHeartbeatDetails(heartbeatPayload(t, map[string]any{
+		"X-Empty": []any{},
+	}))
+	if err != nil {
+		t.Fatalf("small empty-array header rejected: %v", err)
+	}
+	if got := details.Headers["X-Empty"]; len(got) != 0 {
+		t.Fatalf("X-Empty headers = %q, want empty", got)
+	}
+}
+
 func TestExtractAndValidateHeartbeatDetailsHeaderNames(t *testing.T) {
 	t.Parallel()
 

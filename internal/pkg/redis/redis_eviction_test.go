@@ -13,11 +13,14 @@ import (
 	"google.golang.org/grpc/status"
 
 	redispkg "github.com/hitesh22rana/chronoverse/internal/pkg/redis"
+	testkit "github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 // newTestStore starts a throwaway Redis with the given memory/policy.
 func newTestStore(ctx context.Context, t *testing.T, maxMemory, evictionPolicy string) *redispkg.Store {
 	t.Helper()
+	//nolint:contextcheck // RequireDocker mints its own ping context; no caller ctx to propagate.
+	testkit.RequireDocker(t)
 
 	ctr, err := tcredis.Run(ctx, "redis:8.2.1-alpine")
 	if err != nil {
@@ -63,9 +66,9 @@ func newTestStore(ctx context.Context, t *testing.T, maxMemory, evictionPolicy s
 	return store
 }
 
-// TestExpireCannotRecreateDeletedSession replays the logout race: refresh
-// after concurrent delete must report absence, not resurrect the session.
-func TestExpireCannotRecreateDeletedSession(t *testing.T) {
+// TestIntegrationExpireCannotRecreateDeletedSession replays the logout race:
+// refresh after concurrent delete must report absence, not resurrect.
+func TestIntegrationExpireCannotRecreateDeletedSession(t *testing.T) {
 	ctx := t.Context()
 	store := newTestStore(ctx, t, "100mb", "volatile-ttl")
 
@@ -104,7 +107,7 @@ func TestExpireCannotRecreateDeletedSession(t *testing.T) {
 // Under pressure the sliding-refreshed 2h session (idlest key throughout,
 // so any LRU policy evicts it) survives while 30m caches are sacrificed.
 // evicted_keys > 0 proves real pressure.
-func TestVolatileTTLKeepsSessionsUnderPressure(t *testing.T) {
+func TestIntegrationVolatileTTLKeepsSessionsUnderPressure(t *testing.T) {
 	ctx := t.Context()
 	store := newTestStore(ctx, t, "5mb", "volatile-ttl")
 

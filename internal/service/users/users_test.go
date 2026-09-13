@@ -106,7 +106,7 @@ func TestRegisterUser(t *testing.T) {
 			isErr: true,
 		},
 		{
-			name: "error: blocklisted password",
+			name: "error: weak password with letters and digits only",
 			req: &userspb.RegisterUserRequest{
 				Email:          "test@gmail.com",
 				Password:       "password12345",

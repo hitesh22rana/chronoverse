@@ -77,7 +77,7 @@ Body:
 
 Creates the user, issues a session cookie, and returns `201 Created`. Emails are
 trimmed and lowercased; registration passwords need 8–72 characters with 3 of 4
-character classes (lowercase, uppercase, digit, symbol) and must not be common.
+character classes (lowercase, uppercase, digit, symbol).
 A replay
 returns the same account but always issues fresh authentication material.
 

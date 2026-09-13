@@ -71,17 +71,8 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-// weakPassword blocks common passwords and requires 3 of 4 character classes; use zxcvbn/HIBP if stuffing matters.
-var weakPasswords = map[string]struct{}{
-	"password": {}, "password1": {}, "password123": {}, "password12345": {},
-	"12345678": {}, "123456789": {}, "qwerty123": {}, "letmein123": {},
-	"welcome123": {}, "admin12345": {}, "chronoverse": {}, "chronoverse1": {},
-}
-
+// weakPassword requires 3 of 4 character classes (lowercase, uppercase, digit, symbol).
 func weakPassword(password string) bool {
-	if _, ok := weakPasswords[strings.ToLower(password)]; ok {
-		return true
-	}
 	var lower, upper, digit, symbol bool
 	for _, r := range password {
 		switch {
@@ -136,7 +127,7 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 	}
 
 	if weakPassword(req.GetPassword()) {
-		return "", "", status.Errorf(codes.InvalidArgument, "password too weak or too common")
+		return "", "", status.Errorf(codes.InvalidArgument, "password too weak")
 	}
 
 	res, authToken, err := s.repo.RegisterUser(ctx, normalizeEmail(req.GetEmail()), req.GetPassword(), req.GetIdempotencyKey())

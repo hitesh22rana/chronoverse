@@ -61,6 +61,9 @@ func ExtractAndValidateContainerDetails(payload string) (*Details, error) {
 	if !ok || image == "" {
 		return details, status.Error(codes.InvalidArgument, "image is missing or invalid")
 	}
+	if err := validateContainerImage(image); err != nil {
+		return details, err
+	}
 	details.Image = image
 
 	// Command is an optional field

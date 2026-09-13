@@ -23,8 +23,6 @@ type Details struct {
 }
 
 // ExtractAndValidateHeartbeatDetails extracts the heartbeat details from the workflow payload.
-//
-//nolint:gocyclo // This function is responsible for parsing the JSON payload and validating the fields.
 func ExtractAndValidateHeartbeatDetails(payload string) (*Details, error) {
 	var (
 		details = &Details{
@@ -79,28 +77,10 @@ func ExtractAndValidateHeartbeatDetails(payload string) (*Details, error) {
 
 	var headers map[string][]string
 	if data["headers"] != nil {
-		headersRaw, ok := data["headers"].(map[string]any)
-		if !ok {
-			return details, status.Errorf(codes.InvalidArgument, "invalid headers format")
-		}
-
-		headers = make(map[string][]string)
-		for k, v := range headersRaw {
-			switch val := v.(type) {
-			case []any:
-				strValues := make([]string, len(val))
-				for i, iv := range val {
-					strValues[i], ok = iv.(string)
-					if !ok {
-						return details, status.Errorf(codes.InvalidArgument, "header value must be string")
-					}
-				}
-				headers[k] = strValues
-			case string:
-				headers[k] = []string{val}
-			default:
-				return details, status.Errorf(codes.InvalidArgument, "invalid header value for %s", k)
-			}
+		var headersErr error
+		headers, headersErr = parseHeartbeatHeaders(data["headers"])
+		if headersErr != nil {
+			return details, headersErr
 		}
 	}
 	details.Headers = headers

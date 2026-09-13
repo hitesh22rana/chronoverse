@@ -68,10 +68,13 @@ func parseHeartbeatHeaders(raw any) (map[string][]string, error) {
 		if len(headers) >= heartbeatMaxHeaders {
 			return nil, status.Errorf(codes.InvalidArgument, "too many headers: at most %d allowed", heartbeatMaxHeaders)
 		}
-		// Count the name up front so empty value arrays cannot hide bytes.
-		headerBytes += len(name)
+		// Count the name per emitted value (once when there are no values),
+		// matching how Execute adds one header line per value.
 		switch val := v.(type) {
 		case []any:
+			if len(val) == 0 {
+				headerBytes += len(name)
+			}
 			strValues := make([]string, len(val))
 			for i, iv := range val {
 				strValue, ok := iv.(string)
@@ -79,12 +82,12 @@ func parseHeartbeatHeaders(raw any) (map[string][]string, error) {
 					return nil, status.Errorf(codes.InvalidArgument, "header value must be string")
 				}
 				strValues[i] = strValue
-				headerBytes += len(strValue)
+				headerBytes += len(name) + len(strValue)
 			}
 			headers[name] = strValues
 		case string:
 			headers[name] = []string{val}
-			headerBytes += len(val)
+			headerBytes += len(name) + len(val)
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "invalid header value for %s", name)
 		}

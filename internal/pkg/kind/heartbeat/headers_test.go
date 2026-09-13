@@ -119,6 +119,15 @@ func TestExtractAndValidateHeartbeatDetailsEmptyArrays(t *testing.T) {
 	if got := details.Headers["X-Empty"]; len(got) != 0 {
 		t.Fatalf("X-Empty headers = %q, want empty", got)
 	}
+
+	// One 4KiB name with 100 empty values emits ~400KiB of header lines,
+	// so the name must count per value, not once.
+	many := make([]any, 100)
+	if _, err := heartbeat.ExtractAndValidateHeartbeatDetails(heartbeatPayload(t, map[string]any{
+		"X-Pad-" + strings.Repeat("a", 4090): many,
+	})); err == nil {
+		t.Fatal("repeated empty values exceeding size cap accepted, want rejection")
+	}
 }
 
 func TestExtractAndValidateHeartbeatDetailsHeaderNames(t *testing.T) {

@@ -955,14 +955,14 @@ func (r *Repository) SearchJobLogs(
 	}
 
 	// Re-validate IDs immediately before filter build so a relaxed caller
-	// can never turn `%q` interpolation into cross-tenant filter injection.
+	// can never turn filter interpolation into cross-tenant filter injection.
 	// The cursor EventID is a composite log key, not a UUID, so it is only escaped.
 	if filterErr := validateJobLogsFilterIDs(userID, workflowID, jobID); filterErr != nil {
 		return nil, "", filterErr
 	}
 
 	filter := fmt.Sprintf(
-		`user_id = %q AND workflow_id = %q AND job_id = %q`,
+		`user_id = "%s" AND workflow_id = "%s" AND job_id = "%s"`,
 		meiliFilterValue(userID),
 		meiliFilterValue(workflowID),
 		meiliFilterValue(jobID),
@@ -990,7 +990,7 @@ func (r *Repository) SearchJobLogs(
 			sequenceOperator = ">"
 		}
 		filter += fmt.Sprintf(
-			` AND (sequence_num %s %d OR (sequence_num = %d AND id %s %q))`,
+			` AND (sequence_num %s %d OR (sequence_num = %d AND id %s "%s"))`,
 			sequenceOperator,
 			logsCursor.SequenceNum,
 			logsCursor.SequenceNum,
@@ -1298,7 +1298,7 @@ func validateJobLogsFilterIDs(userID, workflowID, jobID string) error {
 	return nil
 }
 
-// meiliFilterValue escapes backslashes and quotes so `%q` interpolation into a
+// meiliFilterValue escapes backslashes and quotes so `"%s"` interpolation into a
 // Meili filter cannot break out of its quoted string.
 func meiliFilterValue(value string) string {
 	value = strings.ReplaceAll(value, `\`, `\\`)

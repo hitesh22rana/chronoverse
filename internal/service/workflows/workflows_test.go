@@ -362,6 +362,23 @@ func TestCreateWorkflow(t *testing.T) {
 			isErr: true,
 		},
 		{
+			name: "error: name exceeds 255 characters",
+			req: &workflowspb.CreateWorkflowRequest{
+				UserId: "user1",
+				//nolint:lll // required for test case
+				Name:                             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
+				Kind:                             "HEARTBEAT",
+				Interval:                         1,
+				MaxConsecutiveJobFailuresAllowed: 5,
+				LogRetention:                     boolPtr(false),
+				IdempotencyKey:                   "workflow-key",
+			},
+			mock:  func(_ *workflowspb.CreateWorkflowRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
 			name: "error: invalid interval",
 			req: &workflowspb.CreateWorkflowRequest{
 				UserId:                           "user1",

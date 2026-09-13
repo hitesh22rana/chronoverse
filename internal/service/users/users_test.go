@@ -42,7 +42,7 @@ func TestRegisterUser(t *testing.T) {
 			name: "success",
 			req: &userspb.RegisterUserRequest{
 				Email:          "test@gmail.com",
-				Password:       "password12345",
+				Password:       "BlueFalcon$22Dances!",
 				IdempotencyKey: "register-key",
 			},
 			mock: func(req *userspb.RegisterUserRequest) {
@@ -106,10 +106,77 @@ func TestRegisterUser(t *testing.T) {
 			isErr: true,
 		},
 		{
-			name: "error: already exists",
+			name: "error: weak predictable password scores below 3",
+			req: &userspb.RegisterUserRequest{
+				Email:          "test@gmail.com",
+				Password:       "Password123",
+				IdempotencyKey: "register-key",
+			},
+			mock:  func(_ *userspb.RegisterUserRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: weak password with letters and digits only",
 			req: &userspb.RegisterUserRequest{
 				Email:          "test@gmail.com",
 				Password:       "password12345",
+				IdempotencyKey: "register-key",
+			},
+			mock:  func(_ *userspb.RegisterUserRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "error: weak sequential password",
+			req: &userspb.RegisterUserRequest{
+				Email:          "test@gmail.com",
+				Password:       "abcdefghij",
+				IdempotencyKey: "register-key",
+			},
+			mock:  func(_ *userspb.RegisterUserRequest) {},
+			want:  want{},
+			isErr: true,
+		},
+		{
+			name: "success: email case and whitespace normalized",
+			req: &userspb.RegisterUserRequest{
+				Email:          "  Test@Gmail.COM  ",
+				Password:       "BlueFalcon$22Dances!",
+				IdempotencyKey: "register-key",
+			},
+			mock: func(_ *userspb.RegisterUserRequest) {
+				repo.EXPECT().RegisterUser(
+					gomock.Any(),
+					"test@gmail.com",
+					"BlueFalcon$22Dances!",
+					"register-key",
+				).Return(&usersmodel.GetUserResponse{
+					ID:                     "userID",
+					Email:                  "test@gmail.com",
+					NotificationPreference: "ALERTS",
+					CreatedAt:              time.Now(),
+					UpdatedAt:              time.Now(),
+				}, "token", nil)
+
+				cache.EXPECT().Set(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).Return(nil).AnyTimes()
+			},
+			want: want{
+				userID: "userID",
+				pat:    "token",
+			},
+			isErr: false,
+		},
+		{
+			name: "error: already exists",
+			req: &userspb.RegisterUserRequest{
+				Email:          "test@gmail.com",
+				Password:       "BlueFalcon$22Dances!",
 				IdempotencyKey: "register-key",
 			},
 			mock: func(req *userspb.RegisterUserRequest) {
@@ -641,13 +708,7 @@ func TestUpdateUser(t *testing.T) {
 				Id:                     "user_id",
 				NotificationPreference: "INVALID_PREFERENCE",
 			},
-			mock: func(req *userspb.UpdateUserRequest) {
-				repo.EXPECT().UpdateUser(
-					gomock.Any(),
-					req.GetId(),
-					req.GetNotificationPreference(),
-				).Return(status.Error(codes.InvalidArgument, "invalid notification preference"))
-			},
+			mock:  func(_ *userspb.UpdateUserRequest) {},
 			isErr: true,
 		},
 		{

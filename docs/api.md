@@ -71,11 +71,14 @@ Body:
 ```json
 {
   "email": "user@example.com",
-  "password": "password"
+  "password": "BlueFalcon$22Dances!"
 }
 ```
 
-Creates the user, issues a session cookie, and returns `201 Created`. A replay
+Creates the user, issues a session cookie, and returns `201 Created`. Emails are
+trimmed and lowercased; registration passwords need 8–72 characters with a
+zxcvbn score of at least 3 and must not match the bundled common-password dictionary.
+A replay
 returns the same account but always issues fresh authentication material.
 
 ### Login
@@ -87,7 +90,7 @@ Body:
 ```json
 {
   "email": "user@example.com",
-  "password": "password"
+  "password": "BlueFalcon$22Dances!"
 }
 ```
 
@@ -125,8 +128,7 @@ Body:
 }
 ```
 
-Returns `204 No Content`. The current handler accepts a `password` field in the
-shape but only forwards notification preference updates.
+Returns `204 No Content`. Only `notification_preference` (`ALERTS`, `ALL`, `NONE`) is accepted.
 
 ## Workflows
 
@@ -180,7 +182,7 @@ Body:
 
 Fields:
 
-- `name`: display name.
+- `name`: display name, 1–255 characters.
 - `payload`: workflow-kind-specific JSON string.
 - `kind`: `HEARTBEAT` or `CONTAINER`.
 - `interval`: schedule interval in minutes.

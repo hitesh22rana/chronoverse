@@ -85,7 +85,7 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 // CreateWorkflowRequest holds the request parameters for creating a new job.
 type CreateWorkflowRequest struct {
 	UserID                           string `validate:"required"`
-	Name                             string `validate:"required"`
+	Name                             string `validate:"required,min=1,max=255"`
 	Payload                          string `validate:"required"`
 	Kind                             string `validate:"required"`
 	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
@@ -202,7 +202,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 type UpdateWorkflowRequest struct {
 	ID                               string `validate:"required"`
 	UserID                           string `validate:"required"`
-	Name                             string `validate:"required"`
+	Name                             string `validate:"required,min=1,max=255"`
 	Payload                          string `validate:"required"`
 	Interval                         int32  `validate:"required,min=1,max=10080"` // Interval in minutes, max 1 week (10080 minutes)
 	MaxConsecutiveJobFailuresAllowed int32  `validate:"required,min=3,max=100"`   // Max consecutive job failures allowed

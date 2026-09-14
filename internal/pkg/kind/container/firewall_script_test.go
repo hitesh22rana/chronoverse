@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -67,10 +68,11 @@ func runProbeScript(t *testing.T) error {
 func runFirewallFile(t *testing.T, name, readyFile string) error {
 	t.Helper()
 
-	script, err := filepath.Abs("../../../../compose/firewall/" + name)
-	if err != nil {
-		t.Fatal(err)
+	_, caller, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate test file")
 	}
+	script := filepath.Join(filepath.Dir(caller), "..", "..", "..", "..", "compose", "firewall", name)
 	cmd := exec.Command("sh", script)
 	cmd.Env = append(os.Environ(),
 		"WORKLOAD_SUBNET=198.18.247.0/24",

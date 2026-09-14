@@ -1,7 +1,6 @@
 #!/bin/sh
-# Firewall health probe: the exact installed rules must exist in the backend
-# Docker uses (nftables or legacy — invisible to each other). Succeeds in
-# exactly one backend view; BOTH views missing the rules means unhealthy.
+# Health probe: the exact installed rules must exist in Docker's backend view
+# (nft or legacy — invisible to each other).
 set -eu
 
 SUBNET="${WORKLOAD_SUBNET:?set WORKLOAD_SUBNET}"

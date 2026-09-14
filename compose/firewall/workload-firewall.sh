@@ -12,9 +12,8 @@
 # (resolving it here would deadlock fresh installs). Interface-free rules are
 # verdict-identical either way, so probes stay host-agnostic.
 #
-# Backend: Docker may manage its chains via nftables or xtables-legacy, which
-# are invisible to each other. Detect the view holding DOCKER-USER once and
-# use it consistently; probes check the same way (see probe script).
+# Backend: Docker uses nftables or xtables-legacy (invisible to each other).
+# Detect the view holding DOCKER-USER once; probes check the same way.
 #
 # Host netns + NET_ADMIN (socket proxy can't program rules); plain alpine +
 # runtime install, so registry access is required on (re)create.
@@ -30,7 +29,7 @@ CHAIN_IN="CHRONOVERSE-WORKLOAD-IN"
 apk add --no-cache iptables ip6tables
 apk add --no-cache iptables-legacy 2>/dev/null || true
 
-# Prints the binary whose view holds Docker's chain, or nothing.
+# Prints the binary seeing DOCKER-USER, or nothing.
 pick_backend() {
     if "$1" -n -L DOCKER-USER >/dev/null 2>&1; then
         echo "$1"
@@ -41,7 +40,7 @@ pick_backend() {
 
 IPT="$(pick_backend iptables iptables-legacy)"
 [ -n "$IPT" ] || { echo "workload-firewall: no DOCKER-USER chain in any backend" >&2; exit 1; }
-# No ip6tables-legacy package exists: v6 is nft-only, skipped when invisible.
+# No ip6tables-legacy exists: v6 is nft-only, skipped when invisible.
 IP6T=""
 if command -v ip6tables >/dev/null 2>&1 && ip6tables -n -L DOCKER-USER >/dev/null 2>&1; then
     IP6T="ip6tables"
@@ -65,8 +64,8 @@ ensure_chain "$CHAIN_IN"
 "$IPT" -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
 
 # Forwarded path: replies, infra drops, then DNS.
-# ESTABLISHED is interface-scoped: our chains sit ahead of operator rules, so
-# an unscoped accept would shield unrelated established flows from them.
+# ESTABLISHED is interface-scoped: our chains precede operator rules, so an
+# unscoped accept would shield unrelated established flows from them.
 rule "$IPT" -i "$BRIDGE_IF" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # Own subnet as dst covers the gateway (.1) and peers.
 for cidr in "$SUBNET" 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 224.0.0.0/4; do

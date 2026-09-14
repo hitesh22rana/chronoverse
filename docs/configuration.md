@@ -257,11 +257,12 @@ expirations), so there is always a sacrificial key. Watch the `redis.evicted_key
 counter (exported over OTEL): sustained growth means pressure is eating cache,
 growth approaching session lifetimes means `REDIS_MAX_MEMORY` is too small.
 
-### Workload isolation + image storage
+### Workload isolation
 
 Workload containers run arbitrary user images on the `chronoverse-workloads`
-bridge (`EXECUTION_WORKER_WORKLOAD_NETWORK`, ICC disabled). Two layers keep
-them off infrastructure while preserving internet egress:
+bridge (`EXECUTION_WORKER_WORKLOAD_NETWORK`, ICC disabled, CPU/memory/PID
+limits, dropped capabilities, read-only rootfs). Two layers keep them off
+infrastructure and each other while preserving internet egress:
 
 - **Fixed subnet.** The bridge is pinned to `EXECUTION_WORKER_WORKLOAD_SUBNET`
   (default `198.18.247.0/24`, RFC 2544 space) at creation, and the runtime
@@ -269,40 +270,40 @@ them off infrastructure while preserving internet egress:
   silently bypassing the firewall. Compose declares the same subnet via ipam;
   existing deployments must recreate the network once
   (`docker network rm chronoverse-workloads`, it is recreated on demand).
-- **Enforced firewall (prod).** The `workload-firewall` service runs
-  `compose/firewall/workload-firewall.sh` in the host network namespace and
-  installs `DOCKER-USER` rules: allow DNS + established traffic, drop the
-  workload subnet itself (covers the bridge gateway), loopback, RFC 1918,
+- **Enforced firewall (prod).** The `workload-firewall` service
+  (`ghcr.io/hitesh22rana/chronoverse/firewall`, built by `Dockerfile.firewall`)
+  runs in the host network namespace and installs filtering in two chains:
+  `DOCKER-USER` for forwarded traffic and `INPUT` for connections terminating
+  on the host itself (DOCKER-USER alone never sees those — verified live: a
+  gateway listener was reachable before the INPUT rules, unreachable after).
+  Denied: the workload subnet itself (bridge gateway), loopback, RFC 1918,
   CGNAT, link-local/metadata (`169.254.169.254`), multicast, plus extra
-  `WORKLOAD_FIREWALL_CLUSTER_CIDRS` (non-RFC1918 pod/service ranges), and drop
-  new inbound connections to workloads. IPv6 infrastructure ranges are dropped
-  the same way. Re-applied on every start. Dev compose has no such service —
-  dev has the subnet but no egress deny. Verify live with the gated probe:
-  `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test ./internal/pkg/kind/container/ -run TestIntegrationWorkloadEgress`.
+  `WORKLOAD_FIREWALL_CLUSTER_CIDRS`, and new inbound connections to workloads.
+  DNS is allowed only after those drops, so infrastructure resolvers are
+  unreachable while public DNS works; verified live: metadata blocked, DNS and
+  plain-HTTP egress working. Re-applied on every start; `execution-worker`
+  starts only once the firewall reports healthy. Dev compose has no such
+  service — dev has the subnet but no egress deny. Re-verify live with the
+  gated probe: `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test
+  ./internal/pkg/kind/container/ -run TestIntegrationWorkloadEgress`.
 
   Kubernetes: the same subnet is used on every workload node (node-local
   bridges, no cross-node routing of that range — keep it clear of pod/service
-  CIDRs). The socket-proxy ACL lives in the `docker-proxy-config` ConfigMap
-  (same `system/df` + `images/prune` rules), and enforcement is the
-  `workload-firewall` DaemonSet (same node selector as `docker-proxy`,
-  host network + `NET_ADMIN`): Kubernetes NetworkPolicies cannot select plain
-  Docker containers, so there is no NetworkPolicy equivalent. Set
-  `CLUSTER_CIDRS` on the DaemonSet if pod/service CIDRs fall outside RFC 1918.
+  CIDRs). Enforcement is the `workload-firewall` DaemonSet (same node selector
+  as `docker-proxy`, host network + `NET_ADMIN`, readiness/liveness probes on
+  both chain jumps): Kubernetes NetworkPolicies cannot select plain Docker
+  containers, so there is no NetworkPolicy equivalent. Set `CLUSTER_CIDRS` on
+  the DaemonSet if pod/service CIDRs fall outside RFC 1918.
 
-Residual: Docker *daemon* pull traffic (registry redirects, auth/token
-endpoints) never traverses the workload network, so the firewall cannot pin it
-to the P4 registry allowlist — that needs a daemon-side registry mirror or
-egress proxy (deploy-time, not yet configured).
+Residual (explicitly open): Docker *daemon* pull traffic (registry redirects,
+auth/token endpoints) never traverses the workload network, so the firewall
+cannot pin it to the P4 registry allowlist — that needs a daemon-side registry
+mirror or egress proxy (deploy-time, not yet configured).
 
-Image storage is bounded per daemon by `*_IMAGE_STORAGE_MAX_BYTES` (default
-10 GiB of layer bytes): cold pulls serialize on a per-daemon Redis gate, check
-`GET /system/df` (allowed through the socket proxy), prune unused images when
-over budget (running-container images are never removed by the daemon), and
-refuse with `ResourceExhausted` past it. Per-user abuse is slowed by
-`WORKFLOW_WORKER_IMAGE_QUOTA_MAX_DISTINCT` (default 20 distinct images per
-`WORKFLOW_WORKER_IMAGE_QUOTA_TTL`, default 720h, tracked in Redis — no
-migration). Limits: the reserve check cannot stop one oversized image from
-filling the remaining headroom mid-pull; the quota counts images, not bytes.
+Accepted risk (B6.2): shared-disk exhaustion is the operator's responsibility.
+There is deliberately no image-storage cap, prune job, or per-user image quota:
+a job pulling large images can fill daemon disk and disrupt other jobs, and
+the application fails with disk errors until the operator reclaims space.
 
 ### Meilisearch
 

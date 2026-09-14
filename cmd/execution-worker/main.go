@@ -102,10 +102,9 @@ func run() int {
 		return ExitError
 	}
 	imagePullLockConfig := imagepull.Config{
-		TTL:               cfg.ImagePullLockTTL,
-		WaitTimeout:       cfg.ImagePullLockWaitTimeout,
-		RetryInterval:     cfg.ImagePullLockRetryInterval,
-		StorageLimitBytes: cfg.ExecutionWorkerConfig.ImageStorageMaxBytes,
+		TTL:           cfg.ImagePullLockTTL,
+		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
+		RetryInterval: cfg.ImagePullLockRetryInterval,
 	}
 	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
 		return container.NewDockerWorkflow(
@@ -113,7 +112,6 @@ func run() int {
 			container.WithResourceLimits(resourceLimits),
 			container.WithWorkloadNetwork(cfg.ExecutionWorkerConfig.WorkloadNetwork),
 			container.WithWorkloadSubnet(cfg.ExecutionWorkerConfig.WorkloadSubnet),
-			container.WithImageStorageLimit(cfg.ExecutionWorkerConfig.ImageStorageMaxBytes),
 			container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
 				CAFile:     cfg.DockerProxy.TLS.CAFile,
 				CertFile:   cfg.DockerProxy.TLS.CertFile,

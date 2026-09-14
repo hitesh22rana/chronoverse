@@ -1,0 +1,10 @@
+# Firewall image for the workload bridge: iptables tooling baked in, since the
+# container runs read-only and runtime package installation is fragile.
+# Released to ghcr.io/hitesh22rana/chronoverse/firewall like the services.
+FROM alpine:3.24.1
+
+RUN apk --no-cache add iptables ip6tables
+
+COPY compose/firewall/workload-firewall.sh /apply.sh
+
+CMD ["/bin/sh", "-c", "/apply.sh && sleep infinity"]

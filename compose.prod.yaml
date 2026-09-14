@@ -409,7 +409,7 @@ services:
   # metadata/cluster destinations are dropped. WORKLOAD_SUBNET must match
   # EXECUTION_WORKER_WORKLOAD_SUBNET and the chronoverse-workloads ipam below.
   workload-firewall:
-    image: alpine:3.24.1
+    image: ghcr.io/hitesh22rana/chronoverse/firewall:latest
     container_name: workload-firewall
     network_mode: host
     user: root
@@ -420,12 +420,15 @@ services:
       - NET_ADMIN
     security_opt:
       - no-new-privileges:true
-    volumes:
-      - ./compose/firewall/workload-firewall.sh:/apply.sh:ro
     environment:
       WORKLOAD_SUBNET: 198.18.247.0/24
       CLUSTER_CIDRS: ${WORKLOAD_FIREWALL_CLUSTER_CIDRS:-}
-    command: ["sh", "-c", "/apply.sh && sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   runtime-agent:
@@ -1578,6 +1581,9 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      # No workloads admitted before the egress firewall reports healthy.
+      workload-firewall:
+        condition: service_healthy
       runtime-agent:
         condition: service_started
       redis:

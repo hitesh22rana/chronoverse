@@ -44,12 +44,6 @@ const (
 			return 0
 		end
 	`
-	// #nosec G101 -- Redis Lua script, not a credential.
-	trackDistinctScript = `
-		redis.call("SADD", KEYS[1], ARGV[1])
-		redis.call("PEXPIRE", KEYS[1], ARGV[2])
-		return redis.call("SCARD", KEYS[1])
-	`
 )
 
 var newDistributedLockToken = uuid.NewString
@@ -452,24 +446,6 @@ func (s *Store) ReleaseDistributedLock(ctx context.Context, key string) error {
 		return status.Errorf(codes.FailedPrecondition, "lock not held or already released")
 	}
 	return nil
-}
-
-// TrackDistinct adds member to a TTL'd set and returns its cardinality, atomically.
-// Used for distinct-count quotas (e.g. images per user); the TTL slides on every add.
-func (s *Store) TrackDistinct(ctx context.Context, key, member string, expiration time.Duration) (int64, error) {
-	if expiration <= 0 {
-		return 0, status.Error(codes.InvalidArgument, "track distinct requires a positive expiration")
-	}
-	result, err := s.client.Eval(ctx, trackDistinctScript, []string{key}, member, expiration.Milliseconds()).Result()
-	if err != nil || result == nil {
-		return 0, status.Errorf(codes.Internal, "failed to track distinct member: %v", err)
-	}
-
-	value, ok := result.(int64)
-	if !ok {
-		return 0, status.Errorf(codes.Internal, "unexpected track distinct result type %T", result)
-	}
-	return value, nil
 }
 
 // ReleaseDistributedLockWithToken releases a distributed lock only when token still owns it.

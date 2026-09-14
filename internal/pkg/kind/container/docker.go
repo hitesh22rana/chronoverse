@@ -18,9 +18,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
@@ -86,14 +84,13 @@ type DockerProxyTLSConfig struct {
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
-	pullGroup              singleflight.Group
-	resourceLimits         ResourceLimits
-	dockerHost             string
-	workloadNetwork        string
-	workloadSubnet         string
-	imageStorageLimitBytes int64
-	dockerProxyToken       string
-	dockerProxyTLS         DockerProxyTLSConfig
+	pullGroup        singleflight.Group
+	resourceLimits   ResourceLimits
+	dockerHost       string
+	workloadNetwork  string
+	workloadSubnet   string
+	dockerProxyToken string
+	dockerProxyTLS   DockerProxyTLSConfig
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -145,14 +142,6 @@ func WithWorkloadSubnet(cidr string) DockerWorkflowOption {
 		if cidr != "" {
 			w.workloadSubnet = cidr
 		}
-	}
-}
-
-// WithImageStorageLimit caps total daemon image-layer bytes; cold pulls past
-// the cap prune reclaimable images first, then refuse. Non-positive disables.
-func WithImageStorageLimit(bytes int64) DockerWorkflowOption {
-	return func(w *DockerWorkflow) {
-		w.imageStorageLimitBytes = bytes
 	}
 }
 
@@ -803,36 +792,6 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	case result := <-resultCh:
 		return result.Err
 	}
-}
-
-// CheckImageStorage implements imagepull.StorageGuard: refuse cold pulls once
-// daemon image-layer bytes exceed the configured cap, pruning reclaimable
-// images first. The daemon never removes images backing running containers,
-// so pruning only costs re-pull latency. A single oversized image can still
-// consume the remaining headroom mid-pull — the cap bounds steady state, and
-// the per-user distinct-image quota bounds who may add images.
-func (w *DockerWorkflow) CheckImageStorage(ctx context.Context) error {
-	if w.imageStorageLimitBytes <= 0 {
-		return nil
-	}
-	usage, err := w.Client.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.ImageObject}})
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to read daemon image storage: %v", err)
-	}
-	if usage.LayersSize < w.imageStorageLimitBytes {
-		return nil
-	}
-	if _, pruneErr := w.Client.ImagesPrune(ctx, filters.NewArgs(filters.Arg("dangling", "false"))); pruneErr != nil {
-		return status.Errorf(codes.Internal, "failed to prune unused images: %v", pruneErr)
-	}
-	usage, err = w.Client.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.ImageObject}})
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to re-read daemon image storage: %v", err)
-	}
-	if usage.LayersSize >= w.imageStorageLimitBytes {
-		return status.Errorf(codes.ResourceExhausted, "daemon image storage over budget (%d bytes used)", usage.LayersSize)
-	}
-	return nil
 }
 
 // ImageExists reports whether an image is already available in the local Docker daemon.

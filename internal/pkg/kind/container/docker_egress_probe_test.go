@@ -13,13 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntegrationWorkloadEgressDropsHostListener proves the host firewall
-// denies workload→infrastructure traffic: a listener on the bridge gateway
-// must be unreachable from inside a workload container (nc exits non-zero on
-// the DROP timeout; exit zero means the packet arrived and the firewall is
-// missing). Requires the firewall applied on the test host (Linux):
-// CHRONOVERSE_WORKLOAD_FIREWALL=1. CHRONOVERSE_WORKLOAD_SUBNET overrides the
-// default subnet and must match the host rules.
+// TestIntegrationWorkloadEgressDropsHostListener proves the firewall denies
+// workload→host traffic: a gateway listener must be unreachable from inside a
+// workload container. Needs the firewall on the test host (Linux):
+// CHRONOVERSE_WORKLOAD_FIREWALL=1 (subnet override: CHRONOVERSE_WORKLOAD_SUBNET).
 func TestIntegrationWorkloadEgressDropsHostListener(t *testing.T) {
 	if os.Getenv("CHRONOVERSE_WORKLOAD_FIREWALL") == "" {
 		t.Skip("requires host workload firewall (CHRONOVERSE_WORKLOAD_FIREWALL=1)")
@@ -93,7 +90,7 @@ func TestIntegrationWorkloadEgressDropsHostListener(t *testing.T) {
 	}
 }
 
-// firstSubnetIP returns the bridge gateway address (first host address).
+// firstSubnetIP returns the subnet's gateway address (.1).
 func firstSubnetIP(t *testing.T, cidr string) string {
 	t.Helper()
 

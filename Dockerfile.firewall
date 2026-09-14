@@ -1,5 +1,4 @@
-# Firewall image for the workload bridge: iptables tooling baked in, since the
-# container runs read-only and runtime package installation is fragile.
+# Firewall image: iptables baked in (runs read-only; no runtime install).
 # Released to ghcr.io/hitesh22rana/chronoverse/firewall like the services.
 FROM alpine:3.24.1
 

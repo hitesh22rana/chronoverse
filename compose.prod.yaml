@@ -403,11 +403,9 @@ services:
       init-certs:
         condition: service_completed_successfully
 
-  # Host firewall for the workload bridge. Runs in the host network namespace
-  # (NET_ADMIN) because rules cannot be programmed through the Docker socket
-  # proxy. Re-applies on every start; internet egress stays open, host/private/
-  # metadata/cluster destinations are dropped. WORKLOAD_SUBNET must match
-  # EXECUTION_WORKER_WORKLOAD_SUBNET and the chronoverse-workloads ipam below.
+  # Host firewall for the workload bridge: host netns + NET_ADMIN (the socket
+  # proxy cannot program rules). Internet stays open; host/private/metadata/
+  # cluster dropped. WORKLOAD_SUBNET must match the worker env and ipam below.
   workload-firewall:
     image: ghcr.io/hitesh22rana/chronoverse/firewall:latest
     container_name: workload-firewall
@@ -1581,7 +1579,7 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
-      # No workloads admitted before the egress firewall reports healthy.
+      # No workloads until the firewall is healthy.
       workload-firewall:
         condition: service_healthy
       runtime-agent:
@@ -2103,8 +2101,8 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_icc: "false"
-    # Must match EXECUTION_WORKER_WORKLOAD_SUBNET: the runtime fail-closes on
-    # any other subnet so firewall rules cannot be silently bypassed.
+    # Must match EXECUTION_WORKER_WORKLOAD_SUBNET; anything else fail-closes
+    # so rules cannot be silently bypassed.
     ipam:
       config:
         - subnet: 198.18.247.0/24

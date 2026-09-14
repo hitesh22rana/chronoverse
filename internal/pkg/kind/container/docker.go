@@ -63,10 +63,8 @@ const (
 	// to; created on demand (VULN-004a/b).
 	DefaultWorkloadNetwork = "chronoverse-workloads"
 
-	// DefaultWorkloadSubnet pins the workload bridge to RFC 2544 benchmarking
-	// space — globally unrouted, so it cannot overlap platform or cluster
-	// ranges. Fixed (not auto-assigned) so host firewall rules can allow
-	// internet egress while denying infrastructure destinations by address.
+	// DefaultWorkloadSubnet pins the workload bridge to unrouted RFC 2544 space
+	// so the fixed range never overlaps infra and the firewall can match it.
 	DefaultWorkloadSubnet = "198.18.247.0/24"
 )
 
@@ -135,8 +133,8 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 	}
 }
 
-// WithWorkloadSubnet overrides the CIDR assigned to the workload bridge.
-// Must match the subnet the host firewall enforces; empty keeps the default.
+// WithWorkloadSubnet overrides the workload bridge CIDR; must match the host
+// firewall rules. Empty keeps the default.
 func WithWorkloadSubnet(cidr string) DockerWorkflowOption {
 	return func(w *DockerWorkflow) {
 		if cidr != "" {
@@ -407,8 +405,7 @@ func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspecte
 	if inspected.Options[workloadNetworkICCOption] != workloadNetworkICCOff {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q does not disable inter-container communication", configuredName)
 	}
-	// The firewall enforces egress by source subnet; a network on any other
-	// subnet would silently bypass it, so refuse instead of attaching.
+	// Refuse subnets the firewall doesn't cover instead of silently bypassing it.
 	if _, _, err := net.ParseCIDR(w.workloadSubnet); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "workload subnet %q is invalid: %v", w.workloadSubnet, err)
 	}

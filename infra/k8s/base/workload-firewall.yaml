@@ -1,11 +1,7 @@
-# Host firewall for the workload bridge on Docker-workload nodes. Workload
-# containers are plain Docker containers (not pods), so Kubernetes
-# NetworkPolicies cannot select them — enforcement runs in the host network
-# namespace via this DaemonSet instead. Rules live in
-# compose/firewall/workload-firewall.sh, baked into the firewall image
-# (Dockerfile.firewall); internet egress stays open, host/private/metadata/
-# cluster destinations are dropped. WORKLOAD_SUBNET must match
-# EXECUTION_WORKER_WORKLOAD_SUBNET (code default 198.18.247.0/24).
+# Host firewall for workload bridges: plain Docker containers aren't pods, so
+# NetworkPolicies can't select them — this enforces in the host netns instead.
+# Rules: compose/firewall/workload-firewall.sh, baked into the image
+# (Dockerfile.firewall). WORKLOAD_SUBNET must match the worker env.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -22,8 +18,7 @@ spec:
       labels:
         app.kubernetes.io/name: workload-firewall
     spec:
-      # Same nodes as the docker-proxy DaemonSet: every Docker daemon that can
-      # host workload containers needs the host rules.
+      # Same nodes as docker-proxy: every daemon hosting workloads needs the rules.
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -48,7 +43,7 @@ spec:
         env:
         - name: WORKLOAD_SUBNET
           value: 198.18.247.0/24
-        # Non-RFC1918 cluster ranges (set pod/service CIDRs here if outside RFC 1918).
+        # Extra non-RFC1918 cluster ranges (e.g. pod/service CIDRs).
         - name: CLUSTER_CIDRS
           value: ""
         resources:
@@ -58,8 +53,7 @@ spec:
           limits:
             cpu: 100m
             memory: 128Mi
-        # The jumps must exist in both chains: DOCKER-USER covers forwarded
-        # traffic, INPUT covers connections terminating on the host itself.
+        # Both jumps must exist: DOCKER-USER (forwarded) and INPUT (host-bound).
         readinessProbe:
           exec:
             command:

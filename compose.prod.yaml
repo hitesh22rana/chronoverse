@@ -403,8 +403,9 @@ services:
       init-certs:
         condition: service_completed_successfully
 
-  # Host firewall for the workload bridge: host netns + NET_ADMIN (the socket
-  # proxy cannot program rules). Internet stays open; host/private/metadata/
+  # Host firewall for the workload bridge: host netns + NET_ADMIN/NET_RAW (the
+  # socket proxy cannot program rules; legacy iptables needs NET_RAW for its
+  # raw socket alongside NET_ADMIN). Internet stays open; host/private/metadata/
   # cluster dropped. WORKLOAD_SUBNET must match the worker env and ipam below.
   workload-firewall:
     # Plain alpine, tools installed at boot (no image to build); failures fail
@@ -417,6 +418,7 @@ services:
       - ALL
     cap_add:
       - NET_ADMIN
+      - NET_RAW
     security_opt:
       - no-new-privileges:true
     volumes:

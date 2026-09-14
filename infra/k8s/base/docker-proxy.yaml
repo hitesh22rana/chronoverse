@@ -242,7 +242,7 @@ spec:
           readOnly: true
       # Firewall sidecar: workload containers aren't pods, so NetworkPolicies
       # can't select them. Shares the pod's host netns (only this container
-      # gets NET_ADMIN). Kept last: local overlay pins containers/1.
+      # gets NET_ADMIN/NET_RAW). Kept last: local overlay pins containers/1.
       - name: workload-firewall
         # Plain alpine, tools installed at boot (no image to build); the loop
         # re-applies and refreshes the registration gate marker.
@@ -281,7 +281,7 @@ spec:
           allowPrivilegeEscalation: false
           capabilities:
             drop: ["ALL"]
-            add: ["NET_ADMIN"]
+            add: ["NET_ADMIN", "NET_RAW"]
         volumeMounts:
         - name: firewall-script
           mountPath: /apply

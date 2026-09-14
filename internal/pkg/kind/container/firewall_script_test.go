@@ -29,9 +29,14 @@ func stubFirewallBins(t *testing.T, withV6Chain, legacyBackend bool) (logFile, r
 		}
 		body := "#!/bin/sh\nTAG=" + name + "\nFAKE_L_MISSING=" + miss + "\nFAKE_STATE=" + filepath.Join(dir, "state-"+name) + "\n" + `echo "$TAG $*" >> "$FAKE_LOG"
 op="$1"; shift
-# Positional inserts carry a bare rule number real -C never sees; strip it so
-# existence checks compare rule specs like the real binary does.
-case "$1" in '') ;; *[!0-9]*) ;; *) shift ;; esac
+# -I carries a position ($2) real -C never sees; drop a bare rule number so
+# existence checks compare specs like the real binary does.
+
+if [ "$op" = "-I" ]; then
+	chain="$1"; shift
+	case "$1" in '') ;; *[!0-9]*) ;; *) shift ;; esac
+	set -- "$chain" "$@"
+fi
 case "$op" in
 -n) exit "$FAKE_L_MISSING" ;;
 -N) exit 0 ;;
@@ -227,5 +232,44 @@ func TestFirewallEstablishedRulesAreInterfaceScoped(t *testing.T) {
 	}
 	if scoped < 4 {
 		t.Errorf("scoped established accepts = %d, want >= 4 (v4 FWD+INPUT, v6 FWD+INPUT)", scoped)
+	}
+}
+
+// Re-application must neither duplicate rules nor reorder allows ahead of
+// denies, and the terminal DROP must survive every apply.
+func TestFirewallReapplyKeepsOrderAndNoDuplicates(t *testing.T) {
+	// No t.Parallel: stub binaries are installed via process environment.
+	logFile, readyFile := stubFirewallBins(t, false, false)
+
+	for i := 0; i < 2; i++ {
+		if err := runFirewallScript(t, readyFile); err != nil {
+			t.Fatalf("apply %d error = %v", i+1, err)
+		}
+	}
+	state, err := os.ReadFile(filepath.Join(filepath.Dir(logFile), "state-iptables"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	dropIdx, dnsFirstIdx := -1, -1
+	for i, line := range strings.Split(strings.TrimSpace(string(state)), "\n") {
+		seen[line]++
+		if strings.Contains(line, "--dport 53") && dnsFirstIdx < 0 {
+			dnsFirstIdx = i
+		}
+		if strings.HasPrefix(line, "CHRONOVERSE-WORKLOAD-IN ") && strings.Contains(line, "NEW -j DROP") {
+			dropIdx = i
+		}
+	}
+	for line, n := range seen {
+		if n > 1 {
+			t.Errorf("duplicated rule after re-apply (%dx): %q", n, line)
+		}
+	}
+	if dropIdx < 0 {
+		t.Fatal("terminal INPUT DROP missing after re-apply")
+	}
+	if dnsFirstIdx < 0 || dnsFirstIdx > dropIdx {
+		t.Errorf("INPUT DNS accepts (first at %d) must precede terminal DROP (at %d)", dnsFirstIdx, dropIdx)
 	}
 }

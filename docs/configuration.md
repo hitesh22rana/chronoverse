@@ -283,8 +283,11 @@ infrastructure and each other while preserving internet egress:
   Workload IPv6 is scoped to link-local sources only; everything else returns
   to Docker's own rules untouched. DNS is allowed only after those drops, so
   infrastructure resolvers are unreachable while public DNS works; the
-  host-input path carries the same port-53 exception because on Linux hosts
-  the Docker-provided resolver is served from the bridge gateway. Metadata
+  host-input path carries the same port-53 exception because some Docker
+  variants serve the Docker-provided resolver from the bridge gateway.
+  Daemon-level DNS overrides (`daemon.json dns`) with private resolvers are
+  incompatible with workload isolation: forwarding for explicit upstreams
+  originates container-side and is dropped — prefer host-inherited DNS. Metadata
   stays unreachable while DNS and plain-HTTP egress work. The apply is
   idempotent (rules are checked before adding, jumps linked last), and a
   minute loop re-applies plus refreshes a ready marker. Admission is gated

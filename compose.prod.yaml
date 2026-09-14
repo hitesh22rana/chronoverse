@@ -403,6 +403,42 @@ services:
       init-certs:
         condition: service_completed_successfully
 
+  # Host firewall for the workload bridge: host netns + NET_ADMIN/NET_RAW (the
+  # socket proxy cannot program rules; legacy iptables needs NET_RAW for its
+  # raw socket alongside NET_ADMIN). Internet stays open; host/private/metadata/
+  # cluster dropped. WORKLOAD_SUBNET must match the worker env and ipam below.
+  workload-firewall:
+    # Plain alpine, tools installed at boot (no image to build); failures fail
+    # the healthcheck loudly. Loop re-applies and refreshes the ready marker.
+    image: alpine:3.24.1
+    container_name: workload-firewall
+    network_mode: host
+    user: root
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./compose/firewall/workload-firewall.sh:/apply.sh:ro
+      - ./compose/firewall/workload-firewall-probe.sh:/probe.sh:ro
+      - firewall-state:/firewall
+    environment:
+      WORKLOAD_SUBNET: 198.18.247.0/24
+      WORKLOAD_BRIDGE_IF: chronoverse-br
+      CLUSTER_CIDRS: ${WORKLOAD_FIREWALL_CLUSTER_CIDRS:-}
+      READY_FILE: /firewall/ready
+    command: ["/bin/sh", "-c", "while true; do /apply.sh; sleep 60; done"]
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/probe.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   runtime-agent:
     <<: *services-limit
     image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
@@ -424,6 +460,7 @@ services:
       RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT: tcp://docker-proxy:2376
       RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
       RUNTIME_AGENT_MAX_CONCURRENCY: ${RUNTIME_AGENT_MAX_CONCURRENCY:-4}
+      RUNTIME_AGENT_FIREWALL_READY_FILE: /firewall/ready
       DOCKER_PROXY_TLS_CA_FILE: /docker-proxy-certs/ca.crt
       DOCKER_PROXY_TLS_CERT_FILE: /docker-proxy-certs/client.crt
       DOCKER_PROXY_TLS_KEY_FILE: /docker-proxy-certs/client.key
@@ -460,6 +497,7 @@ services:
       - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
       - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
       - ./docker-proxy-certs/runtime-agent:/docker-proxy-certs:ro
+      - firewall-state:/firewall:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -1553,6 +1591,9 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      # No workloads until the firewall is healthy.
+      workload-firewall:
+        condition: service_healthy
       runtime-agent:
         condition: service_started
       redis:
@@ -2062,6 +2103,7 @@ volumes:
   kafka:
   kafka-secrets:
   lgtm:
+  firewall-state:
 
 networks:
   # Dedicated network for tenant workload containers (VULN-004b). No platform
@@ -2072,6 +2114,13 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_icc: "false"
+      # Fixed interface for firewall -i matching; must match the runtime.
+      com.docker.network.bridge.name: "chronoverse-br"
+    # Must match EXECUTION_WORKER_WORKLOAD_SUBNET; anything else fail-closes
+    # so rules cannot be silently bypassed.
+    ipam:
+      config:
+        - subnet: 198.18.247.0/24
   chronoverse:
     name: chronoverse
     driver: bridge

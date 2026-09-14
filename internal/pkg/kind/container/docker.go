@@ -51,6 +51,11 @@ const (
 	workloadNetworkDriver    = "bridge"
 	workloadNetworkICCOff    = "false"
 
+	// workloadNetworkBridgeName pins the kernel interface for firewall -i matching.
+	// Fixed at creation: resolving it at apply time would deadlock fresh installs.
+	workloadNetworkBridgeName       = "chronoverse-br"
+	workloadNetworkBridgeNameOption = "com.docker.network.bridge.name"
+
 	// dockerProxyTokenEnv / dockerProxyTokenHeader carry the shared Kubernetes
 	// socket-proxy credential without changing the persisted endpoint URL.
 	dockerProxyTokenEnv    = "DOCKER_PROXY_TOKEN"               //nolint:gosec // Environment-variable name, not a credential.
@@ -62,6 +67,10 @@ const (
 	// DefaultWorkloadNetwork is the ICC-disabled bridge every workload is pinned
 	// to; created on demand (VULN-004a/b).
 	DefaultWorkloadNetwork = "chronoverse-workloads"
+
+	// DefaultWorkloadSubnet pins the workload bridge to unrouted RFC 2544 space
+	// so the fixed range never overlaps infra and the firewall can match it.
+	DefaultWorkloadSubnet = "198.18.247.0/24"
 )
 
 // DockerProxyTLSConfig holds mTLS credentials for the per-node proxy on :2376.
@@ -82,6 +91,7 @@ type DockerWorkflow struct {
 	resourceLimits   ResourceLimits
 	dockerHost       string
 	workloadNetwork  string
+	workloadSubnet   string
 	dockerProxyToken string
 	dockerProxyTLS   DockerProxyTLSConfig
 }
@@ -124,6 +134,16 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 	return func(w *DockerWorkflow) {
 		if name != "" {
 			w.workloadNetwork = name
+		}
+	}
+}
+
+// WithWorkloadSubnet overrides the workload bridge CIDR; must match the host
+// firewall rules. Empty keeps the default.
+func WithWorkloadSubnet(cidr string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		if cidr != "" {
+			w.workloadSubnet = cidr
 		}
 	}
 }
@@ -233,6 +253,7 @@ func NormalizeDockerProxyEndpoint(endpoint string, tlsConfigured bool) string {
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	w := &DockerWorkflow{
 		workloadNetwork:  DefaultWorkloadNetwork,
+		workloadSubnet:   DefaultWorkloadSubnet,
 		dockerProxyToken: os.Getenv(dockerProxyTokenEnv),
 	}
 	for _, option := range options {
@@ -318,7 +339,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	}
 
 	if inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
-		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
 	} else if !cerrdefs.IsNotFound(err) {
 		return status.Errorf(codes.Internal, "failed to inspect workload network %q: %v", w.workloadNetwork, err)
 	}
@@ -328,6 +349,11 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		Options: map[string]string{
 			// Tenant containers on this network must not reach each other.
 			workloadNetworkICCOption: workloadNetworkICCOff,
+			// Pinned interface name for firewall -i matching.
+			workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
+		},
+		IPAM: &network.IPAM{
+			Config: []network.IPAMConfig{{Subnet: w.workloadSubnet}},
 		},
 	}); err != nil {
 		// Lost a create race (or the daemon reported the conflict with an
@@ -336,7 +362,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		if inspectErr != nil {
 			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
 		}
-		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
 	}
 
 	// Verify the daemon honored the requested options (fail-closed).
@@ -344,7 +370,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to verify workload network %q after creation: %v", w.workloadNetwork, err)
 	}
-	return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+	return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
 }
 
 // workloadNetworkNamePattern is the character class the k8s socket-proxy ACL
@@ -373,7 +399,7 @@ func validateWorkloadNetworkName(name string) error {
 	return nil
 }
 
-func validateWorkloadNetwork(configuredName string, inspected *network.Inspect) error {
+func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspected *network.Inspect) error {
 	if err := validateWorkloadNetworkName(inspected.Name); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to an unsafe network: %v", configuredName, err)
 	}
@@ -386,7 +412,21 @@ func validateWorkloadNetwork(configuredName string, inspected *network.Inspect) 
 	if inspected.Options[workloadNetworkICCOption] != workloadNetworkICCOff {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q does not disable inter-container communication", configuredName)
 	}
-
+	if inspected.Options[workloadNetworkBridgeNameOption] != workloadNetworkBridgeName {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q has unexpected bridge interface (firewall -i match would miss)", configuredName)
+	}
+	// Refuse subnets the firewall doesn't cover instead of silently bypassing it.
+	if _, _, err := net.ParseCIDR(w.workloadSubnet); err != nil {
+		return status.Errorf(codes.FailedPrecondition, "workload subnet %q is invalid: %v", w.workloadSubnet, err)
+	}
+	// Exactly one IPAM range — the enforced subnet — and no IPv6: extra ranges
+	// or a dual-stack pool would hand out addresses the firewall doesn't cover.
+	if inspected.EnableIPv6 {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q must not enable IPv6", configuredName)
+	}
+	if len(inspected.IPAM.Config) != 1 || inspected.IPAM.Config[0].Subnet != w.workloadSubnet {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q is not exactly on enforced subnet %q", configuredName, w.workloadSubnet)
+	}
 	return nil
 }
 

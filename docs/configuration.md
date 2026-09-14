@@ -257,6 +257,67 @@ expirations), so there is always a sacrificial key. Watch the `redis.evicted_key
 counter (exported over OTEL): sustained growth means pressure is eating cache,
 growth approaching session lifetimes means `REDIS_MAX_MEMORY` is too small.
 
+### Workload isolation
+
+Workload containers run arbitrary user images on the `chronoverse-workloads`
+bridge (`EXECUTION_WORKER_WORKLOAD_NETWORK`, ICC disabled, CPU/memory/PID
+limits, dropped capabilities, read-only rootfs). Two layers keep them off
+infrastructure and each other while preserving internet egress:
+
+- **Fixed subnet.** The bridge is pinned to `EXECUTION_WORKER_WORKLOAD_SUBNET`
+  (default `198.18.247.0/24`, RFC 2544 space) at creation, and the runtime
+  fail-closes on any other subnet — a miscreated network errors instead of
+  silently bypassing the firewall. Compose declares the same subnet via ipam;
+  existing deployments must recreate the network once
+  (`docker network rm chronoverse-workloads`, it is recreated on demand).
+- **Enforced firewall (prod).** The `workload-firewall` unit is plain
+  `alpine:3.24.1` plus a runtime `apk add` (no image to build or release; needs
+  registry access on (re)create, and any failure fails health checks loudly)
+  and runs in the host network namespace, installing filtering in
+  two chains:
+  `DOCKER-USER` for forwarded traffic and `INPUT` for connections terminating
+  on the host itself (DOCKER-USER alone never sees those).
+  Denied: the workload subnet itself (bridge gateway), loopback, RFC 1918,
+  CGNAT, link-local/metadata (`169.254.169.254`), multicast, plus extra
+  `WORKLOAD_FIREWALL_CLUSTER_CIDRS`, and new inbound connections to workloads.
+  Workload IPv6 is scoped to link-local sources only; everything else returns
+  to Docker's own rules untouched. DNS is allowed only after those drops, so
+  infrastructure resolvers are unreachable while public DNS works; the
+  host-input path carries the same port-53 exception so direct-to-gateway
+  queries resolve on setups bypassing 127.0.0.11.
+  Daemon-level DNS overrides (`daemon.json dns`) with private resolvers are
+  incompatible with workload isolation: forwarding for explicit upstreams
+  originates container-side and is dropped — prefer host-inherited DNS. Metadata
+  stays unreachable while DNS and plain-HTTP egress work. The apply is
+  idempotent (rules are checked before adding, jumps linked last), and a
+  minute loop re-applies plus refreshes a ready marker. Admission is gated
+  twice: `execution-worker` starts only once the firewall reports healthy, and
+  the runtime-agent withholds node registration while the marker is missing or
+  older than 5m (`RUNTIME_AGENT_FIREWALL_READY_FILE`). Dev compose runs the same
+  service (rules are scoped to the workload subnet, so the shared dev daemon is
+  otherwise untouched). Validate the deployment with the
+  gated probe: `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test
+  ./internal/pkg/kind/container/ -run TestIntegrationWorkloadEgress`.
+
+  Kubernetes: the same subnet is used on every workload node (node-local
+  bridges, no cross-node routing of that range — keep it clear of pod/service
+  CIDRs). Enforcement is a `workload-firewall` sidecar in the `docker-proxy`
+  DaemonSet pod (inherits its per-node placement and host network; only the
+  sidecar gets `NET_ADMIN`, with the same chain-jump probes): Kubernetes
+  NetworkPolicies cannot select plain Docker containers, so there is no
+  NetworkPolicy equivalent. Set `CLUSTER_CIDRS` on the sidecar if pod/service
+  CIDRs fall outside RFC 1918.
+
+Residual (explicitly open): Docker *daemon* pull traffic (registry redirects,
+auth/token endpoints) never traverses the workload network, so the firewall
+cannot pin it to the registry allowlist — that needs a daemon-side registry
+mirror or egress proxy (deploy-time, not yet configured).
+
+Accepted risk: shared-disk exhaustion is the operator's responsibility.
+There is deliberately no image-storage cap, prune job, or per-user image quota:
+a job pulling large images can fill daemon disk and disrupt other jobs, and
+the application fails with disk errors until the operator reclaims space.
+
 ### Meilisearch
 
 Common settings:

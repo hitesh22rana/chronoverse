@@ -111,6 +111,7 @@ func run() int {
 			container.WithDockerHost(endpoint),
 			container.WithResourceLimits(resourceLimits),
 			container.WithWorkloadNetwork(cfg.ExecutionWorkerConfig.WorkloadNetwork),
+			container.WithWorkloadSubnet(cfg.ExecutionWorkerConfig.WorkloadSubnet),
 			container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
 				CAFile:     cfg.DockerProxy.TLS.CAFile,
 				CertFile:   cfg.DockerProxy.TLS.CertFile,

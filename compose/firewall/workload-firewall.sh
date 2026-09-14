@@ -37,9 +37,8 @@ ensure_chain6() { ip6tables -n -L "$1" >/dev/null 2>&1 || ip6tables -N "$1"; }
 ensure_chain "$CHAIN"
 ensure_chain "$CHAIN_IN"
 
-# Deny-before-allow: drop the terminal accept AND the DNS accepts first, so
-# added ranges can never land after an allow (shadowed but "healthy"), then
-# re-add everything in order. Removing allows only ever fails closed.
+# Deny-before-allow: drop terminal + DNS accepts first so added ranges can't
+# land after an allow, then re-add in order (removal only fails closed).
 iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -j ACCEPT 2>/dev/null || true
 iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
 iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
@@ -70,9 +69,8 @@ rule_in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 rule_in -s "$SUBNET" -m conntrack --ctstate NEW -j DROP
 
 # IPv6: link-local sources are shared, hence -i; no ACCEPT (RETURN to Docker).
-# Skipped entirely on IPv4-only hosts: without Docker's ip6tables DOCKER-USER
-# chain there is no v6 forwarding to protect, and linking into a missing chain
-# would abort the whole apply (including v4) under set -eu.
+# Skipped on IPv4-only hosts: no DOCKER-USER chain means no v6 forwarding to
+# protect; linking into it would abort the whole apply under set -eu.
 if command -v ip6tables >/dev/null && ip6tables -n -L DOCKER-USER >/dev/null 2>&1; then
     ensure_chain6 "${CHAIN}6"
     ensure_chain6 "${CHAIN_IN}6"

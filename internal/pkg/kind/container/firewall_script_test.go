@@ -8,10 +8,8 @@ import (
 	"testing"
 )
 
-// stubFirewallBins installs fake apk/iptables/ip6tables on PATH. The iptables
-// stub emulates add-if-missing state; the ip6tables stub additionally fails
-// every DOCKER-USER operation when withV6Chain is false, reproducing an
-// IPv4-only Docker host that never created the v6 chain.
+// stubFirewallBins fakes apk/iptables/ip6tables on PATH; with withV6Chain
+// false every DOCKER-USER op fails, reproducing an IPv4-only Docker host.
 func stubFirewallBins(t *testing.T, withV6Chain bool) (logFile, readyFile string) {
 	t.Helper()
 
@@ -78,9 +76,8 @@ func runFirewallScript(t *testing.T, readyFile string) error {
 	return nil
 }
 
-// On IPv4-only Docker hosts the ip6tables DOCKER-USER chain does not exist;
-// the script must skip v6 and still link v4 + touch the ready marker instead
-// of aborting (which would block all workload execution).
+// IPv4-only hosts lack the ip6tables DOCKER-USER chain: v6 must be skipped
+// while v4 still links and the ready marker is touched.
 func TestFirewallScriptSkipsMissingV6Chain(t *testing.T) {
 	// No t.Parallel: stub binaries are installed via process environment.
 	logFile, readyFile := stubFirewallBins(t, false)

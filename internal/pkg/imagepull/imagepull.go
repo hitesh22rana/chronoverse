@@ -26,6 +26,12 @@ type Client interface {
 	DockerHost() string
 }
 
+// StorageGuard reports daemon image-storage pressure, pruning reclaimable
+// images when over budget. Implemented by Docker-backed clients only.
+type StorageGuard interface {
+	CheckImageStorage(ctx context.Context) error
+}
+
 // LockStore coordinates image pulls between workers sharing a Docker daemon.
 type LockStore interface {
 	AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (string, bool, error)
@@ -35,11 +41,15 @@ type LockStore interface {
 
 // Config configures Docker image pull coordination.
 type Config struct {
-	TTL           time.Duration
-	WaitTimeout   time.Duration
-	RetryInterval time.Duration
-	LockScope     string
+	TTL               time.Duration
+	WaitTimeout       time.Duration
+	RetryInterval     time.Duration
+	LockScope         string
+	StorageLimitBytes int64
 }
+
+// storageGateName is the pseudo-image identifying the per-daemon storage gate lock.
+const storageGateName = "image-storage-gate"
 
 // Ensure makes imageName available on client, serializing cold pulls per runtime scope.
 func Ensure(ctx context.Context, client Client, locks LockStore, imageName string, cfg Config) error {
@@ -54,6 +64,28 @@ func Ensure(ctx context.Context, client Client, locks LockStore, imageName strin
 	if lockScope == "" {
 		lockScope = client.DockerHost()
 	}
+
+	// The storage gate serializes cold pulls per daemon so concurrent pulls
+	// cannot all pass the same reserve check; the holder keeps it for the
+	// whole pull and evaluates storage pressure inside it.
+	gateKey, gateToken := "", ""
+	if cfg.StorageLimitBytes > 0 {
+		guard, ok := client.(StorageGuard)
+		if !ok {
+			return status.Error(codes.FailedPrecondition, "image storage gate configured but client cannot enforce it")
+		}
+		if gateKey, gateToken, err = acquireGate(ctx, locks, lockScope, cfg); err != nil {
+			return err
+		}
+		defer func() {
+			//nolint:errcheck // Gate release must not mask the pull result.
+			_ = locks.ReleaseDistributedLockWithToken(context.WithoutCancel(ctx), gateKey, gateToken)
+		}()
+		if err := guard.CheckImageStorage(ctx); err != nil {
+			return err
+		}
+	}
+
 	lockKey := LockKey(lockScope, imageName)
 	waitCtx, cancel := context.WithTimeout(ctx, cfg.WaitTimeout)
 	defer cancel()
@@ -64,11 +96,32 @@ func Ensure(ctx context.Context, client Client, locks LockStore, imageName strin
 			return err
 		}
 		if acquired {
-			return buildWithLock(ctx, client, locks, imageName, lockKey, token, cfg)
+			return buildWithLock(ctx, client, locks, imageName, lockKey, token, cfg, gateKey, gateToken)
 		}
 
 		if err := waitForLock(waitCtx, cfg.RetryInterval); err != nil {
 			return waitError(ctx, err)
+		}
+	}
+}
+
+// acquireGate takes the per-daemon storage gate lock, waiting up to WaitTimeout.
+// The caller holds it across the reserve check and the admitted pull.
+func acquireGate(ctx context.Context, locks LockStore, lockScope string, cfg Config) (gateKey, gateToken string, err error) {
+	gateKey = LockKey(lockScope, storageGateName)
+	waitCtx, cancel := context.WithTimeout(ctx, cfg.WaitTimeout)
+	defer cancel()
+
+	for {
+		token, acquired, err := locks.AcquireDistributedLockWithToken(waitCtx, gateKey, cfg.TTL)
+		if err != nil {
+			return "", "", err
+		}
+		if acquired {
+			return gateKey, token, nil
+		}
+		if err := waitForLock(waitCtx, cfg.RetryInterval); err != nil {
+			return "", "", waitError(ctx, err)
 		}
 	}
 }
@@ -86,7 +139,7 @@ func normalizeConfig(cfg Config) Config {
 	return cfg
 }
 
-func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config) error {
+func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config, gateKey, gateToken string) error {
 	defer func(ctx context.Context) {
 		//nolint:errcheck // A lost or expired lock should not mask the build result.
 		_ = locks.ReleaseDistributedLockWithToken(ctx, lockKey, token)
@@ -102,6 +155,11 @@ func buildWithLock(ctx context.Context, client Client, locks LockStore, imageNam
 
 	stopRenewal, renewalErrCh := startLockRenewal(buildCtx, locks, lockKey, token, cfg.TTL)
 	defer stopRenewal()
+	if gateKey != "" {
+		stopGateRenewal, gateRenewalErrCh := startLockRenewal(buildCtx, locks, gateKey, gateToken, cfg.TTL)
+		defer stopGateRenewal()
+		renewalErrCh = mergeRenewalErrs(buildCtx, renewalErrCh, gateRenewalErrCh)
+	}
 
 	buildErrCh := make(chan error, 1)
 	go func() {
@@ -149,6 +207,28 @@ func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token strin
 	}()
 
 	return cancel, errCh
+}
+
+// mergeRenewalErrs forwards the first error from either lock-renewal loop,
+// unblocking when ctx ends so clean shutdowns leak no goroutine.
+func mergeRenewalErrs(ctx context.Context, a, b <-chan error) <-chan error {
+	merged := make(chan error, 2)
+	go func() {
+		select {
+		case err := <-a:
+			select {
+			case merged <- err:
+			case <-ctx.Done():
+			}
+		case err := <-b:
+			select {
+			case merged <- err:
+			case <-ctx.Done():
+			}
+		case <-ctx.Done():
+		}
+	}()
+	return merged
 }
 
 func waitForLock(ctx context.Context, interval time.Duration) error {

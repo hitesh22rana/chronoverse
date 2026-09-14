@@ -969,6 +969,10 @@ func (*testWorkflowLockStore) ReleaseDistributedLock(context.Context, string) er
 	return nil
 }
 
+func (*testWorkflowLockStore) TrackDistinct(context.Context, string, string, time.Duration) (int64, error) {
+	return 1, nil
+}
+
 type testKafkaProducer struct{}
 
 func (testKafkaProducer) ProduceSync(context.Context, ...*kgo.Record) kgo.ProduceResults {

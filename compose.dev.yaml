@@ -1975,6 +1975,11 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_icc: "false"
+    # Same enforced subnet as prod; dev runs no workload-firewall service, so
+    # this only keeps the runtime subnet validation passing (no egress deny).
+    ipam:
+      config:
+        - subnet: 198.18.247.0/24
   chronoverse:
     name: chronoverse
     driver: bridge

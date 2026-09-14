@@ -108,13 +108,15 @@ func run() int {
 	// Workflow workers resolve image metadata through the runtime registry.
 	// Runtime identity scopes image pull locks to the owning Docker daemon.
 	imagePullLockConfig := imagepull.Config{
-		TTL:           cfg.ImagePullLockTTL,
-		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
-		RetryInterval: cfg.ImagePullLockRetryInterval,
+		TTL:               cfg.ImagePullLockTTL,
+		WaitTimeout:       cfg.ImagePullLockWaitTimeout,
+		RetryInterval:     cfg.ImagePullLockRetryInterval,
+		StorageLimitBytes: cfg.ImageStorageMaxBytes,
 	}
 	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
 		return container.NewDockerWorkflow(
 			container.WithDockerHost(endpoint),
+			container.WithImageStorageLimit(cfg.ImageStorageMaxBytes),
 			container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
 				CAFile:     cfg.DockerProxy.TLS.CAFile,
 				CertFile:   cfg.DockerProxy.TLS.CertFile,
@@ -182,6 +184,10 @@ func run() int {
 			Enabled:   cfg.ImagePrefetchEnabled,
 			MaxFanout: cfg.ImagePrefetchMaxFanout,
 			Timeout:   cfg.ImagePullLockWaitTimeout,
+		},
+		ImageQuota: workflowrepo.ImageQuotaConfig{
+			MaxDistinct: cfg.ImageQuotaMaxDistinct,
+			TTL:         cfg.ImageQuotaTTL,
 		},
 	})
 	svc := workflowsvc.New(repo)

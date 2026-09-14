@@ -18,7 +18,9 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/distribution/reference"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
@@ -62,6 +64,12 @@ const (
 	// DefaultWorkloadNetwork is the ICC-disabled bridge every workload is pinned
 	// to; created on demand (VULN-004a/b).
 	DefaultWorkloadNetwork = "chronoverse-workloads"
+
+	// DefaultWorkloadSubnet pins the workload bridge to RFC 2544 benchmarking
+	// space — globally unrouted, so it cannot overlap platform or cluster
+	// ranges. Fixed (not auto-assigned) so host firewall rules can allow
+	// internet egress while denying infrastructure destinations by address.
+	DefaultWorkloadSubnet = "198.18.247.0/24"
 )
 
 // DockerProxyTLSConfig holds mTLS credentials for the per-node proxy on :2376.
@@ -78,12 +86,14 @@ type DockerProxyTLSConfig struct {
 // DockerWorkflow represents a Docker workflow.
 type DockerWorkflow struct {
 	*client.Client
-	pullGroup        singleflight.Group
-	resourceLimits   ResourceLimits
-	dockerHost       string
-	workloadNetwork  string
-	dockerProxyToken string
-	dockerProxyTLS   DockerProxyTLSConfig
+	pullGroup              singleflight.Group
+	resourceLimits         ResourceLimits
+	dockerHost             string
+	workloadNetwork        string
+	workloadSubnet         string
+	imageStorageLimitBytes int64
+	dockerProxyToken       string
+	dockerProxyTLS         DockerProxyTLSConfig
 }
 
 // ResourceLimits defines Docker resource limits applied to executed workload containers.
@@ -125,6 +135,24 @@ func WithWorkloadNetwork(name string) DockerWorkflowOption {
 		if name != "" {
 			w.workloadNetwork = name
 		}
+	}
+}
+
+// WithWorkloadSubnet overrides the CIDR assigned to the workload bridge.
+// Must match the subnet the host firewall enforces; empty keeps the default.
+func WithWorkloadSubnet(cidr string) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		if cidr != "" {
+			w.workloadSubnet = cidr
+		}
+	}
+}
+
+// WithImageStorageLimit caps total daemon image-layer bytes; cold pulls past
+// the cap prune reclaimable images first, then refuse. Non-positive disables.
+func WithImageStorageLimit(bytes int64) DockerWorkflowOption {
+	return func(w *DockerWorkflow) {
+		w.imageStorageLimitBytes = bytes
 	}
 }
 
@@ -233,6 +261,7 @@ func NormalizeDockerProxyEndpoint(endpoint string, tlsConfigured bool) string {
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	w := &DockerWorkflow{
 		workloadNetwork:  DefaultWorkloadNetwork,
+		workloadSubnet:   DefaultWorkloadSubnet,
 		dockerProxyToken: os.Getenv(dockerProxyTokenEnv),
 	}
 	for _, option := range options {
@@ -318,7 +347,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	}
 
 	if inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
-		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
 	} else if !cerrdefs.IsNotFound(err) {
 		return status.Errorf(codes.Internal, "failed to inspect workload network %q: %v", w.workloadNetwork, err)
 	}
@@ -329,6 +358,9 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 			// Tenant containers on this network must not reach each other.
 			workloadNetworkICCOption: workloadNetworkICCOff,
 		},
+		IPAM: &network.IPAM{
+			Config: []network.IPAMConfig{{Subnet: w.workloadSubnet}},
+		},
 	}); err != nil {
 		// Lost a create race (or the daemon reported the conflict with an
 		// inconsistent status): accept the winner only if it is isolated.
@@ -336,7 +368,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		if inspectErr != nil {
 			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
 		}
-		return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
 	}
 
 	// Verify the daemon honored the requested options (fail-closed).
@@ -344,7 +376,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to verify workload network %q after creation: %v", w.workloadNetwork, err)
 	}
-	return validateWorkloadNetwork(w.workloadNetwork, &inspected)
+	return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
 }
 
 // workloadNetworkNamePattern is the character class the k8s socket-proxy ACL
@@ -373,7 +405,7 @@ func validateWorkloadNetworkName(name string) error {
 	return nil
 }
 
-func validateWorkloadNetwork(configuredName string, inspected *network.Inspect) error {
+func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspected *network.Inspect) error {
 	if err := validateWorkloadNetworkName(inspected.Name); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q resolved to an unsafe network: %v", configuredName, err)
 	}
@@ -386,8 +418,17 @@ func validateWorkloadNetwork(configuredName string, inspected *network.Inspect) 
 	if inspected.Options[workloadNetworkICCOption] != workloadNetworkICCOff {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q does not disable inter-container communication", configuredName)
 	}
-
-	return nil
+	// The firewall enforces egress by source subnet; a network on any other
+	// subnet would silently bypass it, so refuse instead of attaching.
+	if _, _, err := net.ParseCIDR(w.workloadSubnet); err != nil {
+		return status.Errorf(codes.FailedPrecondition, "workload subnet %q is invalid: %v", w.workloadSubnet, err)
+	}
+	for _, ipam := range inspected.IPAM.Config {
+		if ipam.Subnet == w.workloadSubnet {
+			return nil
+		}
+	}
+	return status.Errorf(codes.FailedPrecondition, "workload network %q is not on enforced subnet %q", configuredName, w.workloadSubnet)
 }
 
 func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
@@ -762,6 +803,36 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 	case result := <-resultCh:
 		return result.Err
 	}
+}
+
+// CheckImageStorage implements imagepull.StorageGuard: refuse cold pulls once
+// daemon image-layer bytes exceed the configured cap, pruning reclaimable
+// images first. The daemon never removes images backing running containers,
+// so pruning only costs re-pull latency. A single oversized image can still
+// consume the remaining headroom mid-pull — the cap bounds steady state, and
+// the per-user distinct-image quota bounds who may add images.
+func (w *DockerWorkflow) CheckImageStorage(ctx context.Context) error {
+	if w.imageStorageLimitBytes <= 0 {
+		return nil
+	}
+	usage, err := w.Client.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.ImageObject}})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to read daemon image storage: %v", err)
+	}
+	if usage.LayersSize < w.imageStorageLimitBytes {
+		return nil
+	}
+	if _, pruneErr := w.Client.ImagesPrune(ctx, filters.NewArgs(filters.Arg("dangling", "false"))); pruneErr != nil {
+		return status.Errorf(codes.Internal, "failed to prune unused images: %v", pruneErr)
+	}
+	usage, err = w.Client.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.ImageObject}})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to re-read daemon image storage: %v", err)
+	}
+	if usage.LayersSize >= w.imageStorageLimitBytes {
+		return status.Errorf(codes.ResourceExhausted, "daemon image storage over budget (%d bytes used)", usage.LayersSize)
+	}
+	return nil
 }
 
 // ImageExists reports whether an image is already available in the local Docker daemon.

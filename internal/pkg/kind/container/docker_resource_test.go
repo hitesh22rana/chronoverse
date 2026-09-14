@@ -24,7 +24,7 @@ func TestDockerWorkflowExecuteAppliesResourceLimits(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/networks/"):
 			w.Header().Set("Content-Type", "application/json")
-			_, err := w.Write([]byte(`{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"false"}}`))
+			_, err := w.Write([]byte(`{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"false"},"IPAM":{"Config":[{"Subnet":"198.18.247.0/24"}]}}`))
 			require.NoError(t, err)
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/containers/create"):
 			createCalled = true
@@ -61,6 +61,7 @@ func TestDockerWorkflowExecuteAppliesResourceLimits(t *testing.T) {
 	workflow := &DockerWorkflow{
 		Client:          cli,
 		workloadNetwork: DefaultWorkloadNetwork,
+		workloadSubnet:  DefaultWorkloadSubnet,
 		resourceLimits: ResourceLimits{
 			MemoryBytes: 512 * 1024 * 1024,
 			NanoCPUs:    1_500_000_000,

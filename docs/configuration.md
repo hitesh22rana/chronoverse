@@ -257,6 +257,44 @@ expirations), so there is always a sacrificial key. Watch the `redis.evicted_key
 counter (exported over OTEL): sustained growth means pressure is eating cache,
 growth approaching session lifetimes means `REDIS_MAX_MEMORY` is too small.
 
+### Workload isolation + image storage
+
+Workload containers run arbitrary user images on the `chronoverse-workloads`
+bridge (`EXECUTION_WORKER_WORKLOAD_NETWORK`, ICC disabled). Two layers keep
+them off infrastructure while preserving internet egress:
+
+- **Fixed subnet.** The bridge is pinned to `EXECUTION_WORKER_WORKLOAD_SUBNET`
+  (default `198.18.247.0/24`, RFC 2544 space) at creation, and the runtime
+  fail-closes on any other subnet — a miscreated network errors instead of
+  silently bypassing the firewall. Compose declares the same subnet via ipam;
+  existing deployments must recreate the network once
+  (`docker network rm chronoverse-workloads`, it is recreated on demand).
+- **Enforced firewall (prod).** The `workload-firewall` service runs
+  `compose/firewall/workload-firewall.sh` in the host network namespace and
+  installs `DOCKER-USER` rules: allow DNS + established traffic, drop the
+  workload subnet itself (covers the bridge gateway), loopback, RFC 1918,
+  CGNAT, link-local/metadata (`169.254.169.254`), multicast, plus extra
+  `WORKLOAD_FIREWALL_CLUSTER_CIDRS` (non-RFC1918 pod/service ranges), and drop
+  new inbound connections to workloads. IPv6 infrastructure ranges are dropped
+  the same way. Re-applied on every start. Dev compose has no such service —
+  dev has the subnet but no egress deny. Verify live with the gated probe:
+  `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test ./internal/pkg/kind/container/ -run TestIntegrationWorkloadEgress`.
+
+Residual: Docker *daemon* pull traffic (registry redirects, auth/token
+endpoints) never traverses the workload network, so the firewall cannot pin it
+to the P4 registry allowlist — that needs a daemon-side registry mirror or
+egress proxy (deploy-time, not yet configured).
+
+Image storage is bounded per daemon by `*_IMAGE_STORAGE_MAX_BYTES` (default
+10 GiB of layer bytes): cold pulls serialize on a per-daemon Redis gate, check
+`GET /system/df` (allowed through the socket proxy), prune unused images when
+over budget (running-container images are never removed by the daemon), and
+refuse with `ResourceExhausted` past it. Per-user abuse is slowed by
+`WORKFLOW_WORKER_IMAGE_QUOTA_MAX_DISTINCT` (default 20 distinct images per
+`WORKFLOW_WORKER_IMAGE_QUOTA_TTL`, default 720h, tracked in Redis — no
+migration). Limits: the reserve check cannot stop one oversized image from
+filling the remaining headroom mid-pull; the quota counts images, not bytes.
+
 ### Meilisearch
 
 Common settings:

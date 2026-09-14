@@ -232,6 +232,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return err
 		}
 
+		// Fail fast before any pull: quota exhaustion cannot be retried away.
+		//nolint:govet // Ignore shadow of error variable
+		if err := CheckImageQuota(ctx, r.rdb, workflow.GetUserId(), details.Image, r.svc.ImageQuota); err != nil {
+			return err
+		}
+
 		runtimeNode, err := r.svc.Jobs.GetReadyRuntimeNode(ctx, &jobspb.GetReadyRuntimeNodeRequest{})
 		if err != nil {
 			return err

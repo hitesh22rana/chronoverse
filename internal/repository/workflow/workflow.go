@@ -57,6 +57,7 @@ type Services struct {
 	Notifications   notificationspb.NotificationsServiceClient
 	CsvcForEndpoint ContainerSvcFactory
 	ImagePrefetch   ImagePrefetchConfig
+	ImageQuota      ImageQuotaConfig
 }
 
 // ImagePrefetchConfig tunes best-effort image fan-out to READY nodes.
@@ -73,6 +74,7 @@ type kafkaProducer interface {
 type workflowLockStore interface {
 	AcquireDistributedLock(ctx context.Context, key string, expiration time.Duration) (bool, error)
 	ReleaseDistributedLock(ctx context.Context, key string) error
+	TrackDistinct(ctx context.Context, key, member string, expiration time.Duration) (int64, error)
 }
 
 // Repository provides workflow repository.

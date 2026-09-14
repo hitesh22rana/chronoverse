@@ -47,6 +47,8 @@ type ExecutionWorkerConfig struct {
 	WorkloadCPUs                float64       `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS" default:"1"`
 	WorkloadPidsLimit           int64         `envconfig:"EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT" default:"256"`
 	WorkloadNetwork             string        `envconfig:"EXECUTION_WORKER_WORKLOAD_NETWORK" default:"chronoverse-workloads"`
+	WorkloadSubnet              string        `envconfig:"EXECUTION_WORKER_WORKLOAD_SUBNET" default:"198.18.247.0/24"`
+	ImageStorageMaxBytes        int64         `envconfig:"EXECUTION_WORKER_IMAGE_STORAGE_MAX_BYTES" default:"10737418240"`
 }
 
 // InitExecutionJobConfig initializes the execution worker configuration.

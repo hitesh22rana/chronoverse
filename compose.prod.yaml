@@ -424,11 +424,12 @@ services:
       - firewall-state:/firewall
     environment:
       WORKLOAD_SUBNET: 198.18.247.0/24
+      WORKLOAD_BRIDGE_IF: chronoverse-br
       CLUSTER_CIDRS: ${WORKLOAD_FIREWALL_CLUSTER_CIDRS:-}
       READY_FILE: /firewall/ready
     command: ["/bin/sh", "-c", "while true; do /apply.sh; sleep 60; done"]
     healthcheck:
-      test: ["CMD-SHELL", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C CHRONOVERSE-WORKLOAD -s $$WORKLOAD_SUBNET -j ACCEPT && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN && iptables -C CHRONOVERSE-WORKLOAD-IN -s $$WORKLOAD_SUBNET -m conntrack --ctstate NEW -j DROP"]
+      test: ["CMD-SHELL", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C CHRONOVERSE-WORKLOAD -s $$WORKLOAD_SUBNET -i $${WORKLOAD_BRIDGE_IF:-chronoverse-br} -j ACCEPT && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN && iptables -C CHRONOVERSE-WORKLOAD-IN -s $$WORKLOAD_SUBNET -m conntrack --ctstate NEW -j DROP"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -252,6 +252,8 @@ spec:
         env:
         - name: WORKLOAD_SUBNET
           value: 198.18.247.0/24
+        - name: WORKLOAD_BRIDGE_IF
+          value: chronoverse-br
         # Extra non-RFC1918 cluster ranges.
         - name: CLUSTER_CIDRS
           value: ""
@@ -267,11 +269,11 @@ spec:
         # Jumps + terminal rules: proves a complete apply.
         readinessProbe:
           exec:
-            command: ["/bin/sh", "-c", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C CHRONOVERSE-WORKLOAD -s $WORKLOAD_SUBNET -j ACCEPT && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN && iptables -C CHRONOVERSE-WORKLOAD-IN -s $WORKLOAD_SUBNET -m conntrack --ctstate NEW -j DROP"]
+            command: ["/bin/sh", "-c", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C CHRONOVERSE-WORKLOAD -s $WORKLOAD_SUBNET -i ${WORKLOAD_BRIDGE_IF:-chronoverse-br} -j ACCEPT && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN && iptables -C CHRONOVERSE-WORKLOAD-IN -s $WORKLOAD_SUBNET -m conntrack --ctstate NEW -j DROP"]
           periodSeconds: 60
         livenessProbe:
           exec:
-            command: ["/bin/sh", "-c", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C CHRONOVERSE-WORKLOAD -s $WORKLOAD_SUBNET -j ACCEPT && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN && iptables -C CHRONOVERSE-WORKLOAD-IN -s $WORKLOAD_SUBNET -m conntrack --ctstate NEW -j DROP"]
+            command: ["/bin/sh", "-c", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C CHRONOVERSE-WORKLOAD -s $WORKLOAD_SUBNET -i ${WORKLOAD_BRIDGE_IF:-chronoverse-br} -j ACCEPT && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN && iptables -C CHRONOVERSE-WORKLOAD-IN -s $WORKLOAD_SUBNET -m conntrack --ctstate NEW -j DROP"]
           periodSeconds: 60
         securityContext:
           runAsUser: 0
@@ -398,9 +400,12 @@ data:
     ensure_chain "$CHAIN"
     ensure_chain "$CHAIN_IN"
 
-    # Deny-before-allow: drop the terminal accept first so added ranges can't land
-    # after it, then re-append it last (removal only ever fails closed).
+    # Deny-before-allow: drop the terminal accept AND the DNS accepts first, so
+    # added ranges can never land after an allow (shadowed but "healthy"), then
+    # re-add everything in order. Removing allows only ever fails closed.
     iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -j ACCEPT 2>/dev/null || true
+    iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+    iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
 
     # Forwarded path: replies, infra drops, then DNS.
     # ESTABLISHED stays interface-free: return traffic ingresses externally, and

@@ -37,9 +37,12 @@ ensure_chain6() { ip6tables -n -L "$1" >/dev/null 2>&1 || ip6tables -N "$1"; }
 ensure_chain "$CHAIN"
 ensure_chain "$CHAIN_IN"
 
-# Deny-before-allow: drop the terminal accept first so added ranges can't land
-# after it, then re-append it last (removal only ever fails closed).
+# Deny-before-allow: drop the terminal accept AND the DNS accepts first, so
+# added ranges can never land after an allow (shadowed but "healthy"), then
+# re-add everything in order. Removing allows only ever fails closed.
 iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -j ACCEPT 2>/dev/null || true
+iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
 
 # Forwarded path: replies, infra drops, then DNS.
 # ESTABLISHED stays interface-free: return traffic ingresses externally, and

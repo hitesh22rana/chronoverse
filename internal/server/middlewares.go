@@ -233,13 +233,6 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 			return
 		}
 
-		// Slide expiry per request so live sessions stay longest-lived under
-		// volatile-ttl. Expire cannot resurrect a concurrently deleted key;
-		// refresh failure must not fail a valid session.
-		if _, err = s.rdb.Expire(r.Context(), session, s.validationCfg.SessionExpiry); err != nil {
-			s.logger.Warn("failed to refresh session expiry", zap.Error(err))
-		}
-
 		// Attach the required information to the context
 		ctx = context.WithValue(ctx, sessionKey{}, session)
 		ctx = context.WithValue(ctx, userIDKey{}, userID)

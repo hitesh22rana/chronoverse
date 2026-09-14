@@ -139,51 +139,6 @@ func TestSetNXRejectsNonPositiveExpiration(t *testing.T) {
 	}
 }
 
-func TestExpireRefreshesExistingKey(t *testing.T) {
-	client, mock := redismock.NewClientMock()
-	store := &Store{client: client}
-	mock.ExpectExpire("session:key", 2*time.Hour).SetVal(true)
-
-	refreshed, err := store.Expire(t.Context(), "session:key", 2*time.Hour)
-	if err != nil {
-		t.Fatalf("Expire() error = %v", err)
-	}
-	if !refreshed {
-		t.Fatal("Expire() refreshed = false, want true")
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestExpireReportsMissingKey(t *testing.T) {
-	client, mock := redismock.NewClientMock()
-	store := &Store{client: client}
-	mock.ExpectExpire("session:key", 2*time.Hour).SetVal(false)
-
-	refreshed, err := store.Expire(t.Context(), "session:key", 2*time.Hour)
-	if err != nil {
-		t.Fatalf("Expire() error = %v", err)
-	}
-	if refreshed {
-		t.Fatal("Expire() refreshed = true, want false")
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestExpireRejectsNonPositiveExpiration(t *testing.T) {
-	// No client: the guard must fire before any Redis round trip.
-	store := &Store{}
-
-	for _, expiration := range []time.Duration{0, -time.Second} {
-		if _, err := store.Expire(t.Context(), "k", expiration); status.Code(err) != codes.InvalidArgument {
-			t.Fatalf("Expire(expiration=%s) code = %s, want %s: %v", expiration, status.Code(err), codes.InvalidArgument, err)
-		}
-	}
-}
-
 func stubDistributedLockToken(token string) func() {
 	previous := newDistributedLockToken
 	newDistributedLockToken = func() string {

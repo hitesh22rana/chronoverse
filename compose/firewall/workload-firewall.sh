@@ -86,8 +86,8 @@ rule "$IPT" -d "$SUBNET" -m conntrack --ctstate NEW -j DROP
 rule "$IPT" -s "$SUBNET" -i "$BRIDGE_IF" -j ACCEPT
 
 # Host-input path: the host initiates nothing here; allow replies, drop new.
-# Plus Docker-provided DNS: variants may serve 127.0.0.11 from the gateway,
-# so host port 53 (nothing else) stays reachable for workloads.
+# Plus host port 53 (nothing else): lets direct-to-gateway queries resolve on
+# setups bypassing 127.0.0.11, without exposing any other host service.
 # Unlike the forwarded path, the terminal DROP is never deleted here: DNS goes
 # in positionally ahead of it, so re-apply has no fail-open window at all.
 rule_in "$IPT" -i "$BRIDGE_IF" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT

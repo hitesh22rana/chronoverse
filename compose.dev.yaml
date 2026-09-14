@@ -368,12 +368,14 @@ services:
       - no-new-privileges:true
     volumes:
       - ./compose/firewall/workload-firewall.sh:/apply.sh:ro
+      - firewall-state:/firewall
     environment:
       WORKLOAD_SUBNET: 198.18.247.0/24
       CLUSTER_CIDRS: ${WORKLOAD_FIREWALL_CLUSTER_CIDRS:-}
-    command: ["/bin/sh", "-c", "/apply.sh && sleep infinity"]
+      READY_FILE: /firewall/ready
+    command: ["/bin/sh", "-c", "while true; do /apply.sh; sleep 60; done"]
     healthcheck:
-      test: ["CMD-SHELL", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN"]
+      test: ["CMD-SHELL", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C CHRONOVERSE-WORKLOAD -s $$WORKLOAD_SUBNET -j ACCEPT && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN && iptables -C CHRONOVERSE-WORKLOAD-IN -s $$WORKLOAD_SUBNET -m conntrack --ctstate NEW -j DROP"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -400,6 +402,7 @@ services:
       RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT: tcp://docker-proxy:2376
       RUNTIME_AGENT_HEARTBEAT_INTERVAL: 5s
       RUNTIME_AGENT_MAX_CONCURRENCY: ${RUNTIME_AGENT_MAX_CONCURRENCY:-4}
+      RUNTIME_AGENT_FIREWALL_READY_FILE: /firewall/ready
       DOCKER_PROXY_TLS_CA_FILE: /docker-proxy-certs/ca.crt
       DOCKER_PROXY_TLS_CERT_FILE: /docker-proxy-certs/client.crt
       DOCKER_PROXY_TLS_KEY_FILE: /docker-proxy-certs/client.key
@@ -435,6 +438,7 @@ services:
       - ./certs/issuers/analytics-processor/auth.ed.pub:/certs/issuers/analytics-processor/auth.ed.pub:ro
       - ./certs/issuers/outbox-relay/auth.ed.pub:/certs/issuers/outbox-relay/auth.ed.pub:ro
       - ./docker-proxy-certs/runtime-agent:/docker-proxy-certs:ro
+      - firewall-state:/firewall:ro
     entrypoint: |
       sh -c '
       while [ ! -f /certs/issuers/trusted.json ] || [ ! -f /docker-proxy-certs/ca.crt ]; do
@@ -1995,6 +1999,7 @@ volumes:
   kafka:
   kafka-secrets:
   lgtm:
+  firewall-state:
 
 networks:
   # Dedicated network for tenant workload containers (VULN-004b). No platform

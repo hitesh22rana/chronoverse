@@ -101,7 +101,10 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
 	)
 
-	if err := startRuntimeHeartbeats(ctx, repo, health, cfg.RuntimeAgentConfig.HeartbeatInterval); err != nil && ctx.Err() == nil {
+	if err := startRuntimeHeartbeats(ctx, repo, combinedHealthChecker{checkers: []dockerHealthChecker{
+		health,
+		firewallReadyChecker{path: cfg.RuntimeAgentConfig.FirewallReadyFile, maxAge: firewallReadyMaxAge},
+	}}, cfg.RuntimeAgentConfig.HeartbeatInterval); err != nil && ctx.Err() == nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}

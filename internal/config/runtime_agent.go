@@ -29,6 +29,7 @@ type RuntimeAgentConfig struct {
 	DockerAdvertisePort  int           `envconfig:"RUNTIME_AGENT_DOCKER_ADVERTISE_PORT" default:"2376"`
 	HeartbeatInterval    time.Duration `envconfig:"RUNTIME_AGENT_HEARTBEAT_INTERVAL" default:"5s"`
 	MaxConcurrency       int32         `envconfig:"RUNTIME_AGENT_MAX_CONCURRENCY" default:"4"`
+	FirewallReadyFile    string        `envconfig:"RUNTIME_AGENT_FIREWALL_READY_FILE" default:""`
 }
 
 // InitRuntimeAgentConfig initializes the runtime agent configuration.

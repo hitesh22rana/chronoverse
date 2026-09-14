@@ -270,9 +270,10 @@ infrastructure and each other while preserving internet egress:
   silently bypassing the firewall. Compose declares the same subnet via ipam;
   existing deployments must recreate the network once
   (`docker network rm chronoverse-workloads`, it is recreated on demand).
-- **Enforced firewall (prod).** The `workload-firewall` unit reuses the service
-  image (`iptables` + script baked into `Dockerfile`: no separate image or
-  release) and runs in the host network namespace, installing filtering in
+- **Enforced firewall (prod).** The `workload-firewall` unit is plain
+  `alpine:3.24.1` plus a runtime `apk add` (no image to build or release; needs
+  registry access on (re)create, and any failure fails health checks loudly)
+  and runs in the host network namespace, installing filtering in
   two chains:
   `DOCKER-USER` for forwarded traffic and `INPUT` for connections terminating
   on the host itself (DOCKER-USER alone never sees those — verified live: a
@@ -280,10 +281,15 @@ infrastructure and each other while preserving internet egress:
   Denied: the workload subnet itself (bridge gateway), loopback, RFC 1918,
   CGNAT, link-local/metadata (`169.254.169.254`), multicast, plus extra
   `WORKLOAD_FIREWALL_CLUSTER_CIDRS`, and new inbound connections to workloads.
-  DNS is allowed only after those drops, so infrastructure resolvers are
-  unreachable while public DNS works; verified live: metadata blocked, DNS and
-  plain-HTTP egress working. Re-applied on every start; `execution-worker`
-  starts only once the firewall reports healthy. Dev compose runs the same
+  Workload IPv6 is scoped to link-local sources only; everything else returns
+  to Docker's own rules untouched. DNS is allowed only after those drops, so
+  infrastructure resolvers are unreachable while public DNS works; verified
+  live: metadata blocked, DNS and plain-HTTP egress working. The apply is
+  idempotent (rules are checked before adding, jumps linked last), and a
+  minute loop re-applies plus refreshes a ready marker. Admission is gated
+  twice: `execution-worker` starts only once the firewall reports healthy, and
+  the runtime-agent withholds node registration while the marker is missing or
+  older than 5m (`RUNTIME_AGENT_FIREWALL_READY_FILE`). Dev compose runs the same
   service (rules are scoped to the workload subnet, so the shared dev daemon is
   otherwise untouched). Re-verify live with the
   gated probe: `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test
@@ -296,8 +302,7 @@ infrastructure and each other while preserving internet egress:
   sidecar gets `NET_ADMIN`, with the same chain-jump probes): Kubernetes
   NetworkPolicies cannot select plain Docker containers, so there is no
   NetworkPolicy equivalent. Set `CLUSTER_CIDRS` on the sidecar if pod/service
-  CIDRs fall outside RFC 1918. No extra release is needed: the firewall rides
-  the normal service image builds on both platforms.
+  CIDRs fall outside RFC 1918.
 
 Residual (explicitly open): Docker *daemon* pull traffic (registry redirects,
 auth/token endpoints) never traverses the workload network, so the firewall

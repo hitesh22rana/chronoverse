@@ -446,7 +446,14 @@ data:
     rule "$IPT" -s "$SUBNET" -i "$BRIDGE_IF" -j ACCEPT
 
     # Host-input path: the host initiates nothing here; allow replies, drop new.
+    # Plus the Docker-provided resolver: on Linux hosts 127.0.0.11 is served from
+    # the bridge gateway, so workloads need host port 53 (nothing else) to resolve.
+    # The terminal drop is removed first like above: a re-apply must never append
+    # allows after it.
     rule_in "$IPT" -i "$BRIDGE_IF" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    "$IPT" -D "$CHAIN_IN" -s "$SUBNET" -m conntrack --ctstate NEW -j DROP 2>/dev/null || true
+    rule_in "$IPT" -i "$BRIDGE_IF" -s "$SUBNET" -p udp --dport 53 -j ACCEPT
+    rule_in "$IPT" -i "$BRIDGE_IF" -s "$SUBNET" -p tcp --dport 53 -j ACCEPT
     rule_in "$IPT" -s "$SUBNET" -m conntrack --ctstate NEW -j DROP
 
     # IPv6: link-local sources are shared, hence -i; no ACCEPT (RETURN to Docker).

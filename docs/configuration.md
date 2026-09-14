@@ -283,8 +283,11 @@ infrastructure and each other while preserving internet egress:
   `WORKLOAD_FIREWALL_CLUSTER_CIDRS`, and new inbound connections to workloads.
   Workload IPv6 is scoped to link-local sources only; everything else returns
   to Docker's own rules untouched. DNS is allowed only after those drops, so
-  infrastructure resolvers are unreachable while public DNS works; verified
-  live: metadata blocked, DNS and plain-HTTP egress working. The apply is
+  infrastructure resolvers are unreachable while public DNS works; the
+  host-input path carries the same port-53 exception because on Linux hosts
+  the Docker-provided resolver is served from the bridge gateway. Verified
+  live: metadata blocked, DNS and plain-HTTP egress working (gateway-DNS
+  passage proven by rule counters). The apply is
   idempotent (rules are checked before adding, jumps linked last), and a
   minute loop re-applies plus refreshes a ready marker. Admission is gated
   twice: `execution-worker` starts only once the firewall reports healthy, and

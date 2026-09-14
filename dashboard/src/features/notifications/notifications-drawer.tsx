@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
     useNotifications,
 } from "@/features/notifications/use-notifications"
+import { safeActionUrl } from "@/features/notifications/notification-data"
 import type { Notification, NotificationPayload } from "@/features/notifications/types"
 
 import { cn } from "@/lib/utils"
@@ -222,7 +223,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                 />
 
                 <Link
-                    href={payload.action_url}
+                    href={safeActionUrl(payload.action_url)}
                     prefetch={false}
                     className="flex-1 min-w-0 flex flex-col gap-2"
                     onClick={() => handleNotificationClick(n)}

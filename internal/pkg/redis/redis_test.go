@@ -117,6 +117,28 @@ func TestReleaseDistributedLockWithTokenWrongToken(t *testing.T) {
 	}
 }
 
+func TestSetRejectsNonPositiveExpiration(t *testing.T) {
+	// No client: the guard must fire before any Redis round trip.
+	store := &Store{}
+
+	for _, expiration := range []time.Duration{0, -time.Second} {
+		if err := store.Set(t.Context(), "k", "v", expiration); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("Set(expiration=%s) code = %s, want %s: %v", expiration, status.Code(err), codes.InvalidArgument, err)
+		}
+	}
+}
+
+func TestSetNXRejectsNonPositiveExpiration(t *testing.T) {
+	// No client: the guard must fire before any Redis round trip.
+	store := &Store{}
+
+	for _, expiration := range []time.Duration{0, -time.Second} {
+		if _, err := store.SetNX(t.Context(), "k", "v", expiration); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("SetNX(expiration=%s) code = %s, want %s: %v", expiration, status.Code(err), codes.InvalidArgument, err)
+		}
+	}
+}
+
 func stubDistributedLockToken(token string) func() {
 	previous := newDistributedLockToken
 	newDistributedLockToken = func() string {

@@ -30,3 +30,25 @@ export const removeNotificationsFromPages = (
         notifications: page.notifications.filter((notification) => !removedIds.has(notification.id)),
     }))
 }
+
+// Parser-decided same-origin paths; return normalized, never raw:
+// prefixes miss //host, backslash-as-slash, and stripped tab/CR/LF, and
+// "http://localhost//evil" parses same-origin with an escaping path.
+export const safeActionUrl = (actionUrl: string): string => {
+    if (!actionUrl) {
+        return "/"
+    }
+    try {
+        const parsed = new URL(actionUrl, "http://localhost")
+        if (parsed.origin !== "http://localhost") {
+            return "/"
+        }
+        const path = `${parsed.pathname}${parsed.search}${parsed.hash}`
+        if (!path.startsWith("/") || path.startsWith("//")) {
+            return "/"
+        }
+        return path
+    } catch {
+        return "/"
+    }
+}

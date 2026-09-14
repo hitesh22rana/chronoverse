@@ -5,8 +5,8 @@
 # Two hooks: DOCKER-USER sees only *forwarded* traffic; host-terminating
 # connections (incl. the bridge gateway) traverse INPUT instead.
 #
-# Host netns + NET_ADMIN, as a compose service or DaemonSet
-# (infra/k8s/base/workload-firewall.yaml — keep in sync); the socket proxy
+# Host netns + NET_ADMIN, as a compose service or DaemonSet sidecar
+# (script mirrored into the workload-firewall-script ConfigMap — keep in sync); the socket proxy
 # cannot program rules, and tools are baked into the firewall image.
 set -eu
 
@@ -15,6 +15,9 @@ EXTRA_CIDRS="${CLUSTER_CIDRS:-}"
 CHAIN="CHRONOVERSE-WORKLOAD"
 CHAIN_IN="CHRONOVERSE-WORKLOAD-IN"
 
+# Tools install at boot: the image is plain alpine, so registry access is
+# required on (re)create. Any failure aborts (set -eu) before touching rules.
+apk add --no-cache iptables ip6tables
 command -v iptables >/dev/null || { echo "workload-firewall: iptables not available" >&2; exit 1; }
 
 iptables -N "$CHAIN" 2>/dev/null || iptables -F "$CHAIN"

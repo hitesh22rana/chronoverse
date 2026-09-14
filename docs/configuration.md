@@ -283,8 +283,9 @@ infrastructure and each other while preserving internet egress:
   DNS is allowed only after those drops, so infrastructure resolvers are
   unreachable while public DNS works; verified live: metadata blocked, DNS and
   plain-HTTP egress working. Re-applied on every start; `execution-worker`
-  starts only once the firewall reports healthy. Dev compose has no such
-  service — dev has the subnet but no egress deny. Re-verify live with the
+  starts only once the firewall reports healthy. Dev compose runs the same
+  service (rules are scoped to the workload subnet, so the shared dev daemon is
+  otherwise untouched). Re-verify live with the
   gated probe: `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test
   ./internal/pkg/kind/container/ -run TestIntegrationWorkloadEgress`.
 

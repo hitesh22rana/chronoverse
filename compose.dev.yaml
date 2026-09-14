@@ -353,6 +353,33 @@ services:
       init-certs:
         condition: service_completed_successfully
 
+  # Host firewall for the workload bridge, same as prod (rules are scoped to
+  # the workload subnet only, so the shared dev daemon is otherwise untouched).
+  workload-firewall:
+    image: alpine:3.24.1
+    container_name: workload-firewall
+    network_mode: host
+    user: root
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./compose/firewall/workload-firewall.sh:/apply.sh:ro
+    environment:
+      WORKLOAD_SUBNET: 198.18.247.0/24
+      CLUSTER_CIDRS: ${WORKLOAD_FIREWALL_CLUSTER_CIDRS:-}
+    command: ["/bin/sh", "-c", "/apply.sh && sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   runtime-agent:
     image: runtime-agent
     container_name: runtime-agent
@@ -1566,6 +1593,9 @@ services:
     depends_on:
       docker-proxy:
         condition: service_started
+      # No workloads until the firewall is healthy.
+      workload-firewall:
+        condition: service_healthy
       runtime-agent:
         condition: service_started
       redis:
@@ -1975,8 +2005,7 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_icc: "false"
-    # Same enforced subnet as prod; dev has no firewall service, so this only
-    # satisfies the runtime subnet check (no egress deny).
+    # Same enforced subnet as prod, matching the workload-firewall service.
     ipam:
       config:
         - subnet: 198.18.247.0/24

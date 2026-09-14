@@ -293,7 +293,11 @@ infrastructure and each other while preserving internet egress:
   as `docker-proxy`, host network + `NET_ADMIN`, readiness/liveness probes on
   both chain jumps): Kubernetes NetworkPolicies cannot select plain Docker
   containers, so there is no NetworkPolicy equivalent. Set `CLUSTER_CIDRS` on
-  the DaemonSet if pod/service CIDRs fall outside RFC 1918.
+  the DaemonSet if pod/service CIDRs fall outside RFC 1918. The firewall image
+  has no registry release — compose builds it locally (`docker compose up
+  --build`); Kubernetes operators build and push it once themselves:
+  `docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.firewall
+  -t ghcr.io/hitesh22rana/chronoverse/firewall:latest --push .`
 
 Residual (explicitly open): Docker *daemon* pull traffic (registry redirects,
 auth/token endpoints) never traverses the workload network, so the firewall

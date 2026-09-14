@@ -407,6 +407,10 @@ services:
   # proxy cannot program rules). Internet stays open; host/private/metadata/
   # cluster dropped. WORKLOAD_SUBNET must match the worker env and ipam below.
   workload-firewall:
+    # Built locally on deploy (no registry release): docker compose up --build.
+    build:
+      context: .
+      dockerfile: Dockerfile.firewall
     image: ghcr.io/hitesh22rana/chronoverse/firewall:latest
     container_name: workload-firewall
     network_mode: host

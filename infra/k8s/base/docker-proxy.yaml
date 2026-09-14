@@ -235,6 +235,44 @@ spec:
         - name: docker-proxy-runtime-client-certs
           mountPath: /docker-proxy-certs
           readOnly: true
+      # Host firewall sidecar: plain Docker workload containers aren't pods, so
+      # NetworkPolicies can't select them. Shares the pod's host netns (only
+      # this container gets NET_ADMIN; the proxy keeps drop-ALL) and enforces
+      # the workload-bridge rules from the baked image. Kept last so the local
+      # overlay's containers/1 (runtime-agent) index stays valid.
+      - name: workload-firewall
+        image: ghcr.io/hitesh22rana/chronoverse/firewall:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: WORKLOAD_SUBNET
+          value: 198.18.247.0/24
+        # Extra non-RFC1918 cluster ranges (e.g. pod/service CIDRs).
+        - name: CLUSTER_CIDRS
+          value: ""
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        # Both jumps must exist: DOCKER-USER (forwarded) and INPUT (host-bound).
+        readinessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN"]
+          periodSeconds: 60
+        livenessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "iptables -C DOCKER-USER -j CHRONOVERSE-WORKLOAD && iptables -C INPUT -j CHRONOVERSE-WORKLOAD-IN"]
+          periodSeconds: 60
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]
       volumes:
       - name: docker-socket
         hostPath:

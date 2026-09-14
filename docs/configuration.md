@@ -289,11 +289,12 @@ infrastructure and each other while preserving internet egress:
 
   Kubernetes: the same subnet is used on every workload node (node-local
   bridges, no cross-node routing of that range — keep it clear of pod/service
-  CIDRs). Enforcement is the `workload-firewall` DaemonSet (same node selector
-  as `docker-proxy`, host network + `NET_ADMIN`, readiness/liveness probes on
-  both chain jumps): Kubernetes NetworkPolicies cannot select plain Docker
-  containers, so there is no NetworkPolicy equivalent. Set `CLUSTER_CIDRS` on
-  the DaemonSet if pod/service CIDRs fall outside RFC 1918. The firewall image
+  CIDRs). Enforcement is a `workload-firewall` sidecar in the `docker-proxy`
+  DaemonSet pod (inherits its per-node placement and host network; only the
+  sidecar gets `NET_ADMIN`, with the same chain-jump probes): Kubernetes
+  NetworkPolicies cannot select plain Docker containers, so there is no
+  NetworkPolicy equivalent. Set `CLUSTER_CIDRS` on the sidecar if pod/service
+  CIDRs fall outside RFC 1918. The firewall image
   has no registry release — compose builds it locally (`docker compose up
   --build`); Kubernetes operators build and push it once themselves:
   `docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.firewall

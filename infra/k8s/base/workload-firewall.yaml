@@ -1,0 +1,114 @@
+# Host firewall for the workload bridge on Docker-workload nodes. Workload
+# containers are plain Docker containers (not pods), so Kubernetes
+# NetworkPolicies cannot select them — enforcement runs in the host network
+# namespace via this DaemonSet instead. Mirrors compose/firewall/workload-firewall.sh
+# (keep the two in sync); internet egress stays open, host/private/metadata/
+# cluster destinations are dropped. WORKLOAD_SUBNET must match
+# EXECUTION_WORKER_WORKLOAD_SUBNET (code default 198.18.247.0/24).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workload-firewall-script
+data:
+  apply.sh: |
+    #!/bin/sh
+    set -eu
+    SUBNET="${WORKLOAD_SUBNET:?set WORKLOAD_SUBNET}"
+    EXTRA_CIDRS="${CLUSTER_CIDRS:-}"
+    CHAIN="CHRONOVERSE-WORKLOAD"
+    apk add --no-cache iptables ip6tables >/dev/null 2>&1 || true
+    command -v iptables >/dev/null || { echo "workload-firewall: iptables not available" >&2; exit 1; }
+    iptables -N "$CHAIN" 2>/dev/null || iptables -F "$CHAIN"
+    iptables -C DOCKER-USER -j "$CHAIN" 2>/dev/null || iptables -I DOCKER-USER -j "$CHAIN"
+    iptables -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    iptables -A "$CHAIN" -s "$SUBNET" -p udp --dport 53 -j ACCEPT
+    iptables -A "$CHAIN" -s "$SUBNET" -p tcp --dport 53 -j ACCEPT
+    for cidr in "$SUBNET" 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 224.0.0.0/4; do
+      iptables -A "$CHAIN" -s "$SUBNET" -d "$cidr" -j DROP
+    done
+    for cidr in $EXTRA_CIDRS; do
+      iptables -A "$CHAIN" -s "$SUBNET" -d "$cidr" -j DROP
+    done
+    iptables -A "$CHAIN" -d "$SUBNET" -m conntrack --ctstate NEW -j DROP
+    iptables -A "$CHAIN" -s "$SUBNET" -j ACCEPT
+    if command -v ip6tables >/dev/null; then
+      ip6tables -N "${CHAIN}6" 2>/dev/null || ip6tables -F "${CHAIN}6"
+      ip6tables -C DOCKER-USER -j "${CHAIN}6" 2>/dev/null || ip6tables -I DOCKER-USER -j "${CHAIN}6"
+      ip6tables -A "${CHAIN}6" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+      for cidr in ::1/128 fe80::/10 fc00::/7 ff00::/8; do
+        ip6tables -A "${CHAIN}6" -d "$cidr" -j DROP
+      done
+      ip6tables -A "${CHAIN}6" -j ACCEPT
+    fi
+    echo "workload-firewall: enforced for $SUBNET"
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: workload-firewall
+  labels:
+    app.kubernetes.io/name: workload-firewall
+    app.kubernetes.io/component: firewall
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workload-firewall
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: workload-firewall
+    spec:
+      # Same nodes as the docker-proxy DaemonSet: every Docker daemon that can
+      # host workload containers needs the host rules.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: chronoverse.io/docker-workloads
+                operator: In
+                values: ["true"]
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: workload-firewall
+        image: alpine:3.24.1
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c", "/apply/apply.sh && sleep infinity"]
+        env:
+        - name: WORKLOAD_SUBNET
+          value: 198.18.247.0/24
+        # Non-RFC1918 cluster ranges (set pod/service CIDRs here if outside RFC 1918).
+        - name: CLUSTER_CIDRS
+          value: ""
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: firewall-script
+          mountPath: /apply
+          readOnly: true
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["NET_ADMIN"]
+      volumes:
+      - name: firewall-script
+        configMap:
+          name: workload-firewall-script
+          defaultMode: 0555

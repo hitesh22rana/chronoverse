@@ -280,6 +280,15 @@ them off infrastructure while preserving internet egress:
   dev has the subnet but no egress deny. Verify live with the gated probe:
   `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test ./internal/pkg/kind/container/ -run TestIntegrationWorkloadEgress`.
 
+  Kubernetes: the same subnet is used on every workload node (node-local
+  bridges, no cross-node routing of that range — keep it clear of pod/service
+  CIDRs). The socket-proxy ACL lives in the `docker-proxy-config` ConfigMap
+  (same `system/df` + `images/prune` rules), and enforcement is the
+  `workload-firewall` DaemonSet (same node selector as `docker-proxy`,
+  host network + `NET_ADMIN`): Kubernetes NetworkPolicies cannot select plain
+  Docker containers, so there is no NetworkPolicy equivalent. Set
+  `CLUSTER_CIDRS` on the DaemonSet if pod/service CIDRs fall outside RFC 1918.
+
 Residual: Docker *daemon* pull traffic (registry redirects, auth/token
 endpoints) never traverses the workload network, so the firewall cannot pin it
 to the P4 registry allowlist — that needs a daemon-side registry mirror or

@@ -62,6 +62,8 @@ data:
       acl container_delete path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/?$
       acl network_inspect path,url_dec -m reg -i ^(/v[0-9.]+)?/networks/[a-zA-Z0-9_.-]+/?$
       acl network_create path,url_dec -m reg -i ^(/v[0-9.]+)?/networks/create/?$
+      acl system_df path,url_dec -m reg -i ^(/v[0-9.]+)?/system/df/?$
+      acl image_prune path,url_dec -m reg -i ^(/v[0-9.]+)?/images/prune/?$
 
       http-request allow if known_client read_method ping_or_version
       http-request allow if image_client read_method image_inspect
@@ -75,6 +77,10 @@ data:
       http-request allow if cleanup_client delete_method container_delete
       http-request allow if execution_client read_method network_inspect
       http-request allow if execution_client post_method network_create
+      # Storage gate: read-only disk usage for the pull reserve check, and prune
+      # of unused images (running-container images are never removed by the daemon).
+      http-request allow if image_client read_method system_df
+      http-request allow if cleanup_client post_method image_prune
       http-request deny
 
       default_backend dockerbackend

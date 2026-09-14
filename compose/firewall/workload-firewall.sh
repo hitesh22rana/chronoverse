@@ -6,7 +6,8 @@
 #
 # Runs as a compose one-shot in the host network namespace (needs NET_ADMIN);
 # Go code cannot do this through the filtered Docker socket proxy. Re-applied
-# on every (re)start, so host reboots are covered.
+# on every (re)start, so host reboots are covered. Kubernetes twin:
+# infra/k8s/base/workload-firewall.yaml (keep the rules in sync).
 set -eu
 
 SUBNET="${WORKLOAD_SUBNET:?set WORKLOAD_SUBNET (must match EXECUTION_WORKER_WORKLOAD_SUBNET)}"

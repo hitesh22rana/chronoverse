@@ -2010,8 +2010,7 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_icc: "false"
-      # Fixed kernel interface for firewall -i matching; must match the
-      # runtime (it fail-closes on any other name).
+      # Fixed interface for firewall -i matching; must match the runtime.
       com.docker.network.bridge.name: "chronoverse-br"
     # Same enforced subnet as prod, matching the workload-firewall service.
     ipam:

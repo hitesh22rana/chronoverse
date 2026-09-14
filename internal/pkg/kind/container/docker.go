@@ -51,10 +51,8 @@ const (
 	workloadNetworkDriver    = "bridge"
 	workloadNetworkICCOff    = "false"
 
-	// workloadNetworkBridgeName pins the kernel interface name so host firewall
-	// rules can match workload traffic by interface (-i), not just by subnet.
-	// Resolving it at apply time would deadlock fresh installs (the firewall
-	// waits for the bridge while the worker waits for the firewall).
+	// workloadNetworkBridgeName pins the kernel interface for firewall -i matching.
+	// Fixed at creation: resolving it at apply time would deadlock fresh installs.
 	workloadNetworkBridgeName       = "chronoverse-br"
 	workloadNetworkBridgeNameOption = "com.docker.network.bridge.name"
 
@@ -351,7 +349,7 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		Options: map[string]string{
 			// Tenant containers on this network must not reach each other.
 			workloadNetworkICCOption: workloadNetworkICCOff,
-			// Fixed interface name for firewall -i matching (see const).
+			// Pinned interface name for firewall -i matching.
 			workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
 		},
 		IPAM: &network.IPAM{

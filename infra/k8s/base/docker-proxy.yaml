@@ -368,13 +368,10 @@ data:
     # Two hooks: DOCKER-USER sees only *forwarded* traffic; host-terminating
     # connections (incl. the gateway) traverse INPUT. Jumps link last.
     #
-    # Workload-source rules match the bridge interface (-i), not just the subnet:
-    # the v6 sources are shared link-local space, and -i keeps the rules off
-    # unrelated containers even if the subnet is ever reused. The interface name
-    # is fixed at network creation (never resolved here: resolution would deadlock
-    # fresh installs, with the firewall waiting for the bridge while the worker
-    # waits for the firewall). Interface-free rules (-d drops, ESTABLISHED) are
-    # verdict-identical with or without -i, so probes stay free of host specifics.
+    # Workload-source rules match the bridge interface (-i): v6 sources are shared
+    # link-local space, and -i survives subnet reuse. The name is fixed at creation
+    # (resolving it here would deadlock fresh installs). Interface-free rules are
+    # verdict-identical either way, so probes stay host-agnostic.
     #
     # Host netns + NET_ADMIN (socket proxy can't program rules); plain alpine +
     # runtime install, so registry access is required on (re)create.
@@ -401,14 +398,13 @@ data:
     ensure_chain "$CHAIN"
     ensure_chain "$CHAIN_IN"
 
-    # Deny-before-allow: drop the terminal accept first so added ranges can never
-    # land after it (shadowed but "healthy"), then re-append it last.
-    # Removing it only ever fails closed (traffic falls through to Docker's DROP).
+    # Deny-before-allow: drop the terminal accept first so added ranges can't land
+    # after it, then re-append it last (removal only ever fails closed).
     iptables -D "$CHAIN" -s "$SUBNET" -i "$BRIDGE_IF" -j ACCEPT 2>/dev/null || true
 
     # Forwarded path: replies, infra drops, then DNS.
-    # ESTABLISHED stays interface-free on purpose: return traffic ingresses on
-    # external interfaces, and it can only ever accept replies, never new flows.
+    # ESTABLISHED stays interface-free: return traffic ingresses externally, and
+    # it accepts replies only, never new flows.
     rule -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     # Own subnet as dst covers the gateway (.1) and peers.
     for cidr in "$SUBNET" 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 224.0.0.0/4; do
@@ -426,13 +422,12 @@ data:
     rule -s "$SUBNET" -i "$BRIDGE_IF" -j ACCEPT
 
     # Host-input path: the host initiates nothing here; allow replies, drop new.
-    # Source-subnet match is already precise here (only bridge-ingress or spoofed
-    # packets carry it, and both are dropped), so no interface match is needed.
+    # Source-subnet match is already precise here (bridge-ingress or spoofed —
+    # both dropped), so no interface match is needed.
     rule_in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     rule_in -s "$SUBNET" -m conntrack --ctstate NEW -j DROP
 
-    # IPv6: workloads can only source link-local, which other containers share —
-    # hence the interface match, and no ACCEPT (RETURN leaves the rest to Docker).
+    # IPv6: link-local sources are shared, hence -i; no ACCEPT (RETURN to Docker).
     if command -v ip6tables >/dev/null; then
         ensure_chain6 "${CHAIN}6"
         ensure_chain6 "${CHAIN_IN}6"
@@ -449,7 +444,7 @@ data:
         ip6tables -C DOCKER-USER -j "${CHAIN}6" 2>/dev/null || ip6tables -I DOCKER-USER -j "${CHAIN}6"
     fi
 
-    # Link jumps only once the chains are complete: no empty-chain window.
+    # Link jumps last: no empty-chain window.
     iptables -C INPUT -j "$CHAIN_IN" 2>/dev/null || iptables -I INPUT -j "$CHAIN_IN"
     iptables -C DOCKER-USER -j "$CHAIN" 2>/dev/null || iptables -I DOCKER-USER -j "$CHAIN"
 

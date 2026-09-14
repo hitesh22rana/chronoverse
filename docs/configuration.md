@@ -276,8 +276,7 @@ infrastructure and each other while preserving internet egress:
   and runs in the host network namespace, installing filtering in
   two chains:
   `DOCKER-USER` for forwarded traffic and `INPUT` for connections terminating
-  on the host itself (DOCKER-USER alone never sees those — verified live: a
-  gateway listener was reachable before the INPUT rules, unreachable after).
+  on the host itself (DOCKER-USER alone never sees those).
   Denied: the workload subnet itself (bridge gateway), loopback, RFC 1918,
   CGNAT, link-local/metadata (`169.254.169.254`), multicast, plus extra
   `WORKLOAD_FIREWALL_CLUSTER_CIDRS`, and new inbound connections to workloads.
@@ -285,16 +284,15 @@ infrastructure and each other while preserving internet egress:
   to Docker's own rules untouched. DNS is allowed only after those drops, so
   infrastructure resolvers are unreachable while public DNS works; the
   host-input path carries the same port-53 exception because on Linux hosts
-  the Docker-provided resolver is served from the bridge gateway. Verified
-  live: metadata blocked, DNS and plain-HTTP egress working (gateway-DNS
-  passage proven by rule counters). The apply is
+  the Docker-provided resolver is served from the bridge gateway. Metadata
+  stays unreachable while DNS and plain-HTTP egress work. The apply is
   idempotent (rules are checked before adding, jumps linked last), and a
   minute loop re-applies plus refreshes a ready marker. Admission is gated
   twice: `execution-worker` starts only once the firewall reports healthy, and
   the runtime-agent withholds node registration while the marker is missing or
   older than 5m (`RUNTIME_AGENT_FIREWALL_READY_FILE`). Dev compose runs the same
   service (rules are scoped to the workload subnet, so the shared dev daemon is
-  otherwise untouched). Re-verify live with the
+  otherwise untouched). Validate the deployment with the
   gated probe: `CHRONOVERSE_WORKLOAD_FIREWALL=1 go test
   ./internal/pkg/kind/container/ -run TestIntegrationWorkloadEgress`.
 

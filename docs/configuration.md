@@ -309,7 +309,7 @@ auth/token endpoints) never traverses the workload network, so the firewall
 cannot pin it to the P4 registry allowlist — that needs a daemon-side registry
 mirror or egress proxy (deploy-time, not yet configured).
 
-Accepted risk (B6.2): shared-disk exhaustion is the operator's responsibility.
+Accepted risk: shared-disk exhaustion is the operator's responsibility.
 There is deliberately no image-storage cap, prune job, or per-user image quota:
 a job pulling large images can fill daemon disk and disrupt other jobs, and
 the application fails with disk errors until the operator reclaims space.

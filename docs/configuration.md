@@ -270,9 +270,10 @@ infrastructure and each other while preserving internet egress:
   silently bypassing the firewall. Compose declares the same subnet via ipam;
   existing deployments must recreate the network once
   (`docker network rm chronoverse-workloads`, it is recreated on demand).
-- **Enforced firewall (prod).** The `workload-firewall` service
-  (`ghcr.io/hitesh22rana/chronoverse/firewall`, built by `Dockerfile.firewall`)
-  runs in the host network namespace and installs filtering in two chains:
+- **Enforced firewall (prod).** The `workload-firewall` unit reuses the service
+  image (`iptables` + script baked into `Dockerfile`: no separate image or
+  release) and runs in the host network namespace, installing filtering in
+  two chains:
   `DOCKER-USER` for forwarded traffic and `INPUT` for connections terminating
   on the host itself (DOCKER-USER alone never sees those — verified live: a
   gateway listener was reachable before the INPUT rules, unreachable after).
@@ -294,11 +295,8 @@ infrastructure and each other while preserving internet egress:
   sidecar gets `NET_ADMIN`, with the same chain-jump probes): Kubernetes
   NetworkPolicies cannot select plain Docker containers, so there is no
   NetworkPolicy equivalent. Set `CLUSTER_CIDRS` on the sidecar if pod/service
-  CIDRs fall outside RFC 1918. The firewall image
-  has no registry release — compose builds it locally (`docker compose up
-  --build`); Kubernetes operators build and push it once themselves:
-  `docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.firewall
-  -t ghcr.io/hitesh22rana/chronoverse/firewall:latest --push .`
+  CIDRs fall outside RFC 1918. No extra release is needed: the firewall rides
+  the normal service image builds on both platforms.
 
 Residual (explicitly open): Docker *daemon* pull traffic (registry redirects,
 auth/token endpoints) never traverses the workload network, so the firewall

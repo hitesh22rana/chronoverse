@@ -52,8 +52,14 @@ RUN mkdir -p /certs && \
 COPY --from=build --chown=app:app /go/bin/service /bin/service
 RUN chmod 500 /bin/service
 
-# Install necessary runtime dependencies and grpc-health-probe
-RUN apk --no-cache add ca-certificates tzdata wget && \
+# Workload-egress firewall script (run by the firewall service/sidecar with
+# /bin/sh; never executed by the services themselves).
+COPY compose/firewall/workload-firewall.sh /apply.sh
+
+# Install necessary runtime dependencies and grpc-health-probe.
+# iptables rides along so the workload-firewall sidecar/service can reuse this
+# image instead of shipping (and releasing) a separate one.
+RUN apk --no-cache add ca-certificates tzdata wget iptables ip6tables && \
     GRPC_HEALTH_PROBE_VERSION=v0.4.53 && \
     ARCH=$(uname -m) && \
     case ${ARCH} in \

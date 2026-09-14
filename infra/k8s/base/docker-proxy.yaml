@@ -241,8 +241,11 @@ spec:
       # the workload-bridge rules from the baked image. Kept last so the local
       # overlay's containers/1 (runtime-agent) index stays valid.
       - name: workload-firewall
-        image: ghcr.io/hitesh22rana/chronoverse/firewall:latest
+        # Reuses the service image (iptables + script baked in): no separate
+        # build or release; runs the script instead of the service binary.
+        image: ghcr.io/hitesh22rana/chronoverse/runtime-agent:latest
         imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c", "/apply.sh && sleep infinity"]
         env:
         - name: WORKLOAD_SUBNET
           value: 198.18.247.0/24

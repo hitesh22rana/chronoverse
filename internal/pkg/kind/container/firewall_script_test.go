@@ -8,9 +8,11 @@ import (
 	"testing"
 )
 
-// stubFirewallBins fakes apk/iptables/ip6tables on PATH; with withV6Chain
-// false every DOCKER-USER op fails, reproducing an IPv4-only Docker host.
-func stubFirewallBins(t *testing.T, withV6Chain bool) (logFile, readyFile string) {
+// stubFirewallBins fakes apk/iptables/iptables-legacy/ip6tables on PATH with
+// add-if-missing state. withV6Chain controls ip6tables chain visibility
+// (IPv4-only host when false); legacyBackend selects which v4 backend holds
+// DOCKER-USER. No ip6tables-legacy stub ever exists, mirroring reality.
+func stubFirewallBins(t *testing.T, withV6Chain, legacyBackend bool) (logFile, readyFile string) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -18,14 +20,12 @@ func stubFirewallBins(t *testing.T, withV6Chain bool) (logFile, readyFile string
 	logFile = filepath.Join(dir, "log")
 	readyFile = filepath.Join(dir, "ready")
 
-	writeStub := func(name, body string) {
-		//nolint:gosec // Test-only PATH stubs must be executable; temp dir, no secrets.
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
-			t.Fatal(err)
+	writeStub := func(name string, missing bool) {
+		miss := "0"
+		if missing {
+			miss = "1"
 		}
-	}
-	writeStub("apk", "exit 0")
-	emulator := `echo "$*" >> "$FAKE_LOG"
+		body := "#!/bin/sh\nTAG=" + name + "\nFAKE_L_MISSING=" + miss + "\n" + `echo "$TAG $*" >> "$FAKE_LOG"
 op="$1"; shift
 case "$op" in
 -n) exit "$FAKE_L_MISSING" ;;
@@ -36,17 +36,15 @@ case "$op" in
 *) exit 0 ;;
 esac
 `
-	writeStub("iptables", "FAKE_L_MISSING=1\n"+emulator)
-	if withV6Chain {
-		writeStub("ip6tables", "FAKE_L_MISSING=0\n"+emulator)
-	} else {
-		writeStub("ip6tables", `echo "$*" >> "$FAKE_LOG"
-case "$*" in
-*DOCKER-USER*) exit 1 ;;
-esac
-FAKE_L_MISSING=1
-`+emulator)
+		//nolint:gosec // Test-only PATH stubs must be executable; temp dir, no secrets.
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
+	writeStub("apk", false)
+	writeStub("iptables", legacyBackend)
+	writeStub("iptables-legacy", !legacyBackend)
+	writeStub("ip6tables", !withV6Chain || legacyBackend)
 
 	t.Setenv("FAKE_STATE", stateFile)
 	t.Setenv("FAKE_LOG", logFile)
@@ -80,7 +78,7 @@ func runFirewallScript(t *testing.T, readyFile string) error {
 // while v4 still links and the ready marker is touched.
 func TestFirewallScriptSkipsMissingV6Chain(t *testing.T) {
 	// No t.Parallel: stub binaries are installed via process environment.
-	logFile, readyFile := stubFirewallBins(t, false)
+	logFile, readyFile := stubFirewallBins(t, false, false)
 
 	if err := runFirewallScript(t, readyFile); err != nil {
 		t.Fatalf("script on IPv4-only host error = %v", err)
@@ -105,7 +103,7 @@ func TestFirewallScriptSkipsMissingV6Chain(t *testing.T) {
 // With the v6 chain present, both families must be linked.
 func TestFirewallScriptLinksV6ChainWhenPresent(t *testing.T) {
 	// No t.Parallel: stub binaries are installed via process environment.
-	logFile, readyFile := stubFirewallBins(t, true)
+	logFile, readyFile := stubFirewallBins(t, true, false)
 
 	if err := runFirewallScript(t, readyFile); err != nil {
 		t.Fatalf("script error = %v", err)
@@ -119,5 +117,33 @@ func TestFirewallScriptLinksV6ChainWhenPresent(t *testing.T) {
 	}
 	if !strings.Contains(string(log), "DOCKER-USER -j CHRONOVERSE-WORKLOAD6") {
 		t.Errorf("v6 DOCKER-USER jump not linked; log:\n%s", log)
+	}
+}
+
+// On legacy-backend hosts the nft view never sees DOCKER-USER: every rule
+// must go through iptables-legacy, never plain iptables.
+func TestFirewallScriptUsesLegacyBackend(t *testing.T) {
+	// No t.Parallel: stub binaries are installed via process environment.
+	logFile, readyFile := stubFirewallBins(t, false, true)
+
+	if err := runFirewallScript(t, readyFile); err != nil {
+		t.Fatalf("script on legacy host error = %v", err)
+	}
+	if _, err := os.Stat(readyFile); err != nil {
+		t.Fatalf("ready marker not touched: %v", err)
+	}
+	log, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(log), "\n") {
+		if strings.HasPrefix(line, "iptables ") && (strings.Contains(line, " -A ") || strings.Contains(line, " -I ")) {
+			t.Errorf("nft binary must not install rules on a legacy host: %q", line)
+		}
+	}
+	for _, want := range []string{"iptables-legacy -I INPUT", "iptables-legacy -I DOCKER-USER"} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("legacy jump %q not linked; log:\n%s", want, log)
+		}
 	}
 }

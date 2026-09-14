@@ -419,12 +419,15 @@ func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspecte
 	if _, _, err := net.ParseCIDR(w.workloadSubnet); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "workload subnet %q is invalid: %v", w.workloadSubnet, err)
 	}
-	for _, ipam := range inspected.IPAM.Config {
-		if ipam.Subnet == w.workloadSubnet {
-			return nil
-		}
+	// Exactly one IPAM range — the enforced subnet — and no IPv6: extra ranges
+	// or a dual-stack pool would hand out addresses the firewall doesn't cover.
+	if inspected.EnableIPv6 {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q must not enable IPv6", configuredName)
 	}
-	return status.Errorf(codes.FailedPrecondition, "workload network %q is not on enforced subnet %q", configuredName, w.workloadSubnet)
+	if len(inspected.IPAM.Config) != 1 || inspected.IPAM.Config[0].Subnet != w.workloadSubnet {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q is not exactly on enforced subnet %q", configuredName, w.workloadSubnet)
+	}
+	return nil
 }
 
 func (w *DockerWorkflow) healthCheck(ctx context.Context) error {

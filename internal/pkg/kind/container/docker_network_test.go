@@ -154,6 +154,46 @@ func TestValidateWorkloadNetworkRequiresIsolatedBridge(t *testing.T) {
 			},
 			wantCode: codes.FailedPrecondition,
 		},
+		{
+			name: "extra range bypasses firewall",
+			inspected: network.Inspect{
+				Name:   DefaultWorkloadNetwork,
+				Driver: "bridge",
+				Options: map[string]string{
+					workloadNetworkICCOption:        "false",
+					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
+				},
+				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}, {Subnet: "10.9.9.0/24"}}},
+			},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name: "dual-stack bypasses firewall",
+			inspected: network.Inspect{
+				Name:   DefaultWorkloadNetwork,
+				Driver: "bridge",
+				Options: map[string]string{
+					workloadNetworkICCOption:        "false",
+					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
+				},
+				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}, {Subnet: "fd00:dead:beef::/64"}}},
+			},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name: "ipv6 enabled bypasses firewall",
+			inspected: network.Inspect{
+				Name:   DefaultWorkloadNetwork,
+				Driver: "bridge",
+				Options: map[string]string{
+					workloadNetworkICCOption:        "false",
+					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
+				},
+				IPAM:       network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
+				EnableIPv6: true,
+			},
+			wantCode: codes.FailedPrecondition,
+		},
 	}
 
 	for _, tt := range tests {

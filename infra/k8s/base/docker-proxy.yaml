@@ -433,7 +433,10 @@ data:
     rule_in -s "$SUBNET" -m conntrack --ctstate NEW -j DROP
 
     # IPv6: link-local sources are shared, hence -i; no ACCEPT (RETURN to Docker).
-    if command -v ip6tables >/dev/null; then
+    # Skipped entirely on IPv4-only hosts: without Docker's ip6tables DOCKER-USER
+    # chain there is no v6 forwarding to protect, and linking into a missing chain
+    # would abort the whole apply (including v4) under set -eu.
+    if command -v ip6tables >/dev/null && ip6tables -n -L DOCKER-USER >/dev/null 2>&1; then
         ensure_chain6 "${CHAIN}6"
         ensure_chain6 "${CHAIN_IN}6"
         rule6 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT

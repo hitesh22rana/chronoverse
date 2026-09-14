@@ -68,12 +68,28 @@ func TestValidateWorkloadNetworkRequiresIsolatedBridge(t *testing.T) {
 		{
 			name: "isolated bridge",
 			inspected: network.Inspect{
-				Name:    DefaultWorkloadNetwork,
-				Driver:  "bridge",
-				Options: map[string]string{workloadNetworkICCOption: "false"},
-				IPAM:    network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
+				Name:   DefaultWorkloadNetwork,
+				Driver: "bridge",
+				Options: map[string]string{
+					workloadNetworkICCOption:        "false",
+					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
+				},
+				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
 			},
 			wantCode: codes.OK,
+		},
+		{
+			name: "wrong bridge name breaks firewall match",
+			inspected: network.Inspect{
+				Name:   DefaultWorkloadNetwork,
+				Driver: "bridge",
+				Options: map[string]string{
+					workloadNetworkICCOption:        "false",
+					workloadNetworkBridgeNameOption: "br-deadbeef1234",
+				},
+				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
+			},
+			wantCode: codes.FailedPrecondition,
 		},
 		{
 			name: "unexpected name",
@@ -186,14 +202,18 @@ func TestEnsureWorkloadNetworkValidatesCreatedNetwork(t *testing.T) {
 				writeDockerTestResponse(t, w, `{"message":"network not found"}`)
 				return
 			}
-			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"false"},"IPAM":{"Config":[{"Subnet":"198.18.247.0/24"}]}}`)
+			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge",`+
+				`"Options":{"com.docker.network.bridge.enable_icc":"false","com.docker.network.bridge.name":"chronoverse-br"},`+
+				`"IPAM":{"Config":[{"Subnet":"198.18.247.0/24"}]}}`)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/networks/create"):
 			body, readErr := io.ReadAll(r.Body)
 			if readErr != nil {
 				t.Errorf("read network create body: %v", readErr)
 			}
-			if !strings.Contains(string(body), `"Subnet":"198.18.247.0/24"`) {
-				t.Errorf("network create body missing enforced subnet: %s", body)
+			for _, want := range []string{`"Subnet":"198.18.247.0/24"`, `"com.docker.network.bridge.name":"chronoverse-br"`} {
+				if !strings.Contains(string(body), want) {
+					t.Errorf("network create body missing %s: %s", want, body)
+				}
 			}
 			w.WriteHeader(http.StatusCreated)
 			writeDockerTestResponse(t, w, `{"Id":"network-id"}`)
@@ -306,7 +326,9 @@ func (d *networkLifecycleTestDaemon) handleNetworkInspect(w http.ResponseWriter)
 	if d.unsafeNetwork {
 		icc = "true"
 	}
-	writeDockerTestResponse(d.t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"`+workloadNetworkICCOption+`":"`+icc+`"},"IPAM":{"Config":[{"Subnet":"198.18.247.0/24"}]}}`)
+	writeDockerTestResponse(d.t, w, `{"Name":"chronoverse-workloads","Driver":"bridge",`+
+		`"Options":{"`+workloadNetworkICCOption+`":"`+icc+`","com.docker.network.bridge.name":"chronoverse-br"},`+
+		`"IPAM":{"Config":[{"Subnet":"198.18.247.0/24"}]}}`)
 }
 
 func (d *networkLifecycleTestDaemon) handleNetworkCreate(w http.ResponseWriter) {

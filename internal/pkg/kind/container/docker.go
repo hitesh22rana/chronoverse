@@ -51,6 +51,13 @@ const (
 	workloadNetworkDriver    = "bridge"
 	workloadNetworkICCOff    = "false"
 
+	// workloadNetworkBridgeName pins the kernel interface name so host firewall
+	// rules can match workload traffic by interface (-i), not just by subnet.
+	// Resolving it at apply time would deadlock fresh installs (the firewall
+	// waits for the bridge while the worker waits for the firewall).
+	workloadNetworkBridgeName       = "chronoverse-br"
+	workloadNetworkBridgeNameOption = "com.docker.network.bridge.name"
+
 	// dockerProxyTokenEnv / dockerProxyTokenHeader carry the shared Kubernetes
 	// socket-proxy credential without changing the persisted endpoint URL.
 	dockerProxyTokenEnv    = "DOCKER_PROXY_TOKEN"               //nolint:gosec // Environment-variable name, not a credential.
@@ -344,6 +351,8 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		Options: map[string]string{
 			// Tenant containers on this network must not reach each other.
 			workloadNetworkICCOption: workloadNetworkICCOff,
+			// Fixed interface name for firewall -i matching (see const).
+			workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
 		},
 		IPAM: &network.IPAM{
 			Config: []network.IPAMConfig{{Subnet: w.workloadSubnet}},
@@ -404,6 +413,9 @@ func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspecte
 	}
 	if inspected.Options[workloadNetworkICCOption] != workloadNetworkICCOff {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q does not disable inter-container communication", configuredName)
+	}
+	if inspected.Options[workloadNetworkBridgeNameOption] != workloadNetworkBridgeName {
+		return status.Errorf(codes.FailedPrecondition, "workload network %q has unexpected bridge interface (firewall -i match would miss)", configuredName)
 	}
 	// Refuse subnets the firewall doesn't cover instead of silently bypassing it.
 	if _, _, err := net.ParseCIDR(w.workloadSubnet); err != nil {

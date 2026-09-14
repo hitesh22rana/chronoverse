@@ -306,7 +306,7 @@ infrastructure and each other while preserving internet egress:
 
 Residual (explicitly open): Docker *daemon* pull traffic (registry redirects,
 auth/token endpoints) never traverses the workload network, so the firewall
-cannot pin it to the P4 registry allowlist — that needs a daemon-side registry
+cannot pin it to the registry allowlist — that needs a daemon-side registry
 mirror or egress proxy (deploy-time, not yet configured).
 
 Accepted risk: shared-disk exhaustion is the operator's responsibility.

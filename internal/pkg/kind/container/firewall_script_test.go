@@ -29,6 +29,9 @@ func stubFirewallBins(t *testing.T, withV6Chain, legacyBackend bool) (logFile, r
 		}
 		body := "#!/bin/sh\nTAG=" + name + "\nFAKE_L_MISSING=" + miss + "\nFAKE_STATE=" + filepath.Join(dir, "state-"+name) + "\n" + `echo "$TAG $*" >> "$FAKE_LOG"
 op="$1"; shift
+# Positional inserts carry a bare rule number real -C never sees; strip it so
+# existence checks compare rule specs like the real binary does.
+case "$1" in '') ;; *[!0-9]*) ;; *) shift ;; esac
 case "$op" in
 -n) exit "$FAKE_L_MISSING" ;;
 -N) exit 0 ;;

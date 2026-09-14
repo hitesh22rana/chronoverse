@@ -412,6 +412,9 @@ data:
     # Add-if-missing: never flush, so a re-apply cannot open a window.
     rule() { b="$1"; shift; "$b" -C "$CHAIN" "$@" 2>/dev/null || "$b" -A "$CHAIN" "$@"; }
     rule_in() { b="$1"; shift; "$b" -C "$CHAIN_IN" "$@" 2>/dev/null || "$b" -A "$CHAIN_IN" "$@"; }
+    # rule_in_at inserts (positionally) instead of appending, for allows that must
+    # stay ahead of the terminal DROP without ever deleting it.
+    rule_in_at() { b="$1"; pos="$2"; shift 2; "$b" -C "$CHAIN_IN" "$@" 2>/dev/null || "$b" -I "$CHAIN_IN" "$pos" "$@"; }
     rule6() { "$IP6T" -C "${CHAIN}6" "$@" 2>/dev/null || "$IP6T" -A "${CHAIN}6" "$@"; }
     rule6_in() { "$IP6T" -C "${CHAIN_IN}6" "$@" 2>/dev/null || "$IP6T" -A "${CHAIN_IN}6" "$@"; }
     ensure_chain() { "$IPT" -n -L "$1" >/dev/null 2>&1 || "$IPT" -N "$1"; }
@@ -448,12 +451,11 @@ data:
     # Host-input path: the host initiates nothing here; allow replies, drop new.
     # Plus the Docker-provided resolver: on Linux hosts 127.0.0.11 is served from
     # the bridge gateway, so workloads need host port 53 (nothing else) to resolve.
-    # The terminal drop is removed first like above: a re-apply must never append
-    # allows after it.
+    # Unlike the forwarded path, the terminal DROP is never deleted here: DNS goes
+    # in positionally ahead of it, so re-apply has no fail-open window at all.
     rule_in "$IPT" -i "$BRIDGE_IF" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-    "$IPT" -D "$CHAIN_IN" -s "$SUBNET" -m conntrack --ctstate NEW -j DROP 2>/dev/null || true
-    rule_in "$IPT" -i "$BRIDGE_IF" -s "$SUBNET" -p udp --dport 53 -j ACCEPT
-    rule_in "$IPT" -i "$BRIDGE_IF" -s "$SUBNET" -p tcp --dport 53 -j ACCEPT
+    rule_in_at "$IPT" 2 -i "$BRIDGE_IF" -s "$SUBNET" -p udp --dport 53 -j ACCEPT
+    rule_in_at "$IPT" 2 -i "$BRIDGE_IF" -s "$SUBNET" -p tcp --dport 53 -j ACCEPT
     rule_in "$IPT" -s "$SUBNET" -m conntrack --ctstate NEW -j DROP
 
     # IPv6: link-local sources are shared, hence -i; no ACCEPT (RETURN to Docker).

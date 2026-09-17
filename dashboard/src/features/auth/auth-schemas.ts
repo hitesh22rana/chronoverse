@@ -1,4 +1,5 @@
 import { z } from "zod"
+import zxcvbn from "zxcvbn"
 
 export const loginSchema = z.object({
     email: z.email({ message: "Please enter a valid email" }),
@@ -7,18 +8,24 @@ export const loginSchema = z.object({
 
 export type LoginValues = z.infer<typeof loginSchema>
 
+// Mirrors the server policy (min 8, max 72, zxcvbn score >= 3 with the email
+// as user input); the server remains the authority for edge cases.
 export const signupSchema = z
     .object({
         email: z.email({ message: "Please enter a valid email" }),
         password: z
             .string()
             .min(8, { message: "Password must be at least 8 characters" })
-            .max(100, { message: "Password must be at most 100 characters" }),
+            .max(72, { message: "Password must be at most 72 characters" }),
         confirmPassword: z.string().min(1, { message: "Please confirm your password" }),
     })
     .refine((data) => data.password === data.confirmPassword, {
         path: ["confirmPassword"],
         message: "Passwords do not match",
+    })
+    .refine((data) => zxcvbn(data.password, [data.email]).score >= 3, {
+        path: ["password"],
+        message: "Password is too weak: use a longer passphrase with mixed words, numbers, and symbols",
     })
 
 export type SignupValues = z.infer<typeof signupSchema>

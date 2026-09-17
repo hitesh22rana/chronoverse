@@ -27,8 +27,8 @@ describe("signupSchema", () => {
     it("accepts matching passwords within the supported length", () => {
         expect(signupSchema.safeParse({
             email: "user@example.com",
-            password: "password",
-            confirmPassword: "password",
+            password: "Tr7$kq!mZx9#pL2vB",
+            confirmPassword: "Tr7$kq!mZx9#pL2vB",
         }).success).toBe(true)
     })
 
@@ -48,7 +48,7 @@ describe("signupSchema", () => {
     it("rejects mismatched passwords at the confirmation field", () => {
         const result = signupSchema.safeParse({
             email: "user@example.com",
-            password: "password",
+            password: "Tr7$kq!mZx9#pL2vB",
             confirmPassword: "different",
         })
 
@@ -67,5 +67,34 @@ describe("signupSchema", () => {
             password,
             confirmPassword: password,
         }).success).toBe(false)
+    })
+})
+
+describe("signupSchema password strength", () => {
+    it("rejects a weak password at the password field", () => {
+        const result = signupSchema.safeParse({
+            email: "user@example.com",
+            password: "password123",
+            confirmPassword: "password123",
+        })
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+            expect(result.error.issues.some((issue) => issue.path[0] === "password")).toBe(true)
+        }
+    })
+
+    it("rejects a password longer than the server limit", () => {
+        const long = "Tr7$kq!mZx9#pL2vB".repeat(5).slice(0, 73)
+        const result = signupSchema.safeParse({
+            email: "user@example.com",
+            password: long,
+            confirmPassword: long,
+        })
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+            expect(result.error.issues.some((issue) => issue.path[0] === "password")).toBe(true)
+        }
     })
 })

@@ -9,7 +9,8 @@ export const loginSchema = z.object({
 export type LoginValues = z.infer<typeof loginSchema>
 
 // Mirrors the server policy (min 8, max 72, zxcvbn score >= 3 with the email
-// as user input); the server remains the authority for edge cases.
+// as user input). JS and Go zxcvbn differ, so scores can diverge; this check
+// is a hint only, the server remains the authority.
 export const signupSchema = z
     .object({
         email: z.email({ message: "Please enter a valid email" }),

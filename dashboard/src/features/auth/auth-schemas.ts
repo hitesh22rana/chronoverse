@@ -1,5 +1,11 @@
 import { z } from "zod"
-import zxcvbn from "zxcvbn"
+import { ZxcvbnFactory } from "@zxcvbn-ts/core"
+import * as zxcvbnCommon from "@zxcvbn-ts/language-common"
+
+const zxcvbn = new ZxcvbnFactory({
+    dictionary: zxcvbnCommon.dictionary,
+    graphs: zxcvbnCommon.adjacencyGraphs,
+})
 
 export const loginSchema = z.object({
     email: z.email({ message: "Please enter a valid email" }),
@@ -24,7 +30,7 @@ export const signupSchema = z
         path: ["confirmPassword"],
         message: "Passwords do not match",
     })
-    .refine((data) => zxcvbn(data.password, [data.email]).score >= 3, {
+    .refine((data) => zxcvbn.check(data.password, [data.email]).score >= 3, {
         path: ["password"],
         message: "Password is too weak: use a longer passphrase with mixed words, numbers, and symbols",
     })

@@ -345,8 +345,8 @@ func (r *Repository) UpdateWorkflow(
 		return err
 	}
 
-	if err = validateWorkflowPayloadKind(kind, payload); err != nil {
-		return err
+	if kindErr := validateWorkflowPayloadKind(kind, payload); kindErr != nil {
+		return kindErr
 	}
 
 	newBuildHash, err := idempotency.WorkflowBuildHash(kind, payload)

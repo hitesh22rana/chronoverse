@@ -305,14 +305,14 @@ validate_k8s_network_lockdown() {
     infra/k8s/overlays/production/infrastructure.yaml \
     infra/k8s/overlays/local/infrastructure.yaml \
   ; do
-    templates=$(grep -c 'template:$' "$root_dir/$f")
-    unmounted=$(grep -c 'automountServiceAccountToken: false' "$root_dir/$f")
+    templates=$(grep -c 'template:$' "$root_dir/$f" || true)
+    unmounted=$(grep -c 'automountServiceAccountToken: false' "$root_dir/$f" || true)
     if [ "$templates" != "$unmounted" ]; then
       echo "$f has pod specs without automountServiceAccountToken: false" >&2
       exit 1
     fi
   done
-  if [ "$(grep -c '192.0.2.1/32' "$root_dir/infra/k8s/base/network-policy.yaml")" -ne 3 ]; then
+  if [ "$(grep -c '192.0.2.1/32' "$root_dir/infra/k8s/base/network-policy.yaml" || true)" -ne 3 ]; then
     echo "infra/k8s/base/network-policy.yaml must keep three TEST-NET node-CIDR placeholders" >&2
     exit 1
   fi

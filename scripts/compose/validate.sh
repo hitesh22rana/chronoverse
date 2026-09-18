@@ -290,24 +290,42 @@ validate_docker_proxy_hardening() {
   # a default seccomp profile, a terminal-deny allowlist, and a
   # server-only certificate projection.
   proxy="$root_dir/infra/k8s/base/docker-proxy.yaml"
+  # Confinement is asserted on the proxy container block only: the same
+  # lines on sibling containers must not mask a proxy regression.
+  proxy_block=$(sed -n '/^      - name: docker-proxy$/,/^      - name: runtime-agent/p' "$proxy")
   for pattern in \
     'drop: ["ALL"]' \
     'allowPrivilegeEscalation: false' \
     'readOnlyRootFilesystem: true' \
-    'seccompProfile:' \
   ; do
-    if ! grep -Fq "$pattern" "$proxy"; then
-      echo "infra/k8s/base/docker-proxy.yaml missing proxy confinement ($pattern)" >&2
+    if ! printf '%s\n' "$proxy_block" | grep -Fq "$pattern"; then
+      echo "infra/k8s/base/docker-proxy.yaml proxy container lost confinement ($pattern)" >&2
       exit 1
     fi
   done
+  if ! grep -Fq 'seccompProfile:' "$proxy"; then
+    echo "infra/k8s/base/docker-proxy.yaml missing default seccomp profile" >&2
+    exit 1
+  fi
   if ! grep -q '^      http-request deny$' "$proxy"; then
     echo "infra/k8s/base/docker-proxy.yaml haproxy allowlist lost its terminal deny" >&2
     exit 1
   fi
-  server_certs=$(sed -n '/name: docker-proxy-server-certs/,/name: docker-proxy-runtime-client-certs/p' "$proxy" | grep -c -- '- key: ')
-  if [ "$server_certs" -ne 2 ]; then
+  server_keys=$(sed -n '/^      - name: docker-proxy-server-certs/,/^      - name: docker-proxy-runtime-client-certs/p' "$proxy" | grep -- '- key: ' || true)
+  if ! printf '%s\n' "$server_keys" | grep -Fq -- '- key: ca.crt'; then
+    echo "docker-proxy server projection lost ca.crt" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$server_keys" | grep -Fq -- '- key: server.pem'; then
+    echo "docker-proxy server projection lost server.pem" >&2
+    exit 1
+  fi
+  if [ "$(printf '%s\n' "$server_keys" | grep -c -- '- key: ' || true)" -ne 2 ]; then
     echo "docker-proxy server projection must carry only ca.crt and server.pem" >&2
+    exit 1
+  fi
+  if printf '%s\n' "$server_keys" | grep -Fq -- 'client'; then
+    echo "docker-proxy server projection must not carry client material" >&2
     exit 1
   fi
 }

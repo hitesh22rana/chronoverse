@@ -111,7 +111,7 @@ func TestHandleGetJobLogsCacheControl(t *testing.T) {
 			name:           "cursor page with another page is cached",
 			target:         "/workflows/workflow_id/jobs/job_id/logs?cursor=current-cursor",
 			responseCursor: "next-cursor",
-			want:           "public, max-age=7200",
+			want:           "private, max-age=7200",
 		},
 		{
 			name:           "cursor tail page is not cached",
@@ -140,6 +140,11 @@ func TestHandleGetJobLogsCacheControl(t *testing.T) {
 			if got := res.Header().Get("Cache-Control"); got != tt.want {
 				t.Fatalf("expected Cache-Control %q, got %q", tt.want, got)
 			}
+			if tt.want != "no-store" {
+				if got := res.Header().Get("Vary"); got != "Cookie" {
+					t.Fatalf("expected Vary %q, got %q", "Cookie", got)
+				}
+			}
 		})
 	}
 }
@@ -161,7 +166,7 @@ func TestHandleSearchJobLogsCacheControl(t *testing.T) {
 			name:           "search cursor page with another page is cached",
 			target:         "/workflows/workflow_id/jobs/job_id/logs/search?q=message&cursor=current-cursor",
 			responseCursor: "next-cursor",
-			want:           "public, max-age=7200",
+			want:           "private, max-age=7200",
 		},
 		{
 			name:           "search cursor tail page is not cached",
@@ -189,6 +194,11 @@ func TestHandleSearchJobLogsCacheControl(t *testing.T) {
 			}
 			if got := res.Header().Get("Cache-Control"); got != tt.want {
 				t.Fatalf("expected Cache-Control %q, got %q", tt.want, got)
+			}
+			if tt.want != "no-store" {
+				if got := res.Header().Get("Vary"); got != "Cookie" {
+					t.Fatalf("expected Vary %q, got %q", "Cookie", got)
+				}
 			}
 			if client.searchJobLogsRequest == nil {
 				t.Fatal("expected SearchJobLogs to be called")

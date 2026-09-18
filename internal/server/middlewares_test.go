@@ -264,3 +264,26 @@ func assertNonEmptyStringField(t *testing.T, fields map[string]any, key string) 
 		t.Fatalf("expected %s field to be non-empty, got %#v", key, fields)
 	}
 }
+
+func TestCompressionMiddlewarePreservesHandlerVary(t *testing.T) {
+	s := &Server{logger: zap.NewNop()}
+	handler := s.withCompressionMiddleware(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Add("Vary", "Cookie")
+			w.WriteHeader(http.StatusOK)
+		},
+	))
+	req := httptest.NewRequest(http.MethodGet, "/jobs", http.NoBody)
+	req.Header.Set("Accept-Encoding", "gzip")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	vary := res.Header().Values("Vary")
+	joined := strings.Join(vary, ", ")
+	if !strings.Contains(joined, "Accept-Encoding") || !strings.Contains(joined, "Cookie") {
+		t.Fatalf("expected Vary to contain Accept-Encoding and Cookie, got %q", joined)
+	}
+}

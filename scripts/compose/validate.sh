@@ -303,10 +303,19 @@ validate_docker_proxy_hardening() {
       exit 1
     fi
   done
-  if ! grep -Fq 'seccompProfile:' "$proxy"; then
-    echo "infra/k8s/base/docker-proxy.yaml missing default seccomp profile" >&2
-    exit 1
-  fi
+  # seccomp is asserted on the pod securityContext block only: a profile on a
+  # sibling container must not mask its loss at the pod level, and the type
+  # must stay RuntimeDefault (never Unconfined).
+  pod_security=$(sed -n '/^      securityContext:$/,/^      tolerations:/p' "$proxy")
+  for pattern in \
+    'seccompProfile:' \
+    'type: RuntimeDefault' \
+  ; do
+    if ! printf '%s\n' "$pod_security" | grep -Fq "$pattern"; then
+      echo "infra/k8s/base/docker-proxy.yaml pod securityContext lost default seccomp profile ($pattern)" >&2
+      exit 1
+    fi
+  done
   if ! grep -q '^      http-request deny$' "$proxy"; then
     echo "infra/k8s/base/docker-proxy.yaml haproxy allowlist lost its terminal deny" >&2
     exit 1

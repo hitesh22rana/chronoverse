@@ -284,14 +284,13 @@ validate_auth_bundle() {
 validate_auth_bundle
 
 validate_docker_proxy_hardening() {
-  # The proxy keeps hostNetwork and root for the socket, so its
-  # compensating controls must stay intact: full capability drop
-  # without privilege escalation, a read-only proxy filesystem,
-  # a default seccomp profile, a terminal-deny allowlist, and a
-  # server-only certificate projection.
+  # The proxy keeps hostNetwork and root for the socket, so these
+  # controls must stay intact: capability drop without privilege
+  # escalation, read-only filesystem, RuntimeDefault seccomp,
+  # terminal-deny allowlist, and a server-only certificate projection.
   proxy="$root_dir/infra/k8s/base/docker-proxy.yaml"
-  # Confinement is asserted on the proxy container block only: the same
-  # lines on sibling containers must not mask a proxy regression.
+  # Asserted on the proxy container block only, so matching lines on
+  # sibling containers cannot mask a regression.
   proxy_block=$(sed -n '/^      - name: docker-proxy$/,/^      - name: runtime-agent/p' "$proxy")
   for pattern in \
     'drop: ["ALL"]' \
@@ -303,9 +302,8 @@ validate_docker_proxy_hardening() {
       exit 1
     fi
   done
-  # seccomp is asserted on the pod securityContext block only: a profile on a
-  # sibling container must not mask its loss at the pod level, and the type
-  # must stay RuntimeDefault (never Unconfined).
+  # Seccomp is asserted on the pod securityContext block only (the type
+  # must stay RuntimeDefault), so a sibling profile cannot mask its loss.
   pod_security=$(sed -n '/^      securityContext:$/,/^      tolerations:/p' "$proxy")
   for pattern in \
     'seccompProfile:' \

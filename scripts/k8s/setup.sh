@@ -1301,9 +1301,9 @@ EOF
     } > "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml"
     cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
       "$PATCH_DIR/runtime-agent-telemetry-network-policy-patch.yaml"
-    # The frontend policy keeps its node-CIDR rule at ingress index 0 and
-    # admits pod-network ingress controllers in the rule after it, so a
-    # node-only replacement leaves that controller selector intact.
+    # The frontend policy keeps its node rule at ingress index 0 and admits
+    # pod-network ingress controllers after it, so replacing only the node
+    # rule leaves that selector intact.
     cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
       "$PATCH_DIR/chronoverse-frontend-network-policy-patch.yaml"
     cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \

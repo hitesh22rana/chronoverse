@@ -24,18 +24,17 @@ spec:
   - Egress
   egress:
   # Workers dial per-node Docker proxies that no Service fronts, so the
-  # node range cannot be selected by label. setup.sh replaces the
-  # TEST-NET value with the cluster's node CIDRs. The reserved value
-  # keeps direct kustomize builds closed by default.
+  # node range cannot be selected by label. setup.sh replaces the TEST-NET
+  # value with the cluster's node CIDRs; the reserved value keeps direct
+  # kustomize builds closed.
   - to:
     - ipBlock:
         cidr: 192.0.2.1/32
     ports:
     - protocol: TCP
       port: 2376
-  # Pod-to-pod traffic stays inside the namespace on the ports each
-  # listener actually serves. The any-pod to any-port combination is
-  # harmless: nothing listens on the wrong port.
+  # Pod-to-pod traffic stays inside the namespace, on the ports each
+  # listener serves; any-pod to any-port is harmless.
   - to:
     - podSelector:
         matchLabels:
@@ -157,12 +156,12 @@ spec:
       app.kubernetes.io/name: nginx
   policyTypes:
   - Ingress
-  # Rule order is load-bearing: setup.sh replaces ingress rule 0's `from`
-  # with the cluster's node CIDRs, so the node rule must stay first.
+  # setup.sh replaces ingress rule 0's `from` with the node CIDRs, so that
+  # rule must stay first.
   ingress:
   # A hostNetwork ingress controller reaches nginx from node addresses.
-  # setup.sh replaces the TEST-NET value with the cluster's node CIDRs.
-  # The reserved value keeps direct kustomize builds closed by default.
+  # setup.sh replaces the TEST-NET value with the cluster's node CIDRs;
+  # the reserved value keeps direct kustomize builds closed.
   - from:
     - podSelector: {}
     - ipBlock:
@@ -171,11 +170,10 @@ spec:
     - protocol: TCP
       port: 80
   # A pod-network ingress controller reaches nginx from its own pod address
-  # instead, which no node range covers. Select those controllers by the
-  # labels the ingress-nginx chart publishes — the same ones setup.sh uses
-  # to discover controllers — so any install namespace works without
-  # hardcoding a per-cluster namespace name. A different controller family
-  # needs its own pod selector here; the node rule above will not cover it.
+  # instead, which no node range covers. Match it by the labels the
+  # ingress-nginx chart publishes — the same ones setup.sh discovers
+  # controllers by — so any install namespace works without hardcoding a
+  # name. Another controller family needs its own selector here.
   - from:
     - namespaceSelector: {}
       podSelector:
@@ -228,10 +226,9 @@ spec:
   policyTypes:
   - Ingress
   ingress:
-  # kubelet tcpSocket/httpGet probes originate from node addresses.
-  # setup.sh replaces the TEST-NET value with the cluster's node CIDRs.
-  # The reserved value keeps direct kustomize builds closed by default.
-  # All other probes in the tree are exec-based and need no network rule.
+  # kubelet tcpSocket/httpGet probes originate from node addresses, so
+  # setup.sh fills in the node CIDRs here too; the reserved value keeps
+  # direct kustomize builds closed. Every other probe is exec-based.
   - from:
     - podSelector: {}
     - ipBlock:

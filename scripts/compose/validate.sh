@@ -284,10 +284,9 @@ validate_auth_bundle() {
 validate_auth_bundle
 
 validate_k8s_network_lockdown() {
-  # The namespace must stay default-deny with scoped allows, every pod
-  # spec must opt out of the API token mount, the unused service
-  # account must stay deleted, and node-CIDR placeholders must survive
-  # until setup.sh fills them in.
+  # Invariants: default-deny with scoped allows, every pod spec opts out of
+  # the API token mount, the unused service account stays deleted, and
+  # node-CIDR placeholders survive until setup.sh fills them in.
   if ! grep -q 'name: chronoverse-default-deny' "$root_dir/infra/k8s/base/network-policy.yaml"; then
     echo "infra/k8s/base/network-policy.yaml lost the default-deny policy" >&2
     exit 1
@@ -330,10 +329,9 @@ validate_k8s_network_lockdown() {
   done
 
   # Pod-network ingress controllers reach nginx from their own pod
-  # addresses, which no node CIDR covers. The frontend policy keeps a
-  # selector for them in ingress rule 1; rule 0 stays the node rule that
-  # setup.sh replaces, so removing or reordering either one re-blocks
-  # every supported controller shape.
+  # addresses, which no node CIDR covers, so the frontend policy selects
+  # them in ingress rule 1. Rule 0 stays the node rule setup.sh replaces;
+  # dropping or reordering either one re-blocks those controllers.
   frontend_policy=$(sed -n '/^  name: chronoverse-frontend$/,/^---$/p' "$root_dir/infra/k8s/base/network-policy.yaml")
   for pattern in \
     '    - namespaceSelector: {}' \

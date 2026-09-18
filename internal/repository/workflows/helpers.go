@@ -17,6 +17,8 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/outbox"
 )
 
@@ -42,6 +44,26 @@ type workflowRequestIdentitySet struct {
 	compatibleHashes    []string
 	canonicalLegacyHash string
 	rawLegacyHash       string
+}
+
+// validateWorkflowPayloadKind rejects payloads that do not match the
+// workflow's stored kind, so a cross-kind update cannot poison build
+// state that the executor later dispatches on the stored kind.
+func validateWorkflowPayloadKind(kind, payload string) error {
+	switch kind {
+	case workflowsmodel.KindHeartbeat.ToString():
+		if _, err := heartbeat.ExtractAndValidateHeartbeatDetails(payload); err != nil {
+			return err
+		}
+		return nil
+	case workflowsmodel.KindContainer.ToString():
+		if _, err := container.ExtractAndValidateContainerDetails(payload); err != nil {
+			return err
+		}
+		return nil
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid kind: %s", kind)
+	}
 }
 
 func decideWorkflowUpdateAction(

@@ -21,14 +21,28 @@ describe("loginSchema", () => {
             expect(result.error.issues[0]?.path).toEqual([field])
         }
     })
+
+    it.each([
+        [{ email: "user@example.com", password: "short" }],
+        [{ email: "user@example.com", password: "a".repeat(73) }],
+        // 4 emoji are 8 UTF-16 units but 4 runes; the server counts runes.
+        [{ email: "user@example.com", password: "😀".repeat(4) }],
+    ])("rejects login passwords outside 8-72 runes %#", (credentials) => {
+        const result = loginSchema.safeParse(credentials)
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+            expect(result.error.issues.some((issue) => issue.path[0] === "password")).toBe(true)
+        }
+    })
 })
 
 describe("signupSchema", () => {
     it("accepts matching passwords within the supported length", () => {
         expect(signupSchema.safeParse({
             email: "user@example.com",
-            password: "password",
-            confirmPassword: "password",
+            password: "Tr7$kq!mZx9#pL2vB",
+            confirmPassword: "Tr7$kq!mZx9#pL2vB",
         }).success).toBe(true)
     })
 
@@ -48,7 +62,7 @@ describe("signupSchema", () => {
     it("rejects mismatched passwords at the confirmation field", () => {
         const result = signupSchema.safeParse({
             email: "user@example.com",
-            password: "password",
+            password: "Tr7$kq!mZx9#pL2vB",
             confirmPassword: "different",
         })
 
@@ -67,5 +81,38 @@ describe("signupSchema", () => {
             password,
             confirmPassword: password,
         }).success).toBe(false)
+    })
+})
+
+describe("signupSchema password strength", () => {
+    it("rejects a weak password at the password field", () => {
+        const result = signupSchema.safeParse({
+            email: "user@example.com",
+            password: "password123",
+            confirmPassword: "password123",
+        })
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+            expect(result.error.issues.some((issue) => issue.path[0] === "password")).toBe(true)
+        }
+    })
+
+    it("rejects oversized input on length alone without scoring it", () => {
+        // "a".repeat(1000) scores 0, so a strength issue proves the
+        // estimator ran; its absence proves it was skipped.
+        const password = "a".repeat(1000)
+        const result = signupSchema.safeParse({
+            email: "user@example.com",
+            password,
+            confirmPassword: password,
+        })
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+            expect(result.error.issues.map((issue) => issue.message)).toEqual([
+                "Password must be at most 72 characters",
+            ])
+        }
     })
 })

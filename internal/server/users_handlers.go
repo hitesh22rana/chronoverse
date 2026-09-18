@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
@@ -36,6 +38,12 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey: idempotencyKey,
 	}, grpc.Header(&header))
 	if err != nil {
+		// Keep actionable validation detail (weak password, bad input)
+		// so the client can tell the user what to fix.
+		if status.Code(err) == codes.InvalidArgument {
+			http.Error(w, status.Convert(err).Message(), http.StatusBadRequest)
+			return
+		}
 		handleError(w, err, "failed to register user")
 		return
 	}

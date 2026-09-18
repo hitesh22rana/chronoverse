@@ -98,17 +98,21 @@ describe("signupSchema password strength", () => {
         }
     })
 
-    it("rejects a password longer than the server limit", () => {
-        const long = "Tr7$kq!mZx9#pL2vB".repeat(5).slice(0, 73)
+    it("rejects oversized input on length alone without scoring it", () => {
+        // "a".repeat(1000) scores 0, so a strength issue proves the
+        // estimator ran; its absence proves it was skipped.
+        const password = "a".repeat(1000)
         const result = signupSchema.safeParse({
             email: "user@example.com",
-            password: long,
-            confirmPassword: long,
+            password,
+            confirmPassword: password,
         })
 
         expect(result.success).toBe(false)
         if (!result.success) {
-            expect(result.error.issues.some((issue) => issue.path[0] === "password")).toBe(true)
+            expect(result.error.issues.map((issue) => issue.message)).toEqual([
+                "Password must be at most 72 characters",
+            ])
         }
     })
 })

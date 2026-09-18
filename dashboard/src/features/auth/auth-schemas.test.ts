@@ -21,6 +21,20 @@ describe("loginSchema", () => {
             expect(result.error.issues[0]?.path).toEqual([field])
         }
     })
+
+    it.each([
+        [{ email: "user@example.com", password: "short" }],
+        [{ email: "user@example.com", password: "a".repeat(73) }],
+        // 4 emoji are 8 UTF-16 units but 4 runes; the server counts runes.
+        [{ email: "user@example.com", password: "😀".repeat(4) }],
+    ])("rejects login passwords outside 8-72 runes %#", (credentials) => {
+        const result = loginSchema.safeParse(credentials)
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+            expect(result.error.issues.some((issue) => issue.path[0] === "password")).toBe(true)
+        }
+    })
 })
 
 describe("signupSchema", () => {

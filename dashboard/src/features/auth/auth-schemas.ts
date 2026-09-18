@@ -1,9 +1,23 @@
 import { z } from "zod"
 import zxcvbn from "zxcvbn"
 
+// Code-point length matches the server validator, which counts runes
+// (utf8.RuneCountInString), while string.length counts UTF-16 units.
+const runeLength = (s: string) => [...s].length
+
+const passwordSchema = z
+    .string()
+    .min(1, { message: "Password is required" })
+    .refine((s) => s.length === 0 || runeLength(s) >= 8, {
+        message: "Password must be at least 8 characters",
+    })
+    .refine((s) => runeLength(s) <= 72, {
+        message: "Password must be at most 72 characters",
+    })
+
 export const loginSchema = z.object({
     email: z.email({ message: "Please enter a valid email" }),
-    password: z.string().min(1, { message: "Password is required" }),
+    password: passwordSchema,
 })
 
 export type LoginValues = z.infer<typeof loginSchema>
@@ -14,10 +28,7 @@ export type LoginValues = z.infer<typeof loginSchema>
 export const signupSchema = z
     .object({
         email: z.email({ message: "Please enter a valid email" }),
-        password: z
-            .string()
-            .min(8, { message: "Password must be at least 8 characters" })
-            .max(72, { message: "Password must be at most 72 characters" }),
+        password: passwordSchema,
         confirmPassword: z.string().min(1, { message: "Please confirm your password" }),
     })
     .refine((data) => data.password === data.confirmPassword, {

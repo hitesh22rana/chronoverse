@@ -1,11 +1,5 @@
 import { z } from "zod"
-import { ZxcvbnFactory } from "@zxcvbn-ts/core"
-import * as zxcvbnCommon from "@zxcvbn-ts/language-common"
-
-const zxcvbn = new ZxcvbnFactory({
-    dictionary: zxcvbnCommon.dictionary,
-    graphs: zxcvbnCommon.adjacencyGraphs,
-})
+import zxcvbn from "zxcvbn"
 
 export const loginSchema = z.object({
     email: z.email({ message: "Please enter a valid email" }),
@@ -15,8 +9,8 @@ export const loginSchema = z.object({
 export type LoginValues = z.infer<typeof loginSchema>
 
 // Mirrors the server policy (min 8, max 72, zxcvbn score >= 3 with the email
-// as user input). JS and Go zxcvbn differ, so scores can diverge; this check
-// is a hint only, the server remains the authority.
+// as user input) using the same zxcvbn lineage as the backend
+// (dropbox 4.4.2 / trustelem port); the server remains the authority.
 export const signupSchema = z
     .object({
         email: z.email({ message: "Please enter a valid email" }),
@@ -30,7 +24,7 @@ export const signupSchema = z
         path: ["confirmPassword"],
         message: "Passwords do not match",
     })
-    .refine((data) => zxcvbn.check(data.password, [data.email]).score >= 3, {
+    .refine((data) => zxcvbn(data.password, [data.email]).score >= 3, {
         path: ["password"],
         message: "Password is too weak: use a longer passphrase with mixed words, numbers, and symbols",
     })

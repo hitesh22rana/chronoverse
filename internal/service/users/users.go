@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ccojocar/zxcvbn-go"
-	"github.com/ccojocar/zxcvbn-go/frequency"
+	"github.com/trustelem/zxcvbn"
+	"github.com/trustelem/zxcvbn/frequency"
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -75,7 +75,7 @@ func normalizeEmail(email string) string {
 
 // commonPasswords is the bundled zxcvbn dictionary; exact matches are rejected
 // outright (all of them also score below 3 today — this holds if scoring changes).
-var commonPasswords = toPasswordSet(frequency.Lists["Passwords"].List)
+var commonPasswords = toPasswordSet(frequency.FrequencyLists["passwords"])
 
 func toPasswordSet(passwords []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(passwords))

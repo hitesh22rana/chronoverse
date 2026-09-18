@@ -54,7 +54,13 @@ export async function fetchApi(
 ) {
     const response = await fetchWithCredentials(url, options)
     if (!response.ok) {
-        throw new Error(errorMessage)
+        let detail = ""
+        try {
+            detail = (await response.text()).trim()
+        } catch {
+            // Fall back to the generic message when the body is unreadable.
+        }
+        throw new Error(detail ? `${errorMessage}: ${detail}` : errorMessage)
     }
 
     return response

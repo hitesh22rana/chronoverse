@@ -10,7 +10,6 @@ labels:
 resources:
 - namespace.yaml
 - configmaps.yaml
-- rbac.yaml
 - network-policy.yaml
 - runtime-agent-postgres-network-policy.yaml
 - runtime-agent-telemetry-network-policy.yaml

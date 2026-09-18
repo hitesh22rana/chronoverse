@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: postgres
         app.kubernetes.io/component: database
     spec:
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 999
       initContainers:
@@ -158,6 +159,7 @@ spec:
         app.kubernetes.io/name: redis
         app.kubernetes.io/component: cache
     spec:
+      automountServiceAccountToken: false
       initContainers:
       - name: wait-for-redis-certs
         image: alpine:3.22.2
@@ -273,6 +275,7 @@ spec:
         app.kubernetes.io/name: clickhouse
         app.kubernetes.io/component: database
     spec:
+      automountServiceAccountToken: false
       initContainers:
       - name: prepare-clickhouse-tls
         image: alpine:3.22.2
@@ -482,6 +485,7 @@ spec:
         app.kubernetes.io/name: kafka
         app.kubernetes.io/component: broker
     spec:
+      automountServiceAccountToken: false
       enableServiceLinks: false
       hostname: kafka
       initContainers:
@@ -623,6 +627,7 @@ spec:
         app.kubernetes.io/name: meilisearch
         app.kubernetes.io/component: search
     spec:
+      automountServiceAccountToken: false
       initContainers:
       - name: wait-for-meilisearch-certs
         image: alpine:3.22.2
@@ -731,6 +736,7 @@ spec:
         app.kubernetes.io/name: lgtm
         app.kubernetes.io/component: monitoring
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: lgtm
         image: grafana/otel-lgtm:0.11.10

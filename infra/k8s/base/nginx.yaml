@@ -157,6 +157,7 @@ spec:
         app.kubernetes.io/name: nginx
         app.kubernetes.io/component: ingress
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: nginx
         image: nginx:alpine3.22

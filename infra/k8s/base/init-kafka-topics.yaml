@@ -18,6 +18,7 @@ spec:
         chronoverse.io/datastore-client: "true"
         chronoverse.io/kafka-client: "true"
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
       containers:
       - name: init-kafka-topics

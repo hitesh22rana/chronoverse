@@ -58,7 +58,7 @@ export async function fetchApi(
         try {
             detail = (await response.text()).trim()
         } catch {
-            // Fall back to the generic message when the body is unreadable.
+            // Unreadable body; fall back to the generic message.
         }
         throw new Error(detail ? `${errorMessage}: ${detail}` : errorMessage)
     }

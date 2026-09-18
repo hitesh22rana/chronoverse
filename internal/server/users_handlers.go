@@ -38,8 +38,8 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey: idempotencyKey,
 	}, grpc.Header(&header))
 	if err != nil {
-		// User-actionable validation failures (weak password, bad input)
-		// keep their detail so the client can tell the user what to fix.
+		// Keep actionable validation detail (weak password, bad input)
+		// so the client can tell the user what to fix.
 		if status.Code(err) == codes.InvalidArgument {
 			http.Error(w, status.Convert(err).Message(), http.StatusBadRequest)
 			return

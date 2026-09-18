@@ -272,26 +272,6 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
@@ -437,26 +417,6 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
@@ -563,22 +523,6 @@ patches:
           subPath: users-service
           readOnly: true
         - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
@@ -681,24 +625,8 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/workflows-service
           subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
           readOnly: true
         - name: certs
           mountPath: /certs/clickhouse/clients
@@ -803,24 +731,8 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/jobs-service
           subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
           readOnly: true
         - name: certs
           mountPath: /certs/clickhouse/clients
@@ -925,24 +837,8 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/notifications-service
           subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
           readOnly: true
         - name: certs
           mountPath: /certs/clickhouse/clients
@@ -1045,22 +941,6 @@ patches:
         - name: certs
           mountPath: /certs/meilisearch
           subPath: meilisearch
-          readOnly: true
-        - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
           readOnly: true
         - name: certs
           mountPath: /certs/analytics-service
@@ -1169,26 +1049,6 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
@@ -1289,26 +1149,6 @@ patches:
         - name: certs
           mountPath: /certs/meilisearch
           subPath: meilisearch
-          readOnly: true
-        - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
           readOnly: true
         - name: certs
           mountPath: /certs/clickhouse/clients
@@ -1416,26 +1256,6 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
@@ -1541,26 +1361,6 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
@@ -1661,26 +1461,6 @@ patches:
         - name: certs
           mountPath: /certs/meilisearch
           subPath: meilisearch
-          readOnly: true
-        - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
           readOnly: true
         - name: certs
           mountPath: /certs/clickhouse/clients
@@ -1785,26 +1565,6 @@ patches:
           subPath: meilisearch
           readOnly: true
         - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
-          readOnly: true
-        - name: certs
           mountPath: /certs/clickhouse/clients
           subPath: clickhouse/clients
           readOnly: true
@@ -1905,26 +1665,6 @@ patches:
         - name: certs
           mountPath: /certs/meilisearch
           subPath: meilisearch
-          readOnly: true
-        - name: certs
-          mountPath: /certs/users-service
-          subPath: users-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/workflows-service
-          subPath: workflows-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/jobs-service
-          subPath: jobs-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/notifications-service
-          subPath: notifications-service
-          readOnly: true
-        - name: certs
-          mountPath: /certs/analytics-service
-          subPath: analytics-service
           readOnly: true
         - name: certs
           mountPath: /certs/clickhouse/clients

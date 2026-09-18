@@ -330,6 +330,117 @@ validate_k8s_network_lockdown() {
   done
 }
 
+validate_docker_proxy_hardening() {
+  # The proxy keeps hostNetwork and root for the socket, so these
+  # controls must stay intact: capability drop without privilege
+  # escalation, read-only filesystem, RuntimeDefault seccomp,
+  # terminal-deny allowlist, and a server-only certificate projection.
+  proxy="$root_dir/infra/k8s/base/docker-proxy.yaml"
+  # Asserted on the proxy container block only, so matching lines on
+  # sibling containers cannot mask a regression.
+  proxy_block=$(sed -n '/^      - name: docker-proxy$/,/^      - name: runtime-agent/p' "$proxy")
+  for pattern in \
+    'drop: ["ALL"]' \
+    'allowPrivilegeEscalation: false' \
+    'readOnlyRootFilesystem: true' \
+  ; do
+    if ! printf '%s\n' "$proxy_block" | grep -Fq "$pattern"; then
+      echo "infra/k8s/base/docker-proxy.yaml proxy container lost confinement ($pattern)" >&2
+      exit 1
+    fi
+  done
+  # Seccomp is asserted on the pod securityContext block only (the type
+  # must stay RuntimeDefault), so a sibling profile cannot mask its loss.
+  pod_security=$(sed -n '/^      securityContext:$/,/^      tolerations:/p' "$proxy")
+  for pattern in \
+    'seccompProfile:' \
+    'type: RuntimeDefault' \
+  ; do
+    if ! printf '%s\n' "$pod_security" | grep -Fq "$pattern"; then
+      echo "infra/k8s/base/docker-proxy.yaml pod securityContext lost default seccomp profile ($pattern)" >&2
+      exit 1
+    fi
+  done
+  if ! grep -q '^      http-request deny$' "$proxy"; then
+    echo "infra/k8s/base/docker-proxy.yaml haproxy allowlist lost its terminal deny" >&2
+    exit 1
+  fi
+  server_keys=$(sed -n '/^      - name: docker-proxy-server-certs/,/^      - name: docker-proxy-runtime-client-certs/p' "$proxy" | grep -- '- key: ' || true)
+  if ! printf '%s\n' "$server_keys" | grep -Fq -- '- key: ca.crt'; then
+    echo "docker-proxy server projection lost ca.crt" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$server_keys" | grep -Fq -- '- key: server.pem'; then
+    echo "docker-proxy server projection lost server.pem" >&2
+    exit 1
+  fi
+  if [ "$(printf '%s\n' "$server_keys" | grep -c -- '- key: ' || true)" -ne 2 ]; then
+    echo "docker-proxy server projection must carry only ca.crt and server.pem" >&2
+    exit 1
+  fi
+  if printf '%s\n' "$server_keys" | grep -Fq -- 'client'; then
+    echo "docker-proxy server projection must not carry client material" >&2
+    exit 1
+  fi
+}
+
+validate_k8s_service_tls_scoping() {
+  # Every service-TLS private key must be mounted only by its owning
+  # workload: each serving deployment projects exactly its own pair,
+  # and all other workloads mount no service-TLS material at all.
+  # A bare secret source (no items:) mounts the whole secret, so an
+  # allowed owner referencing it without its own two keys also fails.
+  violations=$(
+    for manifest in \
+      infra/k8s/base/workloads.yaml \
+      infra/k8s/overlays/production/kustomization.yaml \
+      infra/k8s/overlays/local/kustomization.yaml \
+    ; do
+      awk '
+        /^---$/ { owner = "" }
+        /^- target:$/ { owner = "" }
+        /^  name: [a-z-]+$/ { owner = $2 }
+        /^    name: [a-z-]+$/ { owner = $2 }
+        /- key: [a-z-]+-service\.(crt|key)/ {
+          key = $3
+          sub(/\.(crt|key)$/, "", key)
+          if (key != owner) {
+            print FILENAME": "owner" mounts peer key "$3
+          } else {
+            own_keys[owner]++
+          }
+        }
+        /name: chronoverse-service-tls/ {
+          tls_ref[owner] = 1
+          if (owner != "users-service" && owner != "workflows-service" && owner != "jobs-service" && owner != "notifications-service" && owner != "analytics-service") {
+            print FILENAME": "owner" mounts service-TLS secret"
+          }
+        }
+        /mountPath: \/certs\/(users|workflows|jobs|notifications|analytics)-service$/ {
+          dir = $2
+          sub(/.*\//, "", dir)
+          if (dir != owner) { print FILENAME": "owner" mounts peer dir "dir }
+        }
+        END {
+          for (o in tls_ref) {
+            if ((o == "users-service" || o == "workflows-service" || o == "jobs-service" || o == "notifications-service" || o == "analytics-service") && own_keys[o] != 2) {
+              print FILENAME": "o" must project exactly its own service-TLS pair"
+            }
+          }
+        }
+      ' "$root_dir/$manifest"
+    done
+  )
+  if [ -n "$violations" ]; then
+    printf '%s\n' "$violations" >&2
+    echo "service-TLS private keys must be mounted only by their owning workload" >&2
+    exit 1
+  fi
+}
+
+validate_docker_proxy_hardening
+validate_k8s_service_tls_scoping
+
 validate_k8s_network_lockdown
 
 validate_key_permissions() {

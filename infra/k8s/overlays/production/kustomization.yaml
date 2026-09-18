@@ -173,22 +173,6 @@ patches:
                 path: users-service/users-service.crt
               - key: users-service.key
                 path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: workflows-service
@@ -251,26 +235,10 @@ patches:
           - secret:
               name: chronoverse-service-tls
               items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
               - key: workflows-service.crt
                 path: workflows-service/workflows-service.crt
               - key: workflows-service.key
                 path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: jobs-service
@@ -333,26 +301,10 @@ patches:
           - secret:
               name: chronoverse-service-tls
               items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
               - key: jobs-service.crt
                 path: jobs-service/jobs-service.crt
               - key: jobs-service.key
                 path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: notifications-service
@@ -415,26 +367,10 @@ patches:
           - secret:
               name: chronoverse-service-tls
               items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
               - key: notifications-service.crt
                 path: notifications-service/notifications-service.crt
               - key: notifications-service.key
                 path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: analytics-service
@@ -497,22 +433,6 @@ patches:
           - secret:
               name: chronoverse-service-tls
               items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
               - key: analytics-service.crt
                 path: analytics-service/analytics-service.crt
               - key: analytics-service.key
@@ -576,29 +496,6 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: scheduling-worker
@@ -658,29 +555,6 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: workflow-worker
@@ -740,29 +614,6 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: execution-worker
@@ -822,29 +673,6 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: joblogs-processor
@@ -904,29 +732,6 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: analytics-processor
@@ -986,29 +791,6 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Deployment
     name: outbox-relay
@@ -1068,29 +850,6 @@ patches:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
-              items:
-              - key: users-service.crt
-                path: users-service/users-service.crt
-              - key: users-service.key
-                path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 - target:
     kind: Job
     name: database-migration

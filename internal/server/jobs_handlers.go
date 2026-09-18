@@ -178,7 +178,8 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if isTerminalJobStatus(res.GetStatus()) {
-		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
+		w.Header().Set("Cache-Control", "private, max-age=7200") // Cache for 2 hrs
+		w.Header().Add("Vary", "Cookie")
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -314,7 +315,8 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 
 func setJobLogsCacheControl(w http.ResponseWriter, requestCursor, responseCursor string) {
 	if requestCursor != "" && responseCursor != "" {
-		w.Header().Set("Cache-Control", "public, max-age=7200") // Cache for 2 hrs
+		w.Header().Set("Cache-Control", "private, max-age=7200") // Cache for 2 hrs
+		w.Header().Add("Vary", "Cookie")
 		return
 	}
 

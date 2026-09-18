@@ -287,3 +287,58 @@ func TestDecideWorkflowUpdateAction(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateWorkflowPayloadKind(t *testing.T) {
+	t.Parallel()
+
+	const (
+		heartbeatPayload = `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`
+		containerPayload = `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`
+	)
+
+	tests := []struct {
+		name    string
+		kind    string
+		payload string
+		wantErr bool
+	}{
+		{
+			name:    "heartbeat kind accepts heartbeat payload",
+			kind:    workflowsmodel.KindHeartbeat.ToString(),
+			payload: heartbeatPayload,
+		},
+		{
+			name:    "container kind accepts container payload",
+			kind:    workflowsmodel.KindContainer.ToString(),
+			payload: containerPayload,
+		},
+		{
+			name:    "heartbeat kind rejects container payload",
+			kind:    workflowsmodel.KindHeartbeat.ToString(),
+			payload: containerPayload,
+			wantErr: true,
+		},
+		{
+			name:    "container kind rejects heartbeat payload",
+			kind:    workflowsmodel.KindContainer.ToString(),
+			payload: heartbeatPayload,
+			wantErr: true,
+		},
+		{
+			name:    "unknown kind rejects any payload",
+			kind:    "CRON",
+			payload: heartbeatPayload,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := validateWorkflowPayloadKind(tt.kind, tt.payload); (err != nil) != tt.wantErr {
+				t.Fatalf("validateWorkflowPayloadKind() err = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -126,22 +126,6 @@ spec:
                 path: users-service/users-service.crt
               - key: users-service.key
                 path: users-service/users-service.key
-              - key: workflows-service.crt
-                path: workflows-service/workflows-service.crt
-              - key: workflows-service.key
-                path: workflows-service/workflows-service.key
-              - key: jobs-service.crt
-                path: jobs-service/jobs-service.crt
-              - key: jobs-service.key
-                path: jobs-service/jobs-service.key
-              - key: notifications-service.crt
-                path: notifications-service/notifications-service.crt
-              - key: notifications-service.key
-                path: notifications-service/notifications-service.key
-              - key: analytics-service.crt
-                path: analytics-service/analytics-service.crt
-              - key: analytics-service.key
-                path: analytics-service/analytics-service.key
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -270,6 +254,11 @@ spec:
                 path: clients/client.key
           - secret:
               name: chronoverse-service-tls
+              items:
+              - key: workflows-service.crt
+                path: workflows-service/workflows-service.crt
+              - key: workflows-service.key
+                path: workflows-service/workflows-service.key
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -406,6 +395,11 @@ spec:
                 path: clients/client.key
           - secret:
               name: chronoverse-service-tls
+              items:
+              - key: jobs-service.crt
+                path: jobs-service/jobs-service.crt
+              - key: jobs-service.key
+                path: jobs-service/jobs-service.key
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -526,6 +520,11 @@ spec:
                 path: clients/client.key
           - secret:
               name: chronoverse-service-tls
+              items:
+              - key: notifications-service.crt
+                path: notifications-service/notifications-service.crt
+              - key: notifications-service.key
+                path: notifications-service/notifications-service.key
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -646,6 +645,11 @@ spec:
                 path: clients/client.key
           - secret:
               name: chronoverse-service-tls
+              items:
+              - key: analytics-service.crt
+                path: analytics-service/analytics-service.crt
+              - key: analytics-service.key
+                path: analytics-service/analytics-service.key
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -762,8 +766,6 @@ spec:
                 path: clients/client.crt
               - key: tls.key
                 path: clients/client.key
-          - secret:
-              name: chronoverse-service-tls
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1037,8 +1039,6 @@ spec:
               name: chronoverse-ca
           - secret:
               name: chronoverse-client-tls
-          - secret:
-              name: chronoverse-service-tls
       - name: docker-proxy-certs
         projected:
           defaultMode: 0440
@@ -1169,8 +1169,6 @@ spec:
               name: chronoverse-ca
           - secret:
               name: chronoverse-client-tls
-          - secret:
-              name: chronoverse-service-tls
       - name: docker-proxy-certs
         projected:
           defaultMode: 0440

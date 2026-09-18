@@ -619,6 +619,12 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   `NetworkPolicy/chronoverse-runtime-agent-telemetry`, allowing only TCP 4317
   into LGTM for runtime-agent OTLP telemetry. Direct overlays must patch both
   policies; do not broaden LGTM ingress to all sources.
+- The same mechanism also fills the node placeholders in the default-deny
+  tree: `NetworkPolicy/chronoverse-frontend` (controller to nginx),
+  `NetworkPolicy/chronoverse-kubelet-probes` (kubelet to gateway and
+  dashboard), and `NetworkPolicy/chronoverse-egress` (workers to node
+  `2376`, via `/spec/egress/0/to`). Direct overlays must patch all three;
+  the namespace stays fail-closed without them.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

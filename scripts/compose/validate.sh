@@ -283,6 +283,44 @@ validate_auth_bundle() {
 
 validate_auth_bundle
 
+validate_k8s_service_tls_scoping() {
+  # Every service-TLS private key must be mounted only by its owning
+  # workload: each serving deployment projects its own pair, and all
+  # other workloads mount no service-TLS material at all.
+  violations=$(
+    awk '
+      /^---$/ { owner = "" }
+      /^- target:$/ { owner = "" }
+      /^  name: [a-z-]+$/ { owner = $2 }
+      /^    name: [a-z-]+$/ { owner = $2 }
+      /- key: [a-z-]+-service\.(crt|key)/ {
+        key = $3
+        sub(/\.(crt|key)$/, "", key)
+        if (key != owner) { print FILENAME": "owner" mounts peer key "$3 }
+      }
+      /name: chronoverse-service-tls/ {
+        if (owner != "users-service" && owner != "workflows-service" && owner != "jobs-service" && owner != "notifications-service" && owner != "analytics-service") {
+          print FILENAME": "owner" mounts service-TLS secret"
+        }
+      }
+      /mountPath: \/certs\/(users|workflows|jobs|notifications|analytics)-service$/ {
+        dir = $2
+        sub(/.*\//, "", dir)
+        if (dir != owner) { print FILENAME": "owner" mounts peer dir "dir }
+      }
+    ' "$root_dir/infra/k8s/base/workloads.yaml" \
+      "$root_dir/infra/k8s/overlays/production/kustomization.yaml" \
+      "$root_dir/infra/k8s/overlays/local/kustomization.yaml"
+  )
+  if [ -n "$violations" ]; then
+    printf '%s\n' "$violations" >&2
+    echo "service-TLS private keys must be mounted only by their owning workload" >&2
+    exit 1
+  fi
+}
+
+validate_k8s_service_tls_scoping
+
 validate_key_permissions() {
   # init-certs must give every private key an explicit owner and a
   # restrictive mode (never world-readable).

@@ -283,6 +283,60 @@ validate_auth_bundle() {
 
 validate_auth_bundle
 
+validate_docker_proxy_hardening() {
+  # The proxy keeps hostNetwork and root for the socket, so these
+  # controls must stay intact: capability drop without privilege
+  # escalation, read-only filesystem, RuntimeDefault seccomp,
+  # terminal-deny allowlist, and a server-only certificate projection.
+  proxy="$root_dir/infra/k8s/base/docker-proxy.yaml"
+  # Asserted on the proxy container block only, so matching lines on
+  # sibling containers cannot mask a regression.
+  proxy_block=$(sed -n '/^      - name: docker-proxy$/,/^      - name: runtime-agent/p' "$proxy")
+  for pattern in \
+    'drop: ["ALL"]' \
+    'allowPrivilegeEscalation: false' \
+    'readOnlyRootFilesystem: true' \
+  ; do
+    if ! printf '%s\n' "$proxy_block" | grep -Fq "$pattern"; then
+      echo "infra/k8s/base/docker-proxy.yaml proxy container lost confinement ($pattern)" >&2
+      exit 1
+    fi
+  done
+  # Seccomp is asserted on the pod securityContext block only (the type
+  # must stay RuntimeDefault), so a sibling profile cannot mask its loss.
+  pod_security=$(sed -n '/^      securityContext:$/,/^      tolerations:/p' "$proxy")
+  for pattern in \
+    'seccompProfile:' \
+    'type: RuntimeDefault' \
+  ; do
+    if ! printf '%s\n' "$pod_security" | grep -Fq "$pattern"; then
+      echo "infra/k8s/base/docker-proxy.yaml pod securityContext lost default seccomp profile ($pattern)" >&2
+      exit 1
+    fi
+  done
+  if ! grep -q '^      http-request deny$' "$proxy"; then
+    echo "infra/k8s/base/docker-proxy.yaml haproxy allowlist lost its terminal deny" >&2
+    exit 1
+  fi
+  server_keys=$(sed -n '/^      - name: docker-proxy-server-certs/,/^      - name: docker-proxy-runtime-client-certs/p' "$proxy" | grep -- '- key: ' || true)
+  if ! printf '%s\n' "$server_keys" | grep -Fq -- '- key: ca.crt'; then
+    echo "docker-proxy server projection lost ca.crt" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$server_keys" | grep -Fq -- '- key: server.pem'; then
+    echo "docker-proxy server projection lost server.pem" >&2
+    exit 1
+  fi
+  if [ "$(printf '%s\n' "$server_keys" | grep -c -- '- key: ' || true)" -ne 2 ]; then
+    echo "docker-proxy server projection must carry only ca.crt and server.pem" >&2
+    exit 1
+  fi
+  if printf '%s\n' "$server_keys" | grep -Fq -- 'client'; then
+    echo "docker-proxy server projection must not carry client material" >&2
+    exit 1
+  fi
+}
+
 validate_k8s_service_tls_scoping() {
   # Every service-TLS private key must be mounted only by its owning
   # workload: each serving deployment projects exactly its own pair,
@@ -337,6 +391,7 @@ validate_k8s_service_tls_scoping() {
   fi
 }
 
+validate_docker_proxy_hardening
 validate_k8s_service_tls_scoping
 
 validate_key_permissions() {

@@ -1249,6 +1249,24 @@ EOF
     kind: NetworkPolicy
     name: chronoverse-runtime-agent-telemetry
   path: runtime-agent-telemetry-network-policy-patch.yaml
+- target:
+    group: networking.k8s.io
+    version: v1
+    kind: NetworkPolicy
+    name: chronoverse-frontend
+  path: chronoverse-frontend-network-policy-patch.yaml
+- target:
+    group: networking.k8s.io
+    version: v1
+    kind: NetworkPolicy
+    name: chronoverse-kubelet-probes
+  path: chronoverse-kubelet-probes-network-policy-patch.yaml
+- target:
+    group: networking.k8s.io
+    version: v1
+    kind: NetworkPolicy
+    name: chronoverse-egress
+  path: chronoverse-egress-network-policy-patch.yaml
 EOF
     fi
   } > "$PATCH_DIR/kustomization.yaml"
@@ -1283,6 +1301,21 @@ EOF
     } > "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml"
     cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
       "$PATCH_DIR/runtime-agent-telemetry-network-policy-patch.yaml"
+    cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
+      "$PATCH_DIR/chronoverse-frontend-network-policy-patch.yaml"
+    cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
+      "$PATCH_DIR/chronoverse-kubelet-probes-network-policy-patch.yaml"
+    {
+      cat <<'EOF'
+- op: replace
+  path: /spec/egress/0/to
+  value:
+EOF
+      for cidr in $RUNTIME_NODE_CIDRS; do
+        echo "  - ipBlock:"
+        echo "      cidr: $cidr"
+      done
+    } > "$PATCH_DIR/chronoverse-egress-network-policy-patch.yaml"
   fi
   KUSTOMIZE_DIR="$PATCH_DIR"
 fi

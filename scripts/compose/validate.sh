@@ -283,6 +283,37 @@ validate_auth_bundle() {
 
 validate_auth_bundle
 
+validate_docker_proxy_hardening() {
+  # The proxy keeps hostNetwork and root for the socket, so its
+  # compensating controls must stay intact: full capability drop
+  # without privilege escalation, a read-only proxy filesystem,
+  # a default seccomp profile, a terminal-deny allowlist, and a
+  # server-only certificate projection.
+  proxy="$root_dir/infra/k8s/base/docker-proxy.yaml"
+  for pattern in \
+    'drop: ["ALL"]' \
+    'allowPrivilegeEscalation: false' \
+    'readOnlyRootFilesystem: true' \
+    'seccompProfile:' \
+  ; do
+    if ! grep -Fq "$pattern" "$proxy"; then
+      echo "infra/k8s/base/docker-proxy.yaml missing proxy confinement ($pattern)" >&2
+      exit 1
+    fi
+  done
+  if ! grep -q '^      http-request deny$' "$proxy"; then
+    echo "infra/k8s/base/docker-proxy.yaml haproxy allowlist lost its terminal deny" >&2
+    exit 1
+  fi
+  server_certs=$(sed -n '/name: docker-proxy-server-certs/,/name: docker-proxy-runtime-client-certs/p' "$proxy" | grep -c -- '- key: ')
+  if [ "$server_certs" -ne 2 ]; then
+    echo "docker-proxy server projection must carry only ca.crt and server.pem" >&2
+    exit 1
+  fi
+}
+
+validate_docker_proxy_hardening
+
 validate_key_permissions() {
   # init-certs must give every private key an explicit owner and a
   # restrictive mode (never world-readable).

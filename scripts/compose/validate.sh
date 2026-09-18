@@ -283,6 +283,55 @@ validate_auth_bundle() {
 
 validate_auth_bundle
 
+validate_k8s_network_lockdown() {
+  # The namespace must stay default-deny with scoped allows, every pod
+  # spec must opt out of the API token mount, the unused service
+  # account must stay deleted, and node-CIDR placeholders must survive
+  # until setup.sh fills them in.
+  if ! grep -q 'name: chronoverse-default-deny' "$root_dir/infra/k8s/base/network-policy.yaml"; then
+    echo "infra/k8s/base/network-policy.yaml lost the default-deny policy" >&2
+    exit 1
+  fi
+  if grep -rq 'chronoverse-sa' "$root_dir/infra/k8s/base"; then
+    echo "infra/k8s/base still references the removed chronoverse-sa" >&2
+    exit 1
+  fi
+  for f in \
+    infra/k8s/base/workloads.yaml \
+    infra/k8s/base/docker-proxy.yaml \
+    infra/k8s/base/nginx.yaml \
+    infra/k8s/base/pgbouncer.yaml \
+    infra/k8s/base/init-kafka-topics.yaml \
+    infra/k8s/overlays/production/infrastructure.yaml \
+    infra/k8s/overlays/local/infrastructure.yaml \
+  ; do
+    templates=$(grep -c 'template:$' "$root_dir/$f")
+    unmounted=$(grep -c 'automountServiceAccountToken: false' "$root_dir/$f")
+    if [ "$templates" != "$unmounted" ]; then
+      echo "$f has pod specs without automountServiceAccountToken: false" >&2
+      exit 1
+    fi
+  done
+  if [ "$(grep -c '192.0.2.1/32' "$root_dir/infra/k8s/base/network-policy.yaml")" -ne 3 ]; then
+    echo "infra/k8s/base/network-policy.yaml must keep three TEST-NET node-CIDR placeholders" >&2
+    exit 1
+  fi
+  for policy in \
+    chronoverse-runtime-agent-postgres \
+    chronoverse-runtime-agent-telemetry \
+    chronoverse-frontend \
+    chronoverse-kubelet-probes \
+    chronoverse-egress \
+  ; do
+    if ! grep -q "name: $policy" "$root_dir/scripts/k8s/setup.sh"; then
+      echo "scripts/k8s/setup.sh stopped patching node CIDRs into $policy" >&2
+      exit 1
+    fi
+  done
+}
+
+validate_k8s_network_lockdown
+
 validate_key_permissions() {
   # init-certs must give every private key an explicit owner and a
   # restrictive mode (never world-readable).

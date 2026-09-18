@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/trustelem/zxcvbn"
 	"github.com/trustelem/zxcvbn/frequency"
-	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"

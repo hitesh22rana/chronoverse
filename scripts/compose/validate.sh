@@ -328,6 +328,28 @@ validate_k8s_network_lockdown() {
       exit 1
     fi
   done
+
+  # Pod-network ingress controllers reach nginx from their own pod
+  # addresses, which no node CIDR covers. The frontend policy keeps a
+  # selector for them in ingress rule 1; rule 0 stays the node rule that
+  # setup.sh replaces, so removing or reordering either one re-blocks
+  # every supported controller shape.
+  frontend_policy=$(sed -n '/^  name: chronoverse-frontend$/,/^---$/p' "$root_dir/infra/k8s/base/network-policy.yaml")
+  for pattern in \
+    '    - namespaceSelector: {}' \
+    'app.kubernetes.io/name: ingress-nginx' \
+    'app.kubernetes.io/component: controller' \
+  ; do
+    if ! printf '%s\n' "$frontend_policy" | grep -Fq "$pattern"; then
+      echo "NetworkPolicy/chronoverse-frontend no longer admits pod-network ingress controllers ($pattern)" >&2
+      exit 1
+    fi
+  done
+  first_rule=$(printf '%s\n' "$frontend_policy" | awk '/- from:/{n++} n==1{print} n==2{exit}')
+  if ! printf '%s\n' "$first_rule" | grep -Fq '192.0.2.1/32'; then
+    echo "NetworkPolicy/chronoverse-frontend must keep the node-CIDR rule first; setup.sh replaces /spec/ingress/0/from" >&2
+    exit 1
+  fi
 }
 
 validate_docker_proxy_hardening() {

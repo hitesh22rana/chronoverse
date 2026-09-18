@@ -620,11 +620,20 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
   into LGTM for runtime-agent OTLP telemetry. Direct overlays must patch both
   policies; do not broaden LGTM ingress to all sources.
 - The same mechanism also fills the node placeholders in the default-deny
-  tree: `NetworkPolicy/chronoverse-frontend` (controller to nginx),
-  `NetworkPolicy/chronoverse-kubelet-probes` (kubelet to gateway and
+  tree: `NetworkPolicy/chronoverse-frontend` (hostNetwork controller to
+  nginx), `NetworkPolicy/chronoverse-kubelet-probes` (kubelet to gateway and
   dashboard), and `NetworkPolicy/chronoverse-egress` (workers to node
   `2376`, via `/spec/egress/0/to`). Direct overlays must patch all three;
   the namespace stays fail-closed without them.
+- A pod-network ingress controller reaches nginx from its own pod address,
+  which no node range covers. `NetworkPolicy/chronoverse-frontend` therefore
+  also admits pods labeled `app.kubernetes.io/name: ingress-nginx` and
+  `app.kubernetes.io/component: controller` in any namespace — the labels the
+  ingress-nginx chart publishes and `setup.sh` uses to discover controllers.
+  Keep that rule in ingress position 1; position 0 stays the node rule the
+  CIDR patch replaces. An ingress controller that publishes different pod
+  labels needs its own pod selector there, and the nginx real-IP trust list
+  still has to cover whichever addresses it connects from.
 - In kind, recreate the cluster with
   `infra/k8s/overlays/local/kind-cluster.yaml` if `docker-proxy` reports
   `/var/run/docker.sock is not a socket file`.

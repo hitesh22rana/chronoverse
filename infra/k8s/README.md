@@ -44,6 +44,15 @@ recommended by the Kubernetes provider. `setup.sh` validates or warns about
 these contracts and prints actionable guidance; it never assumes ownership of
 them.
 
+`NetworkPolicy/chronoverse-frontend` needs no operator label to admit an
+ingress controller, because the controller's own pod labels identify it. It
+admits pods labeled `app.kubernetes.io/name: ingress-nginx` and
+`app.kubernetes.io/component: controller` in any namespace, so a pod-network
+controller reaches nginx from its pod address, while a `hostNetwork` controller
+is covered separately by the node CIDRs `setup.sh` fills in. An ingress
+controller that publishes different pod labels needs its own pod selector
+alongside those.
+
 Internal clients, Kafka broker metadata, and KEDA use namespace-qualified
 partial Service names such as `kafka.chronoverse.svc`. They deliberately omit
 the cluster DNS suffix, so clusters with a domain other than `cluster.local`

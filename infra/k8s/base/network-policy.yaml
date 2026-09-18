@@ -157,14 +157,31 @@ spec:
       app.kubernetes.io/name: nginx
   policyTypes:
   - Ingress
+  # Rule order is load-bearing: setup.sh replaces ingress rule 0's `from`
+  # with the cluster's node CIDRs, so the node rule must stay first.
   ingress:
-  # The external ingress controller reaches nginx from node addresses.
+  # A hostNetwork ingress controller reaches nginx from node addresses.
   # setup.sh replaces the TEST-NET value with the cluster's node CIDRs.
   # The reserved value keeps direct kustomize builds closed by default.
   - from:
     - podSelector: {}
     - ipBlock:
         cidr: 192.0.2.1/32
+    ports:
+    - protocol: TCP
+      port: 80
+  # A pod-network ingress controller reaches nginx from its own pod address
+  # instead, which no node range covers. Select those controllers by the
+  # labels the ingress-nginx chart publishes — the same ones setup.sh uses
+  # to discover controllers — so any install namespace works without
+  # hardcoding a per-cluster namespace name. A different controller family
+  # needs its own pod selector here; the node rule above will not cover it.
+  - from:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+          app.kubernetes.io/component: controller
     ports:
     - protocol: TCP
       port: 80

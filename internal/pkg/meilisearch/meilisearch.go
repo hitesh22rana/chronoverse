@@ -86,6 +86,8 @@ func WithMasterKey(masterKey string) Option {
 func WithTLS(cfg *config.MeiliSearch) Option {
 	return func(c *Config) {
 		if !cfg.TLS.Enabled {
+			c.TLS = nil
+			c.tlsErr = nil
 			return
 		}
 
@@ -95,6 +97,7 @@ func WithTLS(cfg *config.MeiliSearch) Option {
 			return
 		}
 		c.TLS = tlsConfig
+		c.tlsErr = nil
 	}
 }
 

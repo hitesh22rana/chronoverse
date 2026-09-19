@@ -112,6 +112,8 @@ func WithPartitionLifecycle(lifecycle *PartitionLifecycle) Option {
 func WithTLS(cfg *config.Kafka) Option {
 	return func(c *Config) {
 		if !cfg.TLS.Enabled {
+			c.TLS = nil
+			c.tlsErr = nil
 			return
 		}
 
@@ -121,6 +123,7 @@ func WithTLS(cfg *config.Kafka) Option {
 			return
 		}
 		c.TLS = tlsConfig
+		c.tlsErr = nil
 	}
 }
 

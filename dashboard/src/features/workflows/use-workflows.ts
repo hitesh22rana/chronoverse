@@ -231,10 +231,10 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         workflows: getWorkflowQuery?.data?.workflows || [],
         isLoading: getWorkflowQuery.isLoading,
         error: getWorkflowQuery.error,
-        createWorkflow: (payload: CreateWorkflowPayload) => createWorkflowMutation.mutate({
+        createWorkflow: (payload: CreateWorkflowPayload, onSuccess?: () => void) => createWorkflowMutation.mutate({
             payload,
             idempotencyKey: createIdempotencyKey(),
-        }),
+        }, { onSuccess }),
         isCreating: createWorkflowMutation.isPending,
         refetch: getWorkflowQuery.refetch,
         refetchLoading: getWorkflowQuery.isRefetching,

@@ -44,6 +44,14 @@ recommended by the Kubernetes provider. `setup.sh` validates or warns about
 these contracts and prints actionable guidance; it never assumes ownership of
 them.
 
+`NetworkPolicy/chronoverse-frontend` admits ingress controllers by their own
+pod labels, so no operator label is needed. Pods labeled
+`app.kubernetes.io/name: ingress-nginx` and
+`app.kubernetes.io/component: controller` reach nginx from their pod address in
+any namespace; a `hostNetwork` controller is covered separately by the node
+CIDRs `setup.sh` fills in. A controller with different pod labels needs its own
+selector alongside those.
+
 Internal clients, Kafka broker metadata, and KEDA use namespace-qualified
 partial Service names such as `kafka.chronoverse.svc`. They deliberately omit
 the cluster DNS suffix, so clusters with a domain other than `cluster.local`
@@ -314,10 +322,11 @@ override only for emulator-specific validation. Real single-node and multi-node
 Kubernetes clusters should use node-stable runtime endpoints.
 
 Worker pods need egress to TCP `2376` on runtime node IPs. The base
-NetworkPolicy allows that port, but `hostNetwork` bypasses pod NetworkPolicy —
-production must restrict `2376` at the infrastructure
-layer (node firewall / security group / CNI host policy) in addition to the
-mTLS + token + allowlist. Do not expose `2376` publicly.
+NetworkPolicy denies everything by default and allows `2376` egress only to the
+node CIDRs `setup.sh` fills in, but `hostNetwork` bypasses pod NetworkPolicy,
+so production must restrict `2376` at the infrastructure layer (node firewall /
+security group / CNI host policy) in addition to the mTLS + token + allowlist.
+Do not expose `2376` publicly.
 
 The supported runtime matrix is explicit:
 

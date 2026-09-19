@@ -59,6 +59,7 @@ spec:
         chronoverse.io/datastore-client: "true"
         chronoverse.io/postgres-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 70
@@ -240,6 +241,7 @@ spec:
         chronoverse.io/datastore-client: "true"
         chronoverse.io/postgres-client: "true"
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
       securityContext:
         runAsNonRoot: true

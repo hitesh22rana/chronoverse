@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: chronoverse-default
+  name: chronoverse-default-deny
   labels:
     app.kubernetes.io/name: chronoverse
     app.kubernetes.io/component: network-policy
@@ -10,37 +10,264 @@ spec:
   policyTypes:
   - Ingress
   - Egress
-  ingress:
-  - from:
-    - podSelector: {}
-  - ports:
-    - protocol: TCP
-      port: 80
-    - protocol: TCP
-      port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-egress
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
   egress:
+  # Workers dial per-node Docker proxies that no Service fronts, so the
+  # node range cannot be selected by label. setup.sh replaces the TEST-NET
+  # value with the cluster's node CIDRs; the reserved value keeps direct
+  # kustomize builds closed.
   - to:
-    - podSelector: {}
-  - ports:
-    - protocol: UDP
-      port: 53
-    - protocol: TCP
-      port: 53
-    - protocol: TCP
-      port: 80
-    - protocol: TCP
-      port: 443
-    - protocol: TCP
-      port: 6443
+    - ipBlock:
+        cidr: 192.0.2.1/32
+    ports:
     - protocol: TCP
       port: 2376
+  # Pod-to-pod traffic stays inside the namespace, on the ports each
+  # listener serves; any-pod to any-port is harmless.
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: backend
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: gateway
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: frontend
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: pgbouncer
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgres
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: clickhouse
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: kafka
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: meilisearch
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: lgtm
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 50051
+    - protocol: TCP
+      port: 50052
+    - protocol: TCP
+      port: 50053
+    - protocol: TCP
+      port: 50054
+    - protocol: TCP
+      port: 50055
     - protocol: TCP
       port: 5432
     - protocol: TCP
       port: 6379
     - protocol: TCP
-      port: 7700
+      port: 9440
     - protocol: TCP
       port: 9094
     - protocol: TCP
+      port: 7700
+    - protocol: TCP
+      port: 4317
+  # kube-dns lives in kube-system, outside podSelector reach.
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # The workload firewall sidecar installs its ruleset with apk at boot,
+  # so pods need plain HTTP(S) egress.
+  - ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-grpc-mesh
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: backend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/component
+          operator: In
+          values: [gateway, backend, worker]
+    ports:
+    - protocol: TCP
+      port: 50051
+    - protocol: TCP
+      port: 50052
+    - protocol: TCP
+      port: 50053
+    - protocol: TCP
+      port: 50054
+    - protocol: TCP
+      port: 50055
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-frontend
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nginx
+  policyTypes:
+  - Ingress
+  # setup.sh replaces ingress rule 0's `from` with the node CIDRs, so that
+  # rule must stay first.
+  ingress:
+  # A hostNetwork ingress controller reaches nginx from node addresses.
+  # setup.sh replaces the TEST-NET value with the cluster's node CIDRs;
+  # the reserved value keeps direct kustomize builds closed.
+  - from:
+    - podSelector: {}
+    - ipBlock:
+        cidr: 192.0.2.1/32
+    ports:
+    - protocol: TCP
+      port: 80
+  # A pod-network ingress controller reaches nginx from its own pod address
+  # instead, which no node range covers. Match it by the labels the
+  # ingress-nginx chart publishes — the same ones setup.sh discovers
+  # controllers by — so any install namespace works without hardcoding a
+  # name. Another controller family needs its own selector here.
+  - from:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+          app.kubernetes.io/component: controller
+    ports:
+    - protocol: TCP
+      port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-frontend-upstream
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [server, dashboard]
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: ingress
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-kubelet-probes
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [server, dashboard]
+  policyTypes:
+  - Ingress
+  ingress:
+  # kubelet tcpSocket/httpGet probes originate from node addresses, so
+  # setup.sh fills in the node CIDRs here too; the reserved value keeps
+  # direct kustomize builds closed. Only node addresses are admitted:
+  # pod traffic to these ports stays restricted to the nginx-only
+  # upstream rule. Every other probe is exec-based.
+  - from:
+    - ipBlock:
+        cidr: 192.0.2.1/32
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chronoverse-datastores
+  labels:
+    app.kubernetes.io/name: chronoverse
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [pgbouncer, postgres, redis, clickhouse, kafka, meilisearch, lgtm]
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
       port: 9440
+    - protocol: TCP
+      port: 9094
+    - protocol: TCP
+      port: 7700
+    - protocol: TCP
+      port: 4317

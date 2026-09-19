@@ -101,6 +101,7 @@ spec:
         chronoverse.io/datastore-client: "true"
         chronoverse.io/postgres-client: "true"
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:
         fsGroup: 101

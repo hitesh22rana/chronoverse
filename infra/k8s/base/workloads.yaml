@@ -22,6 +22,7 @@ spec:
         chronoverse.io/postgres-client: "true"
         chronoverse.io/redis-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -152,6 +153,7 @@ spec:
         chronoverse.io/redis-client: "true"
         chronoverse.io/kafka-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -286,6 +288,7 @@ spec:
         chronoverse.io/clickhouse-client: "true"
         chronoverse.io/meilisearch-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -420,6 +423,7 @@ spec:
         app.kubernetes.io/component: backend
         chronoverse.io/postgres-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -544,6 +548,7 @@ spec:
         app.kubernetes.io/component: backend
         chronoverse.io/postgres-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -668,6 +673,7 @@ spec:
         app.kubernetes.io/component: gateway
         chronoverse.io/redis-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -779,6 +785,7 @@ spec:
         app.kubernetes.io/name: dashboard
         app.kubernetes.io/component: frontend
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
@@ -835,6 +842,7 @@ spec:
         app.kubernetes.io/component: worker
         chronoverse.io/postgres-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -934,6 +942,7 @@ spec:
         chronoverse.io/clickhouse-client: "true"
         chronoverse.io/meilisearch-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 100
@@ -1071,6 +1080,7 @@ spec:
         chronoverse.io/redis-client: "true"
         chronoverse.io/kafka-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 100
@@ -1206,6 +1216,7 @@ spec:
         chronoverse.io/clickhouse-client: "true"
         chronoverse.io/meilisearch-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -1313,6 +1324,7 @@ spec:
         chronoverse.io/postgres-client: "true"
         chronoverse.io/kafka-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -1410,6 +1422,7 @@ spec:
         chronoverse.io/postgres-client: "true"
         chronoverse.io/kafka-client: "true"
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -1512,6 +1525,7 @@ spec:
         chronoverse.io/clickhouse-client: "true"
         chronoverse.io/meilisearch-client: "true"
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
       securityContext:
         runAsNonRoot: true

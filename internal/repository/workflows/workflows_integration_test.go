@@ -234,3 +234,33 @@ func TestIntegrationUpdateWorkflowRejectsContainerPayloadOnHeartbeat(t *testing.
 		t.Fatalf("interval = %d, want %d (rejected update must not persist)", updated.Interval, 3600)
 	}
 }
+
+func TestIntegrationUpdateWorkflowRejectsHeartbeatPayloadOnContainer(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	userID := seedUser(ctx, t, pg)
+	containerPayload := `{"image": "alpine:latest", "cmd": ["echo", "hello world"]}`
+	heartbeatPayload := `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`
+
+	created, err := repo.CreateWorkflow(
+		ctx, userID, "container-job", containerPayload, "CONTAINER",
+		3600, 3, true, "workflow-cross-kind-container-"+t.Name(),
+	)
+	if err != nil {
+		t.Fatalf("CreateWorkflow: %v", err)
+	}
+
+	if updateErr := repo.UpdateWorkflow(ctx, created.ID, userID, "container-job", heartbeatPayload, 3600, 3, "workflow-cross-kind-update-"+t.Name()); status.Code(updateErr) != codes.InvalidArgument {
+		t.Fatalf("UpdateWorkflow cross-kind code = %v, want %v (err: %v)", status.Code(updateErr), codes.InvalidArgument, updateErr)
+	}
+
+	updated, err := repo.GetWorkflow(ctx, created.ID, userID)
+	if err != nil {
+		t.Fatalf("GetWorkflow after rejected update: %v", err)
+	}
+	if updated.Interval != 3600 {
+		t.Fatalf("interval = %d, want %d (rejected update must not persist)", updated.Interval, 3600)
+	}
+}

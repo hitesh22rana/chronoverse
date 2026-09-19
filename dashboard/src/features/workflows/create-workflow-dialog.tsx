@@ -233,16 +233,16 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                     </DialogDescription>
                 </DialogHeader>
 
-                <ol aria-label="Workflow setup progress" className="grid shrink-0 grid-cols-3 gap-2 px-4 sm:px-6">
+                <ol aria-label="Workflow setup progress" className="grid shrink-0 grid-cols-3 px-4 py-2 sm:px-6">
                     {steps.map((item, index) => (
                         <li key={item.title} aria-current={index === step ? "step" : undefined}
-                            className="flex min-w-0 flex-col gap-2">
-                            <div className="flex items-center gap-2">
+                            className="relative flex min-w-0 flex-col items-center gap-3 text-center">
+                            <div className="flex justify-center">
                                 <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-medium",
                                     index <= step ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground")}>
                                     {index < step ? <Check className="size-3.5" aria-hidden="true" /> : index + 1}
                                 </span>
-                                {index < steps.length - 1 && <Separator className={cn("flex-1", index < step && "bg-primary")} />}
+                                {index < steps.length - 1 && <Separator className={cn("absolute top-3.5 left-[calc(50%+1.375rem)] w-[calc(100%-2.75rem)]", index < step && "bg-primary")} />}
                             </div>
                             <div>
                                 <p className={cn("text-[11px] font-medium sm:text-sm", index > step && "text-muted-foreground")}>{item.title}</p>

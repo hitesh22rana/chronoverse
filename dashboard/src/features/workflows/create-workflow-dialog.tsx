@@ -546,16 +546,16 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                         </div>
                         <Separator />
                         <DialogFooter className="shrink-0 gap-2 px-6 py-4 sm:items-center sm:justify-between">
-                            <Button type="button" variant="outline" size="lg" onClick={() => onOpenChange(false)} disabled={isCreating}>
+                            <Button type="button" variant="outline" className="h-10 py-0" onClick={() => onOpenChange(false)} disabled={isCreating}>
                                 Cancel
                             </Button>
                             <div className="flex items-center justify-end gap-2">
                                 {step > 0 && (
-                                    <Button type="button" variant="outline" size="lg" onClick={() => setStep(step - 1)} disabled={isCreating}>
+                                    <Button type="button" variant="outline" className="h-10 py-0" onClick={() => setStep(step - 1)} disabled={isCreating}>
                                         <ArrowLeft data-icon="inline-start" className="hidden sm:block" /> Previous
                                     </Button>
                                 )}
-                                <Button type="submit" size="lg" disabled={isCreating || form.formState.isValidating}>
+                                <Button type="submit" className="h-10 py-0" disabled={isCreating || form.formState.isValidating}>
                                     {isCreating && <Loader2 data-icon="inline-start" className="animate-spin" />}
                                     {step === 2 ? (isCreating ? "Creating…" : "Create workflow") : "Next"}
                                     {step < 2 && <ArrowRight data-icon="inline-end" />}

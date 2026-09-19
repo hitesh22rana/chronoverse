@@ -242,7 +242,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                                     index <= step ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground")}>
                                     {index < step ? <Check className="size-3.5" aria-hidden="true" /> : index + 1}
                                 </span>
-                                {index < steps.length - 1 && <Separator className={cn("absolute top-3.5 left-[calc(50%+1.375rem)] w-[calc(100%-2.75rem)]", index < step && "bg-primary")} />}
+                                {index < steps.length - 1 && <Separator className={cn("absolute top-3.5 left-[calc(50%+1.375rem)] data-[orientation=horizontal]:w-[calc(100%-2.75rem)]", index < step && "bg-primary")} />}
                             </div>
                             <div>
                                 <p className={cn("text-[11px] font-medium sm:text-sm", index > step && "text-muted-foreground")}>{item.title}</p>
@@ -546,16 +546,16 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                         </div>
                         <Separator />
                         <DialogFooter className="shrink-0 gap-2 px-6 py-4 sm:items-center sm:justify-between">
-                            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isCreating}>
+                            <Button type="button" variant="outline" size="lg" onClick={() => onOpenChange(false)} disabled={isCreating}>
                                 Cancel
                             </Button>
-                            <div className="flex justify-end gap-2">
+                            <div className="flex items-center justify-end gap-2">
                                 {step > 0 && (
-                                    <Button type="button" variant="outline" onClick={() => setStep(step - 1)} disabled={isCreating}>
+                                    <Button type="button" variant="outline" size="lg" onClick={() => setStep(step - 1)} disabled={isCreating}>
                                         <ArrowLeft data-icon="inline-start" className="hidden sm:block" /> Previous
                                     </Button>
                                 )}
-                                <Button type="submit" disabled={isCreating || form.formState.isValidating}>
+                                <Button type="submit" size="lg" disabled={isCreating || form.formState.isValidating}>
                                     {isCreating && <Loader2 data-icon="inline-start" className="animate-spin" />}
                                     {step === 2 ? (isCreating ? "Creating…" : "Create workflow") : "Next"}
                                     {step < 2 && <ArrowRight data-icon="inline-end" />}

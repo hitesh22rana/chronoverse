@@ -315,9 +315,10 @@ validate_k8s_network_lockdown() {
     echo "infra/k8s/base/network-policy.yaml must keep three TEST-NET node-CIDR placeholders" >&2
     exit 1
   fi
-  # Peer selectors use the list-item form (    - podSelector:); the
-  # policy's own 2-space podSelector is the deny-all target, not a peer.
-  if awk '/^  name: /{pol=$2} pol=="chronoverse-kubelet-probes" && (/^    - podSelector:/ || /^    - namespaceSelector:/){print}' \
+  # Any pod or namespace peer reopens pod traffic to the upstreams, in
+  # any YAML style. Only the policy's own 2-space podSelector (the
+  # deny-all target, not a peer) is allowed; comments are ignored.
+  if awk '/^  name: /{pol=$2} pol=="chronoverse-kubelet-probes" {line=$0; sub(/#.*/, "", line); if ((line ~ /podSelector/ && line !~ /^  podSelector:$/) || (line ~ /namespaceSelector/ && line !~ /^  namespaceSelector:$/)) print line}' \
     "$root_dir/infra/k8s/base/network-policy.yaml" | grep -q .; then
     echo "chronoverse-kubelet-probes must admit node addresses only, not pods" >&2
     exit 1

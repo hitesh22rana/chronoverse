@@ -23,6 +23,7 @@ type Config struct {
 	URI       string
 	MasterKey string
 	TLS       *tls.Config
+	tlsErr    error
 }
 
 // Option configures the MeiliSearch client.
@@ -37,6 +38,10 @@ func New(ctx context.Context, options ...Option) (meilisearch.ServiceManager, er
 
 	for _, opt := range options {
 		opt(c)
+	}
+
+	if c.tlsErr != nil {
+		return nil, c.tlsErr
 	}
 
 	opts := []meilisearch.Option{}
@@ -86,6 +91,7 @@ func WithTLS(cfg *config.MeiliSearch) Option {
 
 		tlsConfig, err := newTLSConfig(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
 		if err != nil {
+			c.tlsErr = err
 			return
 		}
 		c.TLS = tlsConfig

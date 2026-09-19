@@ -318,7 +318,7 @@ validate_k8s_network_lockdown() {
   # Any pod or namespace peer reopens pod traffic to the upstreams, in
   # any YAML style. Only the policy's own 2-space podSelector (the
   # deny-all target, not a peer) is allowed; comments are ignored.
-  if awk '/^  name: /{pol=$2} pol=="chronoverse-kubelet-probes" {line=$0; sub(/#.*/, "", line); if ((line ~ /podSelector/ && line !~ /^  podSelector:$/) || (line ~ /namespaceSelector/ && line !~ /^  namespaceSelector:$/)) print line}' \
+  if awk '/^  name: /{pol=$2} pol=="chronoverse-kubelet-probes" {line=$0; sub(/#.*/, "", line); if ((line ~ /podSelector/ && line !~ /^  podSelector:[[:space:]]*$/) || (line ~ /namespaceSelector/ && line !~ /^  namespaceSelector:[[:space:]]*$/)) print line}' \
     "$root_dir/infra/k8s/base/network-policy.yaml" | grep -q .; then
     echo "chronoverse-kubelet-probes must admit node addresses only, not pods" >&2
     exit 1

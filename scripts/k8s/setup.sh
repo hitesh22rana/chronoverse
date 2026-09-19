@@ -1306,8 +1306,19 @@ EOF
     # rule leaves that selector intact.
     cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
       "$PATCH_DIR/chronoverse-frontend-network-policy-patch.yaml"
-    cp "$PATCH_DIR/runtime-agent-postgres-network-policy-patch.yaml" \
-      "$PATCH_DIR/chronoverse-kubelet-probes-network-policy-patch.yaml"
+    # The probes policy admits node addresses only: no podSelector peer,
+    # so pod traffic to the upstreams stays restricted to nginx.
+    {
+      cat <<'EOF'
+- op: replace
+  path: /spec/ingress/0/from
+  value:
+EOF
+      for cidr in $RUNTIME_NODE_CIDRS; do
+        echo "  - ipBlock:"
+        echo "      cidr: $cidr"
+      done
+    } > "$PATCH_DIR/chronoverse-kubelet-probes-network-policy-patch.yaml"
     {
       cat <<'EOF'
 - op: replace

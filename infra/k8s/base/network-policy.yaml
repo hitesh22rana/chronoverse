@@ -228,9 +228,10 @@ spec:
   ingress:
   # kubelet tcpSocket/httpGet probes originate from node addresses, so
   # setup.sh fills in the node CIDRs here too; the reserved value keeps
-  # direct kustomize builds closed. Every other probe is exec-based.
+  # direct kustomize builds closed. Only node addresses are admitted:
+  # pod traffic to these ports stays restricted to the nginx-only
+  # upstream rule. Every other probe is exec-based.
   - from:
-    - podSelector: {}
     - ipBlock:
         cidr: 192.0.2.1/32
     ports:

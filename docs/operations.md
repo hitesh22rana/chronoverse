@@ -622,7 +622,8 @@ expected keys. Also verify the atomic Docker proxy set: `docker-proxy-ca`,
 - The same mechanism fills the node placeholders in the default-deny tree:
   `NetworkPolicy/chronoverse-frontend` (hostNetwork controller to nginx),
   `NetworkPolicy/chronoverse-kubelet-probes` (kubelet to gateway and
-  dashboard), and `NetworkPolicy/chronoverse-egress` (workers to node
+  dashboard, node addresses only — no pod peer, so pod traffic to the
+  upstreams stays restricted to nginx), and `NetworkPolicy/chronoverse-egress` (workers to node
   `2376`, via `/spec/egress/0/to`). Direct overlays must patch all three;
   the namespace stays fail-closed without them.
 - A pod-network ingress controller reaches nginx from its own pod address,

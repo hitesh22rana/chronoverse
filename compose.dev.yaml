@@ -348,7 +348,12 @@ services:
       - ./compose/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks:
       - chronoverse
-    command: ["sh", "-ec", "export DOCKER_PROXY_TOKEN=$(cat /certs/docker-proxy/token 2>/dev/null || echo ''); exec haproxy -W -db -f /usr/local/etc/haproxy/haproxy.cfg"]
+    command:
+      [
+        "sh",
+        "-ec",
+        "export DOCKER_PROXY_TOKEN=$(cat /certs/docker-proxy/token 2>/dev/null || echo ''); exec haproxy -W -db -f /usr/local/etc/haproxy/haproxy.cfg",
+      ]
     depends_on:
       init-certs:
         condition: service_completed_successfully

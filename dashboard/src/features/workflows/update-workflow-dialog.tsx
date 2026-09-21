@@ -216,20 +216,20 @@ function UpdateWorkflowForm({
                                 </div>
                             </Tabs>
                             <Separator />
-                            <DialogFooter className="grid shrink-0 grid-cols-2 items-center gap-2 px-4 py-4 sm:flex sm:justify-between sm:px-6">
+                            <DialogFooter className="grid shrink-0 grid-cols-2 items-center gap-2 px-4 py-4 sm:gap-4 sm:px-6">
                                 <Button
                                     type="button"
                                     variant="outline"
                                     onClick={() => onOpenChange(false)}
                                     disabled={isUpdating}
-                                    className="h-10 py-0"
+                                    className="w-full"
                                 >
                                     Cancel
                                 </Button>
                                 <Button
                                     type="submit"
                                     disabled={isUpdating}
-                                    className="h-10 py-0"
+                                    className="w-full"
                                 >
                                     {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     {isUpdating ? "Saving…" : "Save changes"}

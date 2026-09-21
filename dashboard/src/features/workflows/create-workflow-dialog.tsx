@@ -263,17 +263,17 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                             </fieldset>
                         </div>
                         <Separator />
-                        <DialogFooter className="grid shrink-0 grid-cols-2 items-center gap-2 px-4 py-4 sm:flex sm:justify-between sm:px-6">
+                        <DialogFooter className="grid shrink-0 grid-cols-2 items-center gap-2 px-4 py-4 sm:gap-4 sm:px-6">
                             {step === 0 ? (
-                                <Button type="button" variant="outline" className="h-10 py-0" onClick={() => onOpenChange(false)} disabled={isCreating}>
+                                <Button type="button" variant="outline" className="w-full" onClick={() => onOpenChange(false)} disabled={isCreating}>
                                     Cancel
                                 </Button>
                             ) : (
-                                <Button type="button" variant="outline" className="h-10 py-0" onClick={() => setStep(step - 1)} disabled={isCreating}>
+                                <Button type="button" variant="outline" className="w-full" onClick={() => setStep(step - 1)} disabled={isCreating}>
                                     <ArrowLeft data-icon="inline-start" /> Previous
                                 </Button>
                             )}
-                            <Button type="submit" className="h-10 min-w-0 shrink whitespace-normal px-2 py-0 sm:px-4" disabled={isCreating || form.formState.isValidating}>
+                            <Button type="submit" className="w-full min-w-0 px-2 sm:px-4" disabled={isCreating || form.formState.isValidating}>
                                 {isCreating && <Loader2 data-icon="inline-start" className="animate-spin" />}
                                 {step === 2 ? (isCreating ? "Creating…" : "Create workflow") : "Next"}
                                 {step < 2 && <ArrowRight data-icon="inline-end" />}

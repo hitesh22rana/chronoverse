@@ -67,12 +67,14 @@ const baseCreateWorkflowSchema = baseWorkflowSchema.extend({
     retainLogs: z.boolean().default(true),
 })
 
-const heartbeatWorkflowSchema = baseCreateWorkflowSchema.extend({
+const heartbeatWorkflowFields = baseCreateWorkflowSchema.extend({
     kind: z.literal("HEARTBEAT"),
     heartbeatPayload: heartbeatPayloadSchema.extend({
         expectedStatusCode: heartbeatPayloadSchema.shape.expectedStatusCode.default(200),
     }),
-}).transform(data => ({
+})
+
+const heartbeatWorkflowSchema = heartbeatWorkflowFields.transform(data => ({
     ...data,
     retainLogs: false // HEARTBEAT workflows always have log_retention as false
 }))
@@ -86,6 +88,15 @@ export const createWorkflowSchema = z.discriminatedUnion("kind", [
     heartbeatWorkflowSchema,
     containerWorkflowSchema
 ])
+
+export const createWorkflowStepSchemas = [
+    baseCreateWorkflowSchema.pick({ name: true }).extend({ kind: z.enum(["HEARTBEAT", "CONTAINER"]) }),
+    z.discriminatedUnion("kind", [
+        heartbeatWorkflowFields.pick({ kind: true, heartbeatPayload: true }),
+        containerWorkflowSchema.pick({ kind: true, containerPayload: true }),
+    ]),
+    createWorkflowSchema,
+]
 
 export const updateWorkflowSchema = baseWorkflowSchema.extend({
     maxConsecutiveJobFailuresAllowed: baseWorkflowSchema.shape.maxConsecutiveJobFailuresAllowed.refine(val => val >= 3, {

@@ -52,9 +52,9 @@ export function serializeWorkflowPayload(kind: string, data: WorkflowConfigurati
             timeout: "",
         }
         const envObject = env.reduce((acc, item) => {
-            const [key, value] = item.split("=")
-            if (key) {
-                acc[key] = value || ""
+            const idx = item.indexOf("=")
+            if (idx > 0) {
+                acc[item.slice(0, idx)] = item.slice(idx + 1) || ""
             }
             return acc
         }, {} as Record<string, string>)

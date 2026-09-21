@@ -172,7 +172,7 @@ function UpdateWorkflowForm({
                         })} className="flex min-h-0 flex-col overflow-clip">
                             <Tabs value={section} onValueChange={setSection} className="min-h-0 gap-0">
                                 <div className="shrink-0 px-6 pb-4">
-                                    <TabsList aria-label="Workflow settings" className="h-12 w-full">
+                                    <TabsList aria-label="Workflow settings" className="w-full">
                                         <TabsTrigger value="configuration" disabled={isUpdating}><Settings2 /> Configuration</TabsTrigger>
                                         <TabsTrigger value="schedule" disabled={isUpdating}><Clock3 /> Schedule</TabsTrigger>
                                     </TabsList>

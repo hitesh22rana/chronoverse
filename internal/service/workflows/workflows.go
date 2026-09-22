@@ -97,7 +97,7 @@ type CreateWorkflowRequest struct {
 }
 
 // CreateWorkflow creates a new workflow and returns its ID.
-func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (jobID string, err error) {
+func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (workflowID string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.CreateWorkflow"),
 	)

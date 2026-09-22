@@ -382,7 +382,7 @@ lease should be treated as owned by an unavailable runtime.
 
 ### Notifications Service
 
-- `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT`
+- `NOTIFICATIONS_SERVICE_CONFIG_FETCH_LIMIT` caps fetch size for notification list operation.
 - `COMMAND_IDEMPOTENCY_EVENT_RETENTION`
 
 Client and random commands remain replayable for 24 hours. Automatic scheduling,

@@ -70,7 +70,7 @@ function UpdateWorkflowForm({
     onOpenChange
 }: UpdateWorkflowDialogProps) {
     const [section, setSection] = useState("configuration")
-    const initialized = useRef(false)
+    const initKey = useRef<string | null>(null)
     const {
         workflow,
         isLoading,
@@ -90,8 +90,13 @@ function UpdateWorkflowForm({
     });
 
     useEffect(() => {
-        if (!workflow || initialized.current) return;
-        initialized.current = true;
+        if (!workflow) return;
+        // The detail query serves stale cache first (30s staleTime) and refetches
+        // in the background. Re-init while pristine so saving can't silently
+        // overwrite a workflow that changed elsewhere; never clobber user edits.
+        if (initKey.current === workflow.updated_at) return;
+        if (initKey.current !== null && form.formState.isDirty) return;
+        initKey.current = workflow.updated_at;
 
         const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) as WorkflowPayload : {};
 
@@ -136,7 +141,7 @@ function UpdateWorkflowForm({
                 containerPayload: form.getValues("containerPayload")
             } : {})
         });
-    }, [workflow, form]);
+    }, [workflow, form, form.formState.isDirty]);
 
     const handleSubmit = (data: UpdateWorkflowFormValues) => {
         if (!workflow) return;

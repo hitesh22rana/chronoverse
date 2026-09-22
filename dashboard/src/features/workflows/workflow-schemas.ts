@@ -33,7 +33,7 @@ const heartbeatPayloadSchema = z.object({
         .refine(val => {
             if (!val) return true
             try {
-                const parsed = parseDuration(val as unknown as Duration, 's')
+                const parsed = parseDuration(val as Duration, 's')
                 return parsed > 0 && parsed <= 300
             } catch {
                 return false
@@ -55,7 +55,7 @@ const containerPayloadSchema = z.object({
         .refine(val => {
             if (!val) return true
             try {
-                const parsed = parseDuration(val as unknown as Duration, 's')
+                const parsed = parseDuration(val as Duration, 's')
                 return parsed > 0 && parsed <= 3600
             } catch {
                 return false

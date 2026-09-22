@@ -44,7 +44,7 @@ func New(ctx context.Context, options ...Option) (meilisearch.ServiceManager, er
 		return nil, c.tlsErr
 	}
 
-	opts := []meilisearch.Option{}
+	var opts []meilisearch.Option
 	if c.URI == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to initialize MeiliSearch client: missing uri")
 	}

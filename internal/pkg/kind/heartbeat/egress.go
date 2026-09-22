@@ -223,10 +223,7 @@ func isGlobal2001_23Exception(ip net.IP) bool {
 		}
 	}
 	// Three anycast addresses 2001:1::1, 2001:1::2, 2001:1::3
-	if ip.Equal(net.ParseIP("2001:1::1")) || ip.Equal(net.ParseIP("2001:1::2")) || ip.Equal(net.ParseIP("2001:1::3")) {
-		return true
-	}
-	return false
+	return ip.Equal(net.ParseIP("2001:1::1")) || ip.Equal(net.ParseIP("2001:1::2")) || ip.Equal(net.ParseIP("2001:1::3"))
 }
 
 func isGlobal192_0_0_24Exception(ip net.IP) bool {

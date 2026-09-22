@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -247,10 +249,7 @@ func uniqueWorkflowLogPairs(batch []*queueData) []workflowLogPair {
 		}
 	}
 
-	pairs := make([]workflowLogPair, 0, len(seen))
-	for _, pair := range seen {
-		pairs = append(pairs, pair)
-	}
+	pairs := slices.Collect(maps.Values(seen))
 	sort.Slice(pairs, func(i, j int) bool {
 		return workflowLogPairKey(pairs[i].workflowID, pairs[i].userID) < workflowLogPairKey(pairs[j].workflowID, pairs[j].userID)
 	})
@@ -350,12 +349,7 @@ func uniqueLogEventIDs(logs []*jobsmodel.JobLogEvent) []string {
 }
 
 func placeholders(count int) string {
-	items := make([]string, 0, count)
-	for range count {
-		items = append(items, "?")
-	}
-
-	return strings.Join(items, ",")
+	return strings.Join(slices.Repeat([]string{"?"}, count), ",")
 }
 
 func toAnySlice[T any](items []T) []any {

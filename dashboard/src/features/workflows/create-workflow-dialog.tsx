@@ -78,6 +78,15 @@ const steps = [
     { title: "Schedule", description: "Timing & retention" },
 ]
 
+function touchedFieldNames(touched: Record<string, unknown>, prefix = ""): string[] {
+    return Object.entries(touched).flatMap(([key, value]) => {
+        const path = prefix ? `${prefix}.${key}` : key
+        if (value === true) return [path]
+        if (value && typeof value === "object") return touchedFieldNames(value as Record<string, unknown>, path)
+        return []
+    })
+}
+
 export function CreateWorkflowDialog(props: CreateWorkflowDialogProps) {
     return props.open ? <CreateWorkflowForm {...props} /> : null
 }
@@ -86,10 +95,6 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const [step, setStep] = useState(0)
     const stepHeading = useRef<HTMLHeadingElement>(null)
     const previousStep = useRef(step)
-    useEffect(() => {
-        if (previousStep.current !== step) stepHeading.current?.focus()
-        previousStep.current = step
-    }, [step])
     const { createWorkflow, isCreating } = useWorkflows()
     const form = useForm<WorkflowFormValues>({
         resolver: zodResolver(createWorkflowStepSchemas[step]) as Resolver<WorkflowFormValues>,
@@ -109,6 +114,15 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
         },
         mode: "onChange",
     })
+
+    useEffect(() => {
+        if (previousStep.current !== step) {
+            stepHeading.current?.focus()
+            const names = touchedFieldNames(form.formState.touchedFields)
+            if (names.length) void form.trigger(names as Parameters<typeof form.trigger>[0])
+        }
+        previousStep.current = step
+    }, [step, form])
 
     const watchedKind = useWatch({ control: form.control, name: "kind" })
     const selectedKind = watchedKind || "HEARTBEAT"

@@ -113,7 +113,6 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check if client accepts gzip compression
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next.ServeHTTP(w, r)
 			return
@@ -131,14 +130,12 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 		// Set Vary header to indicate response varies based on Accept-Encoding
 		w.Header().Set("Vary", "Accept-Encoding")
 
-		// Create proper gzip response writer
 		gzipWriter := &gzipResponseWriter{
 			ResponseWriter: w,
 			gzipWriter:     gz,
 			status:         http.StatusOK,
 		}
 
-		// Serve the request with compressed response
 		next.ServeHTTP(gzipWriter, r)
 	})
 }
@@ -152,7 +149,6 @@ func (s *Server) withAllowedMethodMiddleware(allowedMethod string, next http.Han
 			return
 		}
 
-		// If the method is [POST, PUT, PATCH], limit the request body size
 		if r.Method == http.MethodPost ||
 			r.Method == http.MethodPut ||
 			r.Method == http.MethodPatch {
@@ -166,7 +162,6 @@ func (s *Server) withAllowedMethodMiddleware(allowedMethod string, next http.Han
 // withVerifyCSRFMiddleware is a middleware that checks the CSRF token.
 func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get the CSRF token from cookie
 		csrfCookie, err := r.Cookie(csrfCookieName)
 		if err != nil {
 			http.Error(w, "csrf token not found", http.StatusBadRequest)
@@ -174,7 +169,6 @@ func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFun
 		}
 		csrfToken := csrfCookie.Value
 
-		// Get the session from cookie
 		sessionCookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			http.Error(w, "session token not found", http.StatusBadRequest)
@@ -182,7 +176,6 @@ func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFun
 		}
 		sessionToken := sessionCookie.Value
 
-		// Verify the CSRF token
 		if err := verifyCSRFToken(csrfToken, sessionToken, s.validationCfg.CSRFHMACSecret, s.validationCfg.CSRFExpiry); err != nil {
 			handleError(w, err, "failed to verify csrf token")
 			return
@@ -201,7 +194,6 @@ func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFun
 // withVerifySessionMiddleware is a middleware that verifies the attached token.
 func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get the session from cookie instead of header
 		cookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			http.Error(w, "session not found", http.StatusUnauthorized)
@@ -209,14 +201,12 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 		}
 		session := cookie.Value
 
-		// Decrypt and verify the session
 		authToken, err := s.crypto.Decrypt(session)
 		if err != nil {
 			http.Error(w, "failed to decrypt session", http.StatusUnauthorized)
 			return
 		}
 
-		// Attach the token to the context
 		ctx := auth.WithAuthorizationToken(r.Context(), authToken)
 
 		// The cookie holds a server-audience token minted at login/register.
@@ -226,18 +216,15 @@ func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.Handler
 			return
 		}
 
-		// Get the corresponding user ID from the session
 		var userID string
 		if _, err = s.rdb.Get(r.Context(), session, &userID); err != nil {
 			http.Error(w, "invalid auth token", http.StatusUnauthorized)
 			return
 		}
 
-		// Attach the required information to the context
 		ctx = context.WithValue(ctx, sessionKey{}, session)
 		ctx = context.WithValue(ctx, userIDKey{}, userID)
 
-		// Call the next handler
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

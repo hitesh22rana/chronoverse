@@ -52,7 +52,6 @@ func verifyCSRFToken(csrfToken, session, secret string, maxAge time.Duration) er
 		return status.Error(codes.InvalidArgument, "invalid csrf token")
 	}
 
-	// Check if the token has expired
 	if time.Unix(ts, 0).Add(maxAge).Before(time.Now()) {
 		return status.Error(codes.InvalidArgument, "csrf token has expired")
 	}
@@ -60,7 +59,6 @@ func verifyCSRFToken(csrfToken, session, secret string, maxAge time.Duration) er
 	return nil
 }
 
-// _generateHMAC is a helper function that generates an HMAC from the given data and secret.
 func _generateHMAC(data, secret string) (string, error) {
 	h := hmac.New(sha256.New, []byte(secret))
 	if _, err := h.Write([]byte(data)); err != nil {

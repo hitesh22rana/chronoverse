@@ -238,10 +238,8 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 
 	cursor := r.URL.Query().Get("cursor")
 
-	// 1. query
 	query := r.URL.Query().Get("query")
 
-	// 2. kind
 	kind := r.URL.Query().Get("kind")
 	if kind != "" {
 		if !isValidKind(kind) {
@@ -250,7 +248,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. build_status
 	buildStatus := r.URL.Query().Get("build_status")
 	if buildStatus != "" {
 		if !isValidBuildStatus(buildStatus) {
@@ -259,7 +256,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. terminated
 	terminatedStr := r.URL.Query().Get("terminated")
 	if terminatedStr == "" {
 		terminatedStr = "false"
@@ -276,14 +272,12 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. interval_min
 	intervalMin, err := parseOptionalNonNegativeInt32(r.URL.Query().Get("interval_min"))
 	if err != nil {
 		http.Error(w, "invalid interval_min", http.StatusBadRequest)
 		return
 	}
 
-	// 6. interval_max
 	intervalMax, err := parseOptionalNonNegativeInt32(r.URL.Query().Get("interval_max"))
 	if err != nil || (intervalMax != 0 && intervalMax < intervalMin) {
 		http.Error(w, "invalid interval_max", http.StatusBadRequest)

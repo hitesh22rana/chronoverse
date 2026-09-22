@@ -435,7 +435,6 @@ func (r *Repository) insertLogsBatchToClickhouse(ctx context.Context, logs []*jo
 		return nil
 	}
 
-	// Prepare batch statement
 	stmt := fmt.Sprintf(`
         INSERT INTO %s 
         (event_id, job_id, workflow_id, user_id, timestamp, message, sequence_num, stream)

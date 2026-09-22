@@ -27,7 +27,6 @@ const (
 )
 
 // cancelJobs marks the workflow jobs as canceled and returns the jobs that need container cleanup.
-// This function is invoked via the cancelJobsWithStatus function.
 func (r *Repository) cancelJobs(
 	parentCtx context.Context,
 	workflow *workflowspb.GetWorkflowByIDResponse,
@@ -37,7 +36,6 @@ func (r *Repository) cancelJobs(
 ) ([]*jobspb.JobsResponse, error) {
 	cleanupJobs := make([]*jobspb.JobsResponse, 0, len(jobs.GetJobs()))
 
-	// Iterate over the jobs and cancel them
 	for _, job := range jobs.GetJobs() {
 		if _, ok := excludedJobIDs[job.GetId()]; ok {
 			continue
@@ -108,7 +106,6 @@ func (r *Repository) sendJobCanceledNotification(
 		return
 	}
 
-	// Send notification for the job termination.
 	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution.
 	go r.sendNotification(
@@ -136,7 +133,6 @@ func (r *Repository) sendWorkflowTerminatedNotification(
 		return
 	}
 
-	// Send notification for the workflow termination.
 	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution.
 	go r.sendNotification(
@@ -463,7 +459,6 @@ func (r *Repository) markRunningJobsCanceled(
 		// 2. Time since, the job has been started is greater than the configured timeout for the workflow
 		jobsToCancel := make([]*jobspb.JobsResponse, 0, len(jobs.GetJobs()))
 
-		// Iterate over the jobs and filter the ones to cancel
 		for _, job := range jobs.GetJobs() {
 			if job.GetStartedAt() == "" {
 				jobsToCancel = append(jobsToCancel, job)
@@ -507,7 +502,6 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		return err
 	}
 
-	// Get the workflow details
 	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
 		Id: workflowID,
 	})
@@ -531,20 +525,17 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		return status.Error(codes.Aborted, "failed to acquire distributed lock")
 	}
 
-	// Release the distributed lock
 	defer func() {
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
 		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
 	}()
 
-	// Cancel all the hanging jobs which are in the RUNNING state
 	// This is to ensure that we don't leave any jobs running after the workflow is terminated
 	cleanupJobs, err := r.markRunningJobsCanceled(ctx, workflow, userID)
 	if err != nil {
 		return err
 	}
 
-	// Cancel all the jobs which are in the QUEUED or PENDING state
 	pendingCleanupJobs, err := r.markJobsCanceledWithStatusAndTriggerExcept(
 		ctx,
 		workflow,

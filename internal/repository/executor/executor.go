@@ -703,10 +703,8 @@ func (r *Repository) executeWorkflow(
 	workflow *workflowspb.GetWorkflowByIDResponse,
 ) (string, error) {
 	switch workflow.GetKind() {
-	// Execute the HEARTBEAT workflow
 	case workflowsmodel.KindHeartbeat.ToString():
 		return "", r.executeHeartbeatWorkflow(ctx, workflow)
-	// Execute the CONTAINER workflow
 	case workflowsmodel.KindContainer.ToString():
 		return r.executeContainerWorkflow(ctx, csvc, jobID, leaseToken, runtimeNodeID, attempts, workflow)
 	default:

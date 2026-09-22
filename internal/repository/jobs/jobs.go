@@ -1131,7 +1131,6 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		span.End()
 	}()
 
-	// Add the cursor to the query
 	query := fmt.Sprintf(`
 	        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at, runtime_node_id, runtime_endpoint,
 	               terminal_reason_code, failure_kind, last_error_code, last_error_message
@@ -1142,7 +1141,6 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	// This is used to track the parameter index for the query dynamically
 	paramIndex := 3
 
-	// Apply filters if provided
 	if filters != nil {
 		if filters.Status != "" {
 			query += fmt.Sprintf(` AND status = $%d`, paramIndex)

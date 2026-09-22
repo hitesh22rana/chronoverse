@@ -121,7 +121,6 @@ func (r *Repository) MigratePostgres(ctx context.Context) (err error) {
 		span.End()
 	}()
 
-	// Execute migration with retry logic.
 	if err = r.withRetry(ctx, "PostgreSQL", defaultRetryConfig(), func() error {
 		return postgrespkg.Migrate(r.cfg.PostgresDSN)
 	}); err != nil {
@@ -201,7 +200,6 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 
 		lastErr = err
 
-		// Check if error is retryable.
 		if !r.isDatabaseErrorRetryable(err) {
 			logger.Error("database operation failed with non-retryable error",
 				zap.String("database_type", dbType),

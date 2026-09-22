@@ -37,7 +37,6 @@ func (r *Repository) deleteWorkflow(parentCtx context.Context, workflowID, userI
 		return status.Error(codes.Aborted, "failed to acquire distributed lock")
 	}
 
-	// Release the distributed lock
 	defer func() {
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
 		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)

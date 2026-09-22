@@ -120,7 +120,6 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 		return res, authToken, err
 	}
 
-	// Insert user into database.
 	query := fmt.Sprintf(`
 		INSERT INTO %s (email, password) 
 		VALUES ($1, $2)
@@ -192,7 +191,6 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 		span.End()
 	}()
 
-	// Fetch user from database
 	query := fmt.Sprintf(`
 		SELECT id, email, password, notification_preference, created_at, updated_at
 		FROM %s WHERE email = $1
@@ -228,7 +226,6 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 		return nil, "", err
 	}
 
-	// Validate password
 	if err = bcrypt.CompareHashAndPassword([]byte(loginUserResponse.Password), []byte(pass)); err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 			return nil, "", invalidCredentialsError()
@@ -321,7 +318,6 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 	`, postgres.TableUsers)
 	args := []any{notificationPreference, id}
 
-	// Execute the query
 	ct, err := r.pg.Exec(ctx, query, args...)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {

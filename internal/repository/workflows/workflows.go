@@ -1140,7 +1140,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
         WHERE id = $1 AND user_id = $2 AND terminated_at IS NOT NULL;
     `, postgres.TableWorkflows)
 
-	// Execute the query
 	ct, err := tx.Exec(ctx, query, activeWorkflowID, activeWorkflowUserID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {

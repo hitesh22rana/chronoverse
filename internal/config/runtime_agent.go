@@ -1,7 +1,7 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"net"
 	"os"
 	"strconv"
@@ -54,7 +54,7 @@ func InitRuntimeAgentConfig() (*RuntimeAgent, error) {
 	}
 	if cfg.RuntimeAgentConfig.DockerAdvertiseHost != "" {
 		if cfg.RuntimeAgentConfig.DockerAdvertisePort < 1 || cfg.RuntimeAgentConfig.DockerAdvertisePort > 65535 {
-			return nil, fmt.Errorf("runtime agent Docker advertise port must be between 1 and 65535")
+			return nil, errors.New("runtime agent Docker advertise port must be between 1 and 65535")
 		}
 		cfg.RuntimeAgentConfig.DockerEndpoint = "tcp://" + net.JoinHostPort(
 			cfg.RuntimeAgentConfig.DockerAdvertiseHost,

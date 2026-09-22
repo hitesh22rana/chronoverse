@@ -2,7 +2,7 @@ package databasemigration
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
@@ -145,7 +145,7 @@ func (r *Repository) MigrateClickHouse(ctx context.Context) (err error) {
 	// Execute migration using native ClickHouse client with proper TLS support.
 	if err = r.withRetry(ctx, "ClickHouse", defaultRetryConfig(), func() error {
 		if r.cfg.ClickHouseClient == nil {
-			return fmt.Errorf("clickhouse client is not configured")
+			return errors.New("clickhouse client is not configured")
 		}
 		return clickhousepkg.Migrate(ctx, r.cfg.ClickHouseClient)
 	}); err != nil {

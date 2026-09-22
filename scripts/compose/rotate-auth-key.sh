@@ -12,7 +12,6 @@ if [ -z "$issuer" ]; then
   exit 1
 fi
 
-# Validate issuer
 case "$issuer" in
   server|users-service|workflows-service|jobs-service|notifications-service|analytics-service|scheduling-worker|workflow-worker|execution-worker|runtime-agent|joblogs-processor|analytics-processor|outbox-relay) ;;
   *) echo "unknown issuer: $issuer" >&2; exit 1 ;;
@@ -213,7 +212,6 @@ for iss in $all_issuers; do
     verifiers="$verifiers $iss"
   fi
 done
-# Trim leading space
 verifiers=$(printf '%s' "$verifiers" | sed 's/^ //')
 
 cat <<EOF

@@ -578,7 +578,6 @@ create_auth_secret() {
     openssl genpkey -algorithm ED25519 -outform pem -out "$TMP_DIR/issuers/$iss/auth.ed" >/dev/null 2>&1
     openssl pkey -in "$TMP_DIR/issuers/$iss/auth.ed" -pubout -out "$TMP_DIR/issuers/$iss/auth.ed.pub" >/dev/null 2>&1
   done
-  # legacy alias (server)
   # trusted bundle
   TRUSTED="$TMP_DIR/issuers/trusted.json"
   printf '{\n' > "$TRUSTED.tmp"

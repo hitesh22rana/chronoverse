@@ -96,7 +96,7 @@ export function useWorkflowDetails(
             toast.success("workflow deleted successfully")
             queryClient.invalidateQueries({ queryKey: queryKeys.workflows.all })
             queryClient.removeQueries({ queryKey: queryKeys.workflow.detail(workflowId) })
-            router.push("/") // Redirect to the dashboard after deletion
+            router.push("/")
         },
         onError: (error) => {
             toast.error(error.message)

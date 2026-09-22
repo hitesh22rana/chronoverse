@@ -1196,13 +1196,11 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	}, nil
 }
 
-// withAuthorization issues the necessary headers and tokens for authorization.
 // Job-log lookups call workflows-service to enforce workflow ownership.
 func (r *Repository) withAuthorization(ctx context.Context) (context.Context, error) {
 	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, auth.ServiceNameWorkflows)
 }
 
-// parseTime parses the time.
 func parseTime(t string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, t)
 }
@@ -1221,7 +1219,6 @@ func encodeJobLogsCursor(cursor jobLogsCursor) string {
 	return base64.StdEncoding.EncodeToString(payload)
 }
 
-// encodeListJobsCursor encodes the cursor.
 func encodeListJobsCursor(cursor string) string {
 	if cursor == "" {
 		return ""
@@ -1298,7 +1295,6 @@ func appendJobLogsCursorFilter(filter, sequenceOperator string, sequenceNum uint
 	) + `"` + meiliFilterValue(eventID) + `"))`
 }
 
-// extractDataFromGetJobLogsCursor extracts the data from the cursor.
 func extractDataFromGetJobLogsCursor(cursor string) (jobLogsCursor, error) {
 	decodedBytes, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
@@ -1359,7 +1355,6 @@ func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
 	return source, nil
 }
 
-// extractDataFromListJobsCursor extracts the data from the cursor.
 func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
 	parts := bytes.Split([]byte(cursor), []byte{delimiter})
 	if len(parts) != 2 {

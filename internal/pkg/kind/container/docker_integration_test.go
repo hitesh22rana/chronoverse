@@ -114,7 +114,6 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// In the test body
 			containerID, logs, errs, err := workflow.Execute(t.Context(), tt.timeout, tt.image, tt.cmd, tt.env)
 			cleanupDockerContainer(t, workflow, containerID)
 			if tt.executionError != nil {
@@ -322,7 +321,6 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Create a container to terminate
 			containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, tt.image, tt.cmd, nil)
 			cleanupDockerContainer(t, workflow, containerID)
 			if tt.err != nil {

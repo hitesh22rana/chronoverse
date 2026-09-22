@@ -642,14 +642,13 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set SSE headers before writing anything
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
 	// Disable compression for SSE
 	w.Header().Del("Content-Encoding")
-	w.Header().Del("Transfer-Encoding") // Ensure no transfer encoding
+	w.Header().Del("Transfer-Encoding")
 
 	rc, ok := w.(http.Flusher)
 	if !ok {
@@ -657,7 +656,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create a context that can be canceled when the client disconnects
 	ctx := r.Context()
 
 	stream, err := s.jobsClient.StreamJobLogs(ctx, &jobspb.StreamJobLogsRequest{
@@ -666,7 +664,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 		UserId:     userID,
 	})
 	if err != nil {
-		// Send a generic error event to the client
 		s.logStreamError(ctx, "failed to stream job logs", err)
 		fmt.Fprint(w, "event: error\ndata: {\"message\":\"stream failed\"}\n\n")
 		rc.Flush()
@@ -679,13 +676,11 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Client disconnected
 			return
 		default:
 			msg, err := stream.Recv()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					// Stream ended normally
 					fmt.Fprintf(w, "event: end\ndata: {\"status\":\"stream_ended\"}\n\n")
 					rc.Flush()
 					return

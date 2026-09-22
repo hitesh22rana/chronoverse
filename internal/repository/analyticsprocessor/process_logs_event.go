@@ -22,7 +22,6 @@ func (r *Repository) processLogsEvent(ctx context.Context, event *analyticsmodel
 		return status.Error(codes.InvalidArgument, "missing event data for logs event")
 	}
 
-	// Unmarshal json.RawMessage to the proper struct
 	var data analyticsmodel.EventTypeLogsData
 	if err := json.Unmarshal(event.Data, &data); err != nil {
 		return status.Error(codes.InvalidArgument, "invalid logs event data format")

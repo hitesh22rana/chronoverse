@@ -16,7 +16,6 @@ type Crypto struct {
 
 // New creates a new Crypto.
 func New(secret string) (*Crypto, error) {
-	// AES-256 secret key must be 32 bytes long
 	if len(secret) != 32 {
 		return nil, status.Error(codes.InvalidArgument, "secret must be 32 bytes long")
 	}
@@ -24,12 +23,10 @@ func New(secret string) (*Crypto, error) {
 	return &Crypto{secret: secret}, nil
 }
 
-// encode encodes the data.
 func (c *Crypto) encode(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-// decode decodes the string.
 func (c *Crypto) decode(s string) ([]byte, error) {
 	data, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
@@ -39,7 +36,7 @@ func (c *Crypto) decode(s string) ([]byte, error) {
 	return data, nil
 }
 
-// Encrypt encrypts the data.
+// Encrypt encrypts data with AES-256-GCM and returns base64 ciphertext.
 func (c *Crypto) Encrypt(data string) (string, error) {
 	block, err := aes.NewCipher([]byte(c.secret))
 	if err != nil {
@@ -56,7 +53,7 @@ func (c *Crypto) Encrypt(data string) (string, error) {
 	return c.encode(cipherText), nil
 }
 
-// Decrypt decrypts the data.
+// Decrypt verifies and decrypts base64 AES-256-GCM ciphertext.
 func (c *Crypto) Decrypt(data string) (string, error) {
 	block, err := aes.NewCipher([]byte(c.secret))
 	if err != nil {

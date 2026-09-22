@@ -298,7 +298,6 @@ func (s *Store) DeleteByPattern(ctx context.Context, pattern string) (int64, err
 			return 0, status.Errorf(codes.Internal, "failed to scan keys: %v", err)
 		}
 
-		// If keys found, delete them in a pipeline for efficiency
 		if len(keys) > 0 {
 			pipe := s.client.Pipeline()
 			for _, key := range keys {

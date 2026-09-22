@@ -386,13 +386,11 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 			notificationsmodel.KindWebAlert.ToString(),
 		}
 	case "NONE":
-		// If the user has opted out of notifications, return an empty response
 		return &notificationsmodel.ListNotificationsResponse{
 			Notifications: nil,
 			Cursor:        "",
 		}, nil
 	default:
-		// If the user has an invalid preference, return error
 		err = status.Errorf(codes.InvalidArgument, "invalid notification preference: %s", user.GetNotificationPreference())
 		return nil, err
 	}
@@ -409,7 +407,6 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 		query += fmt.Sprintf(` AND kind = ANY($%d)`, len(args))
 	}
 
-	// Add cursor pagination
 	if cursor != "" {
 		id, createdAt, _err := extractDataFromCursor(cursor)
 		if _err != nil {

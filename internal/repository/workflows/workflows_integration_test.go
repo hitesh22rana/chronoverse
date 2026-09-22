@@ -36,7 +36,6 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 	userID := seedUser(ctx, t, pg)
 	idempotencyKey := "workflow-lifecycle-" + t.Name()
 
-	// Create a workflow.
 	created, err := repo.CreateWorkflow(
 		ctx, userID, "nightly-backup", `{"image":"alpine:3.22.2"}`, "CONTAINER",
 		3600, 3, true, idempotencyKey,

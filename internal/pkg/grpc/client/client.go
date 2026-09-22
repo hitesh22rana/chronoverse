@@ -87,7 +87,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
 	)
 
-	// Configure TLS or insecure connection
 	if svcCfg.TLS.Enabled {
 		creds, err := loadTLSCredentials(svcCfg.TLS)
 		if err != nil {
@@ -102,7 +101,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		cbCfg = DefaultCircuitBreakerConfig()
 	}
 
-	// Configure circuit breaker options
 	cb := breaker.New(
 		cbCfg.ErrorThreshold,
 		cbCfg.SuccessThreshold,
@@ -123,7 +121,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		retryCfg = DefaultRetryConfig()
 	}
 
-	// Configure retry options
 	retryOpts := []retry.CallOption{
 		retry.WithCodes(retryCfg.RetryableCodes...),
 		retry.WithMax(retryCfg.MaxAttempts),

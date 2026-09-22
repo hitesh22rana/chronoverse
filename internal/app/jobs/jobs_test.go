@@ -994,7 +994,6 @@ func TestStreamJobLogs(t *testing.T) {
 		expectClosed bool
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		args  args
@@ -1023,7 +1022,6 @@ func TestStreamJobLogs(t *testing.T) {
 					gomock.Eq(auth.ServiceNameJobs),
 				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 
-				// Create a channel that will send a few logs then close
 				ch := make(chan *jobsmodel.JobLog, 3)
 				go func() {
 					defer close(ch)
@@ -1080,7 +1078,6 @@ func TestStreamJobLogs(t *testing.T) {
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
 
-				// Create a channel that sends logs continuously
 				ch := make(chan *jobsmodel.JobLog)
 				go func() {
 					defer close(ch)
@@ -1242,29 +1239,24 @@ func TestStreamJobLogs(t *testing.T) {
 				return
 			}
 
-			// Read logs from the stream
 			var (
 				logCount     int
 				streamClosed bool
 			)
 
-			// Use a timeout to prevent test from hanging
 			timeout := time.After(300 * time.Millisecond)
 			for {
 				select {
 				case <-timeout:
-					// Test timeout - exit the loop
 					goto done
 				default:
 					log, err := stream.Recv()
 					if err != nil {
-						// Stream ended or error occurred
 						streamClosed = true
 						goto done
 					}
 					if log != nil {
 						logCount++
-						// Verify log structure
 						if log.Message == "" {
 							t.Errorf("received log with empty message")
 						}
@@ -1279,7 +1271,6 @@ func TestStreamJobLogs(t *testing.T) {
 			}
 
 		done:
-			// Verify expectations based on test case
 			if tt.want.expectClosed && !streamClosed {
 				t.Errorf("expected stream to be closed, but it's still open")
 			}
@@ -1288,7 +1279,6 @@ func TestStreamJobLogs(t *testing.T) {
 				t.Errorf("expected %d logs, got %d", tt.want.logCount, logCount)
 			}
 
-			// Ensures stream is properly closed
 			if !streamClosed {
 				if err := stream.CloseSend(); err != nil {
 					t.Errorf("failed to close stream: %v", err)

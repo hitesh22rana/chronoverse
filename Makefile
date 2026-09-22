@@ -3,7 +3,7 @@ PROTOC_GEN_GO_VERSION?=$(shell go list -m -f '{{.Version}}' google.golang.org/pr
 PROTOC_GEN_GO_GRPC_VERSION?=v1.6.2
 export PATH := $(GO_BIN):$(PATH)
 PKG_PATH=github.com/hitesh22rana/chronoverse/internal/pkg/svc
-APP_VERSION?=v0.0.1 # Default version
+APP_VERSION?=v0.0.1
 
 .PHONY: generate
 generate:

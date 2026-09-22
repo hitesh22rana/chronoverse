@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// IsUniqueViolation checks if the error is a unique violation error.
+// IsUniqueViolation reports whether err is a PostgreSQL unique violation.
 func (db *Postgres) IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
@@ -17,12 +17,12 @@ func (db *Postgres) IsUniqueViolation(err error) bool {
 	return pgErr.Code == "23505"
 }
 
-// IsNoRows checks if the error is a no rows error.
+// IsNoRows reports whether err means the query returned no rows.
 func (db *Postgres) IsNoRows(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
 }
 
-// IsInvalidTextRepresentation checks if the error is an invalid text representation error.
+// IsInvalidTextRepresentation reports whether err is a PostgreSQL invalid-text-representation error.
 func (db *Postgres) IsInvalidTextRepresentation(err error) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {

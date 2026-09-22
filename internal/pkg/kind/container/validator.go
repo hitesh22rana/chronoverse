@@ -66,10 +66,8 @@ func ExtractAndValidateContainerDetails(payload string) (*Details, error) {
 	}
 	details.Image = image
 
-	// Command is an optional field
 	cmd, ok := data["cmd"].([]any)
 	if ok {
-		// If cmd is provided, convert all elements to strings
 		for _, c := range cmd {
 			cStr, _ok := c.(string)
 			if !_ok {
@@ -79,7 +77,6 @@ func ExtractAndValidateContainerDetails(payload string) (*Details, error) {
 		}
 	}
 
-	// Environment variables are optional
 	env, ok := data["env"].(map[string]any)
 	if ok {
 		for key, value := range env {

@@ -22,7 +22,6 @@ func (r *Repository) processJobsEvent(ctx context.Context, event *analyticsmodel
 		return status.Error(codes.InvalidArgument, "missing event data for jobs event")
 	}
 
-	// Unmarshal json.RawMessage to the proper struct
 	var data analyticsmodel.EventTypeJobsData
 	if err := json.Unmarshal(event.Data, &data); err != nil {
 		return status.Error(codes.InvalidArgument, "invalid jobs event data format")

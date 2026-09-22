@@ -1393,25 +1393,19 @@ func TestStreamJobLogs(t *testing.T) {
 				return
 			}
 
-			// Test that the channel is properly typed
 			select {
 			case <-stream:
-				// Channel is readable (this is expected behavior)
 			case <-time.After(100 * time.Millisecond):
-				// Channel is not immediately readable (also expected)
 			}
 
-			// Verify the channel can be closed without panic
 			go func() {
 				time.Sleep(50 * time.Millisecond)
-				cancel() // This should trigger cleanup in the goroutine
+				cancel()
 			}()
 
-			// Try to read from channel with timeout to ensure cleanup works
 			select {
 			case <-stream:
 			case <-time.After(200 * time.Millisecond):
-				// Timeout is acceptable in tests
 			}
 		})
 	}

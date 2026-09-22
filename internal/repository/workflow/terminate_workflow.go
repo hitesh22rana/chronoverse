@@ -74,7 +74,6 @@ func (r *Repository) cancelJobs(
 
 //nolint:nilnil // A stale/missing cancellation is an effect-idempotent no-op.
 func (r *Repository) cancelJobRecord(parentCtx context.Context, jobID, terminalReasonCode string) (*jobspb.CancelJobResponse, error) {
-	// Issue necessary headers and tokens for authorization.
 	ctx, err := r.withAuthorization(parentCtx)
 	if err != nil {
 		return nil, err
@@ -106,7 +105,6 @@ func (r *Repository) sendJobCanceledNotification(
 		return
 	}
 
-	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution.
 	go r.sendNotification(
 		notificationCtx,
@@ -133,7 +131,6 @@ func (r *Repository) sendWorkflowTerminatedNotification(
 		return
 	}
 
-	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution.
 	go r.sendNotification(
 		notificationCtx,
@@ -381,7 +378,6 @@ func (r *Repository) markJobsCanceledWithStatusAndTriggerExcept(
 
 	var cleanupJobs []*jobspb.JobsResponse
 
-	// Get all the jobs of the workflow which are in the specified status
 	cursor := ""
 	for {
 		ctx, err := r.withAuthorization(parentCtx)
@@ -430,7 +426,6 @@ func (r *Repository) markRunningJobsCanceled(
 ) ([]*jobspb.JobsResponse, error) {
 	var cleanupJobs []*jobspb.JobsResponse
 
-	// Get all the jobs of the workflow which are in the RUNNING state
 	cursor := ""
 	for {
 		ctx, err := r.withAuthorization(parentCtx)
@@ -454,9 +449,6 @@ func (r *Repository) markRunningJobsCanceled(
 			break
 		}
 
-		// Cancel all running jobs which match the following criteria:
-		// 1. StartedAt is not set (i.e., the job has not started yet)
-		// 2. Time since, the job has been started is greater than the configured timeout for the workflow
 		jobsToCancel := make([]*jobspb.JobsResponse, 0, len(jobs.GetJobs()))
 
 		for _, job := range jobs.GetJobs() {
@@ -465,7 +457,6 @@ func (r *Repository) markRunningJobsCanceled(
 				continue
 			}
 
-			// Skip the job if the started time is not valid
 			if _, parseError := time.Parse(time.RFC3339Nano, job.GetStartedAt()); parseError != nil {
 				continue
 			}
@@ -513,7 +504,6 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		return nil
 	}
 
-	// Acquire a distributed lock to ensure only one worker processes the job at a time
 	lockKey := fmt.Sprintf(
 		"%s:%s:%s",
 		lockKeyPrefix,
@@ -530,7 +520,6 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
 	}()
 
-	// This is to ensure that we don't leave any jobs running after the workflow is terminated
 	cleanupJobs, err := r.markRunningJobsCanceled(ctx, workflow, userID)
 	if err != nil {
 		return err

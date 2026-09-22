@@ -162,7 +162,6 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_ADVERTISED_LISTENERS: SSL://kafka:9094
 
-      # SSL config...
       KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets
       KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
       KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds.txt
@@ -176,7 +175,6 @@ services:
 
       KAFKA_LOG_DIRS: /var/lib/kafka/data
 
-      # Internal topics replication factors
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
 
@@ -184,10 +182,8 @@ services:
       KAFKA_OFFSETS_TOPIC_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
-      # Optional: global default
       KAFKA_MIN_INSYNC_REPLICAS: 1
 
-      # Other Confluent internal topics left at RF=1
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
@@ -520,7 +516,6 @@ services:
         export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
 
         mkdir -p /certs/ca
-        # Generate CA if not exists
         if [ ! -f /certs/ca/ca.key ]; then
           echo "🛡️ Generating CA certificate..."
           openssl genrsa -out /certs/ca/ca.key 4096

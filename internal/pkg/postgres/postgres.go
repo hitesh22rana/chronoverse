@@ -92,10 +92,8 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 		cfg.DialTimeout = 5 * time.Second
 	}
 
-	// DSN's for database connections
 	var pgDSN string
 	if cfg.TLSConfig.Enabled {
-		// Enable mutual TLS with full verification
 		sslMode := "verify-full"
 
 		pgDSN = fmt.Sprintf(
@@ -135,7 +133,6 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to parse connection string: %v", err)
 	}
 
-	// Configure pool settings
 	poolConfig.MaxConns = cfg.MaxConns
 	poolConfig.MinConns = cfg.MinConns
 	poolConfig.MaxConnLifetime = cfg.MaxConnLife

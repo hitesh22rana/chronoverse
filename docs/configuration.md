@@ -421,8 +421,8 @@ node-stable endpoint on `NODE_IP:2376` via `hostNetwork` — not a pod IP or
 load-balanced `tcp://docker-proxy:2376` `ClusterIP`. The DaemonSet is per-node by design;
 a `ClusterIP` would load-balance to a random backend and break the invariant
 that `ClaimJob` (`internal/repository/jobs/lease.go:254`) selects one `runtime_nodes`
-row and workers later dial its stored `runtime_endpoint` (`internal/repository/executor/executor.go:682`,
-`internal/repository/jobs/lease.go:1063` recovery). The DaemonSet's HAProxy
+row and workers later dial its stored `runtime_endpoint` (`internal/repository/executor/executor.go:712`,
+`internal/repository/jobs/lease.go:1143` recovery). The DaemonSet's HAProxy
 binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required`
 plus the `X-Chronoverse-Docker-Proxy-Token` header allowlist and an exact
 Docker method/path allowlist before forwarding to the host socket. Runtime-agent

@@ -54,7 +54,6 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 		span.End()
 	}()
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
@@ -138,7 +137,6 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
-		// Check if the user already exists
 		if r.pg.IsUniqueViolation(err) {
 			err = status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
 			return nil, "", err
@@ -235,7 +233,6 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 		return nil, "", err
 	}
 
-	// Issue authToken
 	authToken, err = r.auth.IssueToken(ctx, loginUserResponse.ID, auth.ServiceNameServer)
 	if err != nil {
 		return nil, "", err

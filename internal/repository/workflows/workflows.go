@@ -1055,8 +1055,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	// Precondition: Only delete workflows that are terminated.
-	// If the workflow is not terminated, we should not allow deletion.
+	// Only terminated workflows with no RUNNING jobs may be deleted.
 	activeWorkflowQuery := fmt.Sprintf(`
         SELECT id::text, user_id::text, terminated_at
         FROM %s
@@ -1093,9 +1092,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		return err
 	}
 
-	// Precondition: There should be no active jobs for this workflow.
-	// If there are active/running jobs, we should not allow deletion.
-	// This is to prevent accidental deletion of workflows that are still running.
 	activeJobsQuery := fmt.Sprintf(`
         SELECT id
         FROM %s
@@ -1116,7 +1112,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 
 		//nolint:gocritic // Ifelse chain is used to handle specific errors
 		if r.pg.IsNoRows(err) {
-			// No active jobs found, we can proceed with deletion
 			activeJobID = ""
 		} else if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid workflow or user ID: %v", err)
@@ -1132,8 +1127,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		return err
 	}
 
-	// Only delete workflows that are terminated
-	// This is to prevent accidental deletion of active workflows.
 	query := fmt.Sprintf(`
         DELETE FROM %s
         WHERE id = $1 AND user_id = $2 AND terminated_at IS NOT NULL;
@@ -1196,7 +1189,6 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 		span.End()
 	}()
 
-	// Base query for user's workflows
 	query := fmt.Sprintf(`
         SELECT id, name, payload, kind, build_status, interval,
             consecutive_job_failures_count, max_consecutive_job_failures_allowed,
@@ -1255,7 +1247,6 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 		args = append(args, createdAt, id)
 	}
 
-	// Always sort by created_at DESC, id DESC for consistency
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	rows, err := r.pg.Query(ctx, query, args...)

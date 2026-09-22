@@ -74,21 +74,16 @@ func StreamLoggingInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
 	return logging.StreamServerInterceptor(
 		loggingInterceptor(logger),
 		[]logging.Option{
-			// Log based on status code
 			logging.WithLevels(serverCodeToLevel),
 
-			// Only log when a call finishes
 			logging.WithLogOnEvents(
 				logging.PayloadReceived,
 				logging.FinishCall,
 			),
 
-			// Add context information
 			logging.WithFieldsFromContext(func(ctx context.Context) logging.Fields {
 				fields := logging.Fields{}
 
-				// Add trace and span IDs, this is useful for tracing and debugging
-				// and can be used to correlate logs with traces.
 				span := trace.SpanFromContext(ctx)
 				if span.SpanContext().IsValid() {
 					fields = append(fields,

@@ -120,7 +120,7 @@ export function useWorkflowDetails(
     return {
         workflow: getWorkflowQuery.data as Workflow,
         isLoading: getWorkflowQuery.isLoading,
-        isFetching: getWorkflowQuery.isFetching,
+        fetchStatus: getWorkflowQuery.fetchStatus,
         error: getWorkflowQuery.error,
         refetch: getWorkflowQuery.refetch,
         updateWorkflow: (payload: UpdateWorkflowDetails, onSuccess?: () => void) => updateWorkflowMutation.mutate({

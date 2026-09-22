@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { WorkflowConfigurationFields } from "./workflow-configuration-fields"
 import { serializeWorkflowPayload, type WorkflowConfigurationValues } from "./workflow-form-values"
+import { isWorkflowDetailsReady } from "./workflow-query-state"
 
 import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
 
@@ -75,17 +76,18 @@ function UpdateWorkflowForm({
     const {
         workflow,
         isLoading,
-        isFetching,
+        fetchStatus,
         error,
         refetch,
         updateWorkflow,
         isUpdating
     } = useWorkflowDetails(workflowId);
     // The detail query serves stale cache first and refetches in the background.
-    // Hold the form until that opening fetch settles successfully: on failure the
-    // cached data is retained, so unlocking then would allow editing stale values.
+    // Hold the form until that opening fetch settles successfully: a failed
+    // refetch retains cached data and an offline fetch pauses with no error,
+    // so unlocking on those would allow editing stale values.
     // The latch ignores later background polls.
-    if (!isFetching && !error && !ready) setReady(true)
+    if (!ready && isWorkflowDetailsReady(fetchStatus, error)) setReady(true)
 
     const form = useForm<UpdateWorkflowFormValues>({
         resolver: zodResolver(updateWorkflowSchema) as Resolver<UpdateWorkflowFormValues>,
@@ -175,7 +177,7 @@ function UpdateWorkflowForm({
                 </DialogHeader>
 
                 {isLoading || !ready ? (
-                    error && !isFetching ? (
+                    error && fetchStatus !== "fetching" ? (
                         <div className="flex flex-col items-center gap-3 my-8 px-6 text-center">
                             <p className="text-sm text-muted-foreground">Couldn&apos;t load the latest workflow data. Editing cached values could overwrite newer changes.</p>
                             <Button type="button" variant="outline" onClick={() => { void refetch() }}>

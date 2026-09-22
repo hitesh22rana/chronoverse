@@ -10,8 +10,8 @@ const baseWorkflowSchema = z.object({
         z.number()
     ])
         .transform(val => val === "" ? undefined : Number(val))
-        .refine(val => val === undefined || (val >= 1 && val <= 10080), {
-            message: "Must be between 1 and 10080 minutes (1 week)"
+        .refine(val => val === undefined || (Number.isInteger(val) && val >= 1 && val <= 10080), {
+            message: "Must be a whole number between 1 and 10080 minutes (1 week)"
         }),
     maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(3).max(100).default(3)
 })

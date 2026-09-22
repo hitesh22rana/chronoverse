@@ -20,7 +20,7 @@ const (
 func generateCSRFToken(session, secret string) (string, error) {
 	timeStamp := strconv.FormatInt(time.Now().Unix(), 10)
 	data := session + timeStamp
-	sha, err := _generateHMAC(data, secret)
+	sha, err := generateHMAC(data, secret)
 	if err != nil {
 		return "", err
 	}
@@ -43,7 +43,7 @@ func verifyCSRFToken(csrfToken, session, secret string, maxAge time.Duration) er
 	}
 
 	data := session + timeStamp
-	expectedSHA, err := _generateHMAC(data, secret)
+	expectedSHA, err := generateHMAC(data, secret)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func verifyCSRFToken(csrfToken, session, secret string, maxAge time.Duration) er
 	return nil
 }
 
-func _generateHMAC(data, secret string) (string, error) {
+func generateHMAC(data, secret string) (string, error) {
 	h := hmac.New(sha256.New, []byte(secret))
 	if _, err := h.Write([]byte(data)); err != nil {
 		return "", status.Errorf(codes.Internal, "failed to write data to hmac: %v", err)

@@ -12,6 +12,8 @@ function Select({
   return <SelectPrimitive.Root data-slot="select" {...props} />
 }
 
+const SelectGroup = SelectPrimitive.Group
+
 function SelectValue({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Value>) {
@@ -142,6 +144,7 @@ function SelectScrollDownButton({
 export {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectScrollDownButton,
   SelectScrollUpButton,

@@ -27,6 +27,9 @@ it.each([createWorkflowSchema, updateWorkflowSchema])("preserves shared validati
     for (const interval of ["0", "10081", "5m", "1.5"]) {
         expect(schema.safeParse({ ...input, interval }).success).toBe(false)
     }
+    for (const interval of [0, 10081, 1.5, 200.5]) {
+        expect(schema.safeParse({ ...input, interval }).success).toBe(false)
+    }
     for (const name of [" a ", "a".repeat(51)]) {
         expect(schema.safeParse({ ...input, name }).success).toBe(false)
     }

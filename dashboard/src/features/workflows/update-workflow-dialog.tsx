@@ -1,15 +1,15 @@
 "use client"
 
-import { WorkflowNumberField, ContainerListField } from "./workflow-form-fields"
+import { WorkflowNumberField } from "./workflow-form-fields"
 
-import { Fragment, useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, useWatch, type Resolver } from "react-hook-form"
+import { useForm, type Resolver } from "react-hook-form"
 import { updateWorkflowSchema } from "./workflow-schemas"
 import {
+    Clock3,
+    Settings2,
     Loader2,
-    Plus,
-    Trash2
 } from "lucide-react"
 
 import {
@@ -23,47 +23,26 @@ import {
 import {
     Form,
     FormControl,
-    FormDescription,
     FormField,
     FormItem,
     FormLabel,
     FormMessage
 } from "@/components/ui/form"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle
-} from "@/components/ui/card"
+import { WorkflowConfigurationFields } from "./workflow-configuration-fields"
+import { serializeWorkflowPayload, type WorkflowConfigurationValues } from "./workflow-form-values"
+import { isWorkflowDetailsReady } from "./workflow-query-state"
 
 import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
 
-type HeaderFormValue = {
-    id?: string
-    key: string
-    value: string
-}
-
-type UpdateWorkflowFormValues = {
+type UpdateWorkflowFormValues = WorkflowConfigurationValues & {
     name: string
     interval: number | string
     maxConsecutiveJobFailuresAllowed: number
-    heartbeatPayload?: {
-        endpoint: string
-        expectedStatusCode: number
-        headers: HeaderFormValue[]
-        timeout: string
-    }
-    containerPayload?: {
-        image: string
-        cmd: string[]
-        cmdIds?: string[]
-        env: string[]
-        envIds?: string[]
-        timeout: string
-    }
+
 }
 
 type WorkflowPayload = {
@@ -82,17 +61,33 @@ interface UpdateWorkflowDialogProps {
     onOpenChange: (_open: boolean) => void;
 }
 
-export function UpdateWorkflowDialog({
+export function UpdateWorkflowDialog(props: UpdateWorkflowDialogProps) {
+    return props.open ? <UpdateWorkflowForm key={props.workflowId} {...props} /> : null
+}
+
+function UpdateWorkflowForm({
     workflowId,
     open,
     onOpenChange
 }: UpdateWorkflowDialogProps) {
+    const [section, setSection] = useState("configuration")
+    const initKey = useRef<string | null>(null)
+    const [ready, setReady] = useState(false)
     const {
         workflow,
         isLoading,
+        fetchStatus,
+        error,
+        refetch,
         updateWorkflow,
         isUpdating
     } = useWorkflowDetails(workflowId);
+    // The detail query serves stale cache first and refetches in the background.
+    // Hold the form until that opening fetch settles successfully: a failed
+    // refetch retains cached data and an offline fetch pauses with no error,
+    // so unlocking on those would allow editing stale values.
+    // The latch ignores later background polls.
+    if (!ready && isWorkflowDetailsReady(fetchStatus, error)) setReady(true)
 
     const form = useForm<UpdateWorkflowFormValues>({
         resolver: zodResolver(updateWorkflowSchema) as Resolver<UpdateWorkflowFormValues>,
@@ -102,10 +97,17 @@ export function UpdateWorkflowDialog({
             maxConsecutiveJobFailuresAllowed: 3,
         },
         mode: "onBlur",
+        shouldFocusError: false,
     });
 
     useEffect(() => {
         if (!workflow) return;
+        // The detail query serves stale cache first (30s staleTime) and refetches
+        // in the background. Re-init while pristine so saving can't silently
+        // overwrite a workflow that changed elsewhere; never clobber user edits.
+        if (initKey.current === workflow.updated_at) return;
+        if (initKey.current !== null && form.formState.isDirty) return;
+        initKey.current = workflow.updated_at;
 
         const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) as WorkflowPayload : {};
 
@@ -150,335 +152,112 @@ export function UpdateWorkflowDialog({
                 containerPayload: form.getValues("containerPayload")
             } : {})
         });
-    }, [workflow, form]);
+    }, [workflow, form, form.formState.isDirty]);
 
     const handleSubmit = (data: UpdateWorkflowFormValues) => {
         if (!workflow) return;
 
-        let payload = "{}";
-
-        if (workflow.kind === "HEARTBEAT") {
-            const { endpoint, expectedStatusCode, headers = [], timeout } = data.heartbeatPayload ?? {
-                endpoint: "",
-                expectedStatusCode: 200,
-                headers: [],
-                timeout: "",
-            };
-            const headersObject = headers.reduce((acc, header) => {
-                if (header.key) {
-                    acc[header.key] = header.value;
-                }
-                return acc;
-            }, {} as Record<string, string>);
-
-            payload = JSON.stringify({
-                endpoint,
-                expected_status_code: expectedStatusCode || 200,
-                headers: headersObject,
-                ...(timeout ? { timeout } : {})
-            });
-        } else if (workflow.kind === "CONTAINER") {
-            const { image, cmd = [], env = [], timeout } = data.containerPayload ?? {
-                image: "",
-                cmd: [],
-                env: [],
-                timeout: "",
-            };
-            const envObject = env.reduce((acc, item) => {
-                const [key, value] = item.split("=")
-                if (key) {
-                    acc[key] = value || ""
-                }
-                return acc
-            }, {} as Record<string, string>)
-
-            payload = JSON.stringify({
-                image,
-                ...(cmd && cmd.length > 0 ? { cmd } : {}),
-                ...(env && env.length > 0 ? { env: envObject } : {}),
-                ...(timeout ? { timeout } : {})
-            });
-        }
 
         updateWorkflow({
             name: data.name,
-            payload: payload,
+            payload: serializeWorkflowPayload(workflow.kind, data),
             interval: Number(data.interval),
             max_consecutive_job_failures_allowed: data.maxConsecutiveJobFailuresAllowed
-        })
-        form.reset();
-        onOpenChange(false);
+        }, () => onOpenChange(false))
     };
 
-    const watchedHeaders = useWatch({ control: form.control, name: "heartbeatPayload.headers" })
-    const watchedCmd = useWatch({ control: form.control, name: "containerPayload.cmd" })
-    const watchedCmdIds = useWatch({ control: form.control, name: "containerPayload.cmdIds" })
-    const watchedEnv = useWatch({ control: form.control, name: "containerPayload.env" })
-    const watchedEnvIds = useWatch({ control: form.control, name: "containerPayload.envIds" })
-    const headerFields = workflow?.kind === "HEARTBEAT" ? watchedHeaders || [] : []
-    const cmdFields = workflow?.kind === "CONTAINER" ? watchedCmd || [] : []
-    const cmdFieldIds = workflow?.kind === "CONTAINER" ? watchedCmdIds || [] : []
-    const envFields = workflow?.kind === "CONTAINER" ? watchedEnv || [] : []
-    const envFieldIds = workflow?.kind === "CONTAINER" ? watchedEnvIds || [] : []
-
-    return renderUpdateWorkflowDialogView({
-        open,
-        onOpenChange,
-        isLoading,
-        workflow,
-        form,
-        handleSubmit,
-        headerFields,
-        cmdFields,
-        cmdFieldIds,
-        envFields,
-        envFieldIds,
-        isUpdating,
-    })
-}
-
-function renderUpdateWorkflowDialogView(model: any) {
-    const {
-        open,
-        onOpenChange,
-        isLoading,
-        workflow,
-        form,
-        handleSubmit,
-        headerFields,
-        cmdFields,
-        cmdFieldIds,
-        envFields,
-        envFieldIds,
-        isUpdating,
-    } = model
-
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto">
-                <DialogHeader>
+        <Dialog open={open} onOpenChange={(nextOpen) => { if (!isUpdating) onOpenChange(nextOpen) }}>
+            <DialogContent className="flex max-h-[90dvh] flex-col overflow-clip p-0 sm:max-w-2xl">
+                <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
                     <DialogTitle>Update workflow</DialogTitle>
                     <DialogDescription>
-                        Modify your workflow configuration.
+                        Edit your configuration or schedule, then save your changes.
                     </DialogDescription>
                 </DialogHeader>
 
-                {isLoading ? (
-                    <div className="flex justify-center my-8">
-                        <Loader2 className="h-8 w-8 animate-spin" />
-                    </div>
+                {isLoading || !ready ? (
+                    error && fetchStatus !== "fetching" ? (
+                        <div className="flex flex-col items-center gap-3 my-8 px-6 text-center">
+                            <p className="text-sm text-muted-foreground">Couldn&apos;t load the latest workflow data. Editing cached values could overwrite newer changes.</p>
+                            <Button type="button" variant="outline" onClick={() => { void refetch() }}>
+                                Retry
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="flex justify-center my-8">
+                            <Loader2 className="h-8 w-8 animate-spin" />
+                        </div>
+                    )
                 ) : workflow && (
                     <Form {...form}>
-                        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 pt-2">
-                            <FormField
-                                control={form.control}
-                                name="name"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Name</FormLabel>
-                                        <FormControl>
-                                            <Input placeholder="Workflow Name" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Configuration</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    {workflow.kind === "HEARTBEAT" && (
-                                        <Fragment>
+                        <form noValidate onSubmit={form.handleSubmit(handleSubmit, (errors) => {
+                            setSection(errors.name || errors.heartbeatPayload || errors.containerPayload ? "configuration" : "schedule")
+                            requestAnimationFrame(() => { void form.trigger(undefined, { shouldFocus: true }) })
+                        })} className="flex min-h-0 flex-col overflow-clip">
+                            <Tabs value={section} onValueChange={setSection} className="min-h-0 gap-0">
+                                <div className="shrink-0 px-6 pb-4">
+                                    <TabsList aria-label="Workflow settings" className="w-full">
+                                        <TabsTrigger value="configuration" disabled={isUpdating}><Settings2 /> Configuration</TabsTrigger>
+                                        <TabsTrigger value="schedule" disabled={isUpdating}><Clock3 /> Schedule</TabsTrigger>
+                                    </TabsList>
+                                </div>
+                                <div className="min-h-0 overflow-y-auto px-6 pb-6">
+                                    <fieldset disabled={isUpdating} className="min-w-0">
+                                    <legend className="sr-only">Workflow settings</legend>
+                                    <TabsContent value="configuration" forceMount className="data-[state=inactive]:hidden">
+                                        <div className="flex flex-col gap-6">
                                             <FormField
                                                 control={form.control}
-                                                name="heartbeatPayload.endpoint"
+                                                name="name"
                                                 render={({ field }) => (
                                                     <FormItem>
-                                                        <FormLabel>Endpoint URL</FormLabel>
+                                                        <FormLabel>Name</FormLabel>
                                                         <FormControl>
-                                                            <Input
-                                                                placeholder="https://example.com/api/health"
-                                                                {...field}
-                                                            />
+                                                            <Input placeholder="Workflow Name" {...field} />
                                                         </FormControl>
-                                                        <FormDescription>
-                                                            The URL to send the heartbeat request to
-                                                        </FormDescription>
                                                         <FormMessage />
                                                     </FormItem>
                                                 )}
                                             />
 
-                                            <WorkflowNumberField name="heartbeatPayload.expectedStatusCode" />
+                                            <WorkflowConfigurationFields kind={workflow.kind} />
 
-                                            <div className="space-y-2">
-                                                <FormLabel>
-                                                    Headers (optional)
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="ml-2"
-                                                        onClick={() => {
-                                                            form.setValue("heartbeatPayload.headers", [
-                                                                ...headerFields,
-                                                                { id: crypto.randomUUID(), key: "", value: "" }
-                                                            ])
-                                                        }}
-                                                    >
-                                                        <Plus className="mr-1 h-3 w-3" /> Add header
-                                                    </Button>
-                                                </FormLabel>
-                                                <FormDescription>
-                                                    Optional HTTP headers to include with the request
-                                                </FormDescription>
+                                        </div>
+                                    </TabsContent>
+                                    <TabsContent value="schedule" forceMount className="data-[state=inactive]:hidden">
+                                        <div className="flex flex-col gap-6">
+                                    <div className="flex flex-col gap-1">
+                                        <h3 className="font-semibold">Schedule & failure handling</h3>
+                                        <p className="text-sm text-muted-foreground">Choose how often this workflow runs and when to pause after failures.</p>
+                                    </div>
+                                            <WorkflowNumberField name="interval" />
 
-                                                {headerFields.map((header: HeaderFormValue, index: number) => (
-                                                    <div key={header.id} className="flex items-center gap-2 mt-2">
-                                                        <FormField
-                                                            control={form.control}
-                                                            name={`heartbeatPayload.headers.${index}.key`}
-                                                            render={({ field }) => (
-                                                                <FormItem className="flex-1">
-                                                                    <FormLabel className="sr-only">Header {index + 1} name</FormLabel>
-                                                                    <FormControl>
-                                                                        <Input
-                                                                            placeholder="Header Name"
-                                                                            {...field}
-                                                                        />
-                                                                    </FormControl>
-                                                                    <FormMessage />
-                                                                </FormItem>
-                                                            )}
-                                                        />
-                                                        <FormField
-                                                            control={form.control}
-                                                            name={`heartbeatPayload.headers.${index}.value`}
-                                                            render={({ field }) => (
-                                                                <FormItem className="flex-1">
-                                                                    <FormLabel className="sr-only">Header {index + 1} value</FormLabel>
-                                                                    <FormControl>
-                                                                        <Input
-                                                                            placeholder="Value"
-                                                                            {...field}
-                                                                        />
-                                                                    </FormControl>
-                                                                    <FormMessage />
-                                                                </FormItem>
-                                                            )}
-                                                        />
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                const updatedHeaders = [...headerFields]
-                                                                updatedHeaders.splice(index, 1)
-                                                                form.setValue("heartbeatPayload.headers", updatedHeaders)
-                                                            }}
-                                                        >
-                                                            <Trash2 className="h-4 w-4" />
-                                                            <span className="sr-only">Remove header {index + 1}</span>
-                                                        </Button>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                            <WorkflowNumberField name="maxConsecutiveJobFailuresAllowed" />
 
-                                            <FormField
-                                                control={form.control}
-                                                name="heartbeatPayload.timeout"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Timeout (optional)</FormLabel>
-                                                        <FormControl>
-                                                            <Input
-                                                                placeholder="30s"
-                                                                {...field}
-                                                            />
-                                                        </FormControl>
-                                                        <FormDescription>
-                                                            Request timeout (e.g., &apos;30s&apos;, &apos;1m&apos;), max up to 5 minutes
-                                                        </FormDescription>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        </Fragment>
-                                    )}
-
-                                    {workflow.kind === "CONTAINER" && (
-                                        <Fragment>
-                                            <FormField
-                                                control={form.control}
-                                                name="containerPayload.image"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Image</FormLabel>
-                                                        <FormControl>
-                                                            <Input
-                                                                placeholder="alpine:latest"
-                                                                {...field}
-                                                            />
-                                                        </FormControl>
-                                                        <FormDescription>
-                                                            Docker image to run (e.g., alpine:latest)
-                                                        </FormDescription>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-
-                                            <ContainerListField name="cmd" values={cmdFields} ids={cmdFieldIds} />
-
-                                            <ContainerListField name="env" values={envFields} ids={envFieldIds} />
-
-                                            <FormField
-                                                control={form.control}
-                                                name="containerPayload.timeout"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Timeout (optional)</FormLabel>
-                                                        <FormControl>
-                                                            <Input
-                                                                placeholder="30s"
-                                                                {...field}
-                                                            />
-                                                        </FormControl>
-                                                        <FormDescription>
-                                                            Maximum execution time (e.g., &quot;30s&quot;, &quot;5m&quot;), max up to 1 hour.
-                                                        </FormDescription>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        </Fragment>
-                                    )}
-                                </CardContent>
-                            </Card>
-
-                            <WorkflowNumberField name="interval" />
-
-                            <WorkflowNumberField name="maxConsecutiveJobFailuresAllowed" />
-
-                            <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        </div>
+                                    </TabsContent>
+                                    </fieldset>
+                                </div>
+                            </Tabs>
+                            <Separator />
+                            <DialogFooter className="grid shrink-0 grid-cols-2 items-center gap-2 px-4 py-4 sm:gap-4 sm:px-6">
                                 <Button
                                     type="button"
                                     variant="outline"
                                     onClick={() => onOpenChange(false)}
                                     disabled={isUpdating}
-                                    className="cursor-pointer w-full"
+                                    className="w-full"
                                 >
                                     Cancel
                                 </Button>
                                 <Button
                                     type="submit"
                                     disabled={isUpdating}
-                                    className="cursor-pointer w-full"
+                                    className="w-full"
                                 >
                                     {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Update workflow
+                                    {isUpdating ? "Saving…" : "Save changes"}
                                 </Button>
                             </DialogFooter>
                         </form>

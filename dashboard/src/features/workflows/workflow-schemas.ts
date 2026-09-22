@@ -10,8 +10,8 @@ const baseWorkflowSchema = z.object({
         z.number()
     ])
         .transform(val => val === "" ? undefined : Number(val))
-        .refine(val => val === undefined || (val >= 1 && val <= 10080), {
-            message: "Must be between 1 and 10080 minutes (1 week)"
+        .refine(val => val === undefined || (Number.isInteger(val) && val >= 1 && val <= 10080), {
+            message: "Must be a whole number between 1 and 10080 minutes (1 week)"
         }),
     maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(3).max(100).default(3)
 })
@@ -67,12 +67,14 @@ const baseCreateWorkflowSchema = baseWorkflowSchema.extend({
     retainLogs: z.boolean().default(true),
 })
 
-const heartbeatWorkflowSchema = baseCreateWorkflowSchema.extend({
+const heartbeatWorkflowFields = baseCreateWorkflowSchema.extend({
     kind: z.literal("HEARTBEAT"),
     heartbeatPayload: heartbeatPayloadSchema.extend({
         expectedStatusCode: heartbeatPayloadSchema.shape.expectedStatusCode.default(200),
     }),
-}).transform(data => ({
+})
+
+const heartbeatWorkflowSchema = heartbeatWorkflowFields.transform(data => ({
     ...data,
     retainLogs: false // HEARTBEAT workflows always have log_retention as false
 }))
@@ -86,6 +88,15 @@ export const createWorkflowSchema = z.discriminatedUnion("kind", [
     heartbeatWorkflowSchema,
     containerWorkflowSchema
 ])
+
+export const createWorkflowStepSchemas = [
+    baseCreateWorkflowSchema.pick({ name: true }).extend({ kind: z.enum(["HEARTBEAT", "CONTAINER"]) }),
+    z.discriminatedUnion("kind", [
+        heartbeatWorkflowFields.pick({ kind: true, heartbeatPayload: true }),
+        containerWorkflowSchema.pick({ kind: true, containerPayload: true }),
+    ]),
+    createWorkflowSchema,
+]
 
 export const updateWorkflowSchema = baseWorkflowSchema.extend({
     maxConsecutiveJobFailuresAllowed: baseWorkflowSchema.shape.maxConsecutiveJobFailuresAllowed.refine(val => val >= 3, {

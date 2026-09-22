@@ -120,12 +120,13 @@ export function useWorkflowDetails(
     return {
         workflow: getWorkflowQuery.data as Workflow,
         isLoading: getWorkflowQuery.isLoading,
+        fetchStatus: getWorkflowQuery.fetchStatus,
         error: getWorkflowQuery.error,
         refetch: getWorkflowQuery.refetch,
-        updateWorkflow: (payload: UpdateWorkflowDetails) => updateWorkflowMutation.mutate({
+        updateWorkflow: (payload: UpdateWorkflowDetails, onSuccess?: () => void) => updateWorkflowMutation.mutate({
             payload,
             idempotencyKey: createIdempotencyKey(),
-        }),
+        }, { onSuccess }),
         isUpdating: updateWorkflowMutation.isPending,
         updateError: updateWorkflowMutation.error,
         terminateWorkflow: terminateWorkflowMutation.mutate,

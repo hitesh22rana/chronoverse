@@ -14,11 +14,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 )
 
-// RoleInterceptorCallbackFunc is a callback function that checks if the role is valid for the method.
-// It takes the method name and role as arguments and returns true if the role is invalid.
-// This is used to validate the role in the RoleInterceptor.
-// This function is to be implemented by the service that uses the interceptor.
-// If the role is not valid, the interceptor will return an error with code PermissionDenied.
+// RoleInterceptorCallbackFunc reports whether role is invalid for method.
 type RoleInterceptorCallbackFunc func(method, role string) bool
 
 // UnaryAudienceInterceptor propagates the JWT-validated audience from context
@@ -71,25 +67,19 @@ func isHealthCheckRoute(method string) bool {
 }
 
 // UnaryLoggingInterceptor returns a gRPC unary interceptor that logs the requests and responses.
-// It uses zap logger to log the messages.
 func UnaryLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return logging.UnaryServerInterceptor(
 		loggingInterceptor(logger),
 		[]logging.Option{
-			// Log based on status code
 			logging.WithLevels(serverCodeToLevel),
 
-			// Only log when a call finishes
 			logging.WithLogOnEvents(
 				logging.FinishCall,
 			),
 
-			// Add context information
 			logging.WithFieldsFromContext(func(ctx context.Context) logging.Fields {
 				fields := logging.Fields{}
 
-				// Add trace and span IDs, this is useful for tracing and debugging
-				// and can be used to correlate logs with traces.
 				span := trace.SpanFromContext(ctx)
 				if span.SpanContext().IsValid() {
 					fields = append(fields,

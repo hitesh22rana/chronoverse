@@ -135,7 +135,6 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to parse connection string: %v", err)
 	}
 
-	// Configure pool settings
 	poolConfig.MaxConns = cfg.MaxConns
 	poolConfig.MinConns = cfg.MinConns
 	poolConfig.MaxConnLifetime = cfg.MaxConnLife

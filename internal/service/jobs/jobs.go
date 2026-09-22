@@ -737,7 +737,6 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Stream the scheduled job logs
 	sub, _err := s.repo.StreamJobLogs(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId())
 	if _err != nil {
 		err = _err

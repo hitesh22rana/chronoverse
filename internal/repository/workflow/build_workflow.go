@@ -95,7 +95,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return nil
 	}
 
-	// Acquire a distributed lock to ensure only one worker processes the job at a time
 	lockKey := fmt.Sprintf(
 		"%s:%s:%s",
 		lockKeyPrefix,
@@ -145,7 +144,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return status.Errorf(codes.Unavailable, "failed to publish workflow analytics event: %v", err)
 	}
 
-	// If the build step is not required, skip the build process
 	if !isBuildStepRequired(workflow.GetKind()) {
 		scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
 			ctx,
@@ -164,7 +162,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return nil
 		}
 
-		// Fire-and-forget; do not wait.
 		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
 			notificationCtx,
@@ -203,7 +200,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		}
 	}
 
-	// Fire-and-forget; do not wait.
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 	go r.sendNotification(
 		notificationCtx,
@@ -269,7 +265,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return nil
 		}
 
-		// Fire-and-forget; do not wait.
 		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
 			notificationCtx,
@@ -330,7 +325,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		}
 	}
 
-	// Fire-and-forget; do not wait.
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
 	go r.sendNotification(
 		notificationCtx,

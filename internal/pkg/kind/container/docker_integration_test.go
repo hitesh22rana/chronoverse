@@ -322,7 +322,6 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Create a container to terminate
 			containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, tt.image, tt.cmd, nil)
 			cleanupDockerContainer(t, workflow, containerID)
 			if tt.err != nil {

@@ -167,7 +167,6 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -259,7 +258,6 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		return err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -325,7 +323,6 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		return err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -488,13 +485,11 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 		return false, err
 	}
 
-	// Increment the job consecutive failures count
 	thresholdReached, err = s.repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId(), req.GetJobId())
 	if err != nil {
 		return false, err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -543,7 +538,6 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 		return err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -592,7 +586,6 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 		return err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -641,7 +634,6 @@ func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWor
 		return err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()

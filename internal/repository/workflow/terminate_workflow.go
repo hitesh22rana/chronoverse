@@ -106,7 +106,6 @@ func (r *Repository) sendJobCanceledNotification(
 		return
 	}
 
-	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the job execution.
 	go r.sendNotification(
 		notificationCtx,
@@ -133,7 +132,6 @@ func (r *Repository) sendWorkflowTerminatedNotification(
 		return
 	}
 
-	// Fire-and-forget; do not wait.
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution.
 	go r.sendNotification(
 		notificationCtx,
@@ -465,7 +463,6 @@ func (r *Repository) markRunningJobsCanceled(
 				continue
 			}
 
-			// Skip the job if the started time is not valid
 			if _, parseError := time.Parse(time.RFC3339Nano, job.GetStartedAt()); parseError != nil {
 				continue
 			}
@@ -513,7 +510,6 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		return nil
 	}
 
-	// Acquire a distributed lock to ensure only one worker processes the job at a time
 	lockKey := fmt.Sprintf(
 		"%s:%s:%s",
 		lockKeyPrefix,

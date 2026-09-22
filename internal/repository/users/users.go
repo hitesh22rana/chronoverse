@@ -138,7 +138,6 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
-		// Check if the user already exists
 		if r.pg.IsUniqueViolation(err) {
 			err = status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
 			return nil, "", err

@@ -543,7 +543,6 @@ func (w *DockerWorkflow) Execute(
 			})
 			stopCancel()
 
-			// Wait for logs to finish
 			select {
 			case <-logsDone:
 			case <-time.After(100 * time.Millisecond):
@@ -551,9 +550,7 @@ func (w *DockerWorkflow) Execute(
 			return
 
 		case err := <-waitErrCh:
-			// Return early if the container was already removed
 			if strings.Contains(err.Error(), "No such container") {
-				// Wait for any remaining logs
 				select {
 				case <-logsDone:
 				case <-time.After(100 * time.Millisecond):
@@ -570,7 +567,6 @@ func (w *DockerWorkflow) Execute(
 			}
 
 		case containerStatus := <-statusCh:
-			// Check exit code after logs finish
 			<-logsDone
 
 			if containerStatus.StatusCode != 0 {
@@ -687,10 +683,8 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		}
 	}()
 
-	// Wait group to track when both readers are done
 	var wg sync.WaitGroup
 
-	// Read from stdout
 	wg.Go(func() {
 		defer stdoutReader.Close()
 
@@ -759,14 +753,11 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 
 	resultCh := w.pullGroup.DoChan(imageName, func() (any, error) {
 		if _, err := w.Client.ImageInspect(ctx, imageName); err == nil {
-			// Image already exists locally, no need to pull
 			return struct{}{}, nil
 		} else if !cerrdefs.IsNotFound(err) {
-			// An error other than "not found" occurred
 			return nil, dockerImageInspectError(err)
 		}
 
-		// Pull the image since it doesn't exist locally
 		out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
 		if err != nil {
 			return nil, terminalreason.Wrap(terminalreason.ImagePullFailed, status.Errorf(codes.NotFound, "failed to pull image: %v", err))

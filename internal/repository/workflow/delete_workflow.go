@@ -25,7 +25,6 @@ const (
 
 // deleteWorkflow completes the deletion of a workflow by removing all associated logs.
 func (r *Repository) deleteWorkflow(parentCtx context.Context, workflowID, userID string) error {
-	// Acquire a distributed lock to ensure only one worker processes the job at a time
 	lockKey := fmt.Sprintf(
 		"%s:%s:%s",
 		lockKeyPrefix,

@@ -133,7 +133,6 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		return "", "", err
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -191,7 +190,6 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		return "", "", normalizeLoginError(err)
 	}
 
-	// Fire-and-forget; do not wait.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
 		defer cancel()
@@ -328,7 +326,6 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 		return err
 	}
 
-	// Invalidate the user cache
 	// The key is in the format "user:{user_id}"
 	cacheKey := fmt.Sprintf("user:%s", req.GetId())
 	if delErr := s.cache.Delete(ctx, cacheKey); delErr != nil && status.Code(delErr) != codes.NotFound {

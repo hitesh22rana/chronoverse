@@ -58,24 +58,20 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 
 	status := r.URL.Query().Get("status")
 	if status != "" {
-		// Validate the job status
 		if !isValidJobStatus(status) {
 			http.Error(w, "invalid status", http.StatusBadRequest)
 			return
 		}
 	}
 
-	// Get trigger from the query parameters
 	trigger := r.URL.Query().Get("trigger")
 	if trigger != "" {
-		// Validate the job trigger
 		if !isValidJobTrigger(trigger) {
 			http.Error(w, "invalid trigger", http.StatusBadRequest)
 			return
 		}
 	}
 
-	// ListJobs lists the jobs by job ID.
 	res, err := s.jobsClient.ListJobs(r.Context(), &jobspb.ListJobsRequest{
 		WorkflowId: workflowID,
 		UserId:     userID,
@@ -165,7 +161,6 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GetJob gets the job by job ID.
 	res, err := s.jobsClient.GetJob(r.Context(), &jobspb.GetJobRequest{
 		Id:         jobID,
 		WorkflowId: workflowID,
@@ -214,7 +209,6 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 
 	cursor := r.URL.Query().Get("cursor")
 
-	// GetJobLogs gets the job logs by job ID.
 	res, err := s.jobsClient.GetJobLogs(r.Context(), &jobspb.GetJobLogsRequest{
 		Id:         jobID,
 		WorkflowId: workflowID,
@@ -270,13 +264,11 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the search query from the query parameters
 	message := r.URL.Query().Get("q")
 
 	var res *jobspb.GetJobLogsResponse
 	switch message {
 	case "":
-		// GetJobLogs gets the filtered logs for a job with only stream specified.
 		res, err = s.jobsClient.GetJobLogs(r.Context(), &jobspb.GetJobLogsRequest{
 			Id:         jobID,
 			WorkflowId: workflowID,
@@ -287,7 +279,6 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 	default:
-		// SearchJobLogs gets the filtered logs of a jobs with both message and stream present
 		res, err = s.jobsClient.SearchJobLogs(r.Context(), &jobspb.SearchJobLogsRequest{
 			Id:         jobID,
 			WorkflowId: workflowID,
@@ -660,7 +651,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Del("Content-Encoding")
 	w.Header().Del("Transfer-Encoding") // Ensure no transfer encoding
 
-	// Response controller for streaming
 	rc, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
@@ -670,7 +660,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	// Create a context that can be canceled when the client disconnects
 	ctx := r.Context()
 
-	// Start the gRPC stream
 	stream, err := s.jobsClient.StreamJobLogs(ctx, &jobspb.StreamJobLogsRequest{
 		Id:         jobID,
 		WorkflowId: workflowID,
@@ -684,11 +673,9 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send initial connection event
 	fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\"}\n\n")
 	rc.Flush()
 
-	// Stream the logs
 	for {
 		select {
 		case <-ctx.Done():
@@ -704,7 +691,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				// Send error event and close
 				s.logStreamError(ctx, "job logs stream failed", err)
 				fmt.Fprint(w, "event: error\ndata: {\"message\":\"stream failed\"}\n\n")
 				rc.Flush()
@@ -715,7 +701,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Marshal the log message
 			data, err := json.Marshal(msg)
 			if err != nil {
 				fmt.Fprintf(w, "event: error\ndata: failed to marshal log message\n\n")
@@ -723,7 +708,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Send the log event
 			fmt.Fprintf(w, "event: log\ndata: %s\n\n", data)
 			rc.Flush()
 		}

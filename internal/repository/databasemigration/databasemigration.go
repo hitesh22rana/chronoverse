@@ -2,7 +2,7 @@ package databasemigration
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
@@ -121,7 +121,6 @@ func (r *Repository) MigratePostgres(ctx context.Context) (err error) {
 		span.End()
 	}()
 
-	// Execute migration with retry logic.
 	if err = r.withRetry(ctx, "PostgreSQL", defaultRetryConfig(), func() error {
 		return postgrespkg.Migrate(r.cfg.PostgresDSN)
 	}); err != nil {
@@ -146,7 +145,7 @@ func (r *Repository) MigrateClickHouse(ctx context.Context) (err error) {
 	// Execute migration using native ClickHouse client with proper TLS support.
 	if err = r.withRetry(ctx, "ClickHouse", defaultRetryConfig(), func() error {
 		if r.cfg.ClickHouseClient == nil {
-			return fmt.Errorf("clickhouse client is not configured")
+			return errors.New("clickhouse client is not configured")
 		}
 		return clickhousepkg.Migrate(ctx, r.cfg.ClickHouseClient)
 	}); err != nil {
@@ -201,7 +200,6 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 
 		lastErr = err
 
-		// Check if error is retryable.
 		if !r.isDatabaseErrorRetryable(err) {
 			logger.Error("database operation failed with non-retryable error",
 				zap.String("database_type", dbType),
@@ -222,7 +220,6 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(delay):
-				// Calculate next delay with exponential backoff.
 				delay = time.Duration(float64(delay) * config.BackoffFactor)
 				delay = min(delay, config.MaxDelay)
 			}

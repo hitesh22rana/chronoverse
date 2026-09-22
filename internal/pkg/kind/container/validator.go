@@ -82,7 +82,6 @@ func ExtractAndValidateContainerDetails(payload string) (*Details, error) {
 	// Environment variables are optional
 	env, ok := data["env"].(map[string]any)
 	if ok {
-		// Convert the map to a slice of strings
 		for key, value := range env {
 			valueStr, _ok := value.(string)
 			if !_ok {

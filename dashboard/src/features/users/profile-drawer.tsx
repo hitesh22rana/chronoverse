@@ -104,7 +104,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
         <Fragment>
             <Sheet open={open} onOpenChange={onClose}>
                 <SheetContent className="w-full sm:max-w-md p-0 gap-0 h-full flex flex-col">
-                    {/* Header */}
                     <SheetHeader className="px-6 py-4 border-b shrink-0">
                         <div className="flex items-center gap-2">
                             <User className="h-5 w-5" />
@@ -112,9 +111,7 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
                         </div>
                     </SheetHeader>
 
-                    {/* Content */}
                     <div className="flex-1 overflow-auto px-6 py-6 space-y-6">
-                        {/* User Identity */}
                         <div className="flex items-center gap-4">
                             <Avatar className="h-20 w-20">
                                 <AvatarImage
@@ -139,7 +136,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
 
                         <Separator />
 
-                        {/* Notification Preferences and Details */}
                         <Card>
                             <CardHeader className="px-4 -my-2">
                                 <CardTitle className="flex items-center text-base">
@@ -172,7 +168,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
                         </Card>
                     </div>
 
-                    {/* Sticky Sign Out Footer */}
                     <SheetFooter className="px-6 py-4 border-t mt-auto">
                         <Button
                             type="button"
@@ -187,7 +182,6 @@ export function ProfileDrawer({ open, onClose }: ProfileDrawerProps) {
                 </SheetContent>
             </Sheet>
 
-            {/* Confirmation Dialog */}
             <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
                 <DialogContent className="sm:max-w-sm">
                     <DialogHeader>

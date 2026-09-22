@@ -211,11 +211,8 @@ function renderWorkflowsView(model: any) {
 
     return (
         <div className="mt-8 flex min-h-0 w-full flex-1 flex-col">
-            {/* Clean control bar */}
             <div className="space-y-4 mb-4">
-                {/* Main controls row */}
                 <div className="flex flex-row h-full w-full items-center justify-between gap-4">
-                    {/* Search box */}
                     <div className="relative flex w-full">
                         <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                         <Input
@@ -253,7 +250,6 @@ function renderWorkflowsView(model: any) {
                     </div>
 
                     <div className="flex items-center gap-2 justify-end">
-                        {/* Filters popover */}
                         <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" className="relative h-9">
@@ -291,7 +287,6 @@ function renderWorkflowsView(model: any) {
                                     <Separator />
 
                                     <div className="flex flex-row w-full gap-2">
-                                        {/* Status Filter */}
                                         <div className="flex flex-col w-full gap-2">
                                             <Label>Status</Label>
                                             <Select
@@ -315,7 +310,6 @@ function renderWorkflowsView(model: any) {
                                             </Select>
                                         </div>
 
-                                        {/* Kind Filter */}
                                         <div className="flex flex-col w-full gap-2">
                                             <Label>Kind</Label>
                                             <Select
@@ -338,7 +332,6 @@ function renderWorkflowsView(model: any) {
 
                                     <Separator />
 
-                                    {/* Interval Range Filter */}
                                     <div className="flex flex-col gap-2">
                                         <Label htmlFor="workflow-interval-min">Interval Range (minutes)</Label>
                                         <div className="grid grid-cols-2 gap-2">
@@ -389,7 +382,6 @@ function renderWorkflowsView(model: any) {
 
                                     <Separator />
 
-                                    {/* Apply button */}
                                     <Button onClick={handleApplyFilters} className="w-full" disabled={isRangeInvalid}>
                                         Apply Filters
                                     </Button>
@@ -397,7 +389,6 @@ function renderWorkflowsView(model: any) {
                             </PopoverContent>
                         </Popover>
 
-                        {/* Refresh button */}
                         <Button
                             variant="outline"
                             size="icon"
@@ -415,7 +406,6 @@ function renderWorkflowsView(model: any) {
                             <span className="sr-only">Refresh</span>
                         </Button>
 
-                        {/* Pagination controls */}
                         <div className="flex items-center gap-1">
                             <Button
                                 variant="outline"

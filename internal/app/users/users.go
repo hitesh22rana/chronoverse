@@ -71,7 +71,6 @@ type Users struct {
 // RoleUser before the repository mints the session JWT.
 func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
 			return handler(ctx, req)
 		}
@@ -173,7 +172,6 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 		grpc_health_v1.HealthCheckResponse_SERVING,
 	)
 
-	// Register the health server.
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
 
 	// Only register reflection for non-production environments.

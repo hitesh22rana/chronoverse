@@ -129,7 +129,6 @@ func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	// Delete the csrf and session cookies
 	setCookie(w, csrfCookieName, "", s.hostConfig.CookieDomain, s.hostConfig.Secure, false, -1, s.hostConfig.SameSite)
 	setCookie(w, sessionCookieName, "", s.hostConfig.CookieDomain, s.hostConfig.Secure, true, -1, s.hostConfig.SameSite)
 
@@ -139,7 +138,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete the session associated with the user
 	if err = s.rdb.Delete(r.Context(), session); err != nil {
 		http.Error(w, "failed to delete session", http.StatusInternalServerError)
 		return

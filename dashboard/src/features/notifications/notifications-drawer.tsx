@@ -262,7 +262,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
     return (
         <Sheet open={open} onOpenChange={handleOpenChange}>
             <SheetContent className="w-full sm:max-w-md p-0 gap-0 h-full flex flex-col">
-                {/* header */}
                 <SheetHeader className="px-6 py-4 border-b shrink-0">
                     <div className="flex items-center gap-2">
                         <Bell className="h-5 w-5" />
@@ -270,7 +269,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                     </div>
                 </SheetHeader>
 
-                {/* bulk bar */}
                 <div className="px-4 py-2 border-b flex items-center justify-between gap-3 bg-background/95">
                     <div className="flex items-center gap-3">
                         <Checkbox
@@ -291,7 +289,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
                     </Button>
                 </div>
 
-                {/* list / loading / empty */}
                 <div className="flex-1 relative">
                     {isLoading && notifications.length === 0 ? (
                         [...Array(10)].map((_, i) => (

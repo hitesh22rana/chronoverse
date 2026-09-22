@@ -58,7 +58,6 @@ func TestKidRotationBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue old token: %v", err)
 	}
-	// Ensure kid header is set to oldKid
 	if unverified, _, parseErr := new(jwt.Parser).ParseUnverified(oldToken, jwt.MapClaims{}); parseErr == nil {
 		if unverified.Header["kid"] != oldKid {
 			t.Fatalf("old token kid = %v, want %v", unverified.Header["kid"], oldKid)

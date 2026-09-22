@@ -51,7 +51,6 @@ func Migrate(ctx context.Context, client *Client) error {
 	return nil
 }
 
-// Ensures the schema_migrations table exists.
 func createSchemaMigrationsTable(ctx context.Context, client *Client) error {
 	query := `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -96,7 +95,6 @@ func getAppliedMigrations(ctx context.Context, client *Client) (map[int]bool, er
 func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 	var migrations []migration
 
-	// Walk embedded migration files.
 	err := fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -118,12 +116,10 @@ func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 			return fmt.Errorf("invalid version in filename %s: %w", filename, err)
 		}
 
-		// Skip if already applied.
 		if applied[version] {
 			return nil
 		}
 
-		// Read migration content.
 		content, err := fs.ReadFile(migrationsFS, path)
 		if err != nil {
 			return fmt.Errorf("read migration file %s: %w", path, err)
@@ -141,7 +137,6 @@ func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 		return nil, err
 	}
 
-	// Sort migrations by version.
 	sort.Slice(migrations, func(i, j int) bool {
 		return migrations[i].Version < migrations[j].Version
 	})
@@ -151,23 +146,20 @@ func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 
 // applyMigration applies a single migration.
 func applyMigration(ctx context.Context, client *Client, migration migration) error {
-	// Mark migration as dirty (in progress).
 	if err := client.Exec(ctx, "INSERT INTO schema_migrations (version, dirty) VALUES (?, 1)", migration.Version); err != nil {
 		return fmt.Errorf("mark migration %d dirty: %w", migration.Version, err)
 	}
 
-	// Execute migration SQL statements one by one. The native ClickHouse driver
-	// rejects multi-statement query strings.
+	// The native ClickHouse driver rejects multi-statement query strings.
 	for _, statement := range splitMigrationStatements(migration.Content) {
 		if err := client.Exec(ctx, statement); err != nil {
 			return fmt.Errorf("execute migration SQL: %w", err)
 		}
 	}
 
-	// Mark migration as clean (completed). The mutation is made synchronous so
-	// that subsequent runs never observe a stale dirty flag. Note that
-	// mutations_sync = 1 only waits on the local server; a replicated cluster
-	// would need mutations_sync = 2.
+	// The mutation is made synchronous so that subsequent runs never observe a
+	// stale dirty flag. Note that mutations_sync = 1 only waits on the local
+	// server; a replicated cluster would need mutations_sync = 2.
 	if err := client.Exec(ctx, "ALTER TABLE schema_migrations UPDATE dirty = 0 WHERE version = ? SETTINGS mutations_sync = 1", migration.Version); err != nil {
 		return fmt.Errorf("mark migration %d clean: %w", migration.Version, err)
 	}

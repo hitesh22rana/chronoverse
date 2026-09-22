@@ -58,7 +58,6 @@ func InitTracerProvider(ctx context.Context, res *resource.Resource) (*sdktrace.
 	)
 	otel.SetTracerProvider(tp)
 
-	// Set the global propagator to tracecontext and baggage.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},

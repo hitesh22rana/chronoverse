@@ -487,7 +487,6 @@ func (w *DockerWorkflow) Execute(
 		return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", err)
 	}
 
-	// Create container with auto-removal
 	resp, err := createContainer()
 	if err != nil && w.workloadNetworkMissing(ctx) {
 		// The network was pruned between the check and the create; a missing
@@ -503,17 +502,13 @@ func (w *DockerWorkflow) Execute(
 
 	containerID := resp.ID
 
-	// Start the container
 	if err := w.Client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
 		return containerID, nil, nil, status.Errorf(codes.Aborted, "failed to start container: %v", err)
 	}
 
-	// Channel for logs streaming
 	logs := make(chan *jobsmodel.JobLog)
-	// Channel to capture errors
 	errs := make(chan error)
 
-	// Create a context with timeout for this container
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 
 	// Stream logs and handle container completion
@@ -525,7 +520,6 @@ func (w *DockerWorkflow) Execute(
 		// Set up container wait early to detect completion
 		statusCh, waitErrCh := w.Client.ContainerWait(timeoutCtx, containerID, container.WaitConditionNotRunning)
 
-		// Start log streaming
 		logsDone := make(chan struct{})
 		go func() {
 			defer close(logsDone)
@@ -541,7 +535,6 @@ func (w *DockerWorkflow) Execute(
 				errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", timeoutCtx.Err())
 			}
 
-			// Container execution timed out - try to stop the container.
 			stopTimeout := int(containerStopTimeout.Seconds())
 			stopCtx, stopCancel := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
 			//nolint:errcheck,contextcheck // Ignore error, as we are trying to stop the container gracefully.
@@ -568,7 +561,6 @@ func (w *DockerWorkflow) Execute(
 				return
 			}
 
-			// Check if this is a context timeout/cancel
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", ctx.Err()))
 			} else if errors.Is(ctx.Err(), context.Canceled) {
@@ -673,14 +665,12 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 
 	var sequenceNum uint32
 
-	// Use pipes to receive stdout and stderr separately
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
 
 	// Channel to collect log messages from both streams
 	logMessages := make(chan *jobsmodel.JobLog)
 
-	// Start demuxing in a goroutine
 	go func() {
 		defer stdoutWriter.Close()
 		defer stderrWriter.Close()
@@ -736,7 +726,6 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		}
 	})
 
-	// Close logMessages when both readers are done
 	go func() {
 		wg.Wait()
 		close(logMessages)

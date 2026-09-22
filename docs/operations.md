@@ -420,8 +420,7 @@ must name the same database, and setup rejects a mismatch before apply.
 
 - `SCHEDULING_WORKER_POLL_INTERVAL` controls how often due workflows are scanned.
 - `SCHEDULING_WORKER_CONTEXT_TIMEOUT` bounds each scan.
-- `SCHEDULING_WORKER_BATCH_SIZE` controls how many workflows can be processed per
-  pass.
+- `SCHEDULING_WORKER_BATCH_SIZE` controls how many workflows can be processed per pass.
 
 Lower intervals increase scheduling responsiveness and database load.
 

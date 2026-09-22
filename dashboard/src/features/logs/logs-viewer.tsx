@@ -581,12 +581,10 @@ function LogsViewerView({ model }: { model: any }) {
 
     return (
         <Card className="flex flex-col flex-1 w-full min-h-dvh h-full">
-            {/* Header sticks to top of page */}
             <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/60 border-b space-y-4 p-6 rounded-t-2xl">
                 <CardTitle>Logs</CardTitle>
 
                 <div className="flex lg:flex-row flex-col items-center justify-between gap-4">
-                    {/* Search Bar */}
                     <div className="relative w-full flex items-center gap-2">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
@@ -654,7 +652,6 @@ function LogsViewerView({ model }: { model: any }) {
                         </div>
                     </div>
 
-                    {/* Logs options */}
                     <div className="flex items-center gap-2">
                         <div className="flex items-center gap-2">
                             <span className={cn("text-sm font-medium", { "text-muted-foreground": !parseJson })}>

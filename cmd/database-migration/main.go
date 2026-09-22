@@ -49,7 +49,6 @@ func run() int {
 		return ExitError
 	}
 
-	// DSNs for database connections
 	pgDSN := fmt.Sprintf(
 		"postgresql://%s:%s@%s:%d/%s",
 		url.QueryEscape(cfg.Postgres.User),
@@ -59,10 +58,8 @@ func run() int {
 		cfg.Postgres.Database,
 	)
 	if cfg.Postgres.TLS.Enabled {
-		// Enable mutual TLS with full verification
 		pgDSN += fmt.Sprintf("?sslmode=%s", "verify-full")
 
-		// Append certificate paths if they are configured
 		if cfg.Postgres.TLS.CAFile != "" {
 			pgDSN += fmt.Sprintf("&sslrootcert=%s", url.QueryEscape(cfg.Postgres.TLS.CAFile))
 		}

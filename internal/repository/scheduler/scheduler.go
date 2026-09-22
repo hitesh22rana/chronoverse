@@ -191,7 +191,6 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		postgres.TableWorkflows,
 	)
 
-	// Execute query
 	rows, err := tx.Query(ctx, query)
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to query jobs: %v", err)
@@ -234,7 +233,6 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		total++
 	}
 
-	// Handle any errors that may have occurred during iteration
 	if err = rows.Err(); err != nil {
 		err = status.Errorf(codes.Internal, "failed to iterate over jobs: %v", err)
 		return 0, err

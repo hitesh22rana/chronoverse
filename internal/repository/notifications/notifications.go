@@ -367,7 +367,6 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 		return nil, err
 	}
 
-	// Fetch user details for user's preferences
 	user, usersErr := r.svc.UsersService.GetUser(ctx, &userspb.GetUserRequest{
 		Id: userID,
 	})
@@ -438,7 +437,6 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 		return nil, err
 	}
 
-	// Check if there are more notifications
 	data, cursor = paginate.TrimWithCursor(data, r.cfg.FetchLimit, func(v *notificationsmodel.NotificationResponse) string {
 		return fmt.Sprintf(
 			"%s%c%s",

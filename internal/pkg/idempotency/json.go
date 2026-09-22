@@ -36,7 +36,7 @@ func parseUniqueJSON(reader io.Reader) (any, error) {
 	}
 	if _, err = decoder.Token(); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return nil, fmt.Errorf("multiple JSON values are not allowed")
+			return nil, errors.New("multiple JSON values are not allowed")
 		}
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 			}
 			key, ok := keyToken.(string)
 			if !ok {
-				return nil, fmt.Errorf("JSON object key must be a string")
+				return nil, errors.New("JSON object key must be a string")
 			}
 			if _, duplicate := object[key]; duplicate {
 				return nil, fmt.Errorf("duplicate JSON key %q", key)

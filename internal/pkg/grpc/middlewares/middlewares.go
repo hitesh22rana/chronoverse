@@ -16,7 +16,6 @@ import (
 //nolint:errcheck,forcetypeassert // It's safe to ignore all lint errors here.
 func loggingInterceptor(l *zap.Logger) logging.Logger {
 	return logging.LoggerFunc(func(ctx context.Context, lvl logging.Level, _ string, fields ...any) {
-		// Skip logging for health check endpoints
 		if method, ok := grpc.Method(ctx); ok && strings.HasPrefix(method, "/grpc.health.v1.Health/") {
 			return
 		}
@@ -81,11 +80,9 @@ func LogAuthenticationFailure(ctx context.Context, logger *zap.Logger, err error
 // serverCodeToLevel maps gRPC status codes to logging levels.
 func serverCodeToLevel(code codes.Code) logging.Level {
 	switch code {
-	// Success case
 	case codes.OK:
 		return logging.LevelInfo
 
-	// Client errors - Warning level
 	case codes.InvalidArgument,
 		codes.NotFound,
 		codes.AlreadyExists,
@@ -95,7 +92,6 @@ func serverCodeToLevel(code codes.Code) logging.Level {
 		codes.OutOfRange:
 		return logging.LevelWarn
 
-	// Server errors - Error level
 	case codes.Unknown,
 		codes.DeadlineExceeded,
 		codes.Canceled,
@@ -107,7 +103,6 @@ func serverCodeToLevel(code codes.Code) logging.Level {
 		codes.DataLoss:
 		return logging.LevelError
 
-	// Default
 	default:
 		return logging.LevelInfo
 	}

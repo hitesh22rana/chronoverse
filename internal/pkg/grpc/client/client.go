@@ -55,8 +55,7 @@ type RetryConfig struct {
 	MaxAttempts uint
 	// BackoffExponential is the base duration for exponential backoff.
 	BackoffExponential time.Duration
-	// RetryableCodes is a list of status codes that are retryable.
-	RetryableCodes []codes.Code
+	RetryableCodes     []codes.Code
 	// PerRetryTimeout is the timeout for each retry attempt (handles case for context.DeadlineExceeded and context.Canceled).
 	PerRetryTimeout time.Duration
 }
@@ -83,7 +82,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		streamInterceptors = make([]grpc.StreamClientInterceptor, 0, 2)
 	)
 
-	// Load balancing policy
 	opts = append(
 		opts,
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
@@ -100,7 +98,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	// Set default circuit breaker config if not provided
 	if cbCfg == nil {
 		cbCfg = DefaultCircuitBreakerConfig()
 	}
@@ -122,7 +119,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		circuitBreakerStreamInterceptor(cb),
 	)
 
-	// Set default retry config if not provided
 	if retryCfg == nil {
 		retryCfg = DefaultRetryConfig()
 	}
@@ -153,7 +149,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)),
 	)
 
-	// Connect to the service
 	conn, err := grpc.NewClient(
 		buildDialTarget(svcCfg.Host, svcCfg.Port),
 		opts...,
@@ -167,7 +162,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 
 // loadTLSCredentials loads TLS credentials for the client.
 func loadTLSCredentials(tlsCfg *TLSConfig) (credentials.TransportCredentials, error) {
-	// Load CA certificate
 	caCert, err := os.ReadFile(tlsCfg.CAFile)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to read CA certificate: %v", err)
@@ -178,7 +172,6 @@ func loadTLSCredentials(tlsCfg *TLSConfig) (credentials.TransportCredentials, er
 		return nil, status.Errorf(codes.Internal, "failed to append CA certificate to pool")
 	}
 
-	// Load client certificate and private key
 	clientCert, err := tls.LoadX509KeyPair(tlsCfg.ClientCertFile, tlsCfg.ClientKeyFile)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to load client certificate and key: %v", err)

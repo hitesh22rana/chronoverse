@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -225,13 +226,13 @@ func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.Resour
 		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: %w", err)
 	}
 	if memoryBytes < 0 {
-		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
+		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
 	}
 	if cfg.WorkloadCPUs < 0 {
-		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be non-negative")
+		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be non-negative")
 	}
 	if cfg.WorkloadPidsLimit < 0 {
-		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: must be non-negative")
+		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: must be non-negative")
 	}
 
 	return container.ResourceLimits{

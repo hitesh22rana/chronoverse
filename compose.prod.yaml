@@ -1,27 +1,25 @@
 name: chronoverse
 
 x-limits:
-  # Database requires more cpu and memory
   database-limits: &database-limits
     deploy:
       resources:
         limits:
-          cpus: "1" # 1 CPU
-          memory: 1G # 1 GB
+          cpus: "1"
+          memory: 1G
         reservations:
-          cpus: "0.5" # 500 m CPU
-          memory: 512M # 512 MB
+          cpus: "0.5"
+          memory: 512M
 
-  # Services require less cpu and memory
   services-limit: &services-limit
     deploy:
       resources:
         limits:
-          cpus: "0.25" # 250 m CPU
-          memory: 256M # 256 MB
+          cpus: "0.25"
+          memory: 256M
         reservations:
-          cpus: "0.1" # 100 m CPU
-          memory: 128M # 128 MB
+          cpus: "0.1"
+          memory: 128M
 
   # Lightweight workers process bounded database/Kafka batches.
   low-resources-workers-limit: &low-resources-workers-limit
@@ -29,11 +27,11 @@ x-limits:
       replicas: 2
       resources:
         limits:
-          cpus: "0.25" # 250 m CPU
-          memory: 512M # 512 MB
+          cpus: "0.25"
+          memory: 512M
         reservations:
-          cpus: "0.1" # 100 m CPU
-          memory: 256M # 256 MB
+          cpus: "0.1"
+          memory: 256M
 
   # Mid resources workers handle Docker image coordination or larger log batches.
   mid-resources-workers-limit: &mid-resources-workers-limit
@@ -41,23 +39,22 @@ x-limits:
       replicas: 2
       resources:
         limits:
-          cpus: "0.5" # 500 m CPU
-          memory: 2G # 2 GB
+          cpus: "0.5"
+          memory: 2G
         reservations:
-          cpus: "0.25" # 250 m CPU
-          memory: 1G # 1 GB
+          cpus: "0.25"
+          memory: 1G
 
-  # High resources workers require a bit more cpu and memory
   high-resources-workers-limit: &high-resources-workers-limit
     deploy:
       replicas: 2
       resources:
         limits:
-          cpus: "2" # 2 CPU
-          memory: 2G # 2 GB
+          cpus: "2"
+          memory: 2G
         reservations:
-          cpus: "1" # 1 CPU
-          memory: 1G # 1 GB
+          cpus: "1"
+          memory: 1G
 
 services:
   postgres:
@@ -212,7 +209,6 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_ADVERTISED_LISTENERS: SSL://kafka:9094
 
-      # SSL config...
       KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets
       KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
       KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds.txt
@@ -226,7 +222,6 @@ services:
 
       KAFKA_LOG_DIRS: /var/lib/kafka/data
 
-      # Internal topics replication factors
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
 
@@ -577,7 +572,6 @@ services:
         export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
 
         mkdir -p /certs/ca
-        # Generate CA if not exists
         if [ ! -f /certs/ca/ca.key ]; then
           echo "🛡️ Generating CA certificate..."
           openssl genrsa -out /certs/ca/ca.key 4096
@@ -615,7 +609,6 @@ services:
         # Rebuild derived stores so reruns and password changes do not reuse old passwords.
         rm -f /certs/kafka/kafka.keystore.new.jks /certs/kafka/kafka.truststore.new.jks
 
-        # Convert Kafka PEM to PKCS12
         echo "🔄 Converting Kafka PEM to PKCS12..."
         openssl pkcs12 -export \
           -in /certs/kafka/kafka.crt \
@@ -625,7 +618,6 @@ services:
           -name kafka \
           -password env:KAFKA_SSL_KEYSTORE_PASSWORD
 
-        # Import PKCS12 to JKS keystore
         echo "🔄 Importing PKCS12 to JKS keystore..."
         keytool -importkeystore \
           -deststorepass:env KAFKA_SSL_KEYSTORE_PASSWORD \

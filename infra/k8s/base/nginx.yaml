@@ -10,7 +10,6 @@ data:
       # before evaluating them.
       include /etc/nginx/realip/realip.conf;
 
-      # Rate limiting zones
       limit_req_zone $binary_remote_addr zone=auth_zone:10m rate=10r/m;
       limit_req_zone $binary_remote_addr zone=api_zone:10m rate=20r/s;
       # Connection zones are separate so each route family enforces its own

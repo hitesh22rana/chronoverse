@@ -150,37 +150,31 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 
 	client := redis.NewClient(redisOptions)
 
-	// Set the max memory
 	if err := client.ConfigSet(ctx, "maxmemory", cfg.MaxMemory).Err(); err != nil {
 		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to set max memory: %v", err)
 	}
 
-	// Set the eviction policy
 	if err := client.ConfigSet(ctx, "maxmemory-policy", cfg.EvictionPolicy).Err(); err != nil {
 		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to set eviction policy: %v", err)
 	}
 
-	// Set sample size for eviction policy
 	if err := client.ConfigSet(ctx, "maxmemory-samples", fmt.Sprintf("%d", cfg.EvictionPolicySampleSize)).Err(); err != nil {
 		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to set eviction policy sample size: %v", err)
 	}
 
-	// Check the health of the connection
 	if err := healthCheck(ctx, client); err != nil {
 		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to connect to Redis: %v", err)
 	}
 
-	// Enable tracing instrumentation for Redis
 	if err := redisotel.InstrumentTracing(client); err != nil {
 		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to instrument tracing: %v", err)
 	}
 
-	// Enable metrics instrumentation for Redis
 	if err := redisotel.InstrumentMetrics(client); err != nil {
 		_ = client.Close()
 		return nil, status.Errorf(codes.Internal, "failed to instrument metrics: %v", err)
@@ -316,7 +310,6 @@ func (s *Store) DeleteByPattern(ctx context.Context, pattern string) (int64, err
 				return 0, status.Errorf(codes.Internal, "failed to delete keys: %v", err)
 			}
 
-			// Count deleted keys
 			for _, cmd := range cmds {
 				if delCmd, ok := cmd.(*redis.IntCmd); ok {
 					totalDeleted += delCmd.Val()
@@ -324,7 +317,6 @@ func (s *Store) DeleteByPattern(ctx context.Context, pattern string) (int64, err
 			}
 		}
 
-		// Stop if cursor is 0 (no more keys to scan)
 		if cursor == 0 {
 			break
 		}

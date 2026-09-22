@@ -58,7 +58,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
 	notificationCtx, _ := r.withAuthorization(context.Background())
 
-	// Get the workflow details
 	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
 		Id: workflowID,
 	})
@@ -70,7 +69,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return nil
 	}
 
-	// Ensure the workflow is not already terminated
 	if workflow.GetTerminatedAt() != "" {
 		return status.Error(codes.FailedPrecondition, "workflow is already terminated")
 	}
@@ -109,13 +107,11 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return status.Error(codes.Aborted, "failed to acquire distributed lock")
 	}
 
-	// Release the distributed lock
 	defer func() {
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
 		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
 	}()
 
-	// Cancel all the jobs which are in the QUEUED or PENDING state
 	// This handles the condition where the worklow is updated, since the interval might be changed
 	//nolint:govet // Ignore shadow of error variable
 	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
@@ -168,7 +164,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return nil
 		}
 
-		// Send notification for the workflow build skipped event
 		// Fire-and-forget; do not wait.
 		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
@@ -191,7 +186,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		_err    error
 	)
 	if buildStatus == workflowsmodel.WorkflowBuildStatusQueued.ToString() {
-		// Update the workflow status from QUEUED to STARTED
 		updated, _err = r.updateWorkflowBuildStatus(
 			ctx,
 			workflowID,
@@ -209,7 +203,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		}
 	}
 
-	// Send notification for the workflow build start event
 	// Fire-and-forget; do not wait.
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 	go r.sendNotification(
@@ -224,7 +217,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		occurrenceKey,
 	)
 
-	// Execute the build process with retry enabled
 	var resolvedImageRef, resolvedImageDigest, warmedNodeID string
 	workflowErr := retrypkg.Do(ctx, 2, retryBackoff, func() error {
 		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
@@ -249,8 +241,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 
 	// Since, build process can take time to execute and can led to authorization issues
 	// So, we need to re-issue the authorization token
-	// This context is used for all the gRPC calls
-	// This context uses the parent context
 	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
 	ctx, _ = r.withAuthorization(ctx)
 
@@ -263,7 +253,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return workflowErr
 		}
 
-		// Update the workflow status from QUEUED to FAILED
 		updated, _err = r.updateWorkflowBuildStatus(
 			ctx,
 			workflowID,
@@ -280,7 +269,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 			return nil
 		}
 
-		// Send notification for the workflow build failed event
 		// Fire-and-forget; do not wait.
 		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
 		go r.sendNotification(
@@ -342,7 +330,6 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		}
 	}
 
-	// Send notification for the workflow build completed event
 	// Fire-and-forget; do not wait.
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
 	go r.sendNotification(

@@ -66,7 +66,6 @@ export default function JobDetailsAndLogsPage() {
 
     return (
         <div className="flex flex-col flex-1 w-full h-full space-y-6">
-            {/* Header with back button */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Link
@@ -84,7 +83,6 @@ export default function JobDetailsAndLogsPage() {
                     </div>
                 </div>
 
-                {/* Refresh Button */}
                 <Button
                     variant="outline"
                     size="sm"
@@ -96,9 +94,7 @@ export default function JobDetailsAndLogsPage() {
                 </Button>
             </div>
 
-            {/* Simple two-column grid layout */}
             <div className="w-full h-full flex flex-col flex-1 gap-4">
-                {/* Details Panel */}
                 <Card>
                     <CardHeader>
                         <div className="flex items-start justify-between gap-4">
@@ -154,7 +150,6 @@ export default function JobDetailsAndLogsPage() {
                     </CardContent>
                 </Card>
 
-                {/* Logs Viewer Panel */}
                 <LogsViewer
                     key={`${workflowId}:${jobId}`}
                     workflowId={workflowId}

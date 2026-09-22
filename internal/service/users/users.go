@@ -242,7 +242,6 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 		return nil, err
 	}
 
-	// Check if the user is already cached
 	cacheKey := fmt.Sprintf("user:%s", req.GetId())
 	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &usersmodel.GetUserResponse{})
 	if cacheErr != nil {

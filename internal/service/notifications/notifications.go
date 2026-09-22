@@ -76,13 +76,11 @@ func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.C
 		return "", status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the JSON payload
 	if _, err = idempotency.CanonicalJSONObject(req.GetPayload()); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid payload: %v", err)
 		return "", err
 	}
 
-	// Create the notification
 	notificationID, err = s.repo.CreateNotification(
 		ctx,
 		req.GetUserId(),
@@ -157,7 +155,6 @@ func (s *Service) ListNotifications(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
 		cursor, err = decodeCursor(req.GetCursor())

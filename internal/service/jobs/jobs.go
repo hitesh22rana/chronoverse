@@ -146,13 +146,11 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		return "", status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the scheduled time
 	err = validateTime(req.GetScheduledAt())
 	if err != nil {
 		return "", err
 	}
 
-	// Validate the job trigger
 	err = validateJobTrigger(req.GetTrigger())
 	if err != nil {
 		return "", err
@@ -162,7 +160,6 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		return "", status.Error(codes.InvalidArgument, "idempotency key is required for manual jobs")
 	}
 
-	// Schedule the job
 	res, err := s.repo.ScheduleJob(
 		ctx,
 		req.GetWorkflowId(),
@@ -550,7 +547,6 @@ func (s *Service) GetJob(ctx context.Context, req *jobspb.GetJobRequest) (res *j
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Get the scheduled job details
 	res, err = s.repo.GetJob(ctx, req.GetId(), req.GetWorkflowId(), req.GetUserId())
 	if err != nil {
 		return nil, err
@@ -827,7 +823,6 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 		filters = &jobsmodel.SearchJobLogsFilters{}
 	}
 
-	// Validate the struct
 	err = s.validator.Struct(&SearchJobLogsRequest{
 		ID:         req.GetId(),
 		WorkflowID: req.GetWorkflowId(),
@@ -957,7 +952,6 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
 		cursor, err = decodeListJobsCursor(req.GetCursor())
@@ -967,7 +961,6 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		}
 	}
 
-	// Validate the filters
 	if err = validateListJobsFilters(filters); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid filters: %v", err)
 		return nil, err

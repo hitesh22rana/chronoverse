@@ -152,7 +152,6 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", status.Errorf(codes.InvalidArgument, "invalid kind: %s", req.GetKind())
 	}
 
-	// CreateWorkflow the job
 	res, err := s.repo.CreateWorkflow(
 		ctx,
 		req.GetUserId(),
@@ -238,7 +237,6 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		return err
 	}
 
-	// Validate payload
 	_, heartBeatPayloadErr := heartbeat.ExtractAndValidateHeartbeatDetails(req.GetPayload())
 	_, containerPayloadErr := container.ExtractAndValidateContainerDetails(req.GetPayload())
 
@@ -247,7 +245,6 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		return err
 	}
 
-	// Update the job details
 	err = s.repo.UpdateWorkflow(
 		ctx,
 		req.GetId(),
@@ -310,13 +307,11 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		return err
 	}
 
-	// Validate the job build status
 	err = validateWorkflowBuildStatus(req.GetBuildStatus())
 	if err != nil {
 		return err
 	}
 
-	// Update the job build status
 	err = s.repo.UpdateWorkflowBuildStatus(
 		ctx,
 		req.GetId(),
@@ -372,7 +367,6 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Check if the workflow is cached
 	cachedKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), req.GetId())
 	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{})
 	if cacheErr != nil {
@@ -544,7 +538,6 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 		return err
 	}
 
-	// Reset the job consecutive failures count
 	err = s.repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, req.GetId(), req.GetUserId(), req.GetJobId())
 	if err != nil {
 		return err
@@ -594,7 +587,6 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 		return err
 	}
 
-	// Terminate the job
 	err = s.repo.TerminateWorkflow(ctx, req.GetId(), req.GetUserId())
 	if err != nil {
 		return err
@@ -644,7 +636,6 @@ func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWor
 		return err
 	}
 
-	// Delete the workflow
 	err = s.repo.DeleteWorkflow(ctx, req.GetId(), req.GetUserId())
 	if err != nil {
 		return err
@@ -708,7 +699,6 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate the cursor
 	var cursor string
 	if req.GetCursor() != "" {
 		cursor, err = decodeCursor(req.GetCursor())
@@ -718,7 +708,6 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 		}
 	}
 
-	// Validate the filters
 	if err = validateFilters(filters); err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid filters: %v", err)
 		return nil, err
@@ -726,7 +715,6 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 
 	cacheKey := generateListWorkflowsCacheKey(req.GetUserId(), req.GetCursor(), filters)
 
-	// Check for cached response
 	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{})
 	if cacheErr != nil {
 		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {

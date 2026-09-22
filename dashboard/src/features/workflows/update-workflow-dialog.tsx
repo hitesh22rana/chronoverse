@@ -76,13 +76,16 @@ function UpdateWorkflowForm({
         workflow,
         isLoading,
         isFetching,
+        error,
+        refetch,
         updateWorkflow,
         isUpdating
     } = useWorkflowDetails(workflowId);
     // The detail query serves stale cache first and refetches in the background.
-    // Hold the form until that opening fetch settles so no edit can start from
-    // stale values; the latch ignores later background polls.
-    if (!isFetching && !ready) setReady(true)
+    // Hold the form until that opening fetch settles successfully: on failure the
+    // cached data is retained, so unlocking then would allow editing stale values.
+    // The latch ignores later background polls.
+    if (!isFetching && !error && !ready) setReady(true)
 
     const form = useForm<UpdateWorkflowFormValues>({
         resolver: zodResolver(updateWorkflowSchema) as Resolver<UpdateWorkflowFormValues>,
@@ -172,9 +175,18 @@ function UpdateWorkflowForm({
                 </DialogHeader>
 
                 {isLoading || !ready ? (
-                    <div className="flex justify-center my-8">
-                        <Loader2 className="h-8 w-8 animate-spin" />
-                    </div>
+                    error && !isFetching ? (
+                        <div className="flex flex-col items-center gap-3 my-8 px-6 text-center">
+                            <p className="text-sm text-muted-foreground">Couldn&apos;t load the latest workflow data. Editing cached values could overwrite newer changes.</p>
+                            <Button type="button" variant="outline" onClick={() => { void refetch() }}>
+                                Retry
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="flex justify-center my-8">
+                            <Loader2 className="h-8 w-8 animate-spin" />
+                        </div>
+                    )
                 ) : workflow && (
                     <Form {...form}>
                         <form noValidate onSubmit={form.handleSubmit(handleSubmit, (errors) => {

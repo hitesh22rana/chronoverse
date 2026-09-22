@@ -140,7 +140,6 @@ const STATUS_META: Record<StatusKey, StatusMeta> = {
     },
 }
 
-// Normalize incoming backend strings to canonical keys
 const NORMALIZE: Record<string, StatusKey> = {
     PENDING: "PENDING",
     QUEUED: "QUEUED",

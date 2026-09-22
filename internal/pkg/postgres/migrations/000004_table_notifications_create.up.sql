@@ -1,6 +1,6 @@
 CREATE TABLE if NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     kind TEXT NOT NULL,
     payload JSONB,
     read_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,

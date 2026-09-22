@@ -140,7 +140,6 @@ func New(
 	router := http.NewServeMux()
 	srv.registerRoutes(router)
 
-	// Common middlewares
 	srv.httpServer.Handler = otelpkg.HTTPHandler(
 		srv.withRequestLoggingMiddleware(
 			srv.withSecurityHeadersMiddleware(
@@ -156,7 +155,6 @@ func New(
 
 // registerRoutes registers the HTTP routes.
 func (s *Server) registerRoutes(router *http.ServeMux) {
-	// Auth routes
 	router.HandleFunc(
 		"/auth/register",
 		s.withAllowedMethodMiddleware(
@@ -203,7 +201,6 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		),
 	)
 
-	// Users routes
 	router.HandleFunc(
 		"/users",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +231,6 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		},
 	)
 
-	// Workflows routes
 	router.HandleFunc(
 		"/workflows",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -315,7 +311,6 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		},
 	)
 
-	// Jobs routes
 	router.HandleFunc(
 		"/workflows/{workflow_id}/jobs",
 		s.withAllowedMethodMiddleware(
@@ -396,7 +391,6 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		),
 	)
 
-	// Notifications routes
 	router.HandleFunc(
 		"/notifications",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -425,7 +419,6 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		},
 	)
 
-	// Analytics routes
 	router.HandleFunc(
 		"/analytics",
 		s.withAllowedMethodMiddleware(

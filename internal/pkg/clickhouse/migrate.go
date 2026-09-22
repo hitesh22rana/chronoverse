@@ -104,7 +104,6 @@ func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 			return nil
 		}
 
-		// Extract version from filename (e.g., "000001_table_job_logs_create.up.sql").
 		filename := filepath.Base(path)
 		parts := strings.Split(filename, "_")
 		if len(parts) < 2 {

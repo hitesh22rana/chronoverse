@@ -178,7 +178,7 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	return server
 }
 
-// CreateWorkflow creates a new job.
+// CreateWorkflow creates a new workflow.
 func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (res *workflowspb.CreateWorkflowResponse, err error) {
 	ctx, span := w.tp.Start(
 		ctx,
@@ -213,7 +213,7 @@ func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateW
 	return &workflowspb.CreateWorkflowResponse{Id: workflowID}, nil
 }
 
-// UpdateWorkflow updates the job details.
+// UpdateWorkflow updates an existing workflow.
 func (w *Workflows) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (res *workflowspb.UpdateWorkflowResponse, err error) {
 	ctx, span := w.tp.Start(
 		ctx,
@@ -309,8 +309,7 @@ func (w *Workflows) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflo
 	return workflow.ToProto(), nil
 }
 
-// GetWorkflowByID returns the job details by ID.
-// Internal only; not public API.
+// GetWorkflowByID returns a workflow by ID. Internal only; not public API.
 func (w *Workflows) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowspb.GetWorkflowByIDResponse, err error) {
 	ctx, span := w.tp.Start(
 		ctx,

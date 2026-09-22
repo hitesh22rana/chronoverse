@@ -58,7 +58,6 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	// Query to get user analytics including workflow count
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(DISTINCT workflow_id) AS total_workflows,
@@ -171,7 +170,6 @@ func (r *Repository) GetWorkflowAnalytics(ctx context.Context, userID, workflowI
 		span.End()
 	}()
 
-	// Query to get workflow analytics
 	query := fmt.Sprintf(`
 		SELECT
 			workflow_id,

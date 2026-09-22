@@ -121,7 +121,6 @@ func (s *Service) MarkNotificationsRead(ctx context.Context, req *notificationsp
 		return err
 	}
 
-	// Mark all notifications as read
 	err = s.repo.MarkNotificationsRead(ctx, req.GetIds(), req.GetUserId())
 	return err
 }

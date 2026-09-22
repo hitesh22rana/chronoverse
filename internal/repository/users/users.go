@@ -54,7 +54,6 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 		span.End()
 	}()
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
@@ -234,7 +233,6 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 		return nil, "", err
 	}
 
-	// Issue authToken
 	authToken, err = r.auth.IssueToken(ctx, loginUserResponse.ID, auth.ServiceNameServer)
 	if err != nil {
 		return nil, "", err

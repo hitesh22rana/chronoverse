@@ -431,7 +431,6 @@ func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspecte
 }
 
 func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
-	// Health check the Docker client
 	if _, err := w.Client.Ping(ctx); err != nil {
 		return status.Errorf(codes.Internal, "failed to ping docker client: %v", err)
 	}
@@ -511,13 +510,11 @@ func (w *DockerWorkflow) Execute(
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 
-	// Stream logs and handle container completion
 	go func() { //nolint:gosec // Execution must remain tied to the caller context so cancellation stops the container.
 		defer close(logs)
 		defer close(errs)
 		defer cancel()
 
-		// Set up container wait early to detect completion
 		statusCh, waitErrCh := w.Client.ContainerWait(timeoutCtx, containerID, container.WaitConditionNotRunning)
 
 		logsDone := make(chan struct{})
@@ -526,7 +523,6 @@ func (w *DockerWorkflow) Execute(
 			w.streamContainerLogs(timeoutCtx, containerID, logs, errs, true)
 		}()
 
-		// Monitor for timeouts and container completion
 		select {
 		case <-timeoutCtx.Done():
 			if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
@@ -664,7 +660,6 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
 
-	// Channel to collect log messages from both streams
 	logMessages := make(chan *jobsmodel.JobLog)
 
 	go func() {
@@ -724,12 +719,10 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		close(logMessages)
 	}()
 
-	// Forward log messages to the output channel
 	for {
 		select {
 		case msg, ok := <-logMessages:
 			if !ok {
-				// Channel closed, all logs processed
 				return
 			}
 

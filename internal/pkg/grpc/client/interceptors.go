@@ -67,12 +67,10 @@ func isCircuitBreakerError(err error) bool {
 		return false
 	}
 
-	// Direct context deadline
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return true
 	}
 
-	// gRPC status codes
 	//nolint:exhaustive // Only treating some codes as circuit-breaker errors
 	if st, ok := status.FromError(err); ok {
 		switch st.Code() {
@@ -90,7 +88,6 @@ func isCircuitBreakerError(err error) bool {
 		}
 	}
 
-	// Network-level timeouts (net.Error)
 	var ne net.Error
 	return errors.As(err, &ne) && ne.Timeout()
 }

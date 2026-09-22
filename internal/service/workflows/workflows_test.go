@@ -1888,7 +1888,6 @@ func TestListWorkflows(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.NotFound, "cache miss"))
 
-				// This should return an error
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),

@@ -4,8 +4,8 @@ CREATE TYPE JOB_STATUS AS ENUM ('PENDING', 'QUEUED', 'RUNNING', 'COMPLETED', 'FA
 
 CREATE TABLE IF NOT EXISTS jobs (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
-    workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE, -- Foreign key constraint
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Foreign key constraint
+    workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     container_id TEXT NULL, -- Unique identifier for the container, if applicable
     status JOB_STATUS DEFAULT 'PENDING' NOT NULL,
     scheduled_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,

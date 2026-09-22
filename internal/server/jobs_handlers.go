@@ -676,13 +676,11 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Client disconnected
 			return
 		default:
 			msg, err := stream.Recv()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					// Stream ended normally
 					fmt.Fprintf(w, "event: end\ndata: {\"status\":\"stream_ended\"}\n\n")
 					rc.Flush()
 					return

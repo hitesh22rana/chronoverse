@@ -24,7 +24,6 @@ import (
 )
 
 const (
-	// retryBackoff is the duration to wait before retrying an operation.
 	retryBackoff = time.Second
 )
 

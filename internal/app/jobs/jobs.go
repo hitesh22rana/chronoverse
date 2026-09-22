@@ -630,22 +630,17 @@ func (j *Jobs) StreamJobLogs(req *jobspb.StreamJobLogsRequest, stream jobspb.Job
 	for {
 		select {
 		case <-ctx.Done():
-			// Client disconnected or context canceled
 			switch ctx.Err() {
 			case context.Canceled:
 				// Client disconnected - just return, don't send error
 				return nil
 			case context.DeadlineExceeded:
-				// Context deadline exceeded
-				// This can happen if the client takes too long to read the stream.
 				return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
 			default:
-				// Other context errors which can happen if the context is canceled or if there is an error in the context.
 				return status.Error(codes.Unknown, ctx.Err().Error())
 			}
 		case data, ok := <-ch:
 			if !ok {
-				// Channel closed, stream ended
 				return nil
 			}
 

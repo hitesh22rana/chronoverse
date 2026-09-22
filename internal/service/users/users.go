@@ -100,7 +100,7 @@ type RegisterUserRequest struct {
 	IdempotencyKey string `validate:"required"`
 }
 
-// RegisterUser a new user.
+// RegisterUser registers a new user and returns its ID with an auth token.
 func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (userID, authToken string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.RegisterUser"),
@@ -162,7 +162,7 @@ type LoginUserRequest struct {
 	Password string `validate:"required,min=8,max=72"`
 }
 
-// LoginUser user.
+// LoginUser authenticates a user and returns its ID with a fresh auth token.
 func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (userID, authToken string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.LoginUser"),

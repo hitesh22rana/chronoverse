@@ -142,7 +142,6 @@ func New(ctx context.Context, cfg *Config) (*Client, error) {
 		conn: conn,
 	}
 
-	// Initial health check
 	if err := healthCheck(ctx, conn); err != nil {
 		return nil, status.Errorf(codes.Internal, "initial health check failed: %v", err)
 	}

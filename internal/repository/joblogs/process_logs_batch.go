@@ -42,7 +42,6 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) (
 	ctx, span := r.tp.Start(ctx, "joblogs.Run.processLogsBatch")
 	defer span.End()
 
-	// If batch is empty, nothing to do
 	if len(batch) == 0 {
 		return nil, nil
 	}
@@ -60,7 +59,6 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) (
 		return nil, nil
 	}
 
-	// Extract logs
 	logs := make([]*jobsmodel.JobLogEvent, 0, len(batch))
 
 	for _, item := range batch {
@@ -94,7 +92,6 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) (
 
 	logger.Info("processing batch", zap.Int("batch_size", len(logs)))
 
-	// Insert logs into ClickHouse
 	if insertErr := r.insertLogsBatchToClickhouse(ctx, logs); insertErr != nil {
 		logger.Error("failed to insert logs batch", zap.Error(insertErr))
 		return nil, insertErr

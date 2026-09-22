@@ -84,7 +84,7 @@ func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
 	}
 }
 
-// CreateWorkflowRequest holds the request parameters for creating a new job.
+// CreateWorkflowRequest holds the request parameters for creating a new workflow.
 type CreateWorkflowRequest struct {
 	UserID                           string `validate:"required"`
 	Name                             string `validate:"required,min=1,max=255"`
@@ -96,7 +96,7 @@ type CreateWorkflowRequest struct {
 	IdempotencyKey                   string `validate:"required"`
 }
 
-// CreateWorkflow a new job.
+// CreateWorkflow creates a new workflow and returns its ID.
 func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (jobID string, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.CreateWorkflow"),
@@ -130,7 +130,6 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validation based on kind
 	switch req.GetKind() {
 	case workflowsmodel.KindHeartbeat.ToString():
 		// Heartbeat kind does not support log retention, so if log retention is enabled, return an error.

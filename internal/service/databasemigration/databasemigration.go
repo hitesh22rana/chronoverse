@@ -44,13 +44,11 @@ func (s *Service) Run(ctx context.Context) (err error) {
 		span.End()
 	}()
 
-	// Migrate PostgreSQL database.
 	err = s.repo.MigratePostgres(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Migrate ClickHouse database.
 	err = s.repo.MigrateClickHouse(ctx)
 	if err != nil {
 		return err

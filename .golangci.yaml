@@ -1,12 +1,8 @@
 version: "2"
 run:
-  # Concurrently run upto 4
   concurrency: 4
-  # Issue exit code
   issues-exit-code: 1
-  # Lint tests
   tests: true
-  # Lint timeout
   timeout: 5m
 linters:
   enable:

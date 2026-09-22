@@ -656,7 +656,6 @@ func (r *Repository) systemRetryBackoff(attempt int32) time.Duration {
 	return backoff
 }
 
-// extractFieldFromRecordValue extracts the data from the record value.
 func extractFieldFromRecordValue(recordValue []byte) (scheduledJobRecord, error) {
 	var scheduledJobEntry jobsmodel.ScheduledJobEntry
 	if err := json.Unmarshal(recordValue, &scheduledJobEntry); err != nil {
@@ -680,7 +679,6 @@ func extractFieldFromRecordValue(recordValue []byte) (scheduledJobRecord, error)
 	}, nil
 }
 
-// withAuthorization issues the necessary headers and tokens for authorization.
 // The audience set names every service this repository may call.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
 	return auth.WithInternalServiceAuthorization(
@@ -692,7 +690,6 @@ func (r *Repository) withAuthorization(parentCtx context.Context) (context.Conte
 	)
 }
 
-// executeWorkflow executes the workflow.
 func (r *Repository) executeWorkflow(
 	ctx context.Context,
 	csvc ContainerSvc,

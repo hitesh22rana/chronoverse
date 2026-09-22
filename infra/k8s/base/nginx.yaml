@@ -23,7 +23,6 @@ data:
       server {
         listen 80;
 
-        # Request hygiene
         client_max_body_size 4m;
         client_body_timeout 15s;
         client_header_timeout 10s;

@@ -22,7 +22,6 @@ import (
 )
 
 const (
-	// Database operation retry configuration.
 	defaultMaxRetries    = 5
 	defaultInitialDelay  = 1 * time.Second
 	defaultMaxDelay      = 16 * time.Second
@@ -208,7 +207,6 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 			return err
 		}
 
-		// Don't sleep on the last attempt.
 		if attempt < config.MaxRetries {
 			logger.Warn("database operation failed, retrying",
 				zap.String("database_type", dbType),

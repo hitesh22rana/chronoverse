@@ -994,7 +994,6 @@ func TestStreamJobLogs(t *testing.T) {
 		expectClosed bool
 	}
 
-	// Test cases
 	tests := []struct {
 		name  string
 		args  args
@@ -1240,29 +1239,24 @@ func TestStreamJobLogs(t *testing.T) {
 				return
 			}
 
-			// Read logs from the stream
 			var (
 				logCount     int
 				streamClosed bool
 			)
 
-			// Use a timeout to prevent test from hanging
 			timeout := time.After(300 * time.Millisecond)
 			for {
 				select {
 				case <-timeout:
-					// Test timeout - exit the loop
 					goto done
 				default:
 					log, err := stream.Recv()
 					if err != nil {
-						// Stream ended or error occurred
 						streamClosed = true
 						goto done
 					}
 					if log != nil {
 						logCount++
-						// Verify log structure
 						if log.Message == "" {
 							t.Errorf("received log with empty message")
 						}
@@ -1277,7 +1271,6 @@ func TestStreamJobLogs(t *testing.T) {
 			}
 
 		done:
-			// Verify expectations based on test case
 			if tt.want.expectClosed && !streamClosed {
 				t.Errorf("expected stream to be closed, but it's still open")
 			}

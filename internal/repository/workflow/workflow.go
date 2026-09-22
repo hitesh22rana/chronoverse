@@ -115,7 +115,6 @@ func New(
 	return r
 }
 
-// runTargetWorkflow runs the target workflow based on the action.
 func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry *workflowsmodel.WorkflowEvent) error {
 	switch workflowEntry.Action {
 	case workflowsmodel.ActionBuild:
@@ -147,7 +146,7 @@ func isStaleWorkflowEvent(workflow *workflowspb.GetWorkflowByIDResponse, workflo
 	return workflowEvent.Generation != 0 && workflow.GetGeneration() != workflowEvent.Generation
 }
 
-// Run start the workflow execution.
+// Run starts the workflow event execution loop.
 func (r *Repository) Run(ctx context.Context) error {
 	logger := loggerpkg.FromContext(ctx)
 	r.runner.SetLogger(logger)
@@ -211,7 +210,6 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 	return workflowErr
 }
 
-// sendNotification sends a notification for the job execution related events.
 func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType, occurrenceKey string) error {
 	var payload, notificationKey string
 	var err error
@@ -248,7 +246,6 @@ func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, j
 	return nil
 }
 
-// withAuthorization issues the necessary headers and tokens for authorization.
 // The audience set names every service this repository may call.
 func (r *Repository) withAuthorization(parentCtx context.Context) (context.Context, error) {
 	return auth.WithInternalServiceAuthorization(

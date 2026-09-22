@@ -229,10 +229,8 @@ services:
       KAFKA_OFFSETS_TOPIC_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
-      # Optional: global default
       KAFKA_MIN_INSYNC_REPLICAS: 1
 
-      # Other Confluent internal topics left at RF=1
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_CLUSTER_LINK_METADATA_TOPIC_REPLICATION_FACTOR: 1
@@ -628,7 +626,6 @@ services:
           -srcstorepass:env KAFKA_SSL_KEYSTORE_PASSWORD \
           -alias kafka
 
-        # Create Kafka truststore
         echo "🔄 Creating Kafka truststore..."
         keytool -import -trustcacerts -alias CARoot \
           -file /certs/ca/ca.crt \

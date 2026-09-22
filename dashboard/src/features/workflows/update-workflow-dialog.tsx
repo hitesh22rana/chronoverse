@@ -71,12 +71,18 @@ function UpdateWorkflowForm({
 }: UpdateWorkflowDialogProps) {
     const [section, setSection] = useState("configuration")
     const initKey = useRef<string | null>(null)
+    const [ready, setReady] = useState(false)
     const {
         workflow,
         isLoading,
+        isFetching,
         updateWorkflow,
         isUpdating
     } = useWorkflowDetails(workflowId);
+    // The detail query serves stale cache first and refetches in the background.
+    // Hold the form until that opening fetch settles so no edit can start from
+    // stale values; the latch ignores later background polls.
+    if (!isFetching && !ready) setReady(true)
 
     const form = useForm<UpdateWorkflowFormValues>({
         resolver: zodResolver(updateWorkflowSchema) as Resolver<UpdateWorkflowFormValues>,
@@ -165,7 +171,7 @@ function UpdateWorkflowForm({
                     </DialogDescription>
                 </DialogHeader>
 
-                {isLoading ? (
+                {isLoading || !ready ? (
                     <div className="flex justify-center my-8">
                         <Loader2 className="h-8 w-8 animate-spin" />
                     </div>

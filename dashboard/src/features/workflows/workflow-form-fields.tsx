@@ -54,8 +54,8 @@ export function ContainerListField({ name, values, ids }: { name: "cmd" | "env",
             <div className="text-sm font-medium">
                 {labels.title} (optional)
                 <Button type="button" variant="outline" size="sm" className="ml-2" onClick={() => {
-                    form.setValue(`containerPayload.${name}`, [...values, ""])
-                    form.setValue(`containerPayload.${name}Ids`, [...ids, crypto.randomUUID()])
+                    form.setValue(`containerPayload.${name}`, [...values, ""], { shouldDirty: true })
+                    form.setValue(`containerPayload.${name}Ids`, [...ids, crypto.randomUUID()], { shouldDirty: true })
                 }}>
                     <Plus className="mr-1 h-3 w-3" /> {labels.add}
                 </Button>
@@ -71,8 +71,8 @@ export function ContainerListField({ name, values, ids }: { name: "cmd" | "env",
                         </FormItem>
                     )} />
                     <Button type="button" variant="ghost" size="sm" onClick={() => {
-                        form.setValue(`containerPayload.${name}`, values.filter((_, i) => i !== index))
-                        form.setValue(`containerPayload.${name}Ids`, ids.filter((_, i) => i !== index))
+                        form.setValue(`containerPayload.${name}`, values.filter((_, i) => i !== index), { shouldDirty: true })
+                        form.setValue(`containerPayload.${name}Ids`, ids.filter((_, i) => i !== index), { shouldDirty: true })
                     }}>
                         <Trash2 className="h-4 w-4" />
                         <span className="sr-only">Remove {labels.label.toLowerCase()} {index + 1}</span>

@@ -90,7 +90,7 @@ function HeartbeatHeaders() {
                             form.setValue("heartbeatPayload.headers", [
                                 ...headerFields,
                                 { id: crypto.randomUUID(), key: "", value: "" }
-                            ])
+                            ], { shouldDirty: true })
                         }}
                     >
                         <Plus className="mr-1 h-3 w-3" /> Add header
@@ -143,7 +143,7 @@ function HeartbeatHeaders() {
                             onClick={() => {
                                 const updatedHeaders = [...headerFields]
                                 updatedHeaders.splice(index, 1)
-                                form.setValue("heartbeatPayload.headers", updatedHeaders)
+                                form.setValue("heartbeatPayload.headers", updatedHeaders, { shouldDirty: true })
                             }}
                         >
                             <Trash2 className="h-4 w-4" />

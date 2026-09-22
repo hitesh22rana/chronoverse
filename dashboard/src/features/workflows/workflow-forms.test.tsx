@@ -42,12 +42,12 @@ it.each(["cmd", "env"] as const)("labels %s fields and keeps values paired with 
     const buttons = descendants(ContainerListField(props)).filter((node) => node.type === Button)
     const setValue = vi.spyOn(form, "setValue")
     buttons[0].props.onClick()
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}`, ["one", "two", ""])
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}Ids`, ["first", "second", expect.any(String)])
+    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}`, ["one", "two", ""], { shouldDirty: true })
+    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}Ids`, ["first", "second", expect.any(String)], { shouldDirty: true })
     setValue.mockClear()
     buttons[1].props.onClick()
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}`, ["two"])
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}Ids`, ["second"])
+    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}`, ["two"], { shouldDirty: true })
+    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}Ids`, ["second"], { shouldDirty: true })
 })
 
 it.each([

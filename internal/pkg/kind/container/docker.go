@@ -702,7 +702,6 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		}
 	})
 
-	// Read from stderr
 	wg.Go(func() {
 		defer stderrReader.Close()
 

@@ -292,6 +292,7 @@ func (s *Store) DeleteByPattern(ctx context.Context, pattern string) (int64, err
 		var keys []string
 		var err error
 
+		// Scan for keys matching pattern (safer than KEYS command)
 		keys, cursor, err = s.client.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			return 0, status.Errorf(codes.Internal, "failed to scan keys: %v", err)

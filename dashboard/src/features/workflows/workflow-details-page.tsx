@@ -266,7 +266,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
 
     return (
         <div className="flex flex-1 flex-col gap-6 h-full">
-            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -373,7 +372,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                     </div>
                 ) : urlTabFilter === "jobs" && (
                     <div className="flex flex-wrap items-center justify-end gap-2 w-full mb-4">
-                        {/* Manual run */}
                         {!!workflow?.build_status && workflow.build_status === "COMPLETED" && (!workflow?.terminated_at) && (
                             <Button
                                 variant="default"
@@ -391,7 +389,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                             </Button>
                         )}
 
-                        {/* Combined filters popover (trigger + status) */}
                         <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" className="relative h-9">
@@ -472,7 +469,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
 
                                     <Separator />
 
-                                    {/* Apply button */}
                                     <Button onClick={handleApplyFilters} className="w-full">
                                         Apply Filters
                                     </Button>
@@ -480,7 +476,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                             </PopoverContent>
                         </Popover>
 
-                        {/* Refresh Button */}
                         <Button
                             variant="outline"
                             size="icon"
@@ -498,7 +493,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                             <span className="sr-only">Refresh</span>
                         </Button>
 
-                        {/* Pagination controls */}
                         <div className="flex items-center border-l pl-4 ml-1">
                             <Button
                                 variant="outline"
@@ -555,21 +549,18 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                     <WorkflowDetailsSkeleton />
                 ) : (urlTabFilter === "details" && !isWorkflowLoading && !workflowError) && (
                     <TabsContent value="details" className="h-full w-full">
-                        {/* UpdateWorkflow Dialog */}
                         <UpdateWorkflowDialog
                             workflowId={workflow.id}
                             open={showUpdateWorkflowDialog}
                             onOpenChange={setShowUpdateWorkflowDialog}
                         />
 
-                        {/* TerminateWorkflow Dialog */}
                         <TerminateWorkflowDialog
                             workflow={workflow}
                             open={showTerminateWorkflowDialog}
                             onOpenChange={setShowTerminateWorkflowDialog}
                         />
 
-                        {/* DeleteWorkflow Dialog */}
                         <DeleteWorkflowDialog
                             workflow={workflow}
                             open={showDeleteWorkflowDialog}
@@ -578,7 +569,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
 
                         <Card>
                             <CardContent className="space-y-4">
-                                {/* Basic Info */}
                                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                                     <div className="space-y-2">
                                         <span className="text-sm font-medium">Workflow kind</span>
@@ -627,7 +617,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
 
                                 <Separator />
 
-                                {/* Configuration */}
                                 <div className="space-y-2">
                                     <span className="text-sm font-medium">Configuration</span>
                                     <div className="text-sm text-muted-foreground">
@@ -651,7 +640,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
 
                                 <Separator />
 
-                                {/* Failure tracking */}
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between mb-1">
                                         <div className="flex items-center text-orange-600 dark:text-orange-400">
@@ -681,7 +669,6 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                     </TabsContent>
                 )}
 
-                {/* Jobs Tab */}
                 {urlTabFilter === "jobs" && isJobsLoading ? (
                     <WorkflowJobsSkeleton />
                 ) : (urlTabFilter === "jobs" && !isJobsLoading && !jobsError && !!jobs.length) && (
@@ -702,7 +689,6 @@ function WorkflowDetailsSkeleton() {
     return (
         <Card>
             <CardContent className="space-y-2">
-                {/* Basic Info Skeleton */}
                 <div className="grid grid-cols-1 md:grid-cols-5 md:gap-4 gap-5 pb-2 pt-1">
                     <div className="space-y-2">
                         <Skeleton className="h-4 w-24" />
@@ -742,7 +728,6 @@ function WorkflowDetailsSkeleton() {
 
                 <Separator />
 
-                {/* Configuration Skeleton */}
                 <div className="space-y-1 pt-4 pb-2">
                     <Skeleton className="h-3.5 w-24" />
                     <Skeleton className="h-[166px] w-full" />
@@ -750,7 +735,6 @@ function WorkflowDetailsSkeleton() {
 
                 <Separator />
 
-                {/* Analytics Skeleton */}
                 <div className="flex flex-col gap-3 py-2">
                     <div className="flex items-start justify-between gap-4">
                         <div className="flex flex-col gap-1 w-full">
@@ -764,7 +748,6 @@ function WorkflowDetailsSkeleton() {
 
                 <Separator />
 
-                {/* Failure Tracking Skeleton */}
                 <div className="space-y-1 pt-2 pb-1">
                     <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">

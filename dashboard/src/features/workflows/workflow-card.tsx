@@ -45,7 +45,6 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
                 "h-full relative overflow-hidden transition-all duration-300 rounded-md",
                 statusMeta.glowClass
             )}>
-                {/* Status indicator dot */}
                 <div
                     className="absolute top-3.5 right-3.5 h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: statusMeta.dotColor }}

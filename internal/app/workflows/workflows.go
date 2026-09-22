@@ -170,7 +170,6 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 		grpc_health_v1.HealthCheckResponse_SERVING,
 	)
 
-	// Register the health server.
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
 
 	// Only register reflection for non-production environments.

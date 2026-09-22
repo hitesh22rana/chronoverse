@@ -107,10 +107,8 @@ func initSvcInfo() {
 func Init() (context.Context, func()) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
-	// Initialize the service information
 	initSvcInfo()
 
-	// Initialize the OpenTelemetry Resource
 	res, err := otelpkg.InitResource(ctx, svc.GetName(), svc.GetVersion())
 	if err != nil {
 		panic(err)
@@ -118,7 +116,6 @@ func Init() (context.Context, func()) {
 
 	shutdownFuncs := []func(context.Context) error{}
 
-	// Initialize the OpenTelemetry TracerProvider
 	tp, err := otelpkg.InitTracerProvider(ctx, res)
 	if err != nil {
 		panic(err)
@@ -127,7 +124,6 @@ func Init() (context.Context, func()) {
 		return tp.Shutdown(shutdownCtx)
 	})
 
-	// Initialize the OpenTelemetry MeterProvider
 	mp, err := otelpkg.InitMeterProvider(ctx, res)
 	if err != nil {
 		panic(err)
@@ -136,7 +132,6 @@ func Init() (context.Context, func()) {
 		return mp.Shutdown(shutdownCtx)
 	})
 
-	// Initialize the OpenTelemetry LoggerProvider
 	lp, err := otelpkg.InitLogProvider(ctx, res)
 	if err != nil {
 		panic(err)

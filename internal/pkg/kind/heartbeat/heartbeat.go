@@ -410,13 +410,11 @@ func (h *HeartBeat) Execute(
 	expectedStatusCode int,
 	headers map[string][]string,
 ) error {
-	// Create request with context
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to create request: %v", err)
 	}
 
-	// Add headers
 	for key, values := range headers {
 		for _, value := range values {
 			req.Header.Add(key, value)
@@ -433,7 +431,6 @@ func (h *HeartBeat) Execute(
 	}
 	defer transport.CloseIdleConnections()
 
-	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
 		var urlErr *url.Error
@@ -450,7 +447,6 @@ func (h *HeartBeat) Execute(
 	}
 	defer resp.Body.Close()
 
-	// Check for expected status code
 	if resp.StatusCode != expectedStatusCode {
 		return terminalreason.Wrap(terminalreason.UnexpectedStatusCode, status.Errorf(codes.FailedPrecondition, "unexpected status code: got %d, want %d", resp.StatusCode, expectedStatusCode))
 	}

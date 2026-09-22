@@ -98,7 +98,6 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 		// Enable mutual TLS with full verification
 		sslMode := "verify-full"
 
-		// Start with the base DSN
 		pgDSN = fmt.Sprintf(
 			"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
 			cfg.User,
@@ -120,7 +119,6 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 			pgDSN += fmt.Sprintf("&sslkey=%s", cfg.TLSConfig.KeyFile)
 		}
 	} else {
-		// Use a non-TLS DSN if TLS is not enabled
 		sslMode := "disable"
 		pgDSN = fmt.Sprintf(
 			"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
@@ -146,13 +144,11 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 	poolConfig.ConnConfig.ConnectTimeout = cfg.DialTimeout
 	poolConfig.ConnConfig.Tracer = otelpgx.NewTracer()
 
-	// Create connection pool
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create PostgreSQL pool: %v", err)
 	}
 
-	// Check the health of the connection
 	if err := healthCheck(ctx, pool); err != nil {
 		// Release the pool: its background goroutine keeps dialing to fill
 		// MinConns and holds connections once the database becomes reachable.
@@ -160,7 +156,6 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 		return nil, status.Errorf(codes.Internal, "failed to check PostgreSQL health: %v", err)
 	}
 
-	// Enable OpenTelemetry instrumentation for postgres
 	if err := otelpgx.RecordStats(pool); err != nil {
 		pool.Close()
 		return nil, status.Errorf(codes.Internal, "failed to record PostgreSQL stats: %v", err)

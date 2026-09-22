@@ -96,7 +96,6 @@ func getAppliedMigrations(ctx context.Context, client *Client) (map[int]bool, er
 func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 	var migrations []migration
 
-	// Walk embedded migration files.
 	err := fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -123,7 +122,6 @@ func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 			return nil
 		}
 
-		// Read migration content.
 		content, err := fs.ReadFile(migrationsFS, path)
 		if err != nil {
 			return fmt.Errorf("read migration file %s: %w", path, err)
@@ -141,7 +139,6 @@ func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 		return nil, err
 	}
 
-	// Sort migrations by version.
 	sort.Slice(migrations, func(i, j int) bool {
 		return migrations[i].Version < migrations[j].Version
 	})

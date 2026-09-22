@@ -161,7 +161,6 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GetJob gets the job by job ID.
 	res, err := s.jobsClient.GetJob(r.Context(), &jobspb.GetJobRequest{
 		Id:         jobID,
 		WorkflowId: workflowID,

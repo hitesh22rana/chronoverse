@@ -93,7 +93,6 @@ func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Credentials", "true") // Critical for cookies
 				w.Header().Set("Access-Control-Max-Age", "86400")
 
-				// Handle preflight requests
 				if r.Method == http.MethodOptions {
 					w.WriteHeader(http.StatusNoContent)
 					return
@@ -107,7 +106,6 @@ func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
 // withCompressionMiddleware adds HTTP gzip compression for JSON responses.
 func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip compression for streaming endpoints
 		if strings.Contains(r.URL.Path, "/logs/raw") || strings.Contains(r.URL.Path, "/events") {
 			next.ServeHTTP(w, r)
 			return
@@ -118,7 +116,6 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Create gzip writer with best speed for better performance
 		gz, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
 		if err != nil {
 			s.logger.Error("failed to create gzip writer", zap.Error(err))

@@ -1138,7 +1138,6 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
         WHERE workflow_id = $1 AND user_id = $2
     `, postgres.TableJobs)
 	args := []any{workflowID, userID}
-	// This is used to track the parameter index for the query dynamically
 	paramIndex := 3
 
 	if filters != nil {

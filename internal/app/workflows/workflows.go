@@ -83,7 +83,6 @@ type Workflows struct {
 // never consulted for authorization.
 func (w *Workflows) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		// Skip the interceptor if the method is a health check route.
 		if isHealthCheckRoute(info.FullMethod) {
 			return handler(ctx, req)
 		}

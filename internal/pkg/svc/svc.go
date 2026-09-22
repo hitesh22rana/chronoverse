@@ -140,7 +140,6 @@ func Init() (context.Context, func()) {
 		return lp.Shutdown(shutdownCtx)
 	})
 
-	// Initialize and set the logger in the context
 	ctx, logger := loggerpkg.Init(ctx, svc.GetName(), lp)
 	shutdownFuncs = append(shutdownFuncs, func(context.Context) error {
 		return logger.Sync()

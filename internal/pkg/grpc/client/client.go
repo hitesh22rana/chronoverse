@@ -55,8 +55,7 @@ type RetryConfig struct {
 	MaxAttempts uint
 	// BackoffExponential is the base duration for exponential backoff.
 	BackoffExponential time.Duration
-	// RetryableCodes is a list of status codes that are retryable.
-	RetryableCodes []codes.Code
+	RetryableCodes     []codes.Code
 	// PerRetryTimeout is the timeout for each retry attempt (handles case for context.DeadlineExceeded and context.Canceled).
 	PerRetryTimeout time.Duration
 }
@@ -83,7 +82,6 @@ func NewClient(svcCfg *ServiceConfig, cbCfg *CircuitBreakerConfig, retryCfg *Ret
 		streamInterceptors = make([]grpc.StreamClientInterceptor, 0, 2)
 	)
 
-	// Load balancing policy
 	opts = append(
 		opts,
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),

@@ -108,7 +108,6 @@ func New(ctx context.Context, cfg *Config) (*Postgres, error) {
 			sslMode,
 		)
 
-		// Append certificate paths if they are configured
 		if cfg.TLSConfig.CAFile != "" {
 			pgDSN += fmt.Sprintf("&sslrootcert=%s", cfg.TLSConfig.CAFile)
 		}

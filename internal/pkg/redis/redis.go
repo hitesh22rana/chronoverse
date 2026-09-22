@@ -317,7 +317,6 @@ func (s *Store) DeleteByPattern(ctx context.Context, pattern string) (int64, err
 			}
 		}
 
-		// Stop if cursor is 0 (no more keys to scan)
 		if cursor == 0 {
 			break
 		}

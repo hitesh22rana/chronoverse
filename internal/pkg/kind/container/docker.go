@@ -726,7 +726,6 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		}
 	})
 
-	// Close logMessages when both readers are done
 	go func() {
 		wg.Wait()
 		close(logMessages)

@@ -220,7 +220,6 @@ func (r *Repository) withRetry(ctx context.Context, dbType string, config RetryC
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(delay):
-				// Calculate next delay with exponential backoff.
 				delay = time.Duration(float64(delay) * config.BackoffFactor)
 				delay = min(delay, config.MaxDelay)
 			}

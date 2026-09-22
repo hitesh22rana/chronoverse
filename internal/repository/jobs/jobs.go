@@ -651,7 +651,6 @@ func (r *Repository) GetJobLogs(
 		return nil, "", err
 	}
 
-	// Validate workflow retention policy
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
 		Id:     workflowID,
 		UserId: userID,
@@ -831,7 +830,6 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		return nil, err
 	}
 
-	// Validate workflow retention policy
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
 		Id:     workflowID,
 		UserId: userID,
@@ -845,7 +843,6 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		return nil, err
 	}
 
-	// Validate whether the user has access to the job
 	query := fmt.Sprintf(`
         SELECT id, status
         FROM %s
@@ -880,8 +877,6 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		return nil, err
 	}
 
-	// Subscribe to the job-specific channel and wait for the subscription
-	// acknowledgement so events published right after this call are not dropped.
 	return r.subscribeToJobLogsChannel(ctx, jobID)
 }
 
@@ -940,7 +935,6 @@ func (r *Repository) SearchJobLogs(
 		return nil, "", err
 	}
 
-	// Validate workflow retention policy
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
 		Id:     workflowID,
 		UserId: userID,
@@ -1187,7 +1181,6 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 		return nil, err
 	}
 
-	// Check if there are more jobs
 	data, cursor = paginate.TrimWithCursor(data, r.cfg.FetchLimit, func(v *jobsmodel.JobByWorkflowIDResponse) string {
 		return fmt.Sprintf(
 			"%s%c%s",

@@ -805,7 +805,6 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		return false, err
 	}
 
-	// Check if the threshold was reached
 	thresholdReached = consecutiveJobFailuresCount >= maxConsecutiveJobFailuresAllowed
 	if thresholdReached {
 		query = fmt.Sprintf(`
@@ -1209,27 +1208,20 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 	args := []any{userID}
 	paramIndex := 2 // Start from $2 since $1 is already used for userID
 
-	// Apply filters if provided
 	//nolint:nestif // The filters are applied in the next lines
 	if filters != nil {
-		// Text search on workflow name
 		if filters.Query != "" {
 			query += fmt.Sprintf(` AND name ILIKE $%d ESCAPE '\'`, paramIndex)
 			args = append(args, "%"+escapeLikeQuery(filters.Query)+"%")
 			paramIndex++
 		}
 
-		// Filter by workflow kind
 		if filters.Kind != "" {
 			query += fmt.Sprintf(` AND kind = $%d`, paramIndex)
 			args = append(args, filters.Kind)
 			paramIndex++
 		}
 
-		// If build status is provided, filter by it
-		// Otherwise, filter by termination status
-
-		// Filter by build status
 		if filters.BuildStatus != "" {
 			query += fmt.Sprintf(` AND build_status = $%d`, paramIndex)
 			args = append(args, filters.BuildStatus)
@@ -1239,7 +1231,6 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 			query += ` AND terminated_at IS NOT NULL`
 		}
 
-		// Filter by interval range
 		if filters.IntervalMin > 0 {
 			query += fmt.Sprintf(` AND interval >= $%d`, paramIndex)
 			args = append(args, filters.IntervalMin)
@@ -1287,7 +1278,6 @@ func (r *Repository) ListWorkflows(ctx context.Context, userID, cursor string, f
 		return nil, err
 	}
 
-	// Check if there are more workflows
 	data, cursor = paginate.TrimWithCursor(data, r.cfg.FetchLimit, func(v *workflowsmodel.WorkflowByUserIDResponse) string {
 		return fmt.Sprintf(
 			"%s%c%s",

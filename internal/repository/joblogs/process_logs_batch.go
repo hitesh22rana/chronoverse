@@ -67,7 +67,6 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) (
 			log.EventKey = idempotency.LogEventKey(log.JobID, log.Stream, log.SequenceNum)
 		}
 
-		// Skip if log retention is disabled
 		if !log.Retention {
 			continue
 		}

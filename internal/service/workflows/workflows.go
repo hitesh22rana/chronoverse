@@ -37,7 +37,7 @@ const (
 	cacheTimeout          = time.Second * 5
 )
 
-// Repository provides job related operations.
+// Repository provides workflow related operations.
 type Repository interface {
 	CreateWorkflow(
 		ctx context.Context,
@@ -65,7 +65,7 @@ type Cache interface {
 	DeleteByPattern(ctx context.Context, pattern string) (int64, error)
 }
 
-// Service provides job related operations.
+// Service provides workflow related operations.
 type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
@@ -176,8 +176,8 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 			return
 		}
 
-		// We use the combination of user ID and job ID as the key to uniquely identify the workflow.
-		// The key is in the format "workflow:{user_id}:{job_id}".
+		// We use the combination of user ID and workflow ID as the key to uniquely identify the workflow.
+		// The key is in the format "workflow:{user_id}:{workflow_id}".
 		cacheKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), res.ID)
 
 		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
@@ -197,7 +197,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 	return res.ID, nil
 }
 
-// UpdateWorkflowRequest holds the request parameters for updating a job.
+// UpdateWorkflowRequest holds the request parameters for updating a workflow.
 type UpdateWorkflowRequest struct {
 	ID                               string `validate:"required"`
 	UserID                           string `validate:"required"`
@@ -208,7 +208,7 @@ type UpdateWorkflowRequest struct {
 	IdempotencyKey                   string `validate:"required"`
 }
 
-// UpdateWorkflow updates the job details.
+// UpdateWorkflow updates the workflow details.
 func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.UpdateWorkflow"),
@@ -269,7 +269,7 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 	return nil
 }
 
-// UpdateWorkflowBuildStatusRequest holds the request parameters for updating a job build status.
+// UpdateWorkflowBuildStatusRequest holds the request parameters for updating a workflow build status.
 type UpdateWorkflowBuildStatusRequest struct {
 	ID          string `validate:"required"`
 	UserID      string `validate:"required"`
@@ -277,7 +277,7 @@ type UpdateWorkflowBuildStatusRequest struct {
 	Generation  int64  `validate:"required,min=1"`
 }
 
-// UpdateWorkflowBuildStatus updates the job build status.
+// UpdateWorkflowBuildStatus updates the workflow build status.
 func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowspb.UpdateWorkflowBuildStatusRequest) (err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("user_id", req.GetUserId()),
@@ -334,13 +334,13 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 	return err
 }
 
-// GetWorkflowRequest holds the request parameters for getting a job.
+// GetWorkflowRequest holds the request parameters for getting a workflow.
 type GetWorkflowRequest struct {
 	ID     string `validate:"required"`
 	UserID string `validate:"required"`
 }
 
-// GetWorkflow returns the job details by ID and user ID.
+// GetWorkflow returns the workflow details by ID and user ID.
 func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowsmodel.GetWorkflowResponse, err error) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.GetWorkflow"),
@@ -413,12 +413,12 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 	return res, nil
 }
 
-// GetWorkflowByIDRequest holds the request parameters for getting a job by ID.
+// GetWorkflowByIDRequest holds the request parameters for getting a workflow by ID.
 type GetWorkflowByIDRequest struct {
 	ID string `validate:"required"`
 }
 
-// GetWorkflowByID returns the job details by ID.
+// GetWorkflowByID returns the workflow details by ID.
 // This is a internal API and we don't want the cached workflow details, so we don't use the cache here.
 func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowsmodel.GetWorkflowByIDResponse, err error) {
 	ctx, span := s.tp.Start(ctx, "Service.GetWorkflowByID")
@@ -549,13 +549,13 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, 
 	return nil
 }
 
-// TerminateWorkflowRequest holds the request parameters for terminating a job.
+// TerminateWorkflowRequest holds the request parameters for terminating a workflow.
 type TerminateWorkflowRequest struct {
 	ID     string `validate:"required"`
 	UserID string `validate:"required"`
 }
 
-// TerminateWorkflow terminates a job.
+// TerminateWorkflow terminates a workflow.
 //
 //nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (err error) {
@@ -838,7 +838,7 @@ func generateListWorkflowsCacheKey(userID, cursor string, filters *workflowsmode
 
 // invalidateWorkflowCache handles cache invalidation for a specific workflow for a user.
 func (s *Service) invalidateWorkflowCache(ctx context.Context, workflowID, userID string, logger *zap.Logger) {
-	// The key is in the format "workflow:{user_id}:{job_id}".
+	// The key is in the format "workflow:{user_id}:{workflow_id}".
 	cacheKey := fmt.Sprintf("workflow:%s:%s", userID, workflowID)
 	if err := s.cache.Delete(ctx, cacheKey); err != nil &&
 		status.Code(err) != codes.NotFound {

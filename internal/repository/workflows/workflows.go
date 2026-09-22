@@ -1055,6 +1055,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
+	// Only terminated workflows with no RUNNING jobs may be deleted.
 	activeWorkflowQuery := fmt.Sprintf(`
         SELECT id::text, user_id::text, terminated_at
         FROM %s

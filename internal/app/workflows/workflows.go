@@ -246,7 +246,7 @@ func (w *Workflows) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateW
 	return &workflowspb.UpdateWorkflowResponse{}, nil
 }
 
-// UpdateWorkflowBuildStatus updates the job build status.
+// UpdateWorkflowBuildStatus updates the workflow build status.
 // Internal only; not public API.
 func (w *Workflows) UpdateWorkflowBuildStatus(
 	ctx context.Context,
@@ -280,7 +280,7 @@ func (w *Workflows) UpdateWorkflowBuildStatus(
 	return &workflowspb.UpdateWorkflowBuildStatusResponse{}, nil
 }
 
-// GetWorkflow returns the job details by ID and user ID.
+// GetWorkflow returns the workflow details by ID and user ID.
 func (w *Workflows) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowspb.GetWorkflowResponse, err error) {
 	ctx, span := w.tp.Start(
 		ctx,
@@ -405,7 +405,7 @@ func (w *Workflows) ResetWorkflowConsecutiveJobFailuresCount(
 	return &workflowspb.ResetWorkflowConsecutiveJobFailuresCountResponse{}, nil
 }
 
-// TerminateWorkflow terminates a job.
+// TerminateWorkflow terminates a workflow.
 func (w *Workflows) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (res *workflowspb.TerminateWorkflowResponse, err error) {
 	ctx, span := w.tp.Start(
 		ctx,

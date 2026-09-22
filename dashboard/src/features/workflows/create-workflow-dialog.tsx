@@ -121,7 +121,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const handleSubmit = (data: WorkflowFormValues) => {
         if (isCreating) return
         if (step < 2) {
-            setStep(step + 1)
+            setStep((s) => s + 1)
             return
         }
 
@@ -269,11 +269,11 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                                     Cancel
                                 </Button>
                             ) : (
-                                <Button type="button" variant="outline" className="w-full" onClick={() => setStep(step - 1)} disabled={isCreating}>
+                                <Button type="button" variant="outline" className="w-full" onClick={() => setStep((s) => s - 1)} disabled={isCreating}>
                                     <ArrowLeft data-icon="inline-start" /> Previous
                                 </Button>
                             )}
-                            <Button type="submit" className="w-full min-w-0 px-2 sm:px-4" disabled={isCreating || form.formState.isValidating}>
+                            <Button type="submit" className="w-full min-w-0 px-2 sm:px-4" disabled={isCreating}>
                                 {isCreating && <Loader2 data-icon="inline-start" className="animate-spin" />}
                                 {step === 2 ? (isCreating ? "Creating…" : "Create workflow") : "Next"}
                                 {step < 2 && <ArrowRight data-icon="inline-end" />}

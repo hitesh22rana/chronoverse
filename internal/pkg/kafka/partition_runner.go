@@ -477,11 +477,12 @@ func (l *partitionLane) popBatch(
 		return nil, err
 	}
 
+	if maxRecords <= 1 {
+		return []*kgo.Record{record}, nil
+	}
+
 	records := make([]*kgo.Record, 1, maxRecords)
 	records[0] = record
-	if maxRecords <= 1 {
-		return records, nil
-	}
 
 	if maxWait <= 0 {
 		records = append(records, l.drain(maxRecords-len(records))...)

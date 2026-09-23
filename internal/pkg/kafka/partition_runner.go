@@ -481,7 +481,10 @@ func (l *partitionLane) popBatch(
 		return []*kgo.Record{record}, nil
 	}
 
-	records := make([]*kgo.Record, 1, maxRecords)
+	// Size the initial capacity from what's already queued so sparse
+	// partitions don't preallocate a full batch they'll never fill.
+	// Records arriving later still append and grow as before.
+	records := make([]*kgo.Record, 1, min(maxRecords, l.queueLen()+1))
 	records[0] = record
 
 	if maxWait <= 0 {

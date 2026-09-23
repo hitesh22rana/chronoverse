@@ -2,7 +2,7 @@ package kafka
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -187,7 +187,7 @@ type partitionKey struct {
 }
 
 func (k partitionKey) String() string {
-	return fmt.Sprintf("%s:%d", k.topic, k.partition)
+	return k.topic + ":" + strconv.FormatInt(int64(k.partition), 10)
 }
 
 type partitionLane struct {
@@ -477,10 +477,15 @@ func (l *partitionLane) popBatch(
 		return nil, err
 	}
 
-	records := []*kgo.Record{record}
 	if maxRecords <= 1 {
-		return records, nil
+		return []*kgo.Record{record}, nil
 	}
+
+	// Size the initial capacity from what's already queued so sparse
+	// partitions don't preallocate a full batch they'll never fill.
+	// Records arriving later still append and grow as before.
+	records := make([]*kgo.Record, 1, min(maxRecords, l.queueLen()+1))
+	records[0] = record
 
 	if maxWait <= 0 {
 		records = append(records, l.drain(maxRecords-len(records))...)

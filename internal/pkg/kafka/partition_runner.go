@@ -2,7 +2,7 @@ package kafka
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -187,7 +187,7 @@ type partitionKey struct {
 }
 
 func (k partitionKey) String() string {
-	return fmt.Sprintf("%s:%d", k.topic, k.partition)
+	return k.topic + ":" + strconv.FormatInt(int64(k.partition), 10)
 }
 
 type partitionLane struct {
@@ -477,7 +477,8 @@ func (l *partitionLane) popBatch(
 		return nil, err
 	}
 
-	records := []*kgo.Record{record}
+	records := make([]*kgo.Record, 1, maxRecords)
+	records[0] = record
 	if maxRecords <= 1 {
 		return records, nil
 	}

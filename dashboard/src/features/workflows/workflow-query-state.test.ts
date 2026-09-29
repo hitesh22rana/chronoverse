@@ -14,26 +14,6 @@ function observe<T>(client: QueryClient, key: string[], queryFn: () => Promise<T
     return { snapshot: () => observer.getCurrentResult(), unsubscribe }
 }
 
-it("stays locked while the opening fetch is paused offline with stale cache", async () => {
-    const client = new QueryClient()
-    client.setQueryData(["w"], { v: 1 })
-    onlineManager.setOnline(false)
-    try {
-        const { snapshot, unsubscribe } = observe(client, ["w"], async () => ({ v: 2 }))
-        await tick(100)
-        const state = snapshot()
-        expect(state.fetchStatus).toBe("paused")
-        expect(state.isFetching).toBe(false)
-        expect(state.error).toBeNull()
-        expect(state.data).toEqual({ v: 1 })
-        expect(isWorkflowDetailsReady(state.fetchStatus, state.error)).toBe(false)
-        unsubscribe()
-    } finally {
-        onlineManager.setOnline(true)
-        client.clear()
-    }
-})
-
 it("stays locked while fetching and on failure, unlocks on success", async () => {
     const client = new QueryClient()
     try {

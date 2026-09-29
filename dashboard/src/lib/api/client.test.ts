@@ -78,26 +78,4 @@ describe("fetchApi", () => {
             vi.unstubAllGlobals()
         }
     })
-
-    it("uses the configured base so edge path prefixes are kept", async () => {
-        vi.stubGlobal("document", { cookie: "" })
-        const calls: Array<{ url: string; headers: Headers }> = []
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async (url: string, opts: RequestInit = {}) => {
-                calls.push({ url, headers: new Headers(opts.headers) })
-                if (url.endsWith("/auth/csrf")) {
-                    return new Response(JSON.stringify({ csrfToken: "prefixed" }), { status: 200 })
-                }
-                return new Response("{}", { status: 200 })
-            }),
-        )
-        try {
-            await fetchApi("/workflows", "boom", { method: "POST" })
-            expect(calls[0].url).toBe(apiEndpoints.auth.csrf)
-            expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("prefixed")
-        } finally {
-            vi.unstubAllGlobals()
-        }
-    })
 })

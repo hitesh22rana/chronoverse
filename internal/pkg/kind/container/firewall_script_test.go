@@ -31,6 +31,14 @@ func stubFirewallBins(t *testing.T, withV6Chain, legacyBackend bool) (stateDir, 
 		body := "#!/bin/sh\nTAG=" + name + "\nFAKE_L_MISSING=" + miss + "\nFAKE_STATE_DIR=" + stateDir + "\nmkdir -p \"$FAKE_STATE_DIR\"\n" + `echo "$TAG $*" >> "$FAKE_LOG"
 op="$1"; shift
 chain_file() { printf '%s/%s-%s' "$FAKE_STATE_DIR" "$TAG" "$1"; }
+# Inspect state after every command, including positional deletions and flushes.
+check_input() {
+	if grep -qxF 'INPUT -j CHRONOVERSE-WORKLOAD-IN' "$(chain_file INPUT)" 2>/dev/null &&
+		! grep -qxF 'CHRONOVERSE-WORKLOAD-IN -s 198.18.247.0/24 -m conntrack --ctstate NEW -j DROP' "$(chain_file CHRONOVERSE-WORKLOAD-IN)" 2>/dev/null; then
+		echo "$TAG INPUT protection missing" >> "$FAKE_LOG"
+	fi
+}
+trap check_input EXIT
 case "$op" in
 -n) exit "$FAKE_L_MISSING" ;;
 -N) : >> "$(chain_file "$1")" ;;
@@ -46,9 +54,15 @@ case "$op" in
 	;;
 -D)
 	f="$(chain_file "$1")"
-	grep -qxF "$*" "$f" 2>/dev/null || exit 1
-	grep -vxF "$*" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+	case "$2" in
+		*[!0-9]*)
+			grep -qxF "$*" "$f" 2>/dev/null || exit 1
+			grep -vxF "$*" "$f" > "$f.tmp" || true ;;
+		*) sed "${2}d" "$f" > "$f.tmp" ;;
+	esac
+	mv "$f.tmp" "$f"
 	;;
+-F) : > "$(chain_file "$1")" ;;
 *) exit 0 ;;
 esac
 `
@@ -246,12 +260,19 @@ func TestFirewallEstablishedRulesAreInterfaceScoped(t *testing.T) {
 // inserts, terminal DROP never deleted), proving continuous protection.
 func TestFirewallReapplyKeepsOrderAndNoDuplicates(t *testing.T) {
 	// No t.Parallel: stub binaries are installed via process environment.
-	stateDir, _, readyFile := stubFirewallBins(t, false, false)
+	stateDir, logFile, readyFile := stubFirewallBins(t, false, false)
 
 	for i := 0; i < 2; i++ {
 		if err := runFirewallScript(t, readyFile); err != nil {
 			t.Fatalf("apply %d error = %v", i+1, err)
 		}
+	}
+	log, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(log), "INPUT protection missing") {
+		t.Errorf("INPUT protection removed during re-apply:\n%s", log)
 	}
 	chainFile := filepath.Join(stateDir, "iptables-CHRONOVERSE-WORKLOAD-IN")
 	raw, err := os.ReadFile(chainFile)
@@ -276,25 +297,5 @@ func TestFirewallReapplyKeepsOrderAndNoDuplicates(t *testing.T) {
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("INPUT chain order = %q, want %q", lines, want)
-	}
-}
-
-// The INPUT terminal DROP must never be deleted: positional DNS inserts keep
-// deny-before-allow without any fail-open window. Guard the invariant in the
-// script source itself so a future edit cannot reintroduce -D on this chain.
-func TestFirewallNeverDeletesInputDrop(t *testing.T) {
-	_, caller, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate test file")
-	}
-	script, err := os.ReadFile(filepath.Join(filepath.Dir(caller), "..", "..", "..", "..", "compose", "firewall", "workload-firewall.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(script), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.Contains(trimmed, "-D") && strings.Contains(trimmed, "CHAIN_IN") {
-			t.Errorf("INPUT chain must never be deleted from: %q", line)
-		}
 	}
 }

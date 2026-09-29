@@ -54,17 +54,17 @@ func Ensure(ctx context.Context, client Client, locks LockStore, imageName strin
 	if lockScope == "" {
 		lockScope = client.DockerHost()
 	}
-	lockKey := LockKey(lockScope, imageName)
+	key := lockKey(lockScope, imageName)
 	waitCtx, cancel := context.WithTimeout(ctx, cfg.WaitTimeout)
 	defer cancel()
 
 	for {
-		token, acquired, err := locks.AcquireDistributedLockWithToken(waitCtx, lockKey, cfg.TTL)
+		token, acquired, err := locks.AcquireDistributedLockWithToken(waitCtx, key, cfg.TTL)
 		if err != nil {
 			return err
 		}
 		if acquired {
-			return buildWithLock(ctx, client, locks, imageName, lockKey, token, cfg)
+			return buildWithLock(ctx, client, locks, imageName, key, token, cfg)
 		}
 
 		if err := waitForLock(waitCtx, cfg.RetryInterval); err != nil {
@@ -179,8 +179,8 @@ func waitError(parentCtx context.Context, err error) error {
 	return err
 }
 
-// LockKey returns the Redis key used to coordinate a runtime scope and image pair.
-func LockKey(lockScope, imageName string) string {
+// lockKey returns the Redis key used to coordinate a runtime scope and image pair.
+func lockKey(lockScope, imageName string) string {
 	return fmt.Sprintf("container:image-pull:%s:%s", sha256Hex(lockScope), sha256Hex(imageName))
 }
 

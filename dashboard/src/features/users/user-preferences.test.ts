@@ -19,7 +19,7 @@ describe("canReceiveNotifications", () => {
         expect(canReceiveNotifications(user("NONE"))).toBe(false)
     })
 
-    it("does not fetch before the user is available", () => {
-        expect(canReceiveNotifications(undefined)).toBe(false)
+    it("stays disabled until a user is loaded", () => {
+        expect(canReceiveNotifications()).toBe(false)
     })
 })

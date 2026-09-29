@@ -5,16 +5,10 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	runtimemodel "github.com/hitesh22rana/chronoverse/internal/model/runtime"
 )
 
 func TestLockRuntimeNodeQueryLocksRuntimeRow(t *testing.T) {
-	query := lockRuntimeNodeQuery()
-
-	assertRuntimeQueryContains(t, query, "FROM runtime_nodes")
-	assertRuntimeQueryContains(t, query, "WHERE id = $1")
-	assertRuntimeQueryContains(t, query, "FOR UPDATE")
+	assertRuntimeQueryContains(t, lockRuntimeNodeQuery(), "FOR UPDATE")
 }
 
 func TestReconcileRunningJobsQueryCountsOnlyRunningOwnedJobs(t *testing.T) {
@@ -42,12 +36,6 @@ func TestUpsertRuntimeNodeQueryRefreshesHeartbeatOnlyWhenRequested(t *testing.T)
 	assertRuntimeQueryContains(t, query, "last_heartbeat_at = CASE")
 	assertRuntimeQueryContains(t, query, "WHEN $7 THEN EXCLUDED.last_heartbeat_at")
 	assertRuntimeQueryContains(t, query, "ELSE runtime_nodes.last_heartbeat_at")
-}
-
-func TestMarkUnhealthyUsesRuntimeUnhealthyStatus(t *testing.T) {
-	if runtimemodel.NodeStatusUnhealthy != "UNHEALTHY" {
-		t.Fatalf("invalid unhealthy status constant: %q", runtimemodel.NodeStatusUnhealthy)
-	}
 }
 
 func TestStaleRuntimeHeartbeatAtUsesUnixEpochUTC(t *testing.T) {

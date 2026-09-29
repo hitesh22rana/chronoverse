@@ -242,23 +242,26 @@ func TestClaimJobAndDeferralUseTheSameWorkflowBlockerPredicate(t *testing.T) {
 	assertContains(t, blockedExpression, "blocker.created_at = j.created_at")
 }
 
-func TestGetReadyRuntimeNodeQueryIgnoresExecutionCapacity(t *testing.T) {
-	query := getReadyRuntimeNodeQuery()
+func TestReadyRuntimeNodeQueriesSelectLeastLoadedReadyNodes(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "single", query: getReadyRuntimeNodeQuery()},
+		{name: "every node", query: listReadyRuntimeNodesQuery()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertContains(t, tt.query, "WHERE status = 'READY'")
+			assertContains(t, tt.query, "last_heartbeat_at >")
+			assertContains(t, tt.query, "ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC")
+			assertNotContains(t, tt.query, "running_jobs < max_concurrency")
+		})
+	}
 
-	assertContains(t, query, "WHERE status = 'READY'")
-	assertContains(t, query, "last_heartbeat_at >")
-	assertContains(t, query, "ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC")
-	assertNotContains(t, query, "running_jobs < max_concurrency")
-}
-
-func TestListReadyRuntimeNodesQueryReturnsEveryReadyNode(t *testing.T) {
-	query := listReadyRuntimeNodesQuery()
-
-	assertContains(t, query, "WHERE status = 'READY'")
-	assertContains(t, query, "last_heartbeat_at >")
-	assertContains(t, query, "ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC")
-	assertNotContains(t, query, "LIMIT")
-	assertNotContains(t, query, "running_jobs < max_concurrency")
+	// The capacity gate is applied by the claim path, not by node selection.
+	assertContains(t, getReadyRuntimeNodeQuery(), "LIMIT")
+	assertNotContains(t, listReadyRuntimeNodesQuery(), "LIMIT")
 }
 
 func TestQueuedContainerJobMissingRuntimeQueryOnlyDiagnosesClaimableContainerJobs(t *testing.T) {

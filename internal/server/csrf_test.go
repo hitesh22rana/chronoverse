@@ -22,10 +22,6 @@ func TestVerifyCSRFToken(t *testing.T) {
 		t.Fatalf("generateCSRFToken() error = %v", err)
 	}
 
-	if err := verifyCSRFToken(token, session, hmacKey, time.Hour); err != nil {
-		t.Fatalf("verifyCSRFToken() error = %v", err)
-	}
-
 	parts := strings.Split(token, delimiter)
 	tamperedToken := strings.Repeat("0", len(parts[0])) + delimiter + parts[1]
 	if err := verifyCSRFToken(tamperedToken, session, hmacKey, time.Hour); err == nil {

@@ -8,6 +8,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
 func TestKafkaRecord(t *testing.T) {
@@ -60,7 +61,7 @@ func TestPublishLiveSkipsNilRedisAndEphemeralLogs(t *testing.T) {
 		t.Fatal("PublishLive() nil redis published = true, want false")
 	}
 
-	published, err = joblogevents.PublishLive(t.Context(), nil, &jobsmodel.JobLogEvent{
+	published, err = joblogevents.PublishLive(t.Context(), &redis.Store{}, &jobsmodel.JobLogEvent{
 		JobID:     "job-1",
 		Retention: false,
 	})

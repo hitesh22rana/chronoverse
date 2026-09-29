@@ -989,7 +989,11 @@ func TestStreamJobLogs(t *testing.T) {
 		req    *jobspb.StreamJobLogsRequest
 	}
 
+	streamContexts := make(chan context.Context, 1)
+	var cancelStream context.CancelFunc
+
 	type want struct {
+		cancelStream bool
 		logCount     int
 		expectClosed bool
 	}
@@ -1061,12 +1065,9 @@ func TestStreamJobLogs(t *testing.T) {
 						t.Context(),
 						"token",
 					)
-					ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-					// Cancel after a short delay to test context cancellation
-					go func() {
-						time.Sleep(50 * time.Millisecond)
-						cancel()
-					}()
+					ctx, cancel := context.WithCancel(ctx)
+					cancelStream = cancel
+					t.Cleanup(cancel)
 					return ctx
 				},
 				req: &jobspb.StreamJobLogsRequest{
@@ -1076,32 +1077,24 @@ func TestStreamJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-
-				ch := make(chan *jobsmodel.JobLog)
-				go func() {
-					defer close(ch)
-					ticker := time.NewTicker(10 * time.Millisecond)
-					defer ticker.Stop()
-					for {
-						select {
-						case <-ticker.C:
-						case <-time.After(200 * time.Millisecond):
-							return // Exit after timeout
-						}
-					}
-				}()
-
-				svc.EXPECT().StreamJobLogs(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(ch, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(ctx context.Context, _ string) (context.Context, *jwt.Token, error) {
+						return auth.WithAudience(auth.WithRole(ctx, string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil
+					},
+				)
+				svc.EXPECT().StreamJobLogs(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(ctx context.Context, _ *jobspb.StreamJobLogsRequest) (chan *jobsmodel.JobLog, error) {
+						streamContexts <- ctx
+						return make(chan *jobsmodel.JobLog), nil
+					},
+				)
 			},
 			want: want{
-				logCount:     0, // We don't expect any specific count due to context cancellation
-				expectClosed: false,
+				cancelStream: true,
+				logCount:     0,
+				expectClosed: true,
 			},
-			isErr: false, // Context cancellation should not return an error from the gRPC method
+			isErr: false,
 		},
 		{
 			name: "error: missing required headers in metadata",
@@ -1237,6 +1230,21 @@ func TestStreamJobLogs(t *testing.T) {
 			if stream == nil {
 				t.Errorf("StreamJobLogs() stream = nil, want stream")
 				return
+			}
+
+			if tt.want.cancelStream {
+				var serviceCtx context.Context
+				select {
+				case serviceCtx = <-streamContexts:
+				case <-time.After(time.Second):
+					t.Fatal("stream did not reach service")
+				}
+				cancelStream()
+				select {
+				case <-serviceCtx.Done():
+				case <-time.After(time.Second):
+					t.Fatal("client cancellation did not reach service")
+				}
 			}
 
 			var (

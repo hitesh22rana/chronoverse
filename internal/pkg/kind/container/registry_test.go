@@ -16,40 +16,6 @@ func containerPayload(t *testing.T, image string) string {
 	return string(payload)
 }
 
-func TestIsAllowedContainerRegistry(t *testing.T) {
-	t.Parallel()
-
-	allowed := []string{
-		"docker.io", "ghcr.io", "public.ecr.aws",
-		"gcr.io", "us.gcr.io", "eu.gcr.io", "asia.gcr.io",
-		"mcr.microsoft.com", "quay.io", "registry.k8s.io",
-		"us-docker.pkg.dev", "europe-west1-docker.pkg.dev",
-		"myregistry.azurecr.io",
-		"docker.io:443", "ghcr.io:443", "myregistry.azurecr.io:443",
-		"us-docker.pkg.dev:443",
-	}
-	for _, host := range allowed {
-		if !isAllowedContainerRegistry(host) {
-			t.Errorf("isAllowedContainerRegistry(%q) = false, want true", host)
-		}
-	}
-
-	// Host matching is exact: subdomains, suffix tricks, and multi-label
-	// cloud patterns must not pass.
-	rejected := []string{
-		"", "evil.com", "docker.io.evil.com", "evil-docker.io",
-		"localhost:5000", "my.azurecr.io.evil.com",
-		"evil-docker.pkg.dev.evil.com", "a.b-docker.pkg.dev",
-		"a.b.azurecr.io", ".azurecr.io",
-		"evil.com:443", "docker.io:443.evil.com", "docker.io:http",
-	}
-	for _, host := range rejected {
-		if isAllowedContainerRegistry(host) {
-			t.Errorf("isAllowedContainerRegistry(%q) = true, want false", host)
-		}
-	}
-}
-
 func TestExtractAndValidateContainerDetailsRegistryGuard(t *testing.T) {
 	t.Parallel()
 
@@ -60,6 +26,9 @@ func TestExtractAndValidateContainerDetailsRegistryGuard(t *testing.T) {
 		"ghcr.io/owner/image:tag",
 		"public.ecr.aws/nginx/nginx:stable",
 		"gcr.io/project/image",
+		"us.gcr.io/project/image",
+		"eu.gcr.io/project/image",
+		"asia.gcr.io/project/image",
 		"us-docker.pkg.dev/project/image:tag",
 		"mcr.microsoft.com/dotnet/runtime:8.0",
 		"MyReg.AzureCR.io/image:tag",
@@ -85,6 +54,10 @@ func TestExtractAndValidateContainerDetailsRegistryGuard(t *testing.T) {
 		"docker.io.evil.com/image",
 		"localhost:5000/image",
 		"my.azurecr.io.evil.com/image",
+		// Per-location and per-registry cloud hosts must be a single label, so a
+		// multi-label host on an attacker-controlled domain is not an allowlist hit.
+		"a.b-docker.pkg.dev/image",
+		"a.b.azurecr.io/image",
 		"not a reference %%%",
 	}
 	for _, image := range rejected {

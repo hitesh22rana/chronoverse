@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -297,51 +298,19 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 
 	ensureBaseImage(t, workflow)
 
-	tests := []struct {
-		name  string
-		image string
-		cmd   []string
-		err   error
-	}{
-		{
-			name:  "successful termination",
-			image: "alpine:3.22.2",
-			cmd:   []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
-			err:   nil,
-		},
-		{
-			name:  "error termination (nonexistent container)",
-			image: "nonexistent:latest",
-			cmd:   []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
-			err:   status.Error(codes.FailedPrecondition, "failed to create container: "),
-		},
-	}
+	t.Run("successful termination", func(t *testing.T) {
+		t.Parallel()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+		containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, "alpine:3.22.2", []string{"sleep", "5"}, nil)
+		cleanupDockerContainer(t, workflow, containerID)
+		require.NoError(t, err)
+		require.NotEmpty(t, containerID)
+		require.NoError(t, workflow.Terminate(t.Context(), containerID))
+	})
 
-			containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, tt.image, tt.cmd, nil)
-			cleanupDockerContainer(t, workflow, containerID)
-			if tt.err != nil {
-				require.Error(t, err)
-				assert.Equal(t, status.Code(tt.err), status.Code(err))
-				assert.Contains(t, err.Error(), status.Convert(tt.err).Message())
-				return
-			}
+	t.Run("missing container is already terminated", func(t *testing.T) {
+		t.Parallel()
 
-			require.NoError(t, err)
-			require.NotEmpty(t, containerID)
-
-			err = workflow.Terminate(t.Context(), containerID)
-			if tt.err != nil {
-				require.Error(t, err)
-				assert.Equal(t, status.Code(tt.err), status.Code(err))
-				assert.Contains(t, err.Error(), status.Convert(tt.err).Message())
-				return
-			}
-
-			require.NoError(t, err)
-		})
-	}
+		require.NoError(t, workflow.Terminate(t.Context(), "chronoverse-missing-"+uuid.NewString()))
+	})
 }

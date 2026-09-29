@@ -66,6 +66,7 @@ func TestValidateTokenRejectsExcessiveClockSkew(t *testing.T) {
 
 	now := time.Now()
 	token := signToken(t, privateKey, jwt.MapClaims{
+		jwtSubjectClaim:   "user-42",
 		jwtIssuerClaim:    testIssuer,
 		jwtAudienceClaim:  []string{"users-service"},
 		jwtNotBeforeClaim: now.Add(clockSkewLeeway + time.Minute).Unix(),
@@ -85,6 +86,7 @@ func TestValidateTokenRejectsWrongAudience(t *testing.T) {
 
 	now := time.Now()
 	token := signToken(t, privateKey, jwt.MapClaims{
+		jwtSubjectClaim:   "user-42",
 		jwtIssuerClaim:    testIssuer,
 		jwtAudienceClaim:  []string{"workflows-service"},
 		jwtNotBeforeClaim: now.Unix(),
@@ -104,6 +106,7 @@ func TestValidateTokenRejectsWrongIssuer(t *testing.T) {
 
 	now := time.Now()
 	token := signToken(t, privateKey, jwt.MapClaims{
+		jwtSubjectClaim:   "user-42",
 		jwtIssuerClaim:    "rogue-issuer",
 		jwtAudienceClaim:  []string{"users-service"},
 		jwtNotBeforeClaim: now.Unix(),
@@ -143,6 +146,7 @@ func TestValidateTokenRejectsMissingRoleClaim(t *testing.T) {
 
 	now := time.Now()
 	token := signToken(t, privateKey, jwt.MapClaims{
+		jwtSubjectClaim:   "user-42",
 		jwtIssuerClaim:    testIssuer,
 		jwtAudienceClaim:  []string{"users-service"},
 		jwtNotBeforeClaim: now.Unix(),

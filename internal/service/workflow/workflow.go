@@ -1,5 +1,3 @@
-//go:generate mockgen -source=$GOFILE -package=$GOPACKAGE -destination=./mock/$GOFILE
-
 package workflow
 
 import (

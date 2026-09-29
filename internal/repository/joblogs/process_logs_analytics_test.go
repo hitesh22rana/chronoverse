@@ -5,11 +5,10 @@ import (
 	"testing"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 )
 
 func TestCollectLogAnalyticsEvents(t *testing.T) {
-	generatedKey := idempotency.LogEventKey("job-2", "stderr", 7)
+	generatedKey := "log:job-2:stderr:7"
 
 	events := collectLogAnalyticsEvents([]*queueData{
 		logRecord("log-2", "workflow-2", "user-2"),

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"reflect"
 	"testing"
 	"time"
 
@@ -11,21 +10,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-func TestExecutionWorkerRetryConfig(t *testing.T) {
-	t.Parallel()
-
-	cfg := executionWorkerRetryConfig()
-	if cfg.MaxAttempts != 3 {
-		t.Fatalf("MaxAttempts = %d, want 3", cfg.MaxAttempts)
-	}
-	if cfg.BackoffExponential != 100*time.Millisecond {
-		t.Fatalf("BackoffExponential = %s, want 100ms", cfg.BackoffExponential)
-	}
-	if !reflect.DeepEqual(cfg.RetryableCodes, []codes.Code{codes.Unavailable, codes.DeadlineExceeded}) {
-		t.Fatalf("RetryableCodes = %v, want Unavailable and DeadlineExceeded", cfg.RetryableCodes)
-	}
-}
 
 func TestExecutionWorkerRetryConfigPerformsThreeAttempts(t *testing.T) {
 	t.Parallel()

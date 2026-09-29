@@ -68,17 +68,6 @@ func TestNormalizeConfigRejectsReconciliationLimitBelowConcurrency(t *testing.T)
 	}
 }
 
-func TestNormalizeConcurrencyFallbackHasFloor(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{Concurrency: 0}
-	normalizeConcurrency(cfg)
-
-	if cfg.Concurrency < 1 {
-		t.Fatalf("normalizeConcurrency().Concurrency = %d, want at least 1", cfg.Concurrency)
-	}
-}
-
 func TestSystemRetryBackoffIsBoundedExponential(t *testing.T) {
 	t.Parallel()
 

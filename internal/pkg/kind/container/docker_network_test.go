@@ -61,148 +61,47 @@ func TestValidateWorkloadNetworkRequiresIsolatedBridge(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		inspected network.Inspect
-		wantCode  codes.Code
+		name   string
+		mutate func(*network.Inspect)
 	}{
-		{
-			name: "isolated bridge",
-			inspected: network.Inspect{
-				Name:   DefaultWorkloadNetwork,
-				Driver: "bridge",
-				Options: map[string]string{
-					workloadNetworkICCOption:        "false",
-					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
-				},
-				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
-			},
-			wantCode: codes.OK,
-		},
-		{
-			name: "wrong bridge name breaks firewall match",
-			inspected: network.Inspect{
-				Name:   DefaultWorkloadNetwork,
-				Driver: "bridge",
-				Options: map[string]string{
-					workloadNetworkICCOption:        "false",
-					workloadNetworkBridgeNameOption: "br-deadbeef1234",
-				},
-				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "unexpected name",
-			inspected: network.Inspect{
-				Name:    "other-workloads",
-				Driver:  "bridge",
-				Options: map[string]string{workloadNetworkICCOption: "false"},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "platform network",
-			inspected: network.Inspect{
-				Name:    platformNetwork,
-				Driver:  "bridge",
-				Options: map[string]string{workloadNetworkICCOption: "false"},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "overlay driver",
-			inspected: network.Inspect{
-				Name:    DefaultWorkloadNetwork,
-				Driver:  "overlay",
-				Options: map[string]string{workloadNetworkICCOption: "false"},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "icc enabled",
-			inspected: network.Inspect{
-				Name:    DefaultWorkloadNetwork,
-				Driver:  "bridge",
-				Options: map[string]string{workloadNetworkICCOption: "true"},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "icc option absent",
-			inspected: network.Inspect{
-				Name:   DefaultWorkloadNetwork,
-				Driver: "bridge",
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "wrong subnet bypasses firewall",
-			inspected: network.Inspect{
-				Name:    DefaultWorkloadNetwork,
-				Driver:  "bridge",
-				Options: map[string]string{workloadNetworkICCOption: "false"},
-				IPAM:    network.IPAM{Config: []network.IPAMConfig{{Subnet: "10.9.9.0/24"}}},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "ipam absent",
-			inspected: network.Inspect{
-				Name:    DefaultWorkloadNetwork,
-				Driver:  "bridge",
-				Options: map[string]string{workloadNetworkICCOption: "false"},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "extra range bypasses firewall",
-			inspected: network.Inspect{
-				Name:   DefaultWorkloadNetwork,
-				Driver: "bridge",
-				Options: map[string]string{
-					workloadNetworkICCOption:        "false",
-					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
-				},
-				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}, {Subnet: "10.9.9.0/24"}}},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "dual-stack bypasses firewall",
-			inspected: network.Inspect{
-				Name:   DefaultWorkloadNetwork,
-				Driver: "bridge",
-				Options: map[string]string{
-					workloadNetworkICCOption:        "false",
-					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
-				},
-				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}, {Subnet: "fd00:dead:beef::/64"}}},
-			},
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name: "ipv6 enabled bypasses firewall",
-			inspected: network.Inspect{
-				Name:   DefaultWorkloadNetwork,
-				Driver: "bridge",
-				Options: map[string]string{
-					workloadNetworkICCOption:        "false",
-					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
-				},
-				IPAM:       network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
-				EnableIPv6: true,
-			},
-			wantCode: codes.FailedPrecondition,
-		},
+		{name: "isolated bridge"},
+		{name: "wrong bridge name breaks firewall match", mutate: func(n *network.Inspect) { n.Options[workloadNetworkBridgeNameOption] = "br-deadbeef1234" }},
+		{name: "unexpected name", mutate: func(n *network.Inspect) { n.Name = "other-workloads" }},
+		{name: "platform network", mutate: func(n *network.Inspect) { n.Name = platformNetwork }},
+		{name: "overlay driver", mutate: func(n *network.Inspect) { n.Driver = "overlay" }},
+		{name: "icc enabled", mutate: func(n *network.Inspect) { n.Options[workloadNetworkICCOption] = "true" }},
+		{name: "icc option absent", mutate: func(n *network.Inspect) { delete(n.Options, workloadNetworkICCOption) }},
+		{name: "wrong subnet bypasses firewall", mutate: func(n *network.Inspect) { n.IPAM.Config[0].Subnet = "10.9.9.0/24" }},
+		{name: "ipam absent", mutate: func(n *network.Inspect) { n.IPAM.Config = nil }},
+		{name: "extra range bypasses firewall", mutate: func(n *network.Inspect) {
+			n.IPAM.Config = append(n.IPAM.Config, network.IPAMConfig{Subnet: "10.9.9.0/24"})
+		}},
+		{name: "dual-stack bypasses firewall", mutate: func(n *network.Inspect) {
+			n.IPAM.Config = append(n.IPAM.Config, network.IPAMConfig{Subnet: "fd00:dead:beef::/64"})
+		}},
+		{name: "ipv6 enabled bypasses firewall", mutate: func(n *network.Inspect) { n.EnableIPv6 = true }},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			inspected := network.Inspect{
+				Name:   DefaultWorkloadNetwork,
+				Driver: "bridge",
+				Options: map[string]string{
+					workloadNetworkICCOption:        "false",
+					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
+				},
+				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
+			}
+			wantCode := codes.OK
+			if tt.mutate != nil {
+				tt.mutate(&inspected)
+				wantCode = codes.FailedPrecondition
+			}
 			w := &DockerWorkflow{workloadSubnet: DefaultWorkloadSubnet}
-			err := w.validateWorkloadNetwork(DefaultWorkloadNetwork, &tt.inspected)
-			if status.Code(err) != tt.wantCode {
-				t.Fatalf("validateWorkloadNetwork() code = %s, want %s: %v", status.Code(err), tt.wantCode, err)
+			if err := w.validateWorkloadNetwork(DefaultWorkloadNetwork, &inspected); status.Code(err) != wantCode {
+				t.Fatalf("validateWorkloadNetwork() code = %s, want %s: %v", status.Code(err), wantCode, err)
 			}
 		})
 	}
@@ -217,7 +116,9 @@ func TestEnsureWorkloadNetworkValidatesExistingNetwork(t *testing.T) {
 			createCalls.Add(1)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"true"}}`)
+		writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge",`+
+			`"Options":{"com.docker.network.bridge.enable_icc":"true","com.docker.network.bridge.name":"chronoverse-br"},`+
+			`"IPAM":{"Config":[{"Subnet":"198.18.247.0/24"}]}}`)
 	}))
 
 	err := workflow.ensureWorkloadNetwork(context.Background())
@@ -283,7 +184,9 @@ func TestEnsureWorkloadNetworkValidatesRaceWinner(t *testing.T) {
 				writeDockerTestResponse(t, w, `{"message":"network not found"}`)
 				return
 			}
-			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"true"}}`)
+			writeDockerTestResponse(t, w, `{"Name":"chronoverse-workloads","Driver":"bridge",`+
+				`"Options":{"com.docker.network.bridge.enable_icc":"true","com.docker.network.bridge.name":"chronoverse-br"},`+
+				`"IPAM":{"Config":[{"Subnet":"198.18.247.0/24"}]}}`)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/networks/create"):
 			w.WriteHeader(http.StatusConflict)
 			writeDockerTestResponse(t, w, `{"message":"network already exists"}`)

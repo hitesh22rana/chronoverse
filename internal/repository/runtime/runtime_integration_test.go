@@ -48,7 +48,7 @@ func TestIntegrationRuntimeNodeLifecycle(t *testing.T) {
 	}
 
 	// Heartbeat keeps the node READY and refreshes the heartbeat.
-	before := time.Now().UTC().Add(-time.Minute)
+	before := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
 	if _, err := pg.Exec(ctx, `UPDATE runtime_nodes SET last_heartbeat_at = $1 WHERE id = $2`, before, repo.cfg.ID); err != nil {
 		t.Fatalf("backdate heartbeat: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestIntegrationRuntimeNodeLifecycle(t *testing.T) {
 	if err := pg.QueryRow(ctx, `SELECT last_heartbeat_at FROM runtime_nodes WHERE id = $1`, repo.cfg.ID).Scan(&heartbeat); err != nil {
 		t.Fatalf("fetch heartbeat: %v", err)
 	}
-	if heartbeat.Before(before) {
+	if !heartbeat.After(before) {
 		t.Fatalf("heartbeat not refreshed: %v before %v", heartbeat, before)
 	}
 

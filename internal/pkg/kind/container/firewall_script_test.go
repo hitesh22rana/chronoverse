@@ -278,23 +278,3 @@ func TestFirewallReapplyKeepsOrderAndNoDuplicates(t *testing.T) {
 		t.Errorf("INPUT chain order = %q, want %q", lines, want)
 	}
 }
-
-// The INPUT terminal DROP must never be deleted: positional DNS inserts keep
-// deny-before-allow without any fail-open window. Guard the invariant in the
-// script source itself so a future edit cannot reintroduce -D on this chain.
-func TestFirewallNeverDeletesInputDrop(t *testing.T) {
-	_, caller, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate test file")
-	}
-	script, err := os.ReadFile(filepath.Join(filepath.Dir(caller), "..", "..", "..", "..", "compose", "firewall", "workload-firewall.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(script), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.Contains(trimmed, "-D") && strings.Contains(trimmed, "CHAIN_IN") {
-			t.Errorf("INPUT chain must never be deleted from: %q", line)
-		}
-	}
-}

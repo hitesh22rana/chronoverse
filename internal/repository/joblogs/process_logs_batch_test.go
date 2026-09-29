@@ -109,7 +109,7 @@ func TestRetainedLogsFromBatch(t *testing.T) {
 		t.Fatalf("expected 2 retained deduped logs, got %d", len(logs))
 	}
 
-	expectedGeneratedKey := idempotency.LogEventKey("job-1", "stdout", 1)
+	expectedGeneratedKey := "log:job-1:stdout:1"
 	if logs[0].EventKey != expectedGeneratedKey {
 		t.Fatalf("expected generated event key %q, got %q", expectedGeneratedKey, logs[0].EventKey)
 	}

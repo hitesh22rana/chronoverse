@@ -47,23 +47,7 @@ func resolveAnyTarget(ctx context.Context, host string) ([]net.IPAddr, error) {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		wantErr bool
-	}{
-		{
-			name:    "success",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			_ = heartbeat.New()
-		})
-	}
+	assert.NotNil(t, heartbeat.New())
 }
 
 func TestHeartBeatExecuteEmitsHTTPClientTelemetry(t *testing.T) {

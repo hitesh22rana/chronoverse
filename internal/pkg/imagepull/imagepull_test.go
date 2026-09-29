@@ -53,7 +53,7 @@ func TestEnsureAcquiresLockAndBuilds(t *testing.T) {
 	if client.buildCalls != 1 {
 		t.Fatalf("Build() calls = %d, want 1", client.buildCalls)
 	}
-	if got, want := locks.keys[0], imagepull.LockKey("tcp://docker-a:2375", "alpine:3.22"); got != want {
+	if got, want := locks.keys[0], "container:image-pull:3d52068d79de31a64402c17fe26c230a44a7d6a737ec94d6cfcdafa8c56f2f4b:16bb83acf66f26922f7c6e5363e33cb104bb4f2728ce8ea45e2b0b214dabc90c"; got != want {
 		t.Fatalf("lock key = %q, want %q", got, want)
 	}
 	if locks.releaseCalls != 1 {
@@ -75,7 +75,7 @@ func TestEnsureUsesConfiguredLockScope(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Ensure() error = %v", err)
 	}
-	if got, want := locks.keys[0], imagepull.LockKey("runtime-node-a", "alpine:3.22"); got != want {
+	if got, want := locks.keys[0], "container:image-pull:05089fbc04898adb03daf54e02b4dbe3105b073953e0836b54028c580aca0a86:16bb83acf66f26922f7c6e5363e33cb104bb4f2728ce8ea45e2b0b214dabc90c"; got != want {
 		t.Fatalf("lock key = %q, want %q", got, want)
 	}
 }

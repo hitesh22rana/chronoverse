@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { createIdempotencyKey, fetchApi } from "./client"
-import { apiEndpoints } from "./endpoints"
 
 describe("createIdempotencyKey", () => {
     it("creates cryptographically secure UUID command identities", () => {
@@ -31,6 +30,8 @@ describe("fetchApi", () => {
     })
 
     it("fetches the token over CORS when the cookie is unreadable", async () => {
+        vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.example.com/edge")
+        vi.resetModules()
         vi.stubGlobal("document", { cookie: "" })
         const calls: Array<{ url: string; headers: Headers }> = []
         vi.stubGlobal(
@@ -44,11 +45,14 @@ describe("fetchApi", () => {
             }),
         )
         try {
-            await fetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
-            expect(calls[0].url).toBe(apiEndpoints.auth.csrf)
+            const { fetchApi: configuredFetchApi } = await import("./client")
+            await configuredFetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
+            expect(calls[0].url).toBe("https://api.example.com/edge/auth/csrf")
             expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("fresh")
         } finally {
             vi.unstubAllGlobals()
+            vi.unstubAllEnvs()
+            vi.resetModules()
         }
     })
 

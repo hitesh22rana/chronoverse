@@ -51,6 +51,10 @@ func TestExtractAndValidateContainerDetailsRegistryGuard(t *testing.T) {
 		"docker.io.evil.com/image",
 		"localhost:5000/image",
 		"my.azurecr.io.evil.com/image",
+		// Per-location and per-registry cloud hosts must be a single label, so a
+		// multi-label host on an attacker-controlled domain is not an allowlist hit.
+		"a.b-docker.pkg.dev/image",
+		"a.b.azurecr.io/image",
 		"not a reference %%%",
 	}
 	for _, image := range rejected {

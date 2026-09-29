@@ -18,4 +18,8 @@ describe("canReceiveNotifications", () => {
     it("disables notifications for NONE", () => {
         expect(canReceiveNotifications(user("NONE"))).toBe(false)
     })
+
+    it("stays disabled until a user is loaded", () => {
+        expect(canReceiveNotifications()).toBe(false)
+    })
 })

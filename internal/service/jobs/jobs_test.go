@@ -382,9 +382,11 @@ func TestTerminalReasonValidation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Both cases must supply CommandId: it is validate:"required", so omitting it
+	// would trip the struct validator and never reach the terminal-reason guard.
 	if err := s.FailJob(t.Context(), &jobspb.FailJobRequest{
 		Id: "job", LeaseToken: "lease", FailureKind: jobsmodel.FailureKindUser.ToString(),
-		TerminalReasonCode: terminalreason.WorkflowUpdated.String(),
+		TerminalReasonCode: terminalreason.WorkflowUpdated.String(), CommandId: "fail-command",
 	}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("cross-family failure reason error = %v", err)
 	}
@@ -396,7 +398,7 @@ func TestTerminalReasonValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.CancelClaimedJob(t.Context(), &jobspb.CancelClaimedJobRequest{
-		Id: "job", LeaseToken: "lease", TerminalReasonCode: terminalreason.NonZeroExit.String(),
+		Id: "job", LeaseToken: "lease", TerminalReasonCode: terminalreason.NonZeroExit.String(), CommandId: "cancel-command",
 	}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("cross-family cancellation reason error = %v", err)
 	}

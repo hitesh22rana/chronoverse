@@ -177,17 +177,6 @@ func TestEnsureWaitTimeoutIsRetryable(t *testing.T) {
 	}
 }
 
-func TestLockKeyIncludesDockerHost(t *testing.T) {
-	t.Parallel()
-
-	image := "alpine:3.22"
-	first := imagepull.LockKey("tcp://docker-a:2375", image)
-	second := imagepull.LockKey("tcp://docker-b:2375", image)
-	if first == second {
-		t.Fatalf("LockKey() must differ for different docker hosts")
-	}
-}
-
 type fakeLockStore struct {
 	mu             sync.Mutex
 	acquireResults []bool

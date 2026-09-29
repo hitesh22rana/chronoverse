@@ -2,11 +2,9 @@
 package joblogs
 
 import (
-	"strings"
 	"testing"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 )
 
 func TestDedupeLogsInBatch(t *testing.T) {
@@ -119,12 +117,8 @@ func TestRetainedLogsFromBatch(t *testing.T) {
 }
 
 func TestMeiliLogDocumentID(t *testing.T) {
-	eventID := idempotency.LogEventKey("019e680f-4c4e-702c-b2a0-136bc29faa23", "stdout", 0)
-	documentID := meiliLogDocumentID(eventID)
+	documentID := meiliLogDocumentID("log:019e680f-4c4e-702c-b2a0-136bc29faa23:stdout:0")
 
-	if strings.Contains(documentID, ":") {
-		t.Fatalf("expected Meilisearch document id not contain colon, got %q", documentID)
-	}
 	if documentID != "log_019e680f-4c4e-702c-b2a0-136bc29faa23_stdout_0" {
 		t.Fatalf("unexpected Meilisearch document id: %q", documentID)
 	}

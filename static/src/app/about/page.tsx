@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Boxes, Layers, ScrollText, ShieldCheck, User } from "lucide-react";
+import { Boxes, Layers, ScrollText, ShieldCheck } from "lucide-react";
 
 import { JsonLd } from "@/components/seo/json-ld";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   AUTHOR_NAME,
-  AUTHOR_PROFILES,
   CONTACT_EMAIL,
   REPOSITORY_URL,
   SITE_PUBLISHED,
@@ -61,30 +59,17 @@ export default function AboutPage() {
         <div className="section-heading">
           <Badge variant="secondary">About</Badge>
           <h2>What Chronoverse is.</h2>
-          <p>It schedules heartbeat checks and container workloads on infrastructure you control. The scheduler, the dashboard, the documentation and this site are built and released from one repository.</p>
+          <p>It schedules heartbeat checks and container workloads on infrastructure you control. The scheduler, the dashboard, the documentation and this site are built and released from one repository, maintained by {AUTHOR_NAME}.</p>
         </div>
 
-        <div className="about-split">
-          <div>
-            <div className="eyebrow"><User /> Maintainer</div>
-            <h2>Who maintains it.</h2>
-            <p>{AUTHOR_NAME}, who writes the code, the documentation and this site. Every figure quoted across this site is read from the source at build time.</p>
-            <div className="about-links">
-              {AUTHOR_PROFILES.map((profile) => (
-                <Button asChild key={profile.name} variant="outline"><a href={profile.url} rel="me noopener" target="_blank">{profile.name}</a></Button>
-              ))}
-              <Button asChild variant="outline"><a href={`mailto:${CONTACT_EMAIL}`}>Email</a></Button>
-            </div>
-          </div>
-          <ul className="about-facts">
-            {facts.map(({ icon: Icon, label, text }) => (
-              <li key={label}>
-                <Icon aria-hidden="true" />
-                <p>{text}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ul className="about-facts">
+          {facts.map(({ icon: Icon, label, text }) => (
+            <li key={label}>
+              <Icon aria-hidden="true" />
+              <p>{text}</p>
+            </li>
+          ))}
+        </ul>
 
         <article className="docs-prose utility-prose">
           <h2>What it runs</h2>

@@ -171,7 +171,7 @@ svg { flex: none; }
 .about-links { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 2rem; }
 .about-links [data-slot="button"] { min-width: 7.5rem; }
 .about-facts { list-style: none; margin: 0; padding: 0; }
-.about-facts > li { display: grid; grid-template-columns: 1.25rem 1fr; gap: 1rem; padding: 1.35rem 0; border-bottom: 1px solid var(--border); }
+.about-facts > li { display: grid; grid-template-columns: 1.25rem 1fr; align-items: center; gap: 1rem; padding: 1.35rem 0; border-bottom: 1px solid var(--border); }
 .about-facts > li:last-child { border-bottom: 0; }
 .about-facts > li > svg { width: 1.25rem; height: 1.25rem; color: var(--primary); }
 .about-facts p { margin: 0; color: var(--muted-foreground); line-height: 1.65; text-wrap: pretty; }

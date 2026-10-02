@@ -4,7 +4,7 @@ import { SearchProvider } from "@/components/docs/search-dialog";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { ThemeProvider } from "@/components/theme-provider";
-import { SITE_URL, SOCIAL_IMAGE_ALT, SOCIAL_IMAGE_TYPE, SOCIAL_IMAGE_URL, sitePageUrl } from "@/lib/site";
+import { SITE_URL, SOCIAL_IMAGE_ALT, SOCIAL_IMAGE_TYPE, SOCIAL_IMAGE_URL, siteAssetUrl, sitePageUrl } from "@/lib/site";
 
 import "./globals.css";
 
@@ -55,6 +55,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html data-scroll-behavior="smooth" lang="en" suppressHydrationWarning>
       <head>
         {process.env.NODE_ENV === "production" && <meta httpEquiv="Content-Security-Policy" content={CONTENT_SECURITY_POLICY} />}
+        <link rel="alternate" type="text/plain" href={siteAssetUrl("/llms.txt")} title="llms.txt" />
       </head>
       <body>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>

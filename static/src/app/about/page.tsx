@@ -115,7 +115,7 @@ export default function AboutPage() {
           <p>The reference is authored as MDX in the repository: {docPages.length} guides across {docsConfig.length} groups, plus {operationCount} HTTP API operations generated from the OpenAPI contract at <code>static/content/openapi.yaml</code>. Navigation, link validation, search and this site all come out of the same <code>npm run build</code>.</p>
 
           <h2>How do I get in touch?</h2>
-          <p>Open an issue on the <a href={REPOSITORY_URL}>repository</a> for bugs and features, find {AUTHOR_NAME} on {profileNames}, or email <a href={`mailto:${CONTACT_EMAIL}`}>{AUTHOR_NAME}</a>.</p>
+          <p>Open an issue on the <a href={REPOSITORY_URL}>repository</a> for bugs and features, find {AUTHOR_NAME} on {profileNames}, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
 
           <p>Last updated {lastUpdatedLabel}.</p>
         </article>

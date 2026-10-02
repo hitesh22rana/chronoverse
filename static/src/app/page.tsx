@@ -18,7 +18,6 @@ import {
   TimerReset,
   Workflow,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 
 import { ArchitectureMap } from "@/components/architecture-map";
@@ -38,6 +37,8 @@ import {
   REPOSITORY_URL,
   SITE_PUBLISHED,
   SITE_URL,
+  SOCIAL_IMAGE_ALT,
+  SOCIAL_IMAGE_URL,
   siteAssetUrl,
   sitePageUrl,
   withBasePath,
@@ -56,10 +57,10 @@ const capabilities = [
 ];
 
 const reliability = [
-  ["Idempotency keys", "Retry the same command without duplicating a workflow or manual job."],
+  ["Idempotency keys", "Retry the same command without duplicating a workflow or manual job. Records are kept for 336h, with a 168h floor."],
   ["Transactional outbox", "Commit domain state and publication intent in one PostgreSQL transaction."],
   ["Workflow generations", "Reject build, schedule, terminate, and delete work from an old definition."],
-  ["Durable job leases", "Stop stale workers from finishing work after ownership has moved."],
+  ["Durable job leases", "Stop stale workers from finishing work after ownership has moved. Leases renew every 30s by default."],
   ["Deterministic events", "Deduplicate notifications, analytics, and retained logs."],
   ["Partition commit policy", "Advance Kafka offsets only after the final result is known."],
 ];
@@ -68,7 +69,7 @@ const timeline = [
   ["01", "Command", "The gateway validates session, CSRF state, input, and idempotency."],
   ["02", "Commit", "The service writes state and an outbox event in one transaction."],
   ["03", "Dispatch", "The relay publishes to Kafka and partition workers take ownership."],
-  ["04", "Execute", "A worker claims a lease and takes a runtime endpoint. It runs the container and renews the lease."],
+  ["04", "Execute", "A worker claims a lease and takes a runtime endpoint. It runs the container and renews the lease every 30s."],
   ["05", "Observe", "Logs, notifications, analytics, traces, and terminal state converge."],
 ];
 
@@ -93,7 +94,7 @@ const organization = {
   logo: siteAssetUrl("/assets/chronoverse-mark.webp"),
   founder: author["@id"],
   email: CONTACT_EMAIL,
-  sameAs: [REPOSITORY_URL],
+  sameAs: [REPOSITORY_URL, ...AUTHOR_PROFILES.map((profile) => profile.url)],
   contactPoint: {
     "@type": "ContactPoint",
     contactType: "technical support",
@@ -102,6 +103,29 @@ const organization = {
     availableLanguage: ["en"],
   },
 };
+
+const faq = [
+  {
+    question: "What does Chronoverse actually run?",
+    answer: "Two workflow kinds. A HEARTBEAT workflow is a lightweight service check that produces no logs. A CONTAINER workflow runs a Docker workload and can retain its stdout and stderr. Both can run on an interval or be dispatched by hand, and both go through the same replay-safe lifecycle.",
+  },
+  {
+    question: "How long does a worker hold a job?",
+    answer: "An execution worker claims a lease and renews it every 30s by default. That lease is what stops a stale worker from finishing work after ownership has moved, which matters when a process is paused, partitioned or restarted mid job.",
+  },
+  {
+    question: "How long are failed commands remembered?",
+    answer: "Command idempotency records are kept for 336h, and the setting cannot go below 168h. It has to cover the longest Kafka, published outbox or manual redrive window, or a retried command could run twice.",
+  },
+  {
+    question: "What does it need to run?",
+    answer: "Docker for local work and Kubernetes for production. Go services and workers sit behind an HTTP and gRPC API, with Kafka for events, PostgreSQL for state, Redis for sessions and live logs, and ClickHouse with Meilisearch for retained search.",
+  },
+  {
+    question: "How is it licensed?",
+    answer: "MIT. You run it on your own machines, and you keep the data it produces. There is no hosted tier and no account to create.",
+  },
+];
 
 const structuredData = {
   "@context": "https://schema.org",
@@ -121,6 +145,51 @@ const structuredData = {
       author: { "@id": author["@id"] },
       maintainer: { "@id": organization["@id"] },
     },
+    {
+      "@type": "WebPage",
+      "@id": `${SITE_URL}/#webpage`,
+      name: "Chronoverse",
+      description: "Reliable scheduled work, on infrastructure you control.",
+      url: sitePageUrl(),
+      isPartOf: { "@id": `${SITE_URL}/#website` },
+      primaryImageOfPage: { "@id": `${SITE_URL}/#primaryimage` },
+      datePublished: SITE_PUBLISHED,
+      dateModified: lastUpdated.toISOString(),
+      author: { "@id": author["@id"] },
+      inLanguage: "en",
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      name: "Chronoverse",
+      url: SITE_URL,
+      description: "Documentation and project site for Chronoverse, a self-hosted distributed scheduler.",
+      publisher: { "@id": organization["@id"] },
+      inLanguage: "en",
+    },
+    {
+      "@type": "ImageObject",
+      "@id": `${SITE_URL}/#primaryimage`,
+      url: SOCIAL_IMAGE_URL,
+      contentUrl: SOCIAL_IMAGE_URL,
+      width: 1200,
+      height: 630,
+      caption: SOCIAL_IMAGE_ALT,
+    },
+    {
+      "@type": "FAQPage",
+      "@id": `${SITE_URL}/#faq`,
+      mainEntity: faq.map(({ question, answer }) => ({
+        "@type": "Question",
+        name: question,
+        acceptedAnswer: { "@type": "Answer", text: answer },
+      })),
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": `${SITE_URL}/#breadcrumb`,
+      itemListElement: [{ "@type": "ListItem", position: 1, name: "Chronoverse", item: sitePageUrl() }],
+    },
     author,
     organization,
   ],
@@ -136,15 +205,26 @@ export default function Home() {
         <div className="hero-copy">
           <Badge className="hero-status" variant="outline"><span className="status-dot" />Self-hosted orchestration</Badge>
           <h1>Reliable scheduled work, on infrastructure you control.</h1>
-          <p>Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads. It runs on 5 gRPC domains and 6 worker roles, and keeps durable state, replay-safe events, searchable logs, and clear evidence of every run.</p>
+          <p>Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads. It runs on 5 gRPC domains and 6 worker roles across 4 Kafka topics. Every figure on this page is counted from the source repository.</p>
           <div className="hero-actions">
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
             <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
           </div>
+          <p className="byline">Written and maintained by <Link href="/about" rel="author">{AUTHOR_NAME}</Link>. I build the code, the docs and this site, and I answer issues on the repository.</p>
           <div className="hero-command"><Terminal /><code>scripts/k8s/setup.sh --mode production --context &lt;context&gt;</code></div>
         </div>
         <div className="hero-visual" aria-label="Chronoverse engineering status panel">
-          <Image src={withBasePath("/assets/chronoverse.webp")} alt="Chronoverse astronaut with an hourglass visor" width={1536} height={1024} priority />
+            {/* eslint-disable-next-line @next/next/no-img-element -- srcset needs hand-written candidates because the static export disables the image optimiser */}
+            <img
+              src={withBasePath("/assets/chronoverse.webp")}
+              srcSet={`${withBasePath("/assets/chronoverse-768.webp")} 768w, ${withBasePath("/assets/chronoverse-1152.webp")} 1152w, ${withBasePath("/assets/chronoverse.webp")} 1536w`}
+              sizes="(max-width: 850px) 100vw, 46vw"
+              alt="Chronoverse astronaut with an hourglass visor"
+              width={1536}
+              height={1024}
+              fetchPriority="high"
+              decoding="async"
+            />
           <div className="hero-console">
             <div><span>workflow.build</span><strong>completed</strong></div>
             <div><span>job.lease</span><strong>renewed · 30s</strong></div>
@@ -175,7 +255,7 @@ export default function Home() {
 
       <section className="engineering-section" id="engineering">
         <div className="section-shell landing-section">
-          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The API stays responsive across gRPC domain boundaries. Kafka workers route slow, distributed, and failure-prone work to Docker nodes they own.</p></div>
+          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The API stays responsive across gRPC domain boundaries. Kafka workers route slow, distributed, and failure-prone work to Docker nodes they own. Per the Kafka bootstrap in the source, the 4 topics default to 1 partition and a replication factor of 1, which suits a single node.</p></div>
           <ArchitectureMap />
 
           <div className="engineering-split">
@@ -194,7 +274,7 @@ export default function Home() {
             <div className="reliability-intro">
               <div className="eyebrow"><RefreshCw /> Reliability model</div>
               <h3>Failure is represented in state, not hidden behind retries.</h3>
-              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. 6 invariants keep it correct at every boundary.</p>
+              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. 6 invariants keep it correct at every boundary. The configuration reference sets command idempotency retention to 336h and refuses any value under 168h.</p>
               <Button asChild variant="outline"><Link href="/docs/engineering/replay-safety">Explore replay safety<ArrowRight data-icon="inline-end" /></Link></Button>
             </div>
             <div className="reliability-list">
@@ -205,14 +285,15 @@ export default function Home() {
           <div className="infra-grid">
             <Card><CardHeader><Database /><CardTitle>PostgreSQL</CardTitle></CardHeader><CardContent><CardDescription>Transactional state, idempotency, outbox rows, leases, retries, and analytics.</CardDescription></CardContent></Card>
             <Card><CardHeader><Boxes /><CardTitle>ClickHouse + Meilisearch</CardTitle></CardHeader><CardContent><CardDescription>Ordered retained output with low-latency text search and safe highlights.</CardDescription></CardContent></Card>
-            <Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and image pulls scoped to each runtime node.</CardDescription></CardContent></Card>
-            <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS between services, and trace propagation across HTTP, gRPC, and Kafka.</CardDescription></CardContent></Card>
+<Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and image pulls scoped to each runtime node. Production Compose caps each client at 768mb.</CardDescription></CardContent></Card>
+          <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS between services, and trace propagation across HTTP, gRPC, and Kafka. Metrics export every 2s, which keeps a 500ms loop off small replicas.</CardDescription></CardContent></Card>
+
           </div>
         </div>
       </section>
 
       <section className="section-shell landing-section" id="operations">
-        <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Can you inspect it while it runs?</h2><p>Startup order comes from health checks. LGTM takes the traces, metrics, and logs. Recovery loops find abandoned work and keep it bounded. 5 operations guides cover this path.</p></div>
+        <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Can you inspect it while it runs?</h2><p>Startup order comes from health checks. LGTM takes the traces, metrics, and logs. Recovery loops find abandoned work and keep it bounded. The Kubernetes ConfigMap exports metrics every 2s and batches spans on a 1s schedule, and 5 operations guides cover this path.</p></div>
         <div className="operations-panel">
           <div className="operations-code">
             <span>$ kubectl -n chronoverse get deploy,ds</span>
@@ -236,8 +317,20 @@ export default function Home() {
           <span>{docPages.length} authored guides · {operationCount} generated API operations · static HTML</span>
         </div>
 <h2>Where does the engineering reference live?</h2>
-        <p>{docPages.length} guides and {operationCount} generated API operations are authored in this repository, from MDX and an OpenAPI contract. Navigation, checks and search ship with the landing page.</p>
+        <p>{docPages.length} guides and {operationCount} generated API operations are authored in this repository, from MDX and an OpenAPI contract. Both counts are read at build time from docs.config.ts and the contract, so they cannot drift from what ships.</p>
         <div className="hero-actions"><Button asChild size="lg"><Link href="/docs">Open documentation<ArrowRight data-icon="inline-end" /></Link></Button><Button asChild size="lg" variant="outline"><Link href="/docs/api/reference">Browse the API</Link></Button></div>
+      </section>
+
+      <section className="section-shell landing-section" id="faq">
+        <div className="section-heading"><Badge variant="secondary">FAQ</Badge><h2>Questions readers ask first.</h2><p>Short answers, taken from the configuration reference and the source.</p></div>
+        <div className="faq-list">
+          {faq.map(({ question, answer }) => (
+            <div key={question}>
+              <h3>{question}</h3>
+              <p>{answer}</p>
+            </div>
+          ))}
+        </div>
       </section>
     </main>
   );

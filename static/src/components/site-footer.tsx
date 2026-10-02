@@ -9,11 +9,13 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
-        <div><Brand /><p>Distributed scheduling and orchestration for infrastructure you control.</p></div>
+        <div><Brand eager /><p>Distributed scheduling and orchestration for infrastructure you control.</p></div>
         <nav aria-label="Footer navigation">
           <Link href="/docs">Documentation</Link>
           <Link href="/docs/engineering/architecture">Engineering</Link>
           <Link href="/about">About</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
           <a href={`${REPOSITORY_URL}/blob/main/LICENSE`}>MIT License</a>
         </nav>
         <nav aria-label="Author profiles">

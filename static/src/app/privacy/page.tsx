@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-
 import { JsonLd } from "@/components/seo/json-ld";
 import { Badge } from "@/components/ui/badge";
 import { CONTACT_EMAIL, SITE_PUBLISHED, sitePageUrl } from "@/lib/site";
 
 const description = "What this documentation site collects, which is nothing, and how to reach the maintainer about it.";
 const lastUpdated = new Date();
-const lastUpdatedLabel = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(lastUpdated);
 
 export const metadata: Metadata = {
   title: "Privacy",
@@ -50,7 +48,7 @@ export default function PrivacyPage() {
           <h2>The scheduler is a separate thing</h2>
           <p>Chronoverse is software you run yourself. If you run it, its data handling is whatever you configured &mdash; see <Link href="/docs/deployment/security">Certificates and security</Link> for the defaults.</p>
 
-          <p>Questions go to the maintainer: <a href={`mailto:${CONTACT_EMAIL}`}>email</a>. Last updated {lastUpdatedLabel}.</p>
+          <p>Questions go to the maintainer: <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
         </article>
       </section>
     </main>

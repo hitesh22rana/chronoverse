@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { Boxes, Layers, ScrollText, ShieldCheck, User } from "lucide-react";
 
 import { JsonLd } from "@/components/seo/json-ld";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getOpenApiOperations } from "@/lib/openapi";
 import {
   AUTHOR_NAME,
@@ -19,9 +17,8 @@ import {
 } from "@/lib/site";
 import { docPages, docsConfig } from "../../../docs.config";
 
-const description = "Who builds Chronoverse, what it runs on, how it is documented, and how to reach the maintainer.";
+const description = "Who builds Chronoverse, what it runs on, and how to reach the maintainer.";
 const lastUpdated = new Date();
-const lastUpdatedLabel = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(lastUpdated);
 
 export const metadata: Metadata = {
   title: "About",
@@ -59,10 +56,10 @@ const profileNames = AUTHOR_PROFILES.reduce<ReactNode[]>((nodes, profile, index)
 }, []);
 
 const facts = [
-  { icon: Boxes, label: "Runtime", text: "Docker containers execute on runtime nodes that register with the platform. Kubernetes is the supported production orchestrator." },
-  { icon: Layers, label: "Storage", text: "PostgreSQL holds transactional state, idempotency records, outbox rows and leases. ClickHouse retains logs and Meilisearch indexes them." },
-  { icon: ScrollText, label: "Observability", text: "OpenTelemetry traces, metrics and logs export to the bundled Grafana OTEL LGTM stack." },
-  { icon: ShieldCheck, label: "Licence", text: "MIT. Anyone can run Chronoverse on their own machines, and they keep the data." },
+  { icon: Boxes, label: "Runtime", text: "Docker containers run on runtime nodes that register with the platform. Kubernetes is the supported production orchestrator." },
+  { icon: Layers, label: "Storage", text: "PostgreSQL holds transactional state, idempotency records, outbox rows and leases. ClickHouse retains logs, and Meilisearch indexes them." },
+  { icon: ScrollText, label: "Observability", text: "Traces, metrics and logs export over OpenTelemetry to the bundled Grafana OTEL LGTM stack." },
+  { icon: ShieldCheck, label: "Licence", text: "MIT. You run it on your own machines, and the data stays with you." },
 ];
 
 export default function AboutPage() {
@@ -75,14 +72,14 @@ export default function AboutPage() {
         <div className="section-heading">
           <Badge variant="secondary">About</Badge>
           <h2>Who builds Chronoverse.</h2>
-          <p>Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads, written in Go and TypeScript. {AUTHOR_NAME} builds, documents and maintains it.</p>
+          <p>{AUTHOR_NAME} writes the code, the documentation and this site. Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads, written in Go and TypeScript.</p>
         </div>
 
         <div className="about-split">
           <div>
             <div className="eyebrow"><User /> Maintainer</div>
             <h2>One author, one repository.</h2>
-            <p>The source, the docs and this site live in the same <a href={REPOSITORY_URL}>Chronoverse repository</a>. Every figure on these pages comes from it.</p>
+            <p>The source, the docs and this site sit in the same repository, and the figures quoted across this site are read from it at build time.</p>
             <div className="about-links">
               {AUTHOR_PROFILES.map((profile) => (
                 <Button asChild key={profile.name} variant="outline"><a href={profile.url} rel="me noopener" target="_blank">{profile.name}</a></Button>
@@ -100,30 +97,15 @@ export default function AboutPage() {
           </ul>
         </div>
 
-        <div className="infra-grid">
-          <Card><CardHeader><CardTitle>5</CardTitle></CardHeader><CardContent><CardDescription>gRPC domains behind the public API.</CardDescription></CardContent></Card>
-          <Card><CardHeader><CardTitle>6</CardTitle></CardHeader><CardContent><CardDescription>worker roles that run the schedule.</CardDescription></CardContent></Card>
-          <Card><CardHeader><CardTitle>4</CardTitle></CardHeader><CardContent><CardDescription>Kafka topics carry events and logs.</CardDescription></CardContent></Card>
-          <Card><CardHeader><CardTitle>{docPages.length}</CardTitle></CardHeader><CardContent><CardDescription>guides across {docsConfig.length} documentation groups.</CardDescription></CardContent></Card>
-        </div>
-
         <article className="docs-prose utility-prose">
-          <h2>What is Chronoverse?</h2>
-          <p>Chronoverse runs scheduled and manual workflows across a Docker-backed execution fleet. It gives you 8 capabilities, from interval-based and on-demand runs through to live logs, retained search, analytics and notifications. The design assumes at-least-once delivery: messages repeat, processes restart, and ownership expires. Correctness comes from idempotency keys, a transactional outbox, workflow generations, deterministic event keys, durable leases and partition-aware Kafka commits.</p>
+          <h2>What it runs</h2>
+          <p>Two workflow kinds. A HEARTBEAT workflow is a lightweight check that produces no logs. A CONTAINER workflow runs a Docker workload and can keep its stdout and stderr. Either can run on an interval or on demand, through the same replay-safe lifecycle.</p>
 
           <h2>How is it documented?</h2>
-          <p>The reference is authored as MDX in the repository: {docPages.length} guides across {docsConfig.length} groups, plus {operationCount} HTTP API operations generated from the OpenAPI contract at <code>static/content/openapi.yaml</code>. Navigation, link validation, search and this site all come out of the same <code>npm run build</code>.</p>
+          <p>{docPages.length} guides across {docsConfig.length} groups, plus {operationCount} HTTP API operations generated from the OpenAPI contract at <code>static/content/openapi.yaml</code>. Navigation, link validation, search and this site all come out of the same <code>npm run build</code>.</p>
 
-          <h2>How do I get in touch?</h2>
-          <p>Open an issue on the <a href={REPOSITORY_URL}>repository</a> for bugs and features, find {AUTHOR_NAME} on {profileNames}, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
-
-          <p>Last updated {lastUpdatedLabel}.</p>
+          <p>Report a defect as an issue on <a href={REPOSITORY_URL}>the repository</a>, find {AUTHOR_NAME} on {profileNames}, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
         </article>
-
-        <div className="hero-actions">
-          <Button asChild size="lg"><Link href="/docs">Read the docs</Link></Button>
-          <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} rel="noopener" target="_blank">View source</a></Button>
-        </div>
       </section>
     </main>
   );

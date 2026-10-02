@@ -6,7 +6,6 @@ import { CONTACT_EMAIL, REPOSITORY_URL, SITE_PUBLISHED, sitePageUrl } from "@/li
 
 const description = "The terms that cover Chronoverse: the MIT licence, the documentation, and how problems are handled.";
 const lastUpdated = new Date();
-const lastUpdatedLabel = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(lastUpdated);
 
 export const metadata: Metadata = {
   title: "Terms",
@@ -46,7 +45,7 @@ export default function TermsPage() {
           <h2>Figures on these pages</h2>
           <p>A stated figure says where it was read from. Values are counted at build time and can change between releases, so check the commit before relying on one.</p>
 
-          <p>Report a defect as an issue on <a href={REPOSITORY_URL}>the repository</a>, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a> the maintainer. Last updated {lastUpdatedLabel}.</p>
+          <p>Report a defect as an issue on <a href={REPOSITORY_URL}>the repository</a>, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a> the maintainer.</p>
         </article>
       </section>
     </main>

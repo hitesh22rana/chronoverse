@@ -195,7 +195,7 @@ svg { flex: none; }
 .docs-cta > p { max-width: 720px; }
 
 .site-footer { border-top: 1px solid var(--border); background: color-mix(in oklab, var(--card) 70%, transparent); }
-.site-footer-inner { width: min(1180px, calc(100% - 2rem)); min-height: 220px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto; gap: 2rem; align-content: center; }
+.site-footer-inner { width: min(1180px, calc(100% - 2rem)); min-height: 220px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto auto; gap: 2rem; align-content: center; }
 .site-footer-inner > div p { max-width: 430px; color: var(--muted-foreground); font-size: .85rem; }
 .site-footer nav { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 2rem; color: var(--muted-foreground); font-size: .85rem; }
 .copyright { grid-column: 1 / -1; margin: 0; color: var(--muted-foreground); font-size: .75rem; }

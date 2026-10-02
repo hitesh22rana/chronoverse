@@ -52,7 +52,7 @@ export function Endpoint({ children, method, path }: { children?: ReactNode; met
 
 export function SourceLink({ children, path }: { children: ReactNode; path: string }) {
   return (
-    <a className="source-link" href={`${REPOSITORY_URL}/blob/main/${path}`} target="_blank" rel="noreferrer">
+    <a className="source-link" href={`${REPOSITORY_URL}/blob/main/${path}`} target="_blank" rel="noopener noreferrer">
       <Terminal />
       <span>{children}</span>
       <code>{path}</code>

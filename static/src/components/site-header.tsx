@@ -22,6 +22,7 @@ const links = [
   { href: "/#product", label: "Product" },
   { href: "/#engineering", label: "Engineering" },
   { href: "/docs", label: "Docs" },
+  { href: "/about", label: "About" },
 ];
 
 export function SiteHeader() {

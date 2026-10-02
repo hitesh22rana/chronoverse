@@ -22,13 +22,14 @@ const links = [
   { href: "/#product", label: "Product" },
   { href: "/#engineering", label: "Engineering" },
   { href: "/docs", label: "Docs" },
+  { href: "/about", label: "About" },
 ];
 
 export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <Brand />
+        <Brand eager />
         <nav className="desktop-nav" aria-label="Primary navigation">
           {links.map((link) => (
             <Link href={link.href} key={link.href}>{link.label}</Link>

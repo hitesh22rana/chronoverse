@@ -29,47 +29,101 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { getOpenApiOperations } from "@/lib/openapi";
-import { REPOSITORY_URL, sitePageUrl, withBasePath } from "@/lib/site";
+import {
+  AUTHOR_IMAGE,
+  AUTHOR_NAME,
+  AUTHOR_PROFILES,
+  AUTHOR_URL,
+  CONTACT_EMAIL,
+  REPOSITORY_URL,
+  SITE_PUBLISHED,
+  SITE_URL,
+  siteAssetUrl,
+  sitePageUrl,
+  withBasePath,
+} from "@/lib/site";
 import { docPages } from "../../docs.config";
 
 const capabilities = [
-  { icon: Workflow, title: "Scheduled workflows", text: "Run interval-based workloads with generation guards and asynchronous build preparation." },
-  { icon: TimerReset, title: "Manual runs", text: "Dispatch immediate jobs through the same replay-safe lifecycle as automatic scheduling." },
-  { icon: Container, title: "Container execution", text: "Execute Docker-backed commands through runtime ownership, node health, and constrained socket proxies." },
-  { icon: Activity, title: "Heartbeat checks", text: "Model lightweight service checks separately from log-producing container workloads." },
+  { icon: Workflow, title: "Scheduled workflows", text: "Run interval workloads with generation guards. Build prep runs in the background." },
+  { icon: TimerReset, title: "Manual runs", text: "Run jobs now through the same replay-safe path as a scheduled run." },
+  { icon: Container, title: "Container execution", text: "Run Docker commands on the owning node, with health checks and a constrained socket proxy." },
+  { icon: Activity, title: "Heartbeat checks", text: "Run lightweight service checks. They stay apart from container jobs that keep logs." },
   { icon: ScrollText, title: "Live logs", text: "Stream running stdout and stderr to the dashboard over Server-Sent Events." },
   { icon: FileSearch, title: "Retained search", text: "Store logs in ClickHouse, search with Meilisearch, and download safely filtered output." },
-  { icon: ChartNoAxesCombined, title: "Analytics", text: "Track workflow and job totals, log volume, and accumulated execution duration." },
-  { icon: Bell, title: "Notifications", text: "Surface workflow and job state changes with replay-safe notification identity." },
+  { icon: ChartNoAxesCombined, title: "Analytics", text: "Track workflow and job totals, log volume, and time spent running." },
+  { icon: Bell, title: "Notifications", text: "Alert when workflow or job state changes. Each alert has a replay-safe ID." },
 ];
 
 const reliability = [
   ["Idempotency keys", "Retry the same command without duplicating a workflow or manual job."],
   ["Transactional outbox", "Commit domain state and publication intent in one PostgreSQL transaction."],
-  ["Workflow generations", "Reject build, schedule, termination, and deletion work from old definitions."],
-  ["Durable job leases", "Prevent stale workers from completing work after ownership has moved."],
-  ["Deterministic events", "Deduplicate notifications, analytics, and retained log side effects."],
-  ["Partition commit policy", "Advance Kafka offsets only after the selected success or retry outcome."],
+  ["Workflow generations", "Reject build, schedule, terminate, and delete work from an old definition."],
+  ["Durable job leases", "Stop stale workers from finishing work after ownership has moved."],
+  ["Deterministic events", "Deduplicate notifications, analytics, and retained logs."],
+  ["Partition commit policy", "Advance Kafka offsets only after the final result is known."],
 ];
 
 const timeline = [
   ["01", "Command", "The gateway validates session, CSRF state, input, and idempotency."],
-  ["02", "Commit", "The domain service writes state and an outbox event atomically."],
+  ["02", "Commit", "The service writes state and an outbox event in one transaction."],
   ["03", "Dispatch", "The relay publishes to Kafka and partition workers take ownership."],
-  ["04", "Execute", "An execution worker claims a lease, receives a runtime endpoint, runs the container, and renews ownership."],
+  ["04", "Execute", "A worker claims a lease and takes a runtime endpoint. It runs the container and renews the lease."],
   ["05", "Observe", "Logs, notifications, analytics, traces, and terminal state converge."],
 ];
 
+const lastUpdated = new Date();
+
+const author = {
+  "@type": "Person",
+  "@id": `${AUTHOR_URL}#person`,
+  name: AUTHOR_NAME,
+  url: AUTHOR_URL,
+  image: AUTHOR_IMAGE,
+  email: CONTACT_EMAIL,
+  jobTitle: "Maintainer",
+  sameAs: AUTHOR_PROFILES.map((profile) => profile.url),
+};
+
+const organization = {
+  "@type": "Organization",
+  "@id": `${SITE_URL}/#organization`,
+  name: "Chronoverse",
+  url: SITE_URL,
+  logo: siteAssetUrl("/assets/chronoverse-mark.webp"),
+  founder: author["@id"],
+  email: CONTACT_EMAIL,
+  sameAs: [REPOSITORY_URL],
+  contactPoint: {
+    "@type": "ContactPoint",
+    contactType: "technical support",
+    email: CONTACT_EMAIL,
+    url: SITE_URL,
+    availableLanguage: ["en"],
+  },
+};
+
 const structuredData = {
   "@context": "https://schema.org",
-  "@type": "SoftwareSourceCode",
-  name: "Chronoverse",
-  description: "A self-hosted distributed scheduler for heartbeat checks and container workloads with replay-safe execution, searchable logs, and full observability.",
-  url: sitePageUrl(),
-  codeRepository: REPOSITORY_URL,
-  license: "https://opensource.org/license/mit",
-  programmingLanguage: ["Go", "TypeScript"],
-  runtimePlatform: ["Docker", "Kubernetes"],
+  "@graph": [
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": `${SITE_URL}/#software`,
+      name: "Chronoverse",
+      description: "A self-hosted distributed scheduler for heartbeat checks and container workloads with replay-safe execution, searchable logs, and full observability.",
+      url: sitePageUrl(),
+      codeRepository: REPOSITORY_URL,
+      license: "https://opensource.org/license/mit",
+      programmingLanguage: ["Go", "TypeScript"],
+      runtimePlatform: ["Docker", "Kubernetes"],
+      datePublished: SITE_PUBLISHED,
+      dateModified: lastUpdated.toISOString(),
+      author: { "@id": author["@id"] },
+      maintainer: { "@id": organization["@id"] },
+    },
+    author,
+    organization,
+  ],
 };
 
 export default function Home() {
@@ -82,7 +136,7 @@ export default function Home() {
         <div className="hero-copy">
           <Badge className="hero-status" variant="outline"><span className="status-dot" />Self-hosted orchestration</Badge>
           <h1>Reliable scheduled work, on infrastructure you control.</h1>
-          <p>Chronoverse is a distributed scheduler for heartbeat checks and container workloads, built around durable state, replay-safe events, searchable logs, and observable execution.</p>
+          <p>Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads. It runs on 5 gRPC domains and 6 worker roles, and keeps durable state, replay-safe events, searchable logs, and clear evidence of every run.</p>
           <div className="hero-actions">
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
             <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
@@ -108,7 +162,7 @@ export default function Home() {
       </section>
 
       <section className="section-shell landing-section" id="product">
-        <div className="section-heading"><Badge variant="secondary">Product</Badge><h2>One lifecycle from schedule to evidence.</h2><p>Define work once, run it automatically or on demand, and keep the operational trail needed to understand what happened.</p></div>
+        <div className="section-heading"><Badge variant="secondary">Product</Badge><h2>One lifecycle from schedule to evidence.</h2><p>8 capabilities cover the whole run. Define work once, run it on a schedule or on demand, and keep the trail you need to explain what happened.</p></div>
         <div className="capability-grid">
           {capabilities.map(({ icon: Icon, title, text }) => (
             <Card key={title}>
@@ -121,13 +175,13 @@ export default function Home() {
 
       <section className="engineering-section" id="engineering">
         <div className="section-shell landing-section">
-          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The public API stays responsive through gRPC domain boundaries while Kafka workers route delayed, distributed, and failure-prone execution through runtime-owned Docker nodes.</p></div>
+          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The API stays responsive across gRPC domain boundaries. Kafka workers route slow, distributed, and failure-prone work to Docker nodes they own.</p></div>
           <ArchitectureMap />
 
           <div className="engineering-split">
             <div>
               <div className="eyebrow"><RadioTower /> Event flow</div>
-              <h3>Every stage has an owner and a recovery path.</h3>
+              <h3>Who owns each of the 5 stages, and where does recovery start?</h3>
             </div>
             <ol className="execution-timeline">
               {timeline.map(([number, title, text]) => <li key={number}><span>{number}</span><div><strong>{title}</strong><p>{text}</p></div></li>)}
@@ -140,7 +194,7 @@ export default function Home() {
             <div className="reliability-intro">
               <div className="eyebrow"><RefreshCw /> Reliability model</div>
               <h3>Failure is represented in state, not hidden behind retries.</h3>
-              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. Correctness comes from explicit invariants at every boundary.</p>
+              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. 6 invariants keep it correct at every boundary.</p>
               <Button asChild variant="outline"><Link href="/docs/engineering/replay-safety">Explore replay safety<ArrowRight data-icon="inline-end" /></Link></Button>
             </div>
             <div className="reliability-list">
@@ -151,14 +205,14 @@ export default function Home() {
           <div className="infra-grid">
             <Card><CardHeader><Database /><CardTitle>PostgreSQL</CardTitle></CardHeader><CardContent><CardDescription>Transactional state, idempotency, outbox rows, leases, retries, and analytics.</CardDescription></CardContent></Card>
             <Card><CardHeader><Boxes /><CardTitle>ClickHouse + Meilisearch</CardTitle></CardHeader><CardContent><CardDescription>Ordered retained output with low-latency text search and safe highlights.</CardDescription></CardContent></Card>
-            <Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and runtime-node-scoped image-pull coordination.</CardDescription></CardContent></Card>
-            <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS service communication and trace propagation across HTTP, gRPC, and Kafka.</CardDescription></CardContent></Card>
+            <Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and image pulls scoped to each runtime node.</CardDescription></CardContent></Card>
+            <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS between services, and trace propagation across HTTP, gRPC, and Kafka.</CardDescription></CardContent></Card>
           </div>
         </div>
       </section>
 
       <section className="section-shell landing-section" id="operations">
-        <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Built to be inspected while it runs.</h2><p>Health checks establish startup order. LGTM receives traces, metrics, and logs. Recovery loops make abandoned work visible and bounded.</p></div>
+        <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Can you inspect it while it runs?</h2><p>Startup order comes from health checks. LGTM takes the traces, metrics, and logs. Recovery loops find abandoned work and keep it bounded. 5 operations guides cover this path.</p></div>
         <div className="operations-panel">
           <div className="operations-code">
             <span>$ kubectl -n chronoverse get deploy,ds</span>
@@ -181,8 +235,8 @@ export default function Home() {
           <Braces />
           <span>{docPages.length} authored guides · {operationCount} generated API operations · static HTML</span>
         </div>
-        <h2>The engineering reference lives with the code.</h2>
-        <p>MDX content, OpenAPI contracts, navigation, validation, and search are built in this repository and deployed with the landing page.</p>
+<h2>Where does the engineering reference live?</h2>
+        <p>{docPages.length} guides and {operationCount} generated API operations are authored in this repository, from MDX and an OpenAPI contract. Navigation, checks and search ship with the landing page.</p>
         <div className="hero-actions"><Button asChild size="lg"><Link href="/docs">Open documentation<ArrowRight data-icon="inline-end" /></Link></Button><Button asChild size="lg" variant="outline"><Link href="/docs/api/reference">Browse the API</Link></Button></div>
       </section>
     </main>

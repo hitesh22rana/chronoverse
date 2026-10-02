@@ -9,8 +9,11 @@ import { SITE_URL, SOCIAL_IMAGE_ALT, SOCIAL_IMAGE_TYPE, SOCIAL_IMAGE_URL, sitePa
 import "./globals.css";
 
 // GitHub Pages serves static files and cannot send custom response headers, so the
-// policy ships as a meta tag. It still blocks third-party script, object and base
-// injection. frame-ancestors only takes effect once this site is served with real headers.
+// policy ships as a meta tag, and only in production: React's dev build needs
+// eval() for callstacks and Turbopack HMR needs a websocket, neither of which
+// this policy allows. It still blocks third-party script, object and base
+// injection. frame-ancestors only takes effect once the site is served with real
+// headers.
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -51,7 +54,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html data-scroll-behavior="smooth" lang="en" suppressHydrationWarning>
       <head>
-        <meta httpEquiv="Content-Security-Policy" content={CONTENT_SECURITY_POLICY} />
+        {process.env.NODE_ENV === "production" && <meta httpEquiv="Content-Security-Policy" content={CONTENT_SECURITY_POLICY} />}
       </head>
       <body>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>

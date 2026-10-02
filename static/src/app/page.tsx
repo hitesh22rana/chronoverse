@@ -194,7 +194,7 @@ export default function Home() {
             <div className="reliability-intro">
               <div className="eyebrow"><RefreshCw /> Reliability model</div>
               <h3>Failure is represented in state, not hidden behind retries.</h3>
-              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. 6 clear rules keep it correct at every boundary.</p>
+              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. 6 invariants keep it correct at every boundary.</p>
               <Button asChild variant="outline"><Link href="/docs/engineering/replay-safety">Explore replay safety<ArrowRight data-icon="inline-end" /></Link></Button>
             </div>
             <div className="reliability-list">
@@ -236,7 +236,7 @@ export default function Home() {
           <span>{docPages.length} authored guides · {operationCount} generated API operations · static HTML</span>
         </div>
 <h2>Where does the engineering reference live?</h2>
-        <p>{docPages.length} guides and {operationCount} generated API operations live in this repository as MDX and OpenAPI. Navigation, checks, and search are built here too, and ship with the landing page.</p>
+        <p>{docPages.length} guides and {operationCount} generated API operations are authored in this repository, from MDX and an OpenAPI contract. Navigation, checks and search ship with the landing page.</p>
         <div className="hero-actions"><Button asChild size="lg"><Link href="/docs">Open documentation<ArrowRight data-icon="inline-end" /></Link></Button><Button asChild size="lg" variant="outline"><Link href="/docs/api/reference">Browse the API</Link></Button></div>
       </section>
     </main>

@@ -27,7 +27,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { getOpenApiOperations } from "@/lib/openapi";
 import {
   AUTHOR_IMAGE,
   AUTHOR_NAME,
@@ -43,7 +42,6 @@ import {
   sitePageUrl,
   withBasePath,
 } from "@/lib/site";
-import { docPages } from "../../docs.config";
 
 const capabilities = [
   { icon: Workflow, title: "Scheduled workflows", text: "Run interval workloads with generation guards. Build prep runs in the background." },
@@ -57,10 +55,10 @@ const capabilities = [
 ];
 
 const reliability = [
-  ["Idempotency keys", "Retry the same command without duplicating a workflow or manual job. Records are kept for 336h, with a 168h floor."],
+  ["Idempotency keys", "Retry the same command without duplicating a workflow or manual job."],
   ["Transactional outbox", "Commit domain state and publication intent in one PostgreSQL transaction."],
   ["Workflow generations", "Reject build, schedule, terminate, and delete work from an old definition."],
-  ["Durable job leases", "Stop stale workers from finishing work after ownership has moved. Leases renew every 30s by default."],
+  ["Durable job leases", "Stop stale workers from finishing work after ownership has moved."],
   ["Deterministic events", "Deduplicate notifications, analytics, and retained logs."],
   ["Partition commit policy", "Advance Kafka offsets only after the final result is known."],
 ];
@@ -69,7 +67,7 @@ const timeline = [
   ["01", "Command", "The gateway validates session, CSRF state, input, and idempotency."],
   ["02", "Commit", "The service writes state and an outbox event in one transaction."],
   ["03", "Dispatch", "The relay publishes to Kafka and partition workers take ownership."],
-  ["04", "Execute", "A worker claims a lease and takes a runtime endpoint. It runs the container and renews the lease every 30s."],
+  ["04", "Execute", "A worker claims a lease and takes a runtime endpoint, then runs the container and renews the lease."],
   ["05", "Observe", "Logs, notifications, analytics, traces, and terminal state converge."],
 ];
 
@@ -196,8 +194,6 @@ const structuredData = {
 };
 
 export default function Home() {
-  const operationCount = getOpenApiOperations().length;
-
   return (
     <main>
       <JsonLd data={structuredData} />
@@ -205,7 +201,7 @@ export default function Home() {
         <div className="hero-copy">
           <Badge className="hero-status" variant="outline"><span className="status-dot" />Self-hosted orchestration</Badge>
           <h1>Reliable scheduled work, on infrastructure you control.</h1>
-          <p>Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads. It runs on 5 gRPC domains and 6 worker roles across 4 Kafka topics. Every figure on this page is counted from the source repository.</p>
+          <p>Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads. Go services and Kafka workers sit behind it, state lives in PostgreSQL, and every run leaves a trail you can inspect.</p>
           <div className="hero-actions">
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
             <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
@@ -241,7 +237,7 @@ export default function Home() {
       </section>
 
       <section className="section-shell landing-section" id="product">
-        <div className="section-heading"><Badge variant="secondary">Product</Badge><h2>One lifecycle from schedule to evidence.</h2><p>8 capabilities cover the whole run. Define work once, run it on a schedule or on demand, and keep the trail you need to explain what happened.</p></div>
+        <div className="section-heading"><Badge variant="secondary">Product</Badge><h2>One lifecycle from schedule to evidence.</h2><p>Define work once, run it on a schedule or on demand, and keep the trail you need to explain what happened.</p></div>
         <div className="capability-grid">
           {capabilities.map(({ icon: Icon, title, text }) => (
             <Card key={title}>
@@ -254,7 +250,7 @@ export default function Home() {
 
       <section className="engineering-section" id="engineering">
         <div className="section-shell landing-section">
-          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The API stays responsive across gRPC domain boundaries. Kafka workers route slow, distributed, and failure-prone work to Docker nodes they own. Per the Kafka bootstrap in the source, the 4 topics default to 1 partition and a replication factor of 1, which suits a single node.</p></div>
+          <div className="section-heading section-heading-wide"><Badge variant="secondary">Engineering</Badge><h2>Synchronous ownership. Asynchronous progress.</h2><p>The API stays responsive across gRPC domain boundaries. Kafka workers route slow, distributed, and failure-prone work to the Docker nodes they own.</p></div>
           <ArchitectureMap />
 
           <div className="engineering-split">
@@ -273,7 +269,7 @@ export default function Home() {
             <div className="reliability-intro">
               <div className="eyebrow"><RefreshCw /> Reliability model</div>
               <h3>Failure is represented in state, not hidden behind retries.</h3>
-              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. 6 invariants keep it correct at every boundary. The configuration reference sets command idempotency retention to 336h and refuses any value under 168h.</p>
+              <p>Chronoverse assumes messages repeat, processes restart, and ownership expires. Explicit invariants keep it correct at every boundary, and idempotency records outlive the longest redrive window.</p>
               <Button asChild variant="outline"><Link href="/docs/engineering/replay-safety">Explore replay safety<ArrowRight data-icon="inline-end" /></Link></Button>
             </div>
             <div className="reliability-list">
@@ -284,15 +280,15 @@ export default function Home() {
           <div className="infra-grid">
             <Card><CardHeader><Database /><CardTitle>PostgreSQL</CardTitle></CardHeader><CardContent><CardDescription>Transactional state, idempotency, outbox rows, leases, retries, and analytics.</CardDescription></CardContent></Card>
             <Card><CardHeader><Boxes /><CardTitle>ClickHouse + Meilisearch</CardTitle></CardHeader><CardContent><CardDescription>Ordered retained output with low-latency text search and safe highlights.</CardDescription></CardContent></Card>
-<Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and image pulls scoped to each runtime node. Production Compose caps each client at 768mb.</CardDescription></CardContent></Card>
-          <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS between services, and trace propagation across HTTP, gRPC, and Kafka. Metrics export every 2s, which keeps a 500ms loop off small replicas.</CardDescription></CardContent></Card>
+<Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and image pulls scoped to each runtime node.</CardDescription></CardContent></Card>
+          <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS between services, and trace propagation across HTTP, gRPC and Kafka.</CardDescription></CardContent></Card>
 
           </div>
         </div>
       </section>
 
       <section className="section-shell landing-section" id="operations">
-        <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Can you inspect it while it runs?</h2><p>Startup order comes from health checks. LGTM takes the traces, metrics, and logs. Recovery loops find abandoned work and keep it bounded. The Kubernetes ConfigMap exports metrics every 2s and batches spans on a 1s schedule, and 5 operations guides cover this path.</p></div>
+        <div className="section-heading"><Badge variant="secondary">Operations</Badge><h2>Can you inspect it while it runs?</h2><p>Startup order comes from health checks. LGTM receives traces, metrics and logs. Recovery loops make abandoned work visible and bounded.</p></div>
         <div className="operations-panel">
           <div className="operations-code">
             <span>$ kubectl -n chronoverse get deploy,ds</span>
@@ -313,7 +309,7 @@ export default function Home() {
       <section className="section-shell docs-cta">
         <Badge variant="secondary">Documentation</Badge>
         <h2>Where does the engineering reference live?</h2>
-        <p>{docPages.length} guides and {operationCount} generated API operations are authored in this repository, from MDX and an OpenAPI contract. Both counts are read at build time from docs.config.ts and the contract, so they cannot drift from what ships.</p>
+        <p>The guides, the OpenAPI contract, the navigation, the link checks and this site are all authored in this repository and deployed together.</p>
         <div className="hero-actions"><Button asChild size="lg"><Link href="/docs">Open documentation<ArrowRight data-icon="inline-end" /></Link></Button><Button asChild size="lg" variant="outline"><Link href="/docs/api/reference">Browse the API</Link></Button></div>
       </section>
 

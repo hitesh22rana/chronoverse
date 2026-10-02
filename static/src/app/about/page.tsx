@@ -4,7 +4,6 @@ import { Boxes, Layers, ScrollText, ShieldCheck, User } from "lucide-react";
 import { JsonLd } from "@/components/seo/json-ld";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getOpenApiOperations } from "@/lib/openapi";
 import {
   AUTHOR_NAME,
   AUTHOR_PROFILES,
@@ -14,7 +13,6 @@ import {
   SITE_URL,
   sitePageUrl,
 } from "@/lib/site";
-import { docPages, docsConfig } from "../../../docs.config";
 
 const description = "What Chronoverse is, what it runs on, who maintains it, and how to reach them.";
 const lastUpdated = new Date();
@@ -56,8 +54,6 @@ const facts = [
 ];
 
 export default function AboutPage() {
-  const operationCount = getOpenApiOperations().length;
-
   return (
     <main>
       <JsonLd data={structuredData} />
@@ -95,7 +91,7 @@ export default function AboutPage() {
           <p>Two workflow kinds. A HEARTBEAT workflow is a lightweight check that produces no logs. A CONTAINER workflow runs a Docker workload and can keep its stdout and stderr. Either can run on an interval or on demand, through the same replay-safe lifecycle.</p>
 
           <h2>How is it documented?</h2>
-          <p>{docPages.length} guides across {docsConfig.length} groups, plus {operationCount} HTTP API operations generated from the OpenAPI contract at <code>static/content/openapi.yaml</code>. Navigation, link validation, search and this site all come out of the same <code>npm run build</code>.</p>
+          <p>The guides, the API reference and the OpenAPI contract are authored as MDX in the same repository. Navigation, link validation, search and this site all come out of one build.</p>
 
           <p>Report a defect as an issue on <a href={REPOSITORY_URL}>the repository</a>, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a> the maintainer.</p>
         </article>

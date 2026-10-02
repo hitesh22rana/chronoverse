@@ -46,7 +46,7 @@ export default function PrivacyPage() {
           <p>Your theme choice is kept in local storage under <code>theme</code> so the page does not flash the wrong colours. It stays on your device, and clearing site data removes it.</p>
 
           <h2>The scheduler is a separate thing</h2>
-          <p>Chronoverse is software you run yourself. If you run it, its data handling is whatever you configured &mdash; see <Link href="/docs/deployment/security">Certificates and security</Link> for the defaults.</p>
+          <p>Chronoverse is software you run yourself. If you run it, its data handling is whatever you configured. See <Link href="/docs/deployment/security">Certificates and security</Link> for the defaults.</p>
 
           <p>Questions go to the maintainer: <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
         </article>

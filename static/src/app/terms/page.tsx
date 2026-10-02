@@ -29,30 +29,24 @@ export default function TermsPage() {
   return (
     <main>
       <JsonLd data={structuredData} />
-      <section className="section-shell landing-section">
+      <section className="section-shell utility-section">
         <div className="section-heading">
           <Badge variant="secondary">Terms</Badge>
           <h2>Terms of use.</h2>
-          <p>Chronoverse is MIT licensed software. These notes cover the licence, these pages, and how problems are handled.</p>
+          <p>Short, because the licence already says most of it.</p>
         </div>
 
-        <article className="docs-prose">
-          <h2>The software</h2>
-          <p>Chronoverse is released under the MIT licence. The licence text is the authoritative version, at <a href={`${REPOSITORY_URL}/blob/main/LICENSE`}>LICENSE</a>. In short: you may use, copy, modify, merge, publish, distribute, sublicense and sell the software, and the licence text carries the warranty disclaimer and the conditions on the copyright notice.</p>
-
-          <h2>These pages</h2>
-          <p>The documentation and this site are part of the same repository and carry the same licence. Where a page states a measured value, it states where that value was read from. Values come from the source at build time and can change between releases, so check the commit before relying on one.</p>
+        <article className="docs-prose utility-prose">
+          <h2>The licence</h2>
+          <p>Chronoverse is MIT licensed. The authoritative text is at <a href={`${REPOSITORY_URL}/blob/main/LICENSE`}>LICENSE</a>, and it governs the software, the documentation and this site equally.</p>
 
           <h2>No warranty</h2>
-          <p>The software is provided as is, without warranty of any kind. Running a scheduler that manages your workloads is your responsibility, and you should test changes before they reach anything you care about.</p>
+          <p>The software comes as is, without warranty of any kind. You run a scheduler that manages your own workloads, so test changes before they reach work you care about.</p>
 
-          <h2>Trademarks and attribution</h2>
-          <p>The project name and logo identify this project. Please do not use them to imply that another product comes from this one.</p>
+          <h2>Figures on these pages</h2>
+          <p>A stated figure says where it was read from. Values are counted at build time and can change between releases, so check the commit before relying on one.</p>
 
-          <h2>Problems</h2>
-          <p>Report a defect or request a change as an issue on <a href={REPOSITORY_URL}>the repository</a>. For anything else, <a href={`mailto:${CONTACT_EMAIL}`}>email</a> the maintainer.</p>
-
-          <p>Last updated {lastUpdatedLabel}.</p>
+          <p>Report a defect as an issue on <a href={REPOSITORY_URL}>the repository</a>, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a> the maintainer. Last updated {lastUpdatedLabel}.</p>
         </article>
       </section>
     </main>

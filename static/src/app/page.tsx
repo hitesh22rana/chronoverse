@@ -211,7 +211,6 @@ export default function Home() {
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
             <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
           </div>
-          <p className="byline">Written and maintained by <Link href="/about" rel="author">{AUTHOR_NAME}</Link>. I build the code, the docs and this site, and I answer issues on the repository.</p>
           <div className="hero-command"><Terminal /><code>scripts/k8s/setup.sh --mode production --context &lt;context&gt;</code></div>
         </div>
         <div className="hero-visual" aria-label="Chronoverse engineering status panel">

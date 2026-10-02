@@ -71,7 +71,7 @@ export default function AboutPage() {
   return (
     <main>
       <JsonLd data={structuredData} />
-      <section className="section-shell landing-section">
+      <section className="section-shell utility-section">
         <div className="section-heading">
           <Badge variant="secondary">About</Badge>
           <h2>Who builds Chronoverse.</h2>
@@ -107,7 +107,7 @@ export default function AboutPage() {
           <Card><CardHeader><CardTitle>{docPages.length}</CardTitle></CardHeader><CardContent><CardDescription>guides across {docsConfig.length} documentation groups.</CardDescription></CardContent></Card>
         </div>
 
-        <article className="docs-prose">
+        <article className="docs-prose utility-prose">
           <h2>What is Chronoverse?</h2>
           <p>Chronoverse runs scheduled and manual workflows across a Docker-backed execution fleet. It gives you 8 capabilities, from interval-based and on-demand runs through to live logs, retained search, analytics and notifications. The design assumes at-least-once delivery: messages repeat, processes restart, and ownership expires. Correctness comes from idempotency keys, a transactional outbox, workflow generations, deterministic event keys, durable leases and partition-aware Kafka commits.</p>
 

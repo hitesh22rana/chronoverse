@@ -30,33 +30,27 @@ export default function PrivacyPage() {
   return (
     <main>
       <JsonLd data={structuredData} />
-      <section className="section-shell landing-section">
+      <section className="section-shell utility-section">
         <div className="section-heading">
           <Badge variant="secondary">Privacy</Badge>
           <h2>What this site collects.</h2>
-          <p>Nothing. This page sets out what that means in practice.</p>
+          <p>Nothing worth a policy. Here is what that means.</p>
         </div>
 
-        <article className="docs-prose">
-          <h2>This site is a static export</h2>
-          <p>These pages are pre-rendered HTML served from GitHub Pages. There is no application server behind them, no database, and no account to create.</p>
+        <article className="docs-prose utility-prose">
+          <h2>A static site with no scripts of its own</h2>
+          <p>These pages are pre-rendered HTML from GitHub Pages. No server, no database, no account, no cookies. GitHub keeps its own request logs under the GitHub Terms of Service; this project never sees them.</p>
 
-          <h2>No analytics, no tracking</h2>
-          <p>The site loads no analytics, advertising or tag-manager script. There is no third-party script on any page here.</p>
+          <h2>No analytics</h2>
+          <p>No analytics, advertising or tag manager loads on any page here.</p>
 
-          <h2>One value in your browser storage</h2>
-          <p>Your light or dark theme choice is stored in your browser&rsquo;s local storage under <code>theme</code>, so the site does not flash the wrong theme on your next visit. It never leaves your device, and clearing site data removes it.</p>
+          <h2>One value in local storage</h2>
+          <p>Your theme choice is kept in local storage under <code>theme</code> so the page does not flash the wrong colours. It stays on your device, and clearing site data removes it.</p>
 
-          <h2>Server logs</h2>
-          <p>GitHub serves these files from its own infrastructure and keeps its own request logs. That handling is covered by the GitHub Terms of Service and Privacy Statement, not by this project.</p>
+          <h2>The scheduler is a separate thing</h2>
+          <p>Chronoverse is software you run yourself. If you run it, its data handling is whatever you configured &mdash; see <Link href="/docs/deployment/security">Certificates and security</Link> for the defaults.</p>
 
-          <h2>The Chronoverse application is separate</h2>
-          <p>The scheduler itself is software you run yourself. If you run it, its handling of your data is whatever you configured. Read <Link href="/docs/deployment/security">Certificates and security</Link> for what the defaults are.</p>
-
-          <h2>Questions</h2>
-          <p>Questions about anything on this page go to the maintainer: <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
-
-          <p>Last updated {lastUpdatedLabel}.</p>
+          <p>Questions go to the maintainer: <a href={`mailto:${CONTACT_EMAIL}`}>email</a>. Last updated {lastUpdatedLabel}.</p>
         </article>
       </section>
     </main>

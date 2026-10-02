@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Boxes, Layers, ScrollText, ShieldCheck, User } from "lucide-react";
 
 import { JsonLd } from "@/components/seo/json-ld";
@@ -51,6 +52,12 @@ const structuredData = {
   ],
 };
 
+const profileNames = AUTHOR_PROFILES.reduce<ReactNode[]>((nodes, profile, index) => {
+  if (index > 0) nodes.push(index === AUTHOR_PROFILES.length - 1 ? " and " : ", ");
+  nodes.push(<a href={profile.url} key={profile.url} rel="me noopener" target="_blank">{profile.name}</a>);
+  return nodes;
+}, []);
+
 const facts = [
   { icon: Boxes, label: "Runtime", text: "Docker containers execute on runtime nodes that register with the platform. Kubernetes is the supported production orchestrator." },
   { icon: Layers, label: "Storage", text: "PostgreSQL holds transactional state, idempotency records, outbox rows and leases. ClickHouse retains logs and Meilisearch indexes them." },
@@ -80,6 +87,7 @@ export default function AboutPage() {
               {AUTHOR_PROFILES.map((profile) => (
                 <Button asChild key={profile.name} variant="outline"><a href={profile.url} rel="me noopener" target="_blank">{profile.name}</a></Button>
               ))}
+              <Button asChild variant="outline"><a href={`mailto:${CONTACT_EMAIL}`}>Email</a></Button>
             </div>
           </div>
           <ul className="about-facts">
@@ -107,7 +115,7 @@ export default function AboutPage() {
           <p>The reference is authored as MDX in the repository: {docPages.length} guides across {docsConfig.length} groups, plus {operationCount} HTTP API operations generated from the OpenAPI contract at <code>static/content/openapi.yaml</code>. Navigation, link validation, search and this site all come out of the same <code>npm run build</code>.</p>
 
           <h2>How do I get in touch?</h2>
-          <p>Open an issue on the <a href={REPOSITORY_URL}>repository</a> for bugs and features, find {AUTHOR_NAME} on GitHub, LinkedIn and X, or email <a href={`mailto:${CONTACT_EMAIL}`}>{AUTHOR_NAME}</a>.</p>
+          <p>Open an issue on the <a href={REPOSITORY_URL}>repository</a> for bugs and features, find {AUTHOR_NAME} on {profileNames}, or email <a href={`mailto:${CONTACT_EMAIL}`}>{AUTHOR_NAME}</a>.</p>
 
           <p>Last updated {lastUpdatedLabel}.</p>
         </article>

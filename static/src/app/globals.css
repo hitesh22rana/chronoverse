@@ -182,7 +182,7 @@ svg { flex: none; }
 .eyebrow { display: flex; align-items: center; gap: .5rem; color: var(--primary); font-family: "SFMono-Regular", Consolas, monospace; text-transform: uppercase; letter-spacing: .1em; font-size: .72rem; }
 .eyebrow svg { width: 1rem; }
 .engineering-split h3, .reliability-intro h3 { margin: 1.2rem 0; font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1.05; letter-spacing: -.05em; }
-.about-meta { max-width: 860px; display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 1.5rem; margin: 2.5rem 0 0; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+.about-meta { display: flex; align-items: baseline; gap: .75rem; margin: 2.5rem 0 0; padding-top: 1.25rem; border-top: 1px solid var(--border); }
 .about-meta dt { margin: 0; color: var(--primary); font-family: "SFMono-Regular", Consolas, monospace; text-transform: uppercase; letter-spacing: .1em; font-size: .72rem; }
 .about-meta dd { margin: 0; font-size: .95rem; }
 .about-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem 3rem; list-style: none; margin: 2.5rem 0 0; padding: 0; }

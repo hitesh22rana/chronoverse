@@ -1,0 +1,30 @@
+# Response headers for static hosts that support this file.
+#
+# Cloudflare Pages and Netlify both read `_headers` from the root of the publish
+# directory, so this file is inert on GitHub Pages (which serves it as an
+# ordinary file and cannot set headers) and takes effect the moment the site is
+# deployed to either of those. No code change is needed at that point.
+#
+# X-Frame-Options is kept alongside the CSP `frame-ancestors` directive, which a
+# <meta http-equiv> policy cannot enforce. Both are deliberate: the header covers
+# older browsers, frame-ancestors covers the modern ones.
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), geolocation=(), microphone=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31556952; includeSubDomains
+
+# Content-Security-Policy is deliberately not repeated here. It is currently
+# delivered by the <meta http-equiv> tag in static/src/app/layout.tsx, which every
+# host honours. When the site moves off GitHub Pages, move that policy into this
+# file and delete the meta tag in the same commit. Do not leave both: a response
+# header overrides the meta tag, so a stale copy here would silently undo any
+# tightening done in the component.
+#
+# The `preload` directive is also omitted on purpose. It is not something a file
+# can opt into: a domain must be submitted to the browser preload list by hand,
+# and removal is effectively irreversible. On github.io it is not available at
+# all, since that is a shared domain. Treat it as a decision for a custom domain
+# you control.

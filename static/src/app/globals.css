@@ -182,9 +182,11 @@ svg { flex: none; }
 .eyebrow { display: flex; align-items: center; gap: .5rem; color: var(--primary); font-family: "SFMono-Regular", Consolas, monospace; text-transform: uppercase; letter-spacing: .1em; font-size: .72rem; }
 .eyebrow svg { width: 1rem; }
 .engineering-split h3, .reliability-intro h3 { margin: 1.2rem 0; font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1.05; letter-spacing: -.05em; }
-.about-facts { max-width: 860px; list-style: none; margin: 2.5rem 0 0; padding: 0; }
-.about-facts > li { display: grid; grid-template-columns: 1.25rem 1fr; align-items: center; gap: 1rem; padding: 1.35rem 0; border-bottom: 1px solid var(--border); }
-.about-facts > li:last-child { border-bottom: 0; }
+.about-meta { max-width: 860px; display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 1.5rem; margin: 2.5rem 0 0; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+.about-meta dt { margin: 0; color: var(--primary); font-family: "SFMono-Regular", Consolas, monospace; text-transform: uppercase; letter-spacing: .1em; font-size: .72rem; }
+.about-meta dd { margin: 0; font-size: .95rem; }
+.about-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem 3rem; list-style: none; margin: 2.5rem 0 0; padding: 0; }
+.about-facts > li { display: grid; grid-template-columns: 1.25rem 1fr; align-items: center; gap: 1rem; }
 .about-facts > li > svg { width: 1.25rem; height: 1.25rem; color: var(--primary); }
 .about-facts p { margin: 0; color: var(--muted-foreground); line-height: 1.65; text-wrap: pretty; }
 .execution-timeline { list-style: none; margin: 0; padding: 0; }
@@ -374,7 +376,7 @@ svg { flex: none; }
   .hero-command svg { margin-top: .15rem; }
   .hero-command code { white-space: pre-wrap; overflow-wrap: anywhere; text-overflow: clip; }
   .hero-console { grid-template-columns: 1fr 1fr; }
-  .capability-grid, .infra-grid, .reliability-list, .doc-card-grid { grid-template-columns: 1fr; }
+  .capability-grid, .infra-grid, .reliability-list, .doc-card-grid, .about-facts { grid-template-columns: 1fr; }
   .landing-section { padding-block: 5rem; }
   .section-heading h2, .docs-cta h2 { font-size: 2.65rem; }
   .docs-cta { padding-block: 5rem; padding-top: 0; }

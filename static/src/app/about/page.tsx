@@ -59,8 +59,13 @@ export default function AboutPage() {
         <div className="section-heading">
           <Badge variant="secondary">About</Badge>
           <h2>What Chronoverse is.</h2>
-          <p>It schedules heartbeat checks and container workloads on infrastructure you control. The scheduler, the dashboard, the documentation and this site are built and released from one repository, maintained by {AUTHOR_NAME}.</p>
+          <p>It schedules heartbeat checks and container workloads on infrastructure you control. The scheduler, the dashboard, the documentation and this site are built and released from one repository.</p>
         </div>
+
+        <dl className="about-meta">
+          <dt>Maintainer</dt>
+          <dd>{AUTHOR_NAME}</dd>
+        </dl>
 
         <ul className="about-facts">
           {facts.map(({ icon: Icon, label, text }) => (

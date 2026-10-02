@@ -50,7 +50,7 @@ export default function TermsPage() {
           <p>The project name and logo identify this project. Please do not use them to imply that another product comes from this one.</p>
 
           <h2>Problems</h2>
-          <p>Report a defect or request a change as an issue on <a href={REPOSITORY_URL}>the repository</a>. For anything else, email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+          <p>Report a defect or request a change as an issue on <a href={REPOSITORY_URL}>the repository</a>. For anything else, <a href={`mailto:${CONTACT_EMAIL}`}>email</a> the maintainer.</p>
 
           <p>Last updated {lastUpdatedLabel}.</p>
         </article>

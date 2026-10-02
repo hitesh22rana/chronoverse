@@ -23,6 +23,7 @@ import Link from "next/link";
 import { ArchitectureMap } from "@/components/architecture-map";
 import { GitHubMark } from "@/components/github-mark";
 import { JsonLd } from "@/components/seo/json-ld";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -321,16 +322,17 @@ export default function Home() {
         <div className="hero-actions"><Button asChild size="lg"><Link href="/docs">Open documentation<ArrowRight data-icon="inline-end" /></Link></Button><Button asChild size="lg" variant="outline"><Link href="/docs/api/reference">Browse the API</Link></Button></div>
       </section>
 
-      <section className="section-shell landing-section" id="faq">
+      <Separator className="section-rule" />
+      <section className="section-shell landing-section faq-section" id="faq">
         <div className="section-heading"><Badge variant="secondary">FAQ</Badge><h2>Questions readers ask first.</h2><p>Short answers, taken from the configuration reference and the source.</p></div>
-        <div className="faq-list">
-          {faq.map(({ question, answer }) => (
-            <div key={question}>
-              <h3>{question}</h3>
-              <p>{answer}</p>
-            </div>
+        <Accordion className="faq-accordion" collapsible defaultValue="lease" type="single">
+          {faq.map(({ question, answer }, index) => (
+            <AccordionItem key={question} value={["lease", "retention", "runs", "needs", "licence"][index]}>
+              <AccordionTrigger>{question}</AccordionTrigger>
+              <AccordionContent>{answer}</AccordionContent>
+            </AccordionItem>
           ))}
-        </div>
+        </Accordion>
       </section>
     </main>
   );

@@ -54,7 +54,7 @@ export default function PrivacyPage() {
           <p>The scheduler itself is software you run yourself. If you run it, its handling of your data is whatever you configured. Read <Link href="/docs/deployment/security">Certificates and security</Link> for what the defaults are.</p>
 
           <h2>Questions</h2>
-          <p>Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+          <p>Questions about anything on this page go to the maintainer: <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
 
           <p>Last updated {lastUpdatedLabel}.</p>
         </article>

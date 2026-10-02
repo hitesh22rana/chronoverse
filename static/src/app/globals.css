@@ -170,12 +170,11 @@ svg { flex: none; }
 .about-split > div > .eyebrow + h2 { margin-top: 1rem; }
 .about-links { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 2rem; }
 .about-links [data-slot="button"] { min-width: 7.5rem; }
-.about-facts { margin: 0; }
-.about-facts > div { display: flex; gap: .75rem; padding: 1.1rem 0; border-bottom: 1px solid var(--border); }
-.about-facts > div:last-child { border-bottom: 0; }
-.about-facts > div > svg { width: 1rem; margin-top: .2rem; flex: none; color: var(--primary); }
-.about-facts dt { margin: 0; font-size: .72rem; color: var(--primary); font-family: "SFMono-Regular", Consolas, monospace; text-transform: uppercase; letter-spacing: .1em; }
-.about-facts dd { margin: .35rem 0 0; color: var(--muted-foreground); line-height: 1.65; text-wrap: pretty; }
+.about-facts { list-style: none; margin: 0; padding: 0; }
+.about-facts > li { display: grid; grid-template-columns: 1.25rem 1fr; gap: 1rem; padding: 1.35rem 0; border-bottom: 1px solid var(--border); }
+.about-facts > li:last-child { border-bottom: 0; }
+.about-facts > li > svg { width: 1.25rem; height: 1.25rem; color: var(--primary); }
+.about-facts p { margin: 0; color: var(--muted-foreground); line-height: 1.65; text-wrap: pretty; }
 .execution-timeline { list-style: none; margin: 0; padding: 0; }
 .execution-timeline li { display: grid; grid-template-columns: 3rem 1fr; gap: 1rem; padding: 1.35rem 0; border-bottom: 1px solid var(--border); }
 .execution-timeline > li > span { color: var(--primary); font-family: "SFMono-Regular", Consolas, monospace; }
@@ -235,6 +234,7 @@ svg { flex: none; }
 .docs-title h1 { margin: 0; font-size: clamp(2.5rem, 5vw, 4.2rem); line-height: 1; letter-spacing: -.06em; overflow-wrap: anywhere; }
 .docs-title p { max-width: 680px; margin: 1rem 0 0; color: var(--muted-foreground); font-size: 1.05rem; line-height: 1.65; overflow-wrap: anywhere; }
 .docs-prose { min-width: 0; max-width: 100%; font-size: .98rem; line-height: 1.8; }
+.docs-prose + .hero-actions { margin-top: 3.5rem; }
 .docs-prose > *, .docs-prose li > *, .docs-prose [data-slot="card"] { min-width: 0; max-width: 100%; }
 .docs-prose h2 { margin: 3.5rem 0 1rem; scroll-margin-top: 6rem; font-size: 1.7rem; letter-spacing: -.035em; }
 .docs-prose h3 { margin: 2.4rem 0 .75rem; scroll-margin-top: 6rem; font-size: 1.15rem; }

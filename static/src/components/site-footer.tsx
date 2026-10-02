@@ -18,7 +18,7 @@ export function SiteFooter() {
         </nav>
         <nav aria-label="Author profiles">
           {AUTHOR_PROFILES.map((profile) => <a key={profile.name} href={profile.url} rel="me noopener" target="_blank">{profile.name}</a>)}
-          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+          <a href={`mailto:${CONTACT_EMAIL}`}>Email</a>
         </nav>
         <p className="copyright">© {new Date().getFullYear()} Chronoverse · Last updated {lastUpdated}</p>
       </div>

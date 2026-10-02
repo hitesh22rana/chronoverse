@@ -3,7 +3,6 @@ import {
   ArrowRight,
   Bell,
   Boxes,
-  Braces,
   ChartNoAxesCombined,
   CheckCircle2,
   Container,
@@ -312,11 +311,8 @@ export default function Home() {
       </section>
 
       <section className="section-shell docs-cta">
-        <div>
-          <Braces />
-          <span>{docPages.length} authored guides · {operationCount} generated API operations · static HTML</span>
-        </div>
-<h2>Where does the engineering reference live?</h2>
+        <Badge variant="secondary">Documentation</Badge>
+        <h2>Where does the engineering reference live?</h2>
         <p>{docPages.length} guides and {operationCount} generated API operations are authored in this repository, from MDX and an OpenAPI contract. Both counts are read at build time from docs.config.ts and the contract, so they cannot drift from what ships.</p>
         <div className="hero-actions"><Button asChild size="lg"><Link href="/docs">Open documentation<ArrowRight data-icon="inline-end" /></Link></Button><Button asChild size="lg" variant="outline"><Link href="/docs/api/reference">Browse the API</Link></Button></div>
       </section>

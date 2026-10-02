@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import { Boxes, Layers, ScrollText, ShieldCheck, User } from "lucide-react";
 
 import { JsonLd } from "@/components/seo/json-ld";
@@ -17,7 +16,7 @@ import {
 } from "@/lib/site";
 import { docPages, docsConfig } from "../../../docs.config";
 
-const description = "Who builds Chronoverse, what it runs on, and how to reach the maintainer.";
+const description = "What Chronoverse is, what it runs on, who maintains it, and how to reach them.";
 const lastUpdated = new Date();
 
 export const metadata: Metadata = {
@@ -49,12 +48,6 @@ const structuredData = {
   ],
 };
 
-const profileNames = AUTHOR_PROFILES.reduce<ReactNode[]>((nodes, profile, index) => {
-  if (index > 0) nodes.push(index === AUTHOR_PROFILES.length - 1 ? " and " : ", ");
-  nodes.push(<a href={profile.url} key={profile.url} rel="me noopener" target="_blank">{profile.name}</a>);
-  return nodes;
-}, []);
-
 const facts = [
   { icon: Boxes, label: "Runtime", text: "Docker containers run on runtime nodes that register with the platform. Kubernetes is the supported production orchestrator." },
   { icon: Layers, label: "Storage", text: "PostgreSQL holds transactional state, idempotency records, outbox rows and leases. ClickHouse retains logs, and Meilisearch indexes them." },
@@ -71,15 +64,15 @@ export default function AboutPage() {
       <section className="section-shell utility-section">
         <div className="section-heading">
           <Badge variant="secondary">About</Badge>
-          <h2>Who builds Chronoverse.</h2>
-          <p>{AUTHOR_NAME} writes the code, the documentation and this site. Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads, written in Go and TypeScript.</p>
+          <h2>What Chronoverse is.</h2>
+          <p>It schedules heartbeat checks and container workloads on infrastructure you control. The scheduler, the dashboard, the documentation and this site are built and released from one repository.</p>
         </div>
 
         <div className="about-split">
           <div>
             <div className="eyebrow"><User /> Maintainer</div>
-            <h2>One author, one repository.</h2>
-            <p>The source, the docs and this site sit in the same repository, and the figures quoted across this site are read from it at build time.</p>
+            <h2>Who maintains it.</h2>
+            <p>{AUTHOR_NAME}, who writes the code, the documentation and this site. Every figure quoted across this site is read from the source at build time.</p>
             <div className="about-links">
               {AUTHOR_PROFILES.map((profile) => (
                 <Button asChild key={profile.name} variant="outline"><a href={profile.url} rel="me noopener" target="_blank">{profile.name}</a></Button>
@@ -104,7 +97,7 @@ export default function AboutPage() {
           <h2>How is it documented?</h2>
           <p>{docPages.length} guides across {docsConfig.length} groups, plus {operationCount} HTTP API operations generated from the OpenAPI contract at <code>static/content/openapi.yaml</code>. Navigation, link validation, search and this site all come out of the same <code>npm run build</code>.</p>
 
-          <p>Report a defect as an issue on <a href={REPOSITORY_URL}>the repository</a>, find {AUTHOR_NAME} on {profileNames}, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a>.</p>
+          <p>Report a defect as an issue on <a href={REPOSITORY_URL}>the repository</a>, or <a href={`mailto:${CONTACT_EMAIL}`}>email</a> the maintainer.</p>
         </article>
       </section>
     </main>

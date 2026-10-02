@@ -14,8 +14,9 @@ export function SiteHeader() {
           <SearchTrigger compact />
           <ThemeToggle />
           <Button asChild className="github-link" size="icon" variant="ghost">
-            <a href={REPOSITORY_URL} target="_blank" rel="noreferrer" aria-label="Open GitHub repository">
+            <a href={REPOSITORY_URL} target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository">
               <GitHubMark data-icon="inline-start" />
+              <span className="sr-only">GitHub repository</span>
             </a>
           </Button>
         </div>

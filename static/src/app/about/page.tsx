@@ -32,7 +32,7 @@ const structuredData = {
       url: sitePageUrl("/about"),
       datePublished: SITE_PUBLISHED,
       dateModified: lastUpdated.toISOString(),
-      mainEntity: { "@id": `${SITE_URL}/#organization` },
+      mainEntity: { "@type": "Organization", "@id": `${SITE_URL}/#organization` },
     },
     {
       "@type": "BreadcrumbList",

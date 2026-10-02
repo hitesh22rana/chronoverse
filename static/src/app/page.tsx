@@ -102,6 +102,11 @@ const organization = {
   },
 };
 
+const personRef = { "@type": "Person", "@id": author["@id"] } as const;
+const organizationRef = { "@type": "Organization", "@id": organization["@id"] } as const;
+const websiteRef = { "@type": "WebSite", "@id": `${SITE_URL}/#website` } as const;
+const imageRef = { "@type": "ImageObject", "@id": `${SITE_URL}/#primaryimage` } as const;
+
 const faq = [
   {
     question: "What does Chronoverse actually run?",
@@ -140,8 +145,8 @@ const structuredData = {
       runtimePlatform: ["Docker", "Kubernetes"],
       datePublished: SITE_PUBLISHED,
       dateModified: lastUpdated.toISOString(),
-      author: { "@id": author["@id"] },
-      maintainer: { "@id": organization["@id"] },
+      author: personRef,
+      maintainer: organizationRef,
     },
     {
       "@type": "WebPage",
@@ -149,11 +154,11 @@ const structuredData = {
       name: "Chronoverse",
       description: "Reliable scheduled work, on infrastructure you control.",
       url: sitePageUrl(),
-      isPartOf: { "@id": `${SITE_URL}/#website` },
-      primaryImageOfPage: { "@id": `${SITE_URL}/#primaryimage` },
+      isPartOf: websiteRef,
+      primaryImageOfPage: imageRef,
       datePublished: SITE_PUBLISHED,
       dateModified: lastUpdated.toISOString(),
-      author: { "@id": author["@id"] },
+      author: personRef,
       inLanguage: "en",
     },
     {
@@ -162,7 +167,7 @@ const structuredData = {
       name: "Chronoverse",
       url: SITE_URL,
       description: "Documentation and project site for Chronoverse, a self-hosted distributed scheduler.",
-      publisher: { "@id": organization["@id"] },
+      publisher: organizationRef,
       inLanguage: "en",
     },
     {
@@ -204,7 +209,7 @@ export default function Home() {
           <p>Chronoverse is a self-hosted scheduler for heartbeat checks and container workloads. Go services and Kafka workers sit behind it, state lives in PostgreSQL, and every run leaves a trail you can inspect.</p>
           <div className="hero-actions">
             <Button asChild size="lg"><Link href="/docs/quickstart">Read the docs<ArrowRight data-icon="inline-end" /></Link></Button>
-            <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
+            <Button asChild size="lg" variant="outline"><a href={REPOSITORY_URL} target="_blank" rel="noopener noreferrer"><GitHubMark data-icon="inline-start" />View source</a></Button>
           </div>
           <div className="hero-command"><Terminal /><code>scripts/k8s/setup.sh --mode production --context &lt;context&gt;</code></div>
         </div>

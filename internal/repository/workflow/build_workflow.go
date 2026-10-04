@@ -42,8 +42,6 @@ var transientBuildRetryErrorCodes = []codes.Code{
 }
 
 // buildWorkflow executes the build workflow.
-//
-//nolint:gocyclo // Ignore the cyclomatic complexity as it is required for the workflow execution
 func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *workflowsmodel.WorkflowEvent) error {
 	workflowID := workflowEvent.ID
 	occurrenceKey := workflowOccurrenceKey(workflowEvent)
@@ -122,60 +120,12 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return err
 	}
 
-	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytesWithKey(
-		idempotency.WorkflowAnalyticsEventKey(workflowID),
-		workflow.GetUserId(),
-		workflowID,
-		analyticsmodel.EventTypeWorkflows,
-		&analyticsmodel.EventTypeWorkflowsData{
-			Kind: workflow.GetKind(),
-		},
-	)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to marshal analytic event: %v", err)
-	}
-
-	record := &kgo.Record{
-		Topic: kafka.TopicAnalytics,
-		Key:   []byte(workflowID),
-		Value: analyticEventBytes,
-	}
-	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
-		return status.Errorf(codes.Unavailable, "failed to publish workflow analytics event: %v", err)
+	if err = r.publishWorkflowBuildAnalytics(ctx, workflowID, workflow); err != nil {
+		return err
 	}
 
 	if !isBuildStepRequired(workflow.GetKind()) {
-		scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
-			ctx,
-			workflowID,
-			workflow.GetUserId(),
-			workflowEvent.Generation,
-			scheduleIdempotencyKey,
-			workflowEvent,
-			"",
-			"",
-		)
-		if _err != nil {
-			return _err
-		}
-		if !scheduled {
-			return nil
-		}
-
-		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
-		go r.sendNotification(
-			notificationCtx,
-			scheduledWorkflow.GetUserId(),
-			workflowID,
-			"",
-			"Workflow Build Skipped",
-			fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", scheduledWorkflow.GetName()),
-			notificationsmodel.KindWebInfo.ToString(),
-			notificationsmodel.EntityWorkflow.ToString(),
-			occurrenceKey,
-		)
-
-		return nil
+		return r.completeSkippedWorkflowBuild(ctx, notificationCtx, workflow, workflowEvent, scheduleIdempotencyKey, occurrenceKey)
 	}
 
 	var (
@@ -245,40 +195,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	notificationCtx, _ = r.withAuthorization(context.Background())
 
 	if workflowErr != nil {
-		if isTransientBuildRetryError(workflowErr) {
-			return workflowErr
-		}
-
-		updated, _err = r.updateWorkflowBuildStatus(
-			ctx,
-			workflowID,
-			workflow.GetUserId(),
-			workflowsmodel.WorkflowBuildStatusFailed.ToString(),
-			workflowEvent.Generation,
-			"",
-			"",
-		)
-		if _err != nil {
-			return _err
-		}
-		if !updated {
-			return nil
-		}
-
-		//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
-		go r.sendNotification(
-			notificationCtx,
-			workflow.GetUserId(),
-			workflowID,
-			"",
-			"Workflow Build Failed",
-			fmt.Sprintf("Build process for workflow '%s' has failed.", workflow.GetName()),
-			notificationsmodel.KindWebAlert.ToString(),
-			notificationsmodel.EntityWorkflow.ToString(),
-			occurrenceKey,
-		)
-
-		return workflowErr
+		return r.handleWorkflowBuildFailure(ctx, notificationCtx, workflow, workflowEvent, occurrenceKey, workflowErr)
 	}
 
 	scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
@@ -298,32 +215,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return nil
 	}
 
-	// Best-effort fan-out: warm up to MaxFanout other READY nodes off the critical path.
-	// Execution-time Ensure is the correctness fallback, so prefetch never fails the build.
-	// Prefetch the immutable digest (what the executor Ensures), not the mutable tag.
-	prefetchImage := resolvedImageDigest
-	if prefetchImage == "" {
-		prefetchImage = resolvedImageRef
-	}
-	if r.svc.ImagePrefetch.Enabled && prefetchImage != "" {
-		authCtx, authErr := r.withAuthorization(context.WithoutCancel(parentCtx))
-		if authErr != nil {
-			loggerpkg.FromContext(parentCtx).Warn("image prefetch: authorization failed",
-				zap.String("workflow_id", workflowID),
-				zap.Error(authErr),
-			)
-		} else {
-			timeout := r.svc.ImagePrefetch.Timeout
-			if timeout <= 0 {
-				timeout = defaultImagePrefetchTimeout
-			}
-			prefetchCtx, cancel := context.WithTimeout(authCtx, timeout)
-			go func() {
-				defer cancel()
-				r.prefetchImageToNodes(prefetchCtx, prefetchImage, warmedNodeID)
-			}()
-		}
-	}
+	r.startImagePrefetch(parentCtx, workflowID, resolvedImageRef, resolvedImageDigest, warmedNodeID)
 
 	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
 	go r.sendNotification(
@@ -512,4 +404,144 @@ func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNode
 		}()
 	}
 	wg.Wait()
+}
+
+func (r *Repository) publishWorkflowBuildAnalytics(ctx context.Context, workflowID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
+	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytesWithKey(
+		idempotency.WorkflowAnalyticsEventKey(workflowID),
+		workflow.GetUserId(),
+		workflowID,
+		analyticsmodel.EventTypeWorkflows,
+		&analyticsmodel.EventTypeWorkflowsData{
+			Kind: workflow.GetKind(),
+		},
+	)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal analytic event: %v", err)
+	}
+
+	record := &kgo.Record{
+		Topic: kafka.TopicAnalytics,
+		Key:   []byte(workflowID),
+		Value: analyticEventBytes,
+	}
+	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+		return status.Errorf(codes.Unavailable, "failed to publish workflow analytics event: %v", err)
+	}
+
+	return nil
+}
+
+func (r *Repository) startImagePrefetch(parentCtx context.Context, workflowID, resolvedImageRef, resolvedImageDigest, warmedNodeID string) {
+	// Best-effort fan-out: warm up to MaxFanout other READY nodes off the critical path.
+	// Execution-time Ensure is the correctness fallback, so prefetch never fails the build.
+	// Prefetch the immutable digest (what the executor Ensures), not the mutable tag.
+	prefetchImage := resolvedImageDigest
+	if prefetchImage == "" {
+		prefetchImage = resolvedImageRef
+	}
+	if r.svc.ImagePrefetch.Enabled && prefetchImage != "" {
+		authCtx, authErr := r.withAuthorization(context.WithoutCancel(parentCtx))
+		if authErr != nil {
+			loggerpkg.FromContext(parentCtx).Warn("image prefetch: authorization failed",
+				zap.String("workflow_id", workflowID),
+				zap.Error(authErr),
+			)
+		} else {
+			timeout := r.svc.ImagePrefetch.Timeout
+			if timeout <= 0 {
+				timeout = defaultImagePrefetchTimeout
+			}
+			prefetchCtx, cancel := context.WithTimeout(authCtx, timeout)
+			go func() {
+				defer cancel()
+				r.prefetchImageToNodes(prefetchCtx, prefetchImage, warmedNodeID)
+			}()
+		}
+	}
+
+}
+
+func (r *Repository) handleWorkflowBuildFailure(
+	ctx, notificationCtx context.Context,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	workflowEvent *workflowsmodel.WorkflowEvent,
+	occurrenceKey string,
+	workflowErr error,
+) error {
+	workflowID := workflowEvent.ID
+	if isTransientBuildRetryError(workflowErr) {
+		return workflowErr
+	}
+
+	updated, updateErr := r.updateWorkflowBuildStatus(
+		ctx,
+		workflowID,
+		workflow.GetUserId(),
+		workflowsmodel.WorkflowBuildStatusFailed.ToString(),
+		workflowEvent.Generation,
+		"",
+		"",
+	)
+	if updateErr != nil {
+		return updateErr
+	}
+	if !updated {
+		return nil
+	}
+
+	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
+	go r.sendNotification(
+		notificationCtx,
+		workflow.GetUserId(),
+		workflowID,
+		"",
+		"Workflow Build Failed",
+		fmt.Sprintf("Build process for workflow '%s' has failed.", workflow.GetName()),
+		notificationsmodel.KindWebAlert.ToString(),
+		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
+	)
+
+	return workflowErr
+}
+
+func (r *Repository) completeSkippedWorkflowBuild(
+	ctx, notificationCtx context.Context,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	workflowEvent *workflowsmodel.WorkflowEvent,
+	scheduleIdempotencyKey, occurrenceKey string,
+) error {
+	workflowID := workflowEvent.ID
+	scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
+		ctx,
+		workflowID,
+		workflow.GetUserId(),
+		workflowEvent.Generation,
+		scheduleIdempotencyKey,
+		workflowEvent,
+		"",
+		"",
+	)
+	if _err != nil {
+		return _err
+	}
+	if !scheduled {
+		return nil
+	}
+
+	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
+	go r.sendNotification(
+		notificationCtx,
+		scheduledWorkflow.GetUserId(),
+		workflowID,
+		"",
+		"Workflow Build Skipped",
+		fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", scheduledWorkflow.GetName()),
+		notificationsmodel.KindWebInfo.ToString(),
+		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
+	)
+
+	return nil
 }

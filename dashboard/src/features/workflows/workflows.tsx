@@ -50,6 +50,10 @@ import type { Workflow } from "@/features/workflows/types"
 import { cn } from "@/lib/utils"
 
 export function Workflows() {
+    return renderWorkflowsView(useWorkflowsModel())
+}
+
+function useWorkflowsModel() {
     const [isSearchPending, startSearchTransition] = useTransition()
     const [isFiltersOpen, setIsFiltersOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
@@ -75,7 +79,7 @@ export function Workflows() {
         clearAllFilters,
         pagination,
         refetch,
-        refetchLoading
+        refetchLoading,
     } = useWorkflows({ poll: true })
 
     const [searchInput, setSearchInput] = useState(searchQuery)
@@ -140,12 +144,7 @@ export function Workflows() {
         setIsFiltersOpen(false)
     }
 
-    const activeFiltersCount = [
-        statusFilter,
-        kindFilter,
-        intervalMin,
-        intervalMax,
-    ].filter(Boolean).length
+    const activeFiltersCount = [statusFilter, kindFilter, intervalMin, intervalMax].filter(Boolean).length
 
     const isRangeInvalid = isIntervalRangeInvalid(filterState.intervalMin, filterState.intervalMax)
 
@@ -161,7 +160,7 @@ export function Workflows() {
         }
     }
 
-    return renderWorkflowsView({
+    return {
         searchInput,
         setSearchInput,
         setIsSearchFocused,
@@ -182,10 +181,23 @@ export function Workflows() {
         pagination,
         workflows,
         searchQuery,
-    })
+    }
 }
 
-function renderWorkflowsView(model: any) {
+function renderWorkflowsView(model: ReturnType<typeof useWorkflowsModel>) {
+
+
+    return (
+        <div className="mt-8 flex min-h-0 w-full flex-1 flex-col">
+            {renderWorkflowListControls(model)}
+
+            {renderWorkflowListResults(model)}
+        </div>
+    )
+}
+
+
+function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView>[0]) {
     const {
         searchInput,
         setSearchInput,
@@ -205,39 +217,36 @@ function renderWorkflowsView(model: any) {
         isLoading,
         refetchLoading,
         pagination,
-        workflows,
-        searchQuery,
     } = model
-
     return (
-        <div className="mt-8 flex min-h-0 w-full flex-1 flex-col">
-            <div className="space-y-4 mb-4">
-                <div className="flex flex-row h-full w-full items-center justify-between gap-4">
-                    <div className="relative flex w-full">
-                        <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-                        <Input
-                            id="workflow-search"
-                            placeholder="Search workflows...(Ctrl+F)"
-                            value={searchInput}
-                            onChange={e => setSearchInput(e.target.value)}
-                            onFocus={() => setIsSearchFocused(true)}
-                            onBlur={() => setIsSearchFocused(false)}
-                            className="w-full pl-9 h-9"
+        <div className="space-y-4 mb-4">
+            <div className="flex flex-row h-full w-full items-center justify-between gap-4">
+                <div className="relative flex w-full">
+                    <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+                    <Input
+                        id="workflow-search"
+                        placeholder="Search workflows...(Ctrl+F)"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setIsSearchFocused(false)}
+                        className="w-full pl-9 h-9"
+                    />
+                    {isSearchPending ? (
+                        <Loader2
+                            className={cn(
+                                "absolute right-2.5 top-2.5 cursor-pointer animate-spin",
+                                "size-4 text-muted-foreground hover:text-foreground",
+                            )}
+                            role="progressbar"
+                            aria-label="spinner"
                         />
-                        {isSearchPending ? (
-                            <Loader2
-                                className={cn(
-                                    "absolute right-2.5 top-2.5 cursor-pointer animate-spin",
-                                    "size-4 text-muted-foreground hover:text-foreground"
-                                )}
-                                role="progressbar"
-                                aria-label="spinner"
-                            />
-                        ) : (searchInput || activeFiltersCount > 0) && (
+                    ) : (
+                        (searchInput || activeFiltersCount > 0) && (
                             <X
                                 className={cn(
                                     "absolute right-2.5 top-2.5 cursor-pointer",
-                                    "size-4 text-muted-foreground hover:text-foreground"
+                                    "size-4 text-muted-foreground hover:text-foreground",
                                 )}
                                 onClick={() => {
                                     setSearchInput("")
@@ -246,217 +255,246 @@ function renderWorkflowsView(model: any) {
                                 role="button"
                                 aria-label="Clear search and filters"
                             />
-                        )}
-                    </div>
+                        )
+                    )}
+                </div>
 
-                    <div className="flex items-center gap-2 justify-end">
-                        <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
-                            <PopoverTrigger asChild>
-                                <Button variant="outline" className="relative h-9">
-                                    <Filter className="size-3" />
-                                    <span className="sm:not-sr-only sr-only">
-                                        Filters
-                                    </span>
+                <div className="flex items-center gap-2 justify-end">
+                    <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
+                        <PopoverTrigger asChild>
+                            <Button variant="outline" className="relative h-9">
+                                <Filter className="size-3" />
+                                <span className="sm:not-sr-only sr-only">Filters</span>
+                                {activeFiltersCount > 0 && (
+                                    <Badge
+                                        variant="secondary"
+                                        className="absolute -right-1 -top-1.5 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
+                                    >
+                                        {activeFiltersCount}
+                                    </Badge>
+                                )}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="max-w-xs w-full m-2" align="center">
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="font-medium">Filter by</h4>
                                     {activeFiltersCount > 0 && (
-                                        <Badge
-                                            variant="secondary"
-                                            className="absolute -right-1 -top-1.5 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={handleClearFilters}
+                                            className="h-8 text-muted-foreground hover:text-foreground"
                                         >
-                                            {activeFiltersCount}
-                                        </Badge>
+                                            <X className="size-3 mr-1" />
+                                            Clear all
+                                        </Button>
                                     )}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="max-w-xs w-full m-2" align="center">
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h4 className="font-medium">Filter by</h4>
-                                        {activeFiltersCount > 0 && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={handleClearFilters}
-                                                className="h-8 text-muted-foreground hover:text-foreground"
-                                            >
-                                                <X className="size-3 mr-1" />
-                                                Clear all
-                                            </Button>
-                                        )}
-                                    </div>
-
-                                    <Separator />
-
-                                    <div className="flex flex-row w-full gap-2">
-                                        <div className="flex flex-col w-full gap-2">
-                                            <Label>Status</Label>
-                                            <Select
-                                                value={filterState.status || "ALL"}
-                                                onValueChange={(value) =>
-                                                    setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, status: value === "ALL" ? "" : value }))
-                                                }
-                                            >
-                                                <SelectTrigger className="w-full">
-                                                    <SelectValue placeholder="All statuses" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="ALL">All statuses</SelectItem>
-                                                    <SelectItem value="QUEUED">Queued</SelectItem>
-                                                    <SelectItem value="STARTED">Building</SelectItem>
-                                                    <SelectItem value="COMPLETED">Active</SelectItem>
-                                                    <SelectItem value="FAILED">Failed</SelectItem>
-                                                    <SelectItem value="CANCELED">Canceled</SelectItem>
-                                                    <SelectItem value="TERMINATED">Terminated</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-
-                                        <div className="flex flex-col w-full gap-2">
-                                            <Label>Kind</Label>
-                                            <Select
-                                                value={filterState.kind || "ALL"}
-                                                onValueChange={(value) =>
-                                                    setFilterState((prev: { status: string; kind: string; intervalMin: string; intervalMax: string }) => ({ ...prev, kind: value === "ALL" ? "" : value }))
-                                                }
-                                            >
-                                                <SelectTrigger className="w-full">
-                                                    <SelectValue placeholder="All kinds" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="ALL">All kinds</SelectItem>
-                                                    <SelectItem value="HEARTBEAT">Heartbeat</SelectItem>
-                                                    <SelectItem value="CONTAINER">Container</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    <div className="flex flex-col gap-2">
-                                        <Label htmlFor="workflow-interval-min">Interval Range (minutes)</Label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <Input
-                                                    id="workflow-interval-min"
-                                                    type="number"
-                                                    inputMode="numeric"
-                                                    placeholder="Min"
-                                                    value={filterState.intervalMin}
-                                                    min={minimumWorkflowIntervalMinutes}
-                                                    max={maximumWorkflowIntervalMinutes}
-                                                    step={1}
-                                                    onKeyDown={(event) => {
-                                                        if (isDisallowedIntervalKey(event.key)) event.preventDefault()
-                                                    }}
-                                                    onChange={(event) => updateIntervalFilter("intervalMin", event.target.value)}
-                                                    aria-invalid={isRangeInvalid}
-                                                    aria-describedby={isRangeInvalid ? "workflow-interval-error" : undefined}
-                                                />
-
-                                            </div>
-                                            <div>
-                                                <Input
-                                                    id="workflow-interval-max"
-                                                    type="number"
-                                                    inputMode="numeric"
-                                                    placeholder="Max"
-                                                    value={filterState.intervalMax}
-                                                    min={minimumWorkflowIntervalMinutes}
-                                                    max={maximumWorkflowIntervalMinutes}
-                                                    step={1}
-                                                    onKeyDown={(event) => {
-                                                        if (isDisallowedIntervalKey(event.key)) event.preventDefault()
-                                                    }}
-                                                    onChange={(event) => updateIntervalFilter("intervalMax", event.target.value)}
-                                                    aria-invalid={isRangeInvalid}
-                                                    aria-describedby={isRangeInvalid ? "workflow-interval-error" : undefined}
-                                                />
-                                            </div>
-                                        </div>
-                                        {isRangeInvalid && (
-                                            <p id="workflow-interval-error" className="text-xs text-destructive" role="alert">
-                                                Maximum must be greater than or equal to minimum.
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <Separator />
-
-                                    <Button onClick={handleApplyFilters} className="w-full" disabled={isRangeInvalid}>
-                                        Apply Filters
-                                    </Button>
                                 </div>
-                            </PopoverContent>
-                        </Popover>
 
+                                <Separator />
+
+                                <div className="flex flex-row w-full gap-2">
+                                    <div className="flex flex-col w-full gap-2">
+                                        <Label>Status</Label>
+                                        <Select
+                                            value={filterState.status || "ALL"}
+                                            onValueChange={(value) =>
+                                                setFilterState(
+                                                    (prev: {
+                                                        status: string
+                                                        kind: string
+                                                        intervalMin: string
+                                                        intervalMax: string
+                                                    }) => ({ ...prev, status: value === "ALL" ? "" : value }),
+                                                )
+                                            }
+                                        >
+                                            <SelectTrigger className="w-full">
+                                                <SelectValue placeholder="All statuses" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="ALL">All statuses</SelectItem>
+                                                <SelectItem value="QUEUED">Queued</SelectItem>
+                                                <SelectItem value="STARTED">Building</SelectItem>
+                                                <SelectItem value="COMPLETED">Active</SelectItem>
+                                                <SelectItem value="FAILED">Failed</SelectItem>
+                                                <SelectItem value="CANCELED">Canceled</SelectItem>
+                                                <SelectItem value="TERMINATED">Terminated</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="flex flex-col w-full gap-2">
+                                        <Label>Kind</Label>
+                                        <Select
+                                            value={filterState.kind || "ALL"}
+                                            onValueChange={(value) =>
+                                                setFilterState(
+                                                    (prev: {
+                                                        status: string
+                                                        kind: string
+                                                        intervalMin: string
+                                                        intervalMax: string
+                                                    }) => ({ ...prev, kind: value === "ALL" ? "" : value }),
+                                                )
+                                            }
+                                        >
+                                            <SelectTrigger className="w-full">
+                                                <SelectValue placeholder="All kinds" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="ALL">All kinds</SelectItem>
+                                                <SelectItem value="HEARTBEAT">Heartbeat</SelectItem>
+                                                <SelectItem value="CONTAINER">Container</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                <Separator />
+
+                                <div className="flex flex-col gap-2">
+                                    <Label htmlFor="workflow-interval-min">Interval Range (minutes)</Label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <Input
+                                                id="workflow-interval-min"
+                                                type="number"
+                                                inputMode="numeric"
+                                                placeholder="Min"
+                                                value={filterState.intervalMin}
+                                                min={minimumWorkflowIntervalMinutes}
+                                                max={maximumWorkflowIntervalMinutes}
+                                                step={1}
+                                                onKeyDown={(event) => {
+                                                    if (isDisallowedIntervalKey(event.key))
+                                                        event.preventDefault()
+                                                }}
+                                                onChange={(event) =>
+                                                    updateIntervalFilter("intervalMin", event.target.value)
+                                                }
+                                                aria-invalid={isRangeInvalid}
+                                                aria-describedby={
+                                                    isRangeInvalid ? "workflow-interval-error" : undefined
+                                                }
+                                            />
+                                        </div>
+                                        <div>
+                                            <Input
+                                                id="workflow-interval-max"
+                                                type="number"
+                                                inputMode="numeric"
+                                                placeholder="Max"
+                                                value={filterState.intervalMax}
+                                                min={minimumWorkflowIntervalMinutes}
+                                                max={maximumWorkflowIntervalMinutes}
+                                                step={1}
+                                                onKeyDown={(event) => {
+                                                    if (isDisallowedIntervalKey(event.key))
+                                                        event.preventDefault()
+                                                }}
+                                                onChange={(event) =>
+                                                    updateIntervalFilter("intervalMax", event.target.value)
+                                                }
+                                                aria-invalid={isRangeInvalid}
+                                                aria-describedby={
+                                                    isRangeInvalid ? "workflow-interval-error" : undefined
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                    {isRangeInvalid && (
+                                        <p
+                                            id="workflow-interval-error"
+                                            className="text-xs text-destructive"
+                                            role="alert"
+                                        >
+                                            Maximum must be greater than or equal to minimum.
+                                        </p>
+                                    )}
+                                </div>
+
+                                <Separator />
+
+                                <Button
+                                    onClick={handleApplyFilters}
+                                    className="w-full"
+                                    disabled={isRangeInvalid}
+                                >
+                                    Apply Filters
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => refetch()}
+                        disabled={isLoading || refetchLoading}
+                        className={cn("h-9 w-9", (isLoading || refetchLoading) && "cursor-not-allowed")}
+                    >
+                        <RefreshCw
+                            className={cn("size-4", (isLoading || refetchLoading) && "animate-spin")}
+                        />
+                        <span className="sr-only">Refresh</span>
+                    </Button>
+
+                    <div className="flex items-center gap-1">
                         <Button
                             variant="outline"
                             size="icon"
-                            onClick={() => refetch()}
-                            disabled={(isLoading || refetchLoading)}
-                            className={cn(
-                                "h-9 w-9",
-                                (isLoading || refetchLoading) && "cursor-not-allowed"
-                            )}
+                            onClick={() => pagination.goToPreviousPage()}
+                            disabled={!pagination.hasPreviousPage}
+                            className="h-9 w-9"
                         >
-                            <RefreshCw className={cn(
-                                "size-4",
-                                (isLoading || refetchLoading) && "animate-spin"
-                            )} />
-                            <span className="sr-only">Refresh</span>
+                            <ChevronLeft className="size-4" />
+                            <span className="sr-only">Previous page</span>
                         </Button>
-
-                        <div className="flex items-center gap-1">
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => pagination.goToPreviousPage()}
-                                disabled={!pagination.hasPreviousPage}
-                                className="h-9 w-9"
-                            >
-                                <ChevronLeft className="size-4" />
-                                <span className="sr-only">Previous page</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => pagination.goToNextPage()}
-                                disabled={!pagination.hasNextPage}
-                                className="h-9 w-9"
-                            >
-                                <ChevronRight className="size-4" />
-                                <span className="sr-only">Next page</span>
-                            </Button>
-                        </div>
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => pagination.goToNextPage()}
+                            disabled={!pagination.hasNextPage}
+                            className="h-9 w-9"
+                        >
+                            <ChevronRight className="size-4" />
+                            <span className="sr-only">Next page</span>
+                        </Button>
                     </div>
                 </div>
             </div>
+        </div>
+    )
+}
 
-            <div className="flex min-h-0 flex-1 flex-col">
-                {(isLoading) && workflows.length === 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[...Array(9)].map((_, i) => (
-                            <WorkflowCardSkeleton key={i} />
-                        ))}
-                    </div>
-                ) : workflows.length === 0 ? (
-                    <EmptyState
-                        title="No workflows found"
-                        description={activeFiltersCount > 0 || searchQuery
-                            ? 'Try adjusting your search query or filters'
-                            : 'Create your first workflow to get started'}
-                    />
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {workflows.map((workflow: Workflow) => (
-                            <WorkflowCard
-                                key={workflow.id}
-                                workflow={workflow}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
+function renderWorkflowListResults(model: Parameters<typeof renderWorkflowsView>[0]) {
+    const { activeFiltersCount, isLoading, workflows, searchQuery } = model
+    return (
+        <div className="flex min-h-0 flex-1 flex-col">
+            {isLoading && workflows.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {[...Array(9)].map((_, i) => (
+                        <WorkflowCardSkeleton key={i} />
+                    ))}
+                </div>
+            ) : workflows.length === 0 ? (
+                <EmptyState
+                    title="No workflows found"
+                    description={
+                        activeFiltersCount > 0 || searchQuery
+                            ? "Try adjusting your search query or filters"
+                            : "Create your first workflow to get started"
+                    }
+                />
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {workflows.map((workflow: Workflow) => (
+                        <WorkflowCard key={workflow.id} workflow={workflow} />
+                    ))}
+                </div>
+            )}
         </div>
     )
 }

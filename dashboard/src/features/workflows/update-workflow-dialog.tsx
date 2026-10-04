@@ -4,7 +4,7 @@ import { WorkflowNumberField } from "./workflow-form-fields"
 
 import { useEffect, useRef, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, type Resolver } from "react-hook-form"
+import { useForm, type Resolver, type UseFormReturn } from "react-hook-form"
 import { updateWorkflowSchema } from "./workflow-schemas"
 import {
     Clock3,
@@ -35,6 +35,8 @@ import { Button } from "@/components/ui/button"
 import { WorkflowConfigurationFields } from "./workflow-configuration-fields"
 import { serializeWorkflowPayload, type WorkflowConfigurationValues } from "./workflow-form-values"
 import { isWorkflowDetailsReady } from "./workflow-query-state"
+
+import type { Workflow } from "./types"
 
 import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
 
@@ -109,49 +111,7 @@ function UpdateWorkflowForm({
         if (initKey.current !== null && form.formState.isDirty) return;
         initKey.current = workflow.updated_at;
 
-        const parsedPayload = workflow.payload ? JSON.parse(workflow.payload) as WorkflowPayload : {};
-
-        if (workflow.kind === "HEARTBEAT") {
-            const headers = parsedPayload.headers ?
-                Object.entries(parsedPayload.headers).map(([key, value]) => ({ id: crypto.randomUUID(), key, value })) :
-                [];
-
-            form.setValue("heartbeatPayload", {
-                endpoint: parsedPayload.endpoint || "",
-                expectedStatusCode: parsedPayload.expected_status_code || 200,
-                headers,
-                timeout: parsedPayload.timeout || ""
-            });
-        }
-        else if (workflow.kind === "CONTAINER") {
-            let envArray: string[] = [];
-            if (parsedPayload.env && typeof parsedPayload.env === 'object') {
-                envArray = Object.entries(parsedPayload.env).map(
-                    ([key, value]) => `${key}=${value}`
-                );
-            }
-
-            form.setValue("containerPayload", {
-                image: parsedPayload.image || "",
-                cmd: parsedPayload.cmd || [],
-                cmdIds: (parsedPayload.cmd || []).map(() => crypto.randomUUID()),
-                env: envArray,
-                envIds: envArray.map(() => crypto.randomUUID()),
-                timeout: parsedPayload.timeout || ""
-            });
-        }
-
-        form.reset({
-            name: workflow.name,
-            interval: workflow.interval,
-            maxConsecutiveJobFailuresAllowed: workflow.max_consecutive_job_failures_allowed,
-            ...(workflow.kind === "HEARTBEAT" ? {
-                heartbeatPayload: form.getValues("heartbeatPayload")
-            } : {}),
-            ...(workflow.kind === "CONTAINER" ? {
-                containerPayload: form.getValues("containerPayload")
-            } : {})
-        });
+        initializeWorkflowForm(workflow, form);
     }, [workflow, form, form.formState.isDirty]);
 
     const handleSubmit = (data: UpdateWorkflowFormValues) => {
@@ -266,4 +226,55 @@ function UpdateWorkflowForm({
             </DialogContent>
         </Dialog>
     );
+}
+
+function initializeWorkflowForm(workflow: Workflow, form: UseFormReturn<UpdateWorkflowFormValues>) {
+    const parsedPayload = workflow.payload ? (JSON.parse(workflow.payload) as WorkflowPayload) : {}
+
+    if (workflow.kind === "HEARTBEAT") {
+        const headers = parsedPayload.headers
+            ? Object.entries(parsedPayload.headers).map(([key, value]) => ({
+                  id: crypto.randomUUID(),
+                  key,
+                  value,
+              }))
+            : []
+
+        form.setValue("heartbeatPayload", {
+            endpoint: parsedPayload.endpoint || "",
+            expectedStatusCode: parsedPayload.expected_status_code || 200,
+            headers,
+            timeout: parsedPayload.timeout || "",
+        })
+    } else if (workflow.kind === "CONTAINER") {
+        let envArray: string[] = []
+        if (parsedPayload.env && typeof parsedPayload.env === "object") {
+            envArray = Object.entries(parsedPayload.env).map(([key, value]) => `${key}=${value}`)
+        }
+
+        form.setValue("containerPayload", {
+            image: parsedPayload.image || "",
+            cmd: parsedPayload.cmd || [],
+            cmdIds: (parsedPayload.cmd || []).map(() => crypto.randomUUID()),
+            env: envArray,
+            envIds: envArray.map(() => crypto.randomUUID()),
+            timeout: parsedPayload.timeout || "",
+        })
+    }
+
+    form.reset({
+        name: workflow.name,
+        interval: workflow.interval,
+        maxConsecutiveJobFailuresAllowed: workflow.max_consecutive_job_failures_allowed,
+        ...(workflow.kind === "HEARTBEAT"
+            ? {
+                  heartbeatPayload: form.getValues("heartbeatPayload"),
+              }
+            : {}),
+        ...(workflow.kind === "CONTAINER"
+            ? {
+                  containerPayload: form.getValues("containerPayload"),
+              }
+            : {}),
+    })
 }

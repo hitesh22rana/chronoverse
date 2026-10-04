@@ -74,6 +74,10 @@ import { cn } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/features/jobs/job-status"
 
 export default function WorkflowDetailsAndJobsPage() {
+    return renderWorkflowDetailsAndJobsView(useWorkflowDetailsAndJobsModel())
+}
+
+function useWorkflowDetailsAndJobsModel() {
     const { workflowId } = useParams() as { workflowId: string }
     const [isSearchPending, startSearchTransition] = useTransition()
     const [isFiltersOpen, setIsFiltersOpen] = useState(false)
@@ -128,8 +132,8 @@ export default function WorkflowDetailsAndJobsPage() {
         ? workflow.interval === 1440
             ? "daily"
             : workflow.interval % 60 === 0 && workflow.interval >= 60
-                ? `every ${workflow.interval / 60} hour${workflow.interval / 60 !== 1 ? 's' : ''}`
-                : `every ${workflow.interval} minute${workflow.interval !== 1 ? 's' : ''}`
+              ? `every ${workflow.interval / 60} hour${workflow.interval / 60 !== 1 ? "s" : ""}`
+              : `every ${workflow.interval} minute${workflow.interval !== 1 ? "s" : ""}`
         : ""
 
     const handleRefresh = () => {
@@ -181,12 +185,9 @@ export default function WorkflowDetailsAndJobsPage() {
         setIsFiltersOpen(false)
     }
 
-    const activeFiltersCount = [
-        statusFilter,
-        triggerFilter,
-    ].filter(Boolean).length
+    const activeFiltersCount = [statusFilter, triggerFilter].filter(Boolean).length
 
-    return renderWorkflowDetailsAndJobsView({
+    return {
         isSearchPending,
         isFiltersOpen,
         filterState,
@@ -222,94 +223,15 @@ export default function WorkflowDetailsAndJobsPage() {
         handleClearFilters,
         handleFiltersOpenChange,
         activeFiltersCount,
-    })
+    }
 }
 
-function renderWorkflowDetailsAndJobsView(model: any) {
-    const {
-        isSearchPending,
-        isFiltersOpen,
-        filterState,
-        setFilterState,
-        urlTabFilter,
-        workflow,
-        isWorkflowLoading,
-        workflowError,
-        workflowAnalytics,
-        isAnalyticsLoading,
-        isAnalyticsFetching,
-        analyticsError,
-        refetchAnalytics,
-        jobs,
-        isJobsLoading,
-        isRefetchingJobs,
-        jobsError,
-        pagination,
-        manualRunJob,
-        isManualRunJobPending,
-        showUpdateWorkflowDialog,
-        setShowUpdateWorkflowDialog,
-        showTerminateWorkflowDialog,
-        setShowTerminateWorkflowDialog,
-        showDeleteWorkflowDialog,
-        setShowDeleteWorkflowDialog,
-        status,
-        statusMeta,
-        interval,
-        handleRefresh,
-        handleTabsChange,
-        handleApplyFilters,
-        handleClearFilters,
-        handleFiltersOpenChange,
-        activeFiltersCount,
-    } = model
+function renderWorkflowDetailsAndJobsView(model: ReturnType<typeof useWorkflowDetailsAndJobsModel>) {
+    const { urlTabFilter, handleTabsChange } = model
 
     return (
         <div className="flex flex-1 flex-col gap-6 h-full">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                        <Link
-                            href="/"
-                            prefetch={false}
-                            className="h-8 w-8 px-2 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
-                        >
-                            <ArrowLeft className="h-4 w-4" />
-                        </Link>
-                        {workflow?.name ? (
-                            <h1 className="text-2xl font-bold tracking-tight md:max-w-full max-w-68 w-full truncate">{workflow?.name}</h1>
-                        ) : (
-                            <Skeleton className="h-8 w-48" />
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Badge
-                            variant="outline"
-                            className={cn(
-                                "px-2 py-0 h-5 font-medium flex items-center gap-1 border-none",
-                                statusMeta.badgeClass
-                            )}
-                        >
-                            <statusMeta.icon className={cn("h-3 w-3", statusMeta.iconClass)} />
-                            <span className="text-xs">{getStatusLabel(status, "workflow")}</span>
-                        </Badge>
-                        {workflow?.kind ? (
-                            <Badge variant="secondary" className="px-2 py-0 h-5 text-xs font-normal">
-                                {workflow?.kind}
-                            </Badge>
-                        ) : (
-                            <Skeleton className="h-5 w-20" />
-                        )}
-                        {workflow?.created_at ? (
-                            <span className="text-xs text-muted-foreground max-w-40 w-full truncate">
-                                Created {formatDistanceToNow(new Date(workflow.created_at), { addSuffix: true })}
-                            </span>
-                        ) : (
-                            <Skeleton className="h-4 w-32" />
-                        )}
-                    </div>
-                </div>
-            </div>
+            {renderWorkflowHeader(model)}
 
             <Tabs
                 value={urlTabFilter}
@@ -335,351 +257,13 @@ function renderWorkflowDetailsAndJobsView(model: any) {
                     </TabsTrigger>
                 </TabsList>
 
-                {urlTabFilter === "details" ? (
-                    <div className="flex sm:flex-row flex-col items-center justify-end mb-4 gap-2 w-full">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
-                            onClick={() => setShowUpdateWorkflowDialog(true)}
-                        >
-                            <Edit className="h-4 w-4" />
-                            Edit workflow
-                        </Button>
-                        {isWorkflowLoading ? (
-                            <Skeleton className="h-9 sm:max-w-[180px] w-full rounded-md" />
-                        ) : workflow?.terminated_at ? (
-                            <Button
-                                variant="destructive"
-                                size="sm"
-                                className="cursor-pointer shrink-0 sm:max-w-[180px] w-full h-9"
-                                onClick={() => setShowDeleteWorkflowDialog(true)}
-                            >
-                                <Trash2 className="h-4 w-4" />
-                                Delete workflow
-                            </Button>
-                        ) : (
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                className="cursor-pointer shrink-0 sm:max-w-[180px] w-full h-9"
-                                onClick={() => setShowTerminateWorkflowDialog(true)}
-                            >
-                                <XCircle className="h-4 w-4" />
-                                Terminate workflow
-                            </Button>
-                        )}
-                    </div>
-                ) : urlTabFilter === "jobs" && (
-                    <div className="flex flex-wrap items-center justify-end gap-2 w-full mb-4">
-                        {!!workflow?.build_status && workflow.build_status === "COMPLETED" && (!workflow?.terminated_at) && (
-                            <Button
-                                variant="default"
-                                size="sm"
-                                className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
-                                onClick={() => manualRunJob()}
-                                disabled={isManualRunJobPending}
-                            >
-                                {isManualRunJobPending ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Play className="h-4 w-4" />
-                                )}
-                                Manual run
-                            </Button>
-                        )}
+                {renderWorkflowActions(model)}
 
-                        <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
-                            <PopoverTrigger asChild>
-                                <Button variant="outline" className="relative h-9">
-                                    <Filter className="size-3" />
-                                    <span className="sm:not-sr-only sr-only">
-                                        Filters
-                                    </span>
-                                    {activeFiltersCount > 0 && (
-                                        <Badge
-                                            variant="secondary"
-                                            className="absolute -right-1 -top-1.5 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
-                                        >
-                                            {activeFiltersCount}
-                                        </Badge>
-                                    )}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="min-w-xs w-full m-2" align="center">
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h4 className="font-medium">Filter by</h4>
-                                        {activeFiltersCount > 0 && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={handleClearFilters}
-                                                className="h-8 text-muted-foreground hover:text-foreground"
-                                            >
-                                                <X className="size-3 mr-1" />
-                                                Clear all
-                                            </Button>
-                                        )}
-                                    </div>
+                {renderWorkflowTabState(model)}
 
-                                    <Separator />
+                {renderWorkflowDetails(model)}
 
-                                    <div className="flex flex-row gap-2 w-full">
-                                        <div className="flex flex-col gap-2 w-full">
-                                            <Label>Trigger</Label>
-                                            <Select
-                                                value={filterState.trigger || "ALL"}
-                                                onValueChange={(value) =>
-                                                    setFilterState((prev: { status: string; trigger: string }) => ({ ...prev, trigger: value === "ALL" ? "" : value }))}
-                                            >
-                                                <SelectTrigger className="w-full">
-                                                    <SelectValue placeholder="All triggers" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="ALL">All triggers</SelectItem>
-                                                    <SelectItem value="AUTOMATIC">Automatic</SelectItem>
-                                                    <SelectItem value="MANUAL">Manual</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-
-                                        <div className="flex flex-col gap-2 w-full">
-                                            <Label>Status</Label>
-                                            <Select
-                                                value={filterState.status || "ALL"}
-                                                onValueChange={(value) =>
-                                                    setFilterState((prev: { status: string; trigger: string }) => ({ ...prev, status: value === "ALL" ? "" : value }))}
-                                            >
-                                                <SelectTrigger className="w-full">
-                                                    <SelectValue placeholder="All statuses" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="ALL">All statuses</SelectItem>
-                                                    <SelectItem value="PENDING">Pending</SelectItem>
-                                                    <SelectItem value="QUEUED">Queued</SelectItem>
-                                                    <SelectItem value="RUNNING">Running</SelectItem>
-                                                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                                                    <SelectItem value="FAILED">Failed</SelectItem>
-                                                    <SelectItem value="CANCELED">Canceled</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    <Button onClick={handleApplyFilters} className="w-full">
-                                        Apply Filters
-                                    </Button>
-                                </div>
-                            </PopoverContent>
-                        </Popover>
-
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={handleRefresh}
-                            disabled={(isSearchPending || isJobsLoading || isRefetchingJobs)}
-                            className={cn(
-                                "h-9 w-9",
-                                (isSearchPending || isJobsLoading || isRefetchingJobs) && "cursor-not-allowed"
-                            )}
-                        >
-                            <RefreshCw className={cn(
-                                "size-4",
-                                (isSearchPending || isJobsLoading || isRefetchingJobs) && "animate-spin"
-                            )} />
-                            <span className="sr-only">Refresh</span>
-                        </Button>
-
-                        <div className="flex items-center border-l pl-4 ml-1">
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => pagination.goToPreviousPage()}
-                                disabled={!pagination.hasPreviousPage}
-                                className="h-9 w-9"
-                            >
-                                <ChevronLeft className="size-4" />
-                                <span className="sr-only">Previous page</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => pagination.goToNextPage()}
-                                disabled={!pagination.hasNextPage}
-                                className="h-9 w-9 ml-2"
-                            >
-                                <ChevronRight className="size-4" />
-                                <span className="sr-only">Next page</span>
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
-                {urlTabFilter === "details" && !!workflowError ? (
-                    <EmptyState
-                        title="Error loading workflow details"
-                        description="Please try again later.."
-                    />
-                ) : urlTabFilter === "jobs" ?
-                    jobsError ? (
-                        <EmptyState
-                            title="Error loading jobs"
-                            description="Please try again later."
-                        />
-                    ) : (!isJobsLoading && jobs.length === 0) && (
-                        <EmptyState
-                            title="No jobs found"
-                            description={
-                                activeFiltersCount > 0
-                                    ? "Try adjusting your search query or filters."
-                                    : "This workflow hasn't run any jobs yet."
-                            }
-                        />
-                    ) : urlTabFilter !== "details" && urlTabFilter !== "jobs" && (
-                        <EmptyState
-                            title="Unknown tab"
-                            description="Please choose the correct tab"
-                        />
-                    )}
-
-                {urlTabFilter === "details" && isWorkflowLoading ? (
-                    <WorkflowDetailsSkeleton />
-                ) : (urlTabFilter === "details" && !isWorkflowLoading && !workflowError) && (
-                    <TabsContent value="details" className="h-full w-full">
-                        <UpdateWorkflowDialog
-                            workflowId={workflow.id}
-                            open={showUpdateWorkflowDialog}
-                            onOpenChange={setShowUpdateWorkflowDialog}
-                        />
-
-                        <TerminateWorkflowDialog
-                            workflow={workflow}
-                            open={showTerminateWorkflowDialog}
-                            onOpenChange={setShowTerminateWorkflowDialog}
-                        />
-
-                        <DeleteWorkflowDialog
-                            workflow={workflow}
-                            open={showDeleteWorkflowDialog}
-                            onOpenChange={setShowDeleteWorkflowDialog}
-                        />
-
-                        <Card>
-                            <CardContent className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium">Workflow kind</span>
-                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                            {
-                                                workflow?.kind === "HEARTBEAT" ?
-                                                    <HeartPulse className="h-4 w-4" />
-                                                    :
-                                                    <Workflow className="h-4 w-4" />
-                                            }
-                                            {workflow?.kind}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium">Execution schedule</span>
-                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                            <Clock className="h-4 w-4" />
-                                            {interval}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium">Status</span>
-                                        <Badge
-                                            className={cn("text-sm flex items-center h-5",
-                                                statusMeta.badgeClass
-                                            )}>
-                                            <statusMeta.icon className={statusMeta.iconClass} />
-                                            {getStatusLabel(status, "workflow")}
-                                        </Badge>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium">Max consecutive failures allowed</span>
-                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                            <Shield className="h-4 w-4" />
-                                            {workflow?.max_consecutive_job_failures_allowed}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <span className="text-sm font-medium">Log retention</span>
-                                        <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                            <Database className="h-4 w-4" />
-                                            {workflow?.log_retention ? "Enabled" : "Disabled"}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <Separator />
-
-                                <div className="space-y-2">
-                                    <span className="text-sm font-medium">Configuration</span>
-                                    <div className="text-sm text-muted-foreground">
-                                        <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
-                                            {workflow?.payload ? JSON.stringify(JSON.parse(workflow.payload), null, 2) : "No configuration available"}
-                                        </pre>
-                                    </div>
-                                </div>
-
-                                <Separator />
-
-                                <WorkflowAnalyticsPanel
-                                    analytics={workflowAnalytics}
-                                    error={analyticsError}
-                                    isLoading={isAnalyticsLoading}
-                                    isFetching={isAnalyticsFetching}
-                                    logRetention={workflow.log_retention}
-                                    onRetry={() => refetchAnalytics()}
-                                    workflowKind={workflow.kind}
-                                />
-
-                                <Separator />
-
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center text-orange-600 dark:text-orange-400">
-                                            <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
-                                            <span className="text-sm font-medium">Failure tracking</span>
-                                        </div>
-                                        <span className="text-sm font-medium">
-                                            {workflow?.consecutive_job_failures_count ?? 0} / {workflow?.max_consecutive_job_failures_allowed ?? 1}
-                                        </span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                                        <div
-                                            className="bg-orange-500 h-1.5 rounded-full"
-                                            style={{
-                                                width: `${(workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1) * 100}%`
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            </CardContent>
-                            <CardFooter className="text-xs text-muted-foreground border-t">
-                                <span className="ml-auto">
-                                    Last updated {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
-                                </span>
-                            </CardFooter>
-                        </Card>
-                    </TabsContent>
-                )}
-
-                {urlTabFilter === "jobs" && isJobsLoading ? (
-                    <WorkflowJobsSkeleton />
-                ) : (urlTabFilter === "jobs" && !isJobsLoading && !jobsError && !!jobs.length) && (
-                    <TabsContent value="jobs" className="h-full w-full flex-1">
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                            {jobs?.map((job: Job) => (
-                                <JobCard key={job.id} job={job} />
-                            ))}
-                        </div>
-                    </TabsContent>
-                )}
+                {renderWorkflowJobs(model)}
             </Tabs>
         </div>
     )
@@ -763,5 +347,470 @@ function WorkflowDetailsSkeleton() {
                 <Skeleton className="h-4 w-52 ml-auto" />
             </CardFooter>
         </Card>
+    )
+}
+
+
+function renderWorkflowHeader(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
+    const { workflow, status, statusMeta } = model
+    return (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                    <Link
+                        href="/"
+                        prefetch={false}
+                        className="h-8 w-8 px-2 border rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors"
+                    >
+                        <ArrowLeft className="h-4 w-4" />
+                    </Link>
+                    {workflow?.name ? (
+                        <h1 className="text-2xl font-bold tracking-tight md:max-w-full max-w-68 w-full truncate">
+                            {workflow?.name}
+                        </h1>
+                    ) : (
+                        <Skeleton className="h-8 w-48" />
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    <Badge
+                        variant="outline"
+                        className={cn(
+                            "px-2 py-0 h-5 font-medium flex items-center gap-1 border-none",
+                            statusMeta.badgeClass,
+                        )}
+                    >
+                        <statusMeta.icon className={cn("h-3 w-3", statusMeta.iconClass)} />
+                        <span className="text-xs">{getStatusLabel(status, "workflow")}</span>
+                    </Badge>
+                    {workflow?.kind ? (
+                        <Badge variant="secondary" className="px-2 py-0 h-5 text-xs font-normal">
+                            {workflow?.kind}
+                        </Badge>
+                    ) : (
+                        <Skeleton className="h-5 w-20" />
+                    )}
+                    {workflow?.created_at ? (
+                        <span className="text-xs text-muted-foreground max-w-40 w-full truncate">
+                            Created {formatDistanceToNow(new Date(workflow.created_at), { addSuffix: true })}
+                        </span>
+                    ) : (
+                        <Skeleton className="h-4 w-32" />
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function renderWorkflowActions(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
+    const {
+        isSearchPending,
+        isFiltersOpen,
+        filterState,
+        setFilterState,
+        urlTabFilter,
+        workflow,
+        isWorkflowLoading,
+        isJobsLoading,
+        isRefetchingJobs,
+        pagination,
+        manualRunJob,
+        isManualRunJobPending,
+        setShowUpdateWorkflowDialog,
+        setShowTerminateWorkflowDialog,
+        setShowDeleteWorkflowDialog,
+        handleRefresh,
+        handleApplyFilters,
+        handleClearFilters,
+        handleFiltersOpenChange,
+        activeFiltersCount,
+    } = model
+    return urlTabFilter === "details" ? (
+        <div className="flex sm:flex-row flex-col items-center justify-end mb-4 gap-2 w-full">
+            <Button
+                variant="outline"
+                size="sm"
+                className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
+                onClick={() => setShowUpdateWorkflowDialog(true)}
+            >
+                <Edit className="h-4 w-4" />
+                Edit workflow
+            </Button>
+            {isWorkflowLoading ? (
+                <Skeleton className="h-9 sm:max-w-[180px] w-full rounded-md" />
+            ) : workflow?.terminated_at ? (
+                <Button
+                    variant="destructive"
+                    size="sm"
+                    className="cursor-pointer shrink-0 sm:max-w-[180px] w-full h-9"
+                    onClick={() => setShowDeleteWorkflowDialog(true)}
+                >
+                    <Trash2 className="h-4 w-4" />
+                    Delete workflow
+                </Button>
+            ) : (
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    className="cursor-pointer shrink-0 sm:max-w-[180px] w-full h-9"
+                    onClick={() => setShowTerminateWorkflowDialog(true)}
+                >
+                    <XCircle className="h-4 w-4" />
+                    Terminate workflow
+                </Button>
+            )}
+        </div>
+    ) : (
+        urlTabFilter === "jobs" && (
+            <div className="flex flex-wrap items-center justify-end gap-2 w-full mb-4">
+                {!!workflow?.build_status &&
+                    workflow.build_status === "COMPLETED" &&
+                    !workflow?.terminated_at && (
+                        <Button
+                            variant="default"
+                            size="sm"
+                            className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
+                            onClick={() => manualRunJob()}
+                            disabled={isManualRunJobPending}
+                        >
+                            {isManualRunJobPending ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Play className="h-4 w-4" />
+                            )}
+                            Manual run
+                        </Button>
+                    )}
+
+                <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" className="relative h-9">
+                            <Filter className="size-3" />
+                            <span className="sm:not-sr-only sr-only">Filters</span>
+                            {activeFiltersCount > 0 && (
+                                <Badge
+                                    variant="secondary"
+                                    className="absolute -right-1 -top-1.5 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
+                                >
+                                    {activeFiltersCount}
+                                </Badge>
+                            )}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="min-w-xs w-full m-2" align="center">
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h4 className="font-medium">Filter by</h4>
+                                {activeFiltersCount > 0 && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleClearFilters}
+                                        className="h-8 text-muted-foreground hover:text-foreground"
+                                    >
+                                        <X className="size-3 mr-1" />
+                                        Clear all
+                                    </Button>
+                                )}
+                            </div>
+
+                            <Separator />
+
+                            <div className="flex flex-row gap-2 w-full">
+                                <div className="flex flex-col gap-2 w-full">
+                                    <Label>Trigger</Label>
+                                    <Select
+                                        value={filterState.trigger || "ALL"}
+                                        onValueChange={(value) =>
+                                            setFilterState((prev: { status: string; trigger: string }) => ({
+                                                ...prev,
+                                                trigger: value === "ALL" ? "" : value,
+                                            }))
+                                        }
+                                    >
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="All triggers" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="ALL">All triggers</SelectItem>
+                                            <SelectItem value="AUTOMATIC">Automatic</SelectItem>
+                                            <SelectItem value="MANUAL">Manual</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="flex flex-col gap-2 w-full">
+                                    <Label>Status</Label>
+                                    <Select
+                                        value={filterState.status || "ALL"}
+                                        onValueChange={(value) =>
+                                            setFilterState((prev: { status: string; trigger: string }) => ({
+                                                ...prev,
+                                                status: value === "ALL" ? "" : value,
+                                            }))
+                                        }
+                                    >
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="All statuses" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="ALL">All statuses</SelectItem>
+                                            <SelectItem value="PENDING">Pending</SelectItem>
+                                            <SelectItem value="QUEUED">Queued</SelectItem>
+                                            <SelectItem value="RUNNING">Running</SelectItem>
+                                            <SelectItem value="COMPLETED">Completed</SelectItem>
+                                            <SelectItem value="FAILED">Failed</SelectItem>
+                                            <SelectItem value="CANCELED">Canceled</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            <Button onClick={handleApplyFilters} className="w-full">
+                                Apply Filters
+                            </Button>
+                        </div>
+                    </PopoverContent>
+                </Popover>
+
+                <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleRefresh}
+                    disabled={isSearchPending || isJobsLoading || isRefetchingJobs}
+                    className={cn(
+                        "h-9 w-9",
+                        (isSearchPending || isJobsLoading || isRefetchingJobs) && "cursor-not-allowed",
+                    )}
+                >
+                    <RefreshCw
+                        className={cn(
+                            "size-4",
+                            (isSearchPending || isJobsLoading || isRefetchingJobs) && "animate-spin",
+                        )}
+                    />
+                    <span className="sr-only">Refresh</span>
+                </Button>
+
+                <div className="flex items-center border-l pl-4 ml-1">
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => pagination.goToPreviousPage()}
+                        disabled={!pagination.hasPreviousPage}
+                        className="h-9 w-9"
+                    >
+                        <ChevronLeft className="size-4" />
+                        <span className="sr-only">Previous page</span>
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => pagination.goToNextPage()}
+                        disabled={!pagination.hasNextPage}
+                        className="h-9 w-9 ml-2"
+                    >
+                        <ChevronRight className="size-4" />
+                        <span className="sr-only">Next page</span>
+                    </Button>
+                </div>
+            </div>
+        )
+    )
+}
+
+function renderWorkflowTabState(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
+    const { urlTabFilter, workflowError, jobs, isJobsLoading, jobsError, activeFiltersCount } = model
+    return urlTabFilter === "details" && !!workflowError ? (
+        <EmptyState title="Error loading workflow details" description="Please try again later.." />
+    ) : urlTabFilter === "jobs" ? (
+        jobsError ? (
+            <EmptyState title="Error loading jobs" description="Please try again later." />
+        ) : (
+            !isJobsLoading &&
+            jobs.length === 0 && (
+                <EmptyState
+                    title="No jobs found"
+                    description={
+                        activeFiltersCount > 0
+                            ? "Try adjusting your search query or filters."
+                            : "This workflow hasn't run any jobs yet."
+                    }
+                />
+            )
+        )
+    ) : (
+        urlTabFilter !== "details" &&
+        urlTabFilter !== "jobs" && (
+            <EmptyState title="Unknown tab" description="Please choose the correct tab" />
+        )
+    )
+}
+
+function renderWorkflowDetails(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
+    const {
+        urlTabFilter,
+        workflow,
+        isWorkflowLoading,
+        workflowError,
+        workflowAnalytics,
+        isAnalyticsLoading,
+        isAnalyticsFetching,
+        analyticsError,
+        refetchAnalytics,
+        showUpdateWorkflowDialog,
+        setShowUpdateWorkflowDialog,
+        showTerminateWorkflowDialog,
+        setShowTerminateWorkflowDialog,
+        showDeleteWorkflowDialog,
+        setShowDeleteWorkflowDialog,
+        status,
+        statusMeta,
+        interval,
+    } = model
+    return urlTabFilter === "details" && isWorkflowLoading ? (
+        <WorkflowDetailsSkeleton />
+    ) : (
+        urlTabFilter === "details" && !isWorkflowLoading && !workflowError && (
+            <TabsContent value="details" className="h-full w-full">
+                <UpdateWorkflowDialog
+                    workflowId={workflow.id}
+                    open={showUpdateWorkflowDialog}
+                    onOpenChange={setShowUpdateWorkflowDialog}
+                />
+
+                <TerminateWorkflowDialog
+                    workflow={workflow}
+                    open={showTerminateWorkflowDialog}
+                    onOpenChange={setShowTerminateWorkflowDialog}
+                />
+
+                <DeleteWorkflowDialog
+                    workflow={workflow}
+                    open={showDeleteWorkflowDialog}
+                    onOpenChange={setShowDeleteWorkflowDialog}
+                />
+
+                <Card>
+                    <CardContent className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div className="space-y-2">
+                                <span className="text-sm font-medium">Workflow kind</span>
+                                <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                    {workflow?.kind === "HEARTBEAT" ? (
+                                        <HeartPulse className="h-4 w-4" />
+                                    ) : (
+                                        <Workflow className="h-4 w-4" />
+                                    )}
+                                    {workflow?.kind}
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <span className="text-sm font-medium">Execution schedule</span>
+                                <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                    <Clock className="h-4 w-4" />
+                                    {interval}
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <span className="text-sm font-medium">Status</span>
+                                <Badge className={cn("text-sm flex items-center h-5", statusMeta.badgeClass)}>
+                                    <statusMeta.icon className={statusMeta.iconClass} />
+                                    {getStatusLabel(status, "workflow")}
+                                </Badge>
+                            </div>
+                            <div className="space-y-2">
+                                <span className="text-sm font-medium">Max consecutive failures allowed</span>
+                                <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                    <Shield className="h-4 w-4" />
+                                    {workflow?.max_consecutive_job_failures_allowed}
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <span className="text-sm font-medium">Log retention</span>
+                                <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                    <Database className="h-4 w-4" />
+                                    {workflow?.log_retention ? "Enabled" : "Disabled"}
+                                </div>
+                            </div>
+                        </div>
+
+                        <Separator />
+
+                        <div className="space-y-2">
+                            <span className="text-sm font-medium">Configuration</span>
+                            <div className="text-sm text-muted-foreground">
+                                <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
+                                    {workflow?.payload
+                                        ? JSON.stringify(JSON.parse(workflow.payload), null, 2)
+                                        : "No configuration available"}
+                                </pre>
+                            </div>
+                        </div>
+
+                        <Separator />
+
+                        <WorkflowAnalyticsPanel
+                            analytics={workflowAnalytics}
+                            error={analyticsError}
+                            isLoading={isAnalyticsLoading}
+                            isFetching={isAnalyticsFetching}
+                            logRetention={workflow.log_retention}
+                            onRetry={() => refetchAnalytics()}
+                            workflowKind={workflow.kind}
+                        />
+
+                        <Separator />
+
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center text-orange-600 dark:text-orange-400">
+                                    <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
+                                    <span className="text-sm font-medium">Failure tracking</span>
+                                </div>
+                                <span className="text-sm font-medium">
+                                    {workflow?.consecutive_job_failures_count ?? 0} /{" "}
+                                    {workflow?.max_consecutive_job_failures_allowed ?? 1}
+                                </span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                <div
+                                    className="bg-orange-500 h-1.5 rounded-full"
+                                    style={{
+                                        width: `${((workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1)) * 100}%`,
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </CardContent>
+                    <CardFooter className="text-xs text-muted-foreground border-t">
+                        <span className="ml-auto">
+                            Last updated{" "}
+                            {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
+                        </span>
+                    </CardFooter>
+                </Card>
+            </TabsContent>
+        )
+    )
+}
+
+function renderWorkflowJobs(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
+    const { urlTabFilter, jobs, isJobsLoading, jobsError } = model
+    return urlTabFilter === "jobs" && isJobsLoading ? (
+        <WorkflowJobsSkeleton />
+    ) : (
+        urlTabFilter === "jobs" && !isJobsLoading && !jobsError && !!jobs.length && (
+            <TabsContent value="jobs" className="h-full w-full flex-1">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {jobs?.map((job: Job) => (
+                        <JobCard key={job.id} job={job} />
+                    ))}
+                </div>
+            </TabsContent>
+        )
     )
 }

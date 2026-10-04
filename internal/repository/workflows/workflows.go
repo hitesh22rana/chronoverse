@@ -76,16 +76,7 @@ func (r *Repository) CreateWorkflow(
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return nil, err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
-		return nil, err
+		return nil, mapWorkflowWriteError(err, "failed to start transaction")
 	}
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
@@ -178,16 +169,7 @@ func (r *Repository) CreateWorkflow(
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return nil, err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
-		return nil, err
+		return nil, mapWorkflowWriteError(err, "failed to commit transaction")
 	}
 
 	return res, nil
@@ -254,16 +236,7 @@ func (r *Repository) UpdateWorkflow(
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
-		return err
+		return mapWorkflowWriteError(err, "failed to start transaction")
 	}
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
@@ -391,53 +364,14 @@ func (r *Repository) UpdateWorkflow(
     `, postgres.TableWorkflows, buildStatus, boolSQL(decision.buildRequired), boolSQL(decision.buildRequired))
 	ct, err := tx.Exec(ctx, query, name, payload, interval, maxConsecutiveJobFailuresAllowed, buildHashArg, decision.nextGeneration, workflowID, userID)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to update workflow: %v", err)
-		return err
+		return mapWorkflowWriteError(err, "failed to update workflow")
 	}
 	if ct.RowsAffected() == 0 {
 		return status.Error(codes.NotFound, "workflow not found")
 	}
 
 	if decision.buildRequired || decision.rescheduleRequired {
-		cancelJobsArgs := []any{
-			jobsmodel.JobStatusCanceled.ToString(),
-			workflowID,
-			userID,
-			jobsmodel.JobStatusPending.ToString(),
-			jobsmodel.JobStatusQueued.ToString(),
-			terminalreason.WorkflowUpdated.String(),
-		}
-		triggerFilter := ""
-		if decision.rescheduleRequired && !decision.buildRequired {
-			triggerFilter = "AND trigger = $7"
-			cancelJobsArgs = append(cancelJobsArgs, jobsmodel.JobTriggerAutomatic.ToString())
-		}
-
-		cancelJobsQuery := fmt.Sprintf(`
-            UPDATE %s
-            SET status = $1,
-                completed_at = now() AT TIME ZONE 'utc',
-				lease_token = NULL,
-				leased_by = NULL,
-				lease_process_instance_id = NULL,
-				lease_expires_at = NULL,
-				last_heartbeat_at = NULL,
-				terminal_reason_code = $6
-            WHERE workflow_id = $2
-                AND user_id = $3
-                AND status IN ($4, $5)
-                %s;
-        `, postgres.TableJobs, triggerFilter)
-		if _, err = tx.Exec(ctx, cancelJobsQuery, cancelJobsArgs...); err != nil {
-			err = status.Errorf(codes.Internal, "failed to cancel stale workflow jobs: %v", err)
+		if err = cancelStaleWorkflowJobs(ctx, tx, workflowID, userID, decision.rescheduleRequired && !decision.buildRequired); err != nil {
 			return err
 		}
 	}
@@ -473,24 +407,13 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
-		return err
+		return mapWorkflowWriteError(err, "failed to commit transaction")
 	}
 
 	return nil
 }
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
-//
-//nolint:gocyclo // The explicit transition matrix keeps state-machine invariants auditable.
 func (r *Repository) UpdateWorkflowBuildStatus(
 	ctx context.Context,
 	workflowID,
@@ -537,17 +460,10 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 	if currentGeneration != generation {
 		return status.Error(codes.FailedPrecondition, "workflow generation mismatch")
 	}
-	if buildStatus != workflowsmodel.WorkflowBuildStatusCompleted.ToString() && (resolvedImageRef != "" || resolvedImageDigest != "") {
-		return status.Error(codes.InvalidArgument, "resolved image identity is only valid for completed builds")
+	if err = validateBuildImageIdentity(kind, buildStatus, resolvedImageRef, resolvedImageDigest); err != nil {
+		return err
 	}
-	if buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
-		if kind == workflowsmodel.KindContainer.ToString() && (resolvedImageRef == "" || resolvedImageDigest == "") {
-			return status.Error(codes.InvalidArgument, "completed container builds require image reference and digest")
-		}
-		if kind == workflowsmodel.KindHeartbeat.ToString() && (resolvedImageRef != "" || resolvedImageDigest != "") {
-			return status.Error(codes.InvalidArgument, "heartbeat builds must not contain resolved image identity")
-		}
-	}
+
 	if currentStatus == buildStatus {
 		if currentRef.String != resolvedImageRef || currentDigest.String != resolvedImageDigest {
 			return status.Error(codes.FailedPrecondition, "build result differs from the recorded result")
@@ -555,19 +471,7 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 		return tx.Commit(ctx)
 	}
 
-	allowed := false
-	switch currentStatus {
-	case workflowsmodel.WorkflowBuildStatusQueued.ToString():
-		allowed = buildStatus == workflowsmodel.WorkflowBuildStatusFailed.ToString() ||
-			buildStatus == workflowsmodel.WorkflowBuildStatusCanceled.ToString() ||
-			(kind == workflowsmodel.KindContainer.ToString() && buildStatus == workflowsmodel.WorkflowBuildStatusStarted.ToString()) ||
-			(kind == workflowsmodel.KindHeartbeat.ToString() && buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString())
-	case workflowsmodel.WorkflowBuildStatusStarted.ToString():
-		allowed = kind == workflowsmodel.KindContainer.ToString() &&
-			(buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString() ||
-				buildStatus == workflowsmodel.WorkflowBuildStatusFailed.ToString() ||
-				buildStatus == workflowsmodel.WorkflowBuildStatusCanceled.ToString())
-	}
+	allowed := workflowBuildTransitionAllowed(kind, currentStatus, buildStatus)
 	if !allowed {
 		return status.Errorf(codes.FailedPrecondition, "invalid workflow build transition %s -> %s", currentStatus, buildStatus)
 	}
@@ -933,16 +837,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
-		return err
+		return mapWorkflowWriteError(err, "failed to start transaction")
 	}
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
@@ -1011,16 +906,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
-		return err
+		return mapWorkflowWriteError(err, "failed to commit transaction")
 	}
 
 	return nil
@@ -1041,16 +927,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
-		return err
+		return mapWorkflowWriteError(err, "failed to start transaction")
 	}
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
@@ -1163,16 +1040,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to commit transaction: %v", err)
-		return err
+		return mapWorkflowWriteError(err, "failed to commit transaction")
 	}
 
 	return nil
@@ -1289,4 +1157,85 @@ func boolSQL(value bool) string {
 		return "TRUE"
 	}
 	return "FALSE"
+}
+
+// mapWorkflowWriteError preserves context cancellation before mapping database failures.
+func mapWorkflowWriteError(err error, message string) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, err.Error())
+	default:
+		return status.Errorf(codes.Internal, "%s: %v", message, err)
+	}
+}
+
+// cancelStaleWorkflowJobs invalidates queued work in the same transaction as the workflow update.
+func cancelStaleWorkflowJobs(ctx context.Context, tx pgx.Tx, workflowID, userID string, automaticOnly bool) error {
+	cancelJobsArgs := []any{
+		jobsmodel.JobStatusCanceled.ToString(),
+		workflowID,
+		userID,
+		jobsmodel.JobStatusPending.ToString(),
+		jobsmodel.JobStatusQueued.ToString(),
+		terminalreason.WorkflowUpdated.String(),
+	}
+	triggerFilter := ""
+	if automaticOnly {
+		triggerFilter = "AND trigger = $7"
+		cancelJobsArgs = append(cancelJobsArgs, jobsmodel.JobTriggerAutomatic.ToString())
+	}
+
+	cancelJobsQuery := fmt.Sprintf(`
+            UPDATE %s
+            SET status = $1,
+                completed_at = now() AT TIME ZONE 'utc',
+			lease_token = NULL,
+			leased_by = NULL,
+			lease_process_instance_id = NULL,
+			lease_expires_at = NULL,
+			last_heartbeat_at = NULL,
+			terminal_reason_code = $6
+            WHERE workflow_id = $2
+                AND user_id = $3
+                AND status IN ($4, $5)
+                %s;
+        `, postgres.TableJobs, triggerFilter)
+	if _, err := tx.Exec(ctx, cancelJobsQuery, cancelJobsArgs...); err != nil {
+		return status.Errorf(codes.Internal, "failed to cancel stale workflow jobs: %v", err)
+	}
+	return nil
+}
+
+func validateBuildImageIdentity(kind, buildStatus, resolvedImageRef, resolvedImageDigest string) error {
+	if buildStatus != workflowsmodel.WorkflowBuildStatusCompleted.ToString() && (resolvedImageRef != "" || resolvedImageDigest != "") {
+		return status.Error(codes.InvalidArgument, "resolved image identity is only valid for completed builds")
+	}
+	if buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString() {
+		if kind == workflowsmodel.KindContainer.ToString() && (resolvedImageRef == "" || resolvedImageDigest == "") {
+			return status.Error(codes.InvalidArgument, "completed container builds require image reference and digest")
+		}
+		if kind == workflowsmodel.KindHeartbeat.ToString() && (resolvedImageRef != "" || resolvedImageDigest != "") {
+			return status.Error(codes.InvalidArgument, "heartbeat builds must not contain resolved image identity")
+		}
+	}
+	return nil
+}
+
+func workflowBuildTransitionAllowed(kind, currentStatus, buildStatus string) bool {
+	allowed := false
+	switch currentStatus {
+	case workflowsmodel.WorkflowBuildStatusQueued.ToString():
+		allowed = buildStatus == workflowsmodel.WorkflowBuildStatusFailed.ToString() ||
+			buildStatus == workflowsmodel.WorkflowBuildStatusCanceled.ToString() ||
+			(kind == workflowsmodel.KindContainer.ToString() && buildStatus == workflowsmodel.WorkflowBuildStatusStarted.ToString()) ||
+			(kind == workflowsmodel.KindHeartbeat.ToString() && buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString())
+	case workflowsmodel.WorkflowBuildStatusStarted.ToString():
+		allowed = kind == workflowsmodel.KindContainer.ToString() &&
+			(buildStatus == workflowsmodel.WorkflowBuildStatusCompleted.ToString() ||
+				buildStatus == workflowsmodel.WorkflowBuildStatusFailed.ToString() ||
+				buildStatus == workflowsmodel.WorkflowBuildStatusCanceled.ToString())
+	}
+	return allowed
 }

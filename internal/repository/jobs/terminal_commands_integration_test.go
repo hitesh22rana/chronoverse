@@ -319,7 +319,9 @@ func occupySpareSlots(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 }
 
 // countTerminalOutboxEvents counts the outbox events whose deterministic keys a
-// terminal job command owns. Used where those keys are the contract under test.
+// terminal job command owns. PostgreSQL's UNIQUE (topic, event_key) makes a
+// repeated insert of the same key invisible here, so this proves the persisted
+// footprint of those keys, not the number of insert attempts.
 func countTerminalOutboxEvents(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID, operation string) int {
 	t.Helper()
 
@@ -654,8 +656,11 @@ func TestIntegrationFailJobStoresBoundedValidUTF8FailureMessage(t *testing.T) {
 			want: strings.Repeat("日", expectedTruncatedRunes),
 		},
 		{
-			name:    "raw container stderr with invalid utf-8 bytes",
-			message: strings.Repeat("a", maxJobErrorMessageLength-1) + "\xc3",
+			// Sanitizing drops the leading invalid byte, leaving 4098 bytes, so the
+			// truncation boundary lands inside the trailing rune: this covers the
+			// sanitization and the partial-rune trim in one pass.
+			name:    "invalid utf-8 bytes with a rune straddling the boundary",
+			message: "\xff" + strings.Repeat("a", maxJobErrorMessageLength-1) + "日",
 			want:    strings.Repeat("a", maxJobErrorMessageLength-1),
 		},
 	}
@@ -837,9 +842,7 @@ func TestIntegrationTerminalCommandsRejectsConflictingCommandPayload(t *testing.
 			}
 
 			// The same command identity must never be re-bound to a different
-			// payload. Every varied field is part of the reserved request hash;
-			// completion reserves no metadata to vary, so it runs no conflict case
-			// here and only the accepted command is proven.
+			// payload. Every varied field is part of the reserved request hash.
 			for _, conflict := range conflictingTerminalPayloads(operation.Operation) {
 				t.Run(conflict.name, func(t *testing.T) {
 					err := conflict.invoke(ctx, repo, fixture, commandID)
@@ -890,9 +893,7 @@ type conflictingTerminalPayload struct {
 // conflictingTerminalPayloads enumerates the payload fields each terminal
 // command reserves. Cancellation hashes terminal_reason_code beyond the lease
 // token and job identity; failure also hashes the failure metadata. Completion
-// reserves no request metadata at all, so no metadata conflict case applies to
-// it: the replay tests drive completion under one command identity and lease
-// token instead, and the stale-token tests cover a token that was never held.
+// reserves only the lease token, so that token is its one conflicting field.
 func conflictingTerminalPayloads(operation string) []conflictingTerminalPayload {
 	cancel := func(reason string) func(context.Context, *Repository, claimedFixture, string) error {
 		return func(ctx context.Context, repo *Repository, fixture claimedFixture, commandID string) error {
@@ -911,7 +912,16 @@ func conflictingTerminalPayloads(operation string) []conflictingTerminalPayload 
 		}
 	}
 	if operation == commandidempotency.OperationJobComplete {
-		return nil
+		// The lease token is the only field completion reserves, so the conflict
+		// must come from it. Re-binding an accepted command identity to a token
+		// no worker held has to be refused by the ledger's request-hash check,
+		// which the job is already terminal would otherwise mask.
+		return []conflictingTerminalPayload{{
+			name: "different lease token",
+			invoke: func(ctx context.Context, repo *Repository, fixture claimedFixture, commandID string) error {
+				return repo.CompleteJob(ctx, fixture.JobID, staleLeaseToken(fixture.LeaseToken), commandID)
+			},
+		}}
 	}
 
 	user := jobsmodel.FailureKindUser.ToString()
@@ -1117,30 +1127,6 @@ func TestIntegrationCancelClaimedJobPersistsTerminalCancellation(t *testing.T) {
 	assertNullString(t, "command resource_id", command.ResourceID, fixture.JobID)
 }
 
-func TestIntegrationCancelClaimedJobRejectsEmptyTerminalReasonConflict(t *testing.T) {
-	ctx := context.Background()
-	pg := testkit.Postgres(t)
-	repo := newTestRepository(t)
-
-	fixture := seedClaimedJob(ctx, t, pg, repo)
-	commandID := "cancel-conflict-" + fixtureTag()
-
-	if err := cancelClaimedTerminal(ctx, repo, fixture.JobID, fixture.LeaseToken, commandID); err != nil {
-		t.Fatalf("CancelClaimedJob: %v", err)
-	}
-	canceled := readTerminalJobState(ctx, t, pg, fixture.JobID)
-
-	// An empty reason code hashes differently from the accepted one, so the same
-	// command identity must be refused instead of silently re-binding.
-	err := repo.CancelClaimedJob(ctx, fixture.JobID, fixture.LeaseToken, "", commandID)
-	if status.Code(err) != codes.AlreadyExists {
-		t.Fatalf("CancelClaimedJob(conflicting empty reason) code = %v, want %v (err: %v)", status.Code(err), codes.AlreadyExists, err)
-	}
-	after := readTerminalJobState(ctx, t, pg, fixture.JobID)
-	assertUnchangedCompletion(t, after, canceled)
-	assertNullString(t, "terminal_reason_code", after.TerminalReasonCode, terminalreason.WorkflowTerminated.String())
-}
-
 func TestIntegrationTerminalCommandsRejectMalformedJobIdentity(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -1165,7 +1151,10 @@ func TestIntegrationTerminalCommandsRejectMalformedJobIdentity(t *testing.T) {
 // assertOutboxEffectCount asserts both the deterministic terminal keys and the
 // job-scoped payload total, so an extra event of an unexpected shape fails too.
 // The wanted count comes from the command rather than from the caller, so the two
-// counters can never be asserted against different numbers.
+// counters can never be asserted against different numbers. Neither counter can
+// see a second insert attempt under an already-persisted key, which the
+// UNIQUE (topic, event_key) constraint suppresses: what a replay proves is that
+// the persisted outbox footprint is unchanged.
 func assertOutboxEffectCount(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture claimedFixture, operation string) {
 	t.Helper()
 

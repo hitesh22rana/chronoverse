@@ -17,6 +17,7 @@ import type { Workflow } from "@/features/workflows/types"
 
 import { cn } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/features/jobs/job-status"
+import { formatWorkflowInterval } from "@/features/workflows/workflow-schedule"
 
 interface WorkflowCardProps {
     workflow: Workflow
@@ -33,11 +34,7 @@ export function WorkflowCard({ workflow }: WorkflowCardProps) {
 
     const StatusIcon = statusMeta.icon
 
-    const interval = workflow.interval === 1440
-        ? "daily"
-        : workflow.interval % 60 === 0 && workflow.interval >= 60
-            ? `every ${workflow.interval / 60} hour${workflow.interval / 60 !== 1 ? 's' : ''}`
-            : `every ${workflow.interval} minute${workflow.interval !== 1 ? 's' : ''}`
+    const interval = formatWorkflowInterval(workflow.interval)
 
     return (
         <Link href={`/workflows/${workflow.id}`} prefetch={false} className="block h-full">

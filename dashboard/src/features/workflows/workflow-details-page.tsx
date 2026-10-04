@@ -72,6 +72,7 @@ import type { Job } from "@/features/jobs/types"
 
 import { cn } from "@/lib/utils"
 import { getStatusMeta, getStatusLabel } from "@/features/jobs/job-status"
+import { formatWorkflowInterval } from "@/features/workflows/workflow-schedule"
 
 export default function WorkflowDetailsAndJobsPage() {
     return renderWorkflowDetailsAndJobsView(useWorkflowDetailsAndJobsModel())
@@ -128,13 +129,7 @@ function useWorkflowDetailsAndJobsModel() {
 
     const statusMeta = getStatusMeta(status)
 
-    const interval = workflow?.interval
-        ? workflow.interval === 1440
-            ? "daily"
-            : workflow.interval % 60 === 0 && workflow.interval >= 60
-              ? `every ${workflow.interval / 60} hour${workflow.interval / 60 !== 1 ? "s" : ""}`
-              : `every ${workflow.interval} minute${workflow.interval !== 1 ? "s" : ""}`
-        : ""
+    const interval = workflow?.interval ? formatWorkflowInterval(workflow.interval) : ""
 
     const handleRefresh = () => {
         refetchWorkflow()

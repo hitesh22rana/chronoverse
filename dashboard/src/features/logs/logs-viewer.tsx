@@ -281,12 +281,6 @@ export function LogsViewer({
     } | null>(null)
     const pendingSearchQueryRef = useRef<string | null>(null)
     const virtuosoRef = useRef<VirtuosoHandle>(null)
-    const deepLinkFetchInFlightRef = useRef(false)
-    const lastScrolledSelectionRef = useRef("")
-    const pendingScrollSelectionRef = useRef<{ key: string; index: number; correcting: boolean } | null>(null)
-    const lastUnavailableSelectionRef = useRef("")
-    const [lineSelection, setLineSelection] = useState<LogLineSelection | null>(null)
-    const selectionAnchorRef = useRef<number | null>(null)
 
     const {
         logs,
@@ -314,17 +308,10 @@ export function LogsViewer({
     const disableLogInteractions = isRetentionDisabled || isLogsUnsupportedForKind
     const parseJson = searchParams.get("json") === "true"
     const datasetKey = `${pathname}?q=${searchQuery}&stream=${streamFilter}`
-    const selectionFragment = lineSelection ? formatLogLineSelection(lineSelection) : ""
-    const selectionKey = `${datasetKey}${selectionFragment}`
-    const isSelectionUnavailable = Boolean(
-        lineSelection &&
-        !isLogsLoading &&
-        !isWorkflowLoading &&
-        !logsError &&
-        !isFetchingNextPage &&
-        hasNextPage === false &&
-        logs.length < lineSelection.end
-    )
+    const { lineSelection, setLineSelection, selectionAnchorRef, handleRenderedRangeChanged } = useLogSelection({
+        workflowId, jobId, datasetKey, logs, isLogsLoading, isWorkflowLoading, logsError,
+        isFetchingNextPage, hasNextPage, fetchNextPage, virtuosoRef,
+    })
 
     const {
         updateJsonRendering,
@@ -357,115 +344,6 @@ export function LogsViewer({
         setSearchInput(searchQuery)
     }, [searchQuery])
 
-    useEffect(() => {
-        deepLinkFetchInFlightRef.current = false
-        pendingScrollSelectionRef.current = null
-        lastScrolledSelectionRef.current = ""
-    }, [datasetKey])
-
-    const handleRenderedRangeChanged = (range: ListRange) => {
-        const pendingScroll = pendingScrollSelectionRef.current
-        if (!pendingScroll || pendingScroll.correcting || pendingScroll.index < range.startIndex || pendingScroll.index > range.endIndex) {
-            return
-        }
-
-        pendingScroll.correcting = true
-        requestAnimationFrame(() => {
-            if (pendingScrollSelectionRef.current !== pendingScroll) {
-                return
-            }
-
-            virtuosoRef.current?.scrollIntoView({
-                index: pendingScroll.index,
-                align: "start",
-                calculateViewLocation: ({ locationParams }) => ({
-                    ...locationParams,
-                    align: "start",
-                }),
-                done: () => {
-                    if (pendingScrollSelectionRef.current !== pendingScroll) {
-                        return
-                    }
-
-                    pendingScrollSelectionRef.current = null
-                    lastScrolledSelectionRef.current = pendingScroll.key
-                },
-            })
-        })
-    }
-
-    useEffect(() => {
-        const syncSelectionFromFragment = () => {
-            const selection = parseLogLineSelection(window.location.hash)
-            setLineSelection(selection)
-            selectionAnchorRef.current = selection?.start ?? null
-        }
-
-        syncSelectionFromFragment()
-        window.addEventListener("hashchange", syncSelectionFromFragment)
-        window.addEventListener("popstate", syncSelectionFromFragment)
-
-        return () => {
-            window.removeEventListener("hashchange", syncSelectionFromFragment)
-            window.removeEventListener("popstate", syncSelectionFromFragment)
-        }
-    }, [workflowId, jobId])
-
-    useEffect(() => {
-        if (!lineSelection || isLogsLoading || isWorkflowLoading || logsError) {
-            return
-        }
-
-        if (logs.length >= lineSelection.end) {
-            if (lastScrolledSelectionRef.current !== selectionKey) {
-                const targetIndex = lineSelection.start - 1
-                pendingScrollSelectionRef.current = { key: selectionKey, index: targetIndex, correcting: false }
-                requestAnimationFrame(() => {
-                    virtuosoRef.current?.scrollToIndex({
-                        index: targetIndex,
-                        align: "start",
-                    })
-                })
-            }
-            return
-        }
-
-        if (shouldFetchMoreLogsForSelection(lineSelection, logs.length, Boolean(hasNextPage))) {
-            if (isFetchingNextPage || deepLinkFetchInFlightRef.current) {
-                return
-            }
-
-            deepLinkFetchInFlightRef.current = true
-            void fetchNextPage().finally(() => {
-                deepLinkFetchInFlightRef.current = false
-            })
-            return
-        }
-
-    }, [
-        fetchNextPage,
-        hasNextPage,
-        isFetchingNextPage,
-        isLogsLoading,
-        isWorkflowLoading,
-        lineSelection,
-        logs.length,
-        logsError,
-        selectionKey,
-    ])
-
-    useEffect(() => {
-        if (!isSelectionUnavailable || !lineSelection) {
-            return
-        }
-
-        if (lastUnavailableSelectionRef.current === selectionKey) {
-            return
-        }
-
-        lastUnavailableSelectionRef.current = selectionKey
-        toast.warning(getUnavailableSelectionMessage(lineSelection))
-    }, [isSelectionUnavailable, lineSelection, selectionKey])
 
     useLogSearchInteractions({
         searchInput,
@@ -808,4 +686,176 @@ function LogResults({ model }: { model: any }) {
             <div className="text-sm text-center">{description}</div>
         </div>
     )
+}
+
+type LogSelectionModel = Pick<ReturnType<typeof useJobLogs>, "logs" | "isWorkflowLoading" | "isFetchingNextPage" | "hasNextPage" | "fetchNextPage"> & {
+    workflowId: string
+    jobId: string
+    datasetKey: string
+    isLogsLoading: boolean
+    logsError: ReturnType<typeof useJobLogs>["error"]
+    virtuosoRef: React.RefObject<VirtuosoHandle | null>
+}
+
+function useLogSelection({
+    workflowId,
+    jobId,
+    datasetKey,
+    logs,
+    isLogsLoading,
+    isWorkflowLoading,
+    logsError,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    virtuosoRef,
+}: LogSelectionModel) {
+    const deepLinkFetchInFlightRef = useRef(false)
+    const lastScrolledSelectionRef = useRef("")
+    const pendingScrollSelectionRef = useRef<{ key: string; index: number; correcting: boolean } | null>(null)
+    const lastUnavailableSelectionRef = useRef("")
+    const [lineSelection, setLineSelection] = useState<LogLineSelection | null>(null)
+    const selectionAnchorRef = useRef<number | null>(null)
+
+    const selectionFragment = lineSelection ? formatLogLineSelection(lineSelection) : ""
+    const selectionKey = `${datasetKey}${selectionFragment}`
+    const isSelectionUnavailable = Boolean(
+        lineSelection &&
+        !isLogsLoading &&
+        !isWorkflowLoading &&
+        !logsError &&
+        !isFetchingNextPage &&
+        hasNextPage === false &&
+        logs.length < lineSelection.end,
+    )
+
+    useEffect(() => {
+        deepLinkFetchInFlightRef.current = false
+        pendingScrollSelectionRef.current = null
+        lastScrolledSelectionRef.current = ""
+    }, [datasetKey])
+
+    const handleRenderedRangeChanged = (range: ListRange) => {
+        correctRenderedSelection(range, pendingScrollSelectionRef, lastScrolledSelectionRef, virtuosoRef)
+    }
+
+    useEffect(() => {
+        const syncSelectionFromFragment = () => {
+            const selection = parseLogLineSelection(window.location.hash)
+            setLineSelection(selection)
+            selectionAnchorRef.current = selection?.start ?? null
+        }
+
+        syncSelectionFromFragment()
+        window.addEventListener("hashchange", syncSelectionFromFragment)
+        window.addEventListener("popstate", syncSelectionFromFragment)
+
+        return () => {
+            window.removeEventListener("hashchange", syncSelectionFromFragment)
+            window.removeEventListener("popstate", syncSelectionFromFragment)
+        }
+    }, [workflowId, jobId])
+
+    useEffect(() => {
+        if (!lineSelection || isLogsLoading || isWorkflowLoading || logsError) {
+            return
+        }
+
+        if (logs.length >= lineSelection.end) {
+            if (lastScrolledSelectionRef.current !== selectionKey) {
+                const targetIndex = lineSelection.start - 1
+                pendingScrollSelectionRef.current = {
+                    key: selectionKey,
+                    index: targetIndex,
+                    correcting: false,
+                }
+                requestAnimationFrame(() => {
+                    virtuosoRef.current?.scrollToIndex({
+                        index: targetIndex,
+                        align: "start",
+                    })
+                })
+            }
+            return
+        }
+
+        if (shouldFetchMoreLogsForSelection(lineSelection, logs.length, Boolean(hasNextPage))) {
+            if (isFetchingNextPage || deepLinkFetchInFlightRef.current) {
+                return
+            }
+
+            deepLinkFetchInFlightRef.current = true
+            void fetchNextPage().finally(() => {
+                deepLinkFetchInFlightRef.current = false
+            })
+            return
+        }
+    }, [
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLogsLoading,
+        isWorkflowLoading,
+        lineSelection,
+        logs.length,
+        logsError,
+        selectionKey,
+        virtuosoRef,
+    ])
+
+    useEffect(() => {
+        if (!isSelectionUnavailable || !lineSelection) {
+            return
+        }
+
+        if (lastUnavailableSelectionRef.current === selectionKey) {
+            return
+        }
+
+        lastUnavailableSelectionRef.current = selectionKey
+        toast.warning(getUnavailableSelectionMessage(lineSelection))
+    }, [isSelectionUnavailable, lineSelection, selectionKey])
+
+    return { lineSelection, setLineSelection, selectionAnchorRef, handleRenderedRangeChanged }
+}
+
+function correctRenderedSelection(
+    range: ListRange,
+    pendingScrollSelectionRef: React.RefObject<{ key: string; index: number; correcting: boolean } | null>,
+    lastScrolledSelectionRef: React.RefObject<string>,
+    virtuosoRef: React.RefObject<VirtuosoHandle | null>,
+) {
+    const pendingScroll = pendingScrollSelectionRef.current
+    if (
+        !pendingScroll ||
+        pendingScroll.correcting ||
+        pendingScroll.index < range.startIndex ||
+        pendingScroll.index > range.endIndex
+    ) {
+        return
+    }
+
+    pendingScroll.correcting = true
+    requestAnimationFrame(() => {
+        if (pendingScrollSelectionRef.current !== pendingScroll) {
+            return
+        }
+
+        virtuosoRef.current?.scrollIntoView({
+            index: pendingScroll.index,
+            align: "start",
+            calculateViewLocation: ({ locationParams }) => ({
+                ...locationParams,
+                align: "start",
+            }),
+            done: () => {
+                if (pendingScrollSelectionRef.current !== pendingScroll) {
+                    return
+                }
+
+                pendingScrollSelectionRef.current = null
+                lastScrolledSelectionRef.current = pendingScroll.key
+            },
+        })
+    })
 }

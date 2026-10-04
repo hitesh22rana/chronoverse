@@ -96,24 +96,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
         queryKey: queryKeys.job.logs(workflowId, jobId, jobStatus),
         queryFn: async ({ pageParam }) => {
-            const isFirstPage = !pageParam
-            const params = new URLSearchParams()
-            if (pageParam) {
-                params.set("cursor", String(pageParam))
-            }
+            const res = await fetchLogPage(logsURL, pageParam)
 
-            const res = await fetchApiJson<JobLogsResponse>(
-                withQuery(logsURL, params),
-                "failed to fetch job logs",
-                isFirstPage ? { cache: "no-store" } : {},
-            )
-
-            return {
-                id: res.id,
-                workflow_id: res.workflow_id,
-                logs: (res.logs || []).map((log) => normalizeJobLog(log)),
-                cursor: res.cursor || undefined,
-            }
+            return retainedLogPage(res)
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
@@ -124,25 +109,9 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
         queryKey: queryKeys.job.logSearch(workflowId, jobId, searchQuery, streamFilter),
         queryFn: async ({ pageParam }) => {
-            const isFirstPage = !pageParam
-            const params = new URLSearchParams(getSearchQueryParams)
-            if (pageParam) {
-                params.set("cursor", String(pageParam))
-            }
+            const res = await fetchLogPage(searchURL, pageParam, getSearchQueryParams)
 
-            const res = await fetchApiJson<JobLogsResponse>(
-                withQuery(searchURL, params),
-                "failed to fetch job logs",
-                isFirstPage ? { cache: "no-store" } : {},
-            )
-
-            return {
-                id: jobId,
-                workflow_id: workflowId,
-                logs: (res.logs || []).map((log) => normalizeJobLog(log, res.highlight_token)),
-                cursor: res.cursor || undefined,
-                highlight_token: res.highlight_token,
-            }
+            return searchedLogPage(res, workflowId, jobId)
         },
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage?.cursor || null,
@@ -155,37 +124,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
             return
         }
 
-        const eventSource = new EventSource(sseURL, {
-            withCredentials: true,
-        })
-
-        const handleLog = (event: MessageEvent<string>) => {
-            try {
-                const logData = normalizeJobLog(JSON.parse(event.data) as JobLogWire)
-
-                setLiveLogs((existingLogs) => mergeLiveLogs(existingLogs, [logData]))
-            } catch { /* ignore parsing errors */ }
-        }
-
-        const handleError = () => {
-            toast.error('Log streaming error occurred')
-        }
-
-        eventSource.addEventListener('log', handleLog)
-        eventSource.addEventListener('error', handleError)
-
-        eventSource.onerror = () => {
-            // Silent on normal disconnects.
-            if (eventSource.readyState !== EventSource.CLOSED) {
-                toast.error('Lost connection to log stream')
-            }
-        }
-
-        return () => {
-            eventSource.removeEventListener('log', handleLog)
-            eventSource.removeEventListener('error', handleError)
-            eventSource.close()
-        }
+        return subscribeToJobLogs(sseURL, setLiveLogs)
     }, [sseURL, isRunning, shouldFetch, getSearchQueryParams, workflowId, jobId])
 
     useEffect(() => {
@@ -256,5 +195,70 @@ function useLogFilters() {
         updateSearchQuery: (value: string) => updateFilter("q", value),
         applyStreamFilter: (value: string) => updateFilter("stream", value),
         getSearchQueryParams: params.toString(),
+    }
+}
+
+function subscribeToJobLogs(sseURL: string, setLiveLogs: React.Dispatch<React.SetStateAction<JobLog[]>>) {
+    const eventSource = new EventSource(sseURL, {
+        withCredentials: true,
+    })
+
+    const handleLog = (event: MessageEvent<string>) => {
+        try {
+            const logData = normalizeJobLog(JSON.parse(event.data) as JobLogWire)
+
+            setLiveLogs((existingLogs) => mergeLiveLogs(existingLogs, [logData]))
+        } catch {
+            /* ignore parsing errors */
+        }
+    }
+
+    const handleError = () => {
+        toast.error("Log streaming error occurred")
+    }
+
+    eventSource.addEventListener("log", handleLog)
+    eventSource.addEventListener("error", handleError)
+
+    eventSource.onerror = () => {
+        // Silent on normal disconnects.
+        if (eventSource.readyState !== EventSource.CLOSED) {
+            toast.error("Lost connection to log stream")
+        }
+    }
+
+    return () => {
+        eventSource.removeEventListener("log", handleLog)
+        eventSource.removeEventListener("error", handleError)
+        eventSource.close()
+    }
+}
+
+function fetchLogPage(url: string, pageParam: unknown, search = "") {
+    const params = new URLSearchParams(search)
+    if (pageParam) params.set("cursor", String(pageParam))
+    return fetchApiJson<JobLogsResponse>(
+        withQuery(url, params),
+        "failed to fetch job logs",
+        !pageParam ? { cache: "no-store" } : {},
+    )
+}
+
+function retainedLogPage(res: JobLogsResponse): JobLogsResponse {
+    return {
+        id: res.id,
+        workflow_id: res.workflow_id,
+        logs: (res.logs || []).map((log) => normalizeJobLog(log)),
+        cursor: res.cursor || undefined,
+    }
+}
+
+function searchedLogPage(res: JobLogsResponse, workflowId: string, jobId: string): JobLogsResponse {
+    return {
+        id: jobId,
+        workflow_id: workflowId,
+        logs: (res.logs || []).map((log) => normalizeJobLog(log, res.highlight_token)),
+        cursor: res.cursor || undefined,
+        highlight_token: res.highlight_token,
     }
 }

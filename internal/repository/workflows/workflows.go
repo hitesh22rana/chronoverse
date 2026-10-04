@@ -276,64 +276,27 @@ func (r *Repository) UpdateWorkflow(
 		return tx.Commit(ctx)
 	}
 
-	var (
-		kind                string
-		currentBuildHash    sql.NullString
-		currentGeneration   int64
-		currentInterval     int32
-		currentBuildStatus  string
-		currentTerminatedAt sql.NullTime
-	)
-	query := fmt.Sprintf(`
-        SELECT kind, build_hash, generation, interval, build_status, terminated_at
-        FROM %s
-        WHERE id = $1 AND user_id = $2
-        FOR UPDATE
-        LIMIT 1;
-    `, postgres.TableWorkflows)
-	if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(
-		&kind,
-		&currentBuildHash,
-		&currentGeneration,
-		&currentInterval,
-		&currentBuildStatus,
-		&currentTerminatedAt,
-	); err != nil {
-		switch {
-		case errors.Is(err, context.DeadlineExceeded):
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		case errors.Is(err, context.Canceled):
-			err = status.Error(codes.Canceled, err.Error())
-			return err
-		case r.pg.IsNoRows(err):
-			err = status.Error(codes.NotFound, "workflow not found")
-			return err
-		case r.pg.IsInvalidTextRepresentation(err):
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
-			return err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to fetch workflow: %v", err)
+	current, err := r.loadWorkflowUpdateState(ctx, tx, workflowID, userID)
+	if err != nil {
 		return err
 	}
 
-	if kindErr := validateWorkflowPayloadKind(kind, payload); kindErr != nil {
+	if kindErr := validateWorkflowPayloadKind(current.kind, payload); kindErr != nil {
 		return kindErr
 	}
 
-	newBuildHash, err := idempotency.WorkflowBuildHash(kind, payload)
+	newBuildHash, err := idempotency.WorkflowBuildHash(current.kind, payload)
 	if err != nil {
 		return err
 	}
 
 	newBuildHashValid := newBuildHash != ""
 	decision := decideWorkflowUpdateAction(
-		currentBuildHash,
-		currentGeneration,
-		currentInterval,
-		currentBuildStatus,
-		currentTerminatedAt.Valid,
+		current.buildHash,
+		current.generation,
+		current.interval,
+		current.buildStatus,
+		current.terminatedAt.Valid,
 		newBuildHash,
 		newBuildHashValid,
 		interval,
@@ -347,7 +310,7 @@ func (r *Repository) UpdateWorkflow(
 		buildStatus = fmt.Sprintf("'%s'", decision.buildStatus)
 	}
 
-	query = fmt.Sprintf(`
+	query := fmt.Sprintf(`
         UPDATE %s
         SET name = $1,
             payload = $2,
@@ -371,8 +334,8 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	if decision.buildRequired || decision.rescheduleRequired {
-		if err = cancelStaleWorkflowJobs(ctx, tx, workflowID, userID, decision.rescheduleRequired && !decision.buildRequired); err != nil {
-			return err
+		if cancelErr := cancelStaleWorkflowJobs(ctx, tx, workflowID, userID, decision.rescheduleRequired && !decision.buildRequired); cancelErr != nil {
+			return cancelErr
 		}
 	}
 
@@ -460,15 +423,12 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 	if currentGeneration != generation {
 		return status.Error(codes.FailedPrecondition, "workflow generation mismatch")
 	}
-	if err = validateBuildImageIdentity(kind, buildStatus, resolvedImageRef, resolvedImageDigest); err != nil {
-		return err
+	if identityErr := validateBuildImageIdentity(kind, buildStatus, resolvedImageRef, resolvedImageDigest); identityErr != nil {
+		return identityErr
 	}
 
 	if currentStatus == buildStatus {
-		if currentRef.String != resolvedImageRef || currentDigest.String != resolvedImageDigest {
-			return status.Error(codes.FailedPrecondition, "build result differs from the recorded result")
-		}
-		return tx.Commit(ctx)
+		return replayWorkflowBuildStatus(ctx, tx, currentRef.String, currentDigest.String, resolvedImageRef, resolvedImageDigest)
 	}
 
 	allowed := workflowBuildTransitionAllowed(kind, currentStatus, buildStatus)
@@ -648,25 +608,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	}
 
 	if ct.RowsAffected() == 0 {
-		query = fmt.Sprintf(`
-			SELECT workflow_id::text, user_id::text, effect, threshold_reached
-			FROM %s
-			WHERE job_id = $1
-			LIMIT 1;
-		`, postgres.TableWorkflowTerminalEffects)
-
-		var storedWorkflowID, storedUserID, effect string
-		var storedThreshold bool
-		if err = tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect, &storedThreshold); err != nil {
-			return false, status.Errorf(codes.Internal, "failed to fetch workflow terminal effect: %v", err)
-		}
-		if storedWorkflowID != workflowID || storedUserID != userID || effect != "FAILED" {
-			return false, status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
-		}
-		if err = tx.Commit(ctx); err != nil {
-			return false, status.Errorf(codes.Internal, "failed to commit terminal-effect replay: %v", err)
-		}
-		return storedThreshold, nil
+		return replayWorkflowFailureEffect(ctx, tx, workflowID, userID, jobID)
 	}
 
 	query = fmt.Sprintf(`
@@ -823,8 +765,6 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 }
 
 // TerminateWorkflow terminates a workflow.
-//
-//nolint:gocyclo // The transactional error handling has several distinct database failure branches.
 func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.TerminateWorkflow")
 	defer func() {
@@ -1238,4 +1178,82 @@ func workflowBuildTransitionAllowed(kind, currentStatus, buildStatus string) boo
 				buildStatus == workflowsmodel.WorkflowBuildStatusCanceled.ToString())
 	}
 	return allowed
+}
+
+type workflowUpdateState struct {
+	kind         string
+	buildHash    sql.NullString
+	generation   int64
+	interval     int32
+	buildStatus  string
+	terminatedAt sql.NullTime
+}
+
+func (r *Repository) loadWorkflowUpdateState(ctx context.Context, tx pgx.Tx, workflowID, userID string) (*workflowUpdateState, error) {
+	state := &workflowUpdateState{}
+	var err error
+	query := fmt.Sprintf(`
+        SELECT kind, build_hash, generation, interval, build_status, terminated_at
+        FROM %s
+        WHERE id = $1 AND user_id = $2
+        FOR UPDATE
+        LIMIT 1;
+    `, postgres.TableWorkflows)
+	if err = tx.QueryRow(ctx, query, workflowID, userID).Scan(
+		&state.kind,
+		&state.buildHash,
+		&state.generation,
+		&state.interval,
+		&state.buildStatus,
+		&state.terminatedAt,
+	); err != nil {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			err = status.Error(codes.DeadlineExceeded, err.Error())
+			return nil, err
+		case errors.Is(err, context.Canceled):
+			err = status.Error(codes.Canceled, err.Error())
+			return nil, err
+		case r.pg.IsNoRows(err):
+			err = status.Error(codes.NotFound, "workflow not found")
+			return nil, err
+		case r.pg.IsInvalidTextRepresentation(err):
+			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+			return nil, err
+		}
+
+		err = status.Errorf(codes.Internal, "failed to fetch workflow: %v", err)
+		return nil, err
+	}
+
+	return state, nil
+}
+
+func replayWorkflowFailureEffect(ctx context.Context, tx pgx.Tx, workflowID, userID, jobID string) (bool, error) {
+	query := fmt.Sprintf(`
+		SELECT workflow_id::text, user_id::text, effect, threshold_reached
+		FROM %s
+		WHERE job_id = $1
+		LIMIT 1;
+	`, postgres.TableWorkflowTerminalEffects)
+
+	var storedWorkflowID, storedUserID, effect string
+	var storedThreshold bool
+	if err := tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect, &storedThreshold); err != nil {
+		return false, status.Errorf(codes.Internal, "failed to fetch workflow terminal effect: %v", err)
+	}
+	if storedWorkflowID != workflowID || storedUserID != userID || effect != "FAILED" {
+		return false, status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, status.Errorf(codes.Internal, "failed to commit terminal-effect replay: %v", err)
+	}
+	return storedThreshold, nil
+}
+
+func replayWorkflowBuildStatus(ctx context.Context, tx pgx.Tx, currentRef, currentDigest, resolvedImageRef, resolvedImageDigest string) error {
+	if currentRef != resolvedImageRef || currentDigest != resolvedImageDigest {
+		return status.Error(codes.FailedPrecondition, "build result differs from the recorded result")
+	}
+	return tx.Commit(ctx)
 }

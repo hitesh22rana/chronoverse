@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -25,15 +26,8 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -90,15 +84,8 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -132,15 +119,8 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -166,15 +146,8 @@ func (s *Server) handleTerminateWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -197,15 +170,8 @@ func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -224,77 +190,22 @@ func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 //
 //nolint:gocyclo // This function is complex and can be simplified further.
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
 	cursor := r.URL.Query().Get("cursor")
-
-	query := r.URL.Query().Get("query")
-
-	kind := r.URL.Query().Get("kind")
-	if kind != "" {
-		if !isValidKind(kind) {
-			http.Error(w, "invalid kind", http.StatusBadRequest)
-			return
-		}
-	}
-
-	buildStatus := r.URL.Query().Get("build_status")
-	if buildStatus != "" {
-		if !isValidBuildStatus(buildStatus) {
-			http.Error(w, "invalid build status", http.StatusBadRequest)
-			return
-		}
-	}
-
-	terminatedStr := r.URL.Query().Get("terminated")
-	if terminatedStr == "" {
-		terminatedStr = "false"
-	}
-	terminated, err := strconv.ParseBool(terminatedStr)
+	filters, err := parseWorkflowListFilters(r.URL.Query())
 	if err != nil {
-		http.Error(w, "invalid terminated", http.StatusBadRequest)
-		return
-	}
-
-	// If build status is provided, terminated must be false
-	if buildStatus != "" && terminated {
-		http.Error(w, "terminated cannot be true when build status is provided", http.StatusBadRequest)
-		return
-	}
-
-	intervalMin, err := parseOptionalNonNegativeInt32(r.URL.Query().Get("interval_min"))
-	if err != nil {
-		http.Error(w, "invalid interval_min", http.StatusBadRequest)
-		return
-	}
-
-	intervalMax, err := parseOptionalNonNegativeInt32(r.URL.Query().Get("interval_max"))
-	if err != nil || (intervalMax != 0 && intervalMax < intervalMin) {
-		http.Error(w, "invalid interval_max", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	res, err := s.workflowsClient.ListWorkflows(r.Context(), &workflowspb.ListWorkflowsRequest{
-		UserId: userID,
-		Cursor: cursor,
-		Filters: &workflowspb.ListWorkflowsFilters{
-			Query:        query,
-			Kind:         kind,
-			BuildStatus:  buildStatus,
-			IsTerminated: terminated,
-			IntervalMin:  intervalMin,
-			IntervalMax:  intervalMax,
-		},
+		UserId:  userID,
+		Cursor:  cursor,
+		Filters: filters,
 	})
 	if err != nil {
 		handleError(w, err, "failed to list workflows")
@@ -318,4 +229,55 @@ func parseOptionalNonNegativeInt32(value string) (int32, error) {
 	}
 
 	return int32(parsed), nil
+}
+
+func parseWorkflowListFilters(values url.Values) (*workflowspb.ListWorkflowsFilters, error) {
+	query := values.Get("query")
+
+	kind := values.Get("kind")
+	if kind != "" {
+		if !isValidKind(kind) {
+			return nil, errors.New("invalid kind")
+		}
+	}
+
+	buildStatus := values.Get("build_status")
+	if buildStatus != "" {
+		if !isValidBuildStatus(buildStatus) {
+			return nil, errors.New("invalid build status")
+		}
+	}
+
+	terminatedStr := values.Get("terminated")
+	if terminatedStr == "" {
+		terminatedStr = "false"
+	}
+	terminated, err := strconv.ParseBool(terminatedStr)
+	if err != nil {
+		return nil, errors.New("invalid terminated")
+	}
+
+	// If build status is provided, terminated must be false
+	if buildStatus != "" && terminated {
+		return nil, errors.New("terminated cannot be true when build status is provided")
+	}
+
+	intervalMin, err := parseOptionalNonNegativeInt32(values.Get("interval_min"))
+	if err != nil {
+		return nil, errors.New("invalid interval_min")
+	}
+
+	intervalMax, err := parseOptionalNonNegativeInt32(values.Get("interval_max"))
+	if err != nil || (intervalMax != 0 && intervalMax < intervalMin) {
+		return nil, errors.New("invalid interval_max")
+	}
+
+	return &workflowspb.ListWorkflowsFilters{
+		Query:        query,
+		Kind:         kind,
+		BuildStatus:  buildStatus,
+		IsTerminated: terminated,
+		IntervalMin:  intervalMin,
+		IntervalMax:  intervalMax,
+	}, nil
 }

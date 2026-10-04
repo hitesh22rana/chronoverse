@@ -8,15 +8,8 @@ import (
 )
 
 func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request) {
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -49,15 +42,8 @@ func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 

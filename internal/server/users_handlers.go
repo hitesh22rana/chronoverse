@@ -190,15 +190,8 @@ func (s *Server) handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -227,15 +220,8 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 

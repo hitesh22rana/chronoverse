@@ -214,3 +214,13 @@ func getJobLogsStreamType(stream string) (jobspb.LogStream, error) {
 func isTerminalJobStatus(status string) bool {
 	return isValidValue(status, terminalJobStatuses)
 }
+
+// requestUserID applies the shared authenticated-user validation for HTTP handlers.
+func requestUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	userID, ok := r.Context().Value(userIDKey{}).(string)
+	if !ok || userID == "" {
+		http.Error(w, "user ID not found", http.StatusBadRequest)
+		return "", false
+	}
+	return userID, true
+}

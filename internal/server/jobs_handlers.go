@@ -42,15 +42,8 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -99,15 +92,8 @@ func (s *Server) handleManualScheduleJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -149,15 +135,8 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -195,15 +174,8 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -244,15 +216,8 @@ func (s *Server) handleSearchJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -630,15 +595,8 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	value := r.Context().Value(userIDKey{})
-	if value == nil {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
-		return
-	}
-
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		http.Error(w, "user ID not found", http.StatusBadRequest)
+	userID, ok := requestUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -673,6 +631,11 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\"}\n\n")
 	rc.Flush()
 
+	s.forwardJobLogEvents(ctx, w, rc, stream)
+
+}
+
+func (s *Server) forwardJobLogEvents(ctx context.Context, w http.ResponseWriter, rc http.Flusher, stream jobspb.JobsService_StreamJobLogsClient) {
 	for {
 		select {
 		case <-ctx.Done():

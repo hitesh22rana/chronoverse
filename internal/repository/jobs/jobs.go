@@ -1338,13 +1338,14 @@ func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobL
 }
 
 func (r *Repository) mapJobLogsStatusError(err error) error {
-	if errors.Is(err, context.DeadlineExceeded) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, err.Error())
-	} else if errors.Is(err, context.Canceled) {
+	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, err.Error())
-	} else if r.pg.IsNoRows(err) {
+	case r.pg.IsNoRows(err):
 		return status.Errorf(codes.NotFound, "job not found or not owned by user: %v", err)
-	} else if r.pg.IsInvalidTextRepresentation(err) {
+	case r.pg.IsInvalidTextRepresentation(err):
 		return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
 	}
 

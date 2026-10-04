@@ -150,8 +150,8 @@ func (r *Repository) ClaimJob(
 		}
 	}
 
-	return r.rejectJobClaim(ctx, tx, jobID, workflowID, dispatchAttempt, scope, commandID, requestHash)
-
+	reason, err = r.rejectJobClaim(ctx, tx, jobID, workflowID, dispatchAttempt, scope, commandID, requestHash)
+	return nil, false, reason, err
 }
 
 func claimJobQuery() string {
@@ -743,8 +743,6 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 }
 
 // RecoverExpiredJobLeases atomically claims running jobs with expired leases for recovery.
-//
-//nolint:gocyclo // Recovery combines UUID validation, ledger replay, and transactional lease selection.
 func (r *Repository) RecoverExpiredJobLeases(
 	ctx context.Context,
 	batchSize int32,
@@ -1330,11 +1328,11 @@ func (r *Repository) rejectJobClaim(
 	jobID, workflowID string,
 	dispatchAttempt int32,
 	scope, commandID, requestHash string,
-) (_ *jobsmodel.ClaimedJob, _ bool, reason string, err error) {
+) (reason string, err error) {
 	deferredQuery := deferBlockedJobQuery()
 	deferredTag, err := tx.Exec(ctx, deferredQuery, jobID)
 	if err != nil {
-		return nil, false, "", r.mapJobLeaseWriteError(err, "defer blocked job")
+		return "", r.mapJobLeaseWriteError(err, "defer blocked job")
 	}
 	if deferredTag.RowsAffected() > 0 {
 		reason = "job deferred behind another workflow job"
@@ -1343,21 +1341,21 @@ func (r *Repository) rejectJobClaim(
 			ctx, tx, scope, commandidempotency.OperationJobClaim,
 			commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
 		); completeErr != nil {
-			return nil, false, "", completeErr
+			return "", completeErr
 		}
 		if err = tx.Commit(ctx); err != nil {
-			return nil, false, "", r.mapJobLeaseWriteError(err, "commit blocked claim")
+			return "", r.mapJobLeaseWriteError(err, "commit blocked claim")
 		}
-		return nil, false, reason, nil
+		return reason, nil
 	}
 
 	var noRuntime bool
 	runtimeErr := tx.QueryRow(ctx, queuedContainerJobMissingRuntimeQuery(), jobID, workflowID, dispatchAttempt, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(&noRuntime)
 	if runtimeErr != nil {
-		return nil, false, "", r.mapJobLeaseReadError(runtimeErr, "check queued job runtime availability")
+		return "", r.mapJobLeaseReadError(runtimeErr, "check queued job runtime availability")
 	}
 	if noRuntime {
-		return nil, false, "", status.Error(grpccodes.Unavailable, "no healthy runtime node is available")
+		return "", status.Error(grpccodes.Unavailable, "no healthy runtime node is available")
 	}
 
 	var jobStatus string
@@ -1365,9 +1363,9 @@ func (r *Repository) rejectJobClaim(
 	query := fmt.Sprintf(`SELECT status, dispatch_attempts FROM %s WHERE id = $1 AND workflow_id = $2`, postgres.TableJobs)
 	if err = tx.QueryRow(ctx, query, jobID, workflowID).Scan(&jobStatus, &storedDispatch); err != nil {
 		if r.pg.IsNoRows(err) {
-			return nil, false, "", status.Error(grpccodes.NotFound, "job not found")
+			return "", status.Error(grpccodes.NotFound, "job not found")
 		}
-		return nil, false, "", r.mapJobLeaseReadError(err, "read claim rejection")
+		return "", r.mapJobLeaseReadError(err, "read claim rejection")
 	}
 	if jobStatus != jobsmodel.JobStatusQueued.ToString() {
 		reason = fmt.Sprintf("job status is %s", jobStatus)
@@ -1379,12 +1377,12 @@ func (r *Repository) rejectJobClaim(
 		ctx, tx, scope, commandidempotency.OperationJobClaim,
 		commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
 	); completeErr != nil {
-		return nil, false, "", completeErr
+		return "", completeErr
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return nil, false, "", r.mapJobLeaseWriteError(err, "commit rejected claim")
+		return "", r.mapJobLeaseWriteError(err, "commit rejected claim")
 	}
-	return nil, false, reason, nil
+	return reason, nil
 }
 
 func (r *Repository) replayExpiredJobRecovery(

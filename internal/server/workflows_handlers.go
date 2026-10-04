@@ -187,8 +187,6 @@ func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-//
-//nolint:gocyclo // This function is complex and can be simplified further.
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requestUserID(w, r)
 	if !ok {

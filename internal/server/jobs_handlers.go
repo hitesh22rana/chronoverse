@@ -632,7 +632,6 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	rc.Flush()
 
 	s.forwardJobLogEvents(ctx, w, rc, stream)
-
 }
 
 func (s *Server) forwardJobLogEvents(ctx context.Context, w http.ResponseWriter, rc http.Flusher, stream jobspb.JobsService_StreamJobLogsClient) {

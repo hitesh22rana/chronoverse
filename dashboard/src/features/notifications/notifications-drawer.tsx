@@ -113,24 +113,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         hasNextPage,
     } = useNotifications()
 
-    const flat: FlatRow[] = (() => {
-        if (notifications.length === 0) return []
-        const groups = new Map<string, Notification[]>()
-
-        for (const n of notifications) {
-            const key = dateHeading(n.created_at)
-            const arr = groups.get(key) ?? []
-            arr.push(n)
-            groups.set(key, arr)
-        }
-
-        const result: FlatRow[] = []
-        for (const [heading, arr] of groups.entries()) {
-            result.push({ type: "heading", heading })
-            for (const n of arr) result.push({ type: "item", n })
-        }
-        return result
-    })()
+    const flat = groupNotificationRows(notifications)
 
     const [selected, setSelected] = useState<Set<string>>(new Set())
     const notificationIds = new Set(notifications.map((notification) => notification.id))
@@ -320,4 +303,23 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             </SheetContent>
         </Sheet>
     )
+}
+
+function groupNotificationRows(notifications: Notification[]): FlatRow[] {
+    if (notifications.length === 0) return []
+    const groups = new Map<string, Notification[]>()
+
+    for (const n of notifications) {
+        const key = dateHeading(n.created_at)
+        const arr = groups.get(key) ?? []
+        arr.push(n)
+        groups.set(key, arr)
+    }
+
+    const result: FlatRow[] = []
+    for (const [heading, arr] of groups.entries()) {
+        result.push({ type: "heading", heading })
+        for (const n of arr) result.push({ type: "item", n })
+    }
+    return result
 }

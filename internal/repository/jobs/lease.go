@@ -38,8 +38,6 @@ type terminalJobSnapshot struct {
 }
 
 // ClaimJob atomically claims a queued job for execution.
-//
-//nolint:gocyclo,nestif // Claim classification and replay validation intentionally share one transaction.
 func (r *Repository) ClaimJob(
 	ctx context.Context,
 	jobID,
@@ -98,41 +96,7 @@ func (r *Repository) ClaimJob(
 		return nil, false, "", err
 	}
 	if reservation.Replay {
-		var stored struct {
-			Claimed bool                  `json:"claimed"`
-			Reason  string                `json:"reason"`
-			Job     *jobsmodel.ClaimedJob `json:"job,omitempty"`
-		}
-		if err = json.Unmarshal(reservation.Response, &stored); err != nil {
-			return nil, false, "", status.Errorf(grpccodes.Internal, "failed to decode claim replay: %v", err)
-		}
-		if !stored.Claimed || stored.Job == nil {
-			if err = tx.Commit(ctx); err != nil {
-				return nil, false, "", r.mapJobLeaseWriteError(err, "commit negative claim replay")
-			}
-			return nil, false, stored.Reason, nil
-		}
-		query := validateClaimReplayQuery()
-		err = tx.QueryRow(
-			ctx,
-			query,
-			jobID,
-			stored.Job.LeaseToken,
-			workerID,
-			processInstanceID,
-			dispatchAttempt,
-		).Scan(&stored.Job.LeaseExpiresAt)
-		if err != nil && !r.pg.IsNoRows(err) {
-			return nil, false, "", r.mapJobLeaseReadError(err, "validate claim replay")
-		}
-		valid := err == nil
-		if err = tx.Commit(ctx); err != nil {
-			return nil, false, "", r.mapJobLeaseWriteError(err, "commit claim replay")
-		}
-		if !valid {
-			return nil, false, "stored lease is no longer active", nil
-		}
-		return stored.Job, true, "", nil
+		return r.replayJobClaim(ctx, tx, reservation.Response, jobID, workerID, processInstanceID, dispatchAttempt)
 	}
 
 	leaseToken := fmt.Sprintf("%s:%s", workerID, uuid.NewString())
@@ -186,60 +150,8 @@ func (r *Repository) ClaimJob(
 		}
 	}
 
-	deferredQuery := deferBlockedJobQuery()
-	deferredTag, err := tx.Exec(ctx, deferredQuery, jobID)
-	if err != nil {
-		return nil, false, "", r.mapJobLeaseWriteError(err, "defer blocked job")
-	}
-	if deferredTag.RowsAffected() > 0 {
-		reason = "job deferred behind another workflow job"
-		response := map[string]any{claimResultField: false, claimReasonField: reason}
-		if completeErr := commandidempotency.Complete(
-			ctx, tx, scope, commandidempotency.OperationJobClaim,
-			commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
-		); completeErr != nil {
-			return nil, false, "", completeErr
-		}
-		if err = tx.Commit(ctx); err != nil {
-			return nil, false, "", r.mapJobLeaseWriteError(err, "commit blocked claim")
-		}
-		return nil, false, reason, nil
-	}
+	return r.rejectJobClaim(ctx, tx, jobID, workflowID, dispatchAttempt, scope, commandID, requestHash)
 
-	var noRuntime bool
-	runtimeErr := tx.QueryRow(ctx, queuedContainerJobMissingRuntimeQuery(), jobID, workflowID, dispatchAttempt, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(&noRuntime)
-	if runtimeErr != nil {
-		return nil, false, "", r.mapJobLeaseReadError(runtimeErr, "check queued job runtime availability")
-	}
-	if noRuntime {
-		return nil, false, "", status.Error(grpccodes.Unavailable, "no healthy runtime node is available")
-	}
-
-	var jobStatus string
-	var storedDispatch int32
-	query = fmt.Sprintf(`SELECT status, dispatch_attempts FROM %s WHERE id = $1 AND workflow_id = $2`, postgres.TableJobs)
-	if err = tx.QueryRow(ctx, query, jobID, workflowID).Scan(&jobStatus, &storedDispatch); err != nil {
-		if r.pg.IsNoRows(err) {
-			return nil, false, "", status.Error(grpccodes.NotFound, "job not found")
-		}
-		return nil, false, "", r.mapJobLeaseReadError(err, "read claim rejection")
-	}
-	if jobStatus != jobsmodel.JobStatusQueued.ToString() {
-		reason = fmt.Sprintf("job status is %s", jobStatus)
-	} else {
-		reason = fmt.Sprintf("dispatch attempt mismatch: current %d", storedDispatch)
-	}
-	response := map[string]any{claimResultField: false, claimReasonField: reason}
-	if completeErr := commandidempotency.Complete(
-		ctx, tx, scope, commandidempotency.OperationJobClaim,
-		commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
-	); completeErr != nil {
-		return nil, false, "", completeErr
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, false, "", r.mapJobLeaseWriteError(err, "commit rejected claim")
-	}
-	return nil, false, reason, nil
 }
 
 func claimJobQuery() string {
@@ -879,17 +791,7 @@ func (r *Repository) RecoverExpiredJobLeases(
 		return nil, err
 	}
 	if reservation.Replay {
-		if err = json.Unmarshal(reservation.Response, &jobs); err != nil {
-			return nil, status.Errorf(grpccodes.Internal, "failed to decode recovery replay: %v", err)
-		}
-		jobs, err = r.renewRecoveryReplay(ctx, tx, jobs, workerID, processInstanceID, leaseDuration)
-		if err != nil {
-			return nil, err
-		}
-		if err = tx.Commit(ctx); err != nil {
-			return nil, r.mapJobLeaseWriteError(err, "commit recovery replay")
-		}
-		return jobs, nil
+		return r.replayExpiredJobRecovery(ctx, tx, reservation.Response, workerID, processInstanceID, leaseDuration)
 	}
 
 	leaseToken := fmt.Sprintf("%s:%s", workerID, uuid.NewString())
@@ -933,12 +835,7 @@ func (r *Repository) renewRecoveryReplay(
 	if len(stored) == 0 {
 		return stored, nil
 	}
-	identities := make([]recoveryReplayIdentity, 0, len(stored))
-	for _, job := range stored {
-		if job != nil {
-			identities = append(identities, recoveryReplayIdentity{ID: job.ID, LeaseToken: job.LeaseToken})
-		}
-	}
+	identities := recoveryReplayIdentities(stored)
 	encoded, err := json.Marshal(identities)
 	if err != nil {
 		return nil, status.Errorf(grpccodes.Internal, "failed to encode recovery replay identities: %v", err)
@@ -965,19 +862,7 @@ func (r *Repository) renewRecoveryReplay(
 	if err != nil {
 		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
 	}
-	renewed := make(map[string]struct{}, len(renewedIDs))
-	for _, id := range renewedIDs {
-		renewed[id] = struct{}{}
-	}
-	active := make([]*jobsmodel.ExpiredJobLease, 0, len(renewed))
-	for _, job := range stored {
-		if job != nil {
-			if _, ok := renewed[job.ID]; ok {
-				active = append(active, job)
-			}
-		}
-	}
-	return active, nil
+	return activeRecoveryReplayJobs(stored, renewedIDs), nil
 }
 
 func validateClaimReplayQuery() string {
@@ -1391,4 +1276,159 @@ func truncateJobError(message string) string {
 	}
 
 	return truncated
+}
+
+// replayJobClaim validates the stored lease before returning an idempotent claim result.
+func (r *Repository) replayJobClaim(
+	ctx context.Context,
+	tx pgx.Tx,
+	response []byte,
+	jobID, workerID, processInstanceID string,
+	dispatchAttempt int32,
+) (_ *jobsmodel.ClaimedJob, _ bool, _ string, err error) {
+	var stored struct {
+		Claimed bool                  `json:"claimed"`
+		Reason  string                `json:"reason"`
+		Job     *jobsmodel.ClaimedJob `json:"job,omitempty"`
+	}
+	if err = json.Unmarshal(response, &stored); err != nil {
+		return nil, false, "", status.Errorf(grpccodes.Internal, "failed to decode claim replay: %v", err)
+	}
+	if !stored.Claimed || stored.Job == nil {
+		if err = tx.Commit(ctx); err != nil {
+			return nil, false, "", r.mapJobLeaseWriteError(err, "commit negative claim replay")
+		}
+		return nil, false, stored.Reason, nil
+	}
+	query := validateClaimReplayQuery()
+	err = tx.QueryRow(
+		ctx,
+		query,
+		jobID,
+		stored.Job.LeaseToken,
+		workerID,
+		processInstanceID,
+		dispatchAttempt,
+	).Scan(&stored.Job.LeaseExpiresAt)
+	if err != nil && !r.pg.IsNoRows(err) {
+		return nil, false, "", r.mapJobLeaseReadError(err, "validate claim replay")
+	}
+	valid := err == nil
+	if err = tx.Commit(ctx); err != nil {
+		return nil, false, "", r.mapJobLeaseWriteError(err, "commit claim replay")
+	}
+	if !valid {
+		return nil, false, "stored lease is no longer active", nil
+	}
+	return stored.Job, true, "", nil
+}
+
+// rejectJobClaim classifies a missed claim while holding the original transaction.
+func (r *Repository) rejectJobClaim(
+	ctx context.Context,
+	tx pgx.Tx,
+	jobID, workflowID string,
+	dispatchAttempt int32,
+	scope, commandID, requestHash string,
+) (_ *jobsmodel.ClaimedJob, _ bool, reason string, err error) {
+	deferredQuery := deferBlockedJobQuery()
+	deferredTag, err := tx.Exec(ctx, deferredQuery, jobID)
+	if err != nil {
+		return nil, false, "", r.mapJobLeaseWriteError(err, "defer blocked job")
+	}
+	if deferredTag.RowsAffected() > 0 {
+		reason = "job deferred behind another workflow job"
+		response := map[string]any{claimResultField: false, claimReasonField: reason}
+		if completeErr := commandidempotency.Complete(
+			ctx, tx, scope, commandidempotency.OperationJobClaim,
+			commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
+		); completeErr != nil {
+			return nil, false, "", completeErr
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return nil, false, "", r.mapJobLeaseWriteError(err, "commit blocked claim")
+		}
+		return nil, false, reason, nil
+	}
+
+	var noRuntime bool
+	runtimeErr := tx.QueryRow(ctx, queuedContainerJobMissingRuntimeQuery(), jobID, workflowID, dispatchAttempt, int64(r.cfg.RuntimeHeartbeatTTL.Seconds())).Scan(&noRuntime)
+	if runtimeErr != nil {
+		return nil, false, "", r.mapJobLeaseReadError(runtimeErr, "check queued job runtime availability")
+	}
+	if noRuntime {
+		return nil, false, "", status.Error(grpccodes.Unavailable, "no healthy runtime node is available")
+	}
+
+	var jobStatus string
+	var storedDispatch int32
+	query := fmt.Sprintf(`SELECT status, dispatch_attempts FROM %s WHERE id = $1 AND workflow_id = $2`, postgres.TableJobs)
+	if err = tx.QueryRow(ctx, query, jobID, workflowID).Scan(&jobStatus, &storedDispatch); err != nil {
+		if r.pg.IsNoRows(err) {
+			return nil, false, "", status.Error(grpccodes.NotFound, "job not found")
+		}
+		return nil, false, "", r.mapJobLeaseReadError(err, "read claim rejection")
+	}
+	if jobStatus != jobsmodel.JobStatusQueued.ToString() {
+		reason = fmt.Sprintf("job status is %s", jobStatus)
+	} else {
+		reason = fmt.Sprintf("dispatch attempt mismatch: current %d", storedDispatch)
+	}
+	response := map[string]any{claimResultField: false, claimReasonField: reason}
+	if completeErr := commandidempotency.Complete(
+		ctx, tx, scope, commandidempotency.OperationJobClaim,
+		commandID, requestHash, jobID, response, commandidempotency.ClientCommandRetention,
+	); completeErr != nil {
+		return nil, false, "", completeErr
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, false, "", r.mapJobLeaseWriteError(err, "commit rejected claim")
+	}
+	return nil, false, reason, nil
+}
+
+func (r *Repository) replayExpiredJobRecovery(
+	ctx context.Context,
+	tx pgx.Tx,
+	response []byte,
+	workerID, processInstanceID string,
+	leaseDuration time.Duration,
+) (jobs []*jobsmodel.ExpiredJobLease, err error) {
+	if err = json.Unmarshal(response, &jobs); err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to decode recovery replay: %v", err)
+	}
+	jobs, err = r.renewRecoveryReplay(ctx, tx, jobs, workerID, processInstanceID, leaseDuration)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, r.mapJobLeaseWriteError(err, "commit recovery replay")
+	}
+	return jobs, nil
+}
+
+func recoveryReplayIdentities(stored []*jobsmodel.ExpiredJobLease) []recoveryReplayIdentity {
+	identities := make([]recoveryReplayIdentity, 0, len(stored))
+	for _, job := range stored {
+		if job != nil {
+			identities = append(identities, recoveryReplayIdentity{ID: job.ID, LeaseToken: job.LeaseToken})
+		}
+	}
+	return identities
+}
+
+func activeRecoveryReplayJobs(stored []*jobsmodel.ExpiredJobLease, renewedIDs []string) []*jobsmodel.ExpiredJobLease {
+	renewed := make(map[string]struct{}, len(renewedIDs))
+	for _, id := range renewedIDs {
+		renewed[id] = struct{}{}
+	}
+	active := make([]*jobsmodel.ExpiredJobLease, 0, len(renewed))
+	for _, job := range stored {
+		if job != nil {
+			if _, ok := renewed[job.ID]; ok {
+				active = append(active, job)
+			}
+		}
+	}
+	return active
 }

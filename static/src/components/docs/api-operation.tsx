@@ -15,6 +15,15 @@ function formatValue(value: unknown) {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+const numericConstraints = [
+  ["minimum", "min"],
+  ["maximum", "max"],
+  ["minLength", "min length"],
+  ["maxLength", "max length"],
+  ["minItems", "min items"],
+  ["maxItems", "max items"],
+] as const;
+
 function getSchemaConstraints(schema?: OpenApiSchema) {
   if (!schema) return ["string"];
 
@@ -23,12 +32,9 @@ function getSchemaConstraints(schema?: OpenApiSchema) {
   constraints.push(schema.format ? `${type} · ${schema.format}` : type);
   if (schema.enum) constraints.push(`enum: ${schema.enum.map(formatValue).join(" | ")}`);
   if (schema.default !== undefined) constraints.push(`default: ${formatValue(schema.default)}`);
-  if (schema.minimum !== undefined) constraints.push(`min: ${schema.minimum}`);
-  if (schema.maximum !== undefined) constraints.push(`max: ${schema.maximum}`);
-  if (schema.minLength !== undefined) constraints.push(`min length: ${schema.minLength}`);
-  if (schema.maxLength !== undefined) constraints.push(`max length: ${schema.maxLength}`);
-  if (schema.minItems !== undefined) constraints.push(`min items: ${schema.minItems}`);
-  if (schema.maxItems !== undefined) constraints.push(`max items: ${schema.maxItems}`);
+  for (const [key, label] of numericConstraints) {
+    if (schema[key] !== undefined) constraints.push(`${label}: ${schema[key]}`);
+  }
   if (schema.uniqueItems) constraints.push("unique items");
   return constraints;
 }

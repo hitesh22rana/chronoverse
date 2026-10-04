@@ -146,45 +146,59 @@ export function getOpenApiOperations(): OpenApiOperation[] {
   return Object.entries(document.paths).flatMap(([route, pathItem]) =>
     Object.entries(pathItem).flatMap(([method, value]) => {
       if (!HTTP_METHODS.has(method)) return [];
-      const operation = value as Record<string, unknown>;
-      const pathParameters = (pathItem.parameters as unknown as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
-      const operationParameters = (operation.parameters as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
-      const security = (operation.security as OpenApiSecurityRequirement[] | undefined) ?? document.security ?? [];
-      const securitySchemeNames = new Set(security.flatMap((requirement) => Object.keys(requirement)));
-      const securitySchemes = Object.fromEntries(
-        [...securitySchemeNames].map((name) => {
-          const scheme = document.components?.securitySchemes?.[name];
-          if (!scheme) throw new Error(`Unresolved OpenAPI security scheme: ${name}`);
-          return [name, dereferenceValue(scheme, document) as OpenApiSecurityScheme];
-        }),
-      );
-      return [
-        {
-          operationId: String(operation.operationId),
-          method: method.toUpperCase(),
-          path: route,
-          summary: String(operation.summary ?? operation.operationId),
-          description: operation.description ? String(operation.description) : undefined,
-          tags: (operation.tags as string[] | undefined) ?? ["API"],
-          security,
-          securitySchemes,
-          parameters: [...pathParameters, ...operationParameters].map((parameter) =>
-            dereferenceValue(parameter, document),
-          ) as OpenApiParameter[],
-          requestBody: operation.requestBody
-            ? (dereferenceValue(operation.requestBody, document) as OpenApiRequestBody)
-            : undefined,
-          responses: Object.fromEntries(
-            Object.entries(
-              (operation.responses as Record<string, OpenApiResponse | { $ref: string }> | undefined) ?? {},
-            ).map(([status, response]) => [status, dereferenceValue(response, document) as OpenApiResponse]),
-          ),
-        },
-      ];
+      return [resolveOperation(document, route, pathItem, method, value)];
     }),
   );
 }
 
 export function getOpenApiOperation(operationId: string) {
   return getOpenApiOperations().find((operation) => operation.operationId === operationId);
+}
+
+function resolveSecuritySchemes(document: OpenApiDocument, security: OpenApiSecurityRequirement[]) {
+  const securitySchemeNames = new Set(security.flatMap((requirement) => Object.keys(requirement)));
+  return Object.fromEntries(
+    [...securitySchemeNames].map((name) => {
+      const scheme = document.components?.securitySchemes?.[name];
+      if (!scheme) throw new Error(`Unresolved OpenAPI security scheme: ${name}`);
+      return [name, dereferenceValue(scheme, document) as OpenApiSecurityScheme];
+    }),
+  );
+}
+
+function resolveOperation(
+  document: OpenApiDocument,
+  route: string,
+  pathItem: Record<string, Record<string, unknown>>,
+  method: string,
+  operation: Record<string, unknown>,
+): OpenApiOperation {
+  const pathParameters =
+    (pathItem.parameters as unknown as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
+  const operationParameters =
+    (operation.parameters as Array<OpenApiParameter | { $ref: string }> | undefined) ?? [];
+  const security =
+    (operation.security as OpenApiSecurityRequirement[] | undefined) ?? document.security ?? [];
+  const securitySchemes = resolveSecuritySchemes(document, security);
+  return {
+    operationId: String(operation.operationId),
+    method: method.toUpperCase(),
+    path: route,
+    summary: String(operation.summary ?? operation.operationId),
+    description: operation.description ? String(operation.description) : undefined,
+    tags: (operation.tags as string[] | undefined) ?? ["API"],
+    security,
+    securitySchemes,
+    parameters: [...pathParameters, ...operationParameters].map((parameter) =>
+      dereferenceValue(parameter, document),
+    ) as OpenApiParameter[],
+    requestBody: operation.requestBody
+      ? (dereferenceValue(operation.requestBody, document) as OpenApiRequestBody)
+      : undefined,
+    responses: Object.fromEntries(
+      Object.entries(
+        (operation.responses as Record<string, OpenApiResponse | { $ref: string }> | undefined) ?? {},
+      ).map(([status, response]) => [status, dereferenceValue(response, document) as OpenApiResponse]),
+    ),
+  };
 }

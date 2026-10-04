@@ -266,23 +266,7 @@ func (r *Repository) ScheduleJob(
 		&storedTrigger,
 		&storedWorkflowGeneration,
 	); err != nil {
-		switch {
-		case errors.Is(err, context.DeadlineExceeded):
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return "", err
-		case errors.Is(err, context.Canceled):
-			err = status.Error(codes.Canceled, err.Error())
-			return "", err
-		case r.pg.IsNoRows(err) && trigger == jobsmodel.JobTriggerAutomatic.ToString() && workflowGeneration > 0:
-			err = status.Errorf(codes.FailedPrecondition, "workflow generation mismatch or workflow is not schedulable")
-			return "", err
-		case r.pg.IsNoRows(err) && trigger == jobsmodel.JobTriggerManual.ToString():
-			err = status.Errorf(codes.NotFound, "workflow not found, not owned by user, or not schedulable")
-			return "", err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to insert job: %v", err)
-		return "", err
+		return "", r.mapScheduleInsertError(err, trigger, workflowGeneration)
 	}
 	if validateErr := validateStoredScheduleCommand(
 		requestHash,
@@ -777,21 +761,9 @@ func (r *Repository) GetJobLogs(
 	eg.Go(func() error {
 		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
 
-		//nolint:gocritic // Ifelse is used to handle different error types
 		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
-			if errors.Is(scanErr, context.DeadlineExceeded) {
-				return status.Error(codes.DeadlineExceeded, scanErr.Error())
-			} else if errors.Is(scanErr, context.Canceled) {
-				return status.Error(codes.Canceled, scanErr.Error())
-			} else if r.pg.IsNoRows(scanErr) {
-				return status.Errorf(codes.NotFound, "job not found or not owned by user: %v", scanErr)
-			} else if r.pg.IsInvalidTextRepresentation(scanErr) {
-				return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", scanErr)
-			}
-
-			return status.Errorf(codes.Internal, "failed to get job: %v", scanErr)
+			return r.mapJobLogsStatusError(scanErr)
 		}
-
 		return nil
 	})
 
@@ -1020,50 +992,12 @@ func (r *Repository) SearchJobLogs(
 		fetched := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
 		fetchedCursors := make([]jobLogsCursor, 0, len(searchRes.Hits))
 		for _, hit := range searchRes.Hits {
-			source, scanErr := searchHitSource(hit)
+			log, logCursor, scanErr := decodeSearchJobLog(hit)
 			if scanErr != nil {
 				return scanErr
 			}
-
-			log := &jobsmodel.JobLog{}
-			if ts, ok := source[jobLogsTimestampField].(string); ok {
-				parsed, scanErr := time.Parse(time.RFC3339Nano, ts)
-				if scanErr != nil {
-					return status.Errorf(codes.Internal, "invalid timestamp format: %v", scanErr)
-				}
-				log.Timestamp = parsed
-			}
-
-			log.EventID = searchHitString(source, jobLogsEventIDField)
-			if log.EventID == "" {
-				log.EventID = searchHitString(source, "id")
-			}
-
-			if msg, ok := source[jobLogsMessageField].(string); ok {
-				log.Message = msg
-			}
-
-			switch sn := source[jobLogsSequenceNumField].(type) {
-			case string:
-				snVal, scanErr := strconv.ParseUint(sn, 10, 32)
-				if scanErr != nil {
-					return status.Errorf(codes.Internal, "invalid sequence_num format: %v", sn)
-				}
-				log.SequenceNum = uint32(snVal)
-			case float64:
-				log.SequenceNum = uint32(sn)
-			}
-
-			if stream, ok := source[jobLogsStreamField].(string); ok {
-				log.Stream = stream
-			}
-
 			fetched = append(fetched, log)
-			fetchedCursors = append(fetchedCursors, jobLogsCursor{
-				SequenceNum: log.SequenceNum,
-				Stream:      log.Stream,
-				EventID:     searchHitString(source, "id"),
-			})
+			fetchedCursors = append(fetchedCursors, logCursor)
 		}
 
 		fetched, hasMore := paginate.Trim(fetched, r.cfg.LogsFetchLimit)
@@ -1077,21 +1011,9 @@ func (r *Repository) SearchJobLogs(
 	eg.Go(func() error {
 		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
 
-		//nolint:gocritic // Ifelse is used to handle different error types
 		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
-			if errors.Is(scanErr, context.DeadlineExceeded) {
-				return status.Error(codes.DeadlineExceeded, scanErr.Error())
-			} else if errors.Is(scanErr, context.Canceled) {
-				return status.Error(codes.Canceled, scanErr.Error())
-			} else if r.pg.IsNoRows(scanErr) {
-				return status.Errorf(codes.NotFound, "job not found or not owned by user: %v", scanErr)
-			} else if r.pg.IsInvalidTextRepresentation(scanErr) {
-				return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", scanErr)
-			}
-
-			return status.Errorf(codes.Internal, "failed to get job: %v", scanErr)
+			return r.mapJobLogsStatusError(scanErr)
 		}
-
 		return nil
 	})
 
@@ -1367,4 +1289,79 @@ func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
 	}
 
 	return string(parts[0]), createdAt, nil
+}
+
+// decodeSearchJobLog retains the search document ID for pagination separately from its event ID.
+func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobLogsCursor, error) {
+	source, scanErr := searchHitSource(hit)
+	if scanErr != nil {
+		return nil, jobLogsCursor{}, scanErr
+	}
+
+	log := &jobsmodel.JobLog{}
+	if ts, ok := source[jobLogsTimestampField].(string); ok {
+		parsed, scanErr := time.Parse(time.RFC3339Nano, ts)
+		if scanErr != nil {
+			return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "invalid timestamp format: %v", scanErr)
+		}
+		log.Timestamp = parsed
+	}
+
+	log.EventID = searchHitString(source, jobLogsEventIDField)
+	if log.EventID == "" {
+		log.EventID = searchHitString(source, "id")
+	}
+
+	if msg, ok := source[jobLogsMessageField].(string); ok {
+		log.Message = msg
+	}
+
+	switch sn := source[jobLogsSequenceNumField].(type) {
+	case string:
+		snVal, scanErr := strconv.ParseUint(sn, 10, 32)
+		if scanErr != nil {
+			return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "invalid sequence_num format: %v", sn)
+		}
+		log.SequenceNum = uint32(snVal)
+	case float64:
+		log.SequenceNum = uint32(sn)
+	}
+
+	if stream, ok := source[jobLogsStreamField].(string); ok {
+		log.Stream = stream
+	}
+	return log, jobLogsCursor{
+		SequenceNum: log.SequenceNum,
+		Stream:      log.Stream,
+		EventID:     searchHitString(source, "id"),
+	}, nil
+}
+
+func (r *Repository) mapJobLogsStatusError(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	} else if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, err.Error())
+	} else if r.pg.IsNoRows(err) {
+		return status.Errorf(codes.NotFound, "job not found or not owned by user: %v", err)
+	} else if r.pg.IsInvalidTextRepresentation(err) {
+		return status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)
+	}
+
+	return status.Errorf(codes.Internal, "failed to get job: %v", err)
+}
+
+func (r *Repository) mapScheduleInsertError(err error, trigger string, workflowGeneration int64) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, err.Error())
+	case r.pg.IsNoRows(err) && trigger == jobsmodel.JobTriggerAutomatic.ToString() && workflowGeneration > 0:
+		return status.Errorf(codes.FailedPrecondition, "workflow generation mismatch or workflow is not schedulable")
+	case r.pg.IsNoRows(err) && trigger == jobsmodel.JobTriggerManual.ToString():
+		return status.Errorf(codes.NotFound, "workflow not found, not owned by user, or not schedulable")
+	}
+
+	return status.Errorf(codes.Internal, "failed to insert job: %v", err)
 }

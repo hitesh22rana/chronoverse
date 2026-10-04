@@ -110,17 +110,15 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	}()
 
 	// This handles the condition where the worklow is updated, since the interval might be changed
-	//nolint:govet // Ignore shadow of error variable
 	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
 		return err
 	}
 
-	//nolint:govet // Ignore shadow of error variable
 	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
 		return err
 	}
 
-	if err = r.publishWorkflowBuildAnalytics(ctx, workflowID, workflow); err != nil {
+	if err := r.publishWorkflowBuildAnalytics(ctx, workflowID, workflow); err != nil {
 		return err
 	}
 
@@ -128,109 +126,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return r.completeSkippedWorkflowBuild(ctx, notificationCtx, workflow, workflowEvent, scheduleIdempotencyKey, occurrenceKey)
 	}
 
-	var (
-		updated bool
-		_err    error
-	)
-	if buildStatus == workflowsmodel.WorkflowBuildStatusQueued.ToString() {
-		updated, _err = r.updateWorkflowBuildStatus(
-			ctx,
-			workflowID,
-			workflow.GetUserId(),
-			workflowsmodel.WorkflowBuildStatusStarted.ToString(),
-			workflowEvent.Generation,
-			"",
-			"",
-		)
-		if _err != nil {
-			return _err
-		}
-		if !updated {
-			return nil
-		}
-	}
-
-	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
-	go r.sendNotification(
-		notificationCtx,
-		workflow.GetUserId(),
-		workflowID,
-		"",
-		"Workflow Build Started",
-		fmt.Sprintf("Build process for workflow '%s' has started.", workflow.GetName()),
-		notificationsmodel.KindWebInfo.ToString(),
-		notificationsmodel.EntityWorkflow.ToString(),
-		occurrenceKey,
-	)
-
-	var resolvedImageRef, resolvedImageDigest, warmedNodeID string
-	workflowErr := retrypkg.Do(ctx, 2, retryBackoff, func() error {
-		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
-		if err != nil {
-			return err
-		}
-
-		runtimeNode, err := r.svc.Jobs.GetReadyRuntimeNode(ctx, &jobspb.GetReadyRuntimeNodeRequest{})
-		if err != nil {
-			return err
-		}
-
-		csvc, err := r.containerSvcForRuntime(runtimeNode.GetRuntimeNodeId(), runtimeNode.GetRuntimeEndpoint())
-		if err != nil {
-			return err
-		}
-
-		warmedNodeID = runtimeNode.GetRuntimeNodeId()
-		resolvedImageRef, resolvedImageDigest, err = csvc.ResolveImageDigest(ctx, details.Image)
-		return err
-	})
-
-	// Since, build process can take time to execute and can led to authorization issues
-	// So, we need to re-issue the authorization token
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	ctx, _ = r.withAuthorization(ctx)
-
-	// Detached context for notifications; ignores cancellation.
-	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
-	notificationCtx, _ = r.withAuthorization(context.Background())
-
-	if workflowErr != nil {
-		return r.handleWorkflowBuildFailure(ctx, notificationCtx, workflow, workflowEvent, occurrenceKey, workflowErr)
-	}
-
-	scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
-		ctx,
-		workflowID,
-		workflow.GetUserId(),
-		workflowEvent.Generation,
-		scheduleIdempotencyKey,
-		workflowEvent,
-		resolvedImageRef,
-		resolvedImageDigest,
-	)
-	if _err != nil {
-		return _err
-	}
-	if !scheduled {
-		return nil
-	}
-
-	r.startImagePrefetch(parentCtx, workflowID, resolvedImageRef, resolvedImageDigest, warmedNodeID)
-
-	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow build process
-	go r.sendNotification(
-		notificationCtx,
-		scheduledWorkflow.GetUserId(),
-		workflowID,
-		"",
-		"Workflow Build Completed",
-		fmt.Sprintf("Build process for workflow '%s' has completed and is scheduled to run.", scheduledWorkflow.GetName()),
-		notificationsmodel.KindWebSuccess.ToString(),
-		notificationsmodel.EntityWorkflow.ToString(),
-		occurrenceKey,
-	)
-
-	return nil
+	return r.buildContainerWorkflow(ctx, parentCtx, notificationCtx, workflow, workflowEvent, scheduleIdempotencyKey, occurrenceKey)
 }
 
 // isBuildStepRequired checks if the build step is required for the given kind.
@@ -459,7 +355,6 @@ func (r *Repository) startImagePrefetch(parentCtx context.Context, workflowID, r
 			}()
 		}
 	}
-
 }
 
 func (r *Repository) handleWorkflowBuildFailure(
@@ -490,7 +385,7 @@ func (r *Repository) handleWorkflowBuildFailure(
 		return nil
 	}
 
-	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
 	go r.sendNotification(
 		notificationCtx,
 		workflow.GetUserId(),
@@ -530,7 +425,7 @@ func (r *Repository) completeSkippedWorkflowBuild(
 		return nil
 	}
 
-	//nolint:errcheck,contextcheck // Ignore the error as we don't want to block the workflow execution
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
 	go r.sendNotification(
 		notificationCtx,
 		scheduledWorkflow.GetUserId(),
@@ -539,6 +434,119 @@ func (r *Repository) completeSkippedWorkflowBuild(
 		"Workflow Build Skipped",
 		fmt.Sprintf("Build process for workflow '%s' is skipped and is scheduled to run.", scheduledWorkflow.GetName()),
 		notificationsmodel.KindWebInfo.ToString(),
+		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
+	)
+
+	return nil
+}
+
+func (r *Repository) buildContainerWorkflow(
+	ctx, parentCtx, notificationCtx context.Context,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	workflowEvent *workflowsmodel.WorkflowEvent,
+	scheduleIdempotencyKey, occurrenceKey string,
+) error {
+	workflowID := workflowEvent.ID
+	buildStatus := workflow.GetBuildStatus()
+	var (
+		updated bool
+		_err    error
+	)
+	if buildStatus == workflowsmodel.WorkflowBuildStatusQueued.ToString() {
+		updated, _err = r.updateWorkflowBuildStatus(
+			ctx,
+			workflowID,
+			workflow.GetUserId(),
+			workflowsmodel.WorkflowBuildStatusStarted.ToString(),
+			workflowEvent.Generation,
+			"",
+			"",
+		)
+		if _err != nil {
+			return _err
+		}
+		if !updated {
+			return nil
+		}
+	}
+
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow execution
+	go r.sendNotification(
+		notificationCtx,
+		workflow.GetUserId(),
+		workflowID,
+		"",
+		"Workflow Build Started",
+		fmt.Sprintf("Build process for workflow '%s' has started.", workflow.GetName()),
+		notificationsmodel.KindWebInfo.ToString(),
+		notificationsmodel.EntityWorkflow.ToString(),
+		occurrenceKey,
+	)
+
+	var resolvedImageRef, resolvedImageDigest, warmedNodeID string
+	workflowErr := retrypkg.Do(ctx, 2, retryBackoff, func() error {
+		details, err := container.ExtractAndValidateContainerDetails(workflow.GetPayload())
+		if err != nil {
+			return err
+		}
+
+		runtimeNode, err := r.svc.Jobs.GetReadyRuntimeNode(ctx, &jobspb.GetReadyRuntimeNodeRequest{})
+		if err != nil {
+			return err
+		}
+
+		csvc, err := r.containerSvcForRuntime(runtimeNode.GetRuntimeNodeId(), runtimeNode.GetRuntimeEndpoint())
+		if err != nil {
+			return err
+		}
+
+		warmedNodeID = runtimeNode.GetRuntimeNodeId()
+		resolvedImageRef, resolvedImageDigest, err = csvc.ResolveImageDigest(ctx, details.Image)
+		return err
+	})
+
+	// Since, build process can take time to execute and can led to authorization issues
+	// So, we need to re-issue the authorization token
+	//nolint:errcheck // Ignore authorization errors during the build.
+	ctx, _ = r.withAuthorization(ctx)
+
+	// Detached context for notifications; ignores cancellation.
+	//nolint:errcheck // Ignore the error as we don't want to block the workflow build process
+	notificationCtx, _ = r.withAuthorization(context.Background())
+
+	if workflowErr != nil {
+		return r.handleWorkflowBuildFailure(ctx, notificationCtx, workflow, workflowEvent, occurrenceKey, workflowErr)
+	}
+
+	scheduledWorkflow, scheduled, _err := r.completeWorkflowBuildAndSchedule(
+		ctx,
+		workflowID,
+		workflow.GetUserId(),
+		workflowEvent.Generation,
+		scheduleIdempotencyKey,
+		workflowEvent,
+		resolvedImageRef,
+		resolvedImageDigest,
+	)
+	if _err != nil {
+		return _err
+	}
+	if !scheduled {
+		return nil
+	}
+
+	r.startImagePrefetch(parentCtx, workflowID, resolvedImageRef, resolvedImageDigest, warmedNodeID)
+
+	//nolint:errcheck,contextcheck // Completion notifications intentionally use detached authorization.
+	go r.sendNotification(
+		notificationCtx,
+		scheduledWorkflow.GetUserId(),
+		workflowID,
+		"",
+		"Workflow Build Completed",
+		fmt.Sprintf("Build process for workflow '%s' has completed and is scheduled to run.", scheduledWorkflow.GetName()),
+		notificationsmodel.KindWebSuccess.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
 		occurrenceKey,
 	)

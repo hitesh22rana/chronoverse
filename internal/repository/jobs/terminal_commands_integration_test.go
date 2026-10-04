@@ -95,20 +95,42 @@ type claimedFixture struct {
 }
 
 // terminalCommandOperation binds a terminal command to its ledger operation so
-// one table can drive every test that must hold for both commands.
+// one table can drive every test that must hold for every command that holds a
+// lease.
 type terminalCommandOperation struct {
 	Name       string
 	Operation  string
 	WantStatus string
+	// WantReason is the terminal_reason_code the command must record. Completion
+	// records none, so its entry is empty: a successful finish has nothing to
+	// explain.
+	WantReason string
 	Invoke     func(ctx context.Context, repo *Repository, jobID, leaseToken, commandID string) error
 }
 
-// terminalCommandOperations is the single source of truth for the two
+// terminalCommandOperations is the single source of truth for the three
 // lease-holding terminal commands. Tests that must prove the same reservation
-// discipline for both iterate this table so coverage cannot silently diverge.
+// discipline for all of them iterate this table so coverage cannot silently
+// diverge.
 var terminalCommandOperations = []terminalCommandOperation{
-	{Name: "fail job", Operation: commandidempotency.OperationJobFail, WantStatus: "FAILED", Invoke: failJobTerminal},
-	{Name: "cancel claimed job", Operation: commandidempotency.OperationJobCancelClaimed, WantStatus: "CANCELED", Invoke: cancelClaimedTerminal},
+	{
+		Name: "complete job", Operation: commandidempotency.OperationJobComplete, WantStatus: "COMPLETED",
+		Invoke: completeJobTerminal,
+	},
+	{
+		Name: "fail job", Operation: commandidempotency.OperationJobFail, WantStatus: "FAILED",
+		WantReason: terminalreason.NonZeroExit.String(), Invoke: failJobTerminal,
+	},
+	{
+		Name: "cancel claimed job", Operation: commandidempotency.OperationJobCancelClaimed, WantStatus: "CANCELED",
+		WantReason: terminalreason.WorkflowTerminated.String(), Invoke: cancelClaimedTerminal,
+	},
+}
+
+// completeJobTerminal invokes CompleteJob with the arguments the executor uses
+// to report a workload that ran to a successful finish.
+func completeJobTerminal(ctx context.Context, repo *Repository, jobID, leaseToken, commandID string) error {
+	return repo.CompleteJob(ctx, jobID, leaseToken, commandID)
 }
 
 // failJobTerminal invokes FailJob with the arguments the executor uses for a
@@ -156,10 +178,30 @@ func seedIsolatedWorkflow(ctx context.Context, t *testing.T, pg *postgres.Postgr
 }
 
 // seedClaimedJob schedules, queues and claims one job on a private workflow and
-// a private runtime node. The node identity is unique per fixture so no two
-// fixtures reset each other's running_jobs through seedReadyRuntimeNode, and the
-// node is restored to its seeded baseline when the test ends.
+// a private runtime node, letting the database name the job. The node identity
+// is unique per fixture so no two fixtures reset each other's running_jobs
+// through seedReadyRuntimeNode, and the node is restored to its seeded baseline
+// when the test ends.
 func seedClaimedJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, repo *Repository) claimedFixture {
+	t.Helper()
+
+	return seedClaimedJobAs(ctx, t, pg, repo, "")
+}
+
+// seedClaimedJobAs is seedClaimedJob under a caller-chosen job identity, for a
+// test that must control how two of its jobs compare to each other. An empty
+// jobID keeps the identity the database generated, which is what every fixture
+// that does not care about ordering wants. A non-empty identity is applied to the
+// freshly scheduled row, before the job is queued or claimed.
+//
+// The rewrite cannot disturb another fixture: the row is seconds old, still
+// PENDING and private to this fixture's own user and workflow, and no table
+// references jobs.id. The only other record ScheduleJob wrote is its own command
+// ledger row, keyed by this fixture's user scope and an idempotency key nothing
+// replays, holding the superseded id as its response; neither the queue, claim,
+// lease nor recovery path reads it, and the claim and terminal commands each
+// reserve their own ledger row under the new identity afterwards.
+func seedClaimedJobAs(ctx context.Context, t *testing.T, pg *postgres.Postgres, repo *Repository, jobID string) claimedFixture {
 	t.Helper()
 
 	userID, workflowID := seedIsolatedWorkflow(ctx, t, pg)
@@ -177,9 +219,21 @@ func seedClaimedJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, re
 	})
 
 	scheduledAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
-	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, scheduledAt, "MANUAL", "idem-lease-"+fixtureTag(), 1)
+	scheduledID, err := repo.ScheduleJob(ctx, workflowID, userID, scheduledAt, "MANUAL", "idem-lease-"+fixtureTag(), 1)
 	if err != nil {
 		t.Fatalf("ScheduleJob: %v", err)
+	}
+	if jobID == "" {
+		// The default fixture: the database named the job, so keep that identity.
+		jobID = scheduledID
+	} else if scheduledID != jobID {
+		tag, renameErr := pg.Exec(ctx, `UPDATE jobs SET id = $2 WHERE id = $1`, scheduledID, jobID)
+		if renameErr != nil {
+			t.Fatalf("assign fixture job id %q: %v", jobID, renameErr)
+		}
+		if tag.RowsAffected() != 1 {
+			t.Fatalf("assign fixture job id %q affected %d rows, want 1", jobID, tag.RowsAffected())
+		}
 	}
 	queueJob(ctx, t, pg, jobID)
 	claimed, ok, reason, err := repo.ClaimJob(ctx, jobID, workflowID, "lease-test-worker", uuid.NewString(), "claim-"+fixtureTag(), 30*time.Second, 1)
@@ -266,17 +320,15 @@ func occupySpareSlots(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 
 // countTerminalOutboxEvents counts the outbox events whose deterministic keys a
 // terminal job command owns. Used where those keys are the contract under test.
-func countTerminalOutboxEvents(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID string) int {
+func countTerminalOutboxEvents(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID, operation string) int {
 	t.Helper()
 
 	var count int
 	if err := pg.QueryRow(ctx, `
 		SELECT count(*)
 		FROM outbox_events
-		WHERE event_key IN ($1, $2)
-	`, idempotency.JobCompletedAnalyticsEventKey(jobID),
-		idempotency.JobWorkflowEventKey(jobID, workflowsmodel.ActionJobFailed.ToString()),
-	).Scan(&count); err != nil {
+		WHERE event_key = ANY($1::text[])
+	`, terminalOutboxEventKeys(operation, jobID)).Scan(&count); err != nil {
 		t.Fatalf("count terminal outbox events: %v", err)
 	}
 	return count
@@ -386,6 +438,19 @@ func assertTerminalLeaseReleased(t *testing.T, state *terminalJobState) {
 			t.Errorf("%s = %v, want NULL after a terminal command", name, column.Time.UTC())
 		}
 	}
+}
+
+// assertTerminalReason asserts the terminal_reason_code the accepted command
+// recorded. Completion records none, which is why its table entry carries an
+// empty expectation instead of a code.
+func assertTerminalReason(t *testing.T, operation terminalCommandOperation, state *terminalJobState) {
+	t.Helper()
+
+	if operation.WantReason == "" {
+		assertNullText(t, "terminal_reason_code", state.TerminalReasonCode)
+		return
+	}
+	assertNullString(t, "terminal_reason_code", state.TerminalReasonCode, operation.WantReason)
 }
 
 // assertUnchangedLeaseOwnership asserts a rejected command left every durable
@@ -554,12 +619,9 @@ func TestIntegrationFailJobPersistsTerminalFailureStateAndEffects(t *testing.T) 
 	assertNullString(t, "workflow event error_code", sql.NullString{String: decodedWorkflow.ErrorCode, Valid: true}, terminalFailureErrorCode)
 	assertNullString(t, "workflow event error_message", sql.NullString{String: decodedWorkflow.ErrorMessage, Valid: true}, terminalFailureMessage)
 
-	if got := countTerminalOutboxEvents(ctx, t, pg, fixture.JobID); got != 2 {
-		t.Fatalf("deterministic terminal outbox events = %d, want exactly 2", got)
-	}
-	if got := countJobScopedOutboxEvents(ctx, t, pg, fixture.JobID, fixture.WorkflowID); got != 2 {
-		t.Fatalf("job scoped outbox events = %d, want exactly 2 (no extra terminal notification)", got)
-	}
+	// Both counters must land on the command's own key count, so a replay that
+	// emitted an extra terminal notification of another shape fails too.
+	assertOutboxEffectCount(ctx, t, pg, fixture, commandidempotency.OperationJobFail)
 
 	command, ok := readJobCommand(ctx, t, pg, fixture.JobID, commandidempotency.OperationJobFail, commandID)
 	if !ok {
@@ -690,9 +752,11 @@ func TestIntegrationTerminalCommandsRejectStaleLeaseTokenWithoutAnyEffect(t *tes
 			if err := operation.Invoke(ctx, repo, fixture.JobID, fixture.LeaseToken, "authoritative-"+fixtureTag()); err != nil {
 				t.Fatalf("%s with the authoritative lease after a stale rejection: %v", operation.Name, err)
 			}
-			if got := readTerminalJobState(ctx, t, pg, fixture.JobID).Status; got != operation.WantStatus {
-				t.Fatalf("job status = %q, want %q once the authoritative lease is used", got, operation.WantStatus)
+			settled := readTerminalJobState(ctx, t, pg, fixture.JobID)
+			if settled.Status != operation.WantStatus {
+				t.Fatalf("job status = %q, want %q once the authoritative lease is used", settled.Status, operation.WantStatus)
 			}
+			assertTerminalReason(t, operation, settled)
 		})
 	}
 }
@@ -720,8 +784,7 @@ func TestIntegrationTerminalCommandsReplaysCommandWithoutRepeatingEffects(t *tes
 			if firstSlotCount != occupied-1 {
 				t.Fatalf("runtime running_jobs = %d, want %d after the first terminal command", firstSlotCount, occupied-1)
 			}
-			wantOutbox := terminalOutboxEventCount(operation.Operation)
-			assertOutboxEffectCount(ctx, t, pg, fixture, wantOutbox)
+			assertOutboxEffectCount(ctx, t, pg, fixture, operation.Operation)
 
 			if err := operation.Invoke(ctx, repo, fixture.JobID, fixture.LeaseToken, commandID); err != nil {
 				t.Fatalf("%s (idempotent replay): %v", operation.Name, err)
@@ -737,7 +800,7 @@ func TestIntegrationTerminalCommandsReplaysCommandWithoutRepeatingEffects(t *tes
 			if got := readRuntimeRunningJobs(ctx, t, pg, nodeID); got != firstSlotCount {
 				t.Fatalf("runtime running_jobs = %d after replay, want unchanged %d", got, firstSlotCount)
 			}
-			assertOutboxEffectCount(ctx, t, pg, fixture, wantOutbox)
+			assertOutboxEffectCount(ctx, t, pg, fixture, operation.Operation)
 
 			commandAfterReplay, ok := readJobCommand(ctx, t, pg, fixture.JobID, operation.Operation, commandID)
 			if !ok {
@@ -763,8 +826,7 @@ func TestIntegrationTerminalCommandsRejectsConflictingCommandPayload(t *testing.
 				t.Fatalf("%s: %v", operation.Name, err)
 			}
 			accepted := readTerminalJobState(ctx, t, pg, fixture.JobID)
-			wantOutbox := terminalOutboxEventCount(operation.Operation)
-			assertOutboxEffectCount(ctx, t, pg, fixture, wantOutbox)
+			assertOutboxEffectCount(ctx, t, pg, fixture, operation.Operation)
 			commandAfterFirst, ok := readJobCommand(ctx, t, pg, fixture.JobID, operation.Operation, commandID)
 			if !ok {
 				t.Fatalf("command ledger has no row for %q", commandID)
@@ -775,7 +837,9 @@ func TestIntegrationTerminalCommandsRejectsConflictingCommandPayload(t *testing.
 			}
 
 			// The same command identity must never be re-bound to a different
-			// payload. Every varied field is part of the reserved request hash.
+			// payload. Every varied field is part of the reserved request hash;
+			// completion reserves no metadata to vary, so it runs no conflict case
+			// here and only the accepted command is proven.
 			for _, conflict := range conflictingTerminalPayloads(operation.Operation) {
 				t.Run(conflict.name, func(t *testing.T) {
 					err := conflict.invoke(ctx, repo, fixture, commandID)
@@ -794,7 +858,7 @@ func TestIntegrationTerminalCommandsRejectsConflictingCommandPayload(t *testing.
 					if got := readRuntimeRunningJobs(ctx, t, pg, nodeID); got != occupiedAfterFirst {
 						t.Fatalf("runtime running_jobs = %d, want unchanged %d", got, occupiedAfterFirst)
 					}
-					assertOutboxEffectCount(ctx, t, pg, fixture, wantOutbox)
+					assertOutboxEffectCount(ctx, t, pg, fixture, operation.Operation)
 					commandAfterConflict, ok := readJobCommand(ctx, t, pg, fixture.JobID, operation.Operation, commandID)
 					if !ok {
 						t.Fatalf("command ledger lost the row for %q", commandID)
@@ -825,7 +889,10 @@ type conflictingTerminalPayload struct {
 
 // conflictingTerminalPayloads enumerates the payload fields each terminal
 // command reserves. Cancellation hashes terminal_reason_code beyond the lease
-// token and job identity; failure also hashes the failure metadata.
+// token and job identity; failure also hashes the failure metadata. Completion
+// reserves no request metadata at all, so no metadata conflict case applies to
+// it: the replay tests drive completion under one command identity and lease
+// token instead, and the stale-token tests cover a token that was never held.
 func conflictingTerminalPayloads(operation string) []conflictingTerminalPayload {
 	cancel := func(reason string) func(context.Context, *Repository, claimedFixture, string) error {
 		return func(ctx context.Context, repo *Repository, fixture claimedFixture, commandID string) error {
@@ -843,6 +910,9 @@ func conflictingTerminalPayloads(operation string) []conflictingTerminalPayload 
 			{name: "empty terminal reason code", invoke: cancel("")},
 		}
 	}
+	if operation == commandidempotency.OperationJobComplete {
+		return nil
+	}
 
 	user := jobsmodel.FailureKindUser.ToString()
 	return []conflictingTerminalPayload{
@@ -853,14 +923,32 @@ func conflictingTerminalPayloads(operation string) []conflictingTerminalPayload 
 	}
 }
 
-// terminalOutboxEventCount is the durable outbox footprint each terminal command
-// owns: failure publishes an analytics plus a workflow event, claimed-job
-// cancellation deliberately publishes neither.
-func terminalOutboxEventCount(operation string) int {
-	if operation == commandidempotency.OperationJobFail {
-		return 2
+// terminalOutboxEventKeys returns the deterministic outbox event keys a terminal
+// command owns. Completion and failure each publish an analytics plus a workflow
+// event, the workflow event under its own action; claimed-job cancellation
+// deliberately publishes neither and owns no key at all.
+func terminalOutboxEventKeys(operation, jobID string) []string {
+	var action workflowsmodel.Action
+	switch operation {
+	case commandidempotency.OperationJobComplete:
+		action = workflowsmodel.ActionJobCompleted
+	case commandidempotency.OperationJobFail:
+		action = workflowsmodel.ActionJobFailed
+	default:
+		return nil
 	}
-	return 0
+	return []string{
+		idempotency.JobCompletedAnalyticsEventKey(jobID),
+		idempotency.JobWorkflowEventKey(jobID, action.ToString()),
+	}
+}
+
+// terminalOutboxEventCount is the durable outbox footprint each terminal command
+// owns: one deterministic key per published event, so the payload-scoped count
+// and the deterministic count must always agree.
+func terminalOutboxEventCount(operation string) int {
+	// The job identity is irrelevant to how many keys a command owns.
+	return len(terminalOutboxEventKeys(operation, ""))
 }
 
 func TestIntegrationTerminalCommandsRollbackReservationWhenOwnershipFails(t *testing.T) {
@@ -945,8 +1033,7 @@ func TestIntegrationTerminalCommandsCannotMutateTerminalJobUnderFreshCommand(t *
 				t.Fatalf("first terminal command: %v", err)
 			}
 			settled := readTerminalJobState(ctx, t, pg, fixture.JobID)
-			wantOutbox := terminalOutboxEventCount(scenario.firstOperation)
-			assertOutboxEffectCount(ctx, t, pg, fixture, wantOutbox)
+			assertOutboxEffectCount(ctx, t, pg, fixture, scenario.firstOperation)
 
 			// A different fresh command must not rewrite the terminal row.
 			rejected := "rejected-" + fixtureTag()
@@ -972,7 +1059,7 @@ func TestIntegrationTerminalCommandsCannotMutateTerminalJobUnderFreshCommand(t *
 			if got := readRuntimeRunningJobs(ctx, t, pg, nodeID); got != occupied-1 {
 				t.Fatalf("runtime running_jobs = %d, want %d after exactly one terminal transition", got, occupied-1)
 			}
-			assertOutboxEffectCount(ctx, t, pg, fixture, wantOutbox)
+			assertOutboxEffectCount(ctx, t, pg, fixture, scenario.firstOperation)
 		})
 	}
 }
@@ -1077,10 +1164,13 @@ func TestIntegrationTerminalCommandsRejectMalformedJobIdentity(t *testing.T) {
 
 // assertOutboxEffectCount asserts both the deterministic terminal keys and the
 // job-scoped payload total, so an extra event of an unexpected shape fails too.
-func assertOutboxEffectCount(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture claimedFixture, want int) {
+// The wanted count comes from the command rather than from the caller, so the two
+// counters can never be asserted against different numbers.
+func assertOutboxEffectCount(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture claimedFixture, operation string) {
 	t.Helper()
 
-	if got := countTerminalOutboxEvents(ctx, t, pg, fixture.JobID); got != want {
+	want := terminalOutboxEventCount(operation)
+	if got := countTerminalOutboxEvents(ctx, t, pg, fixture.JobID, operation); got != want {
 		t.Fatalf("deterministic terminal outbox events for job %q = %d, want %d", fixture.JobID, got, want)
 	}
 	if got := countJobScopedOutboxEvents(ctx, t, pg, fixture.JobID, fixture.WorkflowID); got != want {

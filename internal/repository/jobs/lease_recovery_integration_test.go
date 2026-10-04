@@ -241,6 +241,113 @@ func assertUnrecoveredOwnership(ctx context.Context, t *testing.T, pg *postgres.
 	}
 }
 
+// assertStaleCompleteRejected proves a CompleteJob carrying the lease token the
+// job had before a recovery takeover is refused, and that the refusal changed
+// nothing: the recovering worker keeps the running job and the exact lease it was
+// handed, no JOB_COMPLETED event was published, no ledger reservation survived
+// the rolled back transaction, and neither the retry counters nor the runtime
+// slot moved.
+func assertStaleCompleteRejected(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	repo *Repository,
+	fixture claimedFixture,
+) {
+	t.Helper()
+
+	nodeID := mustClaimedRuntimeNode(ctx, t, pg, fixture.JobID)
+	occupied := readRuntimeRunningJobs(ctx, t, pg, nodeID)
+	before := readTerminalJobState(ctx, t, pg, fixture.JobID)
+	if before.LeaseToken.String == fixture.LeaseToken || !before.LeaseToken.Valid {
+		t.Fatalf("fixture precondition: recovered lease token = %q, want a renewed token that is not the abandoned %q", before.LeaseToken.String, fixture.LeaseToken)
+	}
+	commandID := "complete-old-owner-" + fixtureTag()
+
+	if err := completeJobTerminal(ctx, repo, fixture.JobID, fixture.LeaseToken, commandID); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("CompleteJob with the abandoned lease code = %v, want %v (err: %v)", status.Code(err), codes.FailedPrecondition, err)
+	}
+
+	after := readTerminalJobState(ctx, t, pg, fixture.JobID)
+	if after.Status != "RUNNING" {
+		t.Fatalf("stale CompleteJob set job status = %q, want the recovered %q", after.Status, "RUNNING")
+	}
+	if after.CompletedAt.Valid {
+		t.Fatalf("stale CompleteJob set completed_at = %v, want NULL", after.CompletedAt.Time.UTC())
+	}
+	// Every part of the lease the recovering worker was handed survives, including
+	// the exact token and the liveness signal.
+	assertUnchangedLeaseOwnership(t, after, before)
+	assertRetryCountersUnchanged(t, after, before)
+	if got := readRuntimeRunningJobs(ctx, t, pg, nodeID); got != occupied {
+		t.Fatalf("stale CompleteJob released a runtime slot: running_jobs = %d, want unchanged %d", got, occupied)
+	}
+	// Reporting success is the completion event, so its absence is the contract.
+	assertNoOutboxEffect(ctx, t, pg, fixture)
+	if _, ok := readJobCommand(ctx, t, pg, fixture.JobID, commandidempotency.OperationJobComplete, commandID); ok {
+		t.Fatalf("command ledger kept a reservation for the rejected %s command %q", commandidempotency.OperationJobComplete, commandID)
+	}
+}
+
+// assertDeadEntryUnreplayed asserts a stored recovery entry that the test killed
+// in one dimension stayed dead: the replay neither renewed its expiry nor
+// rewrote the lease identity or the ownership column it was mutated in.
+func assertDeadEntryUnreplayed(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	jobID string,
+	before *leaseOwnership,
+	wantLeasedBy,
+	wantProcessInstanceID string,
+) {
+	t.Helper()
+
+	after := readLeaseOwnership(ctx, t, pg, jobID)
+	if after.LeaseToken.Valid != before.LeaseToken.Valid || after.LeaseToken.String != before.LeaseToken.String {
+		t.Fatalf("job %q lease_token = %+v, want the stored %+v", jobID, after.LeaseToken, before.LeaseToken)
+	}
+	if !after.LeaseExpiresAt.Valid || !after.LeaseExpiresAt.Time.Equal(before.LeaseExpiresAt.Time) {
+		t.Fatalf("job %q lease_expires_at = %v, want unchanged %v", jobID, after.LeaseExpiresAt.Time.UTC(), before.LeaseExpiresAt.Time.UTC())
+	}
+	if after.Status != "RUNNING" {
+		t.Fatalf("job %q status = %q, want %q for a dead but running entry", jobID, after.Status, "RUNNING")
+	}
+	assertNullString(t, "leased_by", after.LeasedBy, wantLeasedBy)
+	assertNullString(t, "lease_process_instance_id", after.LeaseProcessInstanceID, wantProcessInstanceID)
+}
+
+// assertUntouchedOwnership asserts recovery left a job it did not take over
+// exactly as it found it. Status gates every later terminal command and
+// last_heartbeat_at is the liveness signal recovery and renewal both drive, so a
+// takeover that reached an unexpired job could hide in either field, not only in
+// the lease identity columns. Validity is part of the comparison: a cleared
+// column is a change even when it was empty before.
+func assertUntouchedOwnership(t *testing.T, before, after *leaseOwnership) {
+	t.Helper()
+
+	if after.Status != before.Status {
+		t.Fatalf("untouched job %q status = %q, want the unchanged %q", after.ID, after.Status, before.Status)
+	}
+	for name, columns := range map[string][2]sql.NullString{
+		"lease_token":               {before.LeaseToken, after.LeaseToken},
+		"leased_by":                 {before.LeasedBy, after.LeasedBy},
+		"lease_process_instance_id": {before.LeaseProcessInstanceID, after.LeaseProcessInstanceID},
+	} {
+		if columns[0].Valid != columns[1].Valid || columns[0].String != columns[1].String {
+			t.Fatalf("untouched job %q %s = %+v, want the unchanged %+v", after.ID, name, columns[1], columns[0])
+		}
+	}
+	for name, stamps := range map[string][2]sql.NullTime{
+		"lease_expires_at":  {before.LeaseExpiresAt, after.LeaseExpiresAt},
+		"last_heartbeat_at": {before.LastHeartbeatAt, after.LastHeartbeatAt},
+	} {
+		if stamps[0].Valid != stamps[1].Valid || (stamps[0].Valid && !stamps[0].Time.Equal(stamps[1].Time)) {
+			t.Fatalf("untouched job %q %s = %+v, want the unchanged %+v", after.ID, name, stamps[1], stamps[0])
+		}
+	}
+}
+
 func readWorkerCommand(ctx context.Context, t *testing.T, pg *postgres.Postgres, processInstanceID, commandID string) (*jobCommandRow, bool) {
 	t.Helper()
 
@@ -297,14 +404,10 @@ func TestIntegrationRecoverExpiredJobLeasesTakesOverOnlyExpiredLeases(t *testing
 	}
 	assertRecoveredOwnership(ctx, t, pg, expired.JobID, recoveryWorkerID, processInstanceID)
 
-	// The live lease of an unexpired job is untouched.
+	// The live lease of an unexpired job is untouched: status, every lease identity
+	// column, the expiry and the heartbeat.
 	activeAfter := readLeaseOwnership(ctx, t, pg, active.JobID)
-	if activeAfter.LeaseToken.String != activeBefore.LeaseToken.String ||
-		activeAfter.LeasedBy.String != activeBefore.LeasedBy.String ||
-		activeAfter.LeaseProcessInstanceID.String != activeBefore.LeaseProcessInstanceID.String ||
-		!activeAfter.LeaseExpiresAt.Time.Equal(activeBefore.LeaseExpiresAt.Time) {
-		t.Fatalf("active job ownership changed: before %+v after %+v", activeBefore, activeAfter)
-	}
+	assertUntouchedOwnership(t, &activeBefore, &activeAfter)
 
 	// The abandoned worker token is dead: only the recovering identity can now
 	// terminate the job.
@@ -314,6 +417,10 @@ func TestIntegrationRecoverExpiredJobLeasesTakesOverOnlyExpiredLeases(t *testing
 	if got := readLeaseOwnership(ctx, t, pg, expired.JobID).Status; got != "RUNNING" {
 		t.Fatalf("job status = %q, want %q after the abandoned owner was rejected", got, "RUNNING")
 	}
+	// The same holds for reporting success, which is the guard the product docs
+	// single out: a delayed worker must not publish a completion event for work a
+	// recovery worker now owns.
+	assertStaleCompleteRejected(ctx, t, pg, repo, expired)
 
 	command, ok := readWorkerCommand(ctx, t, pg, processInstanceID, commandID)
 	if !ok {
@@ -404,23 +511,38 @@ func TestIntegrationRecoverExpiredJobLeasesOrdersByExpiryAndHonorsBatchLimit(t *
 	}
 }
 
+// tieFixtureJobIDs derives two job identities that differ only in their leading
+// byte. Both are unique per invocation, so neither can collide with another
+// fixture's identity, and the comparison between them is decided by that first
+// byte alone.
+func tieFixtureJobIDs() (low, high string) {
+	base := uuid.NewString()
+	return "00" + base[2:], "ff" + base[2:]
+}
+
 // TestIntegrationRecoverExpiredJobLeasesBreaksExpiryTiesByJobID covers the
 // documented `id ASC` tiebreak: with byte-identical expiries the LIMIT must pick
-// the smaller job id, not the order the fixtures were seeded in.
+// the smaller job id. Database-generated job ids are uuidv7, so they ascend with
+// insertion order and a fixture pair would always agree with the order Postgres
+// falls back to when the tiebreak is missing. These fixtures therefore use
+// identities derived per invocation and are seeded highest first, so insertion
+// order is adversarial to id order and only the tiebreak can produce the winner.
 func TestIntegrationRecoverExpiredJobLeasesBreaksExpiryTiesByJobID(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 
-	lower := seedClaimedJob(ctx, t, pg, repo)
-	higher := seedClaimedJob(ctx, t, pg, repo)
-	lowerID, higherID := lower.JobID, higher.JobID
-	if lowerID > higherID {
-		lowerID, higherID = higherID, lowerID
+	lowJobID, highJobID := tieFixtureJobIDs()
+	// Seeded in descending id order on purpose; the guard below keeps that
+	// property explicit rather than implicit in the call order.
+	first := seedClaimedJobAs(ctx, t, pg, repo, highJobID)
+	second := seedClaimedJobAs(ctx, t, pg, repo, lowJobID)
+	if first.JobID <= second.JobID {
+		t.Fatalf("tie fixtures were seeded ascending (%q then %q), want the higher id inserted first", first.JobID, second.JobID)
 	}
-	setExpiredFixtureLeases(ctx, t, pg, -expiredFixtureMinutes, lower.JobID, higher.JobID)
-	if readLeaseOwnership(ctx, t, pg, lower.JobID).LeaseExpiresAt.Time !=
-		readLeaseOwnership(ctx, t, pg, higher.JobID).LeaseExpiresAt.Time {
+	setExpiredFixtureLeases(ctx, t, pg, -expiredFixtureMinutes, first.JobID, second.JobID)
+	if readLeaseOwnership(ctx, t, pg, first.JobID).LeaseExpiresAt.Time !=
+		readLeaseOwnership(ctx, t, pg, second.JobID).LeaseExpiresAt.Time {
 		t.Fatal("tie fixtures did not receive byte-identical lease expiries")
 	}
 
@@ -429,9 +551,9 @@ func TestIntegrationRecoverExpiredJobLeasesBreaksExpiryTiesByJobID(t *testing.T)
 		t.Fatalf("RecoverExpiredJobLeases(tie break): %v", err)
 	}
 
-	assertSelected(t, jobs, []string{lowerID})
-	assertNotRecovered(t, jobs, []string{higherID})
-	assertUnrecoveredOwnership(ctx, t, pg, higher.JobID, higher.LeaseToken)
+	assertSelected(t, jobs, []string{lowJobID})
+	assertNotRecovered(t, jobs, []string{highJobID})
+	assertUnrecoveredOwnership(ctx, t, pg, first.JobID, first.LeaseToken)
 }
 
 // assertSelectedFixtureIDs asserts the response contains exactly the expected
@@ -515,10 +637,18 @@ func TestIntegrationRecoverExpiredJobLeasesReplayCannotResurrectDeadEntries(t *t
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 
+	// A different worker identity and a different process instance stand in for
+	// a later recovery pass that already rewrote an entry's ownership. Both are
+	// dimensions the replay must re-check, not just the token and the expiry.
+	reassignedWorkerID := "other-recovery-worker"
+	reassignedProcessInstanceID := uuid.NewString()
+
 	reexpired := seedClaimedJob(ctx, t, pg, repo)
 	superseded := seedClaimedJob(ctx, t, pg, repo)
+	reassigned := seedClaimedJob(ctx, t, pg, repo)
+	rehomed := seedClaimedJob(ctx, t, pg, repo)
 	terminal := seedClaimedJob(ctx, t, pg, repo)
-	for i, fixture := range []claimedFixture{reexpired, superseded, terminal} {
+	for i, fixture := range []claimedFixture{reexpired, superseded, reassigned, rehomed, terminal} {
 		setLeaseMinutes(ctx, t, pg, fixture.JobID, -expiredFixtureMinutes+i)
 	}
 
@@ -528,7 +658,7 @@ func TestIntegrationRecoverExpiredJobLeasesReplayCannotResurrectDeadEntries(t *t
 	if err != nil {
 		t.Fatalf("RecoverExpiredJobLeases: %v", err)
 	}
-	jobIDs := []string{reexpired.JobID, superseded.JobID, terminal.JobID}
+	jobIDs := []string{reexpired.JobID, superseded.JobID, reassigned.JobID, rehomed.JobID, terminal.JobID}
 	assertRecovered(t, first, jobIDs)
 
 	// Each stored entry dies in a different, individually durable way.
@@ -536,6 +666,14 @@ func TestIntegrationRecoverExpiredJobLeasesReplayCannotResurrectDeadEntries(t *t
 	supersedingToken := "other-worker:" + superseded.LeaseToken
 	if _, supersedeErr := pg.Exec(ctx, `UPDATE jobs SET lease_token = $2 WHERE id = $1`, superseded.JobID, supersedingToken); supersedeErr != nil {
 		t.Fatalf("supersede lease token: %v", supersedeErr)
+	}
+	if _, reassignErr := pg.Exec(ctx, `UPDATE jobs SET leased_by = $2 WHERE id = $1`, reassigned.JobID, reassignedWorkerID); reassignErr != nil {
+		t.Fatalf("reassign lease owner: %v", reassignErr)
+	}
+	if _, rehomeErr := pg.Exec(
+		ctx, `UPDATE jobs SET lease_process_instance_id = $2 WHERE id = $1`, rehomed.JobID, reassignedProcessInstanceID,
+	); rehomeErr != nil {
+		t.Fatalf("reassign lease process instance: %v", rehomeErr)
 	}
 	if _, terminalizeErr := pg.Exec(ctx, `
 		UPDATE jobs
@@ -550,6 +688,15 @@ func TestIntegrationRecoverExpiredJobLeasesReplayCannotResurrectDeadEntries(t *t
 	}
 
 	reexpiredBefore := readLeaseOwnership(ctx, t, pg, reexpired.JobID)
+	supersededBefore := readLeaseOwnership(ctx, t, pg, superseded.JobID)
+	reassignedBefore := readLeaseOwnership(ctx, t, pg, reassigned.JobID)
+	rehomedBefore := readLeaseOwnership(ctx, t, pg, rehomed.JobID)
+	// Recovery grants a renewed token per call, so every stored entry holds an
+	// identity its abandoned worker never carried. Without that premise the token
+	// comparisons below would prove nothing.
+	if granted := reexpiredBefore.LeaseToken.String; granted == reexpired.LeaseToken || !strings.HasPrefix(granted, recoveryWorkerID+":") {
+		t.Fatalf("recovered lease token = %q, want a renewed %q token instead of the abandoned %q", granted, recoveryWorkerID+":", reexpired.LeaseToken)
+	}
 	commandBefore, ok := readWorkerCommand(ctx, t, pg, processInstanceID, commandID)
 	if !ok {
 		t.Fatalf("command ledger has no row for the recovery command %q", commandID)
@@ -563,12 +710,13 @@ func TestIntegrationRecoverExpiredJobLeasesReplayCannotResurrectDeadEntries(t *t
 	// are legitimately alive. What must never come back is a dead fixture entry.
 	assertNotRecovered(t, replayed, jobIDs)
 
-	// Replay must not have renewed the re-expired lease either.
-	reexpiredAfter := readLeaseOwnership(ctx, t, pg, reexpired.JobID)
-	if !reexpiredAfter.LeaseExpiresAt.Time.Equal(reexpiredBefore.LeaseExpiresAt.Time) {
-		t.Fatalf("re-expired lease_expires_at = %v, want unchanged %v", reexpiredAfter.LeaseExpiresAt.Time.UTC(), reexpiredBefore.LeaseExpiresAt.Time.UTC())
-	}
-	assertUnrecoveredOwnership(ctx, t, pg, superseded.JobID, supersedingToken)
+	// Every dead entry is still dead on disk: not renewed, not rewritten, and not
+	// handed back. Each keeps the ownership column this test mutated and the lease
+	// identity recovery had granted it.
+	assertDeadEntryUnreplayed(ctx, t, pg, reexpired.JobID, &reexpiredBefore, recoveryWorkerID, processInstanceID)
+	assertDeadEntryUnreplayed(ctx, t, pg, superseded.JobID, &supersededBefore, recoveryWorkerID, processInstanceID)
+	assertDeadEntryUnreplayed(ctx, t, pg, reassigned.JobID, &reassignedBefore, reassignedWorkerID, processInstanceID)
+	assertDeadEntryUnreplayed(ctx, t, pg, rehomed.JobID, &rehomedBefore, recoveryWorkerID, reassignedProcessInstanceID)
 	terminalAfter := readLeaseOwnership(ctx, t, pg, terminal.JobID)
 	if terminalAfter.Status != "FAILED" || terminalAfter.LeaseToken.Valid {
 		t.Fatalf("terminal job = %+v, want an untouched FAILED row", terminalAfter)
@@ -758,9 +906,7 @@ func TestIntegrationRecoverExpiredJobLeasesHonorsRuntimeAvailabilityContract(t *
 			// The stored runtime endpoint is always carried to the recovering
 			// worker, including when the node reference is gone.
 			if testCase.detachRuntime {
-				if recoveredJob.RuntimeNodeID.Valid {
-					t.Fatalf("returned runtime_node_id = %q, want NULL for a detached runtime", recoveredJob.RuntimeNodeID.String)
-				}
+				assertNullText(t, "returned runtime_node_id", recoveredJob.RuntimeNodeID)
 			} else {
 				assertNullString(t, "returned runtime_node_id", recoveredJob.RuntimeNodeID, nodeID)
 			}
@@ -800,9 +946,7 @@ func TestIntegrationRecoverExpiredJobLeasesSkipsRunningJobsWithoutUsableLease(t 
 	// A job without a lease token keeps its current owner identity: recovery
 	// found nothing to take over, not something to strip.
 	tokenlessAfter := readLeaseOwnership(ctx, t, pg, tokenless.JobID)
-	if tokenlessAfter.LeaseToken.Valid {
-		t.Fatalf("tokenless job gained a lease token: %q", tokenlessAfter.LeaseToken.String)
-	}
+	assertNullText(t, "tokenless job lease_token", tokenlessAfter.LeaseToken)
 	if tokenlessAfter.LeasedBy.String != tokenlessBefore.LeasedBy.String {
 		t.Fatalf("tokenless job leased_by = %q, want unchanged %q", tokenlessAfter.LeasedBy.String, tokenlessBefore.LeasedBy.String)
 	}

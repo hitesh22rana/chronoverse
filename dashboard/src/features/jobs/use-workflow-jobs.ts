@@ -14,6 +14,53 @@ type UseWorkflowJobsOptions = {
     enabled?: boolean
 }
 
+type SearchParams = Pick<URLSearchParams, "get" | "toString">
+type JobFilters = { status?: string; trigger?: string }
+
+function readJobFilters(path: string, workflowId: string, searchParams: SearchParams) {
+    const isJobsPage = path === `/workflows/${workflowId}` && searchParams.get("tab") === "jobs"
+    const params = isJobsPage ? searchParams : new URLSearchParams()
+    return {
+        currentCursor: params.get("cursor") || "",
+        statusFilter: params.get("status") || "",
+        triggerFilter: params.get("trigger") || "",
+    }
+}
+
+function jobQueryParams({ currentCursor, statusFilter, triggerFilter }: ReturnType<typeof readJobFilters>) {
+    const params = new URLSearchParams()
+
+    if (currentCursor) {
+        params.set("cursor", currentCursor)
+    }
+
+    if (statusFilter && statusFilter !== "ALL") {
+        params.set("status", statusFilter)
+    }
+
+    if (triggerFilter && triggerFilter !== "ALL") {
+        params.set("trigger", triggerFilter)
+    }
+
+    return params.toString()
+}
+
+function applyJobFilters(params: URLSearchParams, filters: JobFilters) {
+    const { status, trigger } = filters
+
+    if (status && status !== "ALL") {
+        params.set("status", status)
+    } else {
+        params.delete("status")
+    }
+
+    if (trigger && trigger !== "ALL") {
+        params.set("trigger", trigger)
+    } else {
+        params.delete("trigger")
+    }
+}
+
 export function useWorkflowJobs(
     workflowId: string,
     { enabled = true }: UseWorkflowJobsOptions = {},
@@ -22,40 +69,9 @@ export function useWorkflowJobs(
     const path = usePathname()
     const searchParams = useSearchParams()
 
-    const isNotWorkflowPath = path !== `/workflows/${workflowId}`
-
-    let currentCursor = ""
-    let statusFilter = ""
-    let triggerFilter = ""
-    const isJobsTab = searchParams.get("tab") === "jobs"
-
-    if (isNotWorkflowPath || !isJobsTab) {
-        currentCursor = ""
-        statusFilter = ""
-        triggerFilter = ""
-    } else {
-        currentCursor = searchParams.get("cursor") || ""
-        statusFilter = searchParams.get("status") || ""
-        triggerFilter = searchParams.get("trigger") || ""
-    }
-
-    const getJobQueryParams = (() => {
-        const params = new URLSearchParams()
-
-        if (currentCursor) {
-            params.set("cursor", currentCursor)
-        }
-
-        if (statusFilter && statusFilter !== "ALL") {
-            params.set("status", statusFilter)
-        }
-
-        if (triggerFilter && triggerFilter !== "ALL") {
-            params.set("trigger", triggerFilter)
-        }
-
-        return params.toString()
-    })()
+    const filters = readJobFilters(path, workflowId, searchParams)
+    const { currentCursor, statusFilter, triggerFilter } = filters
+    const getJobQueryParams = jobQueryParams(filters)
 
     const getJobQuery = useQuery({
         queryKey: queryKeys.workflow.jobs(
@@ -98,19 +114,7 @@ export function useWorkflowJobs(
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
 
-        const { status, trigger } = filters as { status?: string, trigger?: string }
-
-        if (status && status !== "ALL") {
-            params.set("status", status)
-        } else {
-            params.delete("status")
-        }
-
-        if (trigger && trigger !== "ALL") {
-            params.set("trigger", trigger)
-        } else {
-            params.delete("trigger")
-        }
+        applyJobFilters(params, filters as JobFilters)
 
         router.push(`?${params.toString()}`)
     }

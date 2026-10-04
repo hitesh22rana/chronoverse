@@ -16,72 +16,109 @@ type UseWorkflowsOptions = {
     poll?: boolean
 }
 
+type SearchParams = Pick<URLSearchParams, "get" | "toString">
+
+type WorkflowFilters = {
+    status?: string
+    kind?: string
+    intervalMin?: string
+    intervalMax?: string
+}
+
+function readWorkflowFilters(path: string, searchParams: SearchParams) {
+    const params = path === "/" ? searchParams : new URLSearchParams()
+    return {
+        currentCursor: params.get("cursor") || "",
+        searchQuery: params.get("query") || "",
+        statusFilter: params.get("status") || "",
+        kindFilter: params.get("kind") || "",
+        intervalMin: normalizeIntervalFilter(params.get("interval_min")),
+        intervalMax: normalizeIntervalFilter(params.get("interval_max")),
+    }
+}
+
+function workflowQueryParams({
+    currentCursor,
+    searchQuery,
+    statusFilter,
+    kindFilter,
+    intervalMin,
+    intervalMax,
+}: ReturnType<typeof readWorkflowFilters>) {
+    const params = new URLSearchParams()
+
+    if (currentCursor) {
+        params.set("cursor", currentCursor)
+    }
+
+    if (searchQuery) {
+        params.set("query", searchQuery)
+    }
+
+    if (statusFilter) {
+        if (statusFilter === "TERMINATED") {
+            params.set("terminated", "true")
+        } else {
+            params.set("build_status", statusFilter)
+        }
+    }
+
+    if (kindFilter) {
+        params.set("kind", kindFilter)
+    }
+
+    const normalizedIntervalMin = normalizeIntervalFilter(intervalMin)
+    if (normalizedIntervalMin) {
+        params.set("interval_min", normalizedIntervalMin)
+    }
+
+    const normalizedIntervalMax = normalizeIntervalFilter(intervalMax)
+    if (normalizedIntervalMax) {
+        params.set("interval_max", normalizedIntervalMax)
+    }
+
+    return params.toString()
+}
+
+function applyWorkflowFilters(params: URLSearchParams, filters: WorkflowFilters) {
+    const { status, kind, intervalMin, intervalMax } = filters
+
+    if (status && status !== "ALL") {
+        params.set("status", status)
+    } else {
+        params.delete("status")
+    }
+
+    if (kind && kind !== "ALL") {
+        params.set("kind", kind)
+    } else {
+        params.delete("kind")
+    }
+
+    const normalizedIntervalMin = normalizeIntervalFilter(intervalMin)
+    if (normalizedIntervalMin) {
+        params.set("interval_min", normalizedIntervalMin)
+    } else {
+        params.delete("interval_min")
+    }
+
+    const normalizedIntervalMax = normalizeIntervalFilter(intervalMax)
+    if (normalizedIntervalMax) {
+        params.set("interval_max", normalizedIntervalMax)
+    } else {
+        params.delete("interval_max")
+    }
+}
+
 export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
     const queryClient = useQueryClient()
     const router = useRouter()
     const path = usePathname()
     const searchParams = useSearchParams()
 
-    const isNotRootPath = path !== "/"
-
-    let currentCursor = ""
-    let searchQuery = ""
-    let statusFilter = ""
-    let kindFilter = ""
-    let intervalMin = ""
-    let intervalMax = ""
-
-    if (isNotRootPath) {
-        currentCursor = ""
-        searchQuery = ""
-        statusFilter = ""
-        kindFilter = ""
-        intervalMin = ""
-        intervalMax = ""
-    } else {
-        currentCursor = searchParams.get("cursor") || ""
-        searchQuery = searchParams.get("query") || ""
-        statusFilter = searchParams.get("status") || ""
-        kindFilter = searchParams.get("kind") || ""
-        intervalMin = normalizeIntervalFilter(searchParams.get("interval_min"))
-        intervalMax = normalizeIntervalFilter(searchParams.get("interval_max"))
-    }
-
-    const getWorkflowQueryParams = (() => {
-        const params = new URLSearchParams()
-
-        if (currentCursor) {
-            params.set("cursor", currentCursor)
-        }
-
-        if (searchQuery) {
-            params.set("query", searchQuery)
-        }
-
-        if (statusFilter) {
-            if (statusFilter === "TERMINATED") {
-                params.set("terminated", "true")
-            } else {
-                params.set("build_status", statusFilter)
-            }
-        }
-
-        if (kindFilter) {
-            params.set("kind", kindFilter)
-        }
-
-        const normalizedIntervalMin = normalizeIntervalFilter(intervalMin)
-        if (normalizedIntervalMin) {
-            params.set("interval_min", normalizedIntervalMin)
-        }
-
-        const normalizedIntervalMax = normalizeIntervalFilter(intervalMax)
-        if (normalizedIntervalMax) {
-            params.set("interval_max", normalizedIntervalMax)
-        }
-
-        return params.toString()
-    })()
+    const filters = readWorkflowFilters(path, searchParams)
+    const { currentCursor, searchQuery, statusFilter, kindFilter, intervalMin, intervalMax } = filters
+    const getWorkflowQueryParams = workflowQueryParams(filters)
 
     const getWorkflowQuery = useQuery<WorkflowsResponse, Error>({
         queryKey: queryKeys.workflows.list(
@@ -150,43 +187,7 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
 
-        const {
-            status,
-            kind,
-            intervalMin,
-            intervalMax
-        } = filters as {
-            status?: string,
-            kind?: string,
-            intervalMin?: string,
-            intervalMax?: string,
-        }
-
-        if (status && status !== "ALL") {
-            params.set("status", status)
-        } else {
-            params.delete("status")
-        }
-
-        if (kind && kind !== "ALL") {
-            params.set("kind", kind)
-        } else {
-            params.delete("kind")
-        }
-
-        const normalizedIntervalMin = normalizeIntervalFilter(intervalMin)
-        if (normalizedIntervalMin) {
-            params.set("interval_min", normalizedIntervalMin)
-        } else {
-            params.delete("interval_min")
-        }
-
-        const normalizedIntervalMax = normalizeIntervalFilter(intervalMax)
-        if (normalizedIntervalMax) {
-            params.set("interval_max", normalizedIntervalMax)
-        } else {
-            params.delete("interval_max")
-        }
+        applyWorkflowFilters(params, filters as WorkflowFilters)
 
         router.push(`?${params.toString()}`)
     }

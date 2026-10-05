@@ -103,13 +103,10 @@ function useWorkflowDetailsAndJobsModel() {
 
     const interval = workflow?.interval ? formatWorkflowInterval(workflow.interval) : ""
 
+    // Only the jobs toolbar mounts a refresh control, so this never runs on details.
     const handleRefresh = () => {
         refetchWorkflow()
-        if (urlTabFilter === "details") {
-            refetchAnalytics()
-        } else {
-            refetchJobs()
-        }
+        refetchJobs()
     }
 
     const handleFiltersOpenChange = (nextOpen: boolean) => {
@@ -316,7 +313,6 @@ function WorkflowDetailsSkeleton() {
         </Card>
     )
 }
-
 
 function renderWorkflowHeader(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
     const { workflow, status, statusMeta } = model

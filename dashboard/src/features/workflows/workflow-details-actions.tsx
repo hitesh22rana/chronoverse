@@ -16,11 +16,9 @@ type WorkflowDetailsActionsProps = {
 }
 
 /**
- * Details tab action strip: editing is always offered, and exactly one
- * lifecycle action is offered alongside it — delete once the workflow is
- * terminated, terminate while it still runs. The destructive slot shows a
- * placeholder until the workflow is known, because which action it holds
- * depends on the loaded lifecycle state.
+ * Editing is always offered; the second slot holds exactly one lifecycle action
+ * — delete once terminated, terminate until then — and shows a placeholder
+ * while the workflow is still unknown.
  */
 export function WorkflowDetailsActions({
     workflow,

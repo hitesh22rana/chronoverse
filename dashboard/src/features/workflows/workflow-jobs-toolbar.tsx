@@ -37,9 +37,8 @@ type WorkflowJobsToolbarProps = {
 }
 
 /**
- * Jobs tab toolbar. Filter selections stay local until Apply, so opening the
- * popover reseeds them from the applied URL filters instead of from whatever
- * was last picked.
+ * Filter picks stay local until Apply, so reopening the popover reseeds the
+ * selects from the applied URL filters rather than from an abandoned edit.
  */
 export function WorkflowJobsToolbar({
     workflow,
@@ -61,26 +60,23 @@ export function WorkflowJobsToolbar({
 }: WorkflowJobsToolbarProps) {
     return (
         <div className="flex flex-wrap items-center justify-end gap-2 w-full mb-4">
-            {/* A manual run is only meaningful once the build succeeded and the
-                workflow has not already been terminated. */}
-            {!!workflow?.build_status &&
-                workflow.build_status === "COMPLETED" &&
-                !workflow?.terminated_at && (
-                    <Button
-                        variant="default"
-                        size="sm"
-                        className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
-                        onClick={() => onManualRun()}
-                        disabled={isManualRunPending}
-                    >
-                        {isManualRunPending ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                            <Play className="h-4 w-4" />
-                        )}
-                        Manual run
-                    </Button>
-                )}
+            {/* A manual run needs a completed build on a workflow still running. */}
+            {workflow?.build_status === "COMPLETED" && !workflow?.terminated_at && (
+                <Button
+                    variant="default"
+                    size="sm"
+                    className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
+                    onClick={() => onManualRun()}
+                    disabled={isManualRunPending}
+                >
+                    {isManualRunPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <Play className="h-4 w-4" />
+                    )}
+                    Manual run
+                </Button>
+            )}
 
             <Popover open={isFiltersOpen} onOpenChange={onFiltersOpenChange}>
                 <PopoverTrigger asChild>

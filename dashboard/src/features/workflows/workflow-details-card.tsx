@@ -27,7 +27,6 @@ type WorkflowDetailsCardProps = {
     onRetryAnalytics: () => void
 }
 
-/** Everything the loaded workflow says about itself, plus its lifetime signals. */
 export function WorkflowDetailsCard({
     workflow,
     status,
@@ -46,12 +45,12 @@ export function WorkflowDetailsCard({
                     <div className="space-y-2">
                         <span className="text-sm font-medium">Workflow kind</span>
                         <div className="text-sm text-muted-foreground flex items-center gap-2">
-                            {workflow?.kind === "HEARTBEAT" ? (
+                            {workflow.kind === "HEARTBEAT" ? (
                                 <HeartPulse className="h-4 w-4" />
                             ) : (
                                 <Workflow className="h-4 w-4" />
                             )}
-                            {workflow?.kind}
+                            {workflow.kind}
                         </div>
                     </div>
                     <div className="space-y-2">
@@ -72,14 +71,14 @@ export function WorkflowDetailsCard({
                         <span className="text-sm font-medium">Max consecutive failures allowed</span>
                         <div className="text-sm text-muted-foreground flex items-center gap-2">
                             <Shield className="h-4 w-4" />
-                            {workflow?.max_consecutive_job_failures_allowed}
+                            {workflow.max_consecutive_job_failures_allowed}
                         </div>
                     </div>
                     <div className="space-y-2">
                         <span className="text-sm font-medium">Log retention</span>
                         <div className="text-sm text-muted-foreground flex items-center gap-2">
                             <Database className="h-4 w-4" />
-                            {workflow?.log_retention ? "Enabled" : "Disabled"}
+                            {workflow.log_retention ? "Enabled" : "Disabled"}
                         </div>
                     </div>
                 </div>
@@ -90,7 +89,7 @@ export function WorkflowDetailsCard({
                     <span className="text-sm font-medium">Configuration</span>
                     <div className="text-sm text-muted-foreground">
                         <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
-                            {workflow?.payload
+                            {workflow.payload
                                 ? JSON.stringify(JSON.parse(workflow.payload), null, 2)
                                 : "No configuration available"}
                         </pre>
@@ -117,16 +116,17 @@ export function WorkflowDetailsCard({
                             <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
                             <span className="text-sm font-medium">Failure tracking</span>
                         </div>
+                        {/* The API omits a zero failure count, so the fallback is load-bearing. */}
                         <span className="text-sm font-medium">
-                            {workflow?.consecutive_job_failures_count ?? 0} /{" "}
-                            {workflow?.max_consecutive_job_failures_allowed ?? 1}
+                            {workflow.consecutive_job_failures_count ?? 0} /{" "}
+                            {workflow.max_consecutive_job_failures_allowed}
                         </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                         <div
                             className="bg-orange-500 h-1.5 rounded-full"
                             style={{
-                                width: `${((workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1)) * 100}%`,
+                                width: `${(workflow.consecutive_job_failures_count ?? 0) / workflow.max_consecutive_job_failures_allowed * 100}%`,
                             }}
                         />
                     </div>

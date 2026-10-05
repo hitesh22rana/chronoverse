@@ -4,12 +4,9 @@
  * offers, how lifecycle state decides between them, and how the jobs toolbar
  * moves filters, paging and refreshes through the URL.
  *
- * Boundaries only: the transport (`@/lib/api/client`), the Next.js navigation
- * hooks (with a store-backed search string so `router.push` navigates the way
- * the real router does), `sonner`, and the dialog surface Radix needs in jsdom.
- * The page, its hooks, react-query, the analytics panel and the destructive
- * confirmation dialogs all run for real, so the assertions are about what a
- * user can see and do, and about the requests the page actually issues.
+ * Only boundaries are mocked: the transport, the navigation hooks (with a
+ * store-backed search string, so `router.push` navigates like the real router),
+ * `sonner`, and the dialog surface Radix needs. Everything else runs for real.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -245,7 +242,6 @@ it("summarizes a container workflow, its configuration and its lifetime signals"
     expect(screen.getByText("Enabled")).toBeTruthy()
     expect(screen.getByText(/"image": "alpine:latest"/)).toBeTruthy()
     expect(screen.getByText("2 / 3")).toBeTruthy()
-    // Two of three allowed failures consumed, drawn as a two-thirds bar.
     expect(failureBar().style.width).toBe(`${(2 / 3) * 100}%`)
 
     // 9 logs over 3 recorded job executions.
@@ -269,11 +265,29 @@ it("shows the heartbeat variant of the same summary", async () => {
     expect(screen.getByText("4 / 4")).toBeTruthy()
     expect(failureBar().style.width).toBe("100%")
 
-    // Heartbeats emit no logs, so the log metric explains itself instead of
+    // Heartbeats emit no logs, so the metric explains itself instead of
     // promising a per-job rate.
     expect(screen.getByText("Not emitted by this workflow kind")).toBeTruthy()
     expect(screen.queryByText("~3 logs per job")).toBeNull()
     expect(screen.getByText("This workflow kind does not retain execution logs.")).toBeTruthy()
+})
+
+it("counts a workflow that has not failed a job yet", async () => {
+    // The API omits a zero failure count, so a healthy workflow has no such field.
+    mocks.workflow = containerWorkflow({ consecutive_job_failures_count: undefined })
+    renderPage()
+
+    expect(await screen.findByRole("heading", { name: "Nightly container" })).toBeTruthy()
+    expect(screen.getByText("0 / 3")).toBeTruthy()
+    expect(failureBar().style.width).toBe("0%")
+})
+
+it("says so when a workflow carries no configuration", async () => {
+    mocks.workflow = containerWorkflow({ payload: undefined })
+    renderPage()
+
+    expect(await screen.findByRole("heading", { name: "Nightly container" })).toBeTruthy()
+    expect(screen.getByText("No configuration available")).toBeTruthy()
 })
 
 it("keeps analytics failures recoverable from the details card", async () => {
@@ -525,7 +539,7 @@ it("keeps a pending filter out of the request until Apply", async () => {
     expect(within(filterButton()).getByText("2")).toBeTruthy()
 })
 
-it("reseeds the filter popover from the applied filters and can drop one", async () => {
+it("reseeds the filter popover from the applied filters and can drop them one by one", async () => {
     const { user } = renderPage("tab=jobs&status=FAILED&trigger=MANUAL")
     await waitFor(() =>
         expect(jobListUrls()).toEqual(["/workflows/w1/jobs?status=FAILED&trigger=MANUAL"]),
@@ -551,6 +565,14 @@ it("reseeds the filter popover from the applied filters and can drop one", async
 
     await waitFor(() => expect(lastPush()).toBe("?tab=jobs&trigger=MANUAL"))
     expect(within(filterButton()).getByText("1")).toBeTruthy()
+
+    await user.click(filterButton())
+    await user.click(screen.getAllByRole("combobox")[0])
+    await user.click(await screen.findByRole("option", { name: "All triggers" }))
+    await user.click(screen.getByRole("button", { name: "Apply Filters" }))
+
+    await waitFor(() => expect(lastPush()).toBe("?tab=jobs"))
+    expect(within(filterButton()).queryByText("1")).toBeNull()
 })
 
 it("clears every applied filter but keeps the open tab", async () => {
@@ -685,7 +707,6 @@ function installDomStubs() {
     }
 }
 
-/** Puts the shared prototype back the way this file found it. */
 function restoreDomStubs() {
     pointerCaptureMembers.forEach((member, index) => {
         const original = originalPointerCaptureDescriptors[index]

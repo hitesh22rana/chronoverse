@@ -4,9 +4,8 @@
  * request, how paging/search/filter navigation is written back, and what a
  * create does to the cache, the URL and the user-visible result.
  *
- * Boundaries only: the transport (`@/lib/api/client`), the Next.js navigation
- * hooks and `sonner`. react-query runs for real, so the assertions are about the
- * requests the hook issues and the navigation it performs.
+ * Only the transport, the navigation hooks and `sonner` are mocked;
+ * react-query runs for real.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react"
@@ -243,6 +242,17 @@ it("clears every filter but keeps the search text", async () => {
     })
 
     expect(lastPush()).toBe("?query=night")
+})
+
+it("clears every filter down to a bare address when nothing is searched", async () => {
+    const { result } = renderUseWorkflows("status=FAILED&kind=HEARTBEAT&interval_min=5")
+    await waitFor(() => expect(result.current.statusFilter).toBe("FAILED"))
+
+    act(() => {
+        result.current.clearAllFilters()
+    })
+
+    expect(lastPush()).toBe("?")
 })
 
 it("re-requests the list on demand", async () => {

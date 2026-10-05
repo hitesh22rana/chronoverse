@@ -369,7 +369,8 @@ func readJobOutboxEvent(ctx context.Context, t *testing.T, pg *postgres.Postgres
 	return event
 }
 
-func readJobCommand(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID, operation, commandID string) (*jobCommandRow, bool) {
+// readCommandByScope reads the ledger row one command reserves, from whichever scope owns it.
+func readCommandByScope(ctx context.Context, t *testing.T, pg *postgres.Postgres, scope, operation, key string) (*jobCommandRow, bool) {
 	t.Helper()
 
 	var row jobCommandRow
@@ -377,15 +378,21 @@ func readJobCommand(ctx context.Context, t *testing.T, pg *postgres.Postgres, jo
 		SELECT status, request_hash, resource_id, response, completed_at, expires_at
 		FROM command_idempotency_keys
 		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
-	`, commandidempotency.JobScope(jobID), operation, commandID,
+	`, scope, operation, key,
 	).Scan(&row.Status, &row.RequestHash, &row.ResourceID, &row.Response, &row.CompletedAt, &row.ExpiresAt)
 	if pg.IsNoRows(err) {
 		return nil, false
 	}
 	if err != nil {
-		t.Fatalf("read job command ledger row: %v", err)
+		t.Fatalf("read command ledger row for scope %q: %v", scope, err)
 	}
 	return &row, true
+}
+
+func readJobCommand(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID, operation, commandID string) (*jobCommandRow, bool) {
+	t.Helper()
+
+	return readCommandByScope(ctx, t, pg, commandidempotency.JobScope(jobID), operation, commandID)
 }
 
 func countCommandRowsByKey(ctx context.Context, t *testing.T, pg *postgres.Postgres, operation, commandID string) int {

@@ -146,12 +146,50 @@ def _read_go_profile(path: Path) -> tuple[str, dict[str, tuple[int, int]]]:
     return mode, blocks
 
 
-def merge_go_profiles(inputs: list[Path], output: Path) -> dict[str, int]:
+def module_paths(root: Path, tracked: list[str]) -> tuple[str, ...]:
+    """The import path every tracked go.mod declares.
+
+    A go.mod missing from the work tree declares nothing here; `handwritten_sources`
+    reports it as a tracked-but-missing file.
+    """
+
+    declared: list[str] = []
+    for relative in sorted(tracked):
+        path = root / relative
+        if Path(relative).name != "go.mod" or not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            text = line.strip()
+            if text.startswith("module "):
+                declared.append(text.split(None, 1)[1].strip())
+                break
+    return tuple(declared)
+
+
+def unknown_block_files(blocks: dict[str, tuple[int, int]], modules: tuple[str, ...]) -> list[str]:
+    """The block file paths that no declared module can contain.
+
+    Every block a `go test ./... -coverprofile` run writes names a file inside a
+    module of this work tree.
+    """
+
+    unknown: set[str] = set()
+    for location in blocks:
+        part = location.split(":", 1)[0]
+        if not any(part == module or part.startswith(f"{module}/") for module in modules):
+            unknown.add(part)
+    return sorted(unknown)
+
+
+def merge_go_profiles(
+    inputs: list[Path], output: Path, modules: tuple[str, ...]
+) -> dict[str, int]:
     """Sum the hit counts of compatible profiles into one coverprofile.
 
-    Compatible means the same covermode and the same block with the same statement
-    count. Hits are added, so a block run by both suites counts twice; CRAP only asks
-    whether the count is above zero. Returns the merged block and file counts.
+    Compatible means the same covermode, the same block with the same statement
+    count, and a file path some go.mod declares. Hits are added, so a block run by
+    both suites counts twice; CRAP only asks whether the count is above zero.
+    Returns the merged block and file counts.
     """
 
     mode: str | None = None
@@ -171,6 +209,18 @@ def merge_go_profiles(inputs: list[Path], output: Path) -> dict[str, int]:
             _add_block(blocks, location, statements, hits, str(path))
     if mode is None:
         raise CoverageError("no Go coverprofile given")
+
+    unknown = unknown_block_files(blocks, modules)
+    if unknown:
+        shown = ", ".join(unknown[:5])
+        more = f" (and {len(unknown) - 5} more)" if len(unknown) > 5 else ""
+        raise CoverageError(
+            f"no go.mod declares these block file paths: {shown}{more}. Two go test runs "
+            "sharing one -coverprofile path interleave and splice a path's prefix; the "
+            "damaged line still parses, so it would land as a block no source matches "
+            "and leave the intact block with only one run's hits. Give each run its own "
+            "output file."
+        )
 
     lines = [f"mode: {mode}"]
     for location, (statements, hits) in sorted(blocks.items()):
@@ -272,7 +322,13 @@ def handwritten_sources(root: Path, paths: list[str]) -> list[Path]:
         text = Path(relative).as_posix()
         if any(text.startswith(tree) for tree in GENERATED_TREES):
             continue
-        with (root / relative).open("rb") as handle:
+        path = root / relative
+        if not path.is_file():
+            raise CoverageError(
+                f"{relative} is tracked but missing from the work tree. Restore it, or stage "
+                "the deletion, before scoring: git ls-files still lists it."
+            )
+        with path.open("rb") as handle:
             header = handle.read(HEADER_BYTES)
         if is_generated(header.decode("utf-8", errors="replace")):
             continue
@@ -376,27 +432,44 @@ def write_inventory(path: Path, rows: list[dict]) -> Path:
     return path
 
 
-def language_counts(rows: list[dict]) -> dict[str, int]:
+def language_file_counts(files: list[Path], root: Path) -> dict[str, int]:
+    """How many scoped files each language contributes."""
+
+    counts: dict[str, int] = {}
+    for file in files:
+        language = language_of(file.relative_to(root))
+        counts[language] = counts.get(language, 0) + 1
+    return counts
+
+
+def function_language_counts(rows: list[dict]) -> dict[str, int]:
+    """How many scored functions each language contributes."""
+
     counts: dict[str, int] = {}
     for row in rows:
         counts[row["language"]] = counts.get(row["language"], 0) + 1
     return counts
 
 
-def summarise(rows: list[dict], files: list[Path]) -> str:
+def breakdown(counts: dict[str, int]) -> str:
+    return ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+
+
+def summarise(rows: list[dict], files: list[Path], root: Path) -> str:
     """Counts that keep the two kinds of zero apart."""
 
     measured = sum(row["coverage_recorded"] == "yes" for row in rows)
     zero = sum(
         row["coverage_recorded"] == "yes" and float(row["coverage"]) == 0.0 for row in rows
     )
-    areas = ", ".join(f"{name}={count}" for name, count in sorted(language_counts(rows).items()))
+    file_areas = breakdown(language_file_counts(files, root))
+    function_areas = breakdown(function_language_counts(rows))
     return "\n".join(
         [
             "",
             "Scope",
-            f"  files:      {len(files)} ({areas or 'no supported sources'})",
-            f"  functions:  {len(rows)}",
+            f"  files:      {len(files)} ({file_areas or 'no supported sources'})",
+            f"  functions:  {len(rows)} ({function_areas or 'no supported sources'})",
             f"  recorded:   {measured} functions matched a coverage record",
             f"  no record:  {len(rows) - measured} functions no report mentions",
             f"  zero:       {zero} of the matched functions measured 0%",
@@ -481,9 +554,10 @@ def main(argv: list[str] | None = None) -> int:
     if removed:
         print(f"Removed stale reports: {', '.join(removed)}")
 
+    tracked = tracked_files(root)
     if args.go_unit or args.go_integration:
         profiles = [path for path in (args.go_unit, args.go_integration) if path]
-        merged = merge_go_profiles(profiles, root / GO_PROFILE)
+        merged = merge_go_profiles(profiles, root / GO_PROFILE, module_paths(root, tracked))
         print(
             f"Merged {len(profiles)} Go profile(s) into {GO_PROFILE} "
             f"({merged['blocks']} blocks across {merged['files']} files)"
@@ -492,7 +566,7 @@ def main(argv: list[str] | None = None) -> int:
         prefix_lcov_report(args.dashboard_lcov, root / DASHBOARD_LCOV, args.dashboard_prefix)
         print(f"Wrote {DASHBOARD_LCOV} with SF: paths rooted at {args.dashboard_prefix}/")
 
-    files = handwritten_sources(root, tracked_files(root))
+    files = handwritten_sources(root, tracked)
     bundle = load_bundle(root)
     entries, rows = measure(files, root, bundle)
 
@@ -503,7 +577,7 @@ def main(argv: list[str] | None = None) -> int:
     inventory = write_inventory(metrics / "inventory.csv", rows)
 
     print(format_report(entries), end="")
-    print(summarise(rows, files))
+    print(summarise(rows, files, root))
     print(f"\nWrote {display(snapshot, root)} (crapper {CRAPPER_REVISION})")
     print(f"Wrote {display(report, root)}")
     print(f"Wrote {display(inventory, root)}")

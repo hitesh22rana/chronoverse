@@ -17,6 +17,10 @@ from pathlib import Path
 import crap_report
 
 
+# The module every fixture profile below claims to belong to. The merge refuses a
+# block file path no go.mod declares, so each fixture states its module.
+MODULE = ("github.com/acme/app",)
+
 GO_UNIT = """mode: atomic
 github.com/acme/app/service/user.go:10.30,12.2 2 0
 github.com/acme/app/service/user.go:14.2,20.5 6 3
@@ -113,7 +117,7 @@ class MergeGoProfilesTest(unittest.TestCase):
     def merged(self, *texts: str) -> dict[str, tuple[int, int]]:
         output = self.root / "out" / "coverage.out"
         inputs = [self.write(f"profile{index}.out", text) for index, text in enumerate(texts)]
-        crap_report.merge_go_profiles(inputs, output)
+        crap_report.merge_go_profiles(inputs, output, MODULE)
         _mode, blocks = crap_report._read_go_profile(output)
         return blocks
 
@@ -134,12 +138,14 @@ class MergeGoProfilesTest(unittest.TestCase):
         # the Go tool itself attributed.
         output = self.root / "out" / "coverage.out"
         inputs = [self.write("p.out", GO_UNIT)]
-        crap_report.merge_go_profiles(inputs, output)
+        crap_report.merge_go_profiles(inputs, output, MODULE)
         self.assertIn("github.com/acme/app/service/user.go:14.2,20.5 6 3", output.read_text())
 
     def test_merged_profile_reports_block_and_file_counts(self):
         output = self.root / "out" / "coverage.out"
-        summary = crap_report.merge_go_profiles([self.write("p.out", GO_UNIT)], output)
+        summary = crap_report.merge_go_profiles(
+            [self.write("p.out", GO_UNIT)], output, MODULE
+        )
         self.assertEqual(summary, {"blocks": 3, "files": 2})
 
     def test_covermode_is_written_and_kept(self):
@@ -148,7 +154,7 @@ class MergeGoProfilesTest(unittest.TestCase):
             self.write("unit.out", GO_UNIT),
             self.write("integration.out", GO_INTEGRATION),
         ]
-        crap_report.merge_go_profiles(inputs, output)
+        crap_report.merge_go_profiles(inputs, output, MODULE)
         self.assertTrue(output.read_text().startswith("mode: atomic\n"))
 
     def test_mismatched_covermode_is_rejected(self):
@@ -212,13 +218,13 @@ class MergeGoProfilesTest(unittest.TestCase):
     def test_missing_input_profile_is_rejected(self):
         output = self.root / "out" / "coverage.out"
         with self.assertRaisesRegex(crap_report.CoverageError, "not found"):
-            crap_report.merge_go_profiles([self.root / "absent.out"], output)
+            crap_report.merge_go_profiles([self.root / "absent.out"], output, MODULE)
 
     def test_existing_output_is_replaced_not_appended(self):
         output = self.root / "out" / "coverage.out"
         output.parent.mkdir(parents=True)
         output.write_text("mode: atomic\ngithub.com/acme/stale.go:1.1,2.2 9 9\n", encoding="utf-8")
-        crap_report.merge_go_profiles([self.write("unit.out", GO_UNIT)], output)
+        crap_report.merge_go_profiles([self.write("unit.out", GO_UNIT)], output, MODULE)
         text = output.read_text()
         self.assertNotIn("stale.go", text)
         self.assertEqual(text.count("mode:"), 1)
@@ -230,6 +236,87 @@ class MergeGoProfilesTest(unittest.TestCase):
             blocks["github.com/acme/app/service/user.go:14.2,20.5"],
             (6, 3),
         )
+
+
+class MergeBlockPathsTest(unittest.TestCase):
+    """Two go test runs sharing one -coverprofile path interleave their writes."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.root = Path(self.dir.name)
+        self.output = self.root / "out" / "coverage.out"
+
+    def merge(self, text: str) -> dict[str, tuple[int, int]]:
+        source = self.root / "unit.out"
+        source.write_text(text, encoding="utf-8")
+        crap_report.merge_go_profiles([source], self.output, MODULE)
+        return crap_report._read_go_profile(self.output)[1]
+
+    def test_spliced_path_prefix_is_refused(self):
+        # A garbled line still has three fields, so it parses. Merged unchecked it
+        # becomes a block no source matches, and the intact block keeps only the
+        # other run's hits, under-reporting coverage with nothing to notice it.
+        spliced = (
+            "mode: atomic\n"
+            "github.com/acme/app/service/user.go:10.30,12.2 2 0\n"
+            "ggithub.com/acme/app/service/user.go:14.2,20.5 6 3\n"
+        )
+        with self.assertRaisesRegex(crap_report.CoverageError, "ggithub.com/acme/app"):
+            self.merge(spliced)
+
+    def test_refused_merge_writes_no_report(self):
+        spliced = "mode: atomic\nsh22rana/acme/app/service/user.go:1.1,2.2 1 0\n"
+        with self.assertRaises(crap_report.CoverageError):
+            self.merge(spliced)
+        self.assertFalse(self.output.exists())
+
+    def test_unrelated_module_path_is_refused(self):
+        other = GO_UNIT.replace("github.com/acme/app", "example.com/other")
+        with self.assertRaisesRegex(crap_report.CoverageError, "example.com/other"):
+            self.merge(other)
+
+    def test_a_prefix_of_the_module_is_not_enough(self):
+        # `github.com/acme/application` merely starts with the module string.
+        other = GO_UNIT.replace("github.com/acme/app/", "github.com/acme/application/")
+        with self.assertRaisesRegex(crap_report.CoverageError, "application"):
+            self.merge(other)
+
+    def test_module_path_itself_is_allowed(self):
+        blocks = self.merge("mode: atomic\ngithub.com/acme/app:1.1,2.2 1 1\n")
+        self.assertIn("github.com/acme/app:1.1,2.2", blocks)
+
+    def test_several_modules_are_each_accepted(self):
+        source = "mode: atomic\nother.example/lib.go:1.1,2.2 1 1\n"
+        path = self.root / "unit.out"
+        path.write_text(source, encoding="utf-8")
+        crap_report.merge_go_profiles([path], self.output, MODULE + ("other.example",))
+        self.assertIn("other.example/lib.go:1.1,2.2", self.output.read_text())
+
+    def test_unknown_block_files_reports_each_path_once(self):
+        blocks = {
+            "bad.example/a.go:1.1,2.2": (1, 0),
+            "bad.example/a.go:3.1,4.2": (1, 0),
+            "bad.example/b.go:1.1,2.2": (1, 0),
+        }
+        self.assertEqual(
+            crap_report.unknown_block_files(blocks, MODULE),
+            ["bad.example/a.go", "bad.example/b.go"],
+        )
+
+    def test_module_paths_are_read_from_every_go_mod(self):
+        (self.root / "go.mod").write_text("// comment\nmodule example.com/app\n\ngo 1.24\n")
+        (self.root / "tools").mkdir()
+        (self.root / "tools" / "go.mod").write_text("module example.com/tools\n\ngo 1.24\n")
+        self.assertEqual(
+            crap_report.module_paths(self.root, ["go.mod", "tools/go.mod", "not-a-go-mod.txt"]),
+            ("example.com/app", "example.com/tools"),
+        )
+
+    def test_missing_go_mod_declares_nothing_rather_than_crashing(self):
+        # handwritten_sources reports the tracked-but-missing file, so this stays
+        # the one place that names it instead of raising a bare OSError.
+        self.assertEqual(crap_report.module_paths(self.root, ["go.mod"]), ())
 
 
 class PrefixLcovPathsTest(unittest.TestCase):
@@ -495,7 +582,9 @@ class MainTest(unittest.TestCase):
         self.addCleanup(self.dir.cleanup)
         self.root = Path(self.dir.name).resolve()
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        (self.root / "go.mod").write_text("module example.com/app\n\ngo 1.24\n", encoding="utf-8")
+        # The module matches the import path the fixture profiles write, so every
+        # block file path is one go.mod declares.
+        (self.root / "go.mod").write_text("module github.com/acme/app\n\ngo 1.24\n", encoding="utf-8")
         self.write("service/user.go", MAIN_USER_GO)
         self.write("service/audit.go", MAIN_AUDIT_GO)
         self.write("service/user_test.go", "package service\n\nfunc TestChosen() { Chosen(2) }\n")
@@ -655,6 +744,53 @@ class MainTest(unittest.TestCase):
             )
         self.assertTrue(collided.is_file())
         self.assertTrue((self.root / crap_report.INPUT_DIR / "unit" / "coverage.out").is_file())
+
+
+class SummariseTest(unittest.TestCase):
+    """The scope block must label each count with what it actually counts."""
+
+    ROWS = [
+        {"language": "go", "complexity": "4", "coverage": "50.0000", "coverage_recorded": "yes", "crap": "12.0"},
+        {"language": "go", "complexity": "1", "coverage": "0.0000", "coverage_recorded": "yes", "crap": "2.0"},
+        {"language": "typescript", "complexity": "20", "coverage": "", "coverage_recorded": "no", "crap": "420.0"},
+    ]
+
+    def test_file_and_function_counts_are_labelled_separately(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).resolve()
+            (root / "a.go").write_text("package a\n", encoding="utf-8")
+            (root / "b.go").write_text("package b\n", encoding="utf-8")
+            (root / "c.ts").write_text("export const c = 1\n", encoding="utf-8")
+            # Four functions across three files: a file breakdown read as the
+            # function totals named more files than the scope holds.
+            rows = self.ROWS + [dict(self.ROWS[0], name="extra")]
+            text = crap_report.summarise(rows, [root / "a.go", root / "b.go", root / "c.ts"], root)
+
+        self.assertIn("files:      3 (go=2, typescript=1)", text)
+        self.assertIn("functions:  4 (go=3, typescript=1)", text)
+
+    def test_empty_scope_is_reported_without_a_breakdown(self):
+        with tempfile.TemporaryDirectory() as name:
+            text = crap_report.summarise([], [], Path(name).resolve())
+        self.assertIn("files:      0 (no supported sources)", text)
+        self.assertIn("functions:  0 (no supported sources)", text)
+
+    def test_measured_zero_and_no_record_stay_apart(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).resolve()
+            (root / "a.go").write_text("package a\n", encoding="utf-8")
+            text = crap_report.summarise(self.ROWS, [root / "a.go"], root)
+        self.assertIn("recorded:   2 functions matched a coverage record", text)
+        self.assertIn("no record:  1 functions no report mentions", text)
+        self.assertIn("zero:       1 of the matched functions measured 0%", text)
+
+
+class MissingTrackedFileTest(unittest.TestCase):
+    def test_tracked_but_missing_file_is_reported_clearly(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            with self.assertRaisesRegex(crap_report.CoverageError, "tracked but missing"):
+                crap_report.handwritten_sources(root, ["service/gone.go"])
 
 
 class DisplayTest(unittest.TestCase):

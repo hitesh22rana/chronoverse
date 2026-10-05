@@ -78,6 +78,12 @@ target/coverage-inputs/{unit,integration}/          the raw per-job profiles
 - a block described twice must agree on its statement count, inside one profile
   as much as across two. Disagreement means the profiles came from different
   builds, and summing them would report coverage for code neither build ran;
+- every block must name a file inside a module some `go.mod` in the work tree
+  declares. Two `go test` runs pointed at the same `-coverprofile` path write that
+  file at once, and their blocks interleave: a spliced path still has three
+  fields, so it parses, becomes a block no source matches, and leaves the intact
+  block holding only one run's hits. That under-reports coverage with nothing to
+  notice it, so it is refused instead. Give each run its own output file;
 - hit counts are added across blocks, because CRAP only asks whether a block was
   entered at all;
 - the merged report and every LCOV crapper would read are deleted first, so a

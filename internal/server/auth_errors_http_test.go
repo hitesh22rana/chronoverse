@@ -648,8 +648,11 @@ func TestRequestUserIDGuardsHandlers(t *testing.T) {
 			if res.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d (body %q)", res.Code, http.StatusBadRequest, res.Body.String())
 			}
-			if got := res.Body.String(); !strings.Contains(got, "not found") {
-				t.Fatalf("body = %q, want a %q rejection", got, "not found")
+			// The exact message matters: these handlers also answer "workflow ID
+			// not found" and "job ID not found" at the same status, so a
+			// substring check would pass with the guards reordered.
+			if got, want := res.Body.String(), "user ID not found\n"; got != want {
+				t.Fatalf("body = %q, want %q", got, want)
 			}
 			got, reached := s.backendCallCount()
 			if got != 0 {

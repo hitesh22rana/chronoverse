@@ -587,44 +587,32 @@ func (c *recordingJobsClient) logsRequestIDs() string {
 	return ""
 }
 
-// TestHandleJobLogsCursorPageCacheability verifies a request carrying a cursor
-// is cacheable only while the backend still advertises a next page.
-func TestHandleJobLogsCursorPageCacheability(t *testing.T) {
+// TestHandleGetJobLogsIgnoresStreamParameter verifies handleGetJobLogs always
+// asks the backend for every stream, so a stray stream parameter in the query
+// cannot narrow what the viewer shows. The cacheability contract for a cursor
+// page is pinned once, by TestHandleGetJobLogsCacheControl.
+func TestHandleGetJobLogsIgnoresStreamParameter(t *testing.T) {
 	tests := []struct {
-		name           string
-		target         string
-		responseCursor string
-		want           string
+		name   string
+		target string
 	}{
 		{
-			name:           "get logs first page",
-			target:         "/workflows/wf-1/jobs/job-1/logs",
-			responseCursor: "next-page",
-			want:           "no-store",
+			name:   "no stream parameter",
+			target: "/workflows/wf-1/jobs/job-1/logs",
 		},
 		{
-			name:           "get logs middle page",
-			target:         "/workflows/wf-1/jobs/job-1/logs?cursor=page-2",
-			responseCursor: "next-page",
-			want:           "private, max-age=7200",
+			name:   "stream parameter is ignored",
+			target: "/workflows/wf-1/jobs/job-1/logs?cursor=page-2&stream=stdout",
 		},
 		{
-			name:           "get logs tail page",
-			target:         "/workflows/wf-1/jobs/job-1/logs?cursor=page-3",
-			responseCursor: "",
-			want:           "no-store",
-		},
-		{
-			name:           "get logs page without a next page is not cached",
-			target:         "/workflows/wf-1/jobs/job-1/logs?cursor=page-2&stream=stdout",
-			responseCursor: "",
-			want:           "no-store",
+			name:   "stream parameter is ignored on a first page",
+			target: "/workflows/wf-1/jobs/job-1/logs?stream=stderr",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			client := &recordingJobsClient{getLogsResp: &jobspb.GetJobLogsResponse{Cursor: test.responseCursor}}
+			client := &recordingJobsClient{getLogsResp: &jobspb.GetJobLogsResponse{Cursor: "next-page"}}
 			s := &Server{jobsClient: client}
 
 			res := httptest.NewRecorder()
@@ -633,16 +621,6 @@ func TestHandleJobLogsCursorPageCacheability(t *testing.T) {
 			if res.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
 			}
-			if got := res.Header().Get("Cache-Control"); got != test.want {
-				t.Fatalf("Cache-Control = %q, want %q", got, test.want)
-			}
-			if test.want == "private, max-age=7200" {
-				if got := res.Header().Get("Vary"); got != "Cookie" {
-					t.Fatalf("Vary = %q, want Cookie", got)
-				}
-			}
-			// The raw logs endpoint always asks for every stream; a stray
-			// stream parameter must not change the request.
 			if got := client.getLogsReq.GetFilters().GetStream(); got != jobspb.LogStream_LOG_STREAM_ALL {
 				t.Fatalf("stream filter = %v, want LOG_STREAM_ALL", got)
 			}

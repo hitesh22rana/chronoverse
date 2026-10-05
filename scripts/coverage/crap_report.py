@@ -1,35 +1,17 @@
 #!/usr/bin/env python3
-"""Combine the CI coverage profiles, then score the handwritten sources with crapper.
+"""Merge the CI coverage profiles, then score the handwritten sources with crapper.
 
-The test jobs already run the suites that gate the build; `make test/short
-COVERPROFILE=...` and `make test/integration COVERPROFILE=...` simply add a
-profile to those runs. This script does the rest of the work crapper expects to
-find on disk, because crapper only reads a fixed set of report locations:
+The test jobs already run the suites that gate the build; COVERPROFILE only adds a
+profile to those runs. crapper reads fixed report locations (GO_PROFILE,
+DASHBOARD_LCOV), so this merges the Go profiles, roots the dashboard LCOV at the
+repository, and scores the tracked sources a person wrote.
 
-    Go          <root>/target/coverage/go/coverage.out
-    TypeScript  <root>/target/coverage/typescript/<module>/lcov.info
+crapper decides complexity, coverage, and CRAP; kept here is only whether a function
+had a coverage record at all, since crapper substitutes 0% for a function no report
+mentions, hiding "measured zero" from "never measured".
 
-It merges the unit and integration Go profiles into one, rewrites the dashboard
-LCOV so its `SF:` paths are relative to the repository root, selects the
-tracked sources a person wrote, and then scores them. The generated reports are
-cleared first, so a profile left behind by an earlier run can never be merged or
-read; the per-job inputs are staged outside those locations, so clearing cannot
-delete the profiles this run was asked to combine.
-
-crapper itself decides complexity, coverage, and CRAP; this script only moves
-files around and keeps one piece of information the crapper CLI throws away:
-whether a function had a coverage record at all. crapper substitutes 0% for a
-function no report mentions, which is correct for ranking but hides the
-difference between "measured zero" and "never measured".
-
-Pinned tool: https://github.com/unclebob/crapper at
-9f1bead298b5a9d576bdd6319289fcf426e5b18a.
-
-Usage:
-    python3 scripts/coverage/crap_report.py \\
-        --go-unit target/coverage-inputs/unit/coverage.out \\
-        --go-integration target/coverage-inputs/integration/coverage.out \\
-        --dashboard-lcov dashboard/coverage/lcov.info
+Pinned tool: https://github.com/unclebob/crapper at 9f1bead298b5a9d576bdd6319289fcf426e5b18a.
+Invocation and caveats: docs/coverage.md.
 """
 
 from __future__ import annotations
@@ -50,38 +32,35 @@ from crapper.report import format_report
 
 CRAPPER_REVISION = "9f1bead298b5a9d576bdd6319289fcf426e5b18a"
 
-# Where crapper looks for each report. Both are its own native layout, so
+# Where crapper looks for each report: its own native layout, so
 # `--use-existing-coverage` finds them with no extra flags.
 GO_PROFILE = Path("target/coverage/go/coverage.out")
 DASHBOARD_LCOV = Path("target/coverage/typescript/dashboard/lcov.info")
 
-# The exact report paths this script generates. Only these are cleared, never
-# `target/coverage` as a whole: CI stages the raw per-job profiles under
-# INPUT_DIR, and a wholesale delete would throw away the run's own inputs.
+# The reports crapper's loader reads, as the globs it scans. Only these are cleared:
+# CI stages its inputs under INPUT_DIR, which a wholesale delete would destroy.
 STALE_PROFILES = (
-    GO_PROFILE,
-    Path("target/coverage/coverage.out"),
-    Path("coverage.out"),
+    "target/coverage/go/coverage.out",
+    "target/coverage/coverage.out",
+    "coverage.out",
+    "*/target/coverage/go/coverage.out",
+    "*/*/target/coverage/go/coverage.out",
 )
-# crapper merges every lcov.info under these trees, so an older report anywhere
-# in them would still be read.
 STALE_LCOV = ("target/coverage/**/lcov.info", "coverage/**/lcov.info")
 
-# CI stages the per-job reports here. Deliberately outside `target/coverage`, so
-# no clearing rule can reach an input.
+# CI stages the per-job reports here, outside every rule above.
 INPUT_DIR = Path("target/coverage-inputs")
 
 # `go test -covermode` accepts exactly these three.
 COVER_MODES = ("set", "count", "atomic")
 
-# Go's generated-code convention (https://go.dev/s/generatedcode): the marker
-# sits in the comment block above the package clause. protoc-gen-go and MockGen
-# both emit it verbatim.
+# Go's generated-code convention (https://go.dev/s/generatedcode), which protoc-gen-go
+# and MockGen emit verbatim in the block above the package clause.
 GENERATED_MARKER = re.compile(r"^// Code generated .* DO NOT EDIT\.$")
 # The project's declared generated-code location, kept as a second net.
 GENERATED_TREES = ("pkg/proto/",)
 
-# Enough to hold the leading comment block without reading a whole source file.
+# Enough for that leading comment block, so no source is read in full.
 HEADER_BYTES = 512
 
 INVENTORY_FIELDS = (
@@ -109,11 +88,11 @@ def _add_block(
     hits: int,
     source: str,
 ) -> None:
-    """Add one profile block, refusing a block that contradicts itself.
+    """Add one profile block, refusing one that contradicts itself.
 
-    A block's statement count is fixed by the instrumented source. Two profiles
-    that disagree about it came from different builds, inside one file as much as
-    across two, and summing them would report coverage for code neither build ran.
+    A block's statement count is fixed by the instrumented source, so a mismatch, in
+    one profile or across two, means different builds; summing them would report
+    coverage for code neither build ran.
     """
 
     known = blocks.get(location)
@@ -170,13 +149,9 @@ def _read_go_profile(path: Path) -> tuple[str, dict[str, tuple[int, int]]]:
 def merge_go_profiles(inputs: list[Path], output: Path) -> dict[str, int]:
     """Sum the hit counts of compatible profiles into one coverprofile.
 
-    Two profiles are compatible when they use the same covermode and describe
-    the same block with the same statement count, which is what the same
-    `-covermode` over the same package set produces. Hits are added, so a block
-    executed by the unit suites and again by the integration suites counts
-    twice; the CRAP formula only asks whether the count is above zero.
-
-    Returns the block and file counts of the merged profile.
+    Compatible means the same covermode and the same block with the same statement
+    count. Hits are added, so a block run by both suites counts twice; CRAP only asks
+    whether the count is above zero. Returns the merged block and file counts.
     """
 
     mode: str | None = None
@@ -208,12 +183,9 @@ def merge_go_profiles(inputs: list[Path], output: Path) -> dict[str, int]:
 def root_lcov_path(value: str, prefix: str) -> str:
     """One `SF:` value, made relative to the repository root.
 
-    Vitest writes `SF:src/lib/utils.ts`, relative to `dashboard/`, so the module's
-    own directory is prepended. A value that already starts with the prefix, or
-    an absolute path from the machine that produced the report, is left alone:
-    prefixing either would name a path that exists nowhere. crapper matches
-    absolute paths too, and an absolute path from another checkout simply fails
-    to match, which the inventory reports as no coverage record.
+    Vitest writes `SF:src/...` relative to `dashboard/`, so the module directory is
+    prepended. An already-prefixed or absolute value is left alone: prefixing it names
+    a path that exists nowhere, and a non-matching absolute one reports no record.
     """
 
     path = normalize_path(value)
@@ -225,10 +197,9 @@ def root_lcov_path(value: str, prefix: str) -> str:
 def prefix_lcov_paths(text: str, prefix: str) -> str:
     """Root every `SF:` path in an LCOV report at the repository.
 
-    Without this, `SF:src/lib/utils.ts` from the dashboard is indistinguishable
-    from the static site's own `src/` tree when crapper runs from the repository
-    root. Each path goes through crapper's own `normalize_path`, so `./`, `file:`,
-    and doubled separators are resolved the way the loader resolves them.
+    Otherwise `SF:src/lib/utils.ts` from the dashboard is indistinguishable from the
+    static site's own `src/` when crapper runs from the root. Paths pass through
+    crapper's own `normalize_path`.
     """
 
     prefix = prefix.strip("/")
@@ -265,7 +236,7 @@ def is_generated(header: str) -> bool:
     """True when the file opens with Go's generated-code marker.
 
     Only the comment block above the first line of code counts, so a hand-written
-    mention of "Code generated" further down a file does not remove it from scope.
+    mention further down does not remove the file from scope.
     """
 
     for line in header.splitlines():
@@ -280,9 +251,7 @@ def is_generated(header: str) -> bool:
 def is_output_path(relative: str) -> bool:
     """True for build output, dependency trees, and report directories.
 
-    crapper's own skip list, so the scope stays the set of files its walk would
-    reach. `git ls-files` already keeps these out in practice; the check is what
-    keeps a committed vendor directory or a checked-in artifact from being scored.
+    crapper's own skip list, so the scope stays the set its walk would reach.
     """
 
     return any(part in SKIP_DIRS for part in Path(relative).parts)
@@ -291,10 +260,9 @@ def is_output_path(relative: str) -> bool:
 def handwritten_sources(root: Path, paths: list[str]) -> list[Path]:
     """The tracked sources crapper can score and a person wrote.
 
-    `git ls-files` is the starting scope. crapper's own extension, skip-directory,
-    and test-name rules then remove what it cannot usefully score, and the
-    generated-code marker removes protoc-gen-go and MockGen output whose complexity
-    would otherwise drown the report.
+    `git ls-files` starts the scope; crapper's extension, skip-directory and test-name
+    rules drop what it cannot usefully score, and the generated marker drops protoc-gen-go
+    and MockGen output whose complexity would drown the report.
     """
 
     found: list[Path] = []
@@ -304,8 +272,9 @@ def handwritten_sources(root: Path, paths: list[str]) -> list[Path]:
         text = Path(relative).as_posix()
         if any(text.startswith(tree) for tree in GENERATED_TREES):
             continue
-        source = (root / relative).read_text(encoding="utf-8", errors="replace")
-        if is_generated(source[:HEADER_BYTES]):
+        with (root / relative).open("rb") as handle:
+            header = handle.read(HEADER_BYTES)
+        if is_generated(header.decode("utf-8", errors="replace")):
             continue
         found.append((root / relative).resolve())
     return found
@@ -338,36 +307,35 @@ def write_report(path: Path, text: str) -> Path:
     return path
 
 
+def stale_reports(root: Path) -> list[Path]:
+    """The Go and LCOV reports crapper's loader reads and this run would clear."""
+
+    found: list[Path] = []
+    for pattern in STALE_PROFILES + STALE_LCOV:
+        found.extend(sorted(root.glob(pattern)))
+    return [path for path in found if path.is_file()]
+
+
 def clear_stale_reports(root: Path) -> list[str]:
     """Remove the reports crapper reads, and only those.
 
-    Deletes the merged Go profiles and every lcov.info under the trees crapper
-    merges, so a report left by an earlier run cannot influence this one. The
-    per-job inputs live outside those trees (`INPUT_DIR`) and are left alone.
-    Returns the repository-relative paths that were removed.
+    Covers the globs its loader scans, so a report from an earlier run cannot leak in.
+    Inputs under `INPUT_DIR` are left alone. Returns the removed relative paths.
     """
 
     removed = []
-    for relative in STALE_PROFILES:
-        target = root / relative
-        if target.is_file():
-            target.unlink()
-            removed.append(relative.as_posix())
-    for pattern in STALE_LCOV:
-        for target in sorted(root.glob(pattern)):
-            if target.is_file():
-                removed.append(target.relative_to(root).as_posix())
-                target.unlink()
+    for target in stale_reports(root):
+        removed.append(target.relative_to(root).as_posix())
+        target.unlink()
     return sorted(removed)
 
 
 def measure(files: list[Path], root: Path, bundle) -> tuple[list, list[dict]]:
     """Score every function, keeping crapper's no-record case distinguishable.
 
-    crapper's `analyze_files` turns a missing record into 0%. That is the right
-    input to the CRAP formula and the snapshot, and it is what each entry gets
-    here, so the snapshot matches what `crapper --use-existing-coverage` writes.
-    The inventory additionally reports whether a record was found at all.
+    crapper's `analyze_files` turns a missing record into 0%: the right input to the
+    formula and the snapshot, so entries match `crapper --use-existing-coverage` while
+    the inventory separately records whether a record matched at all.
     """
 
     relative = [file.relative_to(root).as_posix() for file in files]
@@ -441,8 +409,7 @@ def summarise(rows: list[dict], files: list[Path]) -> str:
 def display(path: Path, root: Path) -> str:
     """A repository-relative path when possible, absolute otherwise.
 
-    `--metrics-dir` may sit outside the work tree, and reporting an unusable
-    relative path would be worse than reporting the real one.
+    `--metrics-dir` may sit outside the work tree, where a relative path would not help.
     """
 
     resolved = path.resolve()
@@ -487,6 +454,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def check_inputs_survive_clearing(root: Path, inputs: list[Path | None]) -> None:
+    """Refuse an input this run would delete before clearing anything."""
+
+    stale = {path.resolve() for path in stale_reports(root)}
+    for path in inputs:
+        if path is None:
+            continue
+        candidate = path if path.is_absolute() else root / path
+        if candidate.resolve() in stale:
+            raise CoverageError(
+                f"{path} is a report this run clears, so clearing it would destroy an "
+                f"input. Stage the per-job reports outside those trees, e.g. {INPUT_DIR}."
+            )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     root = args.repo_root.resolve()
@@ -494,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
     if not metrics.is_absolute():
         metrics = root / metrics
 
+    check_inputs_survive_clearing(root, [args.go_unit, args.go_integration, args.dashboard_lcov])
     removed = clear_stale_reports(root)
     if removed:
         print(f"Removed stale reports: {', '.join(removed)}")
@@ -514,8 +497,7 @@ def main(argv: list[str] | None = None) -> int:
     entries, rows = measure(files, root, bundle)
 
     # crapper's own EDN renderer, so the bytes are what `crapper
-    # --use-existing-coverage` writes to .metrics/crap.edn, while the destination
-    # follows --metrics-dir.
+    # --use-existing-coverage` writes; only the destination follows --metrics-dir.
     snapshot = write_report(metrics / "crap.edn", render_edn(entries))
     report = write_report(metrics / "crap-report.txt", format_report(entries))
     inventory = write_inventory(metrics / "inventory.csv", rows)

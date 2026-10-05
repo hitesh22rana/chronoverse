@@ -130,8 +130,8 @@ class MergeGoProfilesTest(unittest.TestCase):
         )
 
     def test_block_ranges_are_preserved_exactly(self):
-        # The column offsets survive the merge: a rewritten range would no longer
-        # line up with the source Go itself attributes the block to.
+        # The column offsets survive: a rewritten range would not match the block
+        # the Go tool itself attributed.
         output = self.root / "out" / "coverage.out"
         inputs = [self.write("p.out", GO_UNIT)]
         crap_report.merge_go_profiles(inputs, output)
@@ -157,15 +157,13 @@ class MergeGoProfilesTest(unittest.TestCase):
             self.merged(GO_UNIT, other)
 
     def test_mismatched_statement_count_is_rejected(self):
-        # The same block with a different statement count means the two profiles
-        # were built from different revisions, so summing them would be nonsense.
+        # One block, two statement counts: the profiles came from different builds.
         other = GO_INTEGRATION.replace(":14.2,20.5 6 0", ":14.2,20.5 7 0")
         with self.assertRaisesRegex(crap_report.CoverageError, "6 statements|7 statements"):
             self.merged(GO_UNIT, other)
 
     def test_self_contradicting_block_in_one_profile_is_rejected(self):
-        # Same file, same block, two statement counts. Merging across profiles
-        # would have caught this; a single malformed profile must not pass either.
+        # Merging across profiles would have caught this; one profile must not pass.
         broken = GO_UNIT + "github.com/acme/app/service/user.go:14.2,20.5 7 1\n"
         with self.assertRaisesRegex(crap_report.CoverageError, "6 statements|7 statements"):
             self.merged(broken)
@@ -176,8 +174,8 @@ class MergeGoProfilesTest(unittest.TestCase):
         self.assertEqual(blocks["github.com/acme/app/service/user.go:14.2,20.5"], (6, 5))
 
     def test_unknown_covermode_is_rejected(self):
-        # The CI profiles are atomic; a header the go tool never writes means the
-        # file is truncated, concatenated, or not a coverprofile at all.
+        # CI profiles are atomic; any other header means the file is truncated,
+        # concatenated, or not a coverprofile at all.
         with self.assertRaisesRegex(crap_report.CoverageError, "covermode 'atomic-'"):
             self.merged(GO_UNIT.replace("mode: atomic", "mode: atomic-"))
 
@@ -199,6 +197,17 @@ class MergeGoProfilesTest(unittest.TestCase):
         with self.assertRaises(crap_report.CoverageError) as caught:
             self.merged(broken)
         self.assertIn("profile0.out:5", str(caught.exception))
+
+    def test_unusable_block_fields_are_rejected(self):
+        cases = {
+            "github.com/acme/app/service/user.go:22.1,23.2 x 0": "invalid literal",
+            "github.com/acme/app/service/user.go:22.1 1 0": "malformed block range",
+            "github.com/acme/app/service/user.go:22.1,23.2 1 -3": "negative count",
+        }
+        for line, message in cases.items():
+            with self.subTest(line=line):
+                with self.assertRaisesRegex(crap_report.CoverageError, message):
+                    self.merged(GO_UNIT + line + "\n")
 
     def test_missing_input_profile_is_rejected(self):
         output = self.root / "out" / "coverage.out"
@@ -246,9 +255,9 @@ class PrefixLcovPathsTest(unittest.TestCase):
         self.assertNotIn("dashboard/dashboard", text)
 
     def test_absolute_path_is_left_alone(self):
-        # An artifact produced in another checkout must not become
-        # dashboard/home/runner/work/... : crapper's loader also matches absolute
-        # paths, and one that does not match surfaces as no coverage record.
+        # An artifact from another checkout must not become
+        # dashboard/home/runner/work/...: a name that exists nowhere simply fails
+        # to match, and crapper's inventory then reports no coverage record.
         absolute = "/home/runner/work/chronoverse/chronoverse/dashboard/src/a.ts"
         text = crap_report.prefix_lcov_paths(f"SF:{absolute}\nend_of_record\n", "dashboard")
         self.assertIn(f"SF:{absolute}\n", text)
@@ -362,16 +371,15 @@ class HandwrittenSourcesTest(unittest.TestCase):
         self.assertNotIn("internal/service/users/README.md", selected)
 
     def test_dependency_and_build_output_are_excluded(self):
-        # `git ls-files` never lists these in practice, so they only appear in
-        # scope if something committed them.
+        # Exclude tracked dependency and build artifacts: `git ls-files` lists them.
         selected = self.select()
         self.assertNotIn("dashboard/node_modules/pkg/index.js", selected)
         self.assertNotIn("dashboard/.next/build/app/page.js", selected)
 
     def test_marker_must_follow_go_s_convention(self):
         # https://go.dev/s/generatedcode requires the exact shape in the leading
-        # comment block. A mention without the DO NOT EDIT tail, or one below the
-        # first line of code, is a hand-written comment and stays in scope.
+        # comment block; a mention without the DO NOT EDIT tail, or one below the
+        # first line of code, is hand-written and stays in scope.
         self.assertFalse(
             crap_report.is_generated("// A helper.\n// Code generated by a tool.\npackage x\n")
         )
@@ -413,6 +421,9 @@ class ClearStaleReportsTest(unittest.TestCase):
         self.touch("target/coverage/typescript/dashboard/lcov.info", "SF:a\nend_of_record\n")
         self.touch("target/coverage/typescript/static/lcov.info", "SF:b\nend_of_record\n")
         self.touch("coverage/typescript/lcov.info", "SF:c\nend_of_record\n")
+        # crapper also globs the report location of a nested module.
+        self.touch("tooling/target/coverage/go/coverage.out", "mode: set\n")
+        self.touch("services/worker/target/coverage/go/coverage.out", "mode: set\n")
 
         removed = crap_report.clear_stale_reports(self.root)
 
@@ -422,15 +433,18 @@ class ClearStaleReportsTest(unittest.TestCase):
                 [
                     "coverage.out",
                     "coverage/typescript/lcov.info",
+                    "services/worker/target/coverage/go/coverage.out",
                     "target/coverage/coverage.out",
                     "target/coverage/go/coverage.out",
                     "target/coverage/typescript/dashboard/lcov.info",
                     "target/coverage/typescript/static/lcov.info",
+                    "tooling/target/coverage/go/coverage.out",
                 ]
             ),
         )
         self.assertFalse((self.root / crap_report.GO_PROFILE).exists())
         self.assertFalse((self.root / "coverage/typescript/lcov.info").exists())
+        self.assertFalse((self.root / "tooling/target/coverage/go/coverage.out").exists())
 
     def test_staged_inputs_survive(self):
         # CI stages the per-job profiles under INPUT_DIR, inside the same tree
@@ -450,14 +464,27 @@ class ClearStaleReportsTest(unittest.TestCase):
 
     def test_input_directory_is_outside_every_stale_rule(self):
         # A guard against a future edit moving INPUT_DIR under a cleared tree.
-        staged = (crap_report.INPUT_DIR / "unit" / "coverage.out").as_posix()
-        for relative in crap_report.STALE_PROFILES:
-            self.assertFalse(staged.startswith(relative.as_posix()))
-        for pattern in crap_report.STALE_LCOV:
-            self.assertNotIn("coverage-inputs", pattern)
+        staged = self.touch(f"{crap_report.INPUT_DIR}/unit/coverage.out", GO_UNIT)
+        for pattern in crap_report.STALE_PROFILES + crap_report.STALE_LCOV:
+            self.assertEqual(list(self.root.glob(pattern)), [], pattern)
+        self.assertEqual(staged.read_text(), GO_UNIT)
 
     def test_missing_reports_are_not_an_error(self):
         self.assertEqual(crap_report.clear_stale_reports(self.root), [])
+
+    def test_input_inside_a_cleared_tree_is_refused_before_deletion(self):
+        # Passing a report this run clears would delete the input and then fail.
+        planted = self.touch(crap_report.DASHBOARD_LCOV.as_posix(), LCOV)
+        with self.assertRaisesRegex(crap_report.CoverageError, "clears"):
+            crap_report.check_inputs_survive_clearing(
+                self.root, [None, crap_report.DASHBOARD_LCOV]
+            )
+        self.assertEqual(planted.read_text(), LCOV)
+
+    def test_input_outside_every_cleared_tree_is_accepted(self):
+        self.touch(crap_report.GO_PROFILE.as_posix(), "mode: atomic\n")
+        staged = self.touch(f"{crap_report.INPUT_DIR}/unit/coverage.out", GO_UNIT)
+        crap_report.check_inputs_survive_clearing(self.root, [staged, None])
 
 
 class MainTest(unittest.TestCase):
@@ -526,8 +553,8 @@ class MainTest(unittest.TestCase):
         first = (self.root / crap_report.GO_PROFILE).read_text()
 
         # A second run must still find its inputs and must not read the merged
-        # report the first run left behind: an unnoticed merge of that file would
-        # double every hit count.
+        # report the first run left behind: merging that file would double every
+        # hit count.
         self.assertTrue((self.root / crap_report.INPUT_DIR / "unit" / "coverage.out").is_file())
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(self.run_main(), 0)
@@ -614,6 +641,20 @@ class MainTest(unittest.TestCase):
         self.stage()
         with self.assertRaisesRegex(crap_report.CoverageError, "not found"):
             crap_report.main(["--repo-root", str(self.root), "--go-unit", str(self.root / "no.out")])
+
+    def test_report_used_as_its_own_input_is_refused_and_left_on_disk(self):
+        unit, _integration, _dashboard = self.stage()
+        collided = self.write(crap_report.DASHBOARD_LCOV.as_posix(), LCOV)
+        with self.assertRaisesRegex(crap_report.CoverageError, "clears"):
+            crap_report.main(
+                [
+                    "--repo-root", str(self.root),
+                    "--go-unit", str(unit),
+                    "--dashboard-lcov", str(collided),
+                ]
+            )
+        self.assertTrue(collided.is_file())
+        self.assertTrue((self.root / crap_report.INPUT_DIR / "unit" / "coverage.out").is_file())
 
 
 class DisplayTest(unittest.TestCase):

@@ -24,15 +24,13 @@ lint/fix: dependencies
 
 # Coverage is opt-in and rides along with the test runs that already gate the
 # build: make test/short COVERPROFILE=<file> instruments the same `go test`
-# invocation instead of adding a second, separate run. COVERMODE is fixed to
-# atomic because the race detector needs atomic counters, and summing atomic hit
-# counts is what scripts/coverage/crap_report.py merges. Both targets must use
-# the same mode for their profiles to be compatible.
+# invocation, no second run. COVERMODE is fixed to atomic because -race needs
+# atomic counters, and both targets must agree for their profiles to merge.
 COVERMODE?=atomic
 COVERFLAGS=$(if $(COVERPROFILE),-covermode=$(COVERMODE) -coverprofile=$(COVERPROFILE))
 
-# Where the per-job profiles are staged before they are merged. Deliberately
-# outside target/coverage, which crap_report.py clears between runs.
+# Where the per-job profiles are staged before they are merged, outside
+# target/coverage, which crap_report.py clears between runs.
 COVERAGE_INPUTS=target/coverage-inputs
 UNIT_COVERPROFILE=$(COVERAGE_INPUTS)/unit/coverage.out
 INTEGRATION_COVERPROFILE=$(COVERAGE_INPUTS)/integration/coverage.out
@@ -41,8 +39,8 @@ DASHBOARD_LCOV=dashboard/coverage/lcov.info
 # Interpreter that has the pinned crapper installed (see docs/coverage.md).
 PYTHON?=python3
 
-# Combines the profiles the test jobs wrote and scores the handwritten sources
-# with crapper. Needs all three reports; there is no global test rerun here.
+# Merges the profiles the test jobs wrote and scores the handwritten sources.
+# Needs all three reports on disk; no suite is rerun here.
 .PHONY: coverage/crap
 coverage/crap:
 	@$(PYTHON) scripts/coverage/crap_report.py \

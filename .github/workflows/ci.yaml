@@ -83,7 +83,7 @@ jobs:
       # Run every unit suite with the race detector. Docker-backed integration
       # tests skip under -short and are covered by the dedicated `integration`
       # job below, so this gate stays fast and Docker-independent.
-      # COVERPROFILE instruments this same run; it adds no extra test execution.
+      # COVERPROFILE instruments this run; no test executes twice.
       - name: Run tests
         run: make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out
 
@@ -122,8 +122,8 @@ jobs:
           # test case is deliberately not pre-pulled.
           docker pull alpine:3.22.2
 
-      # Same -covermode=atomic as the unit job, over the same package set, so the
-      # two profiles can be merged instead of one masking the other.
+      # Same -covermode=atomic as the unit job over the same package set, so the
+      # two profiles merge instead of one masking the other.
       - name: Run integration tests
         run: make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out
 
@@ -163,10 +163,10 @@ jobs:
       - name: Check types
         run: npx tsc --noEmit
 
-      # test:coverage runs the whole suite through vitest, so this is the same
-      # test gate plus the LCOV report the CRAP job reads. Vitest's coverage
-      # config names every application source, so files no test imports are
-      # reported at their real coverage instead of being left out.
+      # test:coverage runs the whole suite through vitest, so this is the
+      # existing test gate plus the LCOV report the CRAP job reads. The coverage
+      # config names every application source, so a file no test imports is
+      # still reported at its real coverage.
       - name: Run tests with coverage
         run: npm run test:coverage
 
@@ -196,8 +196,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Pinned by revision so the scores are reproducible; the repository is
-      # public and no credentials are involved.
+      # Pinned by revision so the scores are reproducible.
       - name: Install crapper
         run: |
           python -m pip install --disable-pip-version-check \

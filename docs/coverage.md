@@ -18,10 +18,9 @@ Coverage rides along with the test runs that already gate the build. The
 `go test` invocation; there is no second run of any suite. `npm run test:coverage`
 is `vitest run --coverage ...`, so it is the existing `npm test` gate plus the
 LCOV report. The `coverage` job needs `test`, `integration`, and `dashboard`,
-downloads their three artifacts, and scores them without a Go or Node
-toolchain.
+downloads their three artifacts, and scores them without a Go or Node toolchain.
 
-Both Go jobs must use the same `-covermode`. The Makefile fixes `COVERMODE` to
+Both Go jobs must use the same `-covermode`: the Makefile fixes `COVERMODE` to
 `atomic` because the race detector needs atomic counters, and summing atomic hit
 counts is what the merge step defines.
 
@@ -84,7 +83,8 @@ target/coverage-inputs/{unit,integration}/          the raw per-job profiles
 - the merged report and every LCOV crapper would read are deleted first, so a
   profile left by an earlier run cannot be merged in by accident. The per-job
   inputs are staged under `target/coverage-inputs`, outside everything that is
-  cleared.
+  cleared, and an input that this run would clear is refused before anything is
+  deleted.
 
 Run the script's own tests with:
 
@@ -99,7 +99,7 @@ them. Left unset, the summary described 52 files and read as 87.71% statements;
 the dashboard has 101 non-test sources under `dashboard/src`. `dashboard/vitest.config.ts`
 now names `src/**/*.{ts,tsx}` explicitly and excludes only test files, type
 declarations, and `__tests__` directories, so every application source is
-reported at its real coverage. No production file is excluded to raise a number.
+reported at its real coverage.
 
 ## What the score covers, and what it does not
 

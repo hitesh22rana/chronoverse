@@ -852,14 +852,13 @@ func containerLogRequestError(err error) error {
 }
 
 // containerLogReadError classifies a demultiplexing failure, returning nil when
-// the stream simply ended.
+// the stream simply ended. Every remaining failure is Aborted: the demultiplexer
+// reads the response body, so its errors are read, framing, or pipe failures, and
+// a refused dial surfaces from ContainerLogs instead. Only the request path can
+// carry client.IsErrConnectionFailed, and containerLogRequestError classifies it.
 func containerLogReadError(ctx context.Context, err error) error {
 	if isContainerLogStreamEnd(ctx, err) {
 		return nil
-	}
-
-	if client.IsErrConnectionFailed(err) {
-		return status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
 	}
 
 	return status.Errorf(codes.Aborted, "failed to read container logs: %v", err)

@@ -106,7 +106,7 @@ class MergeGoProfilesTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        self.root = Path(self.dir.name)
+        self.root = Path(self.dir.name).resolve()
 
     def write(self, name: str, text: str) -> Path:
         path = self.root / name
@@ -244,7 +244,7 @@ class MergeBlockPathsTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        self.root = Path(self.dir.name)
+        self.root = Path(self.dir.name).resolve()
         self.output = self.root / "out" / "coverage.out"
 
     def merge(self, text: str) -> dict[str, tuple[int, int]]:
@@ -421,7 +421,7 @@ class HandwrittenSourcesTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        self.root = Path(self.dir.name)
+        self.root = Path(self.dir.name).resolve()
         for name, text in self.FILES.items():
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -803,21 +803,25 @@ class SummariseTest(unittest.TestCase):
 class MissingTrackedFileTest(unittest.TestCase):
     def test_tracked_but_missing_file_is_reported_clearly(self):
         with tempfile.TemporaryDirectory() as name:
-            root = Path(name)
+            root = Path(name).resolve()
             with self.assertRaisesRegex(crap_report.CoverageError, "tracked but missing"):
                 crap_report.handwritten_sources(root, ["service/gone.go"])
 
 
 class DisplayTest(unittest.TestCase):
+    # `display` resolves the path it is given, so the root has to be canonical too:
+    # macOS hands out /tmp and /var symlinked through /private, and an unresolved root
+    # makes every comparison look like "outside the root". Expected absolute paths are
+    # derived the same way rather than written as literal /tmp strings.
+
     def test_relative_when_inside_the_root(self):
-        root = Path("/tmp/example")
+        root = Path("/tmp/example").resolve()
         self.assertEqual(crap_report.display(root / ".metrics" / "crap.edn", root), ".metrics/crap.edn")
 
     def test_absolute_when_outside_the_root(self):
-        self.assertEqual(
-            crap_report.display(Path("/tmp/elsewhere/crap.edn"), Path("/tmp/example")),
-            "/tmp/elsewhere/crap.edn",
-        )
+        outside = Path("/tmp/elsewhere/crap.edn")
+        root = Path("/tmp/example").resolve()
+        self.assertEqual(crap_report.display(outside, root), str(outside.resolve()))
 
 
 class MeasureTest(unittest.TestCase):

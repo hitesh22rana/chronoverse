@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
@@ -200,30 +198,26 @@ func TestHandleJobCompletedReplayReusesDurableIdentities(t *testing.T) {
 		completedTitle = "Job Execution Completed"
 	)
 
-	type resetCommand struct {
-		WorkflowID string
-		UserID     string
-		JobID      string
-	}
-	var (
-		mu     sync.Mutex
-		resets []resetCommand
-		keys   = &orderedEvents{}
-	)
+	records := &recorder{}
+	keys := &orderedEvents{}
 
 	repo := &Repository{
 		auth: testAuth{},
 		svc: &Services{
 			Workflows: resetRecordingWorkflowsClient{
-				workflow: &workflowspb.GetWorkflowByIDResponse{
-					Id:     workflowID,
-					UserId: userID,
-					Name:   "nightly-backup",
+				testWorkflowsClient: &testWorkflowsClient{
+					workflow: &workflowspb.GetWorkflowByIDResponse{
+						Id:     workflowID,
+						UserId: userID,
+						Name:   "nightly-backup",
+					},
 				},
 				resetCounters: func(_ context.Context, req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) error {
-					mu.Lock()
-					defer mu.Unlock()
-					resets = append(resets, resetCommand{WorkflowID: req.GetId(), UserID: req.GetUserId(), JobID: req.GetJobId()})
+					records.recordCommand(recordedTerminalEffectCommand{
+						WorkflowID: req.GetId(),
+						UserID:     req.GetUserId(),
+						JobID:      req.GetJobId(),
+					})
 					return nil
 				},
 			},
@@ -250,8 +244,7 @@ func TestHandleJobCompletedReplayReusesDurableIdentities(t *testing.T) {
 		}
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
+	resets := records.commandsPerRun()
 	if len(resets) != 2 {
 		t.Fatalf("reset commands = %d, want one per delivery", len(resets))
 	}
@@ -276,20 +269,8 @@ func TestHandleJobCompletedReplayReusesDurableIdentities(t *testing.T) {
 // completion handler issues. It embeds the shared workflows test client so only
 // the reset call differs.
 type resetRecordingWorkflowsClient struct {
-	workflowspb.WorkflowsServiceClient
-	workflow      *workflowspb.GetWorkflowByIDResponse
+	*testWorkflowsClient
 	resetCounters func(context.Context, *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) error
-}
-
-func (c resetRecordingWorkflowsClient) GetWorkflowByID(
-	context.Context,
-	*workflowspb.GetWorkflowByIDRequest,
-	...grpc.CallOption,
-) (*workflowspb.GetWorkflowByIDResponse, error) {
-	if c.workflow == nil {
-		return nil, status.Error(codes.NotFound, "workflow not found")
-	}
-	return c.workflow, nil
 }
 
 func (c resetRecordingWorkflowsClient) ResetWorkflowConsecutiveJobFailuresCount(

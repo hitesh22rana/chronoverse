@@ -98,16 +98,21 @@ type workflowFailureState struct {
 }
 
 // fixtureJobState is the durable surface of one fixture job row that workflow
-// commands are allowed to invalidate.
+// commands are allowed to invalidate. It carries the whole claim identity, not
+// only the token: the worker, the process instance, the expiry and the heartbeat
+// are part of the same ownership, and an assertion about one of them is only
+// meaningful if the fixture seeded it first.
 type fixtureJobState struct {
 	Trigger                string
 	Status                 string
 	CompletedAt            sql.NullTime
 	LeaseToken             sql.NullString
+	LeasedBy               sql.NullString
+	LeaseProcessInstanceID sql.NullString
 	TerminalReasonCode     sql.NullString
 	RuntimeNodeID          sql.NullString
 	LeaseExpiresAt         sql.NullTime
-	LastHeartbeatAtPresent bool
+	LastHeartbeatAt        sql.NullTime
 }
 
 // fixtureTag returns a short unique identity fragment. Fixtures never derive
@@ -240,6 +245,37 @@ func seedFixturePendingJob(ctx context.Context, t *testing.T, pg *postgres.Postg
 		RETURNING id
 	`, fixture.WorkflowID, fixture.UserID, trigger, scheduledAt).Scan(&jobID); err != nil {
 		t.Fatalf("seed %s pending fixture job: %v", trigger, err)
+	}
+
+	return jobID
+}
+
+// seedFixtureStaleLeasedQueuedJob inserts one AUTOMATIC job in the QUEUED state a
+// scheduler dispatch leaves behind, still carrying the whole claim identity a
+// worker holds: lease token, worker id, process instance id, expiry and
+// heartbeat. That combination is deliberately stale metadata no production path
+// creates, because the claim is granted only in the statement that flips the row
+// to RUNNING and every path out of RUNNING clears all five columns; it is seeded
+// as fixture SQL so the cancellation has real ownership columns to clean up. The
+// row attributes no runtime node, so nothing here claims a runtime slot.
+func seedFixtureStaleLeasedQueuedJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture *workflowFixture, slot int) string {
+	t.Helper()
+
+	scheduledAt := time.Now().UTC().Add(fixtureScheduleOffset + time.Duration(slot)*time.Minute).Format(time.RFC3339Nano)
+	var jobID string
+	if err := pg.QueryRow(ctx, `
+		INSERT INTO jobs (
+			workflow_id, user_id, status, trigger, scheduled_at, queued_at, dispatch_attempts,
+			lease_token, leased_by, lease_process_instance_id, lease_expires_at, last_heartbeat_at
+		)
+		VALUES (
+			$1, $2, 'QUEUED', 'AUTOMATIC', $3::timestamp, now() AT TIME ZONE 'utc', 1,
+			'stale-fixture-worker:' || $4, 'stale-fixture-worker', $5::uuid,
+			now() AT TIME ZONE 'utc' + interval '10 minutes', now() AT TIME ZONE 'utc'
+		)
+		RETURNING id
+	`, fixture.WorkflowID, fixture.UserID, scheduledAt, uuid.NewString(), uuid.NewString()).Scan(&jobID); err != nil {
+		t.Fatalf("seed stale-leased queued fixture job: %v", err)
 	}
 
 	return jobID
@@ -450,10 +486,9 @@ func readFixtureJobState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 	t.Helper()
 
 	var state fixtureJobState
-	var leaseExpiresAt, lastHeartbeatAt sql.NullTime
 	err := pg.QueryRow(ctx, `
-		SELECT trigger::text, status, completed_at, lease_token, terminal_reason_code, runtime_node_id,
-			lease_expires_at, last_heartbeat_at
+		SELECT trigger::text, status, completed_at, lease_token, leased_by, lease_process_instance_id,
+			terminal_reason_code, runtime_node_id, lease_expires_at, last_heartbeat_at
 		FROM jobs
 		WHERE id = $1
 	`, jobID).Scan(
@@ -461,10 +496,12 @@ func readFixtureJobState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 		&state.Status,
 		&state.CompletedAt,
 		&state.LeaseToken,
+		&state.LeasedBy,
+		&state.LeaseProcessInstanceID,
 		&state.TerminalReasonCode,
 		&state.RuntimeNodeID,
-		&leaseExpiresAt,
-		&lastHeartbeatAt,
+		&state.LeaseExpiresAt,
+		&state.LastHeartbeatAt,
 	)
 	if pg.IsNoRows(err) {
 		return fixtureJobState{}, false
@@ -472,8 +509,6 @@ func readFixtureJobState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 	if err != nil {
 		t.Fatalf("read fixture job state %q: %v", jobID, err)
 	}
-	state.LeaseExpiresAt = leaseExpiresAt
-	state.LastHeartbeatAtPresent = lastHeartbeatAt.Valid
 	return state, true
 }
 
@@ -563,11 +598,31 @@ func assertNullString(t *testing.T, name string, column sql.NullString) {
 	}
 }
 
+// assertSeededString proves the precondition a cleared-column assertion rests
+// on. Without it, an assertion that a column ends up NULL also passes when the
+// fixture never wrote one, which pins nothing.
+func assertSeededString(t *testing.T, name string, column sql.NullString) {
+	t.Helper()
+
+	if !column.Valid {
+		t.Fatalf("%s is NULL, want the seeded value the command must remove", name)
+	}
+}
+
 func assertNullTime(t *testing.T, name string, column sql.NullTime) {
 	t.Helper()
 
 	if column.Valid {
 		t.Fatalf("%s = %v, want NULL", name, column.Time.UTC())
+	}
+}
+
+// assertSeededTime is assertSeededString for a timestamp column.
+func assertSeededTime(t *testing.T, name string, column sql.NullTime) {
+	t.Helper()
+
+	if !column.Valid {
+		t.Fatalf("%s is NULL, want the seeded value the command must remove", name)
 	}
 }
 
@@ -1160,9 +1215,10 @@ func TestIntegrationWorkflowFailureReplayAfterReactivationKeepsNewLifecycle(t *t
 
 // TestIntegrationUpdateWorkflowResetsFailuresAndCancelsOnlyAutomaticJobs proves
 // the failure-counter reset and the stale-job cancellation commit together on the
-// reschedule-only path: user-scheduled manual work survives, automatic pending
-// work is invalidated exactly once, and a failure recorded before the update
-// cannot re-count against the counter the update reset.
+// reschedule-only path: user-scheduled manual work survives, automatic queued work
+// is invalidated exactly once with every stale lease and ownership column it still
+// carried cleared, and a failure recorded before the update cannot re-count
+// against the counter the update reset.
 //
 //nolint:gocyclo // One flow proves the counter reset, the selective job cancellation and the inert replay together.
 func TestIntegrationUpdateWorkflowResetsFailuresAndCancelsOnlyAutomaticJobs(t *testing.T) {
@@ -1185,8 +1241,31 @@ func TestIntegrationUpdateWorkflowResetsFailuresAndCancelsOnlyAutomaticJobs(t *t
 		t.Fatalf("consecutive_job_failures_count = %d, want 2 before the update", beforeUpdate.ConsecutiveJobFailuresCount)
 	}
 
-	automaticJobID := seedFixturePendingJob(ctx, t, pg, fixture, "AUTOMATIC", 0)
+	// The automatic job is queued work that still carries a stale claim, so the
+	// cancellation below must clean up ownership metadata rather than only flip
+	// a status. Manual work is seeded untouched for the contrast asserted later.
+	automaticJobID := seedFixtureStaleLeasedQueuedJob(ctx, t, pg, fixture, 0)
 	manualJobID := seedFixturePendingJob(ctx, t, pg, fixture, "MANUAL", 1)
+
+	// Read the seeded ownership before the command runs. These assertions are
+	// what make the post-update clearing assertions live rather than vacuous:
+	// without a non-null starting value, "still NULL afterwards" proves nothing.
+	queuedBefore, ok := readFixtureJobState(ctx, t, pg, automaticJobID)
+	if !ok {
+		t.Fatal("automatic queued job is missing before the reschedule")
+	}
+	if queuedBefore.Trigger != "AUTOMATIC" || queuedBefore.Status != "QUEUED" {
+		t.Fatalf(
+			"automatic job trigger/status before the reschedule = %q/%q, want AUTOMATIC/QUEUED",
+			queuedBefore.Trigger,
+			queuedBefore.Status,
+		)
+	}
+	assertSeededString(t, "automatic job lease_token before the reschedule", queuedBefore.LeaseToken)
+	assertSeededString(t, "automatic job leased_by before the reschedule", queuedBefore.LeasedBy)
+	assertSeededString(t, "automatic job lease_process_instance_id before the reschedule", queuedBefore.LeaseProcessInstanceID)
+	assertSeededTime(t, "automatic job lease_expires_at before the reschedule", queuedBefore.LeaseExpiresAt)
+	assertSeededTime(t, "automatic job last_heartbeat_at before the reschedule", queuedBefore.LastHeartbeatAt)
 
 	// A reschedule-only update: unchanged payload, new interval, completed build.
 	if err := repo.UpdateWorkflow(
@@ -1222,7 +1301,10 @@ func TestIntegrationUpdateWorkflowResetsFailuresAndCancelsOnlyAutomaticJobs(t *t
 		t.Fatalf("terminated_at = %v, want a reschedule of an active workflow to leave it active", afterUpdate.TerminatedAt.Time.UTC())
 	}
 
-	// The automatic pending job is invalidated with the workflow-update reason.
+	// The automatic queued job is invalidated with the workflow-update reason,
+	// and the stale claim it carried is cleared rather than left behind on a row
+	// no worker owns any more. This is queued-job metadata cleanup, not a
+	// running-claim cancellation: the row holds no runtime node and no slot.
 	canceled, ok := readFixtureJobState(ctx, t, pg, automaticJobID)
 	if !ok {
 		t.Fatal("automatic job disappeared after the reschedule")
@@ -1237,10 +1319,10 @@ func TestIntegrationUpdateWorkflowResetsFailuresAndCancelsOnlyAutomaticJobs(t *t
 		t.Fatalf("automatic job terminal_reason_code = %q, want %q", canceled.TerminalReasonCode.String, terminalreason.WorkflowUpdated.String())
 	}
 	assertNullString(t, "automatic job lease_token", canceled.LeaseToken)
+	assertNullString(t, "automatic job leased_by", canceled.LeasedBy)
+	assertNullString(t, "automatic job lease_process_instance_id", canceled.LeaseProcessInstanceID)
 	assertNullTime(t, "automatic job lease_expires_at", canceled.LeaseExpiresAt)
-	if canceled.LastHeartbeatAtPresent {
-		t.Fatal("automatic job last_heartbeat_at survived the cancellation, want it cleared")
-	}
+	assertNullTime(t, "automatic job last_heartbeat_at", canceled.LastHeartbeatAt)
 
 	// Manual work is user-requested and must survive a reschedule untouched.
 	preserved, ok := readFixtureJobState(ctx, t, pg, manualJobID)

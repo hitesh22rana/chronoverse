@@ -765,7 +765,16 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 // nothing about whether the workload succeeded, so failing the execution over it
 // would blame the user for output the platform declined to carry.
 func scanContainerLogStream(ctx context.Context, stream *io.PipeReader, name string, lines chan<- containerLogLine, errs chan<- error) {
-	defer stream.Close()
+	// Abandoning this stream must not abandon the other one. Closing the reader
+	// would fail the demultiplexer's next write and end both, so the rest of this
+	// stream is read to the void instead: the demuxer stays up and the other
+	// stream keeps draining. It ends when the daemon stream does, or on cancellation,
+	// which aborts the read.
+	defer func() {
+		//nolint:errcheck // The bytes are discarded by design; only the read matters.
+		_, _ = io.Copy(io.Discard, stream)
+		_ = stream.Close()
+	}()
 
 	scanner := bufio.NewScanner(stream)
 	// Room for the cap plus the longest terminator bufio can meet (bare LF, or a
@@ -869,8 +878,9 @@ func isContainerLogStreamEnd(ctx context.Context, err error) bool {
 // containerLogOversizedLine is published in place of a line past the content cap,
 // naming the stream and the limit so a truncated run stays distinguishable from a
 // quiet one. It is a log line rather than a failure because the demultiplexer
-// cannot resume past the refused line: the rest of this stream is lost with it,
-// which the message states, but the workload's own outcome is unaffected.
+// cannot resume past the refused line: the rest of this stream is dropped with it,
+// which the message states, while the other stream drains to its own end. Either
+// way the workload's own outcome is unaffected.
 func containerLogOversizedLine(stream string) containerLogLine {
 	return containerLogLine{
 		stream: stream,

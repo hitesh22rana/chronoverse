@@ -549,42 +549,61 @@ func TestStreamContainerLogsLineCapBoundary(t *testing.T) {
 }
 
 // TestStreamContainerLogsTruncationStopsOnlyTheOffendingStream records the cost of
-// the cap: stdcopy has no way to resume past a line it has already framed, so
-// closing the scanner's pipe ends the demultiplexer too. The other stream is
-// unaffected, and the notice is what tells a consumer the tail is missing rather
-// than never having been produced.
+// the cap: stdcopy has no way to resume past a line it has already framed, so the
+// offending stream is drained to its end and the rest of it is dropped. Both ways a
+// line can exceed the cap are covered, since only one of them leaves the demuxer
+// mid-frame: the explicit length check, and the buffer refusing a token outright.
+// The other stream is unaffected either way, and the notice is what tells a
+// consumer the tail is missing rather than never having been produced.
 func TestStreamContainerLogsTruncationStopsOnlyTheOffendingStream(t *testing.T) {
 	t.Parallel()
 
-	oversized := strings.Repeat("x", dockerLogScanMaxLineBytes+1)
-
-	workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
-		logs: func(rw http.ResponseWriter, _ *http.Request) {
-			var stream bytes.Buffer
-			stream.Write(dockerLogFrame(stdcopy.Stdout, "stdout before\n"))
-			stream.Write(dockerLogFrame(stdcopy.Stdout, oversized+"\n"))
-			stream.Write(dockerLogFrame(stdcopy.Stderr, "stderr after the overflow\n"))
-			writeDockerTestResponse(t, rw, stream.String())
-		},
-	})
-
-	logs, errs, err := workflow.Logs(t.Context(), dockerLogTestContainerID)
-	if err != nil {
-		t.Fatalf("Logs() error = %v", err)
+	sizes := []struct {
+		name    string
+		content int
+	}{
+		{name: "explicit length check", content: dockerLogScanMaxLineBytes + 1},
+		// Two bytes more than the buffer's maximum, so bufio refuses the token
+		// while the demuxer is still holding the frame.
+		{name: "buffer refuses the token", content: dockerLogScanMaxLineBytes + 3},
 	}
 
-	result := awaitDockerLogStream(t, logs, errs)
-	if len(result.errs) != 0 {
-		t.Fatalf("Logs() published %v, want no failure for a line past the cap", result.errs)
-	}
+	for _, size := range sizes {
+		t.Run(size.name, func(t *testing.T) {
+			t.Parallel()
 
-	byStream := logMessagesByStream(result.logs)
-	if !slices.Equal(byStream[dockerLogTestStderr], []string{"stderr after the overflow"}) {
-		t.Fatalf("stderr delivered %v, want the line after the overflow: stdout truncation must not stop the other stream",
-			byStream[dockerLogTestStderr])
-	}
-	if len(byStream[dockerLogTestStdout]) != 2 || byStream[dockerLogTestStdout][0] != "stdout before" {
-		t.Fatalf("stdout delivered %v, want the line before the overflow then the notice", byStream[dockerLogTestStdout])
+			oversized := strings.Repeat("x", size.content)
+
+			workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
+				logs: func(rw http.ResponseWriter, _ *http.Request) {
+					var stream bytes.Buffer
+					stream.Write(dockerLogFrame(stdcopy.Stdout, "stdout before\n"))
+					stream.Write(dockerLogFrame(stdcopy.Stdout, oversized+"\n"))
+					stream.Write(dockerLogFrame(stdcopy.Stdout, "stdout after\n"))
+					stream.Write(dockerLogFrame(stdcopy.Stderr, "stderr after the overflow\n"))
+					writeDockerTestResponse(t, rw, stream.String())
+				},
+			})
+
+			logs, errs, err := workflow.Logs(t.Context(), dockerLogTestContainerID)
+			if err != nil {
+				t.Fatalf("Logs() error = %v", err)
+			}
+
+			result := awaitDockerLogStream(t, logs, errs)
+			if len(result.errs) != 0 {
+				t.Fatalf("Logs() published %v, want no failure for a line past the cap", result.errs)
+			}
+
+			byStream := logMessagesByStream(result.logs)
+			if !slices.Equal(byStream[dockerLogTestStderr], []string{"stderr after the overflow"}) {
+				t.Fatalf("stderr delivered %v, want the line after the overflow: stdout truncation must not stop the other stream",
+					byStream[dockerLogTestStderr])
+			}
+			if len(byStream[dockerLogTestStdout]) != 2 || byStream[dockerLogTestStdout][0] != "stdout before" {
+				t.Fatalf("stdout delivered %v, want the line before the overflow then the notice", byStream[dockerLogTestStdout])
+			}
+		})
 	}
 }
 
@@ -964,7 +983,8 @@ func TestExecuteTimeoutClosesChannelsWhenErrorConsumerAbandons(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	// Abandon both channels: nothing reads logs or errs from here on.
+	// Nothing reads logs or errs while the container is being stopped: both are
+	// abandoned until the goroutine below starts draining them.
 	select {
 	case <-containerStopped:
 	case <-time.After(dockerLogStreamTestTimeout):

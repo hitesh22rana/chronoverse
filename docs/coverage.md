@@ -101,11 +101,13 @@ python3 -m unittest discover -s scripts/coverage -t scripts/coverage
 ## Dashboard coverage scope
 
 Vitest reports only the files a test imported unless `coverage.include` names
-them. Left unset, the summary described 52 files and read as 87.71% statements;
-the dashboard has 101 non-test sources under `dashboard/src`. `dashboard/vitest.config.ts`
+them. Left unset, the summary described 64 files and read as 91.48% statements;
+the dashboard has 104 non-test sources under `dashboard/src`. `dashboard/vitest.config.ts`
 now names `src/**/*.{ts,tsx}` explicitly and excludes only test files, type
 declarations, and `__tests__` directories, so every application source is
-reported at its real coverage.
+reported at its real coverage. The same 226 tests cover the same 1,203
+statements either way; naming the sources raises the denominator from 1,315 to
+1,810, so the percentage falls without a line of behaviour changing.
 
 ## What the score covers, and what it does not
 

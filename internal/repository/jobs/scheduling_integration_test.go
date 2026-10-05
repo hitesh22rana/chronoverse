@@ -20,39 +20,29 @@ import (
 )
 
 const (
-	// manualScheduleReplayWindow is the published replay window of a client
-	// command: a client may retry its key for exactly this long.
+	// manualScheduleReplayWindow is the published window a client may retry its key in.
 	manualScheduleReplayWindow = 24 * time.Hour
-	// automaticScheduleReplayWindow is the published replay window of a
-	// deterministic event command, matching the outbox redrive window.
+	// automaticScheduleReplayWindow matches the redrive window that can still redeliver an event command.
 	automaticScheduleReplayWindow = 14 * 24 * time.Hour
-	// scheduleTestUserDomain keeps seeded addresses inside the users.email
-	// column, which is shorter than the generated fixture identities.
+	// Keeps seeded addresses inside the shorter users.email column.
 	scheduleTestUserDomain = "@chronoverse.test"
 )
 
-// scheduleCommandFixture is one isolated workflow together with the ledger
-// operation its schedule commands are reserved under. Both scopes are derived
-// from the identities here by the ledger helpers the repository itself uses.
+// scheduleCommandFixture is one isolated workflow plus the ledger operations its schedule commands use.
 type scheduleCommandFixture struct {
-	UserID     string
-	WorkflowID string
-	// ManualOperation is the ledger operation of a manual schedule command on
-	// the fixture workflow.
-	ManualOperation string
-	// AutomaticOperation is the ledger operation of an automatic schedule command
-	// on the fixture workflow.
+	UserID             string
+	WorkflowID         string
+	ManualOperation    string
 	AutomaticOperation string
 }
 
 // manualScope is the ledger scope a user reserves manual schedule commands in.
 func manualScope(userID string) string { return commandidempotency.UserScope(userID) }
 
-// automaticScope is the ledger scope a workflow reserves automatic schedule
-// commands in.
+// automaticScope is the ledger scope a workflow reserves automatic schedule commands in.
 func automaticScope(workflowID string) string { return commandidempotency.WorkflowScope(workflowID) }
 
-// scheduleCommand is one schedule command's arguments as a caller supplies them.
+// scheduleCommand is one command's arguments as a caller supplies them.
 type scheduleCommand struct {
 	workflowID     string
 	userID         string
@@ -61,8 +51,7 @@ type scheduleCommand struct {
 	idempotencyKey string
 }
 
-// scheduledJobRow is the durable jobs-row surface a schedule command must
-// converge to, or leave absent when the command is rejected.
+// scheduledJobRow is the durable jobs-row surface a command must converge to, or leave absent.
 type scheduledJobRow struct {
 	WorkflowID         string
 	UserID             string
@@ -73,8 +62,23 @@ type scheduledJobRow struct {
 	WorkflowGeneration sql.NullInt64
 }
 
-// seedScheduleFixture seeds an isolated user and a built workflow, returning the
-// ledger operations its schedule commands are reserved under.
+// legacyAutomaticJob is what a pre-ledger binary recorded on an automatic job. A nil
+// field is one it never wrote, which stays unverifiable rather than guessed at.
+type legacyAutomaticJob struct {
+	idempotencyKey *string
+	generation     *int64
+}
+
+// legacyRedelivery is one committed pre-ledger occurrence plus the automatic command
+// refused for it. An empty commandKey is the worker's derived occurrence identity.
+type legacyRedelivery struct {
+	fixture     scheduleCommandFixture
+	commandKey  string
+	scheduledAt time.Time
+	generation  int64
+}
+
+// seedScheduleFixture seeds an isolated user and workflow plus its ledger operations.
 func seedScheduleFixture(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
 	t.Helper()
 
@@ -87,16 +91,14 @@ func seedScheduleFixture(ctx context.Context, t *testing.T, pg *postgres.Postgre
 	}
 }
 
-// seedScheduleUser inserts a second user for a fixture, used to prove the
-// ownership guards of a schedule command.
+// seedScheduleUser inserts a second user, to prove the ownership guards.
 func seedScheduleUser(ctx context.Context, t *testing.T, pg *postgres.Postgres) string {
 	t.Helper()
 
 	return testkit.SeedUser(ctx, t, pg, "cv-"+fixtureTag()+scheduleTestUserDomain)
 }
 
-// setWorkflowGeneration moves a fixture workflow to another generation, the way
-// a workflow update that requires a rebuild does.
+// setWorkflowGeneration moves a workflow to another generation, as a rebuild does.
 func setWorkflowGeneration(ctx context.Context, t *testing.T, pg *postgres.Postgres, workflowID string, generation int64) {
 	t.Helper()
 
@@ -109,31 +111,31 @@ func setWorkflowGeneration(ctx context.Context, t *testing.T, pg *postgres.Postg
 	}
 }
 
-// seedLegacyAutomaticJob inserts a jobs row the way a binary from before the
-// shared command ledger wrote one, so the upgrade-compatibility path is
-// exercised against a real row. A nil generation reproduces a row whose
-// workflow generation the writing binary never recorded.
+// seedLegacyAutomaticJob commits the jobs row a pre-ledger binary wrote.
 func seedLegacyAutomaticJob(
 	ctx context.Context,
 	t *testing.T,
 	pg *postgres.Postgres,
 	fixture scheduleCommandFixture,
-	idempotencyKey string,
 	scheduledAt time.Time,
-	generation *int64,
+	legacy legacyAutomaticJob,
 ) string {
 	t.Helper()
 
+	var key any
+	if legacy.idempotencyKey != nil {
+		key = *legacy.idempotencyKey
+	}
 	var recorded any
-	if generation != nil {
-		recorded = *generation
+	if legacy.generation != nil {
+		recorded = *legacy.generation
 	}
 	var jobID string
 	if err := pg.QueryRow(ctx, `
 		INSERT INTO jobs (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
 		VALUES ($1, $2, $3, 'AUTOMATIC', $4, $5)
 		RETURNING id
-	`, fixture.WorkflowID, fixture.UserID, scheduledAt, idempotencyKey, recorded).Scan(&jobID); err != nil {
+	`, fixture.WorkflowID, fixture.UserID, scheduledAt, key, recorded).Scan(&jobID); err != nil {
 		t.Fatalf("seed legacy automatic job: %v", err)
 	}
 	return jobID
@@ -200,9 +202,8 @@ func countScheduleCommands(ctx context.Context, t *testing.T, pg *postgres.Postg
 	return count
 }
 
-// assertScheduleReplayWindow asserts the completed command's published replay
-// window: expires_at must be the completion instant plus exactly that window, so
-// the row's own timestamps decide when its identity may be spent again.
+// assertScheduleReplayWindow asserts expires_at is completed_at plus exactly the published
+// window, so the row's own timestamps decide when its key may be spent again.
 func assertScheduleReplayWindow(t *testing.T, command *jobCommandRow, want time.Duration) {
 	t.Helper()
 
@@ -214,8 +215,7 @@ func assertScheduleReplayWindow(t *testing.T, command *jobCommandRow, want time.
 	}
 }
 
-// assertScheduledCommandResponse asserts the completed command's replay payload
-// names the job the command created, which is what a replaying caller reads.
+// assertScheduledCommandResponse asserts the completed command replays the job id it created.
 func assertScheduledCommandResponse(t *testing.T, command *jobCommandRow, jobID string) {
 	t.Helper()
 
@@ -228,8 +228,8 @@ func assertScheduledCommandResponse(t *testing.T, command *jobCommandRow, jobID 
 	}
 }
 
-// assertCompletedScheduleCommand asserts a schedule command's ledger row is the
-// completed reservation every replay of its identity resolves to.
+// assertCompletedScheduleCommand asserts the completed reservation that every replay of
+// that identity resolves to the named job.
 func assertCompletedScheduleCommand(t *testing.T, command *jobCommandRow, jobID string, wantWindow time.Duration) {
 	t.Helper()
 
@@ -241,9 +241,8 @@ func assertCompletedScheduleCommand(t *testing.T, command *jobCommandRow, jobID 
 	assertScheduleReplayWindow(t, command, wantWindow)
 }
 
-// assertScheduledJobOwnership asserts the durable jobs row is the pending
-// occurrence the command reserved for the fixture's workflow and user, at the
-// instant the caller asked for and under the identity the command normalized.
+// assertScheduledJobOwnership asserts the durable row is the pending occurrence reserved
+// for the fixture, at the requested instant and identity.
 func assertScheduledJobOwnership(
 	t *testing.T,
 	job *scheduledJobRow,
@@ -269,10 +268,9 @@ func assertScheduledJobOwnership(
 	assertNullString(t, "job idempotency_key", job.IdempotencyKey, wantKey)
 }
 
-// assertNoScheduleCommandEffect asserts a refused or rejected command left no
-// job row and no command ledger row behind. The ledger assertion is the
-// atomicity check: a reservation that survived the rollback would make every
-// retry of the same identity fail as still processing.
+// assertNoScheduleCommandEffect asserts a refused command left neither a job nor a
+// reservation: the ledger assertion is the atomicity check, since a reservation that
+// survived the rollback would fail every retry as still processing.
 func assertNoScheduleCommandEffect(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture scheduleCommandFixture, scope, operation string) {
 	t.Helper()
 
@@ -284,21 +282,34 @@ func assertNoScheduleCommandEffect(ctx context.Context, t *testing.T, pg *postgr
 	}
 }
 
-// occurrenceInstant returns a schedule instant PostgreSQL stores exactly and
-// that is far enough ahead for the command to be dispatched afterwards.
+// expireScheduleCommand ages a reservation past its window, as the ledger sits between expiry and cleanup.
+func expireScheduleCommand(ctx context.Context, t *testing.T, pg *postgres.Postgres, scope, operation, key string) {
+	t.Helper()
+
+	tag, err := pg.Exec(ctx, `
+		UPDATE command_idempotency_keys
+		SET completed_at = completed_at - interval '2 days', expires_at = expires_at - interval '2 days'
+		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+	`, scope, operation, key)
+	if err != nil {
+		t.Fatalf("expire schedule command %q: %v", key, err)
+	}
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("expire schedule command %q affected %d rows, want 1", key, tag.RowsAffected())
+	}
+}
+
+// occurrenceInstant is a schedule instant PostgreSQL stores exactly, far enough ahead to dispatch.
 func occurrenceInstant(offset time.Duration) time.Time {
 	return time.Now().UTC().Truncate(time.Microsecond).Add(offset)
 }
 
-// automaticOccurrenceKey is the deterministic identity a schedule command
-// derives when the execution worker reports the next occurrence of a job
-// without carrying an event key of its own.
+// automaticOccurrenceKey is the identity a command derives when the worker reports an occurrence without an event key.
 func automaticOccurrenceKey(workflowID string, scheduledAt time.Time) string {
 	return idempotency.JobDispatchEventKey(workflowID + ":" + scheduledAt.Format(time.RFC3339Nano))
 }
 
-// buildEventScheduleKey is the identity a workflow build or reschedule event
-// spends on the first automatic occurrence of a workflow generation.
+// buildEventScheduleKey is the identity a build or reschedule event spends on a generation's first occurrence.
 func buildEventScheduleKey(workflowID string, generation int64) string {
 	return idempotency.AutomaticScheduleEventKey(
 		idempotency.WorkflowEventKey(workflowID, "BUILD", generation),
@@ -312,8 +323,7 @@ func TestIntegrationScheduleJobManualPersistsOneJobAndReplaysFromLedger(t *testi
 
 	fixture := seedScheduleFixture(ctx, t, pg)
 	commandKey := "manual-" + fixtureTag()
-	// Client keys arrive over HTTP headers, so the command must normalize the
-	// padding before the key becomes a durable identity.
+	// Client keys arrive in HTTP headers, so padding is normalized before the key is durable.
 	paddedKey := "  " + commandKey + " "
 	scheduledAt := occurrenceInstant(time.Hour)
 
@@ -345,14 +355,12 @@ func TestIntegrationScheduleJobManualPersistsOneJobAndReplaysFromLedger(t *testi
 		t.Fatalf("ledger holds %d manual schedule rows, want exactly one durable command", count)
 	}
 
-	// Scheduling reserves an occurrence; publishing it is the scheduler's job, so
-	// an unexpected dispatch event here would leak work into Kafka.
+	// Scheduling reserves only; the scheduler publishes, so a schedule command writes no outbox event.
 	if count := countJobScopedOutboxEvents(ctx, t, pg, jobID, fixture.WorkflowID); count != 0 {
 		t.Fatalf("outbox holds %d events naming job %q or workflow %q, want 0 from a schedule command", count, jobID, fixture.WorkflowID)
 	}
 
-	// A manual retry is the same command even when it names another instant, and
-	// the replay must not disturb the job the first attempt created.
+	// A retry is the same command even at another instant, and must not disturb the first job.
 	retryScheduledAt := occurrenceInstant(2 * time.Hour)
 	replayed, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, retryScheduledAt.Format(time.RFC3339Nano),
@@ -377,10 +385,9 @@ func TestIntegrationScheduleJobManualPersistsOneJobAndReplaysFromLedger(t *testi
 	assertSameLedgerRow(t, afterCommand, command)
 }
 
-// TestIntegrationScheduleJobManualAcceptsEveryStorableInstantSpelling pins the
-// schedule instants a command must accept: every RFC3339 spelling of a future
-// instant the jobs table can store exactly, which is what internal callers
-// report after formatting a time in UTC.
+// TestIntegrationScheduleJobManualAcceptsEveryStorableInstantSpelling pins every RFC3339
+// spelling of a future instant the jobs table stores exactly, which is what callers
+// report after formatting a UTC time.
 func TestIntegrationScheduleJobManualAcceptsEveryStorableInstantSpelling(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -439,8 +446,7 @@ func TestIntegrationScheduleJobManualKeyIsScopedToOneWorkflow(t *testing.T) {
 		t.Fatalf("ScheduleJob (second workflow): %v", err)
 	}
 
-	// One client key is one command per workflow, so scheduling a second workflow
-	// must create a second job instead of replaying the first one.
+	// One client key is one command per workflow, so the second workflow gets its own job.
 	if secondJobID == firstJobID {
 		t.Fatalf("second workflow reused job %q, want its own scheduled job", firstJobID)
 	}
@@ -470,8 +476,7 @@ func TestIntegrationScheduleJobManualRejectionLeavesItsKeyReusable(t *testing.T)
 	commandKey := "manual-rejected-" + fixtureTag()
 	scheduledAt := occurrenceInstant(time.Hour)
 
-	// The command runs in one transaction: its reservation, the job insert and
-	// the completion either all land or none of them do.
+	// Reservation, job insert and completion share one transaction: all land or none do.
 	if _, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, attackerID, scheduledAt.Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerManual.ToString(), commandKey, 1,
@@ -482,8 +487,7 @@ func TestIntegrationScheduleJobManualRejectionLeavesItsKeyReusable(t *testing.T)
 		ctx, t, pg, fixture, manualScope(attackerID), fixture.ManualOperation,
 	)
 
-	// A reservation that survived the rollback would make the owner's own retry
-	// fail as still processing, so the owner's identical command must succeed.
+	// A reservation that survived the rollback would fail the owner's retry as still processing.
 	jobID, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerManual.ToString(), commandKey, 1,
@@ -507,6 +511,53 @@ func TestIntegrationScheduleJobManualRejectionLeavesItsKeyReusable(t *testing.T)
 	}
 }
 
+// TestIntegrationScheduleJobManualKeyIsReusableAfterItsReplayWindow pins the other half of
+// the published window: once it passes the same client key reserves a new occurrence
+// instead of replaying onto the wrong job.
+func TestIntegrationScheduleJobManualKeyIsReusableAfterItsReplayWindow(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	fixture := seedScheduleFixture(ctx, t, pg)
+	commandKey := "manual-expired-" + fixtureTag()
+	firstScheduledAt := occurrenceInstant(time.Hour)
+
+	firstJobID, err := repo.ScheduleJob(
+		ctx, fixture.WorkflowID, fixture.UserID, firstScheduledAt.Format(time.RFC3339Nano),
+		jobsmodel.JobTriggerManual.ToString(), commandKey, 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob: %v", err)
+	}
+	expireScheduleCommand(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
+
+	secondScheduledAt := occurrenceInstant(2 * time.Hour)
+	secondJobID, err := repo.ScheduleJob(
+		ctx, fixture.WorkflowID, fixture.UserID, secondScheduledAt.Format(time.RFC3339Nano),
+		jobsmodel.JobTriggerManual.ToString(), commandKey, 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob (expired key): %v", err)
+	}
+	if secondJobID == firstJobID {
+		t.Fatalf("expired key replayed job %q, want the occurrence it now reserves", firstJobID)
+	}
+	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 2 {
+		t.Fatalf("workflow has %d jobs, want one per occurrence the key reserved", count)
+	}
+
+	// The reservation is spent by the new occurrence, and its window runs from that completion.
+	command, ok := readScheduleCommand(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
+	if !ok {
+		t.Fatalf("command %q has no ledger row after the expired key was reused", commandKey)
+	}
+	assertCompletedScheduleCommand(t, command, secondJobID, manualScheduleReplayWindow)
+	if job := readScheduledJob(ctx, t, pg, secondJobID); !job.ScheduledAt.Equal(secondScheduledAt) {
+		t.Fatalf("second job scheduled_at = %s, want the occurrence it reserved %s", job.ScheduledAt.UTC(), secondScheduledAt.UTC())
+	}
+}
+
 func TestIntegrationScheduleJobRejectsInvalidInputWithoutDurableEffect(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -514,8 +565,7 @@ func TestIntegrationScheduleJobRejectsInvalidInputWithoutDurableEffect(t *testin
 
 	tests := []struct {
 		name string
-		// mutate replaces a valid command's arguments with the spelling this case
-		// must refuse.
+		// mutate swaps in the spelling this case must refuse.
 		mutate func(command scheduleCommand) scheduleCommand
 	}{
 		{
@@ -594,8 +644,7 @@ func TestIntegrationScheduleJobCanceledCallerLeavesNoDurableEffect(t *testing.T)
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	// A caller that goes away mid-command must be told the command did not run,
-	// and must leave neither a job nor a reservation for the retry to trip over.
+	// A caller that goes away must be told the command did not run, leaving nothing for the retry to trip over.
 	_, err := repo.ScheduleJob(
 		canceledCtx, fixture.WorkflowID, fixture.UserID, occurrenceInstant(time.Hour).Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerManual.ToString(), "manual-canceled-"+fixtureTag(), 1,
@@ -614,8 +663,7 @@ func TestIntegrationScheduleJobAutomaticOccurrenceUsesDeterministicIdentity(t *t
 	fixture := seedScheduleFixture(ctx, t, pg)
 	firstOccurrence := occurrenceInstant(time.Hour)
 
-	// The execution worker reports the next occurrence of a workflow without an
-	// event key, so the command must derive the identity redeliveries repeat.
+	// The worker reports the next occurrence without an event key, so the command derives an identity redeliveries repeat.
 	jobID, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, firstOccurrence.Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerAutomatic.ToString(), "", 1,
@@ -643,9 +691,7 @@ func TestIntegrationScheduleJobAutomaticOccurrenceUsesDeterministicIdentity(t *t
 	// Event commands live as long as the events that can redeliver them.
 	assertCompletedScheduleCommand(t, command, jobID, automaticScheduleReplayWindow)
 
-	// A redelivered occurrence is the same command: Kafka and the outbox replay
-	// the request the worker reported, so the derived identity must resolve back
-	// to the job the first delivery created.
+	// Kafka and the outbox replay the reported request, so a redelivered occurrence resolves to the first job.
 	redelivered := firstOccurrence.Format(time.RFC3339Nano)
 	replayed, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, redelivered,
@@ -661,8 +707,7 @@ func TestIntegrationScheduleJobAutomaticOccurrenceUsesDeterministicIdentity(t *t
 		t.Fatalf("redelivery left %d jobs, want one job per occurrence", count)
 	}
 
-	// The next occurrence of the same workflow is a different command, and it is
-	// what keeps a built workflow running.
+	// The next occurrence is a different command, and is what keeps a built workflow running.
 	nextOccurrence := firstOccurrence.Add(5 * time.Minute)
 	nextJobID, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, nextOccurrence.Format(time.RFC3339Nano),
@@ -689,13 +734,11 @@ func TestIntegrationScheduleJobAutomaticCommandEnforcesWorkflowGeneration(t *tes
 
 	tests := []struct {
 		name string
-		// prepare returns a fixture workflow whose generation no automatic command
-		// may schedule for.
+		// prepare returns a fixture workflow no automatic command may schedule for.
 		prepare func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture
 	}{
 		{
-			// The workflow was rebuilt, so the event this command replays belongs
-			// to a generation that no longer exists.
+			// The workflow was rebuilt, so this event belongs to a generation that no longer exists.
 			name: "workflow moved to another generation",
 			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
 				t.Helper()
@@ -797,8 +840,7 @@ func TestIntegrationScheduleJobAutomaticIdentityConflictPreservesOriginalJob(t *
 		t.Fatalf("automatic schedule command %q has no ledger row", commandKey)
 	}
 
-	// The workflow is rebuilt and a stale caller offers the identity it already
-	// spent, now under a different generation: a conflicting command, not a replay.
+	// A stale caller offers the identity it already spent under another generation: a conflict, not a replay.
 	setWorkflowGeneration(ctx, t, pg, fixture.WorkflowID, 2)
 	conflicting, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
@@ -811,8 +853,7 @@ func TestIntegrationScheduleJobAutomaticIdentityConflictPreservesOriginalJob(t *
 		t.Fatalf("conflicting ScheduleJob returned job %q, want an empty id", conflicting)
 	}
 
-	// The first command's job and ledger row are the durable state a redelivery
-	// still resolves to, so the conflict must leave both untouched.
+	// The first command's job and ledger row are what a redelivery resolves to, so both stay untouched.
 	after := readScheduledJob(ctx, t, pg, jobID)
 	if !after.WorkflowGeneration.Valid || after.WorkflowGeneration.Int64 != 1 {
 		t.Fatalf("job workflow_generation = %v, want the original 1", after.WorkflowGeneration)
@@ -843,8 +884,7 @@ func TestIntegrationScheduleJobAutomaticWithoutGenerationRecordsLegacyIdentity(t
 	scheduledAt := occurrenceInstant(time.Hour)
 	occurrenceKey := automaticOccurrenceKey(fixture.WorkflowID, scheduledAt)
 
-	// A caller that predates workflow generations reports none, and the command
-	// must still record the occurrence against the generation it was given.
+	// A caller that predates workflow generations reports none, and the occurrence is still recorded against it.
 	jobID, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerAutomatic.ToString(), "", 0,
@@ -865,8 +905,7 @@ func TestIntegrationScheduleJobAutomaticWithoutGenerationRecordsLegacyIdentity(t
 	}
 	assertNullString(t, "command resource_id", command.ResourceID, jobID)
 
-	// The ledger binds the exact input it accepted, so the same occurrence re-offered
-	// as a generation-aware command is a conflict rather than a replay.
+	// The ledger binds the input it accepted, so re-offering the occurrence generation-aware is a conflict.
 	if _, err = repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerAutomatic.ToString(), "", 1,
@@ -892,10 +931,12 @@ func TestIntegrationScheduleJobAdoptsLegacyAutomaticRowWithoutDuplicatingJob(t *
 	scheduledAt := occurrenceInstant(time.Hour)
 	commandKey := "legacy-event-" + fixtureTag()
 	generation := int64(1)
-	legacyJobID := seedLegacyAutomaticJob(ctx, t, pg, fixture, commandKey, scheduledAt, &generation)
+	legacyJobID := seedLegacyAutomaticJob(
+		ctx, t, pg, fixture, scheduledAt,
+		legacyAutomaticJob{idempotencyKey: &commandKey, generation: &generation},
+	)
 
-	// The ledger row an upgraded binary would rebuild is absent here, exactly as
-	// it is while an occurrence committed before the upgrade is redelivered.
+	// No ledger row exists for an occurrence committed before the upgrade, as while it is redelivered.
 	jobID, err := repo.ScheduleJob(
 		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerAutomatic.ToString(), commandKey, 1,
@@ -907,8 +948,7 @@ func TestIntegrationScheduleJobAdoptsLegacyAutomaticRowWithoutDuplicatingJob(t *
 		t.Fatalf("adopted job id = %q, want the committed legacy job %q", jobID, legacyJobID)
 	}
 
-	// The occurrence must stay exactly one job, and the adopted identity must be
-	// replayable for the whole event window.
+	// The occurrence stays exactly one job, replayable for the whole event window.
 	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
 		t.Fatalf("workflow has %d jobs, want only the committed legacy job", count)
 	}
@@ -922,6 +962,9 @@ func TestIntegrationScheduleJobAdoptsLegacyAutomaticRowWithoutDuplicatingJob(t *
 	}
 }
 
+// TestIntegrationScheduleJobRefusesUnverifiableLegacyAutomaticRows covers the rule in the
+// other direction: a pre-ledger occurrence is refused, never duplicated, unless its
+// recorded generation proves it answers this command.
 func TestIntegrationScheduleJobRefusesUnverifiableLegacyAutomaticRows(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -929,46 +972,74 @@ func TestIntegrationScheduleJobRefusesUnverifiableLegacyAutomaticRows(t *testing
 
 	tests := []struct {
 		name string
-		// prepare seeds a pre-upgrade automatic job and returns the fixture plus
-		// the identity and generation the redelivered command must be refused for.
-		prepare func(ctx context.Context, t *testing.T, pg *postgres.Postgres) (scheduleCommandFixture, string, int64)
+		// prepare commits a pre-ledger automatic job and the redelivery refused for it.
+		prepare func(ctx context.Context, t *testing.T, pg *postgres.Postgres) legacyRedelivery
 	}{
 		{
-			// The writing binary never recorded a generation, so the command cannot
-			// prove the committed row answers this occurrence.
+			// The writing binary never recorded a generation, so nothing proves the row answers this occurrence.
 			name: "legacy job has no recorded generation",
-			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) (scheduleCommandFixture, string, int64) {
+			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) legacyRedelivery {
 				t.Helper()
 
 				fixture := seedScheduleFixture(ctx, t, pg)
 				key := "legacy-unknown-generation-" + fixtureTag()
-				seedLegacyAutomaticJob(ctx, t, pg, fixture, key, occurrenceInstant(time.Hour), nil)
-				return fixture, key, 1
+				seedLegacyAutomaticJob(ctx, t, pg, fixture, occurrenceInstant(time.Hour), legacyAutomaticJob{idempotencyKey: &key})
+				return legacyRedelivery{
+					fixture:     fixture,
+					commandKey:  key,
+					scheduledAt: occurrenceInstant(2 * time.Hour),
+					generation:  1,
+				}
 			},
 		},
 		{
-			// The identity was spent by another generation of this workflow, so
-			// treating it as a replay would report the wrong occurrence.
+			// Another generation of this workflow spent the identity, so adopting it reports the wrong occurrence.
 			name: "legacy job records another generation",
-			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) (scheduleCommandFixture, string, int64) {
+			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) legacyRedelivery {
 				t.Helper()
 
 				fixture := seedScheduleFixture(ctx, t, pg)
 				setWorkflowGeneration(ctx, t, pg, fixture.WorkflowID, 3)
 				key := "legacy-stale-generation-" + fixtureTag()
 				staleGeneration := int64(2)
-				seedLegacyAutomaticJob(ctx, t, pg, fixture, key, occurrenceInstant(time.Hour), &staleGeneration)
-				return fixture, key, 3
+				seedLegacyAutomaticJob(
+					ctx, t, pg, fixture, occurrenceInstant(time.Hour),
+					legacyAutomaticJob{idempotencyKey: &key, generation: &staleGeneration},
+				)
+				return legacyRedelivery{
+					fixture:     fixture,
+					commandKey:  key,
+					scheduledAt: occurrenceInstant(2 * time.Hour),
+					generation:  3,
+				}
+			},
+		},
+		{
+			// A pre-idempotency binary wrote neither field, so the committed slot is the
+			// occurrence's only trace and cannot be attributed to this command.
+			name: "legacy job recorded no identity",
+			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) legacyRedelivery {
+				t.Helper()
+
+				fixture := seedScheduleFixture(ctx, t, pg)
+				scheduledAt := occurrenceInstant(time.Hour)
+				seedLegacyAutomaticJob(ctx, t, pg, fixture, scheduledAt, legacyAutomaticJob{})
+				return legacyRedelivery{
+					fixture:     fixture,
+					scheduledAt: scheduledAt,
+					generation:  1,
+				}
 			},
 		},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			fixture, commandKey, offeredGeneration := testCase.prepare(ctx, t, pg)
+			redelivery := testCase.prepare(ctx, t, pg)
 
 			jobID, err := repo.ScheduleJob(
-				ctx, fixture.WorkflowID, fixture.UserID, occurrenceInstant(2*time.Hour).Format(time.RFC3339Nano),
-				jobsmodel.JobTriggerAutomatic.ToString(), commandKey, offeredGeneration,
+				ctx, redelivery.fixture.WorkflowID, redelivery.fixture.UserID,
+				redelivery.scheduledAt.Format(time.RFC3339Nano),
+				jobsmodel.JobTriggerAutomatic.ToString(), redelivery.commandKey, redelivery.generation,
 			)
 			if code := status.Code(err); code != codes.AlreadyExists {
 				t.Fatalf("ScheduleJob code = %v, want %v (err: %v)", code, codes.AlreadyExists, err)
@@ -977,13 +1048,14 @@ func TestIntegrationScheduleJobRefusesUnverifiableLegacyAutomaticRows(t *testing
 				t.Fatalf("refused ScheduleJob returned job %q, want an empty id", jobID)
 			}
 
-			// The refused command must add nothing: the committed legacy job stays
-			// the only job, and the identity stays unspent so the occurrence it does
-			// belong to is still decidable by a later delivery.
-			if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
+			// The refusal adds nothing: the legacy job stays the only job and the identity
+			// unspent, so a later delivery can still decide the occurrence.
+			if count := countWorkflowJobs(ctx, t, pg, redelivery.fixture.WorkflowID); count != 1 {
 				t.Fatalf("workflow has %d jobs, want only the committed legacy job", count)
 			}
-			if count := countScheduleCommands(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation); count != 0 {
+			if count := countScheduleCommands(
+				ctx, t, pg, automaticScope(redelivery.fixture.WorkflowID), redelivery.fixture.AutomaticOperation,
+			); count != 0 {
 				t.Fatalf("ledger holds %d automatic schedule rows, want 0 for a refused identity", count)
 			}
 		})

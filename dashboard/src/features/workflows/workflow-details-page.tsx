@@ -9,27 +9,10 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import {
     ArrowLeft,
-    RefreshCw,
-    Clock,
-    AlertTriangle,
-    XCircle,
-    Shield,
-    Filter,
-    ChevronLeft,
-    ChevronRight,
-    ScrollText,
-    Workflow,
-    Database,
-    Edit,
-    Trash2,
-    HeartPulse,
     Activity,
-    Play,
-    Loader2,
-    X,
+    ScrollText,
 } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -44,27 +27,16 @@ import {
     CardContent,
     CardFooter,
 } from "@/components/ui/card"
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from "@/components/ui/select"
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover"
-import { Label } from "@/components/ui/label"
 import { EmptyState } from "@/components/empty-state"
 import { UpdateWorkflowDialog } from "@/features/workflows/update-workflow-dialog"
 import { TerminateWorkflowDialog } from "@/features/workflows/terminate-workflow-dialog"
 import { DeleteWorkflowDialog } from "@/features/workflows/delete-workflow-dialog"
+import { WorkflowDetailsActions } from "@/features/workflows/workflow-details-actions"
+import { WorkflowDetailsCard } from "@/features/workflows/workflow-details-card"
+import { WorkflowJobsToolbar } from "@/features/workflows/workflow-jobs-toolbar"
 import { JobCard } from "@/features/jobs/job-card"
 import { WorkflowJobsSkeleton } from "@/features/jobs/jobs-skeleton"
 import { WorkflowAnalyticsCardsSkeleton } from "@/features/analytics/analytics-skeletons"
-import { WorkflowAnalyticsPanel } from "@/features/analytics/workflow-analytics-panel"
 
 import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
 import { useWorkflowJobs } from "@/features/jobs/use-workflow-jobs"
@@ -400,221 +372,64 @@ function renderWorkflowHeader(model: Parameters<typeof renderWorkflowDetailsAndJ
 
 function renderWorkflowActions(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
     const {
-        isSearchPending,
-        isFiltersOpen,
-        filterState,
-        setFilterState,
         urlTabFilter,
+        isSearchPending,
         workflow,
         isWorkflowLoading,
         isJobsLoading,
         isRefetchingJobs,
-        pagination,
-        manualRunJob,
+        filterState,
+        isFiltersOpen,
+        activeFiltersCount,
         isManualRunJobPending,
-        setShowUpdateWorkflowDialog,
-        setShowTerminateWorkflowDialog,
-        setShowDeleteWorkflowDialog,
+        manualRunJob,
+        pagination,
         handleRefresh,
         handleApplyFilters,
         handleClearFilters,
         handleFiltersOpenChange,
-        activeFiltersCount,
+        setFilterState,
+        setShowUpdateWorkflowDialog,
+        setShowTerminateWorkflowDialog,
+        setShowDeleteWorkflowDialog,
     } = model
-    return urlTabFilter === "details" ? (
-        <div className="flex sm:flex-row flex-col items-center justify-end mb-4 gap-2 w-full">
-            <Button
-                variant="outline"
-                size="sm"
-                className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
-                onClick={() => setShowUpdateWorkflowDialog(true)}
-            >
-                <Edit className="h-4 w-4" />
-                Edit workflow
-            </Button>
-            {isWorkflowLoading ? (
-                <Skeleton className="h-9 sm:max-w-[180px] w-full rounded-md" />
-            ) : workflow?.terminated_at ? (
-                <Button
-                    variant="destructive"
-                    size="sm"
-                    className="cursor-pointer shrink-0 sm:max-w-[180px] w-full h-9"
-                    onClick={() => setShowDeleteWorkflowDialog(true)}
-                >
-                    <Trash2 className="h-4 w-4" />
-                    Delete workflow
-                </Button>
-            ) : (
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    className="cursor-pointer shrink-0 sm:max-w-[180px] w-full h-9"
-                    onClick={() => setShowTerminateWorkflowDialog(true)}
-                >
-                    <XCircle className="h-4 w-4" />
-                    Terminate workflow
-                </Button>
-            )}
-        </div>
-    ) : (
-        urlTabFilter === "jobs" && (
-            <div className="flex flex-wrap items-center justify-end gap-2 w-full mb-4">
-                {!!workflow?.build_status &&
-                    workflow.build_status === "COMPLETED" &&
-                    !workflow?.terminated_at && (
-                        <Button
-                            variant="default"
-                            size="sm"
-                            className="cursor-pointer shrink-0 sm:max-w-[140px] w-full h-9"
-                            onClick={() => manualRunJob()}
-                            disabled={isManualRunJobPending}
-                        >
-                            {isManualRunJobPending ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Play className="h-4 w-4" />
-                            )}
-                            Manual run
-                        </Button>
-                    )}
 
-                <Popover open={isFiltersOpen} onOpenChange={handleFiltersOpenChange}>
-                    <PopoverTrigger asChild>
-                        <Button variant="outline" className="relative h-9">
-                            <Filter className="size-3" />
-                            <span className="sm:not-sr-only sr-only">Filters</span>
-                            {activeFiltersCount > 0 && (
-                                <Badge
-                                    variant="secondary"
-                                    className="absolute -right-1 -top-1.5 size-4 rounded-full p-0 flex items-center justify-center text-xs overflow-visible"
-                                >
-                                    {activeFiltersCount}
-                                </Badge>
-                            )}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="min-w-xs w-full m-2" align="center">
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <h4 className="font-medium">Filter by</h4>
-                                {activeFiltersCount > 0 && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={handleClearFilters}
-                                        className="h-8 text-muted-foreground hover:text-foreground"
-                                    >
-                                        <X className="size-3 mr-1" />
-                                        Clear all
-                                    </Button>
-                                )}
-                            </div>
-
-                            <Separator />
-
-                            <div className="flex flex-row gap-2 w-full">
-                                <div className="flex flex-col gap-2 w-full">
-                                    <Label>Trigger</Label>
-                                    <Select
-                                        value={filterState.trigger || "ALL"}
-                                        onValueChange={(value) =>
-                                            setFilterState((prev: { status: string; trigger: string }) => ({
-                                                ...prev,
-                                                trigger: value === "ALL" ? "" : value,
-                                            }))
-                                        }
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="All triggers" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="ALL">All triggers</SelectItem>
-                                            <SelectItem value="AUTOMATIC">Automatic</SelectItem>
-                                            <SelectItem value="MANUAL">Manual</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="flex flex-col gap-2 w-full">
-                                    <Label>Status</Label>
-                                    <Select
-                                        value={filterState.status || "ALL"}
-                                        onValueChange={(value) =>
-                                            setFilterState((prev: { status: string; trigger: string }) => ({
-                                                ...prev,
-                                                status: value === "ALL" ? "" : value,
-                                            }))
-                                        }
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="All statuses" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="ALL">All statuses</SelectItem>
-                                            <SelectItem value="PENDING">Pending</SelectItem>
-                                            <SelectItem value="QUEUED">Queued</SelectItem>
-                                            <SelectItem value="RUNNING">Running</SelectItem>
-                                            <SelectItem value="COMPLETED">Completed</SelectItem>
-                                            <SelectItem value="FAILED">Failed</SelectItem>
-                                            <SelectItem value="CANCELED">Canceled</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <Separator />
-
-                            <Button onClick={handleApplyFilters} className="w-full">
-                                Apply Filters
-                            </Button>
-                        </div>
-                    </PopoverContent>
-                </Popover>
-
-                <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleRefresh}
-                    disabled={isSearchPending || isJobsLoading || isRefetchingJobs}
-                    className={cn(
-                        "h-9 w-9",
-                        (isSearchPending || isJobsLoading || isRefetchingJobs) && "cursor-not-allowed",
-                    )}
-                >
-                    <RefreshCw
-                        className={cn(
-                            "size-4",
-                            (isSearchPending || isJobsLoading || isRefetchingJobs) && "animate-spin",
-                        )}
-                    />
-                    <span className="sr-only">Refresh</span>
-                </Button>
-
-                <div className="flex items-center border-l pl-4 ml-1">
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => pagination.goToPreviousPage()}
-                        disabled={!pagination.hasPreviousPage}
-                        className="h-9 w-9"
-                    >
-                        <ChevronLeft className="size-4" />
-                        <span className="sr-only">Previous page</span>
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => pagination.goToNextPage()}
-                        disabled={!pagination.hasNextPage}
-                        className="h-9 w-9 ml-2"
-                    >
-                        <ChevronRight className="size-4" />
-                        <span className="sr-only">Next page</span>
-                    </Button>
-                </div>
-            </div>
+    if (urlTabFilter === "details") {
+        return (
+            <WorkflowDetailsActions
+                workflow={workflow}
+                isLoading={isWorkflowLoading}
+                onEdit={() => setShowUpdateWorkflowDialog(true)}
+                onTerminate={() => setShowTerminateWorkflowDialog(true)}
+                onDelete={() => setShowDeleteWorkflowDialog(true)}
+            />
         )
-    )
+    }
+
+    if (urlTabFilter === "jobs") {
+        return (
+            <WorkflowJobsToolbar
+                workflow={workflow}
+                filters={filterState}
+                onFiltersChange={(patch) => setFilterState((previous) => ({ ...previous, ...patch }))}
+                isFiltersOpen={isFiltersOpen}
+                onFiltersOpenChange={handleFiltersOpenChange}
+                activeFiltersCount={activeFiltersCount}
+                onApplyFilters={handleApplyFilters}
+                onClearFilters={handleClearFilters}
+                onRefresh={handleRefresh}
+                isRefreshPending={isSearchPending || isJobsLoading || isRefetchingJobs}
+                isManualRunPending={isManualRunJobPending}
+                onManualRun={() => manualRunJob()}
+                hasNextPage={pagination.hasNextPage}
+                hasPreviousPage={pagination.hasPreviousPage}
+                onNextPage={() => pagination.goToNextPage()}
+                onPreviousPage={() => pagination.goToPreviousPage()}
+            />
+        )
+    }
+
+    return null
 }
 
 function renderWorkflowTabState(model: Parameters<typeof renderWorkflowDetailsAndJobsView>[0]) {
@@ -689,105 +504,17 @@ function renderWorkflowDetails(model: Parameters<typeof renderWorkflowDetailsAnd
                     onOpenChange={setShowDeleteWorkflowDialog}
                 />
 
-                <Card>
-                    <CardContent className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                            <div className="space-y-2">
-                                <span className="text-sm font-medium">Workflow kind</span>
-                                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                    {workflow?.kind === "HEARTBEAT" ? (
-                                        <HeartPulse className="h-4 w-4" />
-                                    ) : (
-                                        <Workflow className="h-4 w-4" />
-                                    )}
-                                    {workflow?.kind}
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <span className="text-sm font-medium">Execution schedule</span>
-                                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                    <Clock className="h-4 w-4" />
-                                    {interval}
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <span className="text-sm font-medium">Status</span>
-                                <Badge className={cn("text-sm flex items-center h-5", statusMeta.badgeClass)}>
-                                    <statusMeta.icon className={statusMeta.iconClass} />
-                                    {getStatusLabel(status, "workflow")}
-                                </Badge>
-                            </div>
-                            <div className="space-y-2">
-                                <span className="text-sm font-medium">Max consecutive failures allowed</span>
-                                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                    <Shield className="h-4 w-4" />
-                                    {workflow?.max_consecutive_job_failures_allowed}
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <span className="text-sm font-medium">Log retention</span>
-                                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                    <Database className="h-4 w-4" />
-                                    {workflow?.log_retention ? "Enabled" : "Disabled"}
-                                </div>
-                            </div>
-                        </div>
-
-                        <Separator />
-
-                        <div className="space-y-2">
-                            <span className="text-sm font-medium">Configuration</span>
-                            <div className="text-sm text-muted-foreground">
-                                <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
-                                    {workflow?.payload
-                                        ? JSON.stringify(JSON.parse(workflow.payload), null, 2)
-                                        : "No configuration available"}
-                                </pre>
-                            </div>
-                        </div>
-
-                        <Separator />
-
-                        <WorkflowAnalyticsPanel
-                            analytics={workflowAnalytics}
-                            error={analyticsError}
-                            isLoading={isAnalyticsLoading}
-                            isFetching={isAnalyticsFetching}
-                            logRetention={workflow.log_retention}
-                            onRetry={() => refetchAnalytics()}
-                            workflowKind={workflow.kind}
-                        />
-
-                        <Separator />
-
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center text-orange-600 dark:text-orange-400">
-                                    <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
-                                    <span className="text-sm font-medium">Failure tracking</span>
-                                </div>
-                                <span className="text-sm font-medium">
-                                    {workflow?.consecutive_job_failures_count ?? 0} /{" "}
-                                    {workflow?.max_consecutive_job_failures_allowed ?? 1}
-                                </span>
-                            </div>
-                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                                <div
-                                    className="bg-orange-500 h-1.5 rounded-full"
-                                    style={{
-                                        width: `${((workflow?.consecutive_job_failures_count ?? 0) / (workflow?.max_consecutive_job_failures_allowed ?? 1)) * 100}%`,
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    </CardContent>
-                    <CardFooter className="text-xs text-muted-foreground border-t">
-                        <span className="ml-auto">
-                            Last updated{" "}
-                            {formatDistanceToNow(new Date(workflow.updated_at), { addSuffix: true })}
-                        </span>
-                    </CardFooter>
-                </Card>
+                <WorkflowDetailsCard
+                    workflow={workflow}
+                    status={status}
+                    statusMeta={statusMeta}
+                    interval={interval}
+                    analytics={workflowAnalytics}
+                    analyticsError={analyticsError}
+                    isAnalyticsLoading={isAnalyticsLoading}
+                    isAnalyticsFetching={isAnalyticsFetching}
+                    onRetryAnalytics={() => refetchAnalytics()}
+                />
             </TabsContent>
         )
     )

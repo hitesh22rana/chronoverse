@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -757,8 +758,12 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 }
 
 // scanContainerLogStream publishes every nonblank line of one demuxed stream.
+//
 // The scanner error is published, not discarded: an unreadable line must surface
-// as a failure rather than end the stream in silence.
+// as a failure rather than end the stream in silence. A line past the cap is a
+// different condition, and is reported as a log line instead of an error: it says
+// nothing about whether the workload succeeded, so failing the execution over it
+// would blame the user for output the platform declined to carry.
 func scanContainerLogStream(ctx context.Context, stream *io.PipeReader, name string, lines chan<- containerLogLine, errs chan<- error) {
 	defer stream.Close()
 
@@ -771,7 +776,7 @@ func scanContainerLogStream(ctx context.Context, stream *io.PipeReader, name str
 	for scanner.Scan() {
 		message := scanner.Text()
 		if len(message) > dockerLogScanMaxLineBytes {
-			publishContainerLogError(ctx, errs, containerLogOversizedLineError(name))
+			publishContainerLogLine(ctx, lines, containerLogOversizedLine(name))
 			return
 		}
 
@@ -780,15 +785,32 @@ func scanContainerLogStream(ctx context.Context, stream *io.PipeReader, name str
 			continue
 		}
 
-		select {
-		case lines <- containerLogLine{stream: name, message: message}:
-		case <-ctx.Done():
+		if !publishContainerLogLine(ctx, lines, containerLogLine{stream: name, message: message}) {
 			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		publishContainerLogError(ctx, errs, containerLogScanError(name, err))
+		// bufio cannot resume after refusing a token, so an oversized line ends
+		// this stream; it is reported the same way an oversized token is.
+		if errors.Is(err, bufio.ErrTooLong) {
+			publishContainerLogLine(ctx, lines, containerLogOversizedLine(name))
+			return
+		}
+
+		publishContainerLogError(ctx, errs, status.Errorf(codes.Aborted, "failed to read container logs: %s stream: %v", name, err))
+	}
+}
+
+// publishContainerLogLine delivers one line unless ctx is already done, so a
+// scanner never parks on a consumer that stopped draining. It reports whether
+// the line was handed over.
+func publishContainerLogLine(ctx context.Context, lines chan<- containerLogLine, line containerLogLine) bool {
+	select {
+	case lines <- line:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -844,19 +866,20 @@ func isContainerLogStreamEnd(ctx context.Context, err error) bool {
 		errors.Is(err, context.DeadlineExceeded)
 }
 
-// containerLogScanError classifies a line-scanning failure.
-func containerLogScanError(stream string, err error) error {
-	if errors.Is(err, bufio.ErrTooLong) {
-		return containerLogOversizedLineError(stream)
+// containerLogOversizedLine is published in place of a line past the content cap,
+// naming the stream and the limit so a truncated run stays distinguishable from a
+// quiet one. It is a log line rather than a failure because the demultiplexer
+// cannot resume past the refused line: the rest of this stream is lost with it,
+// which the message states, but the workload's own outcome is unaffected.
+func containerLogOversizedLine(stream string) containerLogLine {
+	return containerLogLine{
+		stream: stream,
+		message: fmt.Sprintf(
+			"[chronoverse] %s log line exceeds the %d byte limit; the line and the rest of this stream were dropped",
+			stream,
+			dockerLogScanMaxLineBytes,
+		),
 	}
-
-	return status.Errorf(codes.Aborted, "failed to read container logs: %s stream: %v", stream, err)
-}
-
-// containerLogOversizedLineError reports a line past the content cap and names
-// it, so a truncated run stays distinguishable from a quiet one.
-func containerLogOversizedLineError(stream string) error {
-	return status.Errorf(codes.Aborted, "failed to read container logs: %s line exceeds the %d byte limit", stream, dockerLogScanMaxLineBytes)
 }
 
 // Build pulls an image from the registry, required for the image to be available locally.

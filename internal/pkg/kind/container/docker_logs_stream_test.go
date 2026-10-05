@@ -361,9 +361,11 @@ func TestStreamContainerLogsDeliversLinesAboveScannerDefaultLimit(t *testing.T) 
 	}
 }
 
-// TestStreamContainerLogsFailsOnOversizedLine requires an explicit failure instead of
-// a silent truncation, so an unreadable line cannot look like a clean run.
-func TestStreamContainerLogsFailsOnOversizedLine(t *testing.T) {
+// TestStreamContainerLogsTruncatesOversizedLine requires an explicit report instead
+// of a silent truncation, so an unreadable line cannot look like a clean run — and
+// requires it as output rather than as a failure, because the cap is a limit on what
+// the platform carries: a workload that trips it must not be recorded as failing.
+func TestStreamContainerLogsTruncatesOversizedLine(t *testing.T) {
 	t.Parallel()
 
 	// One byte past the documented cap: the boundary itself must stay usable.
@@ -384,28 +386,84 @@ func TestStreamContainerLogsFailsOnOversizedLine(t *testing.T) {
 	}
 
 	result := awaitDockerLogStream(t, logs, errs)
-	if got, want := logMessages(result.logs), []string{"delivered before the overflow"}; !slices.Equal(got, want) {
-		t.Fatalf("delivered %v, want %v", got, want)
-	}
-	if len(result.errs) != 1 {
-		t.Fatalf("Logs() errors = %v, want exactly one oversized-line failure", result.errs)
+	if len(result.errs) != 0 {
+		t.Fatalf("Logs() published %v, want no failure for a line past the cap", result.errs)
 	}
 
-	failure := result.errs[0]
-	if status.Code(failure) != codes.Aborted {
-		t.Fatalf("oversized-line code = %s, want %s: %v", status.Code(failure), codes.Aborted, failure)
+	// The line before the overflow survives, and the truncation replaces the
+	// refused line rather than being appended after it.
+	messages := logMessages(result.logs)
+	if len(messages) != 2 || messages[0] != "delivered before the overflow" {
+		t.Fatalf("delivered %v, want the line before the overflow then the truncation notice", messages)
 	}
-	if !strings.Contains(failure.Error(), fmt.Sprint(dockerLogScanMaxLineBytes)) {
-		t.Fatalf("oversized-line error %q does not name the %d byte limit", failure, dockerLogScanMaxLineBytes)
+
+	notice := messages[1]
+	if !strings.Contains(notice, fmt.Sprint(dockerLogScanMaxLineBytes)) {
+		t.Fatalf("truncation notice %q does not name the %d byte limit", notice, dockerLogScanMaxLineBytes)
 	}
-	if !strings.Contains(failure.Error(), dockerLogTestStdout) {
-		t.Fatalf("oversized-line error %q does not name the offending stream", failure)
+	if !strings.Contains(notice, dockerLogTestStdout) {
+		t.Fatalf("truncation notice %q does not name the offending stream", notice)
+	}
+	if result.logs[1].Stream != dockerLogTestStdout {
+		t.Fatalf("truncation notice stream = %q, want %q", result.logs[1].Stream, dockerLogTestStdout)
+	}
+}
+
+// TestStreamContainerLogsOversizedLineDoesNotFailExecution is the guard for the
+// consequence that matters: Execute reports the container's own exit status, so a
+// workload that exited 0 stays successful no matter how its output was framed.
+func TestStreamContainerLogsOversizedLineDoesNotFailExecution(t *testing.T) {
+	t.Parallel()
+
+	oversized := strings.Repeat("x", dockerLogScanMaxLineBytes+1)
+
+	for _, exitCode := range []int{0, 7} {
+		t.Run(fmt.Sprint("exit ", exitCode), func(t *testing.T) {
+			t.Parallel()
+
+			workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
+				logs: func(rw http.ResponseWriter, _ *http.Request) {
+					var stream bytes.Buffer
+					stream.Write(dockerLogFrame(stdcopy.Stdout, "before\n"))
+					stream.Write(dockerLogFrame(stdcopy.Stdout, oversized+"\n"))
+					writeDockerTestResponse(t, rw, stream.String())
+				},
+				wait: func(rw http.ResponseWriter, _ *http.Request) {
+					rw.Header().Set("Content-Type", "application/json")
+					writeDockerTestResponse(t, rw, fmt.Sprintf(`{"StatusCode":%d,"Error":null}`, exitCode))
+				},
+			})
+
+			_, logs, errs, err := workflow.Execute(t.Context(), time.Minute, "alpine:latest", []string{"true"}, nil)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			result := awaitDockerLogStream(t, logs, errs)
+			if exitCode == 0 {
+				if len(result.errs) != 0 {
+					t.Fatalf("an exited-0 workload published %v, want its success to stand", result.errs)
+				}
+				return
+			}
+
+			// A real failure keeps its own reason: the truncation neither masks
+			// it nor adds a second, competing one.
+			if len(result.errs) != 1 {
+				t.Fatalf("a non-zero exit published %d failures, want exactly the exit one: %v", len(result.errs), result.errs)
+			}
+			if !strings.Contains(result.errs[0].Error(), "container exited with non-zero code: 7") {
+				t.Fatalf("failure = %q, want the container's own exit reason", result.errs[0])
+			}
+		})
 	}
 }
 
 // TestStreamContainerLogsLineCapBoundary pins the cap for every terminator the daemon
 // can send — LF, CRLF and an unterminated final line — since bufio counts the
-// terminator against its maximum and strips the CR of a CRLF.
+// terminator against its maximum and strips the CR of a CRLF. Both ways a line can
+// exceed the cap are covered: the explicit length check, and the buffer refusing a
+// token outright.
 func TestStreamContainerLogsLineCapBoundary(t *testing.T) {
 	t.Parallel()
 
@@ -418,13 +476,16 @@ func TestStreamContainerLogsLineCapBoundary(t *testing.T) {
 		{name: "unterminated EOF", suffix: ""},
 	}
 	sizes := []struct {
-		name      string
-		content   int
-		wantError bool
+		name           string
+		content        int
+		wantTruncation bool
 	}{
 		{name: "one byte below the cap", content: dockerLogScanMaxLineBytes - 1},
 		{name: "exactly at the cap", content: dockerLogScanMaxLineBytes},
-		{name: "one byte above the cap", content: dockerLogScanMaxLineBytes + 1, wantError: true},
+		{name: "one byte above the cap", content: dockerLogScanMaxLineBytes + 1, wantTruncation: true},
+		// Past cap+2 the buffer itself refuses the token, so this exercises the
+		// bufio.ErrTooLong path rather than the explicit length check.
+		{name: "two bytes above the cap plus terminator", content: dockerLogScanMaxLineBytes + 3, wantTruncation: true},
 	}
 
 	for _, terminator := range terminators {
@@ -457,16 +518,18 @@ func TestStreamContainerLogsLineCapBoundary(t *testing.T) {
 				if terminator.suffix != "" {
 					want = append(want, "after")
 				}
-				if size.wantError {
-					if len(result.errs) != 1 {
-						t.Fatalf("a %d byte line published %d errors, want exactly one: %v", size.content, len(result.errs), result.errs)
+				if size.wantTruncation {
+					if len(result.errs) != 0 {
+						t.Fatalf("a %d byte line published %d errors, want none: %v", size.content, len(result.errs), result.errs)
 					}
-					if !strings.Contains(result.errs[0].Error(), fmt.Sprint(dockerLogScanMaxLineBytes)) {
-						t.Fatalf("error %q does not name the %d byte limit", result.errs[0], dockerLogScanMaxLineBytes)
+					// The line before the overflow is published, then the notice
+					// replaces the refused line.
+					got := logMessages(result.logs)
+					if len(got) != 2 || got[0] != want[0] {
+						t.Fatalf("delivered %v, want the line before the overflow then the truncation notice", got)
 					}
-					// The lines before the overflow are still published.
-					if got := logMessages(result.logs); !slices.Equal(got, want[:1]) {
-						t.Fatalf("delivered %v, want the lines before the overflow", got)
+					if !strings.Contains(got[1], fmt.Sprint(dockerLogScanMaxLineBytes)) {
+						t.Fatalf("truncation notice %q does not name the %d byte limit", got[1], dockerLogScanMaxLineBytes)
 					}
 					return
 				}
@@ -482,6 +545,46 @@ func TestStreamContainerLogsLineCapBoundary(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestStreamContainerLogsTruncationStopsOnlyTheOffendingStream records the cost of
+// the cap: stdcopy has no way to resume past a line it has already framed, so
+// closing the scanner's pipe ends the demultiplexer too. The other stream is
+// unaffected, and the notice is what tells a consumer the tail is missing rather
+// than never having been produced.
+func TestStreamContainerLogsTruncationStopsOnlyTheOffendingStream(t *testing.T) {
+	t.Parallel()
+
+	oversized := strings.Repeat("x", dockerLogScanMaxLineBytes+1)
+
+	workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
+		logs: func(rw http.ResponseWriter, _ *http.Request) {
+			var stream bytes.Buffer
+			stream.Write(dockerLogFrame(stdcopy.Stdout, "stdout before\n"))
+			stream.Write(dockerLogFrame(stdcopy.Stdout, oversized+"\n"))
+			stream.Write(dockerLogFrame(stdcopy.Stderr, "stderr after the overflow\n"))
+			writeDockerTestResponse(t, rw, stream.String())
+		},
+	})
+
+	logs, errs, err := workflow.Logs(t.Context(), dockerLogTestContainerID)
+	if err != nil {
+		t.Fatalf("Logs() error = %v", err)
+	}
+
+	result := awaitDockerLogStream(t, logs, errs)
+	if len(result.errs) != 0 {
+		t.Fatalf("Logs() published %v, want no failure for a line past the cap", result.errs)
+	}
+
+	byStream := logMessagesByStream(result.logs)
+	if !slices.Equal(byStream[dockerLogTestStderr], []string{"stderr after the overflow"}) {
+		t.Fatalf("stderr delivered %v, want the line after the overflow: stdout truncation must not stop the other stream",
+			byStream[dockerLogTestStderr])
+	}
+	if len(byStream[dockerLogTestStdout]) != 2 || byStream[dockerLogTestStdout][0] != "stdout before" {
+		t.Fatalf("stdout delivered %v, want the line before the overflow then the notice", byStream[dockerLogTestStdout])
 	}
 }
 

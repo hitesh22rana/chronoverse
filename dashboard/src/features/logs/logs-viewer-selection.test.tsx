@@ -228,6 +228,9 @@ afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    // Tests assign the hash directly, so clear it here too: a test that starts
+    // by asserting "no selection" must not inherit the previous test's anchor.
+    window.history.replaceState(null, "", "/workflows/w1/jobs/j1")
     // `userEvent.setup()` and the clipboard test below both replace the
     // descriptor; put the one this file started with back.
     if (clipboardDescriptor) {

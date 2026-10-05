@@ -35,6 +35,20 @@ const mocks = vi.hoisted(() => ({
     revoked: [] as string[],
 }))
 
+vi.mock("next/navigation", () => ({
+    usePathname: () => mocks.pathname,
+    useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
+    useSearchParams: () => new URLSearchParams(mocks.search),
+}))
+
+vi.mock("sonner", () => ({ toast: mocks.toast, Toaster: () => null }))
+
+vi.mock("@/lib/api/client", () => ({
+    fetchApi: mocks.fetchApi,
+    fetchApiJson: mocks.fetchApiJson,
+    createIdempotencyKey: () => "idempotency-key",
+}))
+
 class FakeEventSource {
     static CONNECTING = 0
     static OPEN = 1
@@ -438,16 +452,4 @@ it("reports a failed download and clears the pending state", async () => {
     await waitFor(() => expect(screen.getByTestId("downloading").textContent).toBe("false"))
 })
 
-vi.mock("next/navigation", () => ({
-    usePathname: () => mocks.pathname,
-    useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
-    useSearchParams: () => new URLSearchParams(mocks.search),
-}))
 
-vi.mock("sonner", () => ({ toast: mocks.toast, Toaster: () => null }))
-
-vi.mock("@/lib/api/client", () => ({
-    fetchApi: mocks.fetchApi,
-    fetchApiJson: mocks.fetchApiJson,
-    createIdempotencyKey: () => "idempotency-key",
-}))

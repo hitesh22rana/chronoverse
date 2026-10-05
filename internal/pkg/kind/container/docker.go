@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -41,6 +41,25 @@ const (
 	dockerMaxIdleConns        = 6
 	legacyDockerProxyPort     = "2375"
 	dockerProxyTLSPort        = "2376"
+
+	// dockerLogStreamStdout / dockerLogStreamStderr label published log lines.
+	dockerLogStreamStdout = "stdout"
+	dockerLogStreamStderr = "stderr"
+
+	// dockerLogScanBufferBytes is the initial line-scan buffer; longer lines grow
+	// it up to dockerLogScanMaxLineBytes instead of reallocating per line.
+	dockerLogScanBufferBytes = 64 << 10
+
+	// dockerLogScanMaxLineBytes caps a published log line at 256 KiB, four times
+	// bufio.MaxScanTokenSize, past which Scanner would end the stream in silence;
+	// a longer line is reported. Content bound only: escaping can enlarge the record.
+	dockerLogScanMaxLineBytes = 256 << 10
+
+	// maxContainerLogStreamErrors is how many failures the demuxer and the two
+	// scanners can publish. Buffers that wide never block a producer, so neither
+	// a broken stream nor an abandoned consumer can strand the channel owner;
+	// Execute adds one slot for its terminal failure.
+	maxContainerLogStreamErrors = 3
 
 	// capDropAll drops every Linux capability from workload containers.
 	capDropAll = "ALL"
@@ -506,7 +525,10 @@ func (w *DockerWorkflow) Execute(
 	}
 
 	logs := make(chan *jobsmodel.JobLog)
-	errs := make(chan error)
+	// Sized for every stream failure plus one terminal result, so neither blocks
+	// on a consumer that stopped draining. The terminal result is sent
+	// unconditionally: a caller that canceled still needs to learn why it ended.
+	errs := make(chan error, maxContainerLogStreamErrors+1)
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 
@@ -522,6 +544,14 @@ func (w *DockerWorkflow) Execute(
 			defer close(logsDone)
 			w.streamContainerLogs(timeoutCtx, containerID, logs, errs, true)
 		}()
+
+		// The stream goroutine is the only other publisher on logs and errs, so it
+		// must be finished before the deferred closes run; canceling first bounds
+		// the join by aborting the daemon read.
+		stopLogStream := func() {
+			cancel()
+			<-logsDone
+		}
 
 		select {
 		case <-timeoutCtx.Done():
@@ -539,18 +569,12 @@ func (w *DockerWorkflow) Execute(
 			})
 			stopCancel()
 
-			select {
-			case <-logsDone:
-			case <-time.After(100 * time.Millisecond):
-			}
+			stopLogStream()
 			return
 
 		case err := <-waitErrCh:
 			if strings.Contains(err.Error(), "No such container") {
-				select {
-				case <-logsDone:
-				case <-time.After(100 * time.Millisecond):
-				}
+				stopLogStream()
 				return
 			}
 
@@ -562,7 +586,12 @@ func (w *DockerWorkflow) Execute(
 				errs <- status.Errorf(codes.Aborted, "container execution error: %v", err)
 			}
 
+			stopLogStream()
+			return
+
 		case containerStatus := <-statusCh:
+			// The daemon ends the log stream once the container exits, so
+			// wait for it here and let the deferred cancel follow the drain.
 			<-logsDone
 
 			if containerStatus.StatusCode != 0 {
@@ -620,7 +649,9 @@ func (w *DockerWorkflow) Logs(ctx context.Context, containerID string) (logs <-c
 	}
 
 	logsCh := make(chan *jobsmodel.JobLog)
-	errsCh := make(chan error, 1)
+	// Wide enough for every stream failure the demuxer and both scanners
+	// can publish, so the forwarder never blocks on its own errors.
+	errsCh := make(chan error, maxContainerLogStreamErrors)
 
 	go func() {
 		defer close(logsCh)
@@ -632,9 +663,18 @@ func (w *DockerWorkflow) Logs(ctx context.Context, containerID string) (logs <-c
 	return logsCh, errsCh, nil
 }
 
+// containerLogLine is one demuxed container log line awaiting publication.
+type containerLogLine struct {
+	stream  string
+	message string
+}
+
 // streamContainerLogs streams container logs and properly demuxes stdout/stderr.
 //
-//nolint:gocyclo // This function is not complex enough to warrant a refactor
+// It is the only allocator of sequence numbers, so every line gets a unique,
+// contiguous, zero-based sequence however the two streams interleave. Every send
+// selects on ctx and the daemon read is aborted on ctx, so it always returns:
+// callers that own the channels may join it before closing them.
 func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID string, logCh chan<- *jobsmodel.JobLog, errs chan<- error, follow bool) {
 	reader, err := w.Client.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
@@ -642,98 +682,212 @@ func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID st
 		Follow:     follow,
 	})
 	if err != nil {
-		// To distinguish between Docker daemon unavailability and other errors
-		switch {
-		case cerrdefs.IsNotFound(err):
-			errs <- status.Errorf(codes.NotFound, "container not found: %v", err)
-		case client.IsErrConnectionFailed(err):
-			errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
-		default:
-			errs <- status.Errorf(codes.Aborted, "failed to get container logs: %v", err)
-		}
+		publishContainerLogError(ctx, errs, containerLogRequestError(err))
 		return
 	}
 	defer reader.Close()
 
-	var sequenceNum uint32
+	// Abort the daemon body read on cancellation instead of waiting it out.
+	stopReaderOnCancel := context.AfterFunc(ctx, func() {
+		_ = reader.Close()
+	})
+	defer stopReaderOnCancel()
 
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
+	// Closing the readers releases a demuxer write, so an early-stopping
+	// scanner cannot strand the writer.
+	defer stdoutReader.Close()
+	defer stderrReader.Close()
 
-	logMessages := make(chan *jobsmodel.JobLog)
+	lines := make(chan containerLogLine)
+	streamErrs := make(chan error, maxContainerLogStreamErrors)
 
-	go func() {
+	var producers sync.WaitGroup
+	producers.Go(func() {
 		defer stdoutWriter.Close()
 		defer stderrWriter.Close()
-		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, reader)
-		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
-			if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-			if client.IsErrConnectionFailed(err) {
-				errs <- status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
-			} else {
-				errs <- status.Errorf(codes.Aborted, "failed to read container logs: %v", err)
-			}
-		}
-	}()
 
-	var wg sync.WaitGroup
-
-	wg.Go(func() {
-		defer stdoutReader.Close()
-
-		scanner := bufio.NewScanner(stdoutReader)
-		for scanner.Scan() {
-			msg := scanner.Text()
-			if msg != "" {
-				select {
-				case logMessages <- &jobsmodel.JobLog{Timestamp: time.Now(), Message: msg, SequenceNum: atomic.LoadUint32(&sequenceNum), Stream: "stdout"}:
-					atomic.AddUint32(&sequenceNum, 1)
-				case <-ctx.Done():
-					return
-				}
-			}
+		if _, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, reader); err != nil {
+			publishContainerLogError(ctx, streamErrs, containerLogReadError(ctx, err))
 		}
 	})
-
-	wg.Go(func() {
-		defer stderrReader.Close()
-
-		scanner := bufio.NewScanner(stderrReader)
-		for scanner.Scan() {
-			msg := scanner.Text()
-			if msg != "" {
-				select {
-				case logMessages <- &jobsmodel.JobLog{Timestamp: time.Now(), Message: msg, SequenceNum: atomic.LoadUint32(&sequenceNum), Stream: "stderr"}:
-					atomic.AddUint32(&sequenceNum, 1)
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
+	producers.Go(func() {
+		scanContainerLogStream(ctx, stdoutReader, dockerLogStreamStdout, lines, streamErrs)
 	})
-
+	producers.Go(func() {
+		scanContainerLogStream(ctx, stderrReader, dockerLogStreamStderr, lines, streamErrs)
+	})
+	// Closed only once every producer returned, so no send can race the close.
 	go func() {
-		wg.Wait()
-		close(logMessages)
+		producers.Wait()
+		close(lines)
+		close(streamErrs)
 	}()
 
-	for {
+	var sequenceNum uint32
+	for lines != nil || streamErrs != nil {
 		select {
-		case msg, ok := <-logMessages:
+		case line, ok := <-lines:
 			if !ok {
-				return
+				lines = nil
+				continue
 			}
 
 			select {
-			case logCh <- msg:
+			case logCh <- &jobsmodel.JobLog{
+				Timestamp:   time.Now(),
+				Message:     line.message,
+				SequenceNum: sequenceNum,
+				Stream:      line.stream,
+			}:
+				sequenceNum++
 			case <-ctx.Done():
 				return
 			}
+		case streamErr, ok := <-streamErrs:
+			if !ok {
+				streamErrs = nil
+				continue
+			}
+			publishContainerLogError(ctx, errs, streamErr)
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// scanContainerLogStream publishes every nonblank line of one demuxed stream.
+//
+// The scanner error is published, not discarded: an unreadable line must surface
+// as a failure rather than end the stream in silence. A line past the cap is a
+// different condition, and is reported as a log line instead of an error: it says
+// nothing about whether the workload succeeded, so failing the execution over it
+// would blame the user for output the platform declined to carry.
+func scanContainerLogStream(ctx context.Context, stream *io.PipeReader, name string, lines chan<- containerLogLine, errs chan<- error) {
+	// Abandoning this stream must not abandon the other one. Closing the reader
+	// would fail the demultiplexer's next write and end both, so the rest of this
+	// stream is read to the void instead: the demuxer stays up and the other
+	// stream keeps draining. It ends when the daemon stream does, or on cancellation,
+	// which aborts the read.
+	defer func() {
+		//nolint:errcheck // The bytes are discarded by design; only the read matters.
+		_, _ = io.Copy(io.Discard, stream)
+		_ = stream.Close()
+	}()
+
+	scanner := bufio.NewScanner(stream)
+	// Room for the cap plus the longest terminator bufio can meet (bare LF, or a
+	// CRLF whose CR it strips), which it counts against its maximum. Tokens over
+	// the cap are rejected below: an unterminated EOF line has no terminator.
+	scanner.Buffer(make([]byte, 0, dockerLogScanBufferBytes), dockerLogScanMaxLineBytes+2)
+
+	for scanner.Scan() {
+		message := scanner.Text()
+		if len(message) > dockerLogScanMaxLineBytes {
+			publishContainerLogLine(ctx, lines, containerLogOversizedLine(name))
+			return
+		}
+
+		// A blank line carries nothing and must not consume a sequence number.
+		if message == "" {
+			continue
+		}
+
+		if !publishContainerLogLine(ctx, lines, containerLogLine{stream: name, message: message}) {
+			return
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		// bufio cannot resume after refusing a token, so an oversized line ends
+		// this stream; it is reported the same way an oversized token is.
+		if errors.Is(err, bufio.ErrTooLong) {
+			publishContainerLogLine(ctx, lines, containerLogOversizedLine(name))
+			return
+		}
+
+		publishContainerLogError(ctx, errs, status.Errorf(codes.Aborted, "failed to read container logs: %s stream: %v", name, err))
+	}
+}
+
+// publishContainerLogLine delivers one line unless ctx is already done, so a
+// scanner never parks on a consumer that stopped draining. It reports whether
+// the line was handed over.
+func publishContainerLogLine(ctx context.Context, lines chan<- containerLogLine, line containerLogLine) bool {
+	select {
+	case lines <- line:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// publishContainerLogError delivers a stream failure unless ctx is already done,
+// checked first so cancellation cannot race the send into a ready buffer and turn
+// a caller-closed reader into a reported failure. The select covers cancellation
+// arriving mid-publication, and a blocked send stays the fallback for a caller that
+// abandoned the channel, so the publisher can always be joined.
+func publishContainerLogError(ctx context.Context, errs chan<- error, err error) {
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+
+	select {
+	case errs <- err:
+	case <-ctx.Done():
+	}
+}
+
+// containerLogRequestError classifies a failure to open the daemon log stream.
+func containerLogRequestError(err error) error {
+	switch {
+	case cerrdefs.IsNotFound(err):
+		return status.Errorf(codes.NotFound, "container not found: %v", err)
+	case client.IsErrConnectionFailed(err):
+		return status.Errorf(codes.Unavailable, "docker daemon unavailable: %v", err)
+	default:
+		return status.Errorf(codes.Aborted, "failed to get container logs: %v", err)
+	}
+}
+
+// containerLogReadError classifies a demultiplexing failure, returning nil when
+// the stream simply ended. Every remaining failure is Aborted: the demultiplexer
+// reads the response body, so its errors are read, framing, or pipe failures, and
+// a refused dial surfaces from ContainerLogs instead. Only the request path can
+// carry client.IsErrConnectionFailed, and containerLogRequestError classifies it.
+func containerLogReadError(ctx context.Context, err error) error {
+	if isContainerLogStreamEnd(ctx, err) {
+		return nil
+	}
+
+	return status.Errorf(codes.Aborted, "failed to read container logs: %v", err)
+}
+
+// isContainerLogStreamEnd reports whether the demuxer stopped because the stream
+// or the caller's context ended, neither of which is a failure to report.
+func isContainerLogStreamEnd(ctx context.Context, err error) bool {
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrClosedPipe) ||
+		ctx.Err() != nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded)
+}
+
+// containerLogOversizedLine is published in place of a line past the content cap,
+// naming the stream and the limit so a truncated run stays distinguishable from a
+// quiet one. It is a log line rather than a failure because the demultiplexer
+// cannot resume past the refused line: the rest of this stream is dropped with it,
+// which the message states, while the other stream drains to its own end. Either
+// way the workload's own outcome is unaffected.
+func containerLogOversizedLine(stream string) containerLogLine {
+	return containerLogLine{
+		stream: stream,
+		message: fmt.Sprintf(
+			"[chronoverse] %s log line exceeds the %d byte limit; the line and the rest of this stream were dropped",
+			stream,
+			dockerLogScanMaxLineBytes,
+		),
 	}
 }
 

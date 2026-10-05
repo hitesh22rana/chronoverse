@@ -563,15 +563,30 @@ class ClearStaleReportsTest(unittest.TestCase):
         # Passing a report this run clears would delete the input and then fail.
         planted = self.touch(crap_report.DASHBOARD_LCOV.as_posix(), LCOV)
         with self.assertRaisesRegex(crap_report.CoverageError, "clears"):
-            crap_report.check_inputs_survive_clearing(
-                self.root, [None, crap_report.DASHBOARD_LCOV]
-            )
+            crap_report.resolve_inputs(self.root, [None, crap_report.DASHBOARD_LCOV])
         self.assertEqual(planted.read_text(), LCOV)
 
     def test_input_outside_every_cleared_tree_is_accepted(self):
         self.touch(crap_report.GO_PROFILE.as_posix(), "mode: atomic\n")
         staged = self.touch(f"{crap_report.INPUT_DIR}/unit/coverage.out", GO_UNIT)
-        crap_report.check_inputs_survive_clearing(self.root, [staged, None])
+        resolved = crap_report.resolve_inputs(self.root, [staged, None])
+        self.assertEqual(resolved, [staged, None])
+
+    def test_relative_input_resolves_against_the_root_not_the_cwd(self):
+        # `--repo-root` must govern where a relative input is read from, so a run
+        # from another directory still finds the profile the root is holding.
+        self.touch(f"{crap_report.INPUT_DIR}/unit/coverage.out", GO_UNIT)
+        resolved = crap_report.resolve_inputs(
+            self.root, [Path(f"{crap_report.INPUT_DIR}/unit/coverage.out"), None]
+        )
+        self.assertEqual(resolved, [self.root / crap_report.INPUT_DIR / "unit/coverage.out", None])
+
+    def test_missing_input_is_refused_before_anything_is_cleared(self):
+        # Clearing first would destroy the previous run's reports over a typo'd path.
+        previous = self.touch(crap_report.GO_PROFILE.as_posix(), "mode: atomic\n")
+        with self.assertRaisesRegex(crap_report.CoverageError, "not found"):
+            crap_report.resolve_inputs(self.root, [Path("target/coverage-inputs/absent.out")])
+        self.assertEqual(previous.read_text(), "mode: atomic\n")
 
 
 class MainTest(unittest.TestCase):

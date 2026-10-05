@@ -527,12 +527,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def check_inputs_survive_clearing(root: Path, inputs: list[Path | None]) -> None:
-    """Refuse an input this run would delete before clearing anything."""
+def resolve_inputs(root: Path, inputs: list[Path | None]) -> list[Path | None]:
+    """Resolve inputs against the repo root, refusing unusable ones before clearing.
+
+    A relative path resolves against `root`, not the process CWD, so `--repo-root`
+    governs where inputs are read from. Two refusals happen here rather than after
+    `clear_stale_reports` has already destroyed the previous run's reports: an input
+    this run would delete, and an input that does not exist. `None` placeholders are
+    kept so the caller can unpack by position.
+    """
 
     stale = {path.resolve() for path in stale_reports(root)}
+    resolved: list[Path | None] = []
     for path in inputs:
         if path is None:
+            resolved.append(None)
             continue
         candidate = path if path.is_absolute() else root / path
         if candidate.resolve() in stale:
@@ -540,6 +549,10 @@ def check_inputs_survive_clearing(root: Path, inputs: list[Path | None]) -> None
                 f"{path} is a report this run clears, so clearing it would destroy an "
                 f"input. Stage the per-job reports outside those trees, e.g. {INPUT_DIR}."
             )
+        if not candidate.is_file():
+            raise CoverageError(f"input not found: {path}")
+        resolved.append(candidate)
+    return resolved
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -549,21 +562,23 @@ def main(argv: list[str] | None = None) -> int:
     if not metrics.is_absolute():
         metrics = root / metrics
 
-    check_inputs_survive_clearing(root, [args.go_unit, args.go_integration, args.dashboard_lcov])
+    go_unit, go_integration, dashboard_lcov = resolve_inputs(
+        root, [args.go_unit, args.go_integration, args.dashboard_lcov]
+    )
     removed = clear_stale_reports(root)
     if removed:
         print(f"Removed stale reports: {', '.join(removed)}")
 
     tracked = tracked_files(root)
-    if args.go_unit or args.go_integration:
-        profiles = [path for path in (args.go_unit, args.go_integration) if path]
+    if go_unit or go_integration:
+        profiles = [path for path in (go_unit, go_integration) if path]
         merged = merge_go_profiles(profiles, root / GO_PROFILE, module_paths(root, tracked))
         print(
             f"Merged {len(profiles)} Go profile(s) into {GO_PROFILE} "
             f"({merged['blocks']} blocks across {merged['files']} files)"
         )
-    if args.dashboard_lcov:
-        prefix_lcov_report(args.dashboard_lcov, root / DASHBOARD_LCOV, args.dashboard_prefix)
+    if dashboard_lcov:
+        prefix_lcov_report(dashboard_lcov, root / DASHBOARD_LCOV, args.dashboard_prefix)
         print(f"Wrote {DASHBOARD_LCOV} with SF: paths rooted at {args.dashboard_prefix}/")
 
     files = handwritten_sources(root, tracked)

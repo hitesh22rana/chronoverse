@@ -87,10 +87,12 @@ target/coverage-inputs/{unit,integration}/          the raw per-job profiles
 - hit counts are added across blocks, because CRAP only asks whether a block was
   entered at all;
 - the merged report and every LCOV crapper would read are deleted first, so a
-  profile left by an earlier run cannot be merged in by accident. The per-job
-  inputs are staged under `target/coverage-inputs`, outside everything that is
-  cleared, and an input that this run would clear is refused before anything is
-  deleted.
+  profile left by an earlier run cannot be merged in by accident. Inputs are
+  resolved against `--repo-root` rather than the working directory, and both an
+  input this run would clear and one that does not exist are refused *before*
+  anything is deleted, so a mistyped path cannot cost you the last report. The
+  per-job inputs are staged under `target/coverage-inputs`, outside everything
+  that is cleared.
 
 Run the script's own tests with:
 

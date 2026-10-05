@@ -140,7 +140,7 @@ function renderPage(search = "") {
             <WorkflowDetailsAndJobsPage />
         </QueryClientProvider>,
     )
-    return { ...view, user }
+    return { ...view, user, queryClient }
 }
 
 /** The mocked transport records `[url, errorMessage, init]` per call. */
@@ -337,6 +337,24 @@ it("reports a failed workflow load without offering a lifecycle action", async (
     expect(screen.getByRole("button", { name: /Edit workflow/ })).toBeTruthy()
     // A failed load leaves the lifecycle unknown and the lifecycle dialogs
     // unmounted, so the strip must not offer terminate or delete.
+    expect(screen.queryByRole("button", { name: /Terminate workflow/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Delete workflow/ })).toBeNull()
+})
+
+it("withdraws the lifecycle action when a refetch fails after a good load", async () => {
+    const { queryClient } = renderPage()
+    expect(await screen.findByRole("button", { name: /Terminate workflow/ })).toBeTruthy()
+
+    // Polling or a refetch on focus fails later, and react-query keeps the last
+    // good payload, so the workflow still looks loaded. The dialogs unmount on
+    // the error, which leaves the action strip offering a button that opens
+    // nothing.
+    mocks.workflow = new Error("failed to fetch workflow details: offline") as never
+    await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ["workflow", "w1"] })
+    })
+
+    expect(await screen.findByText("Error loading workflow details")).toBeTruthy()
     expect(screen.queryByRole("button", { name: /Terminate workflow/ })).toBeNull()
     expect(screen.queryByRole("button", { name: /Delete workflow/ })).toBeNull()
 })

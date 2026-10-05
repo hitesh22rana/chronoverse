@@ -151,6 +151,12 @@ function useWorkflowDetailsAndJobsModel() {
 
     const activeFiltersCount = [statusFilter, triggerFilter].filter(Boolean).length
 
+    // The only state in which the page can act on the workflow. A failed refetch
+    // keeps the last good payload in the cache, so `workflow` alone still looks
+    // loaded; every consumer below must key off this instead, or the action
+    // strip will offer buttons whose dialogs are not mounted.
+    const hasLoadedWorkflow = !isWorkflowLoading && !workflowError
+
     return {
         isSearchPending,
         isFiltersOpen,
@@ -159,6 +165,7 @@ function useWorkflowDetailsAndJobsModel() {
         urlTabFilter,
         workflow,
         isWorkflowLoading,
+        hasLoadedWorkflow,
         workflowError,
         workflowAnalytics,
         isAnalyticsLoading,
@@ -371,6 +378,7 @@ function renderWorkflowActions(model: Parameters<typeof renderWorkflowDetailsAnd
         urlTabFilter,
         isSearchPending,
         workflow,
+        hasLoadedWorkflow,
         isJobsLoading,
         isRefetchingJobs,
         filterState,
@@ -392,7 +400,7 @@ function renderWorkflowActions(model: Parameters<typeof renderWorkflowDetailsAnd
     if (urlTabFilter === "details") {
         return (
             <WorkflowDetailsActions
-                workflow={workflow}
+                workflow={hasLoadedWorkflow ? workflow : undefined}
                 onEdit={() => setShowUpdateWorkflowDialog(true)}
                 onTerminate={() => setShowTerminateWorkflowDialog(true)}
                 onDelete={() => setShowDeleteWorkflowDialog(true)}
@@ -459,7 +467,7 @@ function renderWorkflowDetails(model: Parameters<typeof renderWorkflowDetailsAnd
         urlTabFilter,
         workflow,
         isWorkflowLoading,
-        workflowError,
+        hasLoadedWorkflow,
         workflowAnalytics,
         isAnalyticsLoading,
         isAnalyticsFetching,
@@ -478,7 +486,7 @@ function renderWorkflowDetails(model: Parameters<typeof renderWorkflowDetailsAnd
     return urlTabFilter === "details" && isWorkflowLoading ? (
         <WorkflowDetailsSkeleton />
     ) : (
-        urlTabFilter === "details" && !isWorkflowLoading && !workflowError && (
+        urlTabFilter === "details" && hasLoadedWorkflow && (
             <TabsContent value="details" className="h-full w-full">
                 <UpdateWorkflowDialog
                     workflowId={workflow.id}

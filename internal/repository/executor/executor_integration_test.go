@@ -17,7 +17,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	testkit.Run(m, testkit.WithRedis(), testkit.WithKafka())
+	testkit.Run(m, testkit.WithPostgres(), testkit.WithRedis(), testkit.WithKafka())
 }
 
 func TestIntegrationImagePullLockSerializesBuilds(t *testing.T) {

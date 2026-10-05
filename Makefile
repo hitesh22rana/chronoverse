@@ -22,11 +22,38 @@ lint: dependencies
 lint/fix: dependencies
 	@${GO_BIN}/golangci-lint run --fix
 
+# Coverage is opt-in and rides along with the test runs that already gate the
+# build: make test/short COVERPROFILE=<file> instruments the same `go test`
+# invocation, no second run. COVERMODE is fixed to atomic because -race needs
+# atomic counters, and both targets must agree for their profiles to merge.
+COVERMODE?=atomic
+COVERFLAGS=$(if $(COVERPROFILE),-covermode=$(COVERMODE) -coverprofile=$(COVERPROFILE))
+
+# Where the per-job profiles are staged before they are merged, outside
+# target/coverage, which crap_report.py clears between runs.
+COVERAGE_INPUTS=target/coverage-inputs
+UNIT_COVERPROFILE=$(COVERAGE_INPUTS)/unit/coverage.out
+INTEGRATION_COVERPROFILE=$(COVERAGE_INPUTS)/integration/coverage.out
+DASHBOARD_LCOV=dashboard/coverage/lcov.info
+
+# Interpreter that has the pinned crapper installed (see docs/coverage.md).
+PYTHON?=python3
+
+# Merges the profiles the test jobs wrote and scores the handwritten sources.
+# Needs all three reports on disk; no suite is rerun here.
+.PHONY: coverage/crap
+coverage/crap:
+	@$(PYTHON) scripts/coverage/crap_report.py \
+		--go-unit $(UNIT_COVERPROFILE) \
+		--go-integration $(INTEGRATION_COVERPROFILE) \
+		--dashboard-lcov $(DASHBOARD_LCOV)
+
 # Runs every unit suite with the race detector. Docker-backed integration
 # tests self-skip under -short and are covered by test/integration.
 .PHONY: test/short
 test/short: dependencies
-	@go test -race -short ./...
+	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
+	@go test -race -short $(strip $(COVERFLAGS)) ./...
 
 # Runs all Docker-backed suites (Testcontainers and direct-daemon tests) by
 # selecting every TestIntegration* test. Requires a running Docker daemon.
@@ -35,7 +62,8 @@ test/short: dependencies
 # windows.
 .PHONY: test/integration
 test/integration: dependencies
-	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' ./...
+	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
+	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' $(strip $(COVERFLAGS)) ./...
 
 .PHONY: k8s/setup
 k8s/setup:

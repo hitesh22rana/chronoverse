@@ -83,8 +83,17 @@ jobs:
       # Run every unit suite with the race detector. Docker-backed integration
       # tests skip under -short and are covered by the dedicated `integration`
       # job below, so this gate stays fast and Docker-independent.
+      # COVERPROFILE instruments this run; no test executes twice.
       - name: Run tests
-        run: make test/short
+        run: make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out
+
+      - name: Upload unit coverage profile
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-unit
+          path: target/coverage-inputs/unit/coverage.out
+          if-no-files-found: error
+          retention-days: 14
 
   integration:
     name: Integration tests (Docker)
@@ -113,8 +122,18 @@ jobs:
           # test case is deliberately not pre-pulled.
           docker pull alpine:3.22.2
 
+      # Same -covermode=atomic as the unit job over the same package set, so the
+      # two profiles merge instead of one masking the other.
       - name: Run integration tests
-        run: make test/integration
+        run: make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out
+
+      - name: Upload integration coverage profile
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-integration
+          path: target/coverage-inputs/integration/coverage.out
+          if-no-files-found: error
+          retention-days: 14
 
   dashboard:
     name: Dashboard checks
@@ -144,11 +163,93 @@ jobs:
       - name: Check types
         run: npx tsc --noEmit
 
-      - name: Run tests
-        run: npm test
+      # test:coverage runs the whole suite through vitest, so this is the
+      # existing test gate plus the LCOV report the CRAP job reads. The coverage
+      # config names every application source, so a file no test imports is
+      # still reported at its real coverage.
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload dashboard coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-dashboard
+          path: dashboard/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Build
         run: npm run build
+
+  coverage:
+    name: CRAP report
+    needs: [test, integration, dashboard]
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Pinned by revision so the scores are reproducible.
+      - name: Install crapper
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "crapper @ git+https://github.com/unclebob/crapper@9f1bead298b5a9d576bdd6319289fcf426e5b18a"
+          python -c "import crapper; print(crapper.__version__)"
+
+      - name: Test the coverage script
+        run: python -m unittest discover -s scripts/coverage -t scripts/coverage
+
+      - name: Download unit coverage profile
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-unit
+          path: target/coverage-inputs/unit
+
+      - name: Download integration coverage profile
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-integration
+          path: target/coverage-inputs/integration
+
+      - name: Download dashboard coverage report
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-dashboard
+          path: dashboard/coverage
+
+      # Merges the profiles, roots the dashboard LCOV at the repository, and
+      # scores the tracked handwritten sources. A report, not a gate: a wrong
+      # score should be reviewed, not block a release.
+      - name: Score complexity against coverage
+        run: |
+          python scripts/coverage/crap_report.py \
+            --go-unit target/coverage-inputs/unit/coverage.out \
+            --go-integration target/coverage-inputs/integration/coverage.out \
+            --dashboard-lcov dashboard/coverage/lcov.info > /tmp/crap.log
+          {
+            echo '::group::CRAP report (crap-report.txt is in the crap-report artifact)'
+            cat /tmp/crap.log
+            echo '::endgroup::'
+          }
+
+      - name: Upload CRAP report
+        uses: actions/upload-artifact@v7
+        with:
+          name: crap-report
+          # .metrics is a hidden directory and is skipped without this.
+          include-hidden-files: true
+          path: |
+            .metrics
+            target/coverage
+          if-no-files-found: error
+          retention-days: 14
 
   static-site:
     name: Static site checks

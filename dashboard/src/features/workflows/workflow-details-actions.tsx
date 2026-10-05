@@ -9,7 +9,6 @@ import type { Workflow } from "@/features/workflows/types"
 
 type WorkflowDetailsActionsProps = {
     workflow?: Workflow
-    isLoading: boolean
     onEdit: () => void
     onTerminate: () => void
     onDelete: () => void
@@ -17,12 +16,13 @@ type WorkflowDetailsActionsProps = {
 
 /**
  * Editing is always offered; the second slot holds exactly one lifecycle action
- * — delete once terminated, terminate until then — and shows a placeholder
- * while the workflow is still unknown.
+ * — delete once terminated, terminate until then. A missing workflow leaves the
+ * lifecycle unknown, whether the detail query is still loading or has failed, so
+ * that slot becomes a placeholder instead of offering an action the page cannot
+ * act on: the lifecycle dialogs only mount once a workflow has loaded cleanly.
  */
 export function WorkflowDetailsActions({
     workflow,
-    isLoading,
     onEdit,
     onTerminate,
     onDelete,
@@ -38,7 +38,7 @@ export function WorkflowDetailsActions({
                 <Edit className="h-4 w-4" />
                 Edit workflow
             </Button>
-            {isLoading ? (
+            {workflow === undefined ? (
                 <Skeleton className="h-9 sm:max-w-[180px] w-full rounded-md" />
             ) : workflow?.terminated_at ? (
                 <Button

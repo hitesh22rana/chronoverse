@@ -327,7 +327,7 @@ it("holds the details card back while loading but still offers editing", async (
     expect(await screen.findByRole("button", { name: /Terminate workflow/ })).toBeTruthy()
 })
 
-it("reports a failed workflow load and keeps the action strip available", async () => {
+it("reports a failed workflow load without offering a lifecycle action", async () => {
     mocks.workflow = new Error("failed to fetch workflow details: offline") as never
     renderPage()
 
@@ -335,7 +335,10 @@ it("reports a failed workflow load and keeps the action strip available", async 
     expect(mocks.toast.error).toHaveBeenCalledWith("failed to fetch workflow details: offline")
     expect(screen.queryByText("Failure tracking")).toBeNull()
     expect(screen.getByRole("button", { name: /Edit workflow/ })).toBeTruthy()
-    expect(screen.getByRole("button", { name: /Terminate workflow/ })).toBeTruthy()
+    // A failed load leaves the lifecycle unknown and the lifecycle dialogs
+    // unmounted, so the strip must not offer terminate or delete.
+    expect(screen.queryByRole("button", { name: /Terminate workflow/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Delete workflow/ })).toBeNull()
 })
 
 it("swaps terminate for delete once the workflow is terminated", async () => {

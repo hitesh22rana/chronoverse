@@ -371,7 +371,6 @@ function renderWorkflowActions(model: Parameters<typeof renderWorkflowDetailsAnd
         urlTabFilter,
         isSearchPending,
         workflow,
-        isWorkflowLoading,
         isJobsLoading,
         isRefetchingJobs,
         filterState,
@@ -394,7 +393,6 @@ function renderWorkflowActions(model: Parameters<typeof renderWorkflowDetailsAnd
         return (
             <WorkflowDetailsActions
                 workflow={workflow}
-                isLoading={isWorkflowLoading}
                 onEdit={() => setShowUpdateWorkflowDialog(true)}
                 onTerminate={() => setShowTerminateWorkflowDialog(true)}
                 onDelete={() => setShowDeleteWorkflowDialog(true)}

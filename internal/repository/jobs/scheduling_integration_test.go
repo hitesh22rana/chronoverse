@@ -385,10 +385,12 @@ func TestIntegrationScheduleJobManualPersistsOneJobAndReplaysFromLedger(t *testi
 	assertSameLedgerRow(t, afterCommand, command)
 }
 
-// TestIntegrationScheduleJobManualAcceptsEveryStorableInstantSpelling pins every RFC3339
-// spelling of a future instant the jobs table stores exactly, which is what callers
-// report after formatting a UTC time.
-func TestIntegrationScheduleJobManualAcceptsEveryStorableInstantSpelling(t *testing.T) {
+// TestIntegrationScheduleJobManualStoresEveryUTCInstantSpellingExactly pins the UTC
+// spellings of a future instant that the jobs table stores exactly, which is what every
+// in-tree caller formats. This is deliberately not a claim about every RFC3339 spelling:
+// an offset spelling denotes the same instant but names a different wall clock, and
+// TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsOwnWallClock records why.
+func TestIntegrationScheduleJobManualStoresEveryUTCInstantSpellingExactly(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
@@ -418,6 +420,110 @@ func TestIntegrationScheduleJobManualAcceptsEveryStorableInstantSpelling(t *test
 				t.Fatalf("job scheduled_at = %s, want the requested instant %s", stored.ScheduledAt.UTC(), spelling.value.UTC())
 			}
 		})
+	}
+}
+
+// TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsOwnWallClock records the
+// boundary the UTC spelling table above cannot reach. scheduled_at is TIMESTAMP WITHOUT
+// TIME ZONE, so an offset spelling is stored as its own wall clock rather than as the
+// instant it denotes: the row lands exactly the offset away from the requested time.
+// In-tree callers only emit an offset spelling from a process whose TZ is not UTC, so
+// this is the behavior a deployment outside UTC would get, not one the current images see.
+func TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsOwnWallClock(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	fixture := seedScheduleFixture(ctx, t, pg)
+	instant := occurrenceInstant(time.Hour)
+	spelling := instant.In(time.FixedZone("plus2", 2*3600))
+
+	jobID, err := repo.ScheduleJob(
+		ctx, fixture.WorkflowID, fixture.UserID, spelling.Format(time.RFC3339Nano),
+		jobsmodel.JobTriggerManual.ToString(), "manual-offset-"+fixtureTag(), 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob: %v", err)
+	}
+
+	// The zone is dropped and the wall clock kept, so the row holds the spelling's own
+	// clock reading rather than the instant that reading stands for.
+	stored := readScheduledJob(ctx, t, pg, jobID)
+	wallClock := time.Date(
+		spelling.Year(), spelling.Month(), spelling.Day(),
+		spelling.Hour(), spelling.Minute(), spelling.Second(), spelling.Nanosecond(),
+		time.UTC,
+	)
+	if !stored.ScheduledAt.Equal(wallClock) {
+		t.Fatalf("job scheduled_at = %s, want the spelled wall clock %s", stored.ScheduledAt.UTC(), wallClock)
+	}
+	if got := stored.ScheduledAt.Sub(instant); got != 2*time.Hour {
+		t.Fatalf("job scheduled_at sits %s from the requested instant, want the spelled +02:00 offset", got)
+	}
+}
+
+// TestIntegrationScheduleJobAutomaticDerivesADistinctIdentityPerInstantSpelling records the
+// consequence of that wall-clock storage for an occurrence reported without an event key.
+// The derived identity is built from the caller's own RFC3339 text, so one instant spelled
+// with an offset and again in UTC is two commands reserving two jobs instead of one
+// occurrence replaying. Every in-tree caller of this path re-formats a value read back
+// from the jobs table, which is UTC, so it stays self-consistent; the divergence needs a
+// caller that spells the same instant two ways.
+func TestIntegrationScheduleJobAutomaticDerivesADistinctIdentityPerInstantSpelling(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	fixture := seedScheduleFixture(ctx, t, pg)
+	instant := occurrenceInstant(time.Hour)
+	spelling := instant.In(time.FixedZone("plus2", 2*3600))
+
+	utcJobID, err := repo.ScheduleJob(
+		ctx, fixture.WorkflowID, fixture.UserID, instant.Format(time.RFC3339Nano),
+		jobsmodel.JobTriggerAutomatic.ToString(), "", 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob (utc spelling): %v", err)
+	}
+	offsetJobID, err := repo.ScheduleJob(
+		ctx, fixture.WorkflowID, fixture.UserID, spelling.Format(time.RFC3339Nano),
+		jobsmodel.JobTriggerAutomatic.ToString(), "", 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob (offset spelling): %v", err)
+	}
+
+	if offsetJobID == utcJobID {
+		t.Fatalf("offset spelling replayed job %q, want the occurrence it reserves separately", utcJobID)
+	}
+	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 2 {
+		t.Fatalf("workflow has %d jobs, want one per distinct derived identity", count)
+	}
+	for _, key := range []string{
+		automaticOccurrenceKey(fixture.WorkflowID, instant),
+		automaticOccurrenceKey(fixture.WorkflowID, spelling),
+	} {
+		if _, ok := readScheduleCommand(
+			ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, key,
+		); !ok {
+			t.Fatalf("derived identity %q has no ledger row, want a completed reservation", key)
+		}
+	}
+
+	// Redelivery is still exact within one spelling, which is the guarantee the occurrence
+	// path does make: the identity it derives for a spelling always resolves to its own job.
+	replayed, err := repo.ScheduleJob(
+		ctx, fixture.WorkflowID, fixture.UserID, spelling.Format(time.RFC3339Nano),
+		jobsmodel.JobTriggerAutomatic.ToString(), "", 1,
+	)
+	if err != nil {
+		t.Fatalf("ScheduleJob (redelivered offset spelling): %v", err)
+	}
+	if replayed != offsetJobID {
+		t.Fatalf("redelivered offset spelling id = %q, want the job it already reserved %q", replayed, offsetJobID)
+	}
+	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 2 {
+		t.Fatalf("redelivery left %d jobs, want the two the spellings reserved", count)
 	}
 }
 
@@ -645,6 +751,10 @@ func TestIntegrationScheduleJobCanceledCallerLeavesNoDurableEffect(t *testing.T)
 	cancel()
 
 	// A caller that goes away must be told the command did not run, leaving nothing for the retry to trip over.
+	//
+	// Internal and not Canceled: the transaction is opened before the insert, so a canceled
+	// context fails BeginTx and is reported here without ever reaching mapScheduleInsertError's
+	// canceled branch. A gRPC client that has gone away therefore reads this as retryable.
 	_, err := repo.ScheduleJob(
 		canceledCtx, fixture.WorkflowID, fixture.UserID, occurrenceInstant(time.Hour).Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerManual.ToString(), "manual-canceled-"+fixtureTag(), 1,
@@ -920,6 +1030,122 @@ func TestIntegrationScheduleJobAutomaticWithoutGenerationRecordsLegacyIdentity(t
 		t.Fatalf("conflict removed the ledger row of the legacy occurrence %q", occurrenceKey)
 	}
 	assertSameLedgerRow(t, afterCommand, command)
+}
+
+// TestIntegrationScheduleJobAutomaticWithoutGenerationSkipsTheWorkflowGuard records the
+// other side of the generation-0 legacy path, which the legacy-identity test above cannot
+// show because its workflow is healthy. automaticScheduleGuardSQL emits no workflow clause
+// below generation 1, so an automatic command carrying no generation reaches the insert
+// with no ownership, termination or build-status clause at all, and every workflow state
+// the generation-1 table refuses is admitted here. Only a workflow that does not exist is
+// still refused, by the foreign key rather than the guard, and that arrives as Internal
+// because mapScheduleInsertError maps a missing-workflow NoRows to FailedPrecondition only
+// for generation > 0. These are recorded as found so that closing the generation-0 path is
+// a deliberate change.
+func TestIntegrationScheduleJobAutomaticWithoutGenerationSkipsTheWorkflowGuard(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	tests := []struct {
+		name string
+		// prepare leaves the fixture workflow in the state this case reports.
+		prepare func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture
+		// admitted is whether the generation-0 command nonetheless creates the job.
+		admitted bool
+	}{
+		{
+			name: "workflow is terminated",
+			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
+				t.Helper()
+
+				fixture := seedScheduleFixture(ctx, t, pg)
+				tag, err := pg.Exec(ctx, `UPDATE workflows SET terminated_at = now() AT TIME ZONE 'utc' WHERE id = $1`, fixture.WorkflowID)
+				if err != nil || tag.RowsAffected() != 1 {
+					t.Fatalf("terminate fixture workflow: %v", err)
+				}
+				return fixture
+			},
+			admitted: true,
+		},
+		{
+			name: "workflow belongs to another user",
+			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
+				t.Helper()
+
+				fixture := seedScheduleFixture(ctx, t, pg)
+				tag, err := pg.Exec(ctx, `UPDATE workflows SET user_id = $2 WHERE id = $1`, fixture.WorkflowID, seedScheduleUser(ctx, t, pg))
+				if err != nil || tag.RowsAffected() != 1 {
+					t.Fatalf("transfer fixture workflow: %v", err)
+				}
+				return fixture
+			},
+			admitted: true,
+		},
+		{
+			// The one state still refused, but by the foreign key rather than by the guard.
+			name: "workflow does not exist",
+			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
+				t.Helper()
+
+				fixture := seedScheduleFixture(ctx, t, pg)
+				if _, err := pg.Exec(ctx, `DELETE FROM workflows WHERE id = $1`, fixture.WorkflowID); err != nil {
+					t.Fatalf("delete fixture workflow: %v", err)
+				}
+				return fixture
+			},
+			admitted: false,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := testCase.prepare(ctx, t, pg)
+			scheduledAt := occurrenceInstant(time.Hour)
+
+			// With the guard emitted, every state in the table is a precondition failure.
+			refusedJobID, refusedErr := repo.ScheduleJob(
+				ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
+				jobsmodel.JobTriggerAutomatic.ToString(), "", 1,
+			)
+			if code := status.Code(refusedErr); code != codes.FailedPrecondition {
+				t.Fatalf("guarded generation-1 ScheduleJob code = %v, want %v (err: %v)", code, codes.FailedPrecondition, refusedErr)
+			}
+			if refusedJobID != "" {
+				t.Fatalf("refused generation-1 ScheduleJob returned job %q, want an empty id", refusedJobID)
+			}
+			assertNoScheduleCommandEffect(ctx, t, pg, fixture, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation)
+
+			// Repeating it without the generation drops the guard, so the same state is
+			// prepared again on a second isolated workflow.
+			unguarded := testCase.prepare(ctx, t, pg)
+			jobID, err := repo.ScheduleJob(
+				ctx, unguarded.WorkflowID, unguarded.UserID, scheduledAt.Format(time.RFC3339Nano),
+				jobsmodel.JobTriggerAutomatic.ToString(), "", 0,
+			)
+			if testCase.admitted {
+				if err != nil {
+					t.Fatalf("unguarded generation-0 ScheduleJob: %v", err)
+				}
+				// The row names the caller's user even when that is not the workflow's owner.
+				job := readScheduledJob(ctx, t, pg, jobID)
+				assertScheduledJobOwnership(
+					t, job, unguarded, jobsmodel.JobTriggerAutomatic.ToString(), scheduledAt,
+					automaticOccurrenceKey(unguarded.WorkflowID, scheduledAt),
+				)
+				if !job.WorkflowGeneration.Valid || job.WorkflowGeneration.Int64 != 0 {
+					t.Fatalf("unguarded job workflow_generation = %v, want 0", job.WorkflowGeneration)
+				}
+				return
+			}
+			if code := status.Code(err); code != codes.Internal {
+				t.Fatalf("unguarded generation-0 ScheduleJob code = %v, want %v (err: %v)", code, codes.Internal, err)
+			}
+			if jobID != "" {
+				t.Fatalf("unguarded generation-0 ScheduleJob returned job %q, want an empty id", jobID)
+			}
+			assertNoScheduleCommandEffect(ctx, t, pg, unguarded, automaticScope(unguarded.WorkflowID), unguarded.AutomaticOperation)
+		})
+	}
 }
 
 func TestIntegrationScheduleJobAdoptsLegacyAutomaticRowWithoutDuplicatingJob(t *testing.T) {

@@ -547,15 +547,13 @@ func assertCode(t *testing.T, name string, err error, want codes.Code) {
 	}
 }
 
-// assertRejected asserts a command refused the caller without pinning the exact
-// status: a workflow that no longer exists can be reported either as a missing
-// foreign key or as a missing workflow, and the durable footprint below is what
-// the caller must observe.
-func assertRejected(t *testing.T, name string, err error) {
+// assertRejected asserts a command refused the caller with one of the given
+// statuses, so an unrelated failure cannot pass as the refusal under test.
+func assertRejected(t *testing.T, name string, err error, want ...codes.Code) {
 	t.Helper()
 
-	if status.Code(err) == codes.OK {
-		t.Fatalf("%s was accepted, want rejection (err: %v)", name, err)
+	if got := status.Code(err); !slices.Contains(want, got) {
+		t.Fatalf("%s code = %v, want one of %v (err: %v)", name, got, want, err)
 	}
 }
 
@@ -1083,11 +1081,13 @@ func TestIntegrationDeleteWorkflowRefusesWhileJobHoldsRuntimeSlot(t *testing.T) 
 		t,
 		"IncrementWorkflowConsecutiveJobFailuresCount(deleted workflow)",
 		incrementFailureError(ctx, repo, fixture.WorkflowID, fixture.UserID, lateFailureJobID),
+		codes.Internal, // workflow_id FK violation (SQLSTATE 23503) reaches the insert directly
 	)
 	assertRejected(
 		t,
 		"ResetWorkflowConsecutiveJobFailuresCount(deleted workflow)",
 		repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, fixture.WorkflowID, fixture.UserID, lateCompletedJobID),
+		codes.NotFound, // the UPDATE matches no row, so there is no FK to violate
 	)
 	for _, jobID := range []string{lateFailureJobID, lateCompletedJobID} {
 		if count := countTerminalEffects(ctx, t, pg, jobID); count != 0 {

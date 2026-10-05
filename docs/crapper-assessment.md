@@ -37,19 +37,21 @@ container-start failures and is not used here.
 Go coverage is statement coverage; TypeScript uses branch coverage where a function has
 branch records, line coverage otherwise. A matched Go record can hold zero hits, and 64 of
 the 84 high Go scores are exactly that: `cmd/*/main.go` `run`, `registerRoutes`,
-`internal/pkg/testkit` helpers, ClickHouse/Kafka/Redis/Postgres setup — wiring with no
-unit-level behaviour to test, not a defect candidate. A missing TypeScript record is
+`internal/pkg/testkit` helpers and service setup. Rank these by actual behaviour and
+maintenance needs; a high score alone does not establish a defect. Default Go profiles
+instrument each package for its own tests, so calls from another package's tests can remain
+unrecorded as hits. Cross-package `-coverpkg=./...` instrumentation was not used. A missing TypeScript record is
 different, since crapper substitutes 0%: 54 of the 140 high scores, 35 dashboard and all 19
 static, have no measurement at all. Neither zero proves absence of tests outside these runs.
 
 ## Implemented work
 
 Four independent PRs branched from main, unmerged and not tested together, so no combined
-"after" figure is reported.
+"after" figure is reported. Implementation was delegated to OpenCode
+`opencode/space-bunny-free`, variant `max`, followed by independent review and validation.
 
-**Docker log streaming**, branch `fix/docker-log-stream-correctness`
-([link](https://github.com/hitesh22rana/chronoverse/tree/fix/docker-log-stream-correctness),
-PR number pending). `streamContainerLogs` (`internal/pkg/kind/container/docker.go:638`):
+**Docker log streaming**, [PR #180](https://github.com/hitesh22rana/chronoverse/pull/180),
+branch `fix/docker-log-stream-correctness`. `streamContainerLogs` (`internal/pkg/kind/container/docker.go:638`):
 CC 26 → 12, coverage 78.4% → 100%, CRAP 32.8 → 12.0. Both earlier findings were real:
 neither stream inspected `scanner.Err()`, and each loaded and incremented the shared
 sequence counter separately, so stdout and stderr could allocate the same value. Assignment
@@ -77,8 +79,8 @@ stops at an unchanged Google Fonts Poppins fetch the environment cannot reach.
 `ci/representative-crap-coverage`. Vitest now names every application source through
 `coverage.include`, so files no test imports are reported at their real coverage instead of
 being left out: 52 → 101 LCOV sources, and the same 174 tests move from statements 87.71%
-(921/1050) to 51.25% (921/1797), branches 81.25% → 46.29% — same covered statements, 876 more
-that no test reaches. CI collects the three job profiles and scores them in one job with
+(921/1050) to 51.25% (921/1797), branches 81.25% → 46.29% — same covered statements,
+747 additional uncovered statements (876 uncovered in total). CI collects the three job profiles and scores them in one job with
 crapper pinned by revision; 57 script regression tests cover the merge, path rooting, and
 source exclusions. Matched records rise from 1,183 to 1,279 while CRAP >= 30 stays at 140,
 because the newly recorded functions measure exactly 0% and substituting 0% scores the same
@@ -101,7 +103,7 @@ regression test.
   them, adding a rejection case only when one is identified. `decodeUniqueValue` CC 16 /
   83.3% / 17.2 supports canonical request identity; do not weaken its parsing.
 - **Workflow repositories.** `UpdateWorkflow` CC 27 / 75.0% / CRAP 38.4 and `DeleteWorkflow`
-  CC 23 / 53.2% / CRAP 77.1 are the two largest remaining. Examine the missing domain
+  CC 23 / 53.2% / CRAP 77.1 remain candidates for additional domain coverage. Examine the missing domain
   outcomes — conflict, rollback, stale lease or generation, cancellation, commit failure —
   before considering extraction, and keep transaction ownership and mutation/outbox
   atomicity visible. Do not add a generic transaction framework.

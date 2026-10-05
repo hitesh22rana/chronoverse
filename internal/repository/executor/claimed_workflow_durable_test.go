@@ -207,7 +207,10 @@ func (s *recordingHeartbeatSvc) Execute(ctx context.Context, _ time.Duration, _ 
 
 // rejectingContainerSvc fails the test if a fixture asks for container execution.
 // The durable fixtures are heartbeat workflows, so any container work is a bug in
-// the executor's routing rather than a value this suite can assert on.
+// the executor's routing rather than a value this suite can assert on. Panicking
+// rather than returning an error keeps a container-kind fixture from quietly
+// reading as the release-for-retry outcome an unrunnable workflow legitimately
+// produces.
 type rejectingContainerSvc struct {
 	factoryCalls atomic.Int32
 }
@@ -215,7 +218,7 @@ type rejectingContainerSvc struct {
 func (s *rejectingContainerSvc) factory(string, string) (ContainerSvc, error) {
 	s.factoryCalls.Add(1)
 
-	return nil, status.Error(codes.FailedPrecondition, "heartbeat workflow must not request a container runtime")
+	panic("heartbeat workflow must not request a container runtime")
 }
 
 // durableFixture is one private user, workflow and claimed job, plus the durable

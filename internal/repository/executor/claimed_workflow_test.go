@@ -3,6 +3,7 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -83,9 +84,9 @@ func settleOp(op jobCommand) bool {
 		return true
 	case commandRenewLease, commandScheduleJob, commandAttach:
 		return false
+	default:
+		panic(fmt.Sprintf("%q is unclassified by settleOp", op))
 	}
-
-	return false
 }
 
 // leaseScoped reports whether a command acts on the claimed job's lease.
@@ -97,9 +98,9 @@ func leaseScoped(op jobCommand) bool {
 		return true
 	case commandScheduleJob:
 		return false
+	default:
+		panic(fmt.Sprintf("%q is unclassified by leaseScoped", op))
 	}
-
-	return false
 }
 
 // commandScoped reports whether a command must be replay safe through a command
@@ -111,9 +112,9 @@ func commandScoped(op jobCommand) bool {
 		return true
 	case commandRenewLease, commandScheduleJob:
 		return false
+	default:
+		panic(fmt.Sprintf("%q is unclassified by commandScoped", op))
 	}
-
-	return false
 }
 
 // jobsCallLog records the jobs-service commands one claimed run issued. It is
@@ -470,9 +471,12 @@ func (s *observedContainerSvc) removals() []string {
 }
 
 // failingContainerSvc runs a workload that exits non-zero and records every
-// execution and removal, including the removals that fail.
+// execution and removal, including the removals that fail. executeErr replaces
+// the non-zero exit with a bare gRPC code, which is what separates a user mistake
+// from a retryable runtime fault.
 type failingContainerSvc struct {
-	removeErr error
+	removeErr  error
+	executeErr error
 
 	mu       sync.Mutex
 	executes int
@@ -505,10 +509,14 @@ func (s *failingContainerSvc) Execute(
 	logCh := make(chan *jobsmodel.JobLog)
 	errCh := make(chan error, 1)
 	close(logCh)
-	errCh <- terminalreason.Wrap(
-		terminalreason.NonZeroExit,
-		status.Error(codes.Aborted, "container exited with non-zero code: 1"),
-	)
+	failure := s.executeErr
+	if failure == nil {
+		failure = terminalreason.Wrap(
+			terminalreason.NonZeroExit,
+			status.Error(codes.Aborted, "container exited with non-zero code: 1"),
+		)
+	}
+	errCh <- failure
 	close(errCh)
 
 	return "container-1", logCh, errCh, nil
@@ -1306,6 +1314,95 @@ func TestRunClaimedWorkflowFailsContainerExecutionAndCleansUp(t *testing.T) {
 			}
 			if got := container.executionCount(); got != 1 {
 				t.Fatalf("container executions = %d, want 1", got)
+			}
+			assertNoOwnershipStealing(t, fixture.log)
+		})
+	}
+}
+
+// TestRunClaimedWorkflowClassifiesRetryableContainerFailure pins both outcomes of
+// a runtime fault a workload can retry. Releasing keeps the job alive and must
+// remove the container first, so the re-dispatch cannot inherit a container the
+// previous run left on the node. Once the budget is spent the same fault becomes a
+// terminal system failure rather than a user mistake. Only a bare retryable code
+// separates the two: a wrapped terminal reason classifies as a user fault whatever
+// the retry budget says.
+func TestRunClaimedWorkflowClassifiesRetryableContainerFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		attempts        int32
+		wantSettlement  jobCommand
+		wantFailureKind string
+		wantReasonCode  string
+	}{
+		{
+			name:           "retryable fault with budget left releases for system retry",
+			attempts:       1,
+			wantSettlement: commandReleaseRetry,
+		},
+		{
+			name:            "retryable fault with the budget spent fails as a system fault",
+			attempts:        3,
+			wantSettlement:  commandFailJob,
+			wantFailureKind: jobsmodel.FailureKindSystem.ToString(),
+			wantReasonCode:  terminalreason.SystemError.String(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := &failingContainerSvc{executeErr: status.Error(codes.Unavailable, "runtime node lost the container")}
+			fixture := newClaimedRunFixture(&scriptedJobsClient{}, &scriptedWorkflowsClient{flow: containerWorkflow()}, nil, container)
+
+			err := fixture.repo.runClaimedWorkflow(t.Context(), claimedJob(tt.attempts), time.Now(), 1)
+			if tt.wantSettlement == commandReleaseRetry {
+				if err != nil {
+					t.Fatalf("runClaimedWorkflow() error = %v, want nil once the claim is released", err)
+				}
+			} else if status.Code(err) != codes.Unavailable {
+				// A terminal failure hands the runtime fault back so the caller can
+				// see why the run ended rather than an opaque settlement rejection.
+				t.Fatalf("runClaimedWorkflow() code = %s, want %s: %v", status.Code(err), codes.Unavailable, err)
+			}
+
+			assertSingleSettlement(t, fixture.log, tt.wantSettlement)
+			commands := fixture.log.snapshot()
+
+			settlement, ok := firstOp(commands, tt.wantSettlement)
+			if !ok {
+				t.Fatalf("no %s command was recorded", tt.wantSettlement)
+			}
+			if got := settlement.ErrorCode; got != codes.Unavailable.String() {
+				t.Fatalf("settlement error code = %q, want %q so recovery sees the runtime fault", got, codes.Unavailable.String())
+			}
+			if tt.wantSettlement == commandFailJob {
+				if got := settlement.FailureKind; got != tt.wantFailureKind {
+					t.Fatalf("failure kind = %q, want %q", got, tt.wantFailureKind)
+				}
+				if got := settlement.TerminalReasonCode; got != tt.wantReasonCode {
+					t.Fatalf("terminal reason = %q, want %q", got, tt.wantReasonCode)
+				}
+			} else {
+				assertFutureBackoff(t, settlement.NextAttemptAt)
+				if got := countOp(commands, commandFailJob); got != 0 {
+					t.Fatalf("terminal failures = %d, want 0 while the retry budget lasts", got)
+				}
+			}
+
+			// Both paths remove the container: leaving it behind would strand it on
+			// the node for whichever run is dispatched next.
+			if got := container.removals(); len(got) != 1 || got[0] != "container-1" {
+				t.Fatalf("container removals = %v, want exactly the executed container", got)
+			}
+			if got := container.executionCount(); got != 1 {
+				t.Fatalf("container executions = %d, want 1", got)
+			}
+			if got := fixture.repo.handoffs.size(); got != 0 {
+				t.Fatalf("handoff permits = %d, want 0 once the jobs service accepted the settlement", got)
 			}
 			assertNoOwnershipStealing(t, fixture.log)
 		})

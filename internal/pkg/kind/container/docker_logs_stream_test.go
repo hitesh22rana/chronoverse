@@ -23,12 +23,11 @@ import (
 const (
 	dockerLogTestContainerID = "container-1"
 
-	// dockerLogStreamTestTimeout bounds every wait on the streaming goroutines
-	// so a shutdown regression fails the test instead of hanging the suite.
+	// dockerLogStreamTestTimeout bounds every wait on the streaming goroutines so
+	// a shutdown regression fails the test instead of hanging the suite.
 	dockerLogStreamTestTimeout = 20 * time.Second
 
-	// dockerLogTestStdout / dockerLogTestStderr are the stream labels the
-	// production code publishes under.
+	// The stream labels production code publishes under.
 	dockerLogTestStdout = dockerLogStreamStdout
 	dockerLogTestStderr = dockerLogStreamStderr
 )
@@ -37,16 +36,14 @@ const (
 type fakeDockerAPI struct {
 	// logs serves GET /containers/{id}/logs.
 	logs http.HandlerFunc
-	// wait serves POST /containers/{id}/wait. A nil handler reports an
-	// immediate clean exit; the tests that need a different outcome set it.
+	// wait serves POST /containers/{id}/wait; nil reports a clean exit.
 	wait http.HandlerFunc
-	// stop serves POST /containers/{id}/stop. A nil handler answers immediately.
+	// stop serves POST /containers/{id}/stop; nil answers immediately.
 	stop http.HandlerFunc
 }
 
-// newFakeDockerWorkflow serves a Docker API whose only interesting endpoint is
-// the log stream handler; everything else (ping, network, create, start, wait,
-// stop) answers the minimum Execute and Logs need. No daemon is required.
+// newFakeDockerWorkflow serves a Docker API whose only interesting endpoint is the
+// log stream handler; the rest answers the minimum Execute and Logs need.
 func newFakeDockerWorkflow(t *testing.T, api fakeDockerAPI) *DockerWorkflow {
 	t.Helper()
 
@@ -102,8 +99,7 @@ func newFakeDockerWorkflow(t *testing.T, api fakeDockerAPI) *DockerWorkflow {
 	return workflow
 }
 
-// dockerLogFrame encodes one stdcopy multiplexed frame, the framing the Docker
-// daemon uses for non-TTY container output.
+// dockerLogFrame encodes one stdcopy frame, the framing of non-TTY daemon output.
 func dockerLogFrame(stream stdcopy.StdType, payload string) []byte {
 	var frame bytes.Buffer
 	if _, err := stdcopy.NewStdWriter(&frame, stream).Write([]byte(payload)); err != nil {
@@ -119,8 +115,8 @@ type dockerLogStreamResult struct {
 	errs []error
 }
 
-// collectDockerLogStream drains both log channels until they close. It never
-// touches *testing.T so it is safe to run on its own goroutine.
+// collectDockerLogStream drains both channels until they close; safe to run on
+// its own goroutine because it never touches *testing.T.
 func collectDockerLogStream(logs <-chan *jobsmodel.JobLog, errs <-chan error) dockerLogStreamResult {
 	var result dockerLogStreamResult
 	for logs != nil || errs != nil {
@@ -143,8 +139,8 @@ func collectDockerLogStream(logs <-chan *jobsmodel.JobLog, errs <-chan error) do
 	return result
 }
 
-// awaitDockerLogStream fails the test when the stream never finishes, which is
-// how a stranded reader, scanner, or error publisher shows up.
+// awaitDockerLogStream fails the test when the stream never finishes, which is how
+// a stranded reader, scanner or error publisher shows up.
 func awaitDockerLogStream(t *testing.T, logs <-chan *jobsmodel.JobLog, errs <-chan error) dockerLogStreamResult {
 	t.Helper()
 
@@ -171,9 +167,8 @@ func logMessages(logs []*jobsmodel.JobLog) []string {
 	return messages
 }
 
-// logMessagesByStream groups the delivered lines per stream, preserving the
-// order within each stream. The relative order of stdout and stderr is not
-// defined: they are scanned on separate goroutines.
+// logMessagesByStream groups delivered lines per stream, preserving order within
+// each stream; the relative order of stdout and stderr is undefined.
 func logMessagesByStream(logs []*jobsmodel.JobLog) map[string][]string {
 	byStream := map[string][]string{}
 	for _, log := range logs {
@@ -193,7 +188,7 @@ func totalBytes(messages []string) int {
 }
 
 // waitForSignal fails the test when a fixture handshake or shutdown signal does
-// not arrive in time. It keeps the lifecycle tests readable and bounded.
+// not arrive in time.
 func waitForSignal(t *testing.T, signal <-chan struct{}, failure string) {
 	t.Helper()
 
@@ -204,8 +199,8 @@ func waitForSignal(t *testing.T, signal <-chan struct{}, failure string) {
 	}
 }
 
-// requireContiguousSequences checks the sequence contract on what was delivered:
-// zero-based, gapless, and free of duplicates.
+// requireContiguousSequences checks that delivered sequences are zero-based,
+// gapless and free of duplicates.
 func requireContiguousSequences(t *testing.T, logs []*jobsmodel.JobLog) {
 	t.Helper()
 
@@ -216,9 +211,8 @@ func requireContiguousSequences(t *testing.T, logs []*jobsmodel.JobLog) {
 	}
 }
 
-// flushDockerLogStream pushes buffered stream bytes out. It is best effort on
-// purpose: Execute aborts the connection when it tears the stream down, and that
-// is one of the behaviors under test.
+// flushDockerLogStream pushes buffered stream bytes out. Best effort: Execute aborts
+// the connection when it tears the stream down, and that is under test.
 func flushDockerLogStream(rw http.ResponseWriter) {
 	_ = http.NewResponseController(rw).Flush()
 }
@@ -273,8 +267,8 @@ func TestStreamContainerLogsDemuxesStdoutAndStderr(t *testing.T) {
 }
 
 // TestStreamContainerLogsAssignsUniqueContiguousSequences pins the sequencing
-// contract: numbers are handed out once, at the single forwarding boundary, so
-// an interleaved stdout/stderr stream yields 0..N-1 exactly once each.
+// contract: numbers are handed out once at the forwarding boundary, so an interleaved
+// stream yields 0..N-1 exactly once each.
 func TestStreamContainerLogsAssignsUniqueContiguousSequences(t *testing.T) {
 	t.Parallel()
 
@@ -326,8 +320,7 @@ func TestStreamContainerLogsAssignsUniqueContiguousSequences(t *testing.T) {
 }
 
 // TestStreamContainerLogsDeliversLinesAboveScannerDefaultLimit guards the 64 KiB
-// bufio.Scanner default: real workloads emit JSON blobs and stack traces far
-// past it and must not be truncated or dropped.
+// bufio.Scanner default: workloads emit JSON blobs and stack traces far past it.
 func TestStreamContainerLogsDeliversLinesAboveScannerDefaultLimit(t *testing.T) {
 	t.Parallel()
 
@@ -368,9 +361,8 @@ func TestStreamContainerLogsDeliversLinesAboveScannerDefaultLimit(t *testing.T) 
 	}
 }
 
-// TestStreamContainerLogsFailsOnOversizedLine requires an explicit failure
-// instead of a silently truncated stream: an unreadable log line must not look
-// like a clean run.
+// TestStreamContainerLogsFailsOnOversizedLine requires an explicit failure instead of
+// a silent truncation, so an unreadable line cannot look like a clean run.
 func TestStreamContainerLogsFailsOnOversizedLine(t *testing.T) {
 	t.Parallel()
 
@@ -411,11 +403,9 @@ func TestStreamContainerLogsFailsOnOversizedLine(t *testing.T) {
 	}
 }
 
-// TestStreamContainerLogsLineCapBoundary pins the accepted boundary of a single
-// log line across every line terminator the daemon can send: LF, CRLF, and an
-// unterminated final line at EOF. bufio counts the terminator against its own
-// maximum and strips the CR of a CRLF, so the content cap has to hold for all
-// three, and one byte over it must fail loudly rather than truncate.
+// TestStreamContainerLogsLineCapBoundary pins the cap for every terminator the daemon
+// can send — LF, CRLF and an unterminated final line — since bufio counts the
+// terminator against its maximum and strips the CR of a CRLF.
 func TestStreamContainerLogsLineCapBoundary(t *testing.T) {
 	t.Parallel()
 
@@ -448,9 +438,8 @@ func TestStreamContainerLogsLineCapBoundary(t *testing.T) {
 						var stream bytes.Buffer
 						stream.Write(dockerLogFrame(stdcopy.Stdout, "before\n"))
 						stream.Write(dockerLogFrame(stdcopy.Stdout, line+terminator.suffix))
-						// An unterminated line is only meaningful as the last thing
-						// the daemon sends: without a delimiter the next line would
-						// simply extend it.
+						// Only meaningful as the last thing the daemon sends: without a
+						// delimiter the next line would extend it.
 						if terminator.suffix != "" {
 							stream.Write(dockerLogFrame(stdcopy.Stdout, "after\n"))
 						}
@@ -565,12 +554,54 @@ func TestStreamContainerLogsClassifiesLogRequestFailures(t *testing.T) {
 	}
 }
 
-// TestStreamContainerLogsCancellationUnblocksBlockedReaderAndReceiver covers the
-// shutdown path a stuck publisher can force. The test reads one line to prove
-// the daemon stream is attached, then stops reading while the daemon keeps
-// publishing: the forwarder parks on the output channel and the demultiplexer
-// parks on the pipe. Cancellation must release both, must reach the daemon, and
-// must not turn the reader it closed into a stream failure.
+// newStoppedDaemonWorkflow returns a workflow whose daemon answered the construction
+// ping and then went away, so the next request is refused at dial time.
+func newStoppedDaemonWorkflow(t *testing.T) *DockerWorkflow {
+	t.Helper()
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		rw.Header().Set("API-Version", "1.51")
+		writeDockerTestResponse(t, rw, "OK")
+	}))
+
+	workflow, err := NewDockerWorkflow(WithDockerHost(daemon.URL))
+	if err != nil {
+		daemon.Close()
+		t.Fatalf("NewDockerWorkflow() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = workflow.Close()
+	})
+	daemon.Close()
+
+	return workflow
+}
+
+// TestStreamContainerLogsReportsDaemonUnavailable separates "the daemon is gone" from
+// the daemon-side failures above: a refused dial must surface as Unavailable.
+func TestStreamContainerLogsReportsDaemonUnavailable(t *testing.T) {
+	t.Parallel()
+
+	workflow := newStoppedDaemonWorkflow(t)
+
+	logCh := make(chan *jobsmodel.JobLog, 1)
+	errs := make(chan error, 1)
+	workflow.streamContainerLogs(t.Context(), dockerLogTestContainerID, logCh, errs, true)
+
+	if len(logCh) != 0 {
+		t.Fatalf("an unreachable daemon published %d log line(s), want none", len(logCh))
+	}
+	if len(errs) != 1 {
+		t.Fatalf("stream failures = %v, want exactly one", len(errs))
+	}
+	if code := status.Code(<-errs); code != codes.Unavailable {
+		t.Fatalf("unreachable-daemon code = %s, want %s", code, codes.Unavailable)
+	}
+}
+
+// TestStreamContainerLogsCancellationUnblocksBlockedReaderAndReceiver parks the forwarder
+// and the demultiplexer mid-publish, then requires cancellation to release both and reach
+// the daemon without turning the reader it closed into a stream failure.
 func TestStreamContainerLogsCancellationUnblocksBlockedReaderAndReceiver(t *testing.T) {
 	t.Parallel()
 
@@ -611,8 +642,8 @@ func TestStreamContainerLogsCancellationUnblocksBlockedReaderAndReceiver(t *test
 		workflow.streamContainerLogs(ctx, dockerLogTestContainerID, logCh, errs, true)
 	}()
 
-	// Reading the first line is the attachment handshake: it proves the request
-	// reached the daemon and the stream is live end to end.
+	// The attachment handshake: it proves the request reached the daemon
+	// and the stream is live end to end.
 	select {
 	case line := <-logCh:
 		if line.Message != "first line" {
@@ -625,13 +656,17 @@ func TestStreamContainerLogsCancellationUnblocksBlockedReaderAndReceiver(t *test
 	}
 	waitForSignal(t, attached, "the fake daemon never saw the log stream request")
 
-	// The receiver stops reading here on purpose: every further line parks the
-	// forwarder, and with it the scanner and the demultiplexer.
+	// The receiver stops reading here on purpose: every further line parks
+	// the forwarder, and with it the scanner and the demultiplexer.
 	close(release)
 	waitForSignal(t, extraFrameSent, "the fake daemon never sent the line the receiver refuses to read")
-	// Scheduling nudge only: attachment is proven above, this just gives the
-	// forwarder time to park on the unread line before cancellation.
-	time.Sleep(50 * time.Millisecond)
+	// A parked send is not observable from outside, so give the forwarder a bounded
+	// window and require the weaker fact it can prove: it still holds the unread line.
+	select {
+	case <-returned:
+		t.Fatal("streamContainerLogs() returned while a published line was never read")
+	case <-time.After(50 * time.Millisecond):
+	}
 	cancel()
 
 	waitForSignal(t, returned, "streamContainerLogs() did not return after cancellation")
@@ -646,10 +681,9 @@ func TestStreamContainerLogsCancellationUnblocksBlockedReaderAndReceiver(t *test
 	}
 }
 
-// TestStreamContainerLogsRequestCancellationIsNotAStreamFailure pins the
-// difference between "the caller went away" and "the stream broke". Canceling
-// while the daemon has not even answered yet must not be reported as a log read
-// failure, or every canceled job would also publish a bogus Aborted error.
+// TestStreamContainerLogsRequestCancellationIsNotAStreamFailure pins the difference
+// between "the caller went away" and "the stream broke": a cancel before the daemon
+// answers must not become a log read failure.
 func TestStreamContainerLogsRequestCancellationIsNotAStreamFailure(t *testing.T) {
 	t.Parallel()
 
@@ -676,9 +710,8 @@ func TestStreamContainerLogsRequestCancellationIsNotAStreamFailure(t *testing.T)
 		workflow.streamContainerLogs(ctx, dockerLogTestContainerID, logCh, errs, true)
 	}()
 
-	// Wait for the request to be attached: without the daemon response there is
-	// no other observable proof that the cancellation below reaches the open
-	// request instead of arriving before it.
+	// Without a daemon response this is the only proof the cancellation
+	// below reaches the open request rather than arriving before it.
 	select {
 	case <-attached:
 	case <-time.After(dockerLogStreamTestTimeout):
@@ -699,10 +732,9 @@ func TestStreamContainerLogsRequestCancellationIsNotAStreamFailure(t *testing.T)
 	close(errs)
 }
 
-// runningContainerFixture serves a container that never finishes on its own:
-// the wait response releases ContainerWait with its headers but never completes,
-// so the log stream is attached and only a cancellation ends it. That is the
-// state every Execute shutdown path has to deal with.
+// runningContainerFixture serves a container that never finishes: the wait releases
+// ContainerWait with its headers but never completes, so only a cancellation ends the
+// log stream — the state every Execute shutdown path has to handle.
 type runningContainerFixture struct {
 	// logStream serves the open log stream.
 	logStream http.HandlerFunc
@@ -731,13 +763,9 @@ func newRunningContainerWorkflow(t *testing.T, fixture runningContainerFixture) 
 	})
 }
 
-// TestExecuteDoesNotCloseLogChannelsWhileStreamIsPublishing pins the invariant
-// behind the Execute/stream hand-off: the log channels are closed only after the
-// streaming goroutine has returned. A container that keeps running, combined with
-// a consumer slow enough to park the forwarder mid-send, is the shape that
-// breaks it — a send on a closed channel takes the worker process down. Execute
-// used to close after a fixed 100 ms wait, which is a race against that
-// publisher rather than a join.
+// TestExecuteDoesNotCloseLogChannelsWhileStreamIsPublishing pins that the log channels
+// close only after the streaming goroutine returns: with a slow consumer parking the
+// forwarder, a send on a closed channel would take the worker process down.
 func TestExecuteDoesNotCloseLogChannelsWhileStreamIsPublishing(t *testing.T) {
 	t.Parallel()
 
@@ -782,8 +810,8 @@ func TestExecuteDoesNotCloseLogChannelsWhileStreamIsPublishing(t *testing.T) {
 		var delivered []*jobsmodel.JobLog
 		for log := range logs {
 			delivered = append(delivered, log)
-			// Deliberately slow: the forwarder parks mid-send for as long as the
-			// execution takes to tear the stream down.
+			// Deliberately slow: the forwarder parks mid-send for as long as
+			// the execution takes to tear the stream down.
 			time.Sleep(time.Second)
 		}
 		collected <- delivered
@@ -804,11 +832,9 @@ func TestExecuteDoesNotCloseLogChannelsWhileStreamIsPublishing(t *testing.T) {
 	requireContiguousSequences(t, <-collected)
 }
 
-// TestExecuteTimeoutClosesChannelsWhenErrorConsumerAbandons covers the case the
-// executor can actually produce: it stops draining both channels once a log
-// publish fails, while the caller context is still live. The execution deadline
-// must still publish the terminal failure, stop the container, and close both
-// channels instead of blocking on an error nobody will read.
+// TestExecuteTimeoutClosesChannelsWhenErrorConsumerAbandons covers the case the executor
+// can produce: it stops draining both channels while the caller context is live, so the
+// deadline must still publish, stop the container and close instead of blocking.
 func TestExecuteTimeoutClosesChannelsWhenErrorConsumerAbandons(t *testing.T) {
 	t.Parallel()
 
@@ -863,11 +889,10 @@ func TestExecuteTimeoutClosesChannelsWhenErrorConsumerAbandons(t *testing.T) {
 	}
 }
 
-// TestExecuteReportsCallerCancellation guards the terminal outcome of an
-// execution the caller gave up on: cancellation suppresses stream failures, but
-// the caller still has to be told the execution ended as canceled. Draining the
-// outcome only after the cancellation also proves the shutdown completes on its
-// own, without a consumer present at the moment it happens.
+// TestExecuteReportsCallerCancellation guards the terminal outcome of an execution the
+// caller gave up on: cancellation suppresses stream failures, yet the caller must still
+// learn the execution ended as canceled. Reading the outcome afterwards also proves the
+// shutdown completes with no consumer present.
 func TestExecuteReportsCallerCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -893,9 +918,8 @@ func TestExecuteReportsCallerCancellation(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	// Drain the logs so the stream cannot stall on backpressure, cancel only once
-	// the first line proves the daemon stream is attached, and look at the
-	// outcome afterwards.
+	// Drain the logs so the stream cannot stall on backpressure, and cancel
+	// only once the first line proves the stream is attached.
 	firstLineRead := make(chan struct{})
 	drained := make(chan struct{})
 	go func() {
@@ -925,4 +949,115 @@ func TestExecuteReportsCallerCancellation(t *testing.T) {
 	}
 
 	waitForSignal(t, streamAborted, "Execute() never tore the daemon log stream down")
+}
+
+// TestExecuteReportsWaitFailureAsTerminalError covers the branch this hand-off rewrote:
+// a wait that fails while the caller context is live becomes the terminal outcome, and
+// the live log stream is torn down before both channels close.
+func TestExecuteReportsWaitFailureAsTerminalError(t *testing.T) {
+	t.Parallel()
+
+	streamAttached, streamAborted := make(chan struct{}), make(chan struct{})
+	var attachOnce atomic.Bool
+
+	workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
+		logs: func(_ http.ResponseWriter, r *http.Request) {
+			if attachOnce.CompareAndSwap(false, true) {
+				close(streamAttached)
+			}
+			<-r.Context().Done()
+			close(streamAborted)
+		},
+		wait: failWaitAfterStreamAttached(t, "wait aborted by the daemon", streamAttached),
+	})
+
+	_, logs, errs, err := workflow.Execute(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for range logs { //nolint:revive // Draining without recording is the point: prove closure.
+		}
+	}()
+
+	result := awaitDockerLogStream(t, nil, errs)
+	if len(result.errs) != 1 {
+		t.Fatalf("a failed wait published %d failures, want exactly the terminal one: %v", len(result.errs), result.errs)
+	}
+	if code := status.Code(result.errs[0]); code != codes.Aborted {
+		t.Fatalf("wait-failure code = %s, want %s: %v", code, codes.Aborted, result.errs[0])
+	}
+	if !strings.Contains(result.errs[0].Error(), "container execution error") {
+		t.Fatalf("wait-failure error = %q, want the terminal execution-error message", result.errs[0])
+	}
+
+	waitForSignal(t, streamAborted, "Execute() never tore the daemon log stream down after the wait failed")
+	waitForSignal(t, drained, "Execute() never closed the log channel after the wait failed")
+}
+
+// TestExecutePublishesNothingWhenContainerIsGone pins the one Execute exit that publishes
+// no terminal outcome: an externally removed container leaves nothing to report, and the
+// channels just close after the join.
+func TestExecutePublishesNothingWhenContainerIsGone(t *testing.T) {
+	t.Parallel()
+
+	streamAttached, streamAborted := make(chan struct{}), make(chan struct{})
+	var attachOnce atomic.Bool
+
+	workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
+		logs: func(_ http.ResponseWriter, r *http.Request) {
+			if attachOnce.CompareAndSwap(false, true) {
+				close(streamAttached)
+			}
+			<-r.Context().Done()
+			close(streamAborted)
+		},
+		wait: failWaitAfterStreamAttached(t, "No such container: "+dockerLogTestContainerID, streamAttached),
+	})
+
+	_, logs, errs, err := workflow.Execute(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for range logs { //nolint:revive // Draining without recording is the point: prove closure.
+		}
+	}()
+
+	result := awaitDockerLogStream(t, nil, errs)
+	if len(result.errs) != 0 {
+		t.Fatalf("a removed container published %d failures, want none: %v", len(result.errs), result.errs)
+	}
+
+	waitForSignal(t, streamAborted, "Execute() never tore the daemon log stream down after the container vanished")
+	waitForSignal(t, drained, "Execute() never closed the log channel after the container vanished")
+}
+
+// failWaitAfterStreamAttached releases the wait headers, waits for the log stream to
+// attach, then ends the wait with a non-JSON body that the client reports as a wait
+// error carrying that text. The headers come first so ContainerWait returns and the
+// stream is ever opened; sequencing on the attachment makes the teardown under test
+// the one that aborts a live stream.
+func failWaitAfterStreamAttached(t *testing.T, body string, attached <-chan struct{}) http.HandlerFunc {
+	t.Helper()
+
+	return func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(http.StatusOK)
+		flushDockerLogStream(rw)
+
+		select {
+		case <-attached:
+		case <-r.Context().Done():
+			return
+		}
+
+		writeDockerTestResponse(t, rw, body)
+	}
 }

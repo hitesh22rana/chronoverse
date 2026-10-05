@@ -129,6 +129,8 @@ func TestIntegrationTerminalFailureReplayKeepsDurableEffects(t *testing.T) {
 	if len(effects) != 2 {
 		t.Fatalf("terminal effect ledger = %+v, want one FAILED row per failed job", effects)
 	}
+	durableTerminalEffectByJob(t, effects, firstJob, "FAILED")
+	durableTerminalEffectByJob(t, effects, thresholdJob, "FAILED")
 	if terminates := durableTerminalTerminateEvents(ctx, t, fixture.pg, fixture.workflowID); terminates != 1 {
 		t.Fatalf("termination outbox events = %d, want 1", terminates)
 	}
@@ -562,12 +564,12 @@ func durableTerminalJobCompletedEvent(fixture *durableTerminalFixture, jobID str
 func durableTerminalNotifications(ctx context.Context, t *testing.T, pg *postgres.Postgres, userID string) []durableTerminalNotificationRow {
 	t.Helper()
 
-	rows, err := pg.Query(ctx, `
+	rows, err := pg.Query(ctx, fmt.Sprintf(`
 		SELECT id::text, kind, payload::text, idempotency_key
-		FROM notifications
+		FROM %s
 		WHERE user_id = $1
 		ORDER BY created_at, id
-	`, userID)
+	`, postgres.TableNotifications), userID)
 	if err != nil {
 		t.Fatalf("read durable notifications: %v", err)
 	}
@@ -593,12 +595,12 @@ func durableTerminalNotifications(ctx context.Context, t *testing.T, pg *postgre
 func durableTerminalEffects(ctx context.Context, t *testing.T, pg *postgres.Postgres, workflowID string) []durableTerminalEffectRow {
 	t.Helper()
 
-	rows, err := pg.Query(ctx, `
+	rows, err := pg.Query(ctx, fmt.Sprintf(`
 		SELECT job_id::text, effect, threshold_reached
-		FROM workflow_terminal_effects
+		FROM %s
 		WHERE workflow_id = $1
 		ORDER BY job_id
-	`, workflowID)
+	`, postgres.TableWorkflowTerminalEffects), workflowID)
 	if err != nil {
 		t.Fatalf("read terminal effect ledger: %v", err)
 	}
@@ -624,11 +626,11 @@ func durableTerminalTerminateEvents(ctx context.Context, t *testing.T, pg *postg
 	t.Helper()
 
 	var count int
-	if err := pg.QueryRow(ctx, `
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`
 		SELECT count(*)
-		FROM outbox_events
+		FROM %s
 		WHERE topic = $1 AND kafka_key = $2 AND payload->>'Action' = $3
-	`, kafkapkg.TopicWorkflows, workflowID, workflowsmodel.ActionTerminate.ToString()).Scan(&count); err != nil {
+	`, postgres.TableOutboxEvents), kafkapkg.TopicWorkflows, workflowID, workflowsmodel.ActionTerminate.ToString()).Scan(&count); err != nil {
 		t.Fatalf("count termination outbox events: %v", err)
 	}
 	return count
@@ -638,9 +640,9 @@ func durableTerminalAssertCounter(ctx context.Context, t *testing.T, fixture *du
 	t.Helper()
 
 	var got int32
-	if err := fixture.pg.QueryRow(ctx, `
-		SELECT consecutive_job_failures_count FROM workflows WHERE id = $1
-	`, fixture.workflowID).Scan(&got); err != nil {
+	if err := fixture.pg.QueryRow(ctx, fmt.Sprintf(`
+		SELECT consecutive_job_failures_count FROM %s WHERE id = $1
+	`, postgres.TableWorkflows), fixture.workflowID).Scan(&got); err != nil {
 		t.Fatalf("read consecutive_job_failures_count: %v", err)
 	}
 	if got != want {
@@ -702,7 +704,7 @@ func durableTerminalAssertNoNotificationKey(t *testing.T, rows []durableTerminal
 
 // durableTerminalEffectByJob returns the ledger row one job's terminal effect
 // produced, so a test can assert the recorded effect rather than a row count.
-func durableTerminalEffectByJob(t *testing.T, rows []durableTerminalEffectRow, jobID, wantEffect string) durableTerminalEffectRow {
+func durableTerminalEffectByJob(t *testing.T, rows []durableTerminalEffectRow, jobID, wantEffect string) {
 	t.Helper()
 
 	for _, row := range rows {
@@ -710,11 +712,10 @@ func durableTerminalEffectByJob(t *testing.T, rows []durableTerminalEffectRow, j
 			if row.Effect != wantEffect {
 				t.Fatalf("terminal effect for job %q = %q, want %q", jobID, row.Effect, wantEffect)
 			}
-			return row
+			return
 		}
 	}
 	t.Fatalf("no terminal effect for job %q in %+v", jobID, rows)
-	return durableTerminalEffectRow{}
 }
 
 func durableTerminalMessage(t *testing.T, payload string) string {

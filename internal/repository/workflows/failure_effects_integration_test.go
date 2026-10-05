@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
@@ -46,8 +48,6 @@ const (
 	// clamp. The node is private to the fixture and removed during cleanup, so
 	// the unattributed slots cannot affect any other test.
 	fixtureOccupiedSlots = 3
-	// fixtureWorkflowsTopic is the topic every workflow command publishes to.
-	fixtureWorkflowsTopic = "workflows"
 	// terminalEffectFailed and terminalEffectCompleted are the durable
 	// workflow_terminal_effects effect values. They are named here so every
 	// assertion reads as the ledger contract it checks.
@@ -133,10 +133,10 @@ func registerFixtureCleanup(ctx context.Context, t *testing.T, pg *postgres.Post
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fixtureCleanupTimeout)
 		defer cancel()
-		if _, err := pg.Exec(cleanupCtx, `DELETE FROM outbox_events WHERE payload->>'UserID' = $1`, userID); err != nil {
+		if _, err := pg.Exec(cleanupCtx, fmt.Sprintf(`DELETE FROM %s WHERE payload->>'UserID' = $1`, postgres.TableOutboxEvents), userID); err != nil {
 			t.Errorf("delete fixture outbox events for user %q: %v", userID, err)
 		}
-		if _, err := pg.Exec(cleanupCtx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
+		if _, err := pg.Exec(cleanupCtx, fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, postgres.TableUsers), userID); err != nil {
 			t.Errorf("delete fixture user %q: %v", userID, err)
 		}
 	})
@@ -221,10 +221,10 @@ func seedFixtureNode(ctx context.Context, t *testing.T, pg *postgres.Postgres, r
 		// key would block that delete while a job row survives, so the node
 		// cleanup releases its own jobs first. Both statements are exact: this
 		// node id is unique to this fixture.
-		if _, err := pg.Exec(cleanupCtx, `DELETE FROM jobs WHERE runtime_node_id = $1`, nodeID); err != nil {
+		if _, err := pg.Exec(cleanupCtx, fmt.Sprintf(`DELETE FROM %s WHERE runtime_node_id = $1`, postgres.TableJobs), nodeID); err != nil {
 			t.Errorf("delete fixture jobs on node %q: %v", nodeID, err)
 		}
-		if _, err := pg.Exec(cleanupCtx, `DELETE FROM runtime_nodes WHERE id = $1`, nodeID); err != nil {
+		if _, err := pg.Exec(cleanupCtx, fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, postgres.TableRuntimeNodes), nodeID); err != nil {
 			t.Errorf("delete fixture runtime node %q: %v", nodeID, err)
 		}
 	})
@@ -344,11 +344,11 @@ func readWorkflowFailureState(ctx context.Context, t *testing.T, pg *postgres.Po
 	t.Helper()
 
 	var state workflowFailureState
-	if err := pg.QueryRow(ctx, `
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`
 		SELECT consecutive_job_failures_count, max_consecutive_job_failures_allowed, build_status, generation, terminated_at
-		FROM workflows
+		FROM %s
 		WHERE id = $1
-	`, workflowID).Scan(
+	`, postgres.TableWorkflows), workflowID).Scan(
 		&state.ConsecutiveJobFailuresCount,
 		&state.MaxConsecutiveFailures,
 		&state.BuildStatus,
@@ -364,7 +364,7 @@ func countWorkflowRows(ctx context.Context, t *testing.T, pg *postgres.Postgres,
 	t.Helper()
 
 	var count int
-	if err := pg.QueryRow(ctx, `SELECT count(*) FROM workflows WHERE id = $1`, workflowID).Scan(&count); err != nil {
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE id = $1`, postgres.TableWorkflows), workflowID).Scan(&count); err != nil {
 		t.Fatalf("count workflow rows for %q: %v", workflowID, err)
 	}
 	return count
@@ -374,7 +374,7 @@ func countWorkflowJobs(ctx context.Context, t *testing.T, pg *postgres.Postgres,
 	t.Helper()
 
 	var count int
-	if err := pg.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE workflow_id = $1`, workflowID).Scan(&count); err != nil {
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE workflow_id = $1`, postgres.TableJobs), workflowID).Scan(&count); err != nil {
 		t.Fatalf("count jobs for workflow %q: %v", workflowID, err)
 	}
 	return count
@@ -386,11 +386,11 @@ func readTerminalEffect(ctx context.Context, t *testing.T, pg *postgres.Postgres
 	t.Helper()
 
 	var row terminalEffectRow
-	err := pg.QueryRow(ctx, `
+	err := pg.QueryRow(ctx, fmt.Sprintf(`
 		SELECT workflow_id::text, user_id::text, effect, threshold_reached, created_at
-		FROM workflow_terminal_effects
+		FROM %s
 		WHERE job_id = $1
-	`, jobID).Scan(&row.WorkflowID, &row.UserID, &row.Effect, &row.ThresholdReached, &row.CreatedAt)
+	`, postgres.TableWorkflowTerminalEffects), jobID).Scan(&row.WorkflowID, &row.UserID, &row.Effect, &row.ThresholdReached, &row.CreatedAt)
 	if pg.IsNoRows(err) {
 		return terminalEffectRow{}, false
 	}
@@ -404,7 +404,7 @@ func countTerminalEffects(ctx context.Context, t *testing.T, pg *postgres.Postgr
 	t.Helper()
 
 	var count int
-	if err := pg.QueryRow(ctx, `SELECT count(*) FROM workflow_terminal_effects WHERE job_id = $1`, jobID).Scan(&count); err != nil {
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE job_id = $1`, postgres.TableWorkflowTerminalEffects), jobID).Scan(&count); err != nil {
 		t.Fatalf("count terminal effects for job %q: %v", jobID, err)
 	}
 	return count
@@ -417,7 +417,7 @@ func countWorkflowEvents(ctx context.Context, t *testing.T, pg *postgres.Postgre
 	t.Helper()
 
 	var count int
-	if err := pg.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE kafka_key = $1`, workflowID).Scan(&count); err != nil {
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE kafka_key = $1`, postgres.TableOutboxEvents), workflowID).Scan(&count); err != nil {
 		t.Fatalf("count outbox events for workflow %q: %v", workflowID, err)
 	}
 	return count
@@ -427,11 +427,11 @@ func countWorkflowActionEvents(ctx context.Context, t *testing.T, pg *postgres.P
 	t.Helper()
 
 	var count int
-	if err := pg.QueryRow(ctx, `
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`
 		SELECT count(*)
-		FROM outbox_events
+		FROM %s
 		WHERE kafka_key = $1 AND payload->>'Action' = $2
-	`, workflowID, action).Scan(&count); err != nil {
+	`, postgres.TableOutboxEvents), workflowID, action).Scan(&count); err != nil {
 		t.Fatalf("count %s outbox events for workflow %q: %v", action, workflowID, err)
 	}
 	return count
@@ -441,11 +441,11 @@ func readWorkflowActionEvent(ctx context.Context, t *testing.T, pg *postgres.Pos
 	t.Helper()
 
 	var event workflowOutboxEvent
-	if err := pg.QueryRow(ctx, `
+	if err := pg.QueryRow(ctx, fmt.Sprintf(`
 		SELECT topic, kafka_key, event_key, payload
-		FROM outbox_events
+		FROM %s
 		WHERE kafka_key = $1 AND payload->>'Action' = $2
-	`, workflowID, action).Scan(&event.Topic, &event.KafkaKey, &event.EventKey, &event.Payload); err != nil {
+	`, postgres.TableOutboxEvents), workflowID, action).Scan(&event.Topic, &event.KafkaKey, &event.EventKey, &event.Payload); err != nil {
 		t.Fatalf("read %s outbox event for workflow %q: %v", action, workflowID, err)
 	}
 	return event
@@ -457,12 +457,12 @@ func readWorkflowActionEvent(ctx context.Context, t *testing.T, pg *postgres.Pos
 func workflowActionEventKeys(ctx context.Context, t *testing.T, pg *postgres.Postgres, workflowID, action string) []string {
 	t.Helper()
 
-	rows, err := pg.Query(ctx, `
+	rows, err := pg.Query(ctx, fmt.Sprintf(`
 		SELECT event_key
-		FROM outbox_events
+		FROM %s
 		WHERE kafka_key = $1 AND payload->>'Action' = $2
 		ORDER BY event_key
-	`, workflowID, action)
+	`, postgres.TableOutboxEvents), workflowID, action)
 	if err != nil {
 		t.Fatalf("query %s outbox event keys for workflow %q: %v", action, workflowID, err)
 	}
@@ -486,12 +486,12 @@ func readFixtureJobState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 	t.Helper()
 
 	var state fixtureJobState
-	err := pg.QueryRow(ctx, `
+	err := pg.QueryRow(ctx, fmt.Sprintf(`
 		SELECT trigger::text, status, completed_at, lease_token, leased_by, lease_process_instance_id,
 			terminal_reason_code, runtime_node_id, lease_expires_at, last_heartbeat_at
-		FROM jobs
+		FROM %s
 		WHERE id = $1
-	`, jobID).Scan(
+	`, postgres.TableJobs), jobID).Scan(
 		&state.Trigger,
 		&state.Status,
 		&state.CompletedAt,
@@ -544,16 +544,6 @@ func assertCode(t *testing.T, name string, err error, want codes.Code) {
 
 	if got := status.Code(err); got != want {
 		t.Fatalf("%s code = %v, want %v (err: %v)", name, got, want, err)
-	}
-}
-
-// assertRejected asserts a command refused the caller with one of the given
-// statuses, so an unrelated failure cannot pass as the refusal under test.
-func assertRejected(t *testing.T, name string, err error, want ...codes.Code) {
-	t.Helper()
-
-	if got := status.Code(err); !slices.Contains(want, got) {
-		t.Fatalf("%s code = %v, want one of %v (err: %v)", name, got, want, err)
 	}
 }
 
@@ -701,8 +691,8 @@ func TestIntegrationWorkflowFailureReplayDoesNotRecountOrRepeatEffects(t *testin
 		idempotency.WorkflowEventKey(fixture.WorkflowID, terminateAction, fixture.Generation),
 	)
 	terminateEvent := readWorkflowActionEvent(ctx, t, pg, fixture.WorkflowID, terminateAction)
-	if terminateEvent.Topic != fixtureWorkflowsTopic || terminateEvent.KafkaKey != fixture.WorkflowID {
-		t.Fatalf("TERMINATE topic/key = %q/%q, want %q/%q", terminateEvent.Topic, terminateEvent.KafkaKey, fixtureWorkflowsTopic, fixture.WorkflowID)
+	if terminateEvent.Topic != kafka.TopicWorkflows || terminateEvent.KafkaKey != fixture.WorkflowID {
+		t.Fatalf("TERMINATE topic/key = %q/%q, want %q/%q", terminateEvent.Topic, terminateEvent.KafkaKey, kafka.TopicWorkflows, fixture.WorkflowID)
 	}
 	decodedTerminate := decodeWorkflowEvent(t, terminateEvent.Payload)
 	if decodedTerminate.Action != workflowsmodel.ActionTerminate || decodedTerminate.Generation != fixture.Generation {
@@ -1052,8 +1042,8 @@ func TestIntegrationDeleteWorkflowRefusesWhileJobHoldsRuntimeSlot(t *testing.T) 
 		workflowActionEventKeys(ctx, t, pg, fixture.WorkflowID, deleteAction),
 		idempotency.WorkflowEventKey(fixture.WorkflowID, deleteAction, 0),
 	)
-	if deleteEvent.Topic != fixtureWorkflowsTopic || deleteEvent.KafkaKey != fixture.WorkflowID {
-		t.Fatalf("DELETE topic/key = %q/%q, want %q/%q", deleteEvent.Topic, deleteEvent.KafkaKey, fixtureWorkflowsTopic, fixture.WorkflowID)
+	if deleteEvent.Topic != kafka.TopicWorkflows || deleteEvent.KafkaKey != fixture.WorkflowID {
+		t.Fatalf("DELETE topic/key = %q/%q, want %q/%q", deleteEvent.Topic, deleteEvent.KafkaKey, kafka.TopicWorkflows, fixture.WorkflowID)
 	}
 	decodedDelete := decodeWorkflowEvent(t, deleteEvent.Payload)
 	if decodedDelete.Action != workflowsmodel.ActionDelete || decodedDelete.Generation != 0 {
@@ -1077,17 +1067,21 @@ func TestIntegrationDeleteWorkflowRefusesWhileJobHoldsRuntimeSlot(t *testing.T) 
 	lateFailureJobID := uuid.NewString()
 	lateCompletedJobID := uuid.NewString()
 	eventsBefore := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID)
-	assertRejected(
+	// Both are refused, but not with the same status: the increment inserts into
+	// the ledger first and trips the workflow_id foreign key (SQLSTATE 23503),
+	// while the reset updates and matches no row. Pinning each keeps an
+	// unrelated failure from passing as the refusal under test.
+	assertCode(
 		t,
 		"IncrementWorkflowConsecutiveJobFailuresCount(deleted workflow)",
 		incrementFailureError(ctx, repo, fixture.WorkflowID, fixture.UserID, lateFailureJobID),
-		codes.Internal, // workflow_id FK violation (SQLSTATE 23503) reaches the insert directly
+		codes.Internal,
 	)
-	assertRejected(
+	assertCode(
 		t,
 		"ResetWorkflowConsecutiveJobFailuresCount(deleted workflow)",
 		repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, fixture.WorkflowID, fixture.UserID, lateCompletedJobID),
-		codes.NotFound, // the UPDATE matches no row, so there is no FK to violate
+		codes.NotFound,
 	)
 	for _, jobID := range []string{lateFailureJobID, lateCompletedJobID} {
 		if count := countTerminalEffects(ctx, t, pg, jobID); count != 0 {

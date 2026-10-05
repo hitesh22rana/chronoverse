@@ -21,6 +21,9 @@
 /target/
 /.metrics/
 
+# Python bytecode cache, from running scripts/coverage
+__pycache__/
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

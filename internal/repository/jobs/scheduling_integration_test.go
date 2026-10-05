@@ -159,25 +159,6 @@ func readScheduledJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 	return &row
 }
 
-func readScheduleCommand(ctx context.Context, t *testing.T, pg *postgres.Postgres, scope, operation, key string) (*jobCommandRow, bool) {
-	t.Helper()
-
-	var row jobCommandRow
-	err := pg.QueryRow(ctx, `
-		SELECT status, request_hash, resource_id, response, completed_at, expires_at
-		FROM command_idempotency_keys
-		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
-	`, scope, operation, key,
-	).Scan(&row.Status, &row.RequestHash, &row.ResourceID, &row.Response, &row.CompletedAt, &row.ExpiresAt)
-	if pg.IsNoRows(err) {
-		return nil, false
-	}
-	if err != nil {
-		t.Fatalf("read schedule command ledger row: %v", err)
-	}
-	return &row, true
-}
-
 func countWorkflowJobs(ctx context.Context, t *testing.T, pg *postgres.Postgres, workflowID string) int {
 	t.Helper()
 
@@ -346,7 +327,7 @@ func TestIntegrationScheduleJobManualPersistsOneJobAndReplaysFromLedger(t *testi
 		t.Fatalf("workflow has %d jobs, want exactly the one the command created", count)
 	}
 
-	command, ok := readScheduleCommand(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
+	command, ok := readCommandByScope(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
 	if !ok {
 		t.Fatalf("manual schedule command %q has no ledger row, want a completed reservation", commandKey)
 	}
@@ -378,7 +359,7 @@ func TestIntegrationScheduleJobManualPersistsOneJobAndReplaysFromLedger(t *testi
 	if after := readScheduledJob(ctx, t, pg, jobID); !after.ScheduledAt.Equal(scheduledAt) {
 		t.Fatalf("replay moved scheduled_at to %s, want the original %s", after.ScheduledAt.UTC(), scheduledAt.UTC())
 	}
-	afterCommand, ok := readScheduleCommand(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
+	afterCommand, ok := readCommandByScope(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
 	if !ok {
 		t.Fatalf("replay removed the ledger row of command %q", commandKey)
 	}
@@ -503,7 +484,7 @@ func TestIntegrationScheduleJobAutomaticDerivesADistinctIdentityPerInstantSpelli
 		automaticOccurrenceKey(fixture.WorkflowID, instant),
 		automaticOccurrenceKey(fixture.WorkflowID, spelling),
 	} {
-		if _, ok := readScheduleCommand(
+		if _, ok := readCommandByScope(
 			ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, key,
 		); !ok {
 			t.Fatalf("derived identity %q has no ledger row, want a completed reservation", key)
@@ -562,7 +543,7 @@ func TestIntegrationScheduleJobManualKeyIsScopedToOneWorkflow(t *testing.T) {
 	if count := countWorkflowJobs(ctx, t, pg, secondWorkflowID); count != 1 {
 		t.Fatalf("second workflow has %d jobs, want 1", count)
 	}
-	secondCommand, ok := readScheduleCommand(
+	secondCommand, ok := readCommandByScope(
 		ctx, t, pg, manualScope(fixture.UserID),
 		commandidempotency.ManualScheduleOperation(secondWorkflowID), commandKey,
 	)
@@ -601,7 +582,7 @@ func TestIntegrationScheduleJobManualRejectionLeavesItsKeyReusable(t *testing.T)
 	if err != nil {
 		t.Fatalf("ScheduleJob (owner, reused key): %v", err)
 	}
-	command, ok := readScheduleCommand(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
+	command, ok := readCommandByScope(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
 	if !ok {
 		t.Fatalf("owner's command %q has no ledger row after the rejected attempt", commandKey)
 	}
@@ -654,7 +635,7 @@ func TestIntegrationScheduleJobManualKeyIsReusableAfterItsReplayWindow(t *testin
 	}
 
 	// The reservation is spent by the new occurrence, and its window runs from that completion.
-	command, ok := readScheduleCommand(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
+	command, ok := readCommandByScope(ctx, t, pg, manualScope(fixture.UserID), fixture.ManualOperation, commandKey)
 	if !ok {
 		t.Fatalf("command %q has no ledger row after the expired key was reused", commandKey)
 	}
@@ -791,7 +772,7 @@ func TestIntegrationScheduleJobAutomaticOccurrenceUsesDeterministicIdentity(t *t
 		t.Fatalf("automatic job workflow_generation = %v, want 1", job.WorkflowGeneration)
 	}
 
-	command, ok := readScheduleCommand(
+	command, ok := readCommandByScope(
 		ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation,
 		automaticOccurrenceKey(fixture.WorkflowID, firstOccurrence),
 	)
@@ -945,7 +926,7 @@ func TestIntegrationScheduleJobAutomaticIdentityConflictPreservesOriginalJob(t *
 	if err != nil {
 		t.Fatalf("ScheduleJob: %v", err)
 	}
-	command, ok := readScheduleCommand(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, commandKey)
+	command, ok := readCommandByScope(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, commandKey)
 	if !ok {
 		t.Fatalf("automatic schedule command %q has no ledger row", commandKey)
 	}
@@ -974,7 +955,7 @@ func TestIntegrationScheduleJobAutomaticIdentityConflictPreservesOriginalJob(t *
 	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
 		t.Fatalf("workflow has %d jobs, want the single job of the first command", count)
 	}
-	afterCommand, ok := readScheduleCommand(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, commandKey)
+	afterCommand, ok := readCommandByScope(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, commandKey)
 	if !ok {
 		t.Fatalf("conflict removed the ledger row of command %q", commandKey)
 	}
@@ -1009,7 +990,7 @@ func TestIntegrationScheduleJobAutomaticWithoutGenerationRecordsLegacyIdentity(t
 	}
 	assertNullString(t, "job idempotency_key", job.IdempotencyKey, occurrenceKey)
 
-	command, ok := readScheduleCommand(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, occurrenceKey)
+	command, ok := readCommandByScope(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, occurrenceKey)
 	if !ok {
 		t.Fatal("legacy occurrence identity has no ledger row, want a completed reservation")
 	}
@@ -1025,7 +1006,7 @@ func TestIntegrationScheduleJobAutomaticWithoutGenerationRecordsLegacyIdentity(t
 	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
 		t.Fatalf("workflow has %d jobs, want the single legacy occurrence", count)
 	}
-	afterCommand, ok := readScheduleCommand(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, occurrenceKey)
+	afterCommand, ok := readCommandByScope(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, occurrenceKey)
 	if !ok {
 		t.Fatalf("conflict removed the ledger row of the legacy occurrence %q", occurrenceKey)
 	}
@@ -1148,43 +1129,66 @@ func TestIntegrationScheduleJobAutomaticWithoutGenerationSkipsTheWorkflowGuard(t
 	}
 }
 
+// TestIntegrationScheduleJobAdoptsLegacyAutomaticRowWithoutDuplicatingJob covers a
+// pre-ledger occurrence committed for an identity this command redelivers: the committed
+// job is adopted rather than duplicated. The padded case is what pins the lookup, because
+// only a key whose stored text differs from the normalized caller key reaches it — a key
+// that matches exactly is already resolved by the insert's own ON CONFLICT. Without the
+// lookup the padded case fails as codes.Internal on idx_jobs_automatic_schedule_slot,
+// which a client would retry forever.
 func TestIntegrationScheduleJobAdoptsLegacyAutomaticRowWithoutDuplicatingJob(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 
-	fixture := seedScheduleFixture(ctx, t, pg)
-	scheduledAt := occurrenceInstant(time.Hour)
-	commandKey := "legacy-event-" + fixtureTag()
-	generation := int64(1)
-	legacyJobID := seedLegacyAutomaticJob(
-		ctx, t, pg, fixture, scheduledAt,
-		legacyAutomaticJob{idempotencyKey: &commandKey, generation: &generation},
-	)
+	tests := []struct {
+		name string
+		// pad stores the legacy row's key with the padding a pre-normalization binary kept.
+		pad bool
+	}{
+		{name: "legacy key already normalized"},
+		{name: "legacy key stored padded", pad: true},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := seedScheduleFixture(ctx, t, pg)
+			scheduledAt := occurrenceInstant(time.Hour)
+			commandKey := "legacy-event-" + fixtureTag()
+			generation := int64(1)
+			storedKey := commandKey
+			if testCase.pad {
+				storedKey = "  " + commandKey + " "
+			}
+			legacyJobID := seedLegacyAutomaticJob(
+				ctx, t, pg, fixture, scheduledAt,
+				legacyAutomaticJob{idempotencyKey: &storedKey, generation: &generation},
+			)
 
-	// No ledger row exists for an occurrence committed before the upgrade, as while it is redelivered.
-	jobID, err := repo.ScheduleJob(
-		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
-		jobsmodel.JobTriggerAutomatic.ToString(), commandKey, 1,
-	)
-	if err != nil {
-		t.Fatalf("ScheduleJob: %v", err)
-	}
-	if jobID != legacyJobID {
-		t.Fatalf("adopted job id = %q, want the committed legacy job %q", jobID, legacyJobID)
-	}
+			// No ledger row exists for an occurrence committed before the upgrade, as while it is redelivered.
+			jobID, err := repo.ScheduleJob(
+				ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
+				jobsmodel.JobTriggerAutomatic.ToString(), commandKey, 1,
+			)
+			if err != nil {
+				t.Fatalf("ScheduleJob: %v", err)
+			}
+			if jobID != legacyJobID {
+				t.Fatalf("adopted job id = %q, want the committed legacy job %q", jobID, legacyJobID)
+			}
 
-	// The occurrence stays exactly one job, replayable for the whole event window.
-	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
-		t.Fatalf("workflow has %d jobs, want only the committed legacy job", count)
-	}
-	command, ok := readScheduleCommand(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, commandKey)
-	if !ok {
-		t.Fatalf("adopted identity %q has no ledger row, want a completed reservation", commandKey)
-	}
-	assertCompletedScheduleCommand(t, command, legacyJobID, automaticScheduleReplayWindow)
-	if count := countScheduleCommands(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation); count != 1 {
-		t.Fatalf("ledger holds %d automatic schedule rows, want only the adopted identity", count)
+			// The occurrence stays exactly one job, replayable for the whole event window.
+			if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
+				t.Fatalf("workflow has %d jobs, want only the committed legacy job", count)
+			}
+			command, ok := readCommandByScope(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, commandKey)
+			if !ok {
+				t.Fatalf("adopted identity %q has no ledger row, want a completed reservation", commandKey)
+			}
+			assertCompletedScheduleCommand(t, command, legacyJobID, automaticScheduleReplayWindow)
+			if count := countScheduleCommands(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation); count != 1 {
+				t.Fatalf("ledger holds %d automatic schedule rows, want only the adopted identity", count)
+			}
+		})
 	}
 }
 

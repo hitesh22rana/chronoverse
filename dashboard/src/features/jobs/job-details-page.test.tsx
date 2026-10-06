@@ -9,7 +9,7 @@
  * document, so each expectation is the text a user reads for that run.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import type { Job } from "@/features/jobs/types"
@@ -84,6 +84,26 @@ function renderPage() {
 const renderedDuration = () => screen.getByText("Duration:").parentElement?.textContent?.slice("Duration:".length)
 
 const timelineRow = (label: string) => screen.getByText(`${label}:`).parentElement?.textContent
+
+/** Job-detail requests, which a refresh or a retry has to repeat. */
+const jobDetailRequests = () =>
+    mocks.fetchApiJson.mock.calls.filter(([url]) => String(url).startsWith("/workflows/w1/jobs/")).length
+
+/** Serves `mocks.job` for the first `failures` job-detail requests, then recovers. */
+const failJobDetailTimes = (failures: number, error: unknown) => {
+    mocks.fetchApiJson.mockImplementation(async (url: string) => {
+        if (url.includes("/logs")) return { id: "j1", workflow_id: "w1", logs: [] }
+        if (url.startsWith("/workflows/w1/jobs/")) {
+            if (failures > 0) {
+                failures -= 1
+                throw error
+            }
+            return mocks.job
+        }
+        if (url.startsWith("/workflows/w1")) return workflow
+        throw new Error(`unexpected transport call: ${url}`)
+    })
+}
 
 /**
  * The timeline prints timestamps in the reader's own timezone, so the expected
@@ -161,4 +181,66 @@ it.each([
     renderPage()
 
     await waitFor(() => expect(renderedDuration()).toBe(expected as string))
+})
+
+it("labels a manually triggered job and asks the server again on refresh", async () => {
+    mocks.job = { ...finishedJob(65), trigger: "MANUAL" }
+    renderPage()
+    await screen.findByRole("heading", { name: "Timeline" })
+
+    // A job run by hand is not confused with a scheduled one.
+    expect(screen.getByText("Manual")).toBeTruthy()
+    expect(screen.queryByText("Automatic")).toBeNull()
+
+    // Refresh is a real refetch of the job, not a repaint of what is on screen.
+    const before = jobDetailRequests()
+    await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    })
+    await waitFor(() => expect(jobDetailRequests()).toBeGreaterThan(before))
+    expect(screen.getByRole("heading", { name: "Timeline" })).toBeTruthy()
+})
+
+it("reports a failed load, then recovers the page through Try Again", async () => {
+    failJobDetailTimes(1, new Error("job details unavailable: offline"))
+
+    renderPage()
+
+    // The failure replaces the page and says what the server said.
+    expect(await screen.findByRole("heading", { name: "Error Loading Job" })).toBeTruthy()
+    expect(screen.getByText("job details unavailable: offline")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Timeline" })).toBeNull()
+    expect(mocks.toast.error).toHaveBeenCalledWith("job details unavailable: offline")
+
+    // Try Again retries the request, and the job comes back on its own.
+    await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Try Again" }))
+    })
+    expect(await screen.findByRole("heading", { name: "Timeline" })).toBeTruthy()
+    expect(renderedDuration()).toBe("1 minute 5 seconds")
+    expect(screen.queryByRole("heading", { name: "Error Loading Job" })).toBeNull()
+})
+
+it("hands navigation back to the router when a reader gives up on a failed load", async () => {
+    failJobDetailTimes(1, new Error("gone"))
+
+    renderPage()
+
+    await screen.findByRole("heading", { name: "Error Loading Job" })
+    await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Go Back" }))
+    })
+    expect(mocks.back).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("heading", { name: "Error Loading Job" })).toBeTruthy()
+})
+
+it("says plainly when a failure arrives without an error to quote", async () => {
+    // A transport can fail with a bare value; the page must not render it raw.
+    failJobDetailTimes(1, "gateway timeout")
+
+    renderPage()
+
+    expect(await screen.findByRole("heading", { name: "Error Loading Job" })).toBeTruthy()
+    expect(screen.getByText("Failed to load job data")).toBeTruthy()
+    expect(screen.queryByText("gateway timeout")).toBeNull()
 })

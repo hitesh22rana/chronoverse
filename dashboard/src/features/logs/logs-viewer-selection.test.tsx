@@ -414,6 +414,102 @@ it.each([
     expect(mocks.toast.warning).toHaveBeenCalledTimes(warning ? 1 : 0)
 })
 
+it("does not repeat an unavailable warning when the address re-delivers the same line", async () => {
+    mocks.fetchApiJson.mockImplementation(async (url: string) => {
+        if (url.includes("/logs/search")) return searchPage
+        if (url.includes("/logs")) return { ...newerPage, cursor: undefined }
+        return workflow
+    })
+    window.location.hash = "#L99"
+
+    renderViewer()
+    await loadedLines(20)
+    await waitFor(() => expect(mocks.toast.warning).toHaveBeenCalledTimes(1))
+
+    // Following the same link again re-selects the same missing line, which the
+    // reader has already been told about: the viewer must not nag twice.
+    await act(async () => {
+        setFragment("#L99")
+    })
+    expect(mocks.toast.warning).toHaveBeenCalledTimes(1)
+    expect(mocks.toast.warning).toHaveBeenCalledWith("Log line 99 is unavailable")
+})
+
+it("keeps a resolved deep link in place when the address re-delivers it", async () => {
+    window.location.hash = "#L30"
+
+    renderViewer()
+    await loadedLines(20)
+    await loadedLines(40)
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledTimes(1))
+    await rangeChanged(25, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1))
+    await act(async () => {
+        (mocks.scrollIntoView.mock.calls[0][0] as { done: () => void }).done()
+    })
+
+    // Re-entering the same link finds the line already scrolled into place, so the
+    // reader keeps their position instead of being yanked back.
+    await act(async () => {
+        setFragment("#L30")
+    })
+    expect(mocks.scrollToIndex).toHaveBeenCalledTimes(1)
+    expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1)
+})
+
+it("drops a rendered-range correction whose selection was replaced first", async () => {
+    window.location.hash = "#L30"
+
+    renderViewer()
+    await loadedLines(20)
+    await loadedLines(40)
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 29, align: "start" }))
+
+    // A range change schedules a correction for line 30; moving the selection in
+    // the same turn replaces it before the browser paints a frame.
+    await act(async () => {
+        mocks.virtuosoProps?.rangeChanged({ startIndex: 25, endIndex: 39 })
+        setFragment("#L35")
+    })
+
+    // Only the surviving selection is corrected. Scrolling to the replaced line
+    // would move the reader away from the line they just asked for.
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 34, align: "start" }))
+    await rangeChanged(34, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1))
+    expect((mocks.scrollIntoView.mock.calls[0][0] as { index: number }).index).toBe(34)
+})
+
+it("does not mark a replaced selection as scrolled when its correction lands late", async () => {
+    window.location.hash = "#L30"
+
+    renderViewer()
+    await loadedLines(20)
+    await loadedLines(40)
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledTimes(1))
+    await rangeChanged(25, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1))
+    const staleDone = (mocks.scrollIntoView.mock.calls[0][0] as { done: () => void }).done
+
+    // Move to another line and correct it, then let the first correction finish.
+    await act(async () => {
+        setFragment("#L35")
+    })
+    await rangeChanged(34, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(2))
+    await act(async () => {
+        staleDone()
+    })
+
+    // Line 30 was never confirmed as scrolled, so returning to it scrolls again
+    // instead of trusting a correction that belonged to an abandoned selection.
+    await act(async () => {
+        setFragment("#L30")
+    })
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledTimes(3))
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 29, align: "start" })
+})
+
 it("tracks selection changes made through the address fragment", async () => {
     renderViewer()
     await loadedLines(20)
@@ -714,6 +810,41 @@ it("downloads the retained logs from the download popover", async () => {
     ))
     expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("run-42.jsonl")
     expect(mocks.toast.success).toHaveBeenCalledWith("Logs downloaded successfully")
+})
+
+it("reports a download in flight in both the trigger and the action", async () => {
+    let releaseDownload: (() => void) | null = null
+    mocks.fetchApi.mockImplementation(() => new Promise((resolve) => {
+        releaseDownload = () => resolve({ blob: async () => new Blob(["logs"]) })
+    }))
+    renderViewer()
+    await loadedLines(20)
+
+    await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+    })
+    await act(async () => {
+        fireEvent.change(await screen.findByLabelText("File name"), { target: { value: "slow.txt" } })
+    })
+    await act(async () => {
+        fireEvent.click(screen.getAllByRole("button", { name: /^Download$/ })[1])
+    })
+
+    // While the request is outstanding, both download buttons show the wait and
+    // refuse a second click, so a slow download cannot be queued twice.
+    const pending = screen.getAllByRole("button", { name: /^Download$/ }) as HTMLButtonElement[]
+    await waitFor(() => expect(pending.every((button) => button.disabled)).toBe(true))
+    expect(pending.map((button) => Boolean(button.querySelector(".lucide-loader-circle")))).toEqual([true, true])
+    expect(screen.getByLabelText("File name")).toHaveProperty("disabled", true)
+    expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
+
+    // Finishing the download closes the popover and reports success.
+    await act(async () => {
+        releaseDownload?.()
+    })
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith("Logs downloaded successfully"))
+    await waitFor(() => expect(screen.queryByLabelText("File name")).toBeNull())
+    expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("slow.txt")
 })
 
 it("keeps json rendering available only while the job has logs", async () => {

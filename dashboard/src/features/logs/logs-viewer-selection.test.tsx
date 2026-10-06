@@ -113,6 +113,7 @@ const row = (lineNumber: number) => document.getElementById(`L${lineNumber}`) as
 const rowButton = (lineNumber: number) => row(lineNumber).querySelector('button[aria-label="Select log entry"]') as HTMLButtonElement
 const visibleLines = () =>
     [...document.querySelectorAll("[data-line-number]")].map((element) => Number(element.getAttribute("data-line-number")))
+const selectionRangeCount = () => window.getSelection()?.rangeCount ?? 0
 const isSelected = (lineNumber: number) => row(lineNumber).getAttribute("data-selected") !== null
 const fragment = () => window.location.hash
 const clickLine = async (lineNumber: number, shiftKey = false) => {
@@ -226,6 +227,9 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup()
+    // The debounce test below scopes fake timers to itself; this is the net for
+    // a failure that leaves them installed, so no later test inherits a clock.
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     // Tests assign the hash directly, so clear it here too: a test that starts
@@ -459,32 +463,124 @@ it("selects and extends a range from row clicks while ignoring drags and line me
     expect(isSelected(11)).toBe(true)
 })
 
-it("drops the selection and applies the debounced query when the search box changes", async () => {
+it("tells a drag apart from a click and drops the text selection while extending", async () => {
+    renderViewer()
+    await loadedLines(20)
+    const pressedLine = rowButton(5)
+
+    // A pointer move with no button held is not a drag gesture at all.
+    await act(async () => {
+        fireEvent.pointerMove(pressedLine, { clientX: 30, clientY: 30 })
+    })
+    expect(fragment()).toBe("")
+
+    // A press that never travels the drag threshold is still a click.
+    await act(async () => {
+        fireEvent.pointerDown(pressedLine, { clientX: 30, clientY: 30, button: 0 })
+        fireEvent.pointerMove(pressedLine, { clientX: 32, clientY: 31 })
+    })
+    await clickLine(5)
+    expect(fragment()).toBe("#L5")
+
+    // Selecting a range by keyboard-and-pointer means shift-clicking, which must
+    // not leave the browser's own text selection highlighting the row as well.
+    const selection = window.getSelection()!
+    const textRange = document.createRange()
+    textRange.selectNodeContents(row(4))
+    selection.removeAllRanges()
+    selection.addRange(textRange)
+    expect(selection.toString()).toBe(row(4).textContent)
+
+    await act(async () => {
+        // dispatchEvent reports false when a handler cancelled the press.
+        expect(fireEvent.pointerDown(rowButton(7), { clientX: 30, clientY: 30, shiftKey: true, button: 0 })).toBe(false)
+    })
+    expect(selectionRangeCount()).toBe(0)
+
+    await clickLine(7, true)
+    expect(fragment()).toBe("#L5-L7")
+    expect([5, 6, 7].map(isSelected)).toEqual([true, true, true])
+})
+
+it("selects a line after a press that is not the primary button", async () => {
     renderViewer()
     await loadedLines(20)
 
+    // Only a shift+primary press starts a range gesture, so any other press
+    // leaves the click to select a single line.
     await act(async () => {
-        fireEvent.click(rowButton(4))
+        fireEvent.pointerDown(rowButton(3), { clientX: 12, clientY: 40, shiftKey: true, button: 1 })
     })
-    expect(fragment()).toBe("#L4")
+    expect(selectionRangeCount()).toBe(0)
 
-    const searchInput = screen.getByPlaceholderText("Search logs... (Ctrl+F)")
-    await act(async () => {
-        fireEvent.change(searchInput, { target: { value: "boom" } })
-    })
+    await clickLine(3)
+    expect(fragment()).toBe("#L3")
+    expect(isSelected(3)).toBe(true)
+})
 
-    // Editing the query invalidates the line selection immediately.
-    expect(fragment()).toBe("")
-    expect(isSelected(4)).toBe(false)
+it("drops the selection and applies the debounced query when the search box changes", async () => {
+    // Fake timers are scoped to this test: the 500ms settle is driven by the
+    // clock instead of by how long the machine happened to take. Nothing else in
+    // this file installs them, and `afterEach` restores the real clock.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+        // Polling helpers cannot drive an installed clock, so the test moves it
+        // itself and reads the DOM in between.
+        const settle = async (ms = 0) => {
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(ms)
+            })
+        }
+        const settleLines = async (count: number) => {
+            for (let attempt = 0; attempt < 20 && visibleLines().length !== count; attempt += 1) {
+                await settle()
+            }
+            expect(visibleLines()).toHaveLength(count)
+        }
 
-    // The query itself is applied once the input settles, and switches the
-    // viewer to the search dataset.
-    await waitFor(
-        () => expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1?q=boom"),
-        { timeout: 5000 },
-    )
-    await waitFor(() => expect(screen.getByText("hit 1")).toBeTruthy())
-    expect(visibleLines()).toHaveLength(40)
+        renderViewer()
+        await settleLines(20)
+
+        // An input that never changes must not re-query the viewer: the debounce
+        // timer fires and finds the input already equal to the applied query.
+        await settle(600)
+        expect(mocks.push).not.toHaveBeenCalled()
+
+        await act(async () => {
+            fireEvent.click(rowButton(4))
+        })
+        expect(fragment()).toBe("#L4")
+
+        const searchInput = screen.getByPlaceholderText("Search logs... (Ctrl+F)")
+        await act(async () => {
+            fireEvent.change(searchInput, { target: { value: "boom" } })
+        })
+
+        // Editing the query invalidates the line selection immediately.
+        expect(fragment()).toBe("")
+        expect(isSelected(4)).toBe(false)
+
+        // The query itself waits for the input to settle, and then switches the
+        // viewer to the search dataset.
+        await settle(600)
+        expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1?q=boom")
+        expect(mocks.push).toHaveBeenCalledTimes(1)
+        await settleLines(40)
+
+        // A settled query is not sent again just because time passed.
+        await settle(600)
+        expect(mocks.push).toHaveBeenCalledTimes(1)
+
+        // Clearing the box returns the viewer to the unfiltered dataset.
+        await act(async () => {
+            fireEvent.change(searchInput, { target: { value: "" } })
+        })
+        await settle(600)
+        expect(mocks.push).toHaveBeenLastCalledWith("/workflows/w1/jobs/j1")
+        await settleLines(20)
+    } finally {
+        vi.useRealTimers()
+    }
 })
 
 it("focuses the search box with the keyboard shortcut and releases it with escape", async () => {
@@ -642,6 +738,42 @@ it("switches between raw and parsed JSON rendering through the address parameter
     expect(row(2).textContent).toBe("plain text")
 })
 
+it("keeps the selected line in the address when parsed JSON rendering is switched off", async () => {
+    mocks.fetchApiJson.mockImplementation(async (url: string) => {
+        if (url.includes("/logs/search")) return searchPage
+        if (url.includes("/logs")) {
+            return {
+                id: "j1",
+                workflow_id: "w1",
+                logs: [
+                    { ...log(2, "raw"), message: '{"level":"info","count":2}' },
+                    { ...log(1, "raw"), message: "plain text" },
+                ],
+            }
+        }
+        return workflow
+    })
+    mocks.search = "json=true"
+    window.location.hash = "#L2"
+
+    renderViewer()
+    await loadedLines(2)
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true")
+    expect(row(1).textContent).toContain('"level": "info"')
+
+    await act(async () => {
+        fireEvent.click(screen.getByRole("switch"))
+    })
+
+    // Switching off drops only the parse flag: the selection fragment survives,
+    // because it is part of the same shareable address.
+    expect(mocks.replace).toHaveBeenCalledWith("/workflows/w1/jobs/j1#L2", { scroll: false })
+    expect(mocks.search).toBe("")
+    await waitFor(() => expect(row(1).textContent).toBe('{"level":"info","count":2}'))
+    expect(isSelected(2)).toBe(true)
+    expect(fragment()).toBe("#L2")
+})
+
 it("copies the selected lines and the shareable permalink from the line menu", async () => {
     // userEvent.setup() also installs the async clipboard stub jsdom lacks.
     const user = userEvent.setup()
@@ -668,6 +800,52 @@ it("copies the selected lines and the shareable permalink from the line menu", a
     await user.click(await screen.findByRole("menuitem", { name: /Copy permalink/ }))
     await waitFor(async () => expect(await copiedText()).toBe(`${window.location.origin}/workflows/w1/jobs/j1#L2-L4`))
     expect(mocks.toast.success).toHaveBeenCalledWith("Log permalink copied")
+})
+
+it("copies one unselected line and its own permalink", async () => {
+    const user = userEvent.setup()
+    renderViewer()
+    await loadedLines(20)
+    const copiedText = () => navigator.clipboard.readText()
+
+    // With no range selected, the line menu of a row acts on that row alone.
+    await user.click(row(6).querySelector('button[aria-label="Line options"]') as HTMLButtonElement)
+    await user.click(await screen.findByRole("menuitem", { name: /Copy line/ }))
+
+    await waitFor(async () => expect(await copiedText()).toBe("retained 35"))
+    expect(mocks.toast.success).toHaveBeenCalledWith("Log line copied")
+    expect(fragment()).toBe("")
+
+    // The permalink of a single line also selects that line in the address.
+    await user.click(row(6).querySelector('button[aria-label="Line options"]') as HTMLButtonElement)
+    await user.click(await screen.findByRole("menuitem", { name: /Copy permalink/ }))
+
+    await waitFor(async () => expect(await copiedText()).toBe(`${window.location.origin}/workflows/w1/jobs/j1#L6`))
+    expect(mocks.toast.success).toHaveBeenCalledWith("Log permalink copied")
+    expect(fragment()).toBe("#L6")
+    expect(isSelected(6)).toBe(true)
+})
+
+it("reports a refused permalink copy and keeps the line it linked to", async () => {
+    const user = userEvent.setup()
+    Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async () => { throw new Error("clipboard blocked") } },
+    })
+
+    renderViewer()
+    await loadedLines(20)
+    expect(fragment()).toBe("")
+
+    await user.click(row(8).querySelector('button[aria-label="Line options"]') as HTMLButtonElement)
+    await user.click(await screen.findByRole("menuitem", { name: /Copy permalink/ }))
+
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith("Failed to copy log permalink"))
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+    // Only the clipboard refused: the line the permalink pointed at stays
+    // selected, so the user can still see and share it by hand.
+    expect(fragment()).toBe("#L8")
+    expect(isSelected(8)).toBe(true)
 })
 
 it("requests at most one page while a deep-linked page is still in flight", async () => {

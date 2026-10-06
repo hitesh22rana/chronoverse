@@ -86,12 +86,12 @@ const renderedDuration = () => screen.getByText("Duration:").parentElement?.text
 const timelineRow = (label: string) => screen.getByText(`${label}:`).parentElement?.textContent
 
 /**
- * Requests for the job document itself. The exact URL matters: the log pages
- * live under the same prefix and must not be counted as a refresh of the job.
+ * Requests for the job document itself. The path is anchored at the end so the
+ * log pages under the same prefix are not counted as a refresh of the job, and so
+ * a configured API base does not hide it.
  */
-const jobDocumentUrl = "/workflows/w1/jobs/j1"
 const jobDetailRequests = () =>
-    mocks.fetchApiJson.mock.calls.filter(([url]) => url === jobDocumentUrl).length
+    mocks.fetchApiJson.mock.calls.filter(([url]) => String(url).endsWith("/workflows/w1/jobs/j1")).length
 
 /** Serves `mocks.job` for the first `failures` job-detail requests, then recovers. */
 const failJobDetailTimes = (failures: number, error: unknown) => {

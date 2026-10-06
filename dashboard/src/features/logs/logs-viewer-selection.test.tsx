@@ -125,7 +125,8 @@ const selectRowText = (lineNumber: number) => {
 /**
  * jsdom reports a listener exception as an `error` event on the window instead
  * of rethrowing it, so a handler that misbehaves is only visible if the test
- * collects those errors itself.
+ * collects those errors itself. Nothing else in this file raises one, so an empty
+ * result means the handlers behaved.
  */
 const windowErrorsWhile = async (dispatch: () => void) => {
     const errors: string[] = []
@@ -145,6 +146,12 @@ const fragment = () => window.location.hash
 const clickLine = async (lineNumber: number, shiftKey = false) => {
     await act(async () => {
         fireEvent.click(rowButton(lineNumber), { shiftKey })
+    })
+}
+/** Lets a queued animation frame run, which `act` alone does not flush in jsdom. */
+const flushFrame = async () => {
+    await act(async () => {
+        await new Promise((resolve) => { setTimeout(resolve, 50) })
     })
 }
 
@@ -449,10 +456,13 @@ it("keeps a resolved deep link in place when the address re-delivers it", async 
     })
 
     // Re-entering the same link finds the line already scrolled into place, so the
-    // reader keeps their position instead of being yanked back.
+    // reader keeps their position instead of being yanked back. A re-arm is queued
+    // in an animation frame, which jsdom does not flush inside `act`, so the test
+    // has to let one run before the counts can say anything.
     await act(async () => {
         setFragment("#L30")
     })
+    await flushFrame()
     expect(mocks.scrollToIndex).toHaveBeenCalledTimes(1)
     expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1)
 })
@@ -834,7 +844,9 @@ it("reports a download in flight in both the trigger and the action", async () =
     // refuse a second click, so a slow download cannot be queued twice.
     const pending = screen.getAllByRole("button", { name: /^Download$/ }) as HTMLButtonElement[]
     await waitFor(() => expect(pending.every((button) => button.disabled)).toBe(true))
-    expect(pending.map((button) => Boolean(button.querySelector(".lucide-loader-circle")))).toEqual([true, true])
+    // The spin utility comes from this view's own markup, so this does not depend
+    // on which icon library renders the spinner.
+    expect(pending.map((button) => Boolean(button.querySelector(".animate-spin")))).toEqual([true, true])
     expect(screen.getByLabelText("File name")).toHaveProperty("disabled", true)
     expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
 

@@ -153,6 +153,8 @@ const pointerCaptureMembers = [
 const originalPointerCaptureDescriptors = pointerCaptureMembers.map((member) =>
     Object.getOwnPropertyDescriptor(Element.prototype, member)
 )
+/** `scrollTo` is stubbed for the same reason and has to be undone with them. */
+const originalScrollToDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTo")
 
 function installDomStubs() {
     if (!("ResizeObserver" in globalThis)) {
@@ -195,6 +197,11 @@ function restoreDomStubs() {
             Reflect.deleteProperty(Element.prototype, member)
         }
     })
+    if (originalScrollToDescriptor) {
+        Object.defineProperty(Element.prototype, "scrollTo", originalScrollToDescriptor)
+    } else {
+        Reflect.deleteProperty(Element.prototype, "scrollTo")
+    }
 }
 
 beforeEach(() => {
@@ -660,7 +667,16 @@ it("keeps the dialog and its values when the create is rejected, and retries on 
     await user.click(screen.getByRole("button", { name: "Create workflow" }))
 
     await waitFor(() => expect(mocks.createCalls).toHaveLength(2))
-    expect(JSON.parse(String(mocks.createCalls[1].init?.body))).toEqual(createBody())
+    // The retry has to send exactly what the rejected attempt sent.
+    expect(JSON.parse(String(mocks.createCalls[1].init?.body))).toEqual(
+        JSON.parse(String(mocks.createCalls[0].init?.body)),
+    )
+    expect(JSON.parse(String(mocks.createCalls[0].init?.body))).toMatchObject({
+        name: "API heartbeat",
+        kind: "HEARTBEAT",
+        interval: 15,
+        max_consecutive_job_failures_allowed: 4,
+    })
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(mocks.toast.success).toHaveBeenCalledWith("workflow created successfully")
 })

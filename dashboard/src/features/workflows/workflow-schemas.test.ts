@@ -18,9 +18,17 @@ it("preserves create-only defaults and update payload optionality", () => {
     expect(createWorkflowSchema.safeParse({ ...base, kind: "OTHER" }).success).toBe(false)
 })
 
+it("requires an interval when creating, while an edit still accepts an emptied one", () => {
+    const input = { ...base, kind: "HEARTBEAT", heartbeatPayload: heartbeat }
+    // The API validates the interval as required, so a create that carries none
+    // would be rejected server-side with nothing to point at in the form.
+    expect(createWorkflowSchema.safeParse({ ...input, interval: "" }).success).toBe(false)
+    // An edit keeps its own meaning: an emptied interval stays undefined.
+    expect(updateWorkflowSchema.parse({ ...base, interval: "" }).interval).toBeUndefined()
+})
+
 it.each([createWorkflowSchema, updateWorkflowSchema])("preserves shared validation and normalization %#", (schema) => {
     const input = { ...base, kind: "HEARTBEAT", heartbeatPayload: heartbeat }
-    expect(schema.parse({ ...input, interval: "" }).interval).toBeUndefined()
     for (const interval of ["1", "10080"]) {
         expect(schema.parse({ ...input, interval }).interval).toBe(Number(interval))
     }

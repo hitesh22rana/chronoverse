@@ -65,6 +65,14 @@ const containerPayloadSchema = z.object({
 
 const baseCreateWorkflowSchema = baseWorkflowSchema.extend({
     retainLogs: z.boolean().default(true),
+    // The create form starts the interval at 5 minutes, so an emptied field is a
+    // missing required value rather than "unset". The API validates the interval
+    // as required, so letting it through would send no interval at all and fail
+    // server-side with no field-level explanation.
+    interval: baseWorkflowSchema.shape.interval.refine(
+        value => value !== undefined,
+        { message: "Interval is required" }
+    )
 })
 
 const heartbeatWorkflowFields = baseCreateWorkflowSchema.extend({

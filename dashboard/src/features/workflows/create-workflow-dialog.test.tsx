@@ -105,6 +105,13 @@ async function chooseKind(user: ReturnType<typeof userEvent.setup>, option: stri
     await user.click(await screen.findByRole("option", { name: option }))
 }
 
+/** Walks a heartbeat from the first step to the schedule, leaving it untouched. */
+async function goToHeartbeatSchedule(user: ReturnType<typeof userEvent.setup>) {
+    await advanceToStep(user, 2)
+    type(endpointField(), "https://example.com/health")
+    await advanceToStep(user, 3)
+}
+
 async function fillHeartbeat(user: ReturnType<typeof userEvent.setup>) {
     type(nameField(), "API heartbeat")
     await advanceToStep(user, 2)
@@ -564,6 +571,45 @@ it("sends the heartbeat request the API expects and closes on success", async ()
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(mocks.toast.success).toHaveBeenCalledWith("workflow created successfully")
+})
+
+it("refuses to create with an emptied interval instead of sending none", async () => {
+    const { user } = renderDialog()
+    type(nameField(), "API heartbeat")
+
+    await goToHeartbeatSchedule(user)
+    // The form starts at the 5-minute default, which is what a create sends.
+    expect(intervalField()).toHaveProperty("value", "5")
+
+    type(intervalField(), "")
+
+    expect(await screen.findByText("Interval is required")).toBeTruthy()
+    await user.click(submitButton())
+
+    expect(currentStep().textContent).toBe("Step 3 of 3")
+    // The API validates the interval as required, so a body without the field
+    // would be rejected with nothing in the form to point at.
+    expect(mocks.createCalls).toHaveLength(0)
+
+    // Repairing the field clears the complaint and the create goes through.
+    type(intervalField(), "15")
+    await waitFor(() => expect(screen.queryByText("Interval is required")).toBeNull())
+
+    await user.click(submitButton())
+
+    await waitFor(() => expect(mocks.createCalls).toHaveLength(1))
+    expect(createBody()).toMatchObject({ interval: 15 })
+})
+
+it("sends the untouched five-minute default without the user setting it", async () => {
+    const { user } = renderDialog()
+    type(nameField(), "API heartbeat")
+
+    await goToHeartbeatSchedule(user)
+    await user.click(submitButton())
+
+    await waitFor(() => expect(mocks.createCalls).toHaveLength(1))
+    expect(createBody()).toMatchObject({ interval: 5 })
 })
 
 it("sends the container request the API expects, honouring the log-retention switch", async () => {

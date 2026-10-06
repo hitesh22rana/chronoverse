@@ -85,9 +85,13 @@ const renderedDuration = () => screen.getByText("Duration:").parentElement?.text
 
 const timelineRow = (label: string) => screen.getByText(`${label}:`).parentElement?.textContent
 
-/** Job-detail requests, which a refresh or a retry has to repeat. */
+/**
+ * Requests for the job document itself. The exact URL matters: the log pages
+ * live under the same prefix and must not be counted as a refresh of the job.
+ */
+const jobDocumentUrl = "/workflows/w1/jobs/j1"
 const jobDetailRequests = () =>
-    mocks.fetchApiJson.mock.calls.filter(([url]) => String(url).startsWith("/workflows/w1/jobs/")).length
+    mocks.fetchApiJson.mock.calls.filter(([url]) => url === jobDocumentUrl).length
 
 /** Serves `mocks.job` for the first `failures` job-detail requests, then recovers. */
 const failJobDetailTimes = (failures: number, error: unknown) => {
@@ -197,7 +201,7 @@ it("labels a manually triggered job and asks the server again on refresh", async
     await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
     })
-    await waitFor(() => expect(jobDetailRequests()).toBeGreaterThan(before))
+    await waitFor(() => expect(jobDetailRequests()).toBe(before + 1))
     expect(screen.getByRole("heading", { name: "Timeline" })).toBeTruthy()
 })
 
@@ -230,8 +234,9 @@ it("hands navigation back to the router when a reader gives up on a failed load"
     await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Go Back" }))
     })
+    // The mocked router does not navigate, so this pins the request the button
+    // makes rather than an outcome only a real route change could produce.
     expect(mocks.back).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole("heading", { name: "Error Loading Job" })).toBeTruthy()
 })
 
 it("says plainly when a failure arrives without an error to quote", async () => {

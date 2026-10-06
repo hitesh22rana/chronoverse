@@ -114,6 +114,32 @@ const rowButton = (lineNumber: number) => row(lineNumber).querySelector('button[
 const visibleLines = () =>
     [...document.querySelectorAll("[data-line-number]")].map((element) => Number(element.getAttribute("data-line-number")))
 const selectionRangeCount = () => window.getSelection()?.rangeCount ?? 0
+/** Selects a row's text, as dragging across the log would leave behind. */
+const selectRowText = (lineNumber: number) => {
+    const range = document.createRange()
+    range.selectNodeContents(row(lineNumber))
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+}
+/**
+ * jsdom reports a listener exception as an `error` event on the window instead
+ * of rethrowing it, so a handler that misbehaves is only visible if the test
+ * collects those errors itself.
+ */
+const windowErrorsWhile = async (dispatch: () => void) => {
+    const errors: string[] = []
+    const onError = (event: ErrorEvent) => { errors.push(event.message) }
+    window.addEventListener("error", onError)
+    try {
+        await act(async () => {
+            dispatch()
+        })
+    } finally {
+        window.removeEventListener("error", onError)
+    }
+    return errors
+}
 const isSelected = (lineNumber: number) => row(lineNumber).getAttribute("data-selected") !== null
 const fragment = () => window.location.hash
 const clickLine = async (lineNumber: number, shiftKey = false) => {
@@ -468,12 +494,6 @@ it("tells a drag apart from a click and drops the text selection while extending
     await loadedLines(20)
     const pressedLine = rowButton(5)
 
-    // A pointer move with no button held is not a drag gesture at all.
-    await act(async () => {
-        fireEvent.pointerMove(pressedLine, { clientX: 30, clientY: 30 })
-    })
-    expect(fragment()).toBe("")
-
     // A press that never travels the drag threshold is still a click.
     await act(async () => {
         fireEvent.pointerDown(pressedLine, { clientX: 30, clientY: 30, button: 0 })
@@ -484,12 +504,8 @@ it("tells a drag apart from a click and drops the text selection while extending
 
     // Selecting a range by keyboard-and-pointer means shift-clicking, which must
     // not leave the browser's own text selection highlighting the row as well.
-    const selection = window.getSelection()!
-    const textRange = document.createRange()
-    textRange.selectNodeContents(row(4))
-    selection.removeAllRanges()
-    selection.addRange(textRange)
-    expect(selection.toString()).toBe(row(4).textContent)
+    selectRowText(4)
+    expect(selectionRangeCount()).toBe(1)
 
     await act(async () => {
         // dispatchEvent reports false when a handler cancelled the press.
@@ -502,16 +518,42 @@ it("tells a drag apart from a click and drops the text selection while extending
     expect([5, 6, 7].map(isSelected)).toEqual([true, true, true])
 })
 
+it("keeps a selection through a pointer move that has no press behind it", async () => {
+    renderViewer()
+    await loadedLines(20)
+
+    // A pointer travelling over the log without a button held is not a drag, so
+    // it neither claims the selection nor records a gesture the next click
+    // would mistake for one. With no press recorded there is no drag to measure,
+    // and the handler must not reach for one.
+    await clickLine(3)
+    expect(fragment()).toBe("#L3")
+
+    expect(await windowErrorsWhile(() => {
+        fireEvent.pointerMove(rowButton(3), { clientX: 300, clientY: 40 })
+        fireEvent.pointerMove(rowButton(7), { clientX: 300, clientY: 40 })
+    })).toEqual([])
+    expect(fragment()).toBe("#L3")
+    expect(isSelected(3)).toBe(true)
+
+    await clickLine(7)
+    expect(fragment()).toBe("#L7")
+    expect(isSelected(7)).toBe(true)
+})
+
 it("selects a line after a press that is not the primary button", async () => {
     renderViewer()
     await loadedLines(20)
 
-    // Only a shift+primary press starts a range gesture, so any other press
-    // leaves the click to select a single line.
+    // Only a shift+primary press starts a range gesture, so this one has to leave
+    // a text selection the reader made themselves alone.
+    selectRowText(4)
+    expect(selectionRangeCount()).toBe(1)
+
     await act(async () => {
         fireEvent.pointerDown(rowButton(3), { clientX: 12, clientY: 40, shiftKey: true, button: 1 })
     })
-    expect(selectionRangeCount()).toBe(0)
+    expect(selectionRangeCount()).toBe(1)
 
     await clickLine(3)
     expect(fragment()).toBe("#L3")

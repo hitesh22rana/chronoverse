@@ -85,6 +85,17 @@ const renderedDuration = () => screen.getByText("Duration:").parentElement?.text
 
 const timelineRow = (label: string) => screen.getByText(`${label}:`).parentElement?.textContent
 
+/**
+ * The timeline prints timestamps in the reader's own timezone, so the expected
+ * calendar day is derived the same way. A fixed literal would only hold for
+ * runners east of UTC, and this suite does not pin a zone.
+ */
+const localDay = (iso: string) => new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+}).format(new Date(iso))
+
 beforeEach(() => {
     mocks.job = finishedJob(65)
     mocks.push.mockClear()
@@ -115,11 +126,14 @@ it("shows the timeline of a finished job next to its identity and status", async
     expect(screen.getByText("Workflow: w1")).toBeTruthy()
     expect(screen.getByText("Job Details")).toBeTruthy()
 
-    // Every timeline row is filled in, because the job ran and finished.
-    expect(timelineRow("Created")).toContain("Jan 1, 2026")
-    expect(timelineRow("Scheduled")).toContain("Jan 1, 2026")
-    expect(timelineRow("Started")).toContain("Jan 1, 2026")
-    expect(timelineRow("Completed")).toContain("Jan 1, 2026")
+    // Every timeline row is filled in with the job's own timestamps, because the
+    // job ran and finished.
+    const runDay = localDay(startedAt)
+    const finishedDay = localDay(mocks.job.completed_at as string)
+    expect(timelineRow("Created")).toContain(runDay)
+    expect(timelineRow("Scheduled")).toContain(runDay)
+    expect(timelineRow("Started")).toContain(runDay)
+    expect(timelineRow("Completed")).toContain(finishedDay)
     expect(timelineRow("Started")).not.toContain("Not started yet")
     expect(timelineRow("Completed")).not.toContain("Not completed yet")
     expect(renderedDuration()).toBe("1 minute 5 seconds")

@@ -1,13 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Mounted tests for the user analytics drawer: that it stays unfetched until it
- * is opened, what it reports for a real account, what an account with no
- * activity looks like, how a failed load recovers, and what the refresh control
- * does while a request is in flight.
- *
- * Boundaries only: the transport (`@/lib/api/client`) and `sonner`. React Query,
- * the Radix drawer and recharts all run for real, so the assertions are about
- * the totals and states a user can read.
+ * Mounted analytics tests exercise the real drawer, queries and charts;
+ * only transport and toast boundaries are mocked.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
@@ -90,15 +84,16 @@ async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
     return screen.findByText("Analytics overview")
 }
 
-/** jsdom implements none of these; `installDomStubs` stands in for them. */
+/** DOM methods missing from jsdom. */
 const pointerCaptureMembers = [
     "hasPointerCapture",
     "setPointerCapture",
     "releasePointerCapture",
     "scrollIntoView",
+    "scrollTo",
 ] as const
 
-/** Captured before the first stub is installed, so `afterEach` can undo it. */
+/** Restore the original DOM methods after each test. */
 const originalPointerCaptureDescriptors = pointerCaptureMembers.map((member) =>
     Object.getOwnPropertyDescriptor(Element.prototype, member)
 )

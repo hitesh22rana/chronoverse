@@ -1,14 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Mounted tests for the create-workflow wizard: what each step validates before
- * it will advance, how the heartbeat and container configurations serialize into
- * the create request, and how a submission behaves while it is in flight, when
- * it succeeds and when it is rejected.
- *
- * Boundaries only: the transport (`@/lib/api/client`), the Next.js navigation
- * hooks and `sonner`. The dialog, react-hook-form, zod, react-query and the Radix
- * primitives all run for real, so the assertions are about what a user can see
- * and do, and about the request the form actually sends.
+ * Mounted create-wizard tests use real form validation and UI components;
+ * only transport, navigation and toast boundaries are mocked.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
@@ -148,7 +141,7 @@ const recordedCreate = () => {
 const createBody = () => JSON.parse(String(recordedCreate().init?.body))
 const formElement = () => document.querySelector("form") as HTMLFormElement
 
-/** jsdom implements none of these; `installDomStubs` stands in for them. */
+/** DOM methods missing from jsdom. */
 const pointerCaptureMembers = [
     "hasPointerCapture",
     "setPointerCapture",
@@ -156,7 +149,7 @@ const pointerCaptureMembers = [
     "scrollIntoView",
 ] as const
 
-/** Captured before the first stub is installed, so `afterEach` can undo it. */
+/** Restore the original DOM methods after each test. */
 const originalPointerCaptureDescriptors = pointerCaptureMembers.map((member) =>
     Object.getOwnPropertyDescriptor(Element.prototype, member)
 )
@@ -519,8 +512,7 @@ it("refuses to create from the schedule step until the schedule is usable", asyn
     await user.click(nextButton())
     expect(await screen.findByText("Must be a whole number between 1 and 10080 minutes (1 week)")).toBeTruthy()
 
-    // Two allowed failures would never stop a broken workflow, so the form is
-    // left short of a usable schedule rather than creating it.
+    // The API requires at least three allowed failures.
     type(intervalField(), "15")
     type(failuresField(), "2")
     await user.click(nextButton())
@@ -664,7 +656,7 @@ it("locks the dialog while the create is in flight", async () => {
     // Neither the escape key nor a resubmit may abandon or duplicate a create.
     await user.keyboard("{Escape}")
     expect(onOpenChange).not.toHaveBeenCalled()
-    act(() => {
+    await act(async () => {
         fireEvent.submit(formElement())
     })
     expect(mocks.createCalls).toHaveLength(1)
@@ -676,10 +668,9 @@ it("locks the dialog while the create is in flight", async () => {
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
 
-    // The same submission does go through once the create settles, so the single
-    // request above came from the in-flight guard rather than a dead form.
+    // The same submit succeeds once the in-flight guard clears.
     mocks.holdCreate = false
-    act(() => {
+    await act(async () => {
         fireEvent.submit(formElement())
     })
 

@@ -1,12 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Mounted tests for the workflow list page: the shell it renders around the
- * list, how the create button opens the real three-step dialog, and how the
- * lazily loaded analytics drawer replaces its placeholder.
- *
- * Boundaries only: the transport, the Next.js navigation hooks and `sonner`.
- * React Query, `next/dynamic`, Radix and the create dialog all run for real, so
- * these tests cover the page-level wiring the feature's own tests cannot see.
+ * Mounted page tests exercise the real list, create dialog and lazy drawer;
+ * only transport, navigation and toast boundaries are mocked.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
@@ -82,15 +77,16 @@ const requestedUrls = () => mocks.fetchApiJson.mock.calls.map((call) => String(c
 const analyticsTrigger = async () =>
     screen.findByRole("button", { name: /Analytics/ }, { timeout: 5000 })
 
-/** jsdom implements none of these; `installDomStubs` stands in for them. */
+/** DOM methods missing from jsdom. */
 const pointerCaptureMembers = [
     "hasPointerCapture",
     "setPointerCapture",
     "releasePointerCapture",
     "scrollIntoView",
+    "scrollTo",
 ] as const
 
-/** Captured before the first stub is installed, so `afterEach` can undo it. */
+/** Restore the original DOM methods after each test. */
 const originalPointerCaptureDescriptors = pointerCaptureMembers.map((member) =>
     Object.getOwnPropertyDescriptor(Element.prototype, member)
 )

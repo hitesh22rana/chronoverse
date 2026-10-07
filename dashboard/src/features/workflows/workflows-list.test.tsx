@@ -1,14 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Mounted tests for the workflow list controls: how the search box, the filter
- * popover, the interval bounds, refresh and paging turn user gestures into
- * navigation and list requests, and how each of them behaves while a request is
- * still in flight.
- *
- * Only boundaries are mocked: the transport, the navigation hooks (with a
- * store-backed search string, so `router.push` re-renders the list the way a
- * real navigation hands the page new search params) and `sonner`. The Radix
- * popover/select, react-query and the interval helpers all run for real.
+ * Mounted list tests use real filters and queries with mocked transport,
+ * navigation and toast boundaries. Navigation updates a subscribed URL store.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -134,7 +127,7 @@ async function openFilters(user: ReturnType<typeof userEvent.setup>) {
     return screen.getByText("Filter by")
 }
 
-/** jsdom implements none of these; `installDomStubs` stands in for them. */
+/** DOM methods missing from jsdom. */
 const pointerCaptureMembers = [
     "hasPointerCapture",
     "setPointerCapture",
@@ -142,7 +135,7 @@ const pointerCaptureMembers = [
     "scrollIntoView",
 ] as const
 
-/** Captured before the first stub is installed, so `afterEach` can undo it. */
+/** Restore the original DOM methods after each test. */
 const originalPointerCaptureDescriptors = pointerCaptureMembers.map((member) =>
     Object.getOwnPropertyDescriptor(Element.prototype, member)
 )
@@ -611,15 +604,14 @@ it("takes focus with the find shortcut and gives it up on escape", async () => {
     expect(document.activeElement).toBe(document.body)
 })
 
-it("keeps an unsent draft when a query arrives through the address instead", async () => {
+it("documents the stale draft overwriting an address-driven query", async () => {
     const { user } = renderList()
     await screen.findByText("Nightly container")
 
     await user.type(searchBox(), "local")
     await waitFor(() => expect(lastPush()).toBe("?query=local"), afterDebounce)
 
-    // Navigation the user did not type, such as a shared link, must not throw
-    // away what is already in the box.
+    // Reproduce navigation from a shared link.
     await act(async () => {
         mocks.searchStore.set("query=fromlink")
     })
@@ -627,9 +619,7 @@ it("keeps an unsent draft when a query arrives through the address instead", asy
     await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=fromlink"))
     expect(searchBox()).toHaveProperty("value", "local")
 
-    // The draft still differs from the applied query, so the pending debounce
-    // puts it back. That is a known gap in the search box, not intended
-    // behaviour; it is recorded in the PR description rather than fixed here.
+    // The stale draft overwrites the link: a documented pre-existing defect.
     await waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(2), afterDebounce)
     expect(lastPush()).toBe("?query=local")
 })

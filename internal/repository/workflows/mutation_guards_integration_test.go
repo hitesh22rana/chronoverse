@@ -355,7 +355,7 @@ func waitForBlockedStatement(
 		select {
 		case err := <-commandDone:
 			return err
-		case <-time.After(0):
+		default:
 			return errCommandStillRunning
 		}
 	}
@@ -432,11 +432,31 @@ func runWhileBlocked(
 	defer cancelCommand()
 
 	done := make(chan error, 1)
-	go func() { done <- command(commandCtx) }()
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		done <- command(commandCtx)
+	}()
+	// Fatal probe or step failures must release the lock and drain the command.
+	defer func() {
+		cancelCommand()
+		release()
+		select {
+		case <-finished:
+		case <-time.After(blockedStatementTimeout):
+			t.Errorf("command did not stop after releasing %s", lock.label)
+		}
+	}()
 
 	waitForBlockedStatement(ctx, t, pg, lock, done)
 	step(blocking, cancelCommand)
-	return <-done
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(blockedStatementTimeout):
+		t.Fatalf("command did not finish after its blocked step on %s", lock.label)
+		return nil
+	}
 }
 
 // TestIntegrationUpdateWorkflowReplayIsDurableAndIdempotent proves the durable
@@ -544,7 +564,7 @@ func TestIntegrationUpdateWorkflowReplayIsDurableAndIdempotent(t *testing.T) {
 	if !ok {
 		t.Fatal("automatic job disappeared after the replays")
 	}
-	if replayedJob.Status != canceledJob.Status || replayedJob.CompletedAt != canceledJob.CompletedAt {
+	if replayedJob != canceledJob {
 		t.Fatalf("automatic job after the replays = %+v, want unchanged %+v", replayedJob, canceledJob)
 	}
 

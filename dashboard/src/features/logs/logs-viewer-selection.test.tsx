@@ -148,7 +148,11 @@ const clickLine = async (lineNumber: number, shiftKey = false) => {
         fireEvent.click(rowButton(lineNumber), { shiftKey })
     })
 }
-/** Lets a queued animation frame run, which `act` alone does not flush in jsdom. */
+/**
+ * Waits one macrotask, which lets a queued animation frame run: jsdom schedules
+ * it but does not flush it inside `act`. The wait is a lower bound on correctness,
+ * not a guarantee — a throttled frame would make these tests pass for less reason.
+ */
 const flushFrame = async () => {
     await act(async () => {
         await new Promise((resolve) => { setTimeout(resolve, 50) })
@@ -458,7 +462,8 @@ it("keeps a resolved deep link in place when the address re-delivers it", async 
     // Re-entering the same link finds the line already scrolled into place, so the
     // reader keeps their position instead of being yanked back. A re-arm is queued
     // in an animation frame, which jsdom does not flush inside `act`, so the test
-    // has to let one run before the counts can say anything.
+    // waits one out before reading the counts: without the wait they would still
+    // read 1 and 1 for the wrong reason.
     await act(async () => {
         setFragment("#L30")
     })
@@ -680,10 +685,13 @@ it("drops the selection and applies the debounced query when the search box chan
             })
         }
         const settleLines = async (count: number) => {
-            for (let attempt = 0; attempt < 20 && visibleLines().length !== count; attempt += 1) {
+            const attempts = 20
+            for (let attempt = 0; attempt < attempts && visibleLines().length !== count; attempt += 1) {
                 await settle()
             }
-            expect(visibleLines()).toHaveLength(count)
+            // The attempt count is in the message so a give-up reads as a settle
+            // that ran out of turns, not as a viewer that rendered the wrong rows.
+            expect(visibleLines(), `gave up after ${attempts} settle turns`).toHaveLength(count)
         }
 
         renderViewer()

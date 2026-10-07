@@ -263,9 +263,16 @@ it("keeps asking for a job that is still running, and stops once it has finished
             })
         }
         const settleUntilRendered = async () => {
-            for (let attempt = 0; attempt < 20 && screen.queryByRole("heading", { name: "Timeline" }) === null; attempt += 1) {
+            const attempts = 20
+            for (let attempt = 0; attempt < attempts && screen.queryByRole("heading", { name: "Timeline" }) === null; attempt += 1) {
                 await settle()
             }
+            // The attempt count is in the message so a give-up reads as a settle
+            // that ran out of turns, not as a page that never rendered a timeline.
+            expect(
+                screen.queryByRole("heading", { name: "Timeline" }),
+                `gave up after ${attempts} settle turns`,
+            ).not.toBeNull()
         }
 
         let finished = false

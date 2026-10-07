@@ -13,6 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import type { Job } from "@/features/jobs/types"
+import { queryRefetchIntervals } from "@/lib/api/query-policy"
 import JobDetailsAndLogsPage from "./job-details-page"
 
 const mocks = vi.hoisted(() => ({
@@ -319,16 +320,18 @@ it("keeps asking for a job that is still running, and stops once it has finished
         expect(renderedDuration()).toBe("Not available")
         expect(jobDetailRequests()).toBe(1)
 
-        // An active job is re-read on its own, without the reader asking.
-        await settle(5000)
+        // An active job is re-read on its own, without the reader asking. The
+        // cadence comes from the policy the page reads, so a change to it shows up
+        // here rather than silently making this test poll the wrong amount.
+        await settle(queryRefetchIntervals.activeJob)
         await waitFor(() => expect(jobDetailRequests()).toBe(2))
 
         // Once the server reports the run finished, the page stops asking.
         finished = true
-        await settle(5000)
+        await settle(queryRefetchIntervals.activeJob)
         await waitFor(() => expect(jobDetailRequests()).toBe(3))
         await screen.findByLabelText("Completed")
-        await settle(15_000)
+        await settle(queryRefetchIntervals.activeJob * 3)
         expect(jobDetailRequests()).toBe(3)
         expect(renderedDuration()).toBe("1 minute 5 seconds")
     } finally {

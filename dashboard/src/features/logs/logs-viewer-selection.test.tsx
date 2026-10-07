@@ -291,6 +291,13 @@ afterEach(() => {
 const loadedLines = (count: number) =>
     waitFor(() => expect(visibleLines()).toHaveLength(count))
 
+/**
+ * The viewer's search box settles for 500 ms before it applies a query
+ * (`logs-viewer.tsx`). It is not exported, so the tests wait comfortably past it
+ * rather than assuming they can read it.
+ */
+const DEBOUNCE_SETTLE_MS = 600
+
 it("pages in older logs once per end-reached while a page request is in flight", async () => {
     let releasePage: (() => void) | null = null
     mocks.fetchApiJson.mockImplementation(async (url: string) => {
@@ -677,6 +684,33 @@ it("selects a line after a press that is not the primary button", async () => {
     expect(isSelected(3)).toBe(true)
 })
 
+it("arms the drag tracker on a non-primary press, so the next primary click on that row is a drag", async () => {
+    renderViewer()
+    await loadedLines(20)
+
+    // The gesture tracker is armed by any press, not only a primary one: what the
+    // primary button gates is clearing the reader's text selection, not the
+    // tracking. A reader who right-drags across a line therefore leaves that row
+    // marked as dragged.
+    await act(async () => {
+        fireEvent.pointerDown(rowButton(5), { clientX: 12, clientY: 40, button: 2 })
+        fireEvent.pointerMove(rowButton(5), { clientX: 40, clientY: 60 })
+    })
+
+    // The next primary click on that row is taken as the end of the drag, so it
+    // selects nothing. This is what the reader sees, and it is what a change to
+    // the tracker would have to update deliberately.
+    await clickLine(5)
+    expect(fragment()).toBe("")
+    expect(isSelected(5)).toBe(false)
+
+    // A click on any other row is unaffected, so the tracker is per-row state and
+    // not a latch that disables the whole viewer.
+    await clickLine(6)
+    expect(fragment()).toBe("#L6")
+    expect(isSelected(6)).toBe(true)
+})
+
 it("drops the selection and applies the debounced query when the search box changes", async () => {
     // Fake timers are scoped to this test: the 500ms settle is driven by the
     // clock instead of by how long the machine happened to take. `shouldAdvanceTime`
@@ -695,8 +729,10 @@ it("drops the selection and applies the debounced query when the search box chan
         await loadedLines(20)
 
         // An input that never changes must not re-query the viewer: the debounce
-        // timer fires and finds the input already equal to the applied query.
-        await settle(600)
+        // timer fires and finds the input already equal to the applied query. The
+        // wait clears the 500ms settle the viewer declares inline, so this fails
+        // against the debounce rather than against a copy of its number.
+        await settle(DEBOUNCE_SETTLE_MS)
         expect(mocks.push).not.toHaveBeenCalled()
 
         await act(async () => {
@@ -715,20 +751,20 @@ it("drops the selection and applies the debounced query when the search box chan
 
         // The query itself waits for the input to settle, and then switches the
         // viewer to the search dataset.
-        await settle(600)
+        await settle(DEBOUNCE_SETTLE_MS)
         expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1?q=boom")
         expect(mocks.push).toHaveBeenCalledTimes(1)
         await loadedLines(40)
 
         // A settled query is not sent again just because time passed.
-        await settle(600)
+        await settle(DEBOUNCE_SETTLE_MS)
         expect(mocks.push).toHaveBeenCalledTimes(1)
 
         // Clearing the box returns the viewer to the unfiltered dataset.
         await act(async () => {
             fireEvent.change(searchInput, { target: { value: "" } })
         })
-        await settle(600)
+        await settle(DEBOUNCE_SETTLE_MS)
         expect(mocks.push).toHaveBeenLastCalledWith("/workflows/w1/jobs/j1")
         await loadedLines(20)
     } finally {
@@ -854,6 +890,14 @@ it("reports a download in flight in both the trigger and the action", async () =
     // than captured, so a rerender that replaced the nodes cannot hide a change.
     expect(downloadButtons().map((button) => Boolean(button.querySelector(".animate-spin")))).toEqual([true, true])
     expect(screen.getByLabelText("File name")).toHaveProperty("disabled", true)
+    expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
+
+    // Clicking again while the first download is outstanding really does nothing:
+    // the disabled attribute is the whole mechanism, so this has to fire the click
+    // to show it is not merely present.
+    await act(async () => {
+        downloadButtons()[1].click()
+    })
     expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
 
     // Finishing the download closes the popover and reports success.

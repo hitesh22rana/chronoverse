@@ -91,20 +91,28 @@ const timelineRow = (label: string) => screen.getByText(`${label}:`).parentEleme
  * a configured API base does not hide it.
  */
 const jobDetailRequests = () =>
-    mocks.fetchApiJson.mock.calls.filter(([url]) => String(url).endsWith("/workflows/w1/jobs/j1")).length
+    mocks.fetchApiJson.mock.calls.filter(([url]) => isJobDetail(url)).length
 
-/** Serves `mocks.job` for the first `failures` job-detail requests, then recovers. */
+/**
+ * `apiEndpoints` prefixes every route with `NEXT_PUBLIC_API_URL`, so these stubs
+ * match on the tail of the path rather than on a relative prefix. Matching the
+ * head would make every test in this file fail for a deployment that configures
+ * an API base, which is a normal way to run the dashboard.
+ */
+const isJobDetail = (url: unknown) => String(url).endsWith("/workflows/w1/jobs/j1")
+
+/** Serves `job` for the first `failures` job-detail requests, then recovers. */
 const failJobDetailTimes = (failures: number, error: unknown) => {
     mocks.fetchApiJson.mockImplementation(async (url: string) => {
         if (url.includes("/logs")) return { id: "j1", workflow_id: "w1", logs: [] }
-        if (url.startsWith("/workflows/w1/jobs/")) {
+        if (isJobDetail(url)) {
             if (failures > 0) {
                 failures -= 1
                 throw error
             }
             return mocks.job
         }
-        if (url.startsWith("/workflows/w1")) return workflow
+        if (url.includes("/workflows/w1")) return workflow
         throw new Error(`unexpected transport call: ${url}`)
     })
 }
@@ -131,8 +139,8 @@ beforeEach(() => {
     mocks.toast.warning.mockClear()
     mocks.fetchApiJson.mockReset().mockImplementation(async (url: string) => {
         if (url.includes("/logs")) return { id: "j1", workflow_id: "w1", logs: [] }
-        if (url.startsWith("/workflows/w1/jobs/")) return mocks.job
-        if (url.startsWith("/workflows/w1")) return workflow
+        if (isJobDetail(url)) return mocks.job
+        if (url.includes("/workflows/w1")) return workflow
         throw new Error(`unexpected transport call: ${url}`)
     })
 })
@@ -298,8 +306,8 @@ it("keeps asking for a job that is still running, and stops once it has finished
         })
         mocks.fetchApiJson.mockImplementation(async (url: string) => {
             if (url.includes("/logs")) return { id: "j1", workflow_id: "w1", logs: [] }
-            if (url.startsWith("/workflows/w1/jobs/")) return runningJob()
-            if (url.startsWith("/workflows/w1")) return workflow
+            if (isJobDetail(url)) return runningJob()
+            if (url.includes("/workflows/w1")) return workflow
             throw new Error(`unexpected transport call: ${url}`)
         })
 
@@ -335,7 +343,9 @@ it("hands navigation back to the router when a reader gives up on a failed load"
 
     renderPage()
 
-    await screen.findByRole("heading", { name: "Error Loading Job" })
+    // The page quotes the server's reason before offering a way out.
+    expect(await screen.findByRole("heading", { name: "Error Loading Job" })).toBeTruthy()
+    expect(screen.getByText("gone")).toBeTruthy()
     await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Go Back" }))
     })

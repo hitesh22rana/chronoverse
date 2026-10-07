@@ -318,21 +318,28 @@ it("keeps asking for a job that is still running, and stops once it has finished
         expect(screen.getByLabelText("Running")).toBeTruthy()
         expect(timelineRow("Completed")).toBe("Not completed yet")
         expect(renderedDuration()).toBe("Not available")
-        expect(jobDetailRequests()).toBe(1)
+        // `shouldAdvanceTime` lets wall-clock time move the fake clock, so the
+        // counts that follow are read against a baseline instead of absolute
+        // numbers: a slow runner may fit in an extra poll, and that must not read
+        // as a broken page.
+        const baseline = jobDetailRequests()
+        expect(baseline).toBeGreaterThanOrEqual(1)
 
         // An active job is re-read on its own, without the reader asking. The
         // cadence comes from the policy the page reads, so a change to it shows up
         // here rather than silently making this test poll the wrong amount.
         await settle(queryRefetchIntervals.activeJob)
-        await waitFor(() => expect(jobDetailRequests()).toBe(2))
+        await waitFor(() => expect(jobDetailRequests()).toBeGreaterThan(baseline))
 
-        // Once the server reports the run finished, the page stops asking.
+        // Once the server reports the run finished, the page stops asking. This
+        // direction is an exact count: polling has to stop, not merely slow down.
         finished = true
         await settle(queryRefetchIntervals.activeJob)
-        await waitFor(() => expect(jobDetailRequests()).toBe(3))
         await screen.findByLabelText("Completed")
+        const settled = jobDetailRequests()
+        expect(settled).toBeGreaterThan(baseline)
         await settle(queryRefetchIntervals.activeJob * 3)
-        expect(jobDetailRequests()).toBe(3)
+        expect(jobDetailRequests()).toBe(settled)
         expect(renderedDuration()).toBe("1 minute 5 seconds")
     } finally {
         vi.useRealTimers()

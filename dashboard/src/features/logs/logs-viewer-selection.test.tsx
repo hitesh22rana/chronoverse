@@ -293,10 +293,12 @@ const loadedLines = (count: number) =>
 
 /**
  * The viewer's search box settles for 500 ms before it applies a query
- * (`logs-viewer.tsx`). It is not exported, so the tests wait comfortably past it
- * rather than assuming they can read it.
+ * (`logs-viewer.tsx`). Neither number is exported, so the tests wait comfortably
+ * past the window and separately check that nothing has been sent partway through
+ * it, which is what makes the wait a debounce rather than an upper bound.
  */
 const DEBOUNCE_SETTLE_MS = 600
+const BEFORE_DEBOUNCE_SETTLE_MS = 300
 
 it("pages in older logs once per end-reached while a page request is in flight", async () => {
     let releasePage: (() => void) | null = null
@@ -704,8 +706,10 @@ it("arms the drag tracker on a non-primary press, so the next primary click on t
     expect(fragment()).toBe("")
     expect(isSelected(5)).toBe(false)
 
-    // A click on any other row is unaffected, so the tracker is per-row state and
-    // not a latch that disables the whole viewer.
+    // A click on any other row is unaffected, because `rowPointerGestureRef` is a
+    // single viewer-wide ref that every row click nulls: the click on row 6 clears
+    // the stale gesture before it decides anything. So the swallow is not a latch
+    // that disables the viewer, it only costs the row the gesture was armed on.
     await clickLine(6)
     expect(fragment()).toBe("#L6")
     expect(isSelected(6)).toBe(true)
@@ -749,8 +753,14 @@ it("drops the selection and applies the debounced query when the search box chan
         expect(fragment()).toBe("")
         expect(isSelected(4)).toBe(false)
 
-        // The query itself waits for the input to settle, and then switches the
-        // viewer to the search dataset.
+        // The query is not sent on the keystroke. Halfway through the settle window
+        // nothing has been pushed yet, which is the part a "waited 600ms" assertion
+        // on its own cannot tell apart from an immediate push.
+        await settle(BEFORE_DEBOUNCE_SETTLE_MS)
+        expect(mocks.push).not.toHaveBeenCalled()
+
+        // Past the window the query goes, and the viewer switches to the search
+        // dataset.
         await settle(DEBOUNCE_SETTLE_MS)
         expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1?q=boom")
         expect(mocks.push).toHaveBeenCalledTimes(1)

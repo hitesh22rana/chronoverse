@@ -80,10 +80,21 @@ function renderPage() {
     )
 }
 
-/** The duration cell of the timeline, which is the only row reading a duration. */
-const renderedDuration = () => screen.getByText("Duration:").parentElement?.textContent?.slice("Duration:".length)
+/**
+ * `textContent` of a node with its whitespace collapsed, so reformatting the JSX
+ * around a label is not a test failure. `getByText` throws when the node is gone,
+ * so a missing row fails here instead of comparing against `undefined`.
+ */
+const collapsedText = (node: HTMLElement, label: string) => {
+    const text = node.textContent?.replace(/\s+/g, " ").trim() ?? ""
+    return text.startsWith(label) ? text.slice(label.length) : text
+}
 
-const timelineRow = (label: string) => screen.getByText(`${label}:`).parentElement?.textContent
+/** The duration cell of the timeline, which is the only row reading a duration. */
+const renderedDuration = () => collapsedText(screen.getByText("Duration:").parentElement as HTMLElement, "Duration:")
+
+const timelineRow = (label: string) =>
+    collapsedText(screen.getByText(`${label}:`).parentElement as HTMLElement, `${label}:`)
 
 /**
  * Requests for the job document itself. The path is anchored at the end so the
@@ -316,7 +327,7 @@ it("keeps asking for a job that is still running, and stops once it has finished
 
         // An unfinished run says so rather than inventing a completion time.
         expect(screen.getByLabelText("Running")).toBeTruthy()
-        expect(timelineRow("Completed")).toBe("Completed:Not completed yet")
+        expect(timelineRow("Completed")).toBe("Not completed yet")
         expect(renderedDuration()).toBe("Not available")
         expect(jobDetailRequests()).toBe(1)
 

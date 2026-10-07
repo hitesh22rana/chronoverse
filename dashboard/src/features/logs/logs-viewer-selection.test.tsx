@@ -123,10 +123,11 @@ const selectRowText = (lineNumber: number) => {
     selection.addRange(range)
 }
 /**
- * jsdom reports a listener exception as an `error` event on the window instead
- * of rethrowing it, so a handler that misbehaves is only visible if the test
- * collects those errors itself. Nothing else in this file raises one, so an empty
- * result means the handlers behaved.
+ * Neither jsdom nor React rethrows an exception thrown inside an event listener:
+ * jsdom reports it as an `error` event on the window, and React 19 does the same
+ * for handlers it dispatches. So a handler that misbehaves is only visible if the
+ * test collects those errors itself. Nothing else in this file raises one, so an
+ * empty result means the handlers behaved.
  */
 const windowErrorsWhile = async (dispatch: () => void) => {
     const errors: string[] = []
@@ -268,10 +269,11 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup()
-    // The debounce test below scopes fake timers to itself; this is the net for
-    // a failure that leaves them installed, so no later test inherits a clock.
-    vi.useRealTimers()
     vi.restoreAllMocks()
+    // The debounce test below scopes fake timers to itself; this is the net for a
+    // failure that leaves them installed, so no later test inherits a clock. It
+    // runs after the mock restore so restoring a timer spy cannot be undone here.
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     // Tests assign the hash directly, so clear it here too: a test that starts
     // by asserting "no selection" must not inherit the previous test's anchor.

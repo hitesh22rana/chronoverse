@@ -149,13 +149,17 @@ const clickLine = async (lineNumber: number, shiftKey = false) => {
     })
 }
 /**
- * Waits one macrotask, which lets a queued animation frame run: jsdom schedules
- * it but does not flush it inside `act`. The wait is a lower bound on correctness,
- * not a guarantee — a throttled frame would make these tests pass for less reason.
+ * Waits for a real animation frame, then one macrotask. The re-arm queued by the
+ * component is scheduled with `requestAnimationFrame` and jsdom runs every callback
+ * registered for a frame in order, so waiting on a frame of our own is what makes
+ * the component's callback count — a fixed sleep only loses that guarantee when the
+ * runner is busy enough to push the frame past it.
  */
 const flushFrame = async () => {
     await act(async () => {
-        await new Promise((resolve) => { setTimeout(resolve, 50) })
+        await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => { setTimeout(resolve, 0) })
+        })
     })
 }
 

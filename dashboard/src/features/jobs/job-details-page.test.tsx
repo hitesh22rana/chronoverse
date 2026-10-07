@@ -193,16 +193,24 @@ it.each([
     ["same second", 0, "0 seconds"],
     ["one second", 1, "1 second"],
     ["under a minute", 59, "59 seconds"],
+    // A completion stamped before the start is reported as the negative run it is.
+    // The server can hand out one when a lease is reconciled after a clock jump, so
+    // the page must not invent an order the timestamps do not have.
+    ["completion before the start", -5, "-5 seconds"],
     // Minutes: the minute count changes the whole unit, and so do the seconds.
     ["exactly a minute", 60, "1 minute 0 seconds"],
     ["one second into a minute", 61, "1 minute 1 second"],
     ["several minutes", 125, "2 minutes 5 seconds"],
     ["one second under an hour", 3599, "59 minutes 59 seconds"],
-    // Hours: the hour count switches the unit and the remainder counts minutes.
+    // Hours: the hour count switches the unit, the remainder counts minutes, and
+    // seconds stop being reported at all.
     ["exactly an hour", 3600, "1 hour 0 minutes"],
     ["an hour and a minute", 3660, "1 hour 1 minute"],
+    // 59 seconds past the hour are dropped rather than rounded or carried.
+    ["just under two hours", 3659, "1 hour 0 minutes"],
     ["two hours", 7200, "2 hours 0 minutes"],
     ["hours and minutes", 7261, "2 hours 1 minute"],
+    ["hours with a dropped remainder", 7319, "2 hours 1 minute"],
 ])("reports a run of %s", async (_name, seconds, expected) => {
     mocks.job = finishedJob(seconds as number)
 

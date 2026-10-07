@@ -679,29 +679,20 @@ it("selects a line after a press that is not the primary button", async () => {
 
 it("drops the selection and applies the debounced query when the search box changes", async () => {
     // Fake timers are scoped to this test: the 500ms settle is driven by the
-    // clock instead of by how long the machine happened to take. Nothing else in
-    // this file installs them, and `afterEach` restores the real clock.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    // clock instead of by how long the machine happened to take. `shouldAdvanceTime`
+    // lets the clock tick with real time, so the polling helpers still work while
+    // `settle` moves it deliberately. Nothing else here installs a clock, and
+    // `afterEach` restores the real one.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
-        // Polling helpers cannot drive an installed clock, so the test moves it
-        // itself and reads the DOM in between.
-        const settle = async (ms = 0) => {
+        const settle = async (ms: number) => {
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(ms)
             })
         }
-        const settleLines = async (count: number) => {
-            const attempts = 20
-            for (let attempt = 0; attempt < attempts && visibleLines().length !== count; attempt += 1) {
-                await settle()
-            }
-            // The attempt count is in the message so a give-up reads as a settle
-            // that ran out of turns, not as a viewer that rendered the wrong rows.
-            expect(visibleLines(), `gave up after ${attempts} settle turns`).toHaveLength(count)
-        }
 
         renderViewer()
-        await settleLines(20)
+        await loadedLines(20)
 
         // An input that never changes must not re-query the viewer: the debounce
         // timer fires and finds the input already equal to the applied query.
@@ -727,7 +718,7 @@ it("drops the selection and applies the debounced query when the search box chan
         await settle(600)
         expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1?q=boom")
         expect(mocks.push).toHaveBeenCalledTimes(1)
-        await settleLines(40)
+        await loadedLines(40)
 
         // A settled query is not sent again just because time passed.
         await settle(600)
@@ -739,7 +730,7 @@ it("drops the selection and applies the debounced query when the search box chan
         })
         await settle(600)
         expect(mocks.push).toHaveBeenLastCalledWith("/workflows/w1/jobs/j1")
-        await settleLines(20)
+        await loadedLines(20)
     } finally {
         vi.useRealTimers()
     }
@@ -856,11 +847,12 @@ it("reports a download in flight in both the trigger and the action", async () =
 
     // While the request is outstanding, both download buttons show the wait and
     // refuse a second click, so a slow download cannot be queued twice.
-    const pending = screen.getAllByRole("button", { name: /^Download$/ }) as HTMLButtonElement[]
-    await waitFor(() => expect(pending.every((button) => button.disabled)).toBe(true))
+    const downloadButtons = () => screen.getAllByRole("button", { name: /^Download$/ }) as HTMLButtonElement[]
+    await waitFor(() => expect(downloadButtons().every((button) => button.disabled)).toBe(true))
     // The spin utility comes from this view's own markup, so this does not depend
-    // on which icon library renders the spinner.
-    expect(pending.map((button) => Boolean(button.querySelector(".animate-spin")))).toEqual([true, true])
+    // on which icon library renders the spinner. The buttons are re-read rather
+    // than captured, so a rerender that replaced the nodes cannot hide a change.
+    expect(downloadButtons().map((button) => Boolean(button.querySelector(".animate-spin")))).toEqual([true, true])
     expect(screen.getByLabelText("File name")).toHaveProperty("disabled", true)
     expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
 

@@ -277,29 +277,17 @@ it("reports a failed load, then recovers the page through Try Again", async () =
 })
 
 it("keeps asking for a job that is still running, and stops once it has finished", async () => {
-    // Fake timers are scoped to this test, as in the selection suite: the poll
-    // interval is driven by the clock instead of by a real five-second wait.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] })
+    // Fake timers are scoped to this test: the poll interval is driven by the clock
+    // instead of by a real five-second wait. `shouldAdvanceTime` lets the clock
+    // tick with real time, so the polling helpers still work while `settle` moves it
+    // deliberately. `afterEach` restores the real clock.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.stubGlobal("EventSource", SilentEventSource)
     try {
-        // Polling helpers cannot drive an installed clock, so the test moves the
-        // clock itself and reads the DOM in between.
-        const settle = async (ms = 0) => {
+        const settle = async (ms: number) => {
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(ms)
             })
-        }
-        const settleUntilRendered = async () => {
-            const attempts = 20
-            for (let attempt = 0; attempt < attempts && screen.queryByRole("heading", { name: "Timeline" }) === null; attempt += 1) {
-                await settle()
-            }
-            // The attempt count is in the message so a give-up reads as a settle
-            // that ran out of turns, not as a page that never rendered a timeline.
-            expect(
-                screen.queryByRole("heading", { name: "Timeline" }),
-                `gave up after ${attempts} settle turns`,
-            ).not.toBeNull()
         }
 
         let finished = false
@@ -323,7 +311,7 @@ it("keeps asking for a job that is still running, and stops once it has finished
         })
 
         renderPage()
-        await settleUntilRendered()
+        await screen.findByRole("heading", { name: "Timeline" })
 
         // An unfinished run says so rather than inventing a completion time.
         expect(screen.getByLabelText("Running")).toBeTruthy()
@@ -333,16 +321,15 @@ it("keeps asking for a job that is still running, and stops once it has finished
 
         // An active job is re-read on its own, without the reader asking.
         await settle(5000)
-        expect(jobDetailRequests()).toBe(2)
+        await waitFor(() => expect(jobDetailRequests()).toBe(2))
 
         // Once the server reports the run finished, the page stops asking.
         finished = true
         await settle(5000)
-        expect(jobDetailRequests()).toBe(3)
-        await settleUntilRendered()
+        await waitFor(() => expect(jobDetailRequests()).toBe(3))
+        await screen.findByLabelText("Completed")
         await settle(15_000)
         expect(jobDetailRequests()).toBe(3)
-        expect(screen.getByLabelText("Completed")).toBeTruthy()
         expect(renderedDuration()).toBe("1 minute 5 seconds")
     } finally {
         vi.useRealTimers()

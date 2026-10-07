@@ -17,6 +17,7 @@ import { useEffect, useState } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import type { MockInstance } from "vitest"
 
+import { apiEndpoints } from "@/lib/api/endpoints"
 import { LogsViewer } from "./logs-viewer"
 
 const mocks = vi.hoisted(() => ({
@@ -866,7 +867,7 @@ it("downloads the retained logs from the download popover", async () => {
     })
 
     await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledWith(
-        "/workflows/w1/jobs/j1/logs/raw?format=jsonl",
+        `${apiEndpoints.workflows.jobs.rawLogs("w1", "j1")}?format=jsonl`,
         "failed to download logs",
     ))
     expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("run-42.jsonl")

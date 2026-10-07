@@ -217,20 +217,32 @@ func lockPublishIntent(fixture *workflowFixture, eventKey, pattern string) inter
 
 // lockWorkflowTableRead stops a deletion while it reads the workflow's
 // termination state, the guard every deletion has to pass first.
-func lockWorkflowTableRead(string) interruptionLock {
+func lockWorkflowTableRead(*workflowFixture) interruptionLock {
 	return lockWholeTable(postgres.TableWorkflows, "%SELECT id::text, user_id::text, terminated_at%")
 }
 
 // lockJobsTableRead stops a deletion while it looks for a job still holding a
 // runtime slot, after the workflow guard has already passed.
-func lockJobsTableRead(string) interruptionLock {
+func lockJobsTableRead(*workflowFixture) interruptionLock {
 	return lockWholeTable(postgres.TableJobs, "%SELECT id%FROM "+postgres.TableJobs+"%")
 }
 
 // lockWorkflowDelete stops a deletion at the delete itself, after both guards
 // have passed and the command is committed to removing the row.
-func lockWorkflowDelete(workflowID string) interruptionLock {
-	return lockWorkflowRow(workflowID, "%DELETE FROM "+postgres.TableWorkflows+"%")
+func lockWorkflowDelete(fixture *workflowFixture) interruptionLock {
+	return lockWorkflowRow(fixture.WorkflowID, "%DELETE FROM "+postgres.TableWorkflows+"%")
+}
+
+// lockDeletePublishIntent stops a deletion at its last statement before the
+// commit: recording the intent to announce the delete. The deterministic event
+// key a deletion uses carries no generation, so the fixture holds exactly the
+// row the command is about to write.
+func lockDeletePublishIntent(fixture *workflowFixture) interruptionLock {
+	return lockPublishIntent(
+		fixture,
+		idempotency.WorkflowEventKey(fixture.WorkflowID, workflowsmodel.ActionDelete.ToString(), 0),
+		"%INSERT INTO "+postgres.TableOutboxEvents+"%",
+	)
 }
 
 // seedDeleteFixture terminates a fixture workflow and gives it one queued job, the
@@ -316,13 +328,37 @@ func holdStatementLock(
 // running a statement matching pattern. That is how a test learns the command
 // under test really reached the statement the fixture blocks, instead of failing
 // on an earlier one and pretending the intended path ran.
-func waitForBlockedStatement(ctx context.Context, t *testing.T, pg *postgres.Postgres, pattern string) {
+//
+// It also gives up as soon as the command returns. A caller-deadline case can end
+// the command before it ever reaches the blocked statement — on a loaded runner
+// the deadline can beat the command's own preamble — and polling to the full
+// blockedStatementTimeout in that case would report a stall that says nothing
+// about the deadline that actually caused it.
+func waitForBlockedStatement(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	lock interruptionLock,
+	commandDone <-chan error,
+) {
 	t.Helper()
 
 	// The probe has to outlive the command it watches: a caller-deadline case
 	// ends the command's own context on purpose.
 	probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), blockedStatementTimeout)
 	defer cancel()
+
+	// The error is drained from the channel here only when the command finished
+	// without ever blocking, which is a failure the caller needs reported; the
+	// normal path leaves it for runWhileBlocked to read.
+	commandErr := func() error {
+		select {
+		case err := <-commandDone:
+			return err
+		case <-time.After(0):
+			return errCommandStillRunning
+		}
+	}
 
 	for {
 		var waiting int
@@ -334,20 +370,34 @@ func waitForBlockedStatement(ctx context.Context, t *testing.T, pg *postgres.Pos
 				AND state = 'active'
 				AND wait_event_type = 'Lock'
 				AND query LIKE $1
-		`, pattern).Scan(&waiting); err != nil {
-			t.Fatalf("probe for a backend blocked in %q: %v", pattern, err)
+		`, lock.pattern).Scan(&waiting); err != nil {
+			t.Fatalf("probe for a backend blocked in %q: %v", lock.pattern, err)
 		}
 		if waiting > 0 {
 			return
 		}
 
+		// A command that has already returned can never block afterwards, so there
+		// is nothing left to wait for.
+		if err := commandErr(); !errors.Is(err, errCommandStillRunning) {
+			t.Fatalf(
+				"command returned (%v) without ever blocking on %s while running %q, so the intended interruption never happened",
+				err, lock.label, lock.pattern,
+			)
+		}
+
 		select {
 		case <-probeCtx.Done():
-			t.Fatalf("no backend waited on a lock while running %q within %s", pattern, blockedStatementTimeout)
+			t.Fatalf("no backend waited on a lock while running %q within %s", lock.pattern, blockedStatementTimeout)
 		case <-time.After(blockedStatementPoll):
 		}
 	}
 }
+
+// errCommandStillRunning marks the probe's non-blocking read of the command's
+// result channel, so a still-pending command is distinguishable from a command
+// that returned nil.
+var errCommandStillRunning = errors.New("command still running")
 
 // blockedStep is what a test does to a command while it is blocked: it receives
 // the blocking transaction and the cancel function of the command's own context.
@@ -384,7 +434,7 @@ func runWhileBlocked(
 	done := make(chan error, 1)
 	go func() { done <- command(commandCtx) }()
 
-	waitForBlockedStatement(ctx, t, pg, lock.pattern)
+	waitForBlockedStatement(ctx, t, pg, lock, done)
 	step(blocking, cancelCommand)
 	return <-done
 }
@@ -833,12 +883,15 @@ func TestIntegrationDeleteWorkflowRejectsMalformedIdentity(t *testing.T) {
 // intent is recorded, whichever of the deletion's statements the interruption lands
 // on.
 func TestIntegrationDeleteWorkflowInterruptionLeavesNothingBehind(t *testing.T) {
-	// The three statements the deletion runs before it commits, each paired with
-	// the two ways a caller's own context can stop it there.
+	// The four statements the deletion runs before it commits, each paired with
+	// the two ways a caller's own context can stop it there. The last one records
+	// the publish intent, so it is the case that proves the delete and its intent
+	// are atomic: the row is already gone by then, and only the rollback can put
+	// it back.
 	cases := []struct {
 		name        string
 		useDeadline bool
-		lock        func(string) interruptionLock
+		lock        func(*workflowFixture) interruptionLock
 		wantCode    codes.Code
 	}{
 		{"WhileReadingTheWorkflow", false, lockWorkflowTableRead, codes.Canceled},
@@ -847,6 +900,13 @@ func TestIntegrationDeleteWorkflowInterruptionLeavesNothingBehind(t *testing.T) 
 		{"WhileReadingRunningJobsOnDeadline", true, lockJobsTableRead, codes.DeadlineExceeded},
 		{"WhileDeleting", false, lockWorkflowDelete, codes.Canceled},
 		{"WhileDeletingOnDeadline", true, lockWorkflowDelete, codes.DeadlineExceeded},
+		// The outbox insert wraps any error, a cancellation included, as
+		// codes.Internal, so an interruption here is reported as an internal
+		// failure rather than as the cancellation it is. The point of these cases
+		// is the rollback either way: the workflow row is already deleted by the
+		// time the intent is recorded, so only the rollback restores it.
+		{"WhileRecordingThePublishIntent", false, lockDeletePublishIntent, codes.Internal},
+		{"WhileRecordingThePublishIntentOnDeadline", true, lockDeletePublishIntent, codes.Internal},
 	}
 
 	t.Run("BeforeTheTransactionBegins", func(t *testing.T) {
@@ -894,7 +954,7 @@ func TestIntegrationDeleteWorkflowInterruptionLeavesNothingBehind(t *testing.T) 
 			}
 
 			err := runWhileBlocked(
-				callerCtx, t, pg, tc.lock(fixture.WorkflowID), step,
+				callerCtx, t, pg, tc.lock(fixture), step,
 				func(commandCtx context.Context) error {
 					return repo.DeleteWorkflow(commandCtx, fixture.WorkflowID, fixture.UserID)
 				},
@@ -938,7 +998,7 @@ func TestIntegrationDeleteWorkflowRefusesWorkflowReactivatedUnderIt(t *testing.T
 
 	err := runWhileBlocked(
 		ctx, t, pg,
-		lockWorkflowDelete(fixture.WorkflowID),
+		lockWorkflowDelete(fixture),
 		reactivate,
 		func(commandCtx context.Context) error {
 			return repo.DeleteWorkflow(commandCtx, fixture.WorkflowID, fixture.UserID)

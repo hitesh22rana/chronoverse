@@ -137,8 +137,32 @@ beforeEach(() => {
     })
 })
 
+/**
+ * jsdom implements no `EventSource`, and a running job subscribes to its live log
+ * stream. Only the surface the viewer touches is stubbed: the subscription is
+ * never expected to deliver anything here.
+ */
+class SilentEventSource {
+    static CONNECTING = 0
+    static OPEN = 1
+    static CLOSED = 2
+
+    readyState: number = SilentEventSource.OPEN
+    onerror: (() => void) | null = null
+
+    addEventListener() {}
+    removeEventListener() {}
+    close() {
+        this.readyState = SilentEventSource.CLOSED
+    }
+}
+
 afterEach(() => {
     cleanup()
+    // The polling test below scopes fake timers to itself; this is the net for a
+    // failure that leaves them installed, so no later test inherits a clock.
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
 })
 
 it("shows the timeline of a finished job next to its identity and status", async () => {
@@ -223,6 +247,72 @@ it("reports a failed load, then recovers the page through Try Again", async () =
     expect(await screen.findByRole("heading", { name: "Timeline" })).toBeTruthy()
     expect(renderedDuration()).toBe("1 minute 5 seconds")
     expect(screen.queryByRole("heading", { name: "Error Loading Job" })).toBeNull()
+})
+
+it("keeps asking for a job that is still running, and stops once it has finished", async () => {
+    // Fake timers are scoped to this test, as in the selection suite: the poll
+    // interval is driven by the clock instead of by a real five-second wait.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] })
+    vi.stubGlobal("EventSource", SilentEventSource)
+    try {
+        // Polling helpers cannot drive an installed clock, so the test moves the
+        // clock itself and reads the DOM in between.
+        const settle = async (ms = 0) => {
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(ms)
+            })
+        }
+        const settleUntilRendered = async () => {
+            for (let attempt = 0; attempt < 20 && screen.queryByRole("heading", { name: "Timeline" }) === null; attempt += 1) {
+                await settle()
+            }
+        }
+
+        let finished = false
+        // A job that is still running has started but has not completed.
+        const runningJob = (): Job => ({
+            id: "j1",
+            workflow_id: "w1",
+            status: finished ? "COMPLETED" : "RUNNING",
+            trigger: "AUTOMATIC",
+            scheduled_at: startedAt,
+            started_at: startedAt,
+            ...(finished ? { completed_at: mocks.job.completed_at as string } : {}),
+            created_at: startedAt,
+            updated_at: startedAt,
+        })
+        mocks.fetchApiJson.mockImplementation(async (url: string) => {
+            if (url.includes("/logs")) return { id: "j1", workflow_id: "w1", logs: [] }
+            if (url.startsWith("/workflows/w1/jobs/")) return runningJob()
+            if (url.startsWith("/workflows/w1")) return workflow
+            throw new Error(`unexpected transport call: ${url}`)
+        })
+
+        renderPage()
+        await settleUntilRendered()
+
+        // An unfinished run says so rather than inventing a completion time.
+        expect(screen.getByLabelText("Running")).toBeTruthy()
+        expect(timelineRow("Completed")).toBe("Completed:Not completed yet")
+        expect(renderedDuration()).toBe("Not available")
+        expect(jobDetailRequests()).toBe(1)
+
+        // An active job is re-read on its own, without the reader asking.
+        await settle(5000)
+        expect(jobDetailRequests()).toBe(2)
+
+        // Once the server reports the run finished, the page stops asking.
+        finished = true
+        await settle(5000)
+        expect(jobDetailRequests()).toBe(3)
+        await settleUntilRendered()
+        await settle(15_000)
+        expect(jobDetailRequests()).toBe(3)
+        expect(screen.getByLabelText("Completed")).toBeTruthy()
+        expect(renderedDuration()).toBe("1 minute 5 seconds")
+    } finally {
+        vi.useRealTimers()
+    }
 })
 
 it("hands navigation back to the router when a reader gives up on a failed load", async () => {

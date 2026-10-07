@@ -34,10 +34,15 @@ const (
 	blockedStatementTimeout = 30 * time.Second
 	// callerDeadlineDelay is the caller deadline used by the interruption cases
 	// that want the deadline, rather than an explicit cancellation, to stop the
-	// command. The held lock is released only after the command returns, so the
-	// statement is provably still waiting when the deadline fires; the delay only
-	// has to exceed the time the command needs to reach that statement.
-	callerDeadlineDelay = 2 * time.Second
+	// command. The clock starts before the lock is held and before the command
+	// issues its first statement, so it has to cover that whole path on an
+	// instrumented build rather than just the happy case: too short and the
+	// deadline fires before the command reaches the statement, the command never
+	// blocks, and the probe spins until blockedStatementTimeout before reporting
+	// a stall that reads nothing like the deadline it was waiting for. The delay
+	// also bounds each case, because the lock is released only after the command
+	// returns, so the headroom is paid once by each case it guards.
+	callerDeadlineDelay = 5 * time.Second
 )
 
 // workflowMutationState is every durable column a workflow mutation command can
@@ -51,6 +56,7 @@ type workflowMutationState struct {
 	MaxConsecutiveFailures int32
 	ConsecutiveFailures    int32
 	BuildStatus            string
+	BuildHash              sql.NullString
 	Generation             int64
 	terminatedAt           sql.NullTime
 	ResolvedImageRef       sql.NullString
@@ -67,7 +73,7 @@ func readWorkflowMutationState(ctx context.Context, t *testing.T, pg *postgres.P
 	state := &workflowMutationState{}
 	if err := pg.QueryRow(ctx, fmt.Sprintf(`
 		SELECT name, payload::text, interval, max_consecutive_job_failures_allowed,
-			consecutive_job_failures_count, build_status, generation, terminated_at,
+			consecutive_job_failures_count, build_status, build_hash, generation, terminated_at,
 			resolved_image_ref, resolved_image_digest
 		FROM %s
 		WHERE id = $1
@@ -78,6 +84,7 @@ func readWorkflowMutationState(ctx context.Context, t *testing.T, pg *postgres.P
 		&state.MaxConsecutiveFailures,
 		&state.ConsecutiveFailures,
 		&state.BuildStatus,
+		&state.BuildHash,
 		&state.Generation,
 		&state.terminatedAt,
 		&state.ResolvedImageRef,
@@ -191,16 +198,20 @@ func lockJobRow(jobID, pattern string) interruptionLock {
 // lockPublishIntent inserts the publish intent a command is about to write and
 // leaves it uncommitted, so the command's own insert waits on that transaction. A
 // concurrent duplicate command or a redrive already holding the same
-// deterministic event key is the real-world shape of that contention.
-func lockPublishIntent(workflowID, eventKey, pattern string) interruptionLock {
+// deterministic event key is the real-world shape of that contention. The payload
+// is the event production would write, attributed to the fixture's own user, so
+// the row stays inside the scope fixture cleanup deletes.
+func lockPublishIntent(fixture *workflowFixture, eventKey, pattern string) interruptionLock {
 	return interruptionLock{
 		label: "the in-flight publish intent",
 		lockSQL: fmt.Sprintf(`
 			INSERT INTO %s (topic, kafka_key, event_key, payload)
-			VALUES ($1, $2, $3, jsonb_build_object('UserID', $4::text))
+			VALUES ($1, $2, $3, jsonb_build_object('ID', $4::text, 'UserID', $5::text))
 		`, postgres.TableOutboxEvents),
-		lockArgs: []any{kafka.TopicWorkflows, workflowID, eventKey, workflowID},
-		pattern:  pattern,
+		lockArgs: []any{
+			kafka.TopicWorkflows, fixture.WorkflowID, eventKey, fixture.WorkflowID, fixture.UserID,
+		},
+		pattern: pattern,
 	}
 }
 
@@ -399,6 +410,24 @@ func TestIntegrationUpdateWorkflowReplayIsDurableAndIdempotent(t *testing.T) {
 	// Queued automatic work the update invalidates, so the replays also have to
 	// prove they cancel nothing a second time.
 	queuedJobID := seedFixturePendingJob(ctx, t, pg, fixture, "AUTOMATIC", 0)
+	// Failures below the threshold are recorded first, so the counter the update
+	// resets starts somewhere other than the zero CreateWorkflow left it at.
+	for range 2 {
+		reached, incrementErr := repo.IncrementWorkflowConsecutiveJobFailuresCount(
+			ctx, fixture.WorkflowID, fixture.UserID, uuid.NewString(),
+		)
+		if incrementErr != nil || reached {
+			t.Fatalf("failure below threshold = (reached %v, err %v), want (false, nil)", reached, incrementErr)
+		}
+	}
+	// The reset assertion below is only meaningful while the counter the update
+	// has to clear is non-zero, so pin that precondition rather than trust it.
+	if seeded := readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID); seeded.ConsecutiveFailures != 2 {
+		t.Fatalf(
+			"consecutive_job_failures_count = %d before the update, want 2 so the reset has something to clear",
+			seeded.ConsecutiveFailures,
+		)
+	}
 
 	update := func() error {
 		return repo.UpdateWorkflow(
@@ -436,7 +465,10 @@ func TestIntegrationUpdateWorkflowReplayIsDurableAndIdempotent(t *testing.T) {
 	}
 	settled := readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID)
 	if settled.ConsecutiveFailures != 0 {
-		t.Fatalf("consecutive_job_failures_count = %d, want the update to reset it to 0", settled.ConsecutiveFailures)
+		t.Fatalf(
+			"consecutive_job_failures_count = %d, want the update to reset the two recorded failures to 0",
+			settled.ConsecutiveFailures,
+		)
 	}
 	settledEvents := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID)
 
@@ -694,7 +726,7 @@ func TestIntegrationUpdateWorkflowDoesNotMutateWhenPublishIntentCannotBeRecorded
 
 			err := runWhileBlocked(
 				ctx, t, pg,
-				lockPublishIntent(fixture.WorkflowID, conflictingIntent, "%INSERT INTO "+postgres.TableOutboxEvents+"%"),
+				lockPublishIntent(fixture, conflictingIntent, "%INSERT INTO "+postgres.TableOutboxEvents+"%"),
 				cancelCaller,
 				func(commandCtx context.Context) error {
 					return repo.UpdateWorkflow(

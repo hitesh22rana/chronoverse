@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Mounted analytics tests exercise the real drawer, queries and charts;
- * only transport and toast boundaries are mocked.
+ * Mounted analytics tests exercise the real drawer, query states and controls;
+ * only transport and toast boundaries are mocked. jsdom measures no box, so the
+ * charts draw nothing here; chart drawing is covered by
+ * user-analytics-overview.test.tsx, which measures the container instead.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
@@ -77,6 +79,14 @@ function renderDrawer() {
 const trigger = () => screen.getByRole("button", { name: /Analytics/ })
 const refreshButton = () => screen.getByRole("button", { name: "Refresh analytics" })
 const analyticsRequests = () => mocks.fetchApiJson.mock.calls.length
+
+/** The headline card for one metric, with its stated total and derived rate. */
+function metric(label: string) {
+    const card = screen.getByText(label).closest("[data-slot=card]")?.querySelector("[data-slot=card-content]")
+    if (!card) throw new Error(`no metric card for ${label}`)
+    const [value, helper] = card.querySelectorAll("p")
+    return { value: value?.textContent, helper: helper?.textContent }
+}
 
 /** Opens the drawer and waits for its first fetch to settle. */
 async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
@@ -183,14 +193,10 @@ it("reports the account totals once the drawer has them", async () => {
     expect(await screen.findByText("Workload mix")).toBeTruthy()
     expect(screen.getByText("Most active workflows")).toBeTruthy()
     // The four headline totals come straight from the response.
-    expect(screen.getByText("Workflows")).toBeTruthy()
-    expect(screen.getByText("4")).toBeTruthy()
-    expect(screen.getByText("12")).toBeTruthy()
-    expect(screen.getByText("30")).toBeTruthy()
-    expect(screen.getByText("1h")).toBeTruthy()
-    // Derived per-workflow and per-job figures are stated rather than implied.
-    expect(screen.getByText("~3 jobs per workflow")).toBeTruthy()
-    expect(screen.getByText("~3 logs per job")).toBeTruthy()
+    expect(metric("Workflows")).toEqual({ value: "4", helper: "~3 jobs per workflow" })
+    expect(metric("Terminal jobs")).toEqual({ value: "12", helper: "5m average runtime" })
+    expect(metric("Generated logs")).toEqual({ value: "30", helper: "~3 logs per job" })
+    expect(metric("Execution time")).toEqual({ value: "1h", helper: "Across 12 terminal jobs" })
     // The single workflow kind in the payload is listed next to its job count.
     expect(screen.getByText("Container")).toBeTruthy()
 })

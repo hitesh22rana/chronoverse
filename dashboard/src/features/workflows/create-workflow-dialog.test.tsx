@@ -319,6 +319,30 @@ it("swaps the configuration and description when the kind changes", async () => 
     expect(screen.queryByLabelText("Image")).toBeNull()
 })
 
+it("re-checks a configuration field the user already visited when they come back", async () => {
+    const { user } = renderDialog()
+    type(nameField(), "API heartbeat")
+    await advanceToStep(user, 2)
+    await user.click(endpointField())
+    type(endpointField(), "not a url")
+    expect(await screen.findByText("Invalid URL")).toBeTruthy()
+
+    // Leaving by button blurs the endpoint, so the wizard knows it was visited.
+    await user.click(previousButton()!)
+    await waitFor(() => expect(stepHeading().textContent).toBe("Basics"))
+    // The basics step has no rule for the endpoint, so it drops the complaint.
+    // It is dropped by the requestAnimationFrame-scheduled re-check, so wait for
+    // it rather than for the heading, which flips synchronously.
+    await waitFor(() => expect(screen.queryByText("Invalid URL")).toBeNull())
+
+    await user.click(nextButton())
+    await waitFor(() => expect(stepHeading().textContent).toBe("Configuration"))
+
+    // Arriving at the configuration step runs those rules for the visited field again.
+    expect(await screen.findByText("Invalid URL")).toBeTruthy()
+    expect(endpointField()).toHaveProperty("value", "not a url")
+})
+
 it("keeps a rejected heartbeat configuration out of the request", async () => {
     const { user } = renderDialog()
     type(nameField(), "API heartbeat")

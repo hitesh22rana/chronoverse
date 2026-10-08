@@ -227,6 +227,11 @@ it("refetches on demand and cannot stack a second request behind one", async () 
     expect(refreshButton().querySelector("svg")?.getAttribute("class")).toContain("animate-spin")
     expect(analyticsRequests()).toBe(before + 1)
 
+    // The control is disabled, so a second request cannot stack behind this one.
+    await user.click(refreshButton())
+    expect(refreshButton()).toHaveProperty("disabled", true)
+    expect(analyticsRequests()).toBe(before + 1)
+
     await act(async () => {
         mocks.releaseFetch?.()
     })

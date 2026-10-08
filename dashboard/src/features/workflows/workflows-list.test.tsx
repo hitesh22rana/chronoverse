@@ -252,11 +252,13 @@ it("holds refresh back while the first list request is in flight", async () => {
 })
 
 it("waits for the search debounce before asking for the typed query", async () => {
-    const { user } = renderList()
+    renderList()
     await screen.findByText("Nightly container")
     const requestsBeforeTyping = listRequests().length
 
-    await user.type(searchBox(), "nightly")
+    // One synchronous change, so the assertions below run immediately instead of
+    // racing the 500ms debounce on however slow the runner happens to be.
+    fireEvent.change(searchBox(), { target: { value: "nightly" } })
 
     // The text is local until the debounce elapses, so nothing is requested.
     expect(searchBox()).toHaveProperty("value", "nightly")
@@ -514,7 +516,10 @@ it("re-requests the list on demand and keeps refresh disabled while one is in fl
 
     await waitFor(() => expect(refreshButton()).toHaveProperty("disabled", true))
     expect(refreshButton().querySelector("svg")?.getAttribute("class")).toContain("animate-spin")
+    expect(listRequests()).toHaveLength(requestsBefore + 1)
+
     // A disabled control cannot queue a second request behind the pending one.
+    await user.click(refreshButton())
     expect(refreshButton()).toHaveProperty("disabled", true)
     expect(listRequests()).toHaveLength(requestsBefore + 1)
 

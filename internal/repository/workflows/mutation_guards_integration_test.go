@@ -1004,15 +1004,22 @@ func TestIntegrationDeleteWorkflowRefusesWorkflowReactivatedUnderIt(t *testing.T
 	// releases it, which is the interleaving the delete has to survive. Doing it
 	// from the blocking transaction is what orders the two writes: the delete is
 	// already waiting for that lock when the reactivation commits.
+	//
+	// A failed statement has to be fatal rather than reported and skipped. The
+	// error aborts this transaction, which drops the row lock and lets the
+	// deletion run straight through to a successful commit, so a reported-and-
+	// returned step fails this case as "the delete was not refused" — blaming the
+	// production guard for a fixture statement that never ran. Fatal stops at the
+	// statement that actually failed, and unwinds through runWhileBlocked's
+	// cleanup, which cancels the command and rolls the fixture transaction back.
 	reactivate := func(blocking pgx.Tx, _ context.CancelFunc) {
 		if _, err := blocking.Exec(ctx, fmt.Sprintf(`
 			UPDATE %s SET terminated_at = NULL WHERE id = $1
 		`, postgres.TableWorkflows), fixture.WorkflowID); err != nil {
-			t.Errorf("reactivate the workflow under the deletion: %v", err)
-			return
+			t.Fatalf("reactivate the workflow under the deletion: %v", err)
 		}
 		if err := blocking.Commit(ctx); err != nil {
-			t.Errorf("commit the concurrent reactivation: %v", err)
+			t.Fatalf("commit the concurrent reactivation: %v", err)
 		}
 	}
 

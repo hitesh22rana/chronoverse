@@ -271,8 +271,11 @@ func assertWorkflowSurvivedDeletion(
 ) {
 	t.Helper()
 
+	// The row itself is a precondition for everything below: reading it is what
+	// turns a missing row into a fatal "no rows" error, which would bury this
+	// failure and skip the independent job and outbox checks.
 	if count := countWorkflowRows(ctx, t, pg, fixture.WorkflowID); count != 1 {
-		t.Errorf("workflow rows after %s = %d, want 1", name, count)
+		t.Fatalf("workflow rows after %s = %d, want 1", name, count)
 	}
 	assertMutationState(t, name, readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID), before)
 	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
@@ -550,6 +553,11 @@ func TestIntegrationUpdateWorkflowReplayIsDurableAndIdempotent(t *testing.T) {
 		}
 		assertMutationState(t, fmt.Sprintf("replay %d", attempt+1), readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID), settled)
 	}
+	// A replay still runs the ledger and legacy-identity writes and commits, so
+	// the key has to stay one durable row rather than gain one per attempt.
+	if count := countCommandKeys(ctx, t, pg, updateKey); count != 1 {
+		t.Fatalf("ledger rows for the replayed key %q = %d, want the original 1", updateKey, count)
+	}
 	assertEventKeys(
 		t,
 		"build intents after the replays",
@@ -582,6 +590,9 @@ func TestIntegrationUpdateWorkflowReplayIsDurableAndIdempotent(t *testing.T) {
 	assertMutationState(t, "refused key reuse", readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID), settled)
 	if count := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID); count != settledEvents {
 		t.Fatalf("outbox events after the refused key reuse = %d, want unchanged %d", count, settledEvents)
+	}
+	if count := countCommandKeys(ctx, t, pg, updateKey); count != 1 {
+		t.Fatalf("ledger rows for the reused key %q = %d, want the original 1", updateKey, count)
 	}
 }
 

@@ -22,7 +22,7 @@ it("requires an interval when creating, while an edit still accepts an emptied o
     const input = { ...base, kind: "HEARTBEAT", heartbeatPayload: heartbeat }
     // Empty create intervals must fail before reaching the API.
     expect(createWorkflowSchema.safeParse({ ...input, interval: "" }).success).toBe(false)
-    // Empty update intervals preserve the existing schedule.
+    // The update schema parses an emptied interval; its request requires one.
     expect(updateWorkflowSchema.parse({ ...base, interval: "" }).interval).toBeUndefined()
 })
 

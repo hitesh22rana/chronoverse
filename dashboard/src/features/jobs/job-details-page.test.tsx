@@ -214,8 +214,9 @@ it.each([
     ["one second", 1, "1 second"],
     ["under a minute", 59, "59 seconds"],
     // A completion stamped before the start is reported as the negative run it is.
-    // The server can hand out one when a lease is reconciled after a clock jump, so
-    // the page must not invent an order the timestamps do not have.
+    // The repository stamps both timestamps from Postgres, so no code path
+    // produces this; a skewed pair renders this way and the page must not invent
+    // an order the timestamps do not have.
     ["completion before the start", -5, "-5 seconds"],
     // Minutes: the minute count changes the whole unit, and so do the seconds.
     ["exactly a minute", 60, "1 minute 0 seconds"],

@@ -687,22 +687,24 @@ it("selects a line after a press that is not the primary button", async () => {
     expect(isSelected(3)).toBe(true)
 })
 
-it("arms the drag tracker on a non-primary press, so the next primary click on that row is a drag", async () => {
+it("arms the drag tracker on a non-primary press, and a click that brings no pointer of its own inherits that gesture", async () => {
     renderViewer()
     await loadedLines(20)
 
     // The gesture tracker is armed by any press, not only a primary one: what the
     // primary button gates is clearing the reader's text selection, not the
-    // tracking. A reader who right-drags across a line therefore leaves that row
-    // marked as dragged.
+    // tracking. `pointerup` clears nothing either, so a right-drag across a line
+    // leaves that row marked as dragged.
     await act(async () => {
         fireEvent.pointerDown(rowButton(5), { clientX: 12, clientY: 40, button: 2 })
         fireEvent.pointerMove(rowButton(5), { clientX: 40, clientY: 60 })
     })
 
-    // The next primary click on that row is taken as the end of the drag, so it
-    // selects nothing. This is what the reader sees, and it is what a change to
-    // the tracker would have to update deliberately.
+    // A mouse click always arrives with its own pointerdown first, and that
+    // re-arms the tracker as `didDrag: false`, so a reader's next click is not
+    // swallowed. `clickLine` sends the click on its own, which is what
+    // activating the row from the keyboard does, so here the handler is handed
+    // the stale gesture and has to reject the selection.
     await clickLine(5)
     expect(fragment()).toBe("")
     expect(isSelected(5)).toBe(false)

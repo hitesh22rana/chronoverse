@@ -17,6 +17,7 @@ import { useEffect, useState } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import type { MockInstance } from "vitest"
 
+import { apiEndpoints } from "@/lib/api/endpoints"
 import { LogsViewer } from "./logs-viewer"
 
 const mocks = vi.hoisted(() => ({
@@ -113,11 +114,56 @@ const row = (lineNumber: number) => document.getElementById(`L${lineNumber}`) as
 const rowButton = (lineNumber: number) => row(lineNumber).querySelector('button[aria-label="Select log entry"]') as HTMLButtonElement
 const visibleLines = () =>
     [...document.querySelectorAll("[data-line-number]")].map((element) => Number(element.getAttribute("data-line-number")))
+const selectionRangeCount = () => window.getSelection()?.rangeCount ?? 0
+/** Selects a row's text, as dragging across the log would leave behind. */
+const selectRowText = (lineNumber: number) => {
+    const range = document.createRange()
+    range.selectNodeContents(row(lineNumber))
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+}
+/**
+ * Neither jsdom nor React rethrows an exception thrown inside an event listener:
+ * jsdom reports it as an `error` event on the window, and React 19 does the same
+ * for handlers it dispatches. So a handler that misbehaves synchronously is
+ * only visible if the test collects those errors itself — an async throw would
+ * instead surface as an unhandled rejection, which this does not observe.
+ * Nothing else in this file raises either, so an empty result means the
+ * handlers behaved.
+ */
+const windowErrorsWhile = async (dispatch: () => void) => {
+    const errors: string[] = []
+    const onError = (event: ErrorEvent) => { errors.push(event.message) }
+    window.addEventListener("error", onError)
+    try {
+        await act(async () => {
+            dispatch()
+        })
+    } finally {
+        window.removeEventListener("error", onError)
+    }
+    return errors
+}
 const isSelected = (lineNumber: number) => row(lineNumber).getAttribute("data-selected") !== null
 const fragment = () => window.location.hash
 const clickLine = async (lineNumber: number, shiftKey = false) => {
     await act(async () => {
         fireEvent.click(rowButton(lineNumber), { shiftKey })
+    })
+}
+/**
+ * Waits for a real animation frame, then one macrotask. The re-arm queued by the
+ * component is scheduled with `requestAnimationFrame` and jsdom runs every callback
+ * registered for a frame in order, so waiting on a frame of our own is what makes
+ * the component's callback count — a fixed sleep only loses that guarantee when the
+ * runner is busy enough to push the frame past it.
+ */
+const flushFrame = async () => {
+    await act(async () => {
+        await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => { setTimeout(resolve, 0) })
+        })
     })
 }
 
@@ -227,6 +273,10 @@ beforeEach(() => {
 afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    // The debounce test below scopes fake timers to itself; this is the net for a
+    // failure that leaves them installed, so no later test inherits a clock. It
+    // runs after the mock restore so restoring a timer spy cannot be undone here.
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     // Tests assign the hash directly, so clear it here too: a test that starts
     // by asserting "no selection" must not inherit the previous test's anchor.
@@ -243,6 +293,15 @@ afterEach(() => {
 
 const loadedLines = (count: number) =>
     waitFor(() => expect(visibleLines()).toHaveLength(count))
+
+/**
+ * The viewer's search box settles for 500 ms before it applies a query
+ * (`logs-viewer.tsx`). Neither number is exported, so the tests wait comfortably
+ * past the window and separately check that nothing has been sent partway through
+ * it, which is what makes the wait a debounce rather than an upper bound.
+ */
+const DEBOUNCE_SETTLE_MS = 600
+const BEFORE_DEBOUNCE_SETTLE_MS = 300
 
 it("pages in older logs once per end-reached while a page request is in flight", async () => {
     let releasePage: (() => void) | null = null
@@ -384,6 +443,106 @@ it.each([
     expect(mocks.toast.warning).toHaveBeenCalledTimes(warning ? 1 : 0)
 })
 
+it("does not repeat an unavailable warning when the address re-delivers the same line", async () => {
+    mocks.fetchApiJson.mockImplementation(async (url: string) => {
+        if (url.includes("/logs/search")) return searchPage
+        if (url.includes("/logs")) return { ...newerPage, cursor: undefined }
+        return workflow
+    })
+    window.location.hash = "#L99"
+
+    renderViewer()
+    await loadedLines(20)
+    await waitFor(() => expect(mocks.toast.warning).toHaveBeenCalledTimes(1))
+
+    // Following the same link again re-selects the same missing line, which the
+    // reader has already been told about: the viewer must not nag twice.
+    await act(async () => {
+        setFragment("#L99")
+    })
+    expect(mocks.toast.warning).toHaveBeenCalledTimes(1)
+    expect(mocks.toast.warning).toHaveBeenCalledWith("Log line 99 is unavailable")
+})
+
+it("keeps a resolved deep link in place when the address re-delivers it", async () => {
+    window.location.hash = "#L30"
+
+    renderViewer()
+    await loadedLines(20)
+    await loadedLines(40)
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledTimes(1))
+    await rangeChanged(25, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1))
+    await act(async () => {
+        (mocks.scrollIntoView.mock.calls[0][0] as { done: () => void }).done()
+    })
+
+    // Re-entering the same link finds the line already scrolled into place, so the
+    // reader keeps their position instead of being yanked back. A re-arm is queued
+    // in an animation frame, which jsdom does not flush inside `act`, so the test
+    // waits one out before reading the counts: without the wait they would still
+    // read 1 and 1 for the wrong reason.
+    await act(async () => {
+        setFragment("#L30")
+    })
+    await flushFrame()
+    expect(mocks.scrollToIndex).toHaveBeenCalledTimes(1)
+    expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1)
+})
+
+it("drops a rendered-range correction whose selection was replaced first", async () => {
+    window.location.hash = "#L30"
+
+    renderViewer()
+    await loadedLines(20)
+    await loadedLines(40)
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 29, align: "start" }))
+
+    // A range change schedules a correction for line 30; moving the selection in
+    // the same turn replaces it before the browser paints a frame.
+    await act(async () => {
+        mocks.virtuosoProps?.rangeChanged({ startIndex: 25, endIndex: 39 })
+        setFragment("#L35")
+    })
+
+    // Only the surviving selection is corrected. Scrolling to the replaced line
+    // would move the reader away from the line they just asked for.
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 34, align: "start" }))
+    await rangeChanged(34, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1))
+    expect((mocks.scrollIntoView.mock.calls[0][0] as { index: number }).index).toBe(34)
+})
+
+it("does not mark a replaced selection as scrolled when its correction lands late", async () => {
+    window.location.hash = "#L30"
+
+    renderViewer()
+    await loadedLines(20)
+    await loadedLines(40)
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledTimes(1))
+    await rangeChanged(25, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(1))
+    const staleDone = (mocks.scrollIntoView.mock.calls[0][0] as { done: () => void }).done
+
+    // Move to another line and correct it, then let the first correction finish.
+    await act(async () => {
+        setFragment("#L35")
+    })
+    await rangeChanged(34, 39)
+    await waitFor(() => expect(mocks.scrollIntoView).toHaveBeenCalledTimes(2))
+    await act(async () => {
+        staleDone()
+    })
+
+    // Line 30 was never confirmed as scrolled, so returning to it scrolls again
+    // instead of trusting a correction that belonged to an abandoned selection.
+    await act(async () => {
+        setFragment("#L30")
+    })
+    await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledTimes(3))
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 29, align: "start" })
+})
+
 it("tracks selection changes made through the address fragment", async () => {
     renderViewer()
     await loadedLines(20)
@@ -459,32 +618,173 @@ it("selects and extends a range from row clicks while ignoring drags and line me
     expect(isSelected(11)).toBe(true)
 })
 
-it("drops the selection and applies the debounced query when the search box changes", async () => {
+it("tells a drag apart from a click and drops the text selection while extending", async () => {
+    renderViewer()
+    await loadedLines(20)
+    const pressedLine = rowButton(5)
+
+    // A press that never travels the drag threshold is still a click.
+    await act(async () => {
+        fireEvent.pointerDown(pressedLine, { clientX: 30, clientY: 30, button: 0 })
+        fireEvent.pointerMove(pressedLine, { clientX: 32, clientY: 31 })
+    })
+    await clickLine(5)
+    expect(fragment()).toBe("#L5")
+
+    // Selecting a range by keyboard-and-pointer means shift-clicking, which must
+    // not leave the browser's own text selection highlighting the row as well.
+    selectRowText(4)
+    expect(selectionRangeCount()).toBe(1)
+
+    await act(async () => {
+        // dispatchEvent reports false when a handler cancelled the press.
+        expect(fireEvent.pointerDown(rowButton(7), { clientX: 30, clientY: 30, shiftKey: true, button: 0 })).toBe(false)
+    })
+    expect(selectionRangeCount()).toBe(0)
+
+    await clickLine(7, true)
+    expect(fragment()).toBe("#L5-L7")
+    expect([5, 6, 7].map(isSelected)).toEqual([true, true, true])
+})
+
+it("keeps a selection through a pointer move that has no press behind it", async () => {
     renderViewer()
     await loadedLines(20)
 
-    await act(async () => {
-        fireEvent.click(rowButton(4))
-    })
-    expect(fragment()).toBe("#L4")
+    // A pointer travelling over the log without a button held is not a drag, so
+    // it neither claims the selection nor records a gesture the next click
+    // would mistake for one. With no press recorded there is no drag to measure,
+    // and the handler must not reach for one.
+    await clickLine(3)
+    expect(fragment()).toBe("#L3")
 
-    const searchInput = screen.getByPlaceholderText("Search logs... (Ctrl+F)")
+    expect(await windowErrorsWhile(() => {
+        fireEvent.pointerMove(rowButton(3), { clientX: 300, clientY: 40 })
+        fireEvent.pointerMove(rowButton(7), { clientX: 300, clientY: 40 })
+    })).toEqual([])
+    expect(fragment()).toBe("#L3")
+    expect(isSelected(3)).toBe(true)
+
+    await clickLine(7)
+    expect(fragment()).toBe("#L7")
+    expect(isSelected(7)).toBe(true)
+})
+
+it("selects a line after a press that is not the primary button", async () => {
+    renderViewer()
+    await loadedLines(20)
+
+    // Only a shift+primary press starts a range gesture, so this one has to leave
+    // a text selection the reader made themselves alone.
+    selectRowText(4)
+    expect(selectionRangeCount()).toBe(1)
+
     await act(async () => {
-        fireEvent.change(searchInput, { target: { value: "boom" } })
+        fireEvent.pointerDown(rowButton(3), { clientX: 12, clientY: 40, shiftKey: true, button: 1 })
+    })
+    expect(selectionRangeCount()).toBe(1)
+
+    await clickLine(3)
+    expect(fragment()).toBe("#L3")
+    expect(isSelected(3)).toBe(true)
+})
+
+it("arms the drag tracker on a non-primary press, and a click that brings no pointer of its own inherits that gesture", async () => {
+    renderViewer()
+    await loadedLines(20)
+
+    // The gesture tracker is armed by any press, not only a primary one: what the
+    // primary button gates is clearing the reader's text selection, not the
+    // tracking. `pointerup` clears nothing either, so a right-drag across a line
+    // leaves that row marked as dragged.
+    await act(async () => {
+        fireEvent.pointerDown(rowButton(5), { clientX: 12, clientY: 40, button: 2 })
+        fireEvent.pointerMove(rowButton(5), { clientX: 40, clientY: 60 })
     })
 
-    // Editing the query invalidates the line selection immediately.
+    // A mouse click always arrives with its own pointerdown first, and that
+    // re-arms the tracker as `didDrag: false`, so a reader's next click is not
+    // swallowed. `clickLine` sends the click on its own, which is what
+    // activating the row from the keyboard does, so here the handler is handed
+    // the stale gesture and has to reject the selection.
+    await clickLine(5)
     expect(fragment()).toBe("")
-    expect(isSelected(4)).toBe(false)
+    expect(isSelected(5)).toBe(false)
 
-    // The query itself is applied once the input settles, and switches the
-    // viewer to the search dataset.
-    await waitFor(
-        () => expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1?q=boom"),
-        { timeout: 5000 },
-    )
-    await waitFor(() => expect(screen.getByText("hit 1")).toBeTruthy())
-    expect(visibleLines()).toHaveLength(40)
+    // A click on any other row is unaffected, because `rowPointerGestureRef` is a
+    // single viewer-wide ref that every row click nulls: the click on row 6 clears
+    // the stale gesture before it decides anything. So the swallow is not a latch
+    // that disables the viewer, it only costs the row the gesture was armed on.
+    await clickLine(6)
+    expect(fragment()).toBe("#L6")
+    expect(isSelected(6)).toBe(true)
+})
+
+it("drops the selection and applies the debounced query when the search box changes", async () => {
+    // Fake timers are scoped to this test: the 500ms settle is driven by the
+    // clock instead of by how long the machine happened to take. `shouldAdvanceTime`
+    // lets the clock tick with real time, so the polling helpers still work while
+    // `settle` moves it deliberately. Nothing else here installs a clock, and
+    // `afterEach` restores the real one.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+        const settle = async (ms: number) => {
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(ms)
+            })
+        }
+
+        renderViewer()
+        await loadedLines(20)
+
+        // An input that never changes must not re-query the viewer: the debounce
+        // timer fires and finds the input already equal to the applied query. The
+        // wait clears the 500ms settle the viewer declares inline, so this fails
+        // against the debounce rather than against a copy of its number.
+        await settle(DEBOUNCE_SETTLE_MS)
+        expect(mocks.push).not.toHaveBeenCalled()
+
+        await act(async () => {
+            fireEvent.click(rowButton(4))
+        })
+        expect(fragment()).toBe("#L4")
+
+        const searchInput = screen.getByPlaceholderText("Search logs... (Ctrl+F)")
+        await act(async () => {
+            fireEvent.change(searchInput, { target: { value: "boom" } })
+        })
+
+        // Editing the query invalidates the line selection immediately.
+        expect(fragment()).toBe("")
+        expect(isSelected(4)).toBe(false)
+
+        // The query is not sent on the keystroke. Halfway through the settle window
+        // nothing has been pushed yet, which is the part a "waited 600ms" assertion
+        // on its own cannot tell apart from an immediate push.
+        await settle(BEFORE_DEBOUNCE_SETTLE_MS)
+        expect(mocks.push).not.toHaveBeenCalled()
+
+        // Past the window the query goes, and the viewer switches to the search
+        // dataset.
+        await settle(DEBOUNCE_SETTLE_MS)
+        expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1?q=boom")
+        expect(mocks.push).toHaveBeenCalledTimes(1)
+        await loadedLines(40)
+
+        // A settled query is not sent again just because time passed.
+        await settle(DEBOUNCE_SETTLE_MS)
+        expect(mocks.push).toHaveBeenCalledTimes(1)
+
+        // Clearing the box returns the viewer to the unfiltered dataset.
+        await act(async () => {
+            fireEvent.change(searchInput, { target: { value: "" } })
+        })
+        await settle(DEBOUNCE_SETTLE_MS)
+        expect(mocks.push).toHaveBeenLastCalledWith("/workflows/w1/jobs/j1")
+        await loadedLines(20)
+    } finally {
+        vi.useRealTimers()
+    }
 })
 
 it("focuses the search box with the keyboard shortcut and releases it with escape", async () => {
@@ -571,11 +871,57 @@ it("downloads the retained logs from the download popover", async () => {
     })
 
     await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledWith(
-        "/workflows/w1/jobs/j1/logs/raw?format=jsonl",
+        `${apiEndpoints.workflows.jobs.rawLogs("w1", "j1")}?format=jsonl`,
         "failed to download logs",
     ))
     expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("run-42.jsonl")
     expect(mocks.toast.success).toHaveBeenCalledWith("Logs downloaded successfully")
+})
+
+it("reports a download in flight in both the trigger and the action", async () => {
+    let releaseDownload: (() => void) | null = null
+    mocks.fetchApi.mockImplementation(() => new Promise((resolve) => {
+        releaseDownload = () => resolve({ blob: async () => new Blob(["logs"]) })
+    }))
+    renderViewer()
+    await loadedLines(20)
+
+    await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+    })
+    await act(async () => {
+        fireEvent.change(await screen.findByLabelText("File name"), { target: { value: "slow.txt" } })
+    })
+    await act(async () => {
+        fireEvent.click(screen.getAllByRole("button", { name: /^Download$/ })[1])
+    })
+
+    // While the request is outstanding, both download buttons show the wait and
+    // refuse a second click, so a slow download cannot be queued twice.
+    const downloadButtons = () => screen.getAllByRole("button", { name: /^Download$/ }) as HTMLButtonElement[]
+    await waitFor(() => expect(downloadButtons().every((button) => button.disabled)).toBe(true))
+    // The spin utility comes from this view's own markup, so this does not depend
+    // on which icon library renders the spinner. The buttons are re-read rather
+    // than captured, so a rerender that replaced the nodes cannot hide a change.
+    expect(downloadButtons().map((button) => Boolean(button.querySelector(".animate-spin")))).toEqual([true, true])
+    expect(screen.getByLabelText("File name")).toHaveProperty("disabled", true)
+    expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
+
+    // Clicking again while the first download is outstanding really does nothing:
+    // the disabled attribute is the whole mechanism, so this has to fire the click
+    // to show it is not merely present.
+    await act(async () => {
+        downloadButtons()[1].click()
+    })
+    expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
+
+    // Finishing the download closes the popover and reports success.
+    await act(async () => {
+        releaseDownload?.()
+    })
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith("Logs downloaded successfully"))
+    await waitFor(() => expect(screen.queryByLabelText("File name")).toBeNull())
+    expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("slow.txt")
 })
 
 it("keeps json rendering available only while the job has logs", async () => {
@@ -642,6 +988,42 @@ it("switches between raw and parsed JSON rendering through the address parameter
     expect(row(2).textContent).toBe("plain text")
 })
 
+it("keeps the selected line in the address when parsed JSON rendering is switched off", async () => {
+    mocks.fetchApiJson.mockImplementation(async (url: string) => {
+        if (url.includes("/logs/search")) return searchPage
+        if (url.includes("/logs")) {
+            return {
+                id: "j1",
+                workflow_id: "w1",
+                logs: [
+                    { ...log(2, "raw"), message: '{"level":"info","count":2}' },
+                    { ...log(1, "raw"), message: "plain text" },
+                ],
+            }
+        }
+        return workflow
+    })
+    mocks.search = "json=true"
+    window.location.hash = "#L2"
+
+    renderViewer()
+    await loadedLines(2)
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true")
+    expect(row(1).textContent).toContain('"level": "info"')
+
+    await act(async () => {
+        fireEvent.click(screen.getByRole("switch"))
+    })
+
+    // Switching off drops only the parse flag: the selection fragment survives,
+    // because it is part of the same shareable address.
+    expect(mocks.replace).toHaveBeenCalledWith("/workflows/w1/jobs/j1#L2", { scroll: false })
+    expect(mocks.search).toBe("")
+    await waitFor(() => expect(row(1).textContent).toBe('{"level":"info","count":2}'))
+    expect(isSelected(2)).toBe(true)
+    expect(fragment()).toBe("#L2")
+})
+
 it("copies the selected lines and the shareable permalink from the line menu", async () => {
     // userEvent.setup() also installs the async clipboard stub jsdom lacks.
     const user = userEvent.setup()
@@ -668,6 +1050,52 @@ it("copies the selected lines and the shareable permalink from the line menu", a
     await user.click(await screen.findByRole("menuitem", { name: /Copy permalink/ }))
     await waitFor(async () => expect(await copiedText()).toBe(`${window.location.origin}/workflows/w1/jobs/j1#L2-L4`))
     expect(mocks.toast.success).toHaveBeenCalledWith("Log permalink copied")
+})
+
+it("copies one unselected line and its own permalink", async () => {
+    const user = userEvent.setup()
+    renderViewer()
+    await loadedLines(20)
+    const copiedText = () => navigator.clipboard.readText()
+
+    // With no range selected, the line menu of a row acts on that row alone.
+    await user.click(row(6).querySelector('button[aria-label="Line options"]') as HTMLButtonElement)
+    await user.click(await screen.findByRole("menuitem", { name: /Copy line/ }))
+
+    await waitFor(async () => expect(await copiedText()).toBe("retained 35"))
+    expect(mocks.toast.success).toHaveBeenCalledWith("Log line copied")
+    expect(fragment()).toBe("")
+
+    // The permalink of a single line also selects that line in the address.
+    await user.click(row(6).querySelector('button[aria-label="Line options"]') as HTMLButtonElement)
+    await user.click(await screen.findByRole("menuitem", { name: /Copy permalink/ }))
+
+    await waitFor(async () => expect(await copiedText()).toBe(`${window.location.origin}/workflows/w1/jobs/j1#L6`))
+    expect(mocks.toast.success).toHaveBeenCalledWith("Log permalink copied")
+    expect(fragment()).toBe("#L6")
+    expect(isSelected(6)).toBe(true)
+})
+
+it("reports a refused permalink copy and keeps the line it linked to", async () => {
+    const user = userEvent.setup()
+    Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async () => { throw new Error("clipboard blocked") } },
+    })
+
+    renderViewer()
+    await loadedLines(20)
+    expect(fragment()).toBe("")
+
+    await user.click(row(8).querySelector('button[aria-label="Line options"]') as HTMLButtonElement)
+    await user.click(await screen.findByRole("menuitem", { name: /Copy permalink/ }))
+
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith("Failed to copy log permalink"))
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+    // Only the clipboard refused: the line the permalink pointed at stays
+    // selected, so the user can still see and share it by hand.
+    expect(fragment()).toBe("#L8")
+    expect(isSelected(8)).toBe(true)
 })
 
 it("requests at most one page while a deep-linked page is still in flight", async () => {

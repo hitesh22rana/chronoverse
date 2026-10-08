@@ -126,9 +126,11 @@ const selectRowText = (lineNumber: number) => {
 /**
  * Neither jsdom nor React rethrows an exception thrown inside an event listener:
  * jsdom reports it as an `error` event on the window, and React 19 does the same
- * for handlers it dispatches. So a handler that misbehaves is only visible if the
- * test collects those errors itself. Nothing else in this file raises one, so an
- * empty result means the handlers behaved.
+ * for handlers it dispatches. So a handler that misbehaves synchronously is
+ * only visible if the test collects those errors itself — an async throw would
+ * instead surface as an unhandled rejection, which this does not observe.
+ * Nothing else in this file raises either, so an empty result means the
+ * handlers behaved.
  */
 const windowErrorsWhile = async (dispatch: () => void) => {
     const errors: string[] = []

@@ -332,8 +332,10 @@ it("keeps asking for a job that is still running, and stops once it has finished
         await settle(queryRefetchIntervals.activeJob)
         await waitFor(() => expect(jobDetailRequests()).toBeGreaterThan(baseline))
 
-        // Once the server reports the run finished, the page stops asking. This
-        // direction is an exact count: polling has to stop, not merely slow down.
+        // Once the server reports the run finished, the page stops asking. The
+        // count may still grow while the settled page is fetched, so the read
+        // before the long settle only proves progress; the exact count is the
+        // next one — polling has to stop, not merely slow down.
         finished = true
         await settle(queryRefetchIntervals.activeJob)
         await screen.findByLabelText("Completed")

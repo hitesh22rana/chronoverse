@@ -24,7 +24,7 @@ lint/fix: dependencies
 
 # Coverage is opt-in and rides along with the test runs that already gate the
 # build: make test/short COVERPROFILE=<file> instruments the same `go test`
-# invocation, no second run. COVERMODE is fixed to atomic because -race needs
+# invocation, no second run. COVERMODE defaults to atomic because -race needs
 # atomic counters, and both targets must agree for their profiles to merge.
 COVERMODE?=atomic
 COVERFLAGS=$(if $(COVERPROFILE),-covermode=$(COVERMODE) -coverprofile=$(COVERPROFILE))

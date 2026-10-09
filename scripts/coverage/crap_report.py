@@ -203,7 +203,7 @@ def merge_go_profiles(
         elif found_mode != mode:
             raise CoverageError(
                 f"{path}: covermode {found_mode!r} but an earlier profile used {mode!r}. "
-                "Both jobs must pass the same -covermode, which the Makefile fixes to atomic."
+                "Both jobs must pass the same -covermode, which the Makefile defaults to."
             )
         for location, (statements, hits) in found.items():
             _add_block(blocks, location, statements, hits, str(path))

@@ -4,11 +4,15 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
@@ -46,10 +50,10 @@ func releaseForRetry(t *testing.T, repo *Repository, jobID, leaseToken, tag stri
 	}
 }
 
-func jobReleaseState(t *testing.T, pg *postgres.Postgres, jobID string) (status string, reason, lease sql.NullString, nextAttemptAt sql.NullTime) {
+func jobReleaseState(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID string) (status string, reason, lease sql.NullString, nextAttemptAt sql.NullTime) {
 	t.Helper()
 
-	if err := pg.QueryRow(context.Background(), `
+	if err := pg.QueryRow(ctx, `
 		SELECT status, terminal_reason_code, lease_token, next_attempt_at
 		FROM jobs WHERE id = $1
 	`, jobID).Scan(&status, &reason, &lease, &nextAttemptAt); err != nil {
@@ -58,11 +62,11 @@ func jobReleaseState(t *testing.T, pg *postgres.Postgres, jobID string) (status 
 	return status, reason, lease, nextAttemptAt
 }
 
-func jobNextAttemptAt(t *testing.T, pg *postgres.Postgres, jobID string) sql.NullTime {
+func jobNextAttemptAt(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID string) sql.NullTime {
 	t.Helper()
 
 	var nextAttemptAt sql.NullTime
-	if err := pg.QueryRow(context.Background(), `SELECT next_attempt_at FROM jobs WHERE id = $1`, jobID).Scan(&nextAttemptAt); err != nil {
+	if err := pg.QueryRow(ctx, `SELECT next_attempt_at FROM jobs WHERE id = $1`, jobID).Scan(&nextAttemptAt); err != nil {
 		t.Fatalf("fetch job next_attempt_at: %v", err)
 	}
 	return nextAttemptAt
@@ -79,7 +83,7 @@ func TestIntegrationReleaseForRetryReleasesActiveWorkflowJob(t *testing.T) {
 
 	releaseForRetry(t, repo, jobID, leaseToken, t.Name())
 
-	status, _, lease, nextAttemptAt := jobReleaseState(t, pg, jobID)
+	status, _, lease, nextAttemptAt := jobReleaseState(ctx, t, pg, jobID)
 	if status != "PENDING" {
 		t.Fatalf("job status = %q, want %q", status, "PENDING")
 	}
@@ -115,7 +119,7 @@ func TestIntegrationReleaseForRetryStoresAnOffsetSpellingAsItsInstant(t *testing
 		t.Fatalf("ReleaseJobForRetry: %v", err)
 	}
 
-	nextAttemptAt := jobNextAttemptAt(t, pg, jobID)
+	nextAttemptAt := jobNextAttemptAt(ctx, t, pg, jobID)
 	if !nextAttemptAt.Valid {
 		t.Fatal("next_attempt_at is NULL, want set for retry")
 	}
@@ -176,7 +180,7 @@ func TestIntegrationReleaseForRetryCancelsTerminatedWorkflowJob(t *testing.T) {
 
 	releaseForRetry(t, repo, jobID, leaseToken, t.Name())
 
-	status, reason, lease, _ := jobReleaseState(t, pg, jobID)
+	status, reason, lease, _ := jobReleaseState(ctx, t, pg, jobID)
 	if status != "CANCELED" {
 		t.Fatalf("job status = %q, want %q", status, "CANCELED")
 	}
@@ -242,12 +246,138 @@ func TestIntegrationReleaseForRetrySerializesWithConcurrentTermination(t *testin
 		t.Fatal("ReleaseJobForRetry did not finish after lock release")
 	}
 
-	status, reason, _, _ := jobReleaseState(t, pg, jobID)
+	status, reason, _, _ := jobReleaseState(ctx, t, pg, jobID)
 	if status != "CANCELED" {
 		t.Fatalf("job status = %q, want %q (orphan PENDING)", status, "CANCELED")
 	}
 	if !reason.Valid || reason.String != "WORKFLOW_TERMINATED" {
 		t.Fatalf("terminal_reason_code = %q, want %q", reason.String, "WORKFLOW_TERMINATED")
+	}
+}
+
+// TestIntegrationReleaseForRetryRejectsBadInputBeforeTouchingTheJob pins the input guards on
+// a release. Both reject before any statement runs, so the running job keeps its lease.
+func TestIntegrationReleaseForRetryRejectsBadInputBeforeTouchingTheJob(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	_, workflowID := seedUserWorkflow(ctx, t, pg)
+	userID := mustWorkflowUser(ctx, t, pg, workflowID)
+	jobID, leaseToken := seedRunningJob(ctx, t, pg, repo, workflowID, userID, t.Name())
+	valid := time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano)
+
+	for _, tc := range []struct{ name, jobID, nextAttemptAt, want string }{
+		{name: "job ID is not a UUID", jobID: "not-a-uuid", nextAttemptAt: valid, want: "must be a valid UUID"},
+		{name: "next attempt is not a timestamp", jobID: jobID, nextAttemptAt: "not-a-timestamp", want: "invalid next_attempt_at"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := repo.ReleaseJobForRetry(ctx, tc.jobID, leaseToken, tc.nextAttemptAt, "Unavailable", "runtime down", "release-bad-"+fixtureTag())
+			if err == nil {
+				t.Fatal("ReleaseJobForRetry accepted invalid input")
+			}
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("ReleaseJobForRetry code = %s, want %s: %v", status.Code(err), codes.InvalidArgument, err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ReleaseJobForRetry error = %v, want it to mention %q", err, tc.want)
+			}
+			jobStatus, _, lease, nextAttemptAt := jobReleaseState(ctx, t, pg, jobID)
+			if jobStatus != "RUNNING" || !lease.Valid || nextAttemptAt.Valid {
+				t.Fatalf("job after rejection = %q/lease %v/next %v, want RUNNING holding its lease",
+					jobStatus, lease.Valid, nextAttemptAt.Valid)
+			}
+		})
+	}
+}
+
+// TestIntegrationReleaseForRetryWithoutTheHeldLeaseIsRejected pins the precondition that a
+// release only frees a lease this worker still holds.
+func TestIntegrationReleaseForRetryWithoutTheHeldLeaseIsRejected(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	_, workflowID := seedUserWorkflow(ctx, t, pg)
+	userID := mustWorkflowUser(ctx, t, pg, workflowID)
+	jobID, _ := seedRunningJob(ctx, t, pg, repo, workflowID, userID, t.Name())
+
+	err := repo.ReleaseJobForRetry(
+		ctx, jobID, uuid.NewString(), time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano),
+		"Unavailable", "runtime down", "release-stale-"+t.Name(),
+	)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("ReleaseJobForRetry with a stale token = %v, want %s", err, codes.FailedPrecondition)
+	}
+	if jobStatus, _, lease, nextAttemptAt := jobReleaseState(ctx, t, pg, jobID); jobStatus != "RUNNING" || !lease.Valid || nextAttemptAt.Valid {
+		t.Fatalf("job after stale release = %q/lease %v/next %v, want RUNNING holding its lease",
+			jobStatus, lease.Valid, nextAttemptAt.Valid)
+	}
+}
+
+// TestIntegrationReleaseForRetryFaultsRollBackAndRecoverWithTheSameCommand drives the release
+// against a database that fails partway. A release moves the job, its runtime slot and its
+// ledger row together, so a failure anywhere must leave the job running on its original lease
+// with no ledger trace, and the caller's commandID must still be usable afterwards.
+func TestIntegrationReleaseForRetryFaultsRollBackAndRecoverWithTheSameCommand(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	for _, tc := range []struct {
+		name, table, event string
+		deferred           bool
+	}{
+		// The reservation insert, before the job is touched at all.
+		{name: "reservation fails", table: "command_idempotency_keys", event: "INSERT"},
+		// The release update, deferred so it fails at commit rather than mid-statement.
+		{name: "commit fails", table: "jobs", event: "UPDATE", deferred: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			userID, workflowID := seedIsolatedWorkflow(ctx, t, pg)
+			jobID, leaseToken := seedRunningJob(ctx, t, pg, repo, workflowID, userID, t.Name())
+
+			commandID := "release-fault-" + fixtureTag()
+			instant := time.Now().UTC().Add(time.Minute).Truncate(time.Microsecond)
+			release := func() error {
+				return repo.ReleaseJobForRetry(ctx, jobID, leaseToken, instant.Format(time.RFC3339Nano),
+					"Unavailable", "runtime down", commandID)
+			}
+
+			remove := scheduleFaultTrigger(ctx, t, pg, tc.table, tc.event, tc.deferred)
+			if err := release(); err == nil {
+				remove()
+				t.Fatal("ReleaseJobForRetry succeeded through an injected fault")
+			}
+			remove()
+
+			jobStatus, _, lease, nextAttemptAt := jobReleaseState(ctx, t, pg, jobID)
+			if jobStatus != "RUNNING" || !lease.Valid || nextAttemptAt.Valid {
+				t.Fatalf("job after rollback = %q/lease %v/next %v, want RUNNING holding its lease",
+					jobStatus, lease.Valid, nextAttemptAt.Valid)
+			}
+			if _, ok := readCommandByScope(ctx, t, pg, commandidempotency.JobScope(jobID), commandidempotency.OperationJobReleaseForRetry, commandID); ok {
+				t.Fatal("a failed release left a completed ledger row behind")
+			}
+
+			// The same commandID must still work, and must then replay rather than reserve again.
+			if err := release(); err != nil {
+				t.Fatalf("retry after recovery: %v", err)
+			}
+			jobStatus, _, lease, _ = jobReleaseState(ctx, t, pg, jobID)
+			if jobStatus != "PENDING" || lease.Valid {
+				t.Fatalf("job after recovery = %q/lease %v, want PENDING released", jobStatus, lease.Valid)
+			}
+			if _, ok := readCommandByScope(ctx, t, pg, commandidempotency.JobScope(jobID), commandidempotency.OperationJobReleaseForRetry, commandID); !ok {
+				t.Fatal("retry after recovery did not complete the ledger")
+			}
+			if err := release(); err != nil {
+				t.Fatalf("replay after recovery: %v", err)
+			}
+			if got := jobNextAttemptAt(ctx, t, pg, jobID); !got.Valid {
+				t.Fatal("replay dropped the stored next_attempt_at")
+			}
+		})
 	}
 }
 

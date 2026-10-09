@@ -808,14 +808,33 @@ func TestIntegrationBuildStatusReplayRefusesADifferentResult(t *testing.T) {
 		t.Errorf("outbox events after the build status replay = %d, want unchanged %d", count, eventsBefore)
 	}
 
-	const otherDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	assertCode(
-		t, "UpdateWorkflowBuildStatus (replay naming another digest)",
-		replay(fixture.ResolvedImageRef, otherDigest),
-		codes.FailedPrecondition,
+	const (
+		otherRef    = "alpine:3.23.0"
+		otherDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	)
-	assertMutationState(t, "refused build status replay", readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID), settled)
-	if count := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID); count != eventsBefore {
-		t.Errorf("outbox events after the refused replay = %d, want unchanged %d", count, eventsBefore)
+	// The recorded identity is a reference and a digest together, so a redelivery
+	// that changes either half has to be refused. Checking only the digest would
+	// let a redelivery that names a different tag through, and the tag is what
+	// decides what a later run executes.
+	for _, tc := range []struct {
+		name   string
+		ref    string
+		digest string
+	}{
+		{name: "another reference", ref: otherRef, digest: fixture.ResolvedImageDigest},
+		{name: "another digest", ref: fixture.ResolvedImageRef, digest: otherDigest},
+		{name: "another reference and digest", ref: otherRef, digest: otherDigest},
+	} {
+		t.Run("replay naming "+tc.name, func(t *testing.T) {
+			refused := replay(tc.ref, tc.digest)
+			assertCode(t, "UpdateWorkflowBuildStatus (replay naming "+tc.name+")", refused, codes.FailedPrecondition)
+			if message := status.Convert(refused).Message(); message != "build result differs from the recorded result" {
+				t.Errorf("replay naming %s message = %q, want the recorded-result refusal", tc.name, message)
+			}
+			assertMutationState(t, "refused build status replay", readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID), settled)
+			if count := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID); count != eventsBefore {
+				t.Errorf("outbox events after the refused replay = %d, want unchanged %d", count, eventsBefore)
+			}
+		})
 	}
 }

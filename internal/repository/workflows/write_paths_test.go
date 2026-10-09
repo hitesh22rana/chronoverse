@@ -20,6 +20,11 @@ import (
 const (
 	testImageRef    = "alpine:3.22.2"
 	testImageDigest = "sha256:3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b"
+	testWorkflowID  = "550e8400-e29b-41d4-a716-446655440000"
+	testUserID      = "9b2d4f1e-8a3c-4d5b-9e7f-0a1b2c3d4e5f"
+	// testCompletedBuildStatus is the build status whose image identity the
+	// guards below are stated in terms of.
+	testCompletedBuildStatus = "COMPLETED"
 )
 
 // TestMapWorkflowWriteErrorKeepsCallerOutcome proves the wrapper the mutation
@@ -99,6 +104,31 @@ func TestMapWorkflowWriteErrorKeepsCallerOutcome(t *testing.T) {
 				t.Fatalf("mapWorkflowWriteError(%v) message = %q, want %q", tc.err, message, tc.wantCause)
 			}
 		})
+	}
+}
+
+// TestUpdateWorkflowBuildStatusRefusesGenerationsItCannotApply proves a build
+// result for a generation that does not exist is refused before the command
+// opens a transaction or reads a row, and is refused as the caller's own bad
+// request rather than as a missing workflow. The repository is built without a
+// database on purpose: there is nothing here it could reach, so a guard that
+// stopped short of the transaction could not pass.
+func TestUpdateWorkflowBuildStatusRefusesGenerationsItCannotApply(t *testing.T) {
+	t.Parallel()
+
+	repo := New(&Config{}, nil)
+
+	for _, generation := range []int64{0, -1, -1000} {
+		err := repo.UpdateWorkflowBuildStatus(
+			context.Background(), testWorkflowID, testUserID, testCompletedBuildStatus, generation, testImageRef, testImageDigest,
+		)
+		if code := status.Code(err); code != codes.InvalidArgument {
+			t.Fatalf("UpdateWorkflowBuildStatus(generation %d) code = %v, want %v (err: %v)", generation, code, codes.InvalidArgument, err)
+		}
+		want := "workflow generation must be at least 1"
+		if message := status.Convert(err).Message(); message != want {
+			t.Fatalf("UpdateWorkflowBuildStatus(generation %d) message = %q, want %q", generation, message, want)
+		}
 	}
 }
 

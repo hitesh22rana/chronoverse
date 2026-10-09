@@ -159,11 +159,29 @@ func seedWorkflowFixture(ctx context.Context, t *testing.T, pg *postgres.Postgre
 func seedWorkflowForUser(ctx context.Context, t *testing.T, repo *Repository, userID string, maxFailures int32) *workflowFixture {
 	t.Helper()
 
+	return createFixtureWorkflow(ctx, t, repo, userID, "CONTAINER", fixturePayload, maxFailures)
+}
+
+// createFixtureWorkflow creates one workflow of an explicit kind under an
+// existing fixture user. Every seed helper goes through it, so a fixture workflow
+// is built identically whatever kind a case needs and the build state each one
+// starts in is produced by CreateWorkflow rather than by fixture SQL.
+func createFixtureWorkflow(
+	ctx context.Context,
+	t *testing.T,
+	repo *Repository,
+	userID,
+	kind,
+	payload string,
+	maxFailures int32,
+) *workflowFixture {
+	t.Helper()
+
 	const interval = int32(60)
 	tag := fixtureTag()
-	created, err := repo.CreateWorkflow(ctx, userID, "cv-"+tag, fixturePayload, "CONTAINER", interval, maxFailures, true, "cv-create-"+tag)
+	created, err := repo.CreateWorkflow(ctx, userID, "cv-"+tag, payload, kind, interval, maxFailures, true, "cv-create-"+tag)
 	if err != nil {
-		t.Fatalf("CreateWorkflow: %v", err)
+		t.Fatalf("CreateWorkflow (%s): %v", kind, err)
 	}
 
 	return &workflowFixture{

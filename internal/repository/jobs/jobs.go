@@ -152,7 +152,9 @@ func (r *Repository) ScheduleJob(
 		err = status.Errorf(codes.InvalidArgument, "invalid scheduled_at time format: %v", err)
 		return "", err
 	}
-
+	// parseTime normalizes to UTC, which is what jobs.scheduled_at needs: it is
+	// TIMESTAMP WITHOUT TIME ZONE, so an offset spelling would otherwise be kept as its own
+	// wall clock and dispatched the offset's distance from the instant it denotes.
 	idempotencyKey, automaticIdempotencyKeyProvided := normalizeScheduleJobIdempotencyKey(
 		workflowID,
 		scheduledAtTime,
@@ -165,7 +167,7 @@ func (r *Repository) ScheduleJob(
 	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to start schedule transaction: %v", err)
+		return "", mapBeginTxError(err, "start schedule transaction")
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
@@ -329,6 +331,12 @@ func scheduleJobHashFields(workflowID, userID, trigger string, workflowGeneratio
 	return fields
 }
 
+// normalizeScheduleJobIdempotencyKey returns the identity a command spends, reporting
+// whether the caller named it. An automatic occurrence with no key is identified by its
+// instant, which parseTime has already normalized to UTC so that two spellings of one
+// instant derive one identity and one redelivered occurrence replays instead of reserving
+// a second job. An identity the caller supplied is returned unchanged: it is not an
+// instant this function may rewrite.
 func normalizeScheduleJobIdempotencyKey(
 	workflowID string,
 	scheduledAt time.Time,
@@ -337,7 +345,9 @@ func normalizeScheduleJobIdempotencyKey(
 ) (string, bool) {
 	automaticIdempotencyKeyProvided := trigger == jobsmodel.JobTriggerAutomatic.ToString() && idempotencyKey != ""
 	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !automaticIdempotencyKeyProvided {
-		idempotencyKey = idempotency.JobDispatchEventKey(fmt.Sprintf("%s:%s", workflowID, scheduledAt.Format(time.RFC3339Nano)))
+		idempotencyKey = idempotency.JobDispatchEventKey(
+			fmt.Sprintf("%s:%s", workflowID, scheduledAt.Format(time.RFC3339Nano)),
+		)
 	}
 
 	return idempotencyKey, automaticIdempotencyKeyProvided
@@ -436,7 +446,7 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to start cancel-job transaction: %v", err)
+		return nil, mapBeginTxError(err, "start cancel-job transaction")
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
@@ -1123,8 +1133,17 @@ func (r *Repository) withAuthorization(ctx context.Context) (context.Context, er
 	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, auth.ServiceNameWorkflows)
 }
 
+// parseTime is the single entry point for a caller-supplied instant, and normalizes to UTC.
+// Every column it feeds is TIMESTAMP WITHOUT TIME ZONE, which discards an offset and keeps
+// the wall clock the caller spelled. Without this, a caller outside UTC stores its own wall
+// clock for an instant it meant, and the scheduler, which compares against
+// now() AT TIME ZONE 'utc', reads it as that much too early or too late.
 func parseTime(t string) (time.Time, error) {
-	return time.Parse(time.RFC3339Nano, t)
+	parsed, err := time.Parse(time.RFC3339Nano, t)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed.UTC(), nil
 }
 
 // encodeJobLogsCursor encodes the cursor for descending log pagination.
@@ -1350,6 +1369,21 @@ func (r *Repository) mapJobLogsStatusError(err error) error {
 	}
 
 	return status.Errorf(codes.Internal, "failed to get job: %v", err)
+}
+
+// mapBeginTxError classifies a failure to open a repository transaction. The transaction
+// is opened before any statement runs, so a caller that has gone away leaves nothing
+// durable behind and is reported as the cancellation or deadline it is rather than as a
+// retryable internal failure, matching how the insert path reads the same conditions.
+func mapBeginTxError(err error, operation string) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, err.Error())
+	}
+
+	return status.Errorf(codes.Internal, "failed to %s: %v", operation, err)
 }
 
 func (r *Repository) mapScheduleInsertError(err error, trigger string, workflowGeneration int64) error {

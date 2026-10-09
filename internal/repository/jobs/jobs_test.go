@@ -4,12 +4,15 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -112,6 +115,77 @@ func TestNormalizeAttachJobContainerIdentityRejectsEmptyRuntimeNodeID(t *testing
 	}
 }
 
+// TestMapJobLeaseWriteErrorReportsEveryConditionItDistinguishes pins the mapper the lease
+// write paths defer to. A nil error has to come back nil so a caller can hand it a rollback
+// result unconditionally, an abandoned caller has to read as the cancellation it is rather
+// than as a retryable internal failure, and a malformed UUID has to read as a client error
+// rather than a server one. IsInvalidTextRepresentation only reads the error, so a nil pool
+// exercises it without a database.
+func TestMapJobLeaseWriteErrorReportsEveryConditionItDistinguishes(t *testing.T) {
+	t.Parallel()
+
+	const operation = "commit release job for retry transaction"
+	repo := &Repository{}
+
+	if err := repo.mapJobLeaseWriteError(nil, operation); err != nil {
+		t.Fatalf("mapJobLeaseWriteError(nil) = %v, want nil so a caller can assign a rollback result unconditionally", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		err  error
+		want codes.Code
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: codes.DeadlineExceeded},
+		{name: "wrapped deadline", err: fmt.Errorf("commit: %w", context.DeadlineExceeded), want: codes.DeadlineExceeded},
+		{name: "cancellation", err: context.Canceled, want: codes.Canceled},
+		{name: "wrapped cancellation", err: fmt.Errorf("rollback: %w", context.Canceled), want: codes.Canceled},
+		{name: "malformed UUID", err: &pgconn.PgError{Code: "22P02", Message: `invalid input syntax for type uuid: "nope"`}, want: codes.InvalidArgument},
+		{name: "other database error", err: &pgconn.PgError{Code: "23505", Message: "duplicate key value"}, want: codes.Internal},
+		{name: "unrecognized error", err: errors.New("boom"), want: codes.Internal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := repo.mapJobLeaseWriteError(tc.err, operation)
+			if status.Code(got) != tc.want {
+				t.Fatalf("mapJobLeaseWriteError(%v) code = %s, want %s: %v", tc.err, status.Code(got), tc.want, got)
+			}
+		})
+	}
+}
+
+// TestParseTimeNormalizesAnOffsetSpellingToTheInstantItDenotes pins the shared entry point
+// for a caller-supplied instant. Every column it feeds is TIMESTAMP WITHOUT TIME ZONE, so a
+// spelling carrying an offset must land as the instant and not as its own wall clock: the
+// column discards the offset, and every reader compares against now() AT TIME ZONE 'utc'.
+func TestParseTimeNormalizesAnOffsetSpellingToTheInstantItDenotes(t *testing.T) {
+	t.Parallel()
+
+	instant := time.Date(2026, time.October, 7, 10, 30, 0, 123456000, time.UTC)
+
+	for _, zone := range []string{"plus2", "minus5"} {
+		offset := 2 * 3600
+		if zone == "minus5" {
+			offset = -5 * 3600
+		}
+		got, err := parseTime(instant.In(time.FixedZone(zone, offset)).Format(time.RFC3339Nano))
+		if err != nil {
+			t.Fatalf("parseTime(%s): %v", zone, err)
+		}
+		if !got.Equal(instant) {
+			t.Fatalf("parseTime(%s) = %s, want the instant the spelling denotes %s", zone, got, instant)
+		}
+		if got.Location() != time.UTC {
+			t.Fatalf("parseTime(%s) kept zone %s, want UTC so the stored value is the instant", zone, got.Location())
+		}
+	}
+
+	if _, err := parseTime("not-a-timestamp"); err == nil {
+		t.Fatal("parseTime accepted a malformed instant")
+	}
+}
+
 func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	t.Parallel()
 
@@ -121,6 +195,80 @@ func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	}
 	if got := fields["workflow_generation"]; got != int64(3) {
 		t.Fatalf("automatic schedule hash generation = %v, want 3", got)
+	}
+}
+
+// TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant pins the identity an
+// automatic occurrence spends. The instant arrives already normalized to UTC by parseTime, so
+// this function only has to format it: one instant is one identity, the next is another, and an
+// identity the caller named is never rewritten.
+func TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant(t *testing.T) {
+	t.Parallel()
+
+	const workflowID = "22222222-2222-4222-8222-222222222222"
+	instant := time.Date(2026, time.October, 7, 10, 30, 0, 123456000, time.UTC)
+
+	utcKey, utcProvided := normalizeScheduleJobIdempotencyKey(
+		workflowID, instant, jobsmodel.JobTriggerAutomatic.ToString(), "",
+	)
+	if utcProvided {
+		t.Fatal("derived identity reported itself as caller-provided")
+	}
+	if want := idempotency.JobDispatchEventKey(workflowID + ":2026-10-07T10:30:00.123456Z"); utcKey != want {
+		t.Fatalf("derived identity = %q, want the UTC instant key %q", utcKey, want)
+	}
+
+	// One instant later is a different occurrence, and an identity the caller supplied is
+	// returned unchanged for either trigger.
+	laterKey, _ := normalizeScheduleJobIdempotencyKey(
+		workflowID, instant.Add(time.Nanosecond), jobsmodel.JobTriggerAutomatic.ToString(), "",
+	)
+	if laterKey == utcKey {
+		t.Fatalf("derived identity %q is shared with the next instant", laterKey)
+	}
+	for trigger, wantProvided := range map[string]bool{
+		jobsmodel.JobTriggerAutomatic.ToString(): true,
+		jobsmodel.JobTriggerManual.ToString():    false,
+	} {
+		got, provided := normalizeScheduleJobIdempotencyKey(workflowID, instant, trigger, "caller-key")
+		if got != "caller-key" {
+			t.Fatalf("%s trigger rewrote the caller's identity to %q", trigger, got)
+		}
+		if provided != wantProvided {
+			t.Fatalf("%s trigger reported caller-provided = %t, want %t", trigger, provided, wantProvided)
+		}
+	}
+}
+
+func TestMapBeginTxErrorClassifiesTheCallersThatWentAway(t *testing.T) {
+	t.Parallel()
+
+	// Both RPCs open their transaction before any statement runs, so neither leaves
+	// anything durable behind and both report an abandoned caller as the cancellation
+	// or deadline it is rather than as a retryable internal failure.
+	for operation, begin := range map[string]func(error) error{
+		"schedule": func(err error) error { return mapBeginTxError(err, "start schedule transaction") },
+		"cancel":   func(err error) error { return mapBeginTxError(err, "start cancel-job transaction") },
+	} {
+		for name, test := range map[string]struct {
+			err  error
+			code codes.Code
+		}{
+			"canceled":          {err: context.Canceled, code: codes.Canceled},
+			"deadline exceeded": {err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
+			// A wrapped condition still classifies: the pool reports the caller's own error.
+			"wrapped cancel": {err: fmt.Errorf("begin transaction: %w", context.Canceled), code: codes.Canceled},
+			"pool failure":   {err: errors.New("conn refused"), code: codes.Internal},
+		} {
+			t.Run(operation+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				mapped := begin(test.err)
+				if got := status.Code(mapped); got != test.code {
+					t.Fatalf("mapBeginTxError() code = %s, want %s (err: %v)", got, test.code, mapped)
+				}
+			})
+		}
 	}
 }
 

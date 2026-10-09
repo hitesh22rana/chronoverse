@@ -818,7 +818,7 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 
 	query = fmt.Sprintf(`
         UPDATE %s
-        SET terminated_at = COALESCE(terminated_at, NOW())
+        SET terminated_at = COALESCE(terminated_at, clock_timestamp() AT TIME ZONE 'utc')
         WHERE id = $1 AND user_id = $2;
     `, postgres.TableWorkflows)
 	if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {

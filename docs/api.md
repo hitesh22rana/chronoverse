@@ -282,6 +282,10 @@ Requires `Idempotency-Key`.
 
 Schedules an immediate manual job and returns `201 Created` with the job ID.
 
+An accepted `scheduled_at` is normalized to UTC before storage, so an offset spelling
+denotes the instant it stands for rather than its own wall clock. The same applies to
+`next_attempt_at` on job release.
+
 ### Get Job
 
 `GET /workflows/{workflow_id}/jobs/{job_id}`
@@ -292,7 +296,7 @@ Returns:
 - `workflow_id`
 - `status`
 - `trigger`
-- `scheduled_at`
+- `scheduled_at`, returned as a UTC instant
 - `started_at`
 - `completed_at`
 - `created_at`

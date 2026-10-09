@@ -687,8 +687,11 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 			err = r.mapJobLeaseWriteError(rollbackErr, "rollback release job for retry transaction")
 		}
 	}()
+	// Hashing the normalized instant rather than the supplied text keeps one retry one
+	// request: the stored next_attempt_at is UTC either way, so two spellings of the same
+	// instant must not reserve two command identities or reject the second as a mismatch.
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobReleaseForRetry, commandID, map[string]any{
-		leaseTokenField: leaseToken, "next_attempt_at": nextAttemptAt, "error_code": errorCode, "error_message": truncateJobError(errorMessage),
+		leaseTokenField: leaseToken, "next_attempt_at": nextAttemptAtTime, "error_code": errorCode, "error_message": truncateJobError(errorMessage),
 	})
 	if err != nil {
 		return err

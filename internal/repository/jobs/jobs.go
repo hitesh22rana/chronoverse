@@ -1374,10 +1374,7 @@ func (r *Repository) mapJobLogsStatusError(err error) error {
 // mapBeginTxError classifies a failure to open a repository transaction. The transaction
 // is opened before any statement runs, so a caller that has gone away leaves nothing
 // durable behind and is reported as the cancellation or deadline it is rather than as a
-// retryable internal failure, matching how the insert path reads the same conditions. The
-// commit paths do not: once the outcome of a commit is unknown, an abandoned caller has to
-// read as retryable, because a cancellation reported there would tell a client not to
-// retry a job row that may already be durable.
+// retryable internal failure, matching how the insert path reads the same conditions.
 func mapBeginTxError(err error, operation string) error {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):

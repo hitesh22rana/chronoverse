@@ -128,6 +128,37 @@ func TestIntegrationReleaseForRetryStoresAnOffsetSpellingAsItsInstant(t *testing
 	}
 }
 
+// TestIntegrationReleaseForRetryTreatsTwoSpellingsOfOneInstantAsOneRequest pins the request
+// identity a release spends. next_attempt_at is stored UTC, so two spellings of one instant
+// reserve the same retry. Hashing the supplied text instead would reject the second as a
+// different request and fail a caller that merely spelled the same instant in its own zone.
+func TestIntegrationReleaseForRetryTreatsTwoSpellingsOfOneInstantAsOneRequest(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	_, workflowID := seedUserWorkflow(ctx, t, pg)
+	userID := mustWorkflowUser(ctx, t, pg, workflowID)
+	jobID, leaseToken := seedRunningJob(ctx, t, pg, repo, workflowID, userID, t.Name())
+
+	instant := time.Now().UTC().Add(time.Minute).Truncate(time.Microsecond)
+	commandID := "release-spelling-" + t.Name()
+	if err := repo.ReleaseJobForRetry(
+		ctx, jobID, leaseToken, instant.Format(time.RFC3339Nano), "Unavailable", "runtime down", commandID,
+	); err != nil {
+		t.Fatalf("ReleaseJobForRetry (UTC spelling): %v", err)
+	}
+
+	// The lease is gone by now, so this only reaches the ledger if the request identity
+	// matches; a mismatch reads as a reused commandID with a different request.
+	spelling := instant.In(time.FixedZone("plus2", 2*3600))
+	if err := repo.ReleaseJobForRetry(
+		ctx, jobID, leaseToken, spelling.Format(time.RFC3339Nano), "Unavailable", "runtime down", commandID,
+	); err != nil {
+		t.Fatalf("ReleaseJobForRetry (offset spelling) read as a different request: %v", err)
+	}
+}
+
 func TestIntegrationReleaseForRetryCancelsTerminatedWorkflowJob(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)

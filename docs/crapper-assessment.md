@@ -98,6 +98,15 @@ investigation reproduced a non-UTC offset lost through a timezone-less column; c
 currently supply UTC, so it is deferred to a focused UTC-normalization change with an offset
 regression test.
 
+**Workflow list and create coverage**, [PR #182](https://github.com/hitesh22rana/chronoverse/pull/182),
+branch `test/workflow-list-and-create-coverage` (open). Dashboard tests for the list controls,
+both create kinds, the workflows page and the analytics drawer. `renderWorkflowListControls`
+(`dashboard/src/features/workflows/workflows.tsx`): CC 20 unchanged, coverage 0.0% → 100.0%,
+CRAP 420.0 → 20.0. `CreateWorkflowForm`
+(`dashboard/src/features/workflows/create-workflow-dialog.tsx`): CC 19 unchanged, coverage
+0.0% → 97.1%, CRAP 380.0 → 19.0. Creation also now requires an interval: the create schema
+refines an emptied interval away instead of sending a request the API rejects.
+
 ## Dashboard coverage at equal scope
 
 Each run below reports every application source under `dashboard/src`, so the percentages
@@ -107,6 +116,7 @@ are comparable; the denominators still move slightly where a branch extracts or 
 | --- | ---: | ---: | ---: |
 | baseline `9bc2aa6` | 226 | 66.46% (1203/1810) | 63.41% (851/1342) |
 | PR #178, same scope | 226 | 66.46% (1203/1810) | 63.41% (851/1342) |
+| PR #182, same scope | 277 | 77.41% (1402/1811) | 75.70% (1016/1342) |
 
 The baseline's own Vitest configuration reports only imported files, 91.48% statements and
 86.48% branches (1203/1315, 851/984) over 226 tests. Those numbers come from a denominator of
@@ -126,10 +136,8 @@ assessment above uses only the full-source figures.
   outcomes — conflict, rollback, stale lease or generation, cancellation, commit failure —
   before considering extraction, and keep transaction ownership and mutation/outbox
   atomicity visible. Do not add a generic transaction framework.
-- **Remaining UI.** `renderWorkflowListControls` CC 20 / 0% / CRAP 420 and
-  `CreateWorkflowForm` CC 19 / 0% / 380 now measure a real 0% rather than going unrecorded,
-  and `useLogViewerActions` CC 24 / 74.3% / CRAP 33.8, merit
-  behaviour tests when next touched. `renderTooltipItem`
+- **Remaining UI.** `useLogViewerActions` CC 24 / 74.3% / CRAP 33.8 merits behaviour tests
+  when next touched. `renderTooltipItem`
   (`dashboard/src/components/ui/chart.tsx:207`, CC 23 / CRAP 552) is lower priority;
   optional formatting branches naturally inflate it.
 - **Static site.** Its 19 high scores assume zero coverage, not measured failures. The

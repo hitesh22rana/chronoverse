@@ -23,8 +23,8 @@ Coverage rides along with the test runs that already gate the build. The `COVERP
 variable adds `-covermode=atomic -coverprofile=...` to the same `go test` invocation; there
 is no second run of any suite. `npm run test:coverage` is `vitest run --coverage` with the
 JSON, LCOV, and text-summary reporters, so it is the existing `npm test` gate plus the LCOV
-report. The `coverage` job needs `test`, `integration`, and `dashboard`, downloads their
-three artifacts, runs the script's own tests, and scores the profiles without a Go or Node
+report. The `coverage` job needs `test`, `integration`, and `dashboard`; it runs the script's
+own tests, downloads their three artifacts, and scores the profiles without a Go or Node
 toolchain.
 
 Both Go jobs must use the same `-covermode`: the Makefile defaults `COVERMODE` to `atomic`
@@ -59,18 +59,20 @@ follows a deliberate bump rather than drifting from it. The `sed` below extracts
 commit hash from `CRAPPER_REVISION` and passes it as a pip argument rather than evaluating it;
 if the constant is renamed or reformatted, `sed` prints nothing and the install fails on an
 empty revision rather than silently pinning something else. It needs `git` on `PATH` for the
-`git+https` URL, and the `venv` module (`python3-venv` on Debian) to create the environment:
+`git+https` URL, and the `venv` module (`python3-venv` on Debian) to create the environment.
+The environment is created outside the work tree, because `.venv` is not in `.gitignore` and an
+untracked dependency tree would otherwise show up in `git status`:
 
 ```sh
-python3 -m venv .venv/crapper
-.venv/crapper/bin/python -m pip install \
+CRAPPER_VENV="${HOME}/.venvs/chronoverse-crapper"
+python3 -m venv "$CRAPPER_VENV"
+"$CRAPPER_VENV/bin/python" -m pip install \
   "crapper @ git+https://github.com/unclebob/crapper@$(sed -n 's/^CRAPPER_REVISION = "\([0-9a-f]\{40\}\)"$/\1/p' scripts/coverage/crap_report.py)"
 
-make coverage/crap PYTHON="$PWD/.venv/crapper/bin/python"
+make coverage/crap PYTHON="$CRAPPER_VENV/bin/python"
 ```
 
-`.venv` is not in `.gitignore`, so either keep the environment outside the work tree or add
-it there; an untracked dependency tree will otherwise show up in `git status`.
+If you would rather keep the environment in the work tree, add `.venv` to `.gitignore` first.
 
 Expect the scores to move when the revision is bumped, and bump it deliberately. The revision
 appears in two places, this script's `CRAPPER_REVISION` and the install step in
@@ -131,7 +133,7 @@ target/coverage-inputs/{unit,integration}/           the raw per-job profiles
 Run the script's own tests with the same interpreter that has `crapper` installed:
 
 ```sh
-.venv/crapper/bin/python -m unittest discover -s scripts/coverage -t scripts/coverage
+"$CRAPPER_VENV/bin/python" -m unittest discover -s scripts/coverage -t scripts/coverage
 ```
 
 An interpreter without `crapper` installed fails to import it, since the script imports it

@@ -114,6 +114,37 @@ func TestNormalizeAttachJobContainerIdentityRejectsEmptyRuntimeNodeID(t *testing
 	}
 }
 
+// TestParseTimeNormalizesAnOffsetSpellingToTheInstantItDenotes pins the shared entry point
+// for a caller-supplied instant. Every column it feeds is TIMESTAMP WITHOUT TIME ZONE, so a
+// spelling carrying an offset must land as the instant and not as its own wall clock: the
+// column discards the offset, and every reader compares against now() AT TIME ZONE 'utc'.
+func TestParseTimeNormalizesAnOffsetSpellingToTheInstantItDenotes(t *testing.T) {
+	t.Parallel()
+
+	instant := time.Date(2026, time.October, 7, 10, 30, 0, 123456000, time.UTC)
+
+	for _, zone := range []string{"plus2", "minus5"} {
+		offset := 2 * 3600
+		if zone == "minus5" {
+			offset = -5 * 3600
+		}
+		got, err := parseTime(instant.In(time.FixedZone(zone, offset)).Format(time.RFC3339Nano))
+		if err != nil {
+			t.Fatalf("parseTime(%s): %v", zone, err)
+		}
+		if !got.Equal(instant) {
+			t.Fatalf("parseTime(%s) = %s, want the instant the spelling denotes %s", zone, got, instant)
+		}
+		if got.Location() != time.UTC {
+			t.Fatalf("parseTime(%s) kept zone %s, want UTC so the stored value is the instant", zone, got.Location())
+		}
+	}
+
+	if _, err := parseTime("not-a-timestamp"); err == nil {
+		t.Fatal("parseTime accepted a malformed instant")
+	}
+}
+
 func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	t.Parallel()
 
@@ -126,24 +157,20 @@ func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	}
 }
 
+// TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant pins the identity an
+// automatic occurrence spends. The instant arrives already normalized to UTC by parseTime, so
+// this function only has to format it: one instant is one identity, the next is another, and an
+// identity the caller named is never rewritten.
 func TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant(t *testing.T) {
 	t.Parallel()
 
 	const workflowID = "22222222-2222-4222-8222-222222222222"
 	instant := time.Date(2026, time.October, 7, 10, 30, 0, 123456000, time.UTC)
-	// A deployment outside UTC spells the same instant with its own offset.
-	offsetSpelling := instant.In(time.FixedZone("plus2", 2*3600))
 
 	utcKey, utcProvided := normalizeScheduleJobIdempotencyKey(
 		workflowID, instant, jobsmodel.JobTriggerAutomatic.ToString(), "",
 	)
-	offsetKey, offsetProvided := normalizeScheduleJobIdempotencyKey(
-		workflowID, offsetSpelling, jobsmodel.JobTriggerAutomatic.ToString(), "",
-	)
-	if utcKey != offsetKey {
-		t.Fatalf("derived identity = %q for the offset spelling and %q for the UTC one, want one per instant", offsetKey, utcKey)
-	}
-	if utcProvided || offsetProvided {
+	if utcProvided {
 		t.Fatal("derived identity reported itself as caller-provided")
 	}
 	if want := idempotency.JobDispatchEventKey(workflowID + ":2026-10-07T10:30:00.123456Z"); utcKey != want {
@@ -162,7 +189,7 @@ func TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant(t *testi
 		jobsmodel.JobTriggerAutomatic.ToString(): true,
 		jobsmodel.JobTriggerManual.ToString():    false,
 	} {
-		got, provided := normalizeScheduleJobIdempotencyKey(workflowID, offsetSpelling, trigger, "caller-key")
+		got, provided := normalizeScheduleJobIdempotencyKey(workflowID, instant, trigger, "caller-key")
 		if got != "caller-key" {
 			t.Fatalf("%s trigger rewrote the caller's identity to %q", trigger, got)
 		}

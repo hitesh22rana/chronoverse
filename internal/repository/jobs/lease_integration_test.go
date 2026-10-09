@@ -58,6 +58,16 @@ func jobReleaseState(t *testing.T, pg *postgres.Postgres, jobID string) (status 
 	return status, reason, lease, nextAttemptAt
 }
 
+func jobNextAttemptAt(t *testing.T, pg *postgres.Postgres, jobID string) sql.NullTime {
+	t.Helper()
+
+	var nextAttemptAt sql.NullTime
+	if err := pg.QueryRow(context.Background(), `SELECT next_attempt_at FROM jobs WHERE id = $1`, jobID).Scan(&nextAttemptAt); err != nil {
+		t.Fatalf("fetch job next_attempt_at: %v", err)
+	}
+	return nextAttemptAt
+}
+
 func TestIntegrationReleaseForRetryReleasesActiveWorkflowJob(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -78,6 +88,43 @@ func TestIntegrationReleaseForRetryReleasesActiveWorkflowJob(t *testing.T) {
 	}
 	if !nextAttemptAt.Valid {
 		t.Fatal("next_attempt_at is NULL, want set for retry")
+	}
+}
+
+// TestIntegrationReleaseForRetryStoresAnOffsetSpellingAsItsInstant pins the UTC contract of
+// jobs.next_attempt_at, which is TIMESTAMP WITHOUT TIME ZONE. The retry backoff is computed on
+// the worker with time.Now(), which carries that host's own offset, so a worker outside UTC
+// spells an instant in its own zone on every single retry. The column keeps no offset, so the
+// instant has to be normalized before storage: otherwise the scheduler, which compares
+// next_attempt_at against now() AT TIME ZONE 'utc', sees the retry as due the offset's
+// distance from when it was actually asked for.
+func TestIntegrationReleaseForRetryStoresAnOffsetSpellingAsItsInstant(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	_, workflowID := seedUserWorkflow(ctx, t, pg)
+	userID := mustWorkflowUser(ctx, t, pg, workflowID)
+	jobID, leaseToken := seedRunningJob(ctx, t, pg, repo, workflowID, userID, t.Name())
+
+	instant := time.Now().UTC().Add(time.Minute).Truncate(time.Microsecond)
+	spelling := instant.In(time.FixedZone("plus2", 2*3600))
+	if err := repo.ReleaseJobForRetry(
+		ctx, jobID, leaseToken, spelling.Format(time.RFC3339Nano), "Unavailable", "runtime down", "release-offset-"+t.Name(),
+	); err != nil {
+		t.Fatalf("ReleaseJobForRetry: %v", err)
+	}
+
+	nextAttemptAt := jobNextAttemptAt(t, pg, jobID)
+	if !nextAttemptAt.Valid {
+		t.Fatal("next_attempt_at is NULL, want set for retry")
+	}
+	if !nextAttemptAt.Time.Equal(instant) {
+		t.Fatalf("job next_attempt_at = %s, want the instant the spelling denotes %s",
+			nextAttemptAt.Time.UTC(), instant.UTC())
+	}
+	if got := nextAttemptAt.Time.Sub(instant); got != 0 {
+		t.Fatalf("job next_attempt_at sits %s from the requested instant, want 0", got)
 	}
 }
 

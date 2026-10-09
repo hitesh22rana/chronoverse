@@ -152,12 +152,9 @@ func (r *Repository) ScheduleJob(
 		err = status.Errorf(codes.InvalidArgument, "invalid scheduled_at time format: %v", err)
 		return "", err
 	}
-	// jobs.scheduled_at is TIMESTAMP WITHOUT TIME ZONE, so a timestamp written with an
-	// offset keeps its own wall clock and loses the instant it stands for. Normalizing
-	// here stores the instant itself, which also makes one instant a single scheduling
-	// slot under idx_jobs_automatic_schedule_slot whatever spelling a caller sends.
-	scheduledAtTime = scheduledAtTime.UTC()
-
+	// parseTime normalizes to UTC, which is what jobs.scheduled_at needs: it is
+	// TIMESTAMP WITHOUT TIME ZONE, so an offset spelling would otherwise be kept as its own
+	// wall clock and dispatched the offset's distance from the instant it denotes.
 	idempotencyKey, automaticIdempotencyKeyProvided := normalizeScheduleJobIdempotencyKey(
 		workflowID,
 		scheduledAtTime,
@@ -336,9 +333,10 @@ func scheduleJobHashFields(workflowID, userID, trigger string, workflowGeneratio
 
 // normalizeScheduleJobIdempotencyKey returns the identity a command spends, reporting
 // whether the caller named it. An automatic occurrence with no key is identified by its
-// instant, formatted in UTC so that two spellings of one instant derive one identity and
-// one redelivered occurrence replays instead of reserving a second job. An identity the
-// caller supplied is returned unchanged: it is not an instant this function may rewrite.
+// instant, which parseTime has already normalized to UTC so that two spellings of one
+// instant derive one identity and one redelivered occurrence replays instead of reserving
+// a second job. An identity the caller supplied is returned unchanged: it is not an
+// instant this function may rewrite.
 func normalizeScheduleJobIdempotencyKey(
 	workflowID string,
 	scheduledAt time.Time,
@@ -348,7 +346,7 @@ func normalizeScheduleJobIdempotencyKey(
 	automaticIdempotencyKeyProvided := trigger == jobsmodel.JobTriggerAutomatic.ToString() && idempotencyKey != ""
 	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !automaticIdempotencyKeyProvided {
 		idempotencyKey = idempotency.JobDispatchEventKey(
-			fmt.Sprintf("%s:%s", workflowID, scheduledAt.UTC().Format(time.RFC3339Nano)),
+			fmt.Sprintf("%s:%s", workflowID, scheduledAt.Format(time.RFC3339Nano)),
 		)
 	}
 
@@ -1135,8 +1133,17 @@ func (r *Repository) withAuthorization(ctx context.Context) (context.Context, er
 	return auth.WithInternalServiceAuthorization(ctx, r.auth, authSubject, auth.ServiceNameWorkflows)
 }
 
+// parseTime is the single entry point for a caller-supplied instant, and normalizes to UTC.
+// Every column it feeds is TIMESTAMP WITHOUT TIME ZONE, which discards an offset and keeps
+// the wall clock the caller spelled. Without this, a caller outside UTC stores its own wall
+// clock for an instant it meant, and the scheduler, which compares against
+// now() AT TIME ZONE 'utc', reads it as that much too early or too late.
 func parseTime(t string) (time.Time, error) {
-	return time.Parse(time.RFC3339Nano, t)
+	parsed, err := time.Parse(time.RFC3339Nano, t)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed.UTC(), nil
 }
 
 // encodeJobLogsCursor encodes the cursor for descending log pagination.

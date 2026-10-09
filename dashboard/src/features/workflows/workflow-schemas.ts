@@ -65,6 +65,12 @@ const containerPayloadSchema = z.object({
 
 const baseCreateWorkflowSchema = baseWorkflowSchema.extend({
     retainLogs: z.boolean().default(true),
+    // Create requires an interval. The update schema still parses an emptied
+    // field, but its request requires one server-side too.
+    interval: baseWorkflowSchema.shape.interval.refine(
+        value => value !== undefined,
+        { message: "Interval is required" }
+    )
 })
 
 const heartbeatWorkflowFields = baseCreateWorkflowSchema.extend({

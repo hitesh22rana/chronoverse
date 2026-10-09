@@ -15,6 +15,12 @@ penalty. Read `.metrics/inventory.csv` first and sort by `complexity` to find th
 functions carrying the most decisions, because those are the ones a reader has the most
 trouble reasoning about regardless of coverage. Then look at `coverage_recorded`.
 
+The summary the script prints ends with two counts. `CRAP >= 30` is how many scored
+functions landed at or above 30, which mostly means high complexity combined with little or
+no measured coverage; it is a count, not a verdict, and it is not a gate. `CC > 10` is how many
+functions carry more than ten decision points, independent of coverage. The second is the more
+useful of the two, because it stays stable when coverage work moves the first number.
+
 That column is the single most important field in the inventory, because the score does not
 preserve the distinction:
 
@@ -86,8 +92,9 @@ tests that assert a rendering happened. Adding assertions to cover an untested b
 knowing what that branch is for converts an open question into a false guarantee.
 
 Changing the measured source set can change the numbers without any behaviour changing: a
-new source file that no test imports enters the denominator at 0%. Treat a percentage that falls because the measured
-set grew as scope, not regression. Compare like with like before drawing any trend.
+new source file that no test imports enters the denominator at 0%. Treat a percentage that
+falls because the measured set grew as scope, not regression. Compare like with like before
+drawing any trend.
 
 For the static site, validation of MDX pages, OpenAPI operations, and generated documents is
 the evidence that exists. Behaviour tests for OpenAPI dereferencing including cycles and

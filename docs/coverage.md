@@ -55,25 +55,16 @@ cd dashboard && npm ci && npm run test:coverage && cd ..
 
 `crapper` is not vendored, and its revision is part of the reproducibility contract. Read the
 revision out of the reporting script instead of copying it into a command, so the install
-follows a deliberate bump rather than drifting from it. The snippet below prints only the
-revision after checking it is a commit hash, and passes it as a pip argument rather than
-evaluating it. It needs `git` on `PATH` for the `git+https` URL, and the `venv` module
-(`python3-venv` on Debian) to create the environment:
+follows a deliberate bump rather than drifting from it. The `sed` below extracts the 40-character
+commit hash from `CRAPPER_REVISION` and passes it as a pip argument rather than evaluating it;
+if the constant is renamed or reformatted, `sed` prints nothing and the install fails on an
+empty revision rather than silently pinning something else. It needs `git` on `PATH` for the
+`git+https` URL, and the `venv` module (`python3-venv` on Debian) to create the environment:
 
 ```sh
 python3 -m venv .venv/crapper
 .venv/crapper/bin/python -m pip install \
-  "crapper @ git+https://github.com/unclebob/crapper@$(
-    .venv/crapper/bin/python - <<'PY'
-import pathlib, re
-
-text = pathlib.Path("scripts/coverage/crap_report.py").read_text(encoding="utf-8")
-match = re.search(r'^CRAPPER_REVISION = "([0-9a-f]{40})"$', text, re.MULTILINE)
-if match is None:
-    raise SystemExit("CRAPPER_REVISION not found in scripts/coverage/crap_report.py")
-print(match.group(1))
-PY
-  )"
+  "crapper @ git+https://github.com/unclebob/crapper@$(sed -n 's/^CRAPPER_REVISION = "\([0-9a-f]\{40\}\)"$/\1/p' scripts/coverage/crap_report.py)"
 
 make coverage/crap PYTHON="$PWD/.venv/crapper/bin/python"
 ```

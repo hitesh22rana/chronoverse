@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -111,6 +112,46 @@ func TestNormalizeAttachJobContainerIdentityRejectsEmptyRuntimeNodeID(t *testing
 	_, _, err := normalizeAttachJobContainerIdentity("550e8400-e29b-41d4-a716-446655440000", "")
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("normalizeAttachJobContainerIdentity() code = %s, want %s: %v", status.Code(err), codes.InvalidArgument, err)
+	}
+}
+
+// TestMapJobLeaseWriteErrorReportsEveryConditionItDistinguishes pins the mapper the lease
+// write paths defer to. A nil error has to come back nil so a caller can hand it a rollback
+// result unconditionally, an abandoned caller has to read as the cancellation it is rather
+// than as a retryable internal failure, and a malformed UUID has to read as a client error
+// rather than a server one. IsInvalidTextRepresentation only reads the error, so a nil pool
+// exercises it without a database.
+func TestMapJobLeaseWriteErrorReportsEveryConditionItDistinguishes(t *testing.T) {
+	t.Parallel()
+
+	const operation = "commit release job for retry transaction"
+	repo := &Repository{}
+
+	if err := repo.mapJobLeaseWriteError(nil, operation); err != nil {
+		t.Fatalf("mapJobLeaseWriteError(nil) = %v, want nil so a caller can assign a rollback result unconditionally", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		err  error
+		want codes.Code
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: codes.DeadlineExceeded},
+		{name: "wrapped deadline", err: fmt.Errorf("commit: %w", context.DeadlineExceeded), want: codes.DeadlineExceeded},
+		{name: "cancellation", err: context.Canceled, want: codes.Canceled},
+		{name: "wrapped cancellation", err: fmt.Errorf("rollback: %w", context.Canceled), want: codes.Canceled},
+		{name: "malformed UUID", err: &pgconn.PgError{Code: "22P02", Message: `invalid input syntax for type uuid: "nope"`}, want: codes.InvalidArgument},
+		{name: "other database error", err: &pgconn.PgError{Code: "23505", Message: "duplicate key value"}, want: codes.Internal},
+		{name: "unrecognized error", err: errors.New("boom"), want: codes.Internal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := repo.mapJobLeaseWriteError(tc.err, operation)
+			if status.Code(got) != tc.want {
+				t.Fatalf("mapJobLeaseWriteError(%v) code = %s, want %s: %v", tc.err, status.Code(got), tc.want, got)
+			}
+		})
 	}
 }
 

@@ -104,8 +104,9 @@ and `jobs.next_attempt_at` are timezone-less columns read back against
 `now() AT TIME ZONE 'utc'`. Measured against baseline `ddcb111a`, `ReleaseJobForRetry` CC 19
 unchanged, coverage 65.2% → 82.6%, CRAP 34.2 → 20.9, which takes it below the threshold and
 drops the repository's CRAP >= 30 count from 119 to 118. `mapScheduleInsertError` 10.4 → 8.0
-and `mapJobLeaseWriteError` 7.2 → 5.3 reach full and near-full coverage from database fault
-injection rather than from guards being removed. `parseTime` is the only function whose CRAP
+reaches full coverage from database fault injection rather than from guards being removed,
+and `mapJobLeaseWriteError` 7.2 → 5.0 is now fully covered too, at the floor a CC 5 function
+can reach, by a table-driven unit test of the mapper alone with no database behind it. `parseTime` is the only function whose CRAP
 rose, 1.0 → 2.0, because normalizing added the error arm that carries the fix; at full
 coverage that is the cheapest possible place to spend a complexity point.
 

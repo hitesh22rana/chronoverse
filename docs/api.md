@@ -282,6 +282,11 @@ Requires `Idempotency-Key`.
 
 Schedules an immediate manual job and returns `201 Created` with the job ID.
 
+An accepted `scheduled_at` is stored and returned as a UTC instant. Rows written
+before that normalization keep the wall clock they were stored with, so a client
+comparing `scheduled_at` against the text it sent may see a different offset for
+those rows.
+
 ### Get Job
 
 `GET /workflows/{workflow_id}/jobs/{job_id}`
@@ -292,7 +297,7 @@ Returns:
 - `workflow_id`
 - `status`
 - `trigger`
-- `scheduled_at`
+- `scheduled_at`, returned as a UTC instant
 - `started_at`
 - `completed_at`
 - `created_at`

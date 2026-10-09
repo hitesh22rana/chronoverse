@@ -152,6 +152,11 @@ func (r *Repository) ScheduleJob(
 		err = status.Errorf(codes.InvalidArgument, "invalid scheduled_at time format: %v", err)
 		return "", err
 	}
+	// jobs.scheduled_at is TIMESTAMP WITHOUT TIME ZONE, so a timestamp written with an
+	// offset keeps its own wall clock and loses the instant it stands for. Normalizing
+	// here stores the instant itself, which also makes one instant a single scheduling
+	// slot under idx_jobs_automatic_schedule_slot whatever spelling a caller sends.
+	scheduledAtTime = scheduledAtTime.UTC()
 
 	idempotencyKey, automaticIdempotencyKeyProvided := normalizeScheduleJobIdempotencyKey(
 		workflowID,
@@ -165,7 +170,7 @@ func (r *Repository) ScheduleJob(
 	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to start schedule transaction: %v", err)
+		return "", mapBeginTxError(err, "start schedule transaction")
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
@@ -329,6 +334,11 @@ func scheduleJobHashFields(workflowID, userID, trigger string, workflowGeneratio
 	return fields
 }
 
+// normalizeScheduleJobIdempotencyKey returns the identity a command spends, reporting
+// whether the caller named it. An automatic occurrence with no key is identified by its
+// instant, formatted in UTC so that two spellings of one instant derive one identity and
+// one redelivered occurrence replays instead of reserving a second job. An identity the
+// caller supplied is returned unchanged: it is not an instant this function may rewrite.
 func normalizeScheduleJobIdempotencyKey(
 	workflowID string,
 	scheduledAt time.Time,
@@ -337,7 +347,9 @@ func normalizeScheduleJobIdempotencyKey(
 ) (string, bool) {
 	automaticIdempotencyKeyProvided := trigger == jobsmodel.JobTriggerAutomatic.ToString() && idempotencyKey != ""
 	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !automaticIdempotencyKeyProvided {
-		idempotencyKey = idempotency.JobDispatchEventKey(fmt.Sprintf("%s:%s", workflowID, scheduledAt.Format(time.RFC3339Nano)))
+		idempotencyKey = idempotency.JobDispatchEventKey(
+			fmt.Sprintf("%s:%s", workflowID, scheduledAt.UTC().Format(time.RFC3339Nano)),
+		)
 	}
 
 	return idempotencyKey, automaticIdempotencyKeyProvided
@@ -436,7 +448,7 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to start cancel-job transaction: %v", err)
+		return nil, mapBeginTxError(err, "start cancel-job transaction")
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
@@ -1350,6 +1362,24 @@ func (r *Repository) mapJobLogsStatusError(err error) error {
 	}
 
 	return status.Errorf(codes.Internal, "failed to get job: %v", err)
+}
+
+// mapBeginTxError classifies a failure to open a repository transaction. The transaction
+// is opened before any statement runs, so a caller that has gone away leaves nothing
+// durable behind and is reported as the cancellation or deadline it is rather than as a
+// retryable internal failure, matching how the insert path reads the same conditions. The
+// commit paths do not: once the outcome of a commit is unknown, an abandoned caller has to
+// read as retryable, because a cancellation reported there would tell a client not to
+// retry a job row that may already be durable.
+func mapBeginTxError(err error, operation string) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, err.Error())
+	}
+
+	return status.Errorf(codes.Internal, "failed to %s: %v", operation, err)
 }
 
 func (r *Repository) mapScheduleInsertError(err error, trigger string, workflowGeneration int64) error {

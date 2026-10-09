@@ -4,6 +4,8 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -121,6 +123,84 @@ func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	}
 	if got := fields["workflow_generation"]; got != int64(3) {
 		t.Fatalf("automatic schedule hash generation = %v, want 3", got)
+	}
+}
+
+func TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant(t *testing.T) {
+	t.Parallel()
+
+	const workflowID = "22222222-2222-4222-8222-222222222222"
+	instant := time.Date(2026, time.October, 7, 10, 30, 0, 123456000, time.UTC)
+	// A deployment outside UTC spells the same instant with its own offset.
+	offsetSpelling := instant.In(time.FixedZone("plus2", 2*3600))
+
+	utcKey, utcProvided := normalizeScheduleJobIdempotencyKey(
+		workflowID, instant, jobsmodel.JobTriggerAutomatic.ToString(), "",
+	)
+	offsetKey, offsetProvided := normalizeScheduleJobIdempotencyKey(
+		workflowID, offsetSpelling, jobsmodel.JobTriggerAutomatic.ToString(), "",
+	)
+	if utcKey != offsetKey {
+		t.Fatalf("derived identity = %q for the offset spelling and %q for the UTC one, want one per instant", offsetKey, utcKey)
+	}
+	if utcProvided || offsetProvided {
+		t.Fatal("derived identity reported itself as caller-provided")
+	}
+	if want := idempotency.JobDispatchEventKey(workflowID + ":2026-10-07T10:30:00.123456Z"); utcKey != want {
+		t.Fatalf("derived identity = %q, want the UTC instant key %q", utcKey, want)
+	}
+
+	// One instant later is a different occurrence, and an identity the caller supplied is
+	// returned unchanged for either trigger.
+	laterKey, _ := normalizeScheduleJobIdempotencyKey(
+		workflowID, instant.Add(time.Nanosecond), jobsmodel.JobTriggerAutomatic.ToString(), "",
+	)
+	if laterKey == utcKey {
+		t.Fatalf("derived identity %q is shared with the next instant", laterKey)
+	}
+	for trigger, wantProvided := range map[string]bool{
+		jobsmodel.JobTriggerAutomatic.ToString(): true,
+		jobsmodel.JobTriggerManual.ToString():    false,
+	} {
+		got, provided := normalizeScheduleJobIdempotencyKey(workflowID, offsetSpelling, trigger, "caller-key")
+		if got != "caller-key" {
+			t.Fatalf("%s trigger rewrote the caller's identity to %q", trigger, got)
+		}
+		if provided != wantProvided {
+			t.Fatalf("%s trigger reported caller-provided = %t, want %t", trigger, provided, wantProvided)
+		}
+	}
+}
+
+func TestMapBeginTxErrorClassifiesTheCallersThatWentAway(t *testing.T) {
+	t.Parallel()
+
+	// Both RPCs open their transaction before any statement runs, so neither leaves
+	// anything durable behind and both report an abandoned caller as the cancellation
+	// or deadline it is rather than as a retryable internal failure.
+	for operation, begin := range map[string]func(error) error{
+		"schedule": func(err error) error { return mapBeginTxError(err, "start schedule transaction") },
+		"cancel":   func(err error) error { return mapBeginTxError(err, "start cancel-job transaction") },
+	} {
+		for name, test := range map[string]struct {
+			err  error
+			code codes.Code
+		}{
+			"canceled":          {err: context.Canceled, code: codes.Canceled},
+			"deadline exceeded": {err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
+			// A wrapped condition still classifies: the pool reports the caller's own error.
+			"wrapped cancel": {err: fmt.Errorf("begin transaction: %w", context.Canceled), code: codes.Canceled},
+			"pool failure":   {err: errors.New("conn refused"), code: codes.Internal},
+		} {
+			t.Run(operation+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				mapped := begin(test.err)
+				if got := status.Code(mapped); got != test.code {
+					t.Fatalf("mapBeginTxError() code = %s, want %s (err: %v)", got, test.code, mapped)
+				}
+			})
+		}
 	}
 }
 

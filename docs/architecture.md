@@ -117,6 +117,13 @@ workers are deployed together on the user's Kubernetes infrastructure.
   uses workflow generation guards, and creates replay-safe job events.
 - Manual scheduling is driven by `POST /workflows/{workflow_id}/jobs/schedule`
   and also requires `Idempotency-Key`.
+- An accepted `scheduled_at` is normalized to UTC before storage.
+  `jobs.scheduled_at` is a timestamp without time zone, so an offset spelling
+  would otherwise be kept as its own wall clock and dispatched the offset's
+  distance from the instant it denotes. An automatic occurrence reported
+  without an event key derives its identity from that same UTC instant, so one
+  occurrence reported in two spellings replays as one job. Occurrences stored
+  before this normalization keep the value they were written with.
 - Job dispatch events include trigger metadata (`AUTOMATIC` or `MANUAL`) and
   dispatch-attempt data so repeated processing does not create duplicate work.
 

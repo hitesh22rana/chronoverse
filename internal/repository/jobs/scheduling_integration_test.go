@@ -285,9 +285,11 @@ func occurrenceInstant(offset time.Duration) time.Time {
 	return time.Now().UTC().Truncate(time.Microsecond).Add(offset)
 }
 
-// automaticOccurrenceKey is the identity a command derives when the worker reports an occurrence without an event key.
+// automaticOccurrenceKey is the identity a command derives when the worker reports an
+// occurrence without an event key: the workflow and the instant, both in UTC, so it does
+// not depend on the spelling the caller used to report the occurrence.
 func automaticOccurrenceKey(workflowID string, scheduledAt time.Time) string {
-	return idempotency.JobDispatchEventKey(workflowID + ":" + scheduledAt.Format(time.RFC3339Nano))
+	return idempotency.JobDispatchEventKey(workflowID + ":" + scheduledAt.UTC().Format(time.RFC3339Nano))
 }
 
 // buildEventScheduleKey is the identity a build or reschedule event spends on a generation's first occurrence.
@@ -368,9 +370,9 @@ func TestIntegrationScheduleJobManualPersistsOneJobAndReplaysFromLedger(t *testi
 
 // TestIntegrationScheduleJobManualStoresEveryUTCInstantSpellingExactly pins the UTC
 // spellings of a future instant that the jobs table stores exactly, which is what every
-// in-tree caller formats. This is deliberately not a claim about every RFC3339 spelling:
-// an offset spelling denotes the same instant but names a different wall clock, and
-// TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsOwnWallClock records why.
+// in-tree caller formats. The offset spellings denoting those same instants land on the
+// same stored instant, as TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsInstant
+// shows.
 func TestIntegrationScheduleJobManualStoresEveryUTCInstantSpellingExactly(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -404,13 +406,13 @@ func TestIntegrationScheduleJobManualStoresEveryUTCInstantSpellingExactly(t *tes
 	}
 }
 
-// TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsOwnWallClock records the
-// boundary the UTC spelling table above cannot reach. scheduled_at is TIMESTAMP WITHOUT
-// TIME ZONE, so an offset spelling is stored as its own wall clock rather than as the
-// instant it denotes: the row lands exactly the offset away from the requested time.
-// In-tree callers only emit an offset spelling from a process whose TZ is not UTC, so
-// this is the behavior a deployment outside UTC would get, not one the current images see.
-func TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsOwnWallClock(t *testing.T) {
+// TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsInstant pins the UTC
+// contract of jobs.scheduled_at, which is TIMESTAMP WITHOUT TIME ZONE. An offset spelling
+// denotes an instant, so the row holds that instant rather than the spelling's own wall
+// clock: the column keeps no offset of its own, so the instant has to be normalized before
+// storage. A deployment whose TZ is not UTC is what produces such a spelling, and what
+// would otherwise store and dispatch the occurrence the offset's distance away.
+func TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsInstant(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
@@ -427,30 +429,22 @@ func TestIntegrationScheduleJobManualStoresAnOffsetSpellingAsItsOwnWallClock(t *
 		t.Fatalf("ScheduleJob: %v", err)
 	}
 
-	// The zone is dropped and the wall clock kept, so the row holds the spelling's own
-	// clock reading rather than the instant that reading stands for.
 	stored := readScheduledJob(ctx, t, pg, jobID)
-	wallClock := time.Date(
-		spelling.Year(), spelling.Month(), spelling.Day(),
-		spelling.Hour(), spelling.Minute(), spelling.Second(), spelling.Nanosecond(),
-		time.UTC,
-	)
-	if !stored.ScheduledAt.Equal(wallClock) {
-		t.Fatalf("job scheduled_at = %s, want the spelled wall clock %s", stored.ScheduledAt.UTC(), wallClock)
+	if !stored.ScheduledAt.Equal(instant) {
+		t.Fatalf("job scheduled_at = %s, want the instant the spelling denotes %s", stored.ScheduledAt.UTC(), instant.UTC())
 	}
-	if got := stored.ScheduledAt.Sub(instant); got != 2*time.Hour {
-		t.Fatalf("job scheduled_at sits %s from the requested instant, want the spelled +02:00 offset", got)
+	if got := stored.ScheduledAt.Sub(instant); got != 0 {
+		t.Fatalf("job scheduled_at sits %s from the requested instant, want 0", got)
 	}
 }
 
-// TestIntegrationScheduleJobAutomaticDerivesADistinctIdentityPerInstantSpelling records the
-// consequence of that wall-clock storage for an occurrence reported without an event key.
-// The derived identity is built from the caller's own RFC3339 text, so one instant spelled
-// with an offset and again in UTC is two commands reserving two jobs instead of one
-// occurrence replaying. Every in-tree caller of this path re-formats a value read back
-// from the jobs table, which is UTC, so it stays self-consistent; the divergence needs a
-// caller that spells the same instant two ways.
-func TestIntegrationScheduleJobAutomaticDerivesADistinctIdentityPerInstantSpelling(t *testing.T) {
+// TestIntegrationScheduleJobAutomaticDerivesOneIdentityPerInstantSpelling pins the
+// consequence of that UTC contract for an occurrence reported without an event key. The
+// derived identity is built from the instant, not from the caller's RFC3339 text, so one
+// instant spelled with an offset and again in UTC is one command replaying rather than two
+// occurrences reserving two jobs. Occurrences derived before this normalization by a
+// deployment outside UTC keep the keys they were stored under; nothing rewrites them.
+func TestIntegrationScheduleJobAutomaticDerivesOneIdentityPerInstantSpelling(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
@@ -474,38 +468,34 @@ func TestIntegrationScheduleJobAutomaticDerivesADistinctIdentityPerInstantSpelli
 		t.Fatalf("ScheduleJob (offset spelling): %v", err)
 	}
 
-	if offsetJobID == utcJobID {
-		t.Fatalf("offset spelling replayed job %q, want the occurrence it reserves separately", utcJobID)
+	if offsetJobID != utcJobID {
+		t.Fatalf("offset spelling id = %q, want the job the UTC spelling reserved %q", offsetJobID, utcJobID)
 	}
-	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 2 {
-		t.Fatalf("workflow has %d jobs, want one per distinct derived identity", count)
-	}
-	for _, key := range []string{
-		automaticOccurrenceKey(fixture.WorkflowID, instant),
-		automaticOccurrenceKey(fixture.WorkflowID, spelling),
-	} {
-		if _, ok := readCommandByScope(
-			ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, key,
-		); !ok {
-			t.Fatalf("derived identity %q has no ledger row, want a completed reservation", key)
-		}
+	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
+		t.Fatalf("workflow has %d jobs, want one per occurrence rather than one per spelling", count)
 	}
 
-	// Redelivery is still exact within one spelling, which is the guarantee the occurrence
-	// path does make: the identity it derives for a spelling always resolves to its own job.
-	replayed, err := repo.ScheduleJob(
-		ctx, fixture.WorkflowID, fixture.UserID, spelling.Format(time.RFC3339Nano),
-		jobsmodel.JobTriggerAutomatic.ToString(), "", 1,
+	// The ledger holds the single identity both spellings derive, resolving to that job.
+	occurrenceKey := automaticOccurrenceKey(fixture.WorkflowID, instant)
+	command, ok := readCommandByScope(
+		ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, occurrenceKey,
 	)
-	if err != nil {
-		t.Fatalf("ScheduleJob (redelivered offset spelling): %v", err)
+	if !ok {
+		t.Fatalf("derived identity %q has no ledger row, want a completed reservation", occurrenceKey)
 	}
-	if replayed != offsetJobID {
-		t.Fatalf("redelivered offset spelling id = %q, want the job it already reserved %q", replayed, offsetJobID)
+	assertCompletedScheduleCommand(t, command, utcJobID, automaticScheduleReplayWindow)
+	if count := countScheduleCommands(
+		ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation,
+	); count != 1 {
+		t.Fatalf("ledger holds %d automatic schedule rows, want one per occurrence", count)
 	}
-	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 2 {
-		t.Fatalf("redelivery left %d jobs, want the two the spellings reserved", count)
+
+	// The occurrence the scheduler reads back is the requested instant, not the offset's.
+	stored := readScheduledJob(ctx, t, pg, utcJobID)
+	if !stored.ScheduledAt.Equal(instant) {
+		t.Fatalf("job scheduled_at = %s, want the requested occurrence %s", stored.ScheduledAt.UTC(), instant.UTC())
 	}
+	assertNullString(t, "job idempotency_key", stored.IdempotencyKey, occurrenceKey)
 }
 
 func TestIntegrationScheduleJobManualKeyIsScopedToOneWorkflow(t *testing.T) {
@@ -722,28 +712,61 @@ func TestIntegrationScheduleJobRejectsInvalidInputWithoutDurableEffect(t *testin
 	}
 }
 
-func TestIntegrationScheduleJobCanceledCallerLeavesNoDurableEffect(t *testing.T) {
+// TestIntegrationScheduleJobAbandonedCallerLeavesNoDurableEffect covers a caller that goes
+// away before the command starts. The transaction is opened before the insert, so the
+// failure arrives from BeginTx, and it is reported as the cancellation or deadline it is.
+// The point is accuracy: a client that has gone away is not told the server had an internal
+// fault. Nothing durable exists either way, so a redelivery would have been harmless; the
+// only behavioral difference is that a caller is no longer asked to retry a command which
+// provably reserved nothing.
+func TestIntegrationScheduleJobAbandonedCallerLeavesNoDurableEffect(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 
-	fixture := seedScheduleFixture(ctx, t, pg)
-	canceledCtx, cancel := context.WithCancel(ctx)
-	cancel()
-
-	// A caller that goes away must be told the command did not run, leaving nothing for the retry to trip over.
-	//
-	// Internal and not Canceled: the transaction is opened before the insert, so a canceled
-	// context fails BeginTx and is reported here without ever reaching mapScheduleInsertError's
-	// canceled branch. A gRPC client that has gone away therefore reads this as retryable.
-	_, err := repo.ScheduleJob(
-		canceledCtx, fixture.WorkflowID, fixture.UserID, occurrenceInstant(time.Hour).Format(time.RFC3339Nano),
-		jobsmodel.JobTriggerManual.ToString(), "manual-canceled-"+fixtureTag(), 1,
-	)
-	if code := status.Code(err); code != codes.Internal {
-		t.Fatalf("canceled ScheduleJob code = %v, want %v (err: %v)", code, codes.Internal, err)
+	tests := []struct {
+		name string
+		// abandon returns a context whose caller is already gone when the command starts.
+		abandon func(context.Context) (context.Context, context.CancelFunc)
+		want    codes.Code
+	}{
+		{
+			name: "canceled caller",
+			abandon: func(ctx context.Context) (context.Context, context.CancelFunc) {
+				abandoned, cancel := context.WithCancel(ctx)
+				cancel()
+				return abandoned, cancel
+			},
+			want: codes.Canceled,
+		},
+		{
+			name: "expired deadline",
+			abandon: func(ctx context.Context) (context.Context, context.CancelFunc) {
+				return context.WithDeadline(ctx, time.Now().Add(-time.Second))
+			},
+			want: codes.DeadlineExceeded,
+		},
 	}
-	assertNoScheduleCommandEffect(ctx, t, pg, fixture, manualScope(fixture.UserID), fixture.ManualOperation)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := seedScheduleFixture(ctx, t, pg)
+			abandoned, cancel := testCase.abandon(ctx)
+			t.Cleanup(cancel)
+
+			jobID, err := repo.ScheduleJob(
+				abandoned, fixture.WorkflowID, fixture.UserID,
+				occurrenceInstant(time.Hour).Format(time.RFC3339Nano),
+				jobsmodel.JobTriggerManual.ToString(), "manual-abandoned-"+fixtureTag(), 1,
+			)
+			if code := status.Code(err); code != testCase.want {
+				t.Fatalf("ScheduleJob code = %v, want %v (err: %v)", code, testCase.want, err)
+			}
+			if jobID != "" {
+				t.Fatalf("ScheduleJob returned job %q, want an empty id", jobID)
+			}
+			assertNoScheduleCommandEffect(ctx, t, pg, fixture, manualScope(fixture.UserID), fixture.ManualOperation)
+		})
+	}
 }
 
 func TestIntegrationScheduleJobAutomaticOccurrenceUsesDeterministicIdentity(t *testing.T) {

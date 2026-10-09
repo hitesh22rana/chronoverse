@@ -282,10 +282,8 @@ Requires `Idempotency-Key`.
 
 Schedules an immediate manual job and returns `201 Created` with the job ID.
 
-An accepted `scheduled_at` is stored and returned as a UTC instant. Rows written
-before that normalization keep the wall clock they were stored with, so a client
-comparing `scheduled_at` against the text it sent may see a different offset for
-those rows.
+An accepted `scheduled_at` is normalized to UTC before storage, so an offset spelling
+denotes the instant it stands for rather than its own wall clock.
 
 ### Get Job
 

@@ -122,8 +122,7 @@ workers are deployed together on the user's Kubernetes infrastructure.
   would otherwise be kept as its own wall clock and dispatched the offset's
   distance from the instant it denotes. An automatic occurrence reported
   without an event key derives its identity from that same UTC instant, so one
-  occurrence reported in two spellings replays as one job. Occurrences stored
-  before this normalization keep the value they were written with.
+  occurrence reported in two spellings replays as one job.
 - Job dispatch events include trigger metadata (`AUTOMATIC` or `MANUAL`) and
   dispatch-attempt data so repeated processing does not create duplicate work.
 

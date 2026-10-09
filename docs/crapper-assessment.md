@@ -96,7 +96,11 @@ on the report.
 CC 24 unchanged, coverage 62.0% → 90.1%, CRAP 55.7 → 24.6, test-only. A separate
 investigation reproduced a non-UTC offset lost through a timezone-less column; callers
 currently supply UTC, so it is deferred to a focused UTC-normalization change with an offset
-regression test.
+regression test. That change landed in
+[PR #184](https://github.com/hitesh22rana/chronoverse/pull/184): `ScheduleJob` normalizes
+`scheduled_at` to UTC before insert, and `normalizeScheduleJobIdempotencyKey` derives the
+automatic identity from the same UTC instant, so one occurrence reported in two spellings
+reserves one job.
 
 **Workflow list and create coverage**, [PR #182](https://github.com/hitesh22rana/chronoverse/pull/182),
 branch `test/workflow-list-and-create-coverage` (open). Dashboard tests for the list controls,

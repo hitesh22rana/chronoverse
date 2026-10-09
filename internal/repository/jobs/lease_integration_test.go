@@ -163,6 +163,98 @@ func TestIntegrationReleaseForRetryTreatsTwoSpellingsOfOneInstantAsOneRequest(t 
 	}
 }
 
+// TestIntegrationReleaseForRetryAbandonedCallerLeavesNoDurableEffect covers a caller that goes
+// away before the command starts. The transaction opens before the job is touched, so the
+// failure arrives from BeginTx and is reported as the cancellation it is rather than as a
+// retryable internal fault.
+func TestIntegrationReleaseForRetryAbandonedCallerLeavesNoDurableEffect(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	_, workflowID := seedUserWorkflow(ctx, t, pg)
+	userID := mustWorkflowUser(ctx, t, pg, workflowID)
+	jobID, leaseToken := seedRunningJob(ctx, t, pg, repo, workflowID, userID, t.Name())
+
+	abandoned, cancel := context.WithCancel(ctx)
+	cancel()
+	commandID := "release-abandoned-" + t.Name()
+	err := repo.ReleaseJobForRetry(
+		abandoned, jobID, leaseToken, time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano),
+		"Unavailable", "runtime down", commandID,
+	)
+	if status.Code(err) != codes.Canceled {
+		t.Fatalf("ReleaseJobForRetry from an abandoned caller = %v, want %s", err, codes.Canceled)
+	}
+	jobStatus, _, lease, nextAttemptAt := jobReleaseState(ctx, t, pg, jobID)
+	if jobStatus != "RUNNING" || !lease.Valid || nextAttemptAt.Valid {
+		t.Fatalf("job after an abandoned caller = %q/lease %v/next %v, want RUNNING holding its lease",
+			jobStatus, lease.Valid, nextAttemptAt.Valid)
+	}
+	if _, ok := readCommandByScope(ctx, t, pg, commandidempotency.JobScope(jobID), commandidempotency.OperationJobReleaseForRetry, commandID); ok {
+		t.Fatal("an abandoned caller left a completed ledger row behind")
+	}
+}
+
+// TestIntegrationReleaseForRetryTerminatedPathFaults drives the other half of a release: the
+// one that finds its workflow already terminated and cancels the job instead. Cancellation,
+// its ledger completion and the commit are three more statements that have to fail the same
+// way, and recovery has to still land on CANCELED rather than resurrecting the job.
+func TestIntegrationReleaseForRetryTerminatedPathFaults(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	for _, tc := range []struct {
+		name, table, event string
+		deferred           bool
+	}{
+		{name: "cancellation fails", table: "jobs", event: "UPDATE"},
+		{name: "ledger completion fails", table: "command_idempotency_keys", event: "UPDATE"},
+		{name: "commit fails", table: "jobs", event: "UPDATE", deferred: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			userID, workflowID := seedIsolatedWorkflow(ctx, t, pg)
+			jobID, leaseToken := seedRunningJob(ctx, t, pg, repo, workflowID, userID, t.Name())
+			if _, err := pg.Exec(ctx, `UPDATE workflows SET terminated_at = (now() AT TIME ZONE 'utc') WHERE id = $1`, workflowID); err != nil {
+				t.Fatalf("terminate workflow: %v", err)
+			}
+
+			commandID := "release-terminated-fault-" + fixtureTag()
+			release := func() error {
+				return repo.ReleaseJobForRetry(ctx, jobID, leaseToken,
+					time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano),
+					"Unavailable", "runtime down", commandID)
+			}
+
+			remove := scheduleFaultTrigger(ctx, t, pg, tc.table, tc.event, tc.deferred)
+			if err := release(); err == nil {
+				remove()
+				t.Fatal("ReleaseJobForRetry succeeded through an injected fault")
+			}
+			remove()
+
+			jobStatus, _, lease, nextAttemptAt := jobReleaseState(ctx, t, pg, jobID)
+			if jobStatus != "RUNNING" || !lease.Valid || nextAttemptAt.Valid {
+				t.Fatalf("job after rollback = %q/lease %v/next %v, want RUNNING holding its lease",
+					jobStatus, lease.Valid, nextAttemptAt.Valid)
+			}
+
+			// Recovery has to still see the termination, or the retry would orphan the job.
+			if err := release(); err != nil {
+				t.Fatalf("retry after recovery: %v", err)
+			}
+			jobStatus, reason, lease, _ := jobReleaseState(ctx, t, pg, jobID)
+			if jobStatus != "CANCELED" || lease.Valid {
+				t.Fatalf("job after recovery = %q/lease %v, want CANCELED and released", jobStatus, lease.Valid)
+			}
+			if !reason.Valid || reason.String != "WORKFLOW_TERMINATED" {
+				t.Fatalf("terminal_reason_code = %q, want %q", reason.String, "WORKFLOW_TERMINATED")
+			}
+		})
+	}
+}
+
 func TestIntegrationReleaseForRetryCancelsTerminatedWorkflowJob(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -328,8 +420,12 @@ func TestIntegrationReleaseForRetryFaultsRollBackAndRecoverWithTheSameCommand(t 
 		name, table, event string
 		deferred           bool
 	}{
+		// The release update itself, firing before the job row can change.
+		{name: "release update fails", table: "jobs", event: "UPDATE"},
 		// The reservation insert, before the job is touched at all.
 		{name: "reservation fails", table: "command_idempotency_keys", event: "INSERT"},
+		// The ledger completion, after the release updated the job.
+		{name: "ledger completion fails", table: "command_idempotency_keys", event: "UPDATE"},
 		// The release update, deferred so it fails at commit rather than mid-statement.
 		{name: "commit fails", table: "jobs", event: "UPDATE", deferred: true},
 	} {

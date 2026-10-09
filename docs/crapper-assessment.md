@@ -102,12 +102,15 @@ UTC rule at `parseTime`: a scheduling instant arrives from an API caller or from
 executor, which spells it in the worker's own zone on every retry, and `jobs.scheduled_at`
 and `jobs.next_attempt_at` are timezone-less columns read back against
 `now() AT TIME ZONE 'utc'`. Measured against baseline `ddcb111a`, `ReleaseJobForRetry` CC 19
-unchanged, coverage 65.2% → 82.6%, CRAP 34.2 → 20.9, which takes it below the threshold and
-drops the repository's CRAP >= 30 count from 119 to 118. `mapScheduleInsertError` 10.4 → 8.0
+unchanged, coverage 65.2% → 95.7%, CRAP 34.2 → 19.0, which takes it below the threshold and
+drops the repository's CRAP >= 30 count from 119 to 118. Its reachable error arms are now
+covered: the abandoned caller, the release update, the ledger completion, and the three
+statements on the already-terminated path. `mapScheduleInsertError` 10.4 → 8.0
 reaches full coverage from database fault injection rather than from guards being removed,
 and `mapJobLeaseWriteError` 7.2 → 5.0 is now fully covered too, at the floor a CC 5 function
-can reach, by a table-driven unit test of the mapper alone with no database behind it. `parseTime` is the only function whose CRAP
-rose, 1.0 → 2.0, because normalizing added the error arm that carries the fix; at full
+can reach, by a table-driven unit test of the mapper alone with no database behind it.
+`parseTime` is the only function whose CRAP rose, 1.0 → 2.0, because normalizing added the
+error arm that carries the fix; at full
 coverage that is the cheapest possible place to spend a complexity point.
 
 **Workflow list and create coverage**, [PR #182](https://github.com/hitesh22rana/chronoverse/pull/182),

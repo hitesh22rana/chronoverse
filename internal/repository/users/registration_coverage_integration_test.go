@@ -101,6 +101,36 @@ func TestIntegrationRegistrationTokenFailurePreservesAccountAndReplay(t *testing
 	assertRegistrationState(ctx, t, pg, email, key, 1, 1)
 }
 
+func TestIntegrationRegistrationReplayCommitFailure(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	mockAuth := authmock.NewMockIAuth(gomock.NewController(t))
+	repo := New(mockAuth, pg)
+	key := "register-" + uuid.NewString()
+	email := key + "@chronoverse.test"
+	mockAuth.EXPECT().IssueToken(gomock.Any(), gomock.Any(), auth.ServiceNameServer).Return("test-token", nil)
+	registered, _, err := repo.RegisterUser(ctx, email, "password", key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A replay transaction writes nothing, so the fault is queued by the
+	// reservation's BEFORE INSERT trigger and only surfaces when it commits.
+	remove := installRegistrationReplayCommitFault(t, pg)
+	replay, token, err := repo.RegisterUser(ctx, email, "password", key)
+	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "commit registration replay") || replay != nil || token != "" {
+		t.Fatalf("replay = %v, %q, %v", replay, token, err)
+	}
+	remove()
+	assertRegistrationState(ctx, t, pg, email, key, 1, 1)
+	// No token may be issued for the aborted replay, and the account, ledger
+	// row, and password stay usable by the next replay.
+	mockAuth.EXPECT().IssueToken(gomock.Any(), registered.ID, auth.ServiceNameServer).Return("recovered-token", nil)
+	replay, token, err = repo.RegisterUser(ctx, email, "password", key)
+	if err != nil || replay.ID != registered.ID || token != "recovered-token" {
+		t.Fatalf("retry = %v, %q, %v", replay, token, err)
+	}
+}
+
 func TestIntegrationRegistrationRollsBackDatabaseFaults(t *testing.T) {
 	for _, tc := range []struct {
 		name, table, event, condition, body, message string
@@ -165,6 +195,38 @@ func assertRegistrationState(ctx context.Context, t *testing.T, pg *postgres.Pos
 	if users != wantUsers || commands != wantCommands {
 		t.Fatalf("durable users/commands = %d/%d, want %d/%d", users, commands, wantUsers, wantCommands)
 	}
+}
+
+func installRegistrationReplayCommitFault(t *testing.T, pg *postgres.Postgres) func() {
+	t.Helper()
+	ctx := context.Background()
+	const table = "registration_replay_fault"
+	statements := []string{
+		"DROP TABLE IF EXISTS " + table,
+		fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY DEFERRABLE INITIALLY DEFERRED)", table),
+		fmt.Sprintf("INSERT INTO %s VALUES (1)", table),
+		fmt.Sprintf(`CREATE FUNCTION %s_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO %s VALUES (1); RETURN NEW; END $$`, table, table),
+		fmt.Sprintf("CREATE TRIGGER %s_fault BEFORE INSERT ON %s FOR EACH ROW EXECUTE FUNCTION %s_fault()", table, postgres.TableCommandIdempotencyKeys, table),
+	}
+	remove := func() {
+		for _, statement := range []string{
+			fmt.Sprintf("DROP TRIGGER IF EXISTS %s_fault ON %s", table, postgres.TableCommandIdempotencyKeys),
+			fmt.Sprintf("DROP FUNCTION IF EXISTS %s_fault()", table),
+			"DROP TABLE IF EXISTS " + table,
+		} {
+			if _, err := pg.Exec(ctx, statement); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	for _, statement := range statements {
+		if _, err := pg.Exec(ctx, statement); err != nil {
+			remove()
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(remove)
+	return remove
 }
 
 func installRegistrationFault(t *testing.T, pg *postgres.Postgres, table, event, condition, target, body string, deferred bool) func() {

@@ -82,11 +82,23 @@ function useWorkflowsModel() {
         refetchLoading,
     } = useWorkflows({ poll: true })
 
-    const [searchInput, setSearchInput] = useState(searchQuery)
+    const [searchDraft, setSearchDraft] = useState({
+        query: searchQuery,
+        value: searchQuery,
+        pendingQuery: null as string | null,
+    })
+    // Preserve newer typing when our earlier URL update arrives.
+    const acknowledgedDraft = searchDraft.pendingQuery === searchQuery
+    const searchInput = searchDraft.query === searchQuery || acknowledgedDraft ? searchDraft.value : searchQuery
+    if (searchDraft.query !== searchQuery) {
+        setSearchDraft({ query: searchQuery, value: searchInput, pendingQuery: null })
+    }
+    const setSearchInput = (value: string) => setSearchDraft(draft => ({ ...draft, query: searchQuery, value }))
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (searchInput !== searchQuery) {
+            if (searchInput !== searchQuery && searchDraft.pendingQuery === null) {
+                setSearchDraft(draft => ({ ...draft, pendingQuery: searchInput }))
                 startSearchTransition(() => {
                     updateSearchQuery(searchInput)
                 })
@@ -94,7 +106,7 @@ function useWorkflowsModel() {
         }, 500)
 
         return () => clearTimeout(timer)
-    }, [searchInput, searchQuery, updateSearchQuery])
+    }, [searchInput, searchQuery, searchDraft.pendingQuery, updateSearchQuery])
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

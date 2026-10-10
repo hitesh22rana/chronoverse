@@ -105,7 +105,7 @@ func waitForRegistrationInsert(ctx context.Context, t *testing.T, pg *postgres.P
 		var blocked bool
 		query := `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
    WHERE datname = current_database() AND state = 'active' AND wait_event_type = 'Lock'
-   AND query LIKE '%INSERT INTO users (email, password)%'
+   AND query ILIKE '%INSERT INTO%users%'
    AND $1 = ANY(pg_blocking_pids(pid)))`
 		if err := pg.QueryRow(probeCtx, query, blocker).Scan(&blocked); err != nil {
 			t.Fatalf("probe registration INSERT: %v", err)

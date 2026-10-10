@@ -27,22 +27,30 @@ type publicClaimState struct {
 	ExpiresAt   sql.NullTime
 	StartedAt   sql.NullTime
 	RuntimeNode sql.NullString
-	RunningJobs int64
+	NodeRunning int64
 }
 
-func readPublicClaimState(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID string) publicClaimState {
+// readPublicClaimState snapshots the claimed job together with the runtime slot
+// of nodeID only. The slot total stays scoped to the fixture so unrelated nodes
+// written by other tests sharing this database cannot fail the comparison.
+func readPublicClaimState(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID, nodeID string) publicClaimState {
 	t.Helper()
 	var state publicClaimState
 	err := pg.QueryRow(ctx, `SELECT status, attempts, lease_token, lease_process_instance_id,
- leased_by, lease_expires_at, started_at, runtime_node_id,
- (SELECT COALESCE(sum(running_jobs),0) FROM runtime_nodes)
- FROM jobs WHERE id=$1`, jobID).Scan(&state.Status, &state.Attempts, &state.LeaseToken, &state.Process, &state.LeasedBy, &state.ExpiresAt, &state.StartedAt, &state.RuntimeNode, &state.RunningJobs)
+  leased_by, lease_expires_at, started_at, runtime_node_id,
+  (SELECT COALESCE(sum(running_jobs),0) FROM runtime_nodes WHERE id=$2)
+  FROM jobs WHERE id=$1`, jobID, nodeID).Scan(
+		&state.Status, &state.Attempts, &state.LeaseToken, &state.Process, &state.LeasedBy,
+		&state.ExpiresAt, &state.StartedAt, &state.RuntimeNode, &state.NodeRunning,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return state
 }
 
+// assertPublicClaimLedgerCount checks how many claim ledger rows a process and
+// command produced, distinguishing a reserved command from a completed one.
 func assertPublicClaimLedgerCount(ctx context.Context, t *testing.T, pg *postgres.Postgres, process, command string, want int) {
 	t.Helper()
 	var count int
@@ -55,7 +63,9 @@ func assertPublicClaimLedgerCount(ctx context.Context, t *testing.T, pg *postgre
 	}
 }
 
-func seedPublicQueuedClaim(ctx context.Context, t *testing.T, pg *postgres.Postgres, repo *Repository) (jobID, workflowID string) {
+// seedPublicQueuedClaim schedules a queued job and a dedicated runtime node,
+// returning both identifiers so assertions stay scoped to this fixture.
+func seedPublicQueuedClaim(ctx context.Context, t *testing.T, pg *postgres.Postgres, repo *Repository) (jobID, workflowID, nodeID string) {
 	t.Helper()
 	userID, workflowID := seedIsolatedWorkflow(ctx, t, pg)
 	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "claim-schedule-"+fixtureTag(), 1)
@@ -63,7 +73,7 @@ func seedPublicQueuedClaim(ctx context.Context, t *testing.T, pg *postgres.Postg
 		t.Fatal(err)
 	}
 	queueJob(ctx, t, pg, jobID)
-	nodeID := seedReadyRuntimeNode(ctx, t, pg, "claim-public-"+fixtureTag())
+	nodeID = seedReadyRuntimeNode(ctx, t, pg, "claim-public-"+fixtureTag())
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		defer cancel()
@@ -71,7 +81,7 @@ func seedPublicQueuedClaim(ctx context.Context, t *testing.T, pg *postgres.Postg
 			t.Errorf("delete claim fixture node: %v", cleanupErr)
 		}
 	})
-	return jobID, workflowID
+	return jobID, workflowID, nodeID
 }
 
 //nolint:gocyclo // Each fault shares rollback, retry, and replay assertions.
@@ -89,15 +99,15 @@ func TestIntegrationClaimJobFaultsRollBackAndAllowRetry(t *testing.T) {
 		{name: "commit", table: "jobs", event: "UPDATE", deferred: true, message: "commit claim transaction"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			jobID, workflowID := seedPublicQueuedClaim(ctx, t, pg, repo)
+			jobID, workflowID, nodeID := seedPublicQueuedClaim(ctx, t, pg, repo)
 			process, command := uuid.NewString(), "claim-fault-"+fixtureTag()
-			before := readPublicClaimState(ctx, t, pg, jobID)
+			before := readPublicClaimState(ctx, t, pg, jobID, nodeID)
 			remove := scheduleFaultTrigger(ctx, t, pg, tc.table, tc.event, tc.deferred)
 			claimed, ok, reason, err := repo.ClaimJob(ctx, jobID, workflowID, "public-worker", process, command, time.Minute, 1)
 			if claimed != nil || ok || reason != "" || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), tc.message) || !strings.Contains(err.Error(), "schedule fault") {
 				t.Fatalf("faulted claim = %+v, %t, %q, %v", claimed, ok, reason, err)
 			}
-			if after := readPublicClaimState(ctx, t, pg, jobID); !reflect.DeepEqual(before, after) {
+			if after := readPublicClaimState(ctx, t, pg, jobID, nodeID); !reflect.DeepEqual(before, after) {
 				t.Fatalf("claim leaked durable state: %+v -> %+v", before, after)
 			}
 			assertPublicClaimLedgerCount(ctx, t, pg, process, command, 0)
@@ -115,8 +125,8 @@ func TestIntegrationClaimJobFaultsRollBackAndAllowRetry(t *testing.T) {
 					t.Errorf("release claimed runtime slot: %v", releaseErr)
 				}
 			})
-			after := readPublicClaimState(ctx, t, pg, jobID)
-			if after.Status != "RUNNING" || after.Attempts != 1 || after.LeaseToken.String != claimed.LeaseToken || after.RunningJobs != before.RunningJobs+1 {
+			after := readPublicClaimState(ctx, t, pg, jobID, nodeID)
+			if after.Status != "RUNNING" || after.Attempts != 1 || after.LeaseToken.String != claimed.LeaseToken || after.NodeRunning != before.NodeRunning+1 {
 				t.Fatalf("successful retry state = %+v; baseline %+v", after, before)
 			}
 			assertPublicClaimLedgerCount(ctx, t, pg, process, command, 1)
@@ -133,7 +143,7 @@ func TestIntegrationClaimJobFaultsRollBackAndAllowRetry(t *testing.T) {
 			if err != nil || !ok || reason != "" || !reflect.DeepEqual(replay, claimed) {
 				t.Fatalf("retry replay = %+v, %t, %q, %v", replay, ok, reason, err)
 			}
-			if replayed := readPublicClaimState(ctx, t, pg, jobID); !reflect.DeepEqual(after, replayed) {
+			if replayed := readPublicClaimState(ctx, t, pg, jobID, nodeID); !reflect.DeepEqual(after, replayed) {
 				t.Fatalf("replay mutated claim: %+v -> %+v", after, replayed)
 			}
 		})
@@ -144,8 +154,8 @@ func TestIntegrationClaimJobCanceledBeginHasNoEffects(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
-	jobID, workflowID := seedPublicQueuedClaim(ctx, t, pg, repo)
-	before := readPublicClaimState(ctx, t, pg, jobID)
+	jobID, workflowID, nodeID := seedPublicQueuedClaim(ctx, t, pg, repo)
+	before := readPublicClaimState(ctx, t, pg, jobID, nodeID)
 	for _, tc := range []struct {
 		name    string
 		expired bool
@@ -165,7 +175,7 @@ func TestIntegrationClaimJobCanceledBeginHasNoEffects(t *testing.T) {
 			if claimed != nil || ok || reason != "" || status.Code(err) != tc.code || !strings.Contains(err.Error(), "context") {
 				t.Fatalf("canceled claim = %+v, %t, %q, %v", claimed, ok, reason, err)
 			}
-			if after := readPublicClaimState(ctx, t, pg, jobID); !reflect.DeepEqual(before, after) {
+			if after := readPublicClaimState(ctx, t, pg, jobID, nodeID); !reflect.DeepEqual(before, after) {
 				t.Fatalf("canceled claim mutated state: %+v -> %+v", before, after)
 			}
 			assertPublicClaimLedgerCount(ctx, t, pg, process, command, 0)
@@ -177,14 +187,14 @@ func TestIntegrationClaimJobRejectsEmptyCommandBeforeClaiming(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
-	jobID, workflowID := seedPublicQueuedClaim(ctx, t, pg, repo)
-	before := readPublicClaimState(ctx, t, pg, jobID)
+	jobID, workflowID, nodeID := seedPublicQueuedClaim(ctx, t, pg, repo)
+	before := readPublicClaimState(ctx, t, pg, jobID, nodeID)
 	process := uuid.NewString()
 	claimed, ok, reason, err := repo.ClaimJob(ctx, jobID, workflowID, "public-worker", process, "", time.Minute, 1)
 	if claimed != nil || ok || reason != "" || status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("empty command = %+v, %t, %q, %v", claimed, ok, reason, err)
 	}
-	if after := readPublicClaimState(ctx, t, pg, jobID); !reflect.DeepEqual(before, after) {
+	if after := readPublicClaimState(ctx, t, pg, jobID, nodeID); !reflect.DeepEqual(before, after) {
 		t.Fatalf("empty command changed job: %+v -> %+v", before, after)
 	}
 	assertPublicClaimLedgerCount(ctx, t, pg, process, "", 0)

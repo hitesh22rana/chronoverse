@@ -24,6 +24,7 @@ const (
 	staleClaimReason = "stored lease is no longer active"
 )
 
+// claimRow is a scripted pgx.Row that returns fixed scan values or an error.
 type claimRow struct {
 	values []any
 	err    error
@@ -39,6 +40,9 @@ func (r claimRow) Scan(dest ...any) error {
 	return nil
 }
 
+// claimTx scripts a claim transaction and records the query arguments, writes,
+// and commits a path performed, so replay and rejection outcomes can be asserted
+// without a database.
 type claimTx struct {
 	pgx.Tx
 	t          *testing.T
@@ -64,14 +68,17 @@ func (tx *claimTx) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
 	return row
 }
 
-func (tx *claimTx) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
+// Exec records the completion response by identifying the ledger UPDATE
+// statement itself, so a signature change to commandidempotency.Complete cannot
+// silently stop the fake from capturing it.
+func (tx *claimTx) Exec(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	tx.t.Helper()
 	if tx.execs >= len(tx.execTags) {
 		tx.t.Fatal("unexpected write")
 	}
 	i := tx.execs
 	tx.execs++
-	if len(args) == 7 {
+	if strings.Contains(query, "UPDATE "+postgres.TableCommandIdempotencyKeys) {
 		encoded, ok := args[5].([]byte)
 		if !ok {
 			tx.t.Fatal("completion response is not encoded JSON")

@@ -15,6 +15,8 @@ import (
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
+// logSearchWorkflowClient returns a fixed workflow lookup and counts calls so
+// guard ordering can be asserted.
 type logSearchWorkflowClient struct {
 	fakeWorkflowsService
 	response *workflowspb.GetWorkflowResponse

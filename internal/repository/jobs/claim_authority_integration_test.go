@@ -54,9 +54,13 @@ func TestIntegrationClaimReplayPreservesExactAuthority(t *testing.T) {
 	}
 	for _, tc := range changes {
 		t.Run(tc.name, func(t *testing.T) {
+			// Restore every authority column except the one under test. The lease is
+			// pushed past the replay clock so a slow run cannot reject the replay on
+			// expiry alone and pass without exercising this mutation.
 			if _, err := pg.Exec(ctx, `UPDATE jobs SET lease_token=$2, leased_by=$3,
- lease_process_instance_id=$4, dispatch_attempts=1, lease_expires_at=$5,
- status='RUNNING' WHERE id=$1`, jobID, first.LeaseToken, "worker", process, first.LeaseExpiresAt); err != nil {
+  lease_process_instance_id=$4, dispatch_attempts=1,
+  lease_expires_at=(now() AT TIME ZONE 'utc') + interval '5 minutes',
+  status='RUNNING' WHERE id=$1`, jobID, first.LeaseToken, "worker", process); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pg.Exec(ctx, `UPDATE jobs SET `+tc.assignment+`=$2 WHERE id=$1`, jobID, tc.value); err != nil {

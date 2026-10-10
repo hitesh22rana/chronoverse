@@ -15,6 +15,8 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
+// recoveryContainer records every lifecycle call so recovery settlement can be
+// asserted on the order of inspect, terminate, logs, and remove.
 type recoveryContainer struct {
 	observedContainerSvc
 	state                                        containerpkg.State

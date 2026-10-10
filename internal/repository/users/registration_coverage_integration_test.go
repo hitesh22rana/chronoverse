@@ -172,6 +172,9 @@ func TestIntegrationRegistrationRollsBackDatabaseFaults(t *testing.T) {
 	}
 }
 
+// assertRegistrationState counts the durable rows a registration attempt left
+// behind and, once a ledger row is expected, checks it completed and points at
+// the created account.
 func assertRegistrationState(ctx context.Context, t *testing.T, pg *postgres.Postgres, email, key string, wantUsers, wantCommands int) {
 	t.Helper()
 	var users, commands int
@@ -197,6 +200,10 @@ func assertRegistrationState(ctx context.Context, t *testing.T, pg *postgres.Pos
 	}
 }
 
+// installRegistrationReplayCommitFault makes only the read-only replay path's
+// COMMIT fail. A BEFORE INSERT trigger on command_idempotency_keys, which fires
+// before ON CONFLICT resolution and therefore even when the replay writes
+// nothing, queues a deferred unique violation that only surfaces at COMMIT.
 func installRegistrationReplayCommitFault(t *testing.T, pg *postgres.Postgres) func() {
 	t.Helper()
 	ctx := context.Background()
@@ -229,6 +236,9 @@ func installRegistrationReplayCommitFault(t *testing.T, pg *postgres.Postgres) f
 	return remove
 }
 
+// installRegistrationFault raises body from a trigger on one table event,
+// returning a remover so the same command can retry after recovery. Deferred
+// faults use a DEFERRABLE constraint raised from an AFTER trigger instead.
 func installRegistrationFault(t *testing.T, pg *postgres.Postgres, table, event, condition, target, body string, deferred bool) func() {
 	t.Helper()
 	ctx := context.Background()

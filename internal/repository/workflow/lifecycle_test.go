@@ -64,6 +64,7 @@ func TestRescheduleWorkflowGuardsAndFailures(t *testing.T) {
 	tests := []struct {
 		name         string
 		configure    func(*Repository, *lifecycleLock, *workflowspb.GetWorkflowByIDResponse, *workflowsmodel.WorkflowEvent)
+		scheduleErr  error
 		want         codes.Code
 		wantLock     bool
 		wantSchedule bool
@@ -89,8 +90,8 @@ func TestRescheduleWorkflowGuardsAndFailures(t *testing.T) {
 		{name: "lock unavailable", configure: func(_ *Repository, l *lifecycleLock, _ *workflowspb.GetWorkflowByIDResponse, _ *workflowsmodel.WorkflowEvent) {
 			l.err = errors.New("redis unavailable")
 		}, want: codes.Aborted, wantLock: true},
-		{name: "schedule unavailable", want: codes.Unavailable, wantLock: true, wantSchedule: true},
-		{name: "schedule precondition race", want: codes.OK, wantLock: true, wantSchedule: true},
+		{name: "schedule unavailable", scheduleErr: status.Error(codes.Unavailable, "jobs"), want: codes.Unavailable, wantLock: true, wantSchedule: true},
+		{name: "schedule precondition race", scheduleErr: status.Error(codes.FailedPrecondition, "generation changed"), want: codes.OK, wantLock: true, wantSchedule: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -101,10 +102,7 @@ func TestRescheduleWorkflowGuardsAndFailures(t *testing.T) {
 			called := false
 			r.svc.Jobs = &testJobsClient{scheduleJob: func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error) {
 				called = true
-				if tt.name == "schedule precondition race" {
-					return nil, status.Error(codes.FailedPrecondition, "generation changed")
-				}
-				return nil, status.Error(codes.Unavailable, "jobs")
+				return nil, tt.scheduleErr
 			}}
 			if tt.configure != nil {
 				tt.configure(r, l, w, e)
@@ -310,8 +308,9 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 		return &jobspb.CancelJobResponse{Id: req.GetId(), PreviousStatus: state, ContainerId: "container-" + state, RuntimeEndpoint: "runtime"}, nil
 	}}
 	r.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) { return &testContainerSvc{events: events}, nil }
+	e := lifecycleEvent(workflowsmodel.ActionTerminate)
 	for range 2 {
-		if err := r.terminateWorkflow(t.Context(), lifecycleEvent(workflowsmodel.ActionTerminate)); err != nil {
+		if err := r.terminateWorkflow(t.Context(), e); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -324,22 +323,28 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 	if !reflect.DeepEqual(l.released, l.keys) || len(l.released) != 2 {
 		t.Fatalf("release=%v", l.released)
 	}
-	assertTerminationNotificationReplay(t, notifications)
+	assertTerminationNotificationReplay(t, notifications, idempotency.WorkflowNotificationEventKey(w.GetId(), "Workflow Terminated", workflowOccurrenceKey(e)))
 }
 
-func assertTerminationNotificationReplay(t *testing.T, notifications <-chan string) {
+// assertTerminationNotificationReplay waits for the detached termination
+// notifications of both terminations. Each wait is bounded because delivery runs
+// on a detached goroutine after terminateWorkflow has already returned.
+func assertTerminationNotificationReplay(t *testing.T, notifications <-chan string, want string) {
 	t.Helper()
 	var keys []string
 	for range 2 {
 		select {
 		case key := <-notifications:
 			keys = append(keys, key)
-		case <-time.After(time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("termination notification missing")
 		}
 	}
 	if keys[0] == "" || keys[0] != keys[1] {
 		t.Fatalf("notification replay identity=%v", keys)
+	}
+	if keys[0] != want {
+		t.Fatalf("termination notification key=%q want=%q", keys[0], want)
 	}
 }
 

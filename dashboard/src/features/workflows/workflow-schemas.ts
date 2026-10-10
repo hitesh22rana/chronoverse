@@ -10,7 +10,8 @@ const baseWorkflowSchema = z.object({
         z.number()
     ])
         .transform(val => val === "" ? undefined : Number(val))
-        .refine(val => val === undefined || (Number.isInteger(val) && val >= 1 && val <= 10080), {
+        .refine(val => val !== undefined, { message: "Interval is required" })
+        .refine(val => Number.isInteger(val) && Number(val) >= 1 && Number(val) <= 10080, {
             message: "Must be a whole number between 1 and 10080 minutes (1 week)"
         }),
     maxConsecutiveJobFailuresAllowed: z.coerce.number().int().min(3).max(100).default(3)
@@ -65,12 +66,6 @@ const containerPayloadSchema = z.object({
 
 const baseCreateWorkflowSchema = baseWorkflowSchema.extend({
     retainLogs: z.boolean().default(true),
-    // Create requires an interval. The update schema still parses an emptied
-    // field, but its request requires one server-side too.
-    interval: baseWorkflowSchema.shape.interval.refine(
-        value => value !== undefined,
-        { message: "Interval is required" }
-    )
 })
 
 const heartbeatWorkflowFields = baseCreateWorkflowSchema.extend({

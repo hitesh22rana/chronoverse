@@ -610,22 +610,44 @@ it("takes focus with the find shortcut and gives it up on escape", async () => {
     expect(document.activeElement).toBe(document.body)
 })
 
-it("documents the stale draft overwriting an address-driven query", async () => {
+it("synchronizes navigation queries without overwriting them with a stale draft", async () => {
     const { user } = renderList()
     await screen.findByText("Nightly container")
-
     await user.type(searchBox(), "local")
     await waitFor(() => expect(lastPush()).toBe("?query=local"), afterDebounce)
+    await act(async () => { mocks.searchStore.set("query=fromlink&status=FAILED") })
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=fromlink&build_status=FAILED"))
+    expect(searchBox()).toHaveProperty("value", "fromlink")
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    await user.clear(searchBox())
+    await user.type(searchBox(), "new")
+    await waitFor(() => expect(lastPush()).toBe("?query=new&status=FAILED"), afterDebounce)
+})
+it("cancels a pending search when navigation clears the query", async () => {
+    const { user } = renderList("query=original")
+    await screen.findByText("Nightly container")
+    await user.clear(searchBox())
+    await user.type(searchBox(), "pending")
+    await act(async () => { mocks.searchStore.set("status=FAILED") })
+    expect(searchBox()).toHaveProperty("value", "")
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(lastListRequest()).toBe("/workflows?build_status=FAILED")
+})
 
-    // Reproduce navigation from a shared link.
-    await act(async () => {
-        mocks.searchStore.set("query=fromlink")
-    })
-
-    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=fromlink"))
-    expect(searchBox()).toHaveProperty("value", "local")
-
-    // The stale draft overwrites the link: a documented pre-existing defect.
-    await waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(2), afterDebounce)
-    expect(lastPush()).toBe("?query=local")
+it("preserves newer typing when an earlier search navigation is acknowledged", async () => {
+    const { user } = renderList()
+    await screen.findByText("Nightly container")
+    mocks.push.mockImplementation(() => {})
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?query=alpha"), afterDebounce)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    await user.type(searchBox(), "beta")
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    await act(async () => { mocks.searchStore.set("query=alpha") })
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
+    await waitFor(() => expect(lastPush()).toBe("?query=alphabeta"), afterDebounce)
 })

@@ -457,3 +457,18 @@ function restoreDomStubs() {
         }
     })
 }
+
+it("blocks an empty interval and allows a corrected interval", async () => {
+    mocks.workflow = heartbeatWorkflow()
+    const user = userEvent.setup()
+    renderDialog()
+    await screen.findByLabelText("Name")
+    await user.clear(screen.getByLabelText("Interval (minutes)"))
+    await user.click(saveButton())
+    expect(await screen.findByText("Interval is required")).toBeTruthy()
+    expect(mocks.updateCalls).toHaveLength(0)
+    await user.type(screen.getByLabelText("Interval (minutes)"), "10")
+    await user.click(saveButton())
+    await waitFor(() => expect(mocks.updateCalls).toHaveLength(1))
+    expect(JSON.parse(String(mocks.updateCalls[0].init?.body)).interval).toBe(10)
+})

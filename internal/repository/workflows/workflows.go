@@ -1231,7 +1231,7 @@ func (r *Repository) loadWorkflowUpdateState(ctx context.Context, tx pgx.Tx, wor
 
 func replayWorkflowFailureEffect(ctx context.Context, tx pgx.Tx, workflowID, userID, jobID string) (bool, error) {
 	query := fmt.Sprintf(`
-		SELECT workflow_id::text, user_id::text, effect, threshold_reached
+		SELECT workflow_id::text, user_id::text, effect, COALESCE(threshold_reached, FALSE)
 		FROM %s
 		WHERE job_id = $1
 		LIMIT 1;

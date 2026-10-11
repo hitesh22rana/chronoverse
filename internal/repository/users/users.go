@@ -127,15 +127,12 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	args := []any{email, string(hashedPassword)}
 
 	rows, err := tx.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, "", err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, "", err
-	}
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	if isContextError(err) {
+		return nil, "", contextStatusError(err)
+	}
+
 	if err != nil {
 		if r.pg.IsUniqueViolation(err) {
 			err = status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
@@ -197,15 +194,12 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	args := []any{email}
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, "", err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, "", err
-	}
 
 	loginUserResponse, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
+	if isContextError(err) {
+		return nil, "", contextStatusError(err)
+	}
+
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			// Keep missing-user attempts on the same expensive path as invalid passwords.
@@ -249,6 +243,25 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	return res, authToken, nil
 }
 
+// isContextError reports whether err is a canceled or expired context.
+// pgx surfaces a cancellation from either the Query call or the row scan that
+// follows it, so callers check this where both surfaces converge.
+func isContextError(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
+}
+
+// contextStatusError maps a canceled or expired context to its gRPC status.
+func contextStatusError(err error) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, err.Error())
+	default:
+		return nil
+	}
+}
+
 func invalidCredentialsError() error {
 	return status.Error(codes.Unauthenticated, "invalid email or password")
 }
@@ -272,15 +285,12 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 	args := []any{id}
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
-	}
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	if isContextError(err) {
+		return nil, contextStatusError(err)
+	}
+
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "user not found: %v", err)
@@ -340,6 +350,10 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 	if ct.RowsAffected() == 0 {
 		var exists bool
 		if lookupErr := r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); lookupErr != nil {
+			if isContextError(lookupErr) {
+				return contextStatusError(lookupErr)
+			}
+
 			return status.Errorf(codes.Internal, "failed to check user preference state: %v", lookupErr)
 		}
 		if !exists {

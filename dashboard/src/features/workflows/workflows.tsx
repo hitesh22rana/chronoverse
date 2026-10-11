@@ -61,7 +61,7 @@ type SearchDraft = {
     /** Text in the search box, which can be newer than the query. */
     value: string
     /** Search navigation pushed and not yet seen in the address. */
-    pending: { query: string; address: string } | null
+    pending: { query: string; address: string; released: boolean } | null
 }
 
 /** Abandon superseded pushes; preserve newer typing on our acknowledgements. */
@@ -129,8 +129,8 @@ function useWorkflowsModel() {
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (searchInput !== searchQuery && searchDraft.pending === null) {
-                setSearchDraft(draft => ({ ...draft, pending: { query: searchInput, address: navigationKey } }))
+            if (searchInput !== searchQuery && (searchDraft.pending === null || searchDraft.pending.released)) {
+                setSearchDraft(draft => ({ ...draft, pending: { query: searchInput, address: navigationKey, released: false } }))
                 startSearchTransition(() => {
                     updateSearchQuery(searchInput)
                 })
@@ -141,11 +141,11 @@ function useWorkflowsModel() {
     }, [searchInput, searchQuery, searchDraft.pending, navigationKey, updateSearchQuery])
 
     useEffect(() => {
-        const pendingQuery = searchDraft.pending?.query
-        if (pendingQuery === undefined || pendingQuery === searchInput) return
-        // Release a dropped navigation so newer typing can be submitted.
+        const pending = searchDraft.pending
+        if (pending === null || pending.query === searchInput || pending.released) return
+        // Release the wait, retaining its identity for a delayed acknowledgement.
         const timer = setTimeout(() => {
-            setSearchDraft(draft => ({ ...draft, pending: null }))
+            setSearchDraft(draft => ({ ...draft, pending: { ...pending, released: true } }))
         }, searchRecoveryDelay)
 
         return () => clearTimeout(timer)

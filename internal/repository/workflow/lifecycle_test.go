@@ -42,16 +42,17 @@ func (s *lifecycleLock) ReleaseDistributedLock(_ context.Context, key string) er
 	return nil
 }
 
-// assertLockTTLs pins every acquisition attempt to a production expiration
-// constant. The fake records the TTL instead of failing the acquire, so passing
-// the wrong duration reports a precise failure here rather than surfacing as an
-// unrelated guard-code mismatch.
-func assertLockTTLs(t *testing.T, lock *lifecycleLock) {
+// assertLockTTLs pins every acquisition attempt to the expiration constant the
+// caller's lifecycle path uses. The fake records the TTL instead of failing the
+// acquire, so passing the wrong duration reports a precise failure here rather
+// than surfacing as an unrelated guard-code mismatch.
+//
+//nolint:unparam // Both lifecycle locks currently expire after five minutes; keeping the expected value explicit stays correct if they diverge.
+func assertLockTTLs(t *testing.T, lock *lifecycleLock, want time.Duration) {
 	t.Helper()
 	for i, ttl := range lock.ttls {
-		if ttl != terminateWorkflowExpirationTimeout && ttl != rescheduleWorkflowExpirationTimeout {
-			t.Fatalf("lock %d ttl=%s want %s/%s",
-				i, ttl, terminateWorkflowExpirationTimeout, rescheduleWorkflowExpirationTimeout)
+		if ttl != want {
+			t.Fatalf("lock %d ttl=%s want %s", i, ttl, want)
 		}
 	}
 }
@@ -139,7 +140,7 @@ func TestRescheduleWorkflowGuardsAndFailures(t *testing.T) {
 			if got := status.Code(r.rescheduleWorkflow(t.Context(), e)); got != tt.want {
 				t.Fatalf("code=%s want %s", got, tt.want)
 			}
-			assertLockTTLs(t, l)
+			assertLockTTLs(t, l, rescheduleWorkflowExpirationTimeout)
 			if called != tt.wantSchedule || (len(l.keys) > 0) != tt.wantLock {
 				t.Fatalf("schedule=%v locks=%v", called, l.keys)
 			}
@@ -186,7 +187,7 @@ func TestRescheduleWorkflowReplayPreservesCommandIdentity(t *testing.T) {
 		t.Fatalf("schedule requests=%d want 2", len(requests))
 	}
 	assertLockReleased(t, l, 2)
-	assertLockTTLs(t, l)
+	assertLockTTLs(t, l, rescheduleWorkflowExpirationTimeout)
 }
 
 func TestMarkRunningJobsCanceledPaginationAndTimestamps(t *testing.T) {
@@ -315,7 +316,7 @@ func TestTerminateWorkflowGuards(t *testing.T) {
 			if stage != "busy" && stage != "lock error" && len(l.keys) != 0 {
 				t.Fatalf("guard acquired lock: %v", l.keys)
 			}
-			assertLockTTLs(t, l)
+			assertLockTTLs(t, l, terminateWorkflowExpirationTimeout)
 		})
 	}
 }
@@ -409,9 +410,16 @@ func assertTerminationNotificationReplay(t *testing.T, notifications <-chan stri
 	}
 }
 
+// notificationSettleWindow bounds how long assertNotificationKeys waits for an
+// unwanted extra delivery. Every goroutine is spawned before the lifecycle call
+// returns, so a delivery beyond this window is a scheduling anomaly, not a
+// pending one.
+const notificationSettleWindow = 100 * time.Millisecond
+
 // assertNotificationKeys waits for every expected delivery and compares the
 // delivered keys as an exact set. Delivery runs on detached goroutines, so each
-// wait is bounded and ordering between goroutines is not asserted.
+// wait is bounded, ordering between goroutines is not asserted, and a settle
+// window rejects duplicates or extra deliveries.
 func assertNotificationKeys(t *testing.T, keys <-chan string, want ...string) {
 	t.Helper()
 	got := make([]string, 0, len(want))
@@ -423,11 +431,16 @@ func assertNotificationKeys(t *testing.T, keys <-chan string, want ...string) {
 			t.Fatalf("notification missing: got %v want %v", got, want)
 		}
 	}
-	sort.Strings(got)
 	sorted := append([]string(nil), want...)
+	sort.Strings(got)
 	sort.Strings(sorted)
 	if !reflect.DeepEqual(got, sorted) {
 		t.Fatalf("notification keys=%v want %v", got, sorted)
+	}
+	select {
+	case key := <-keys:
+		t.Fatalf("unexpected extra notification %q after %v", key, got)
+	case <-time.After(notificationSettleWindow):
 	}
 }
 
@@ -451,6 +464,13 @@ func TestTerminateWorkflowStopsAtFailureAndReleasesLock(t *testing.T) {
 					return &jobspb.ListJobsResponse{Jobs: []*jobspb.JobsResponse{{Id: "job-1"}}}, nil
 				}
 				return &jobspb.ListJobsResponse{}, nil
+			}, cancelJob: func(_ context.Context, req *jobspb.CancelJobRequest) error {
+				// The workflow is not terminated here, so cancellations must
+				// report a workflow change rather than a termination.
+				if req.GetTerminalReasonCode() != "WORKFLOW_UPDATED" {
+					t.Fatalf("cancel=%v", req)
+				}
+				return nil
 			}}
 			r.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) {
 				cleanupCalls++
@@ -460,7 +480,7 @@ func TestTerminateWorkflowStopsAtFailureAndReleasesLock(t *testing.T) {
 				t.Fatal("expected failure")
 			}
 			assertLockReleased(t, l, 1)
-			assertLockTTLs(t, l)
+			assertLockTTLs(t, l, terminateWorkflowExpirationTimeout)
 			expected := map[string]int{"RUNNING": 1, "PENDING": 2, "QUEUED": 3, "cleanup": 3, "CANCELED": 4}[stage]
 			if len(listed) != expected {
 				t.Fatalf("listed=%v", listed)

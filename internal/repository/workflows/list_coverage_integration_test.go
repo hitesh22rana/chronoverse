@@ -248,14 +248,12 @@ func TestIntegrationListWorkflowsErrors(t *testing.T) {
 			t.Fatalf("invalid user = (%+v,%v)", response, err)
 		}
 	})
-	for _, filters := range []*workflowsmodel.ListWorkflowsFilters{{BuildStatus: "UNKNOWN"}} {
-		t.Run(fmt.Sprintf("invalid enum %v", filters), func(t *testing.T) {
-			response, err := repo.ListWorkflows(t.Context(), userID, "", filters)
-			if response != nil || status.Code(err) != codes.InvalidArgument {
-				t.Fatalf("invalid enum = (%+v, %v), want nil and InvalidArgument", response, err)
-			}
-		})
-	}
+	t.Run("invalid build status", func(t *testing.T) {
+		response, err := repo.ListWorkflows(t.Context(), userID, "", &workflowsmodel.ListWorkflowsFilters{BuildStatus: "UNKNOWN"})
+		if response != nil || status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid enum = (%+v, %v), want nil and InvalidArgument", response, err)
+		}
+	})
 	lock := lockWholeTable(postgres.TableWorkflows, "%SELECT id, name, payload, kind, build_status%")
 	cases := []struct {
 		name, stop string

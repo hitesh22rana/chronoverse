@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
@@ -79,7 +80,7 @@ func TestIntegrationFailureThresholdFaultsRollBackAllEffects(t *testing.T) {
 			}
 			fixture := seedWorkflowFixture(ctx, t, pg, repo, maximum)
 			if tc.terminated {
-				if _, err := pg.Exec(ctx, `UPDATE workflows SET terminated_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.WorkflowID); err != nil {
+				if _, err := pg.Exec(ctx, fmt.Sprintf(`UPDATE %s SET terminated_at=now() AT TIME ZONE 'utc' WHERE id=$1`, postgres.TableWorkflows), fixture.WorkflowID); err != nil {
 					t.Fatalf("terminate fixture: %v", err)
 				}
 			}
@@ -93,7 +94,10 @@ func TestIntegrationFailureThresholdFaultsRollBackAllEffects(t *testing.T) {
 				}
 			}
 			if tc.table == postgres.TableOutboxEvents {
-				condition = fmt.Sprintf("NEW.payload->>'ID' = '%s' AND NEW.payload->>'Action' = 'TERMINATE'", fixture.WorkflowID)
+				condition = fmt.Sprintf(
+					"NEW.payload->>'ID' = '%s' AND NEW.payload->>'Action' = '%s'",
+					fixture.WorkflowID, workflowsmodel.ActionTerminate.ToString(),
+				)
 			}
 			installFailureEffectFault(ctx, t, pg, tc.table, tc.event, condition, tc.deferred, tc.skip)
 			reached, err := repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, fixture.WorkflowID, fixture.UserID, jobID)
@@ -104,7 +108,9 @@ func TestIntegrationFailureThresholdFaultsRollBackAllEffects(t *testing.T) {
 			if count := countTerminalEffects(ctx, t, pg, jobID); count != 0 {
 				t.Fatalf("terminal effects=%d, want 0 after rollback", count)
 			}
-			if count := countWorkflowActionEvents(ctx, t, pg, fixture.WorkflowID, "TERMINATE"); count != 0 {
+			if count := countWorkflowActionEvents(
+				ctx, t, pg, fixture.WorkflowID, workflowsmodel.ActionTerminate.ToString(),
+			); count != 0 {
 				t.Fatalf("termination events=%d, want 0 after rollback", count)
 			}
 		})

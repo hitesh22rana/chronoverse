@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -26,20 +27,48 @@ type lifecycleLock struct {
 	acquired bool
 	err      error
 	keys     []string
+	ttls     []time.Duration
 	released []string
 }
 
 func (s *lifecycleLock) AcquireDistributedLock(_ context.Context, key string, ttl time.Duration) (bool, error) {
-	if ttl != 5*time.Minute {
-		return false, errors.New("unexpected lock expiry")
-	}
 	s.keys = append(s.keys, key)
+	s.ttls = append(s.ttls, ttl)
 	return s.acquired, s.err
 }
 
 func (s *lifecycleLock) ReleaseDistributedLock(_ context.Context, key string) error {
 	s.released = append(s.released, key)
 	return nil
+}
+
+// assertLockTTLs pins every acquisition attempt to a production expiration
+// constant. The fake records the TTL instead of failing the acquire, so passing
+// the wrong duration reports a precise failure here rather than surfacing as an
+// unrelated guard-code mismatch.
+func assertLockTTLs(t *testing.T, lock *lifecycleLock) {
+	t.Helper()
+	for i, ttl := range lock.ttls {
+		if ttl != terminateWorkflowExpirationTimeout && ttl != rescheduleWorkflowExpirationTimeout {
+			t.Fatalf("lock %d ttl=%s want %s/%s",
+				i, ttl, terminateWorkflowExpirationTimeout, rescheduleWorkflowExpirationTimeout)
+		}
+	}
+}
+
+// assertLockReleased checks that every acquisition was released exactly once and
+// in order. Lengths are verified before indexing so a missing acquisition fails
+// cleanly instead of panicking.
+func assertLockReleased(t *testing.T, lock *lifecycleLock, want int) {
+	t.Helper()
+	if len(lock.keys) != want || len(lock.released) != want {
+		t.Fatalf("locks=%d released=%d want %d", len(lock.keys), len(lock.released), want)
+	}
+	for i := range lock.keys {
+		if lock.released[i] != lock.keys[i] {
+			t.Fatalf("released %q want %q", lock.released[i], lock.keys[i])
+		}
+	}
 }
 
 func lifecycleWorkflow() *workflowspb.GetWorkflowByIDResponse {
@@ -110,11 +139,17 @@ func TestRescheduleWorkflowGuardsAndFailures(t *testing.T) {
 			if got := status.Code(r.rescheduleWorkflow(t.Context(), e)); got != tt.want {
 				t.Fatalf("code=%s want %s", got, tt.want)
 			}
+			assertLockTTLs(t, l)
 			if called != tt.wantSchedule || (len(l.keys) > 0) != tt.wantLock {
 				t.Fatalf("schedule=%v locks=%v", called, l.keys)
 			}
-			if tt.wantSchedule && (len(l.released) != 1 || l.released[0] != l.keys[0]) {
-				t.Fatal("acquired lock not released")
+			switch {
+			case tt.wantSchedule:
+				assertLockReleased(t, l, 1)
+			default:
+				if len(l.released) != 0 {
+					t.Fatalf("released lock that was never acquired: %v", l.released)
+				}
 			}
 		})
 	}
@@ -147,9 +182,11 @@ func TestRescheduleWorkflowReplayPreservesCommandIdentity(t *testing.T) {
 			t.Fatalf("schedule request=%v", req)
 		}
 	}
-	if len(requests) != 2 || len(l.released) != 2 || l.keys[0] != l.keys[1] {
-		t.Fatalf("requests=%d lock=%+v", len(requests), l)
+	if len(requests) != 2 {
+		t.Fatalf("schedule requests=%d want 2", len(requests))
 	}
+	assertLockReleased(t, l, 2)
+	assertLockTTLs(t, l)
 }
 
 func TestMarkRunningJobsCanceledPaginationAndTimestamps(t *testing.T) {
@@ -157,6 +194,13 @@ func TestMarkRunningJobsCanceledPaginationAndTimestamps(t *testing.T) {
 	w := lifecycleWorkflow()
 	w.Kind = workflowsmodel.KindContainer.ToString()
 	r, _ := lifecycleRepository(w)
+	jobNotifications := make(chan string, 8)
+	r.svc.Notifications = testNotificationsClient{createNotification: func(_ context.Context, req *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
+		if notificationTitle(req.GetPayload()) == "Job Canceled" {
+			jobNotifications <- req.GetIdempotencyKey()
+		}
+		return &notificationspb.CreateNotificationResponse{Id: "notification"}, nil
+	}}
 	var canceled, cursors []string
 	r.svc.Jobs = &testJobsClient{listJobs: func(_ context.Context, req *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error) {
 		if req.GetWorkflowId() != w.GetId() || req.GetUserId() != w.GetUserId() || req.GetFilters().GetStatus() != jobsmodel.JobStatusRunning.ToString() {
@@ -184,6 +228,11 @@ func TestMarkRunningJobsCanceledPaginationAndTimestamps(t *testing.T) {
 	if !reflect.DeepEqual(canceled, []string{"job-1", "job-2", "job-3"}) || !reflect.DeepEqual(cursors, []string{"", "page-2"}) || len(jobs) != 3 {
 		t.Fatalf("canceled=%v cursors=%v cleanup=%v", canceled, cursors, jobs)
 	}
+	assertNotificationKeys(t, jobNotifications,
+		idempotency.JobNotificationEventKey("job-1", "Job Canceled"),
+		idempotency.JobNotificationEventKey("job-2", "Job Canceled"),
+		idempotency.JobNotificationEventKey("job-3", "Job Canceled"),
+	)
 }
 
 func TestMarkRunningJobsCanceledFailures(t *testing.T) {
@@ -266,6 +315,7 @@ func TestTerminateWorkflowGuards(t *testing.T) {
 			if stage != "busy" && stage != "lock error" && len(l.keys) != 0 {
 				t.Fatalf("guard acquired lock: %v", l.keys)
 			}
+			assertLockTTLs(t, l)
 		})
 	}
 }
@@ -278,9 +328,13 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 	r, l := lifecycleRepository(w)
 	events := &orderedEvents{}
 	notifications := make(chan string, 2)
+	jobNotifications := make(chan string, 8)
 	r.svc.Notifications = testNotificationsClient{createNotification: func(_ context.Context, req *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
-		if notificationTitle(req.GetPayload()) == "Workflow Terminated" {
+		switch notificationTitle(req.GetPayload()) {
+		case "Workflow Terminated":
 			notifications <- req.GetIdempotencyKey()
+		case "Job Canceled":
+			jobNotifications <- req.GetIdempotencyKey()
 		}
 		return &notificationspb.CreateNotificationResponse{Id: "notification"}, nil
 	}}
@@ -324,6 +378,13 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 		t.Fatalf("release=%v", l.released)
 	}
 	assertTerminationNotificationReplay(t, notifications, idempotency.WorkflowNotificationEventKey(w.GetId(), "Workflow Terminated", workflowOccurrenceKey(e)))
+	// Only the first pass cancels jobs; the replay lists nothing new, so each
+	// canceled job is notified exactly once across both passes.
+	assertNotificationKeys(t, jobNotifications,
+		idempotency.JobNotificationEventKey("job-RUNNING", "Job Canceled"),
+		idempotency.JobNotificationEventKey("job-PENDING", "Job Canceled"),
+		idempotency.JobNotificationEventKey("job-QUEUED", "Job Canceled"),
+	)
 }
 
 // assertTerminationNotificationReplay waits for the detached termination
@@ -345,6 +406,28 @@ func assertTerminationNotificationReplay(t *testing.T, notifications <-chan stri
 	}
 	if keys[0] != want {
 		t.Fatalf("termination notification key=%q want=%q", keys[0], want)
+	}
+}
+
+// assertNotificationKeys waits for every expected delivery and compares the
+// delivered keys as an exact set. Delivery runs on detached goroutines, so each
+// wait is bounded and ordering between goroutines is not asserted.
+func assertNotificationKeys(t *testing.T, keys <-chan string, want ...string) {
+	t.Helper()
+	got := make([]string, 0, len(want))
+	for range want {
+		select {
+		case key := <-keys:
+			got = append(got, key)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("notification missing: got %v want %v", got, want)
+		}
+	}
+	sort.Strings(got)
+	sorted := append([]string(nil), want...)
+	sort.Strings(sorted)
+	if !reflect.DeepEqual(got, sorted) {
+		t.Fatalf("notification keys=%v want %v", got, sorted)
 	}
 }
 
@@ -376,15 +459,15 @@ func TestTerminateWorkflowStopsAtFailureAndReleasesLock(t *testing.T) {
 			if status.Code(r.terminateWorkflow(t.Context(), lifecycleEvent(workflowsmodel.ActionTerminate))) != codes.Unavailable {
 				t.Fatal("expected failure")
 			}
-			if len(l.released) != 1 || l.released[0] != l.keys[0] {
-				t.Fatal("lock not released on error")
-			}
+			assertLockReleased(t, l, 1)
+			assertLockTTLs(t, l)
 			expected := map[string]int{"RUNNING": 1, "PENDING": 2, "QUEUED": 3, "cleanup": 3, "CANCELED": 4}[stage]
 			if len(listed) != expected {
 				t.Fatalf("listed=%v", listed)
 			}
-			if (cleanupCalls > 0) != (stage == "cleanup") {
-				t.Fatalf("cleanup calls=%d", cleanupCalls)
+			wantCleanup := map[string]int{"cleanup": 1}[stage]
+			if cleanupCalls != wantCleanup {
+				t.Fatalf("cleanup calls=%d want %d", cleanupCalls, wantCleanup)
 			}
 		})
 	}

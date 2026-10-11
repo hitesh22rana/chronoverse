@@ -6,14 +6,11 @@ import { parseLogMessage } from "./log-message"
 
 const token = "0123456789abcdef0123456789abcdef"
 const otherToken = "fedcba9876543210fedcba9876543210"
-/** Well-formed hex, but not the 32 characters the backend sends. */
 const shortHexToken = "0123456789abcdef"
-/** The markers the search service emits around a match, carrying a given token. */
 const marked = (markerToken: string, text: string) => `__CV_HL_START_${markerToken}__${text}__CV_HL_END_${markerToken}__`
 const start = `__CV_HL_START_${token}__`
 const end = `__CV_HL_END_${token}__`
 const highlight = (text: string) => marked(token, text)
-/** The `parseJson` argument under a label a test title can read. */
 const jsonModes = [["raw", false], ["JSON", true]] as const
 
 function renderMessage(message: string, highlightToken: string | undefined = undefined, parseJson = false) {
@@ -27,19 +24,7 @@ function marks(container: HTMLElement) {
 afterEach(cleanup)
 
 describe("log message rendering", () => {
-    /**
-     * Each message carries markers built from the token under test, so the
-     * expectation only holds while that token is still rejected: the tags the
-     * code derives are the ones in the message, and a rejected token is what
-     * leaves them unrecognised. A message built from the valid token instead
-     * would give the code nothing to find and pass with or without the check.
-     * The rejected tokens span what the check rules out: nothing, too short,
-     * the wrong length for well-formed hex, a non-hex character, and the
-     * uppercase hex a case-insensitive encoder would send. For an absent token
-     * the candidate is the literal `undefined` that interpolating a missing
-     * value would produce, so an absent token is caught when its absence leaks
-     * into the tags instead of stopping them.
-     */
+    // Matching invalid-token markers make these assertions depend on rejection.
     it.each([undefined, "", "short", shortHexToken, "G".repeat(32), token.toUpperCase()])(
         "preserves markers for an absent or invalid token %s",
         (highlightToken) => {
@@ -72,17 +57,14 @@ describe("log message rendering", () => {
         }
     })
 
-    // An unmatched start marker has no closing tag, so it reaches the reader
-    // verbatim: there is no match to mark and nothing to drop it from.
+    // Incomplete markers remain literal text.
     it.each(jsonModes)("keeps an incomplete tail after a valid match in %s mode", (_label, parseJson) => {
         const container = renderMessage(`${highlight("first")} trailing ${start}unfinished`, token, parseJson)
         expect(container.textContent).toBe(`first trailing ${start}unfinished`)
         expect(marks(container)).toEqual(["first"])
     })
 
-    // The two paths disagree about an empty segment on purpose: the raw path
-    // marks what the search service bracketed, the parsed path has no bracket
-    // left to find once formatting has rewritten the text.
+    // Raw rendering keeps empty marks; JSON rendering skips empty segments.
     it("renders empty segments without losing adjacent text", () => {
         const message = `before${highlight("")}after`
         const raw = renderMessage(message, token)
@@ -99,8 +81,6 @@ describe("log message rendering", () => {
         expect(marks(container)).toEqual(["error"])
     })
 
-    // The expectation is written out rather than re-parsed from the input, so a
-    // change to the indent or to what a scalar serialises as fails here.
     it.each([
         ['[1,{"ok":true}]', JSON.stringify([1, { ok: true }], null, 2)],
         ['"text"', JSON.stringify("text")],

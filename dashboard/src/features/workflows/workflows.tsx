@@ -287,27 +287,22 @@ function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView
                         onBlur={() => setIsSearchFocused(false)}
                         className="w-full pl-9 h-9"
                     />
-                    {isSearchPending ? (
+                    {isSearchPending && (
                         <Loader2
-                            className={cn(
-                                "absolute right-2.5 top-2.5 cursor-pointer animate-spin",
-                                "size-4 text-muted-foreground hover:text-foreground",
-                            )}
+                            className="absolute right-8 top-2.5 size-4 animate-spin text-muted-foreground"
                             role="progressbar"
                             aria-label="spinner"
                         />
-                    ) : (
-                        (searchInput || activeFiltersCount > 0) && (
-                            <X
-                                className={cn(
-                                    "absolute right-2.5 top-2.5 cursor-pointer",
-                                    "size-4 text-muted-foreground hover:text-foreground",
-                                )}
-                                onClick={clearSearch}
-                                role="button"
-                                aria-label="Clear search and filters"
-                            />
-                        )
+                    )}
+                    {(searchInput || activeFiltersCount > 0) && (
+                        <button
+                            type="button"
+                            className="absolute right-2.5 top-2.5 size-4 text-muted-foreground hover:text-foreground"
+                            onClick={clearSearch}
+                            aria-label="Clear search and filters"
+                        >
+                            <X className="size-4" aria-hidden="true" />
+                        </button>
                     )}
                 </div>
 

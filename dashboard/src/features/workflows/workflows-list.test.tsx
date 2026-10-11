@@ -698,6 +698,19 @@ it("keeps searching when a filter apply wins the race with a search navigation",
     expect(searchBox()).toHaveProperty("value", "alphabeta")
 }, slowRace)
 
+it("keeps the clear control mounted while a search transition completes", async () => {
+    const { user } = renderList("status=FAILED")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?build_status=FAILED"))
+    loseOneSearchPush()
+    const clear = clearSearch()!
+    await user.pointer({ target: clear, keys: "[MouseLeft>]" })
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await waitFor(() => expect(lastPush()).toBe("?status=FAILED&query=alpha"), afterDebounce)
+    expect(clearSearch()).toBe(clear)
+    await user.pointer({ target: clear, keys: "[/MouseLeft]" })
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+})
+
 it("keeps searching when the clear affordance discards a lost navigation", async () => {
     const { user } = renderList("status=FAILED")
     await waitFor(() => expect(lastListRequest()).toBe("/workflows?build_status=FAILED"))

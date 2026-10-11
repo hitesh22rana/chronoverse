@@ -905,6 +905,11 @@ type testContainerSvc struct {
 	dockerHost  string
 	buildErr    error
 	builds      *orderedEvents
+	// targets records "terminate:<container>", "logs:<container>" and
+	// "remove:<container>", so a test can assert which container each cleanup
+	// operation acted on. Kept apart from events because operation order is
+	// already asserted without container identity.
+	targets *orderedEvents
 }
 
 func (s *testContainerSvc) Build(_ context.Context, image string) error {
@@ -932,7 +937,10 @@ func (s *testContainerSvc) DockerHost() string {
 	return "tcp://docker-proxy:2375"
 }
 
-func (s *testContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *testContainerSvc) Logs(_ context.Context, containerID string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	if s.targets != nil {
+		s.targets.add("logs:" + containerID)
+	}
 	logsCh := make(chan *jobsmodel.JobLog)
 	errsCh := make(chan error)
 	go func() {
@@ -945,14 +953,20 @@ func (s *testContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmodel
 	return logsCh, errsCh, nil
 }
 
-func (s *testContainerSvc) Remove(context.Context, string) error {
+func (s *testContainerSvc) Remove(_ context.Context, containerID string) error {
+	if s.targets != nil {
+		s.targets.add("remove:" + containerID)
+	}
 	if s.events != nil {
 		s.events.add("remove")
 	}
 	return nil
 }
 
-func (s *testContainerSvc) Terminate(context.Context, string) error {
+func (s *testContainerSvc) Terminate(_ context.Context, containerID string) error {
+	if s.targets != nil {
+		s.targets.add("terminate:" + containerID)
+	}
 	if s.events != nil {
 		s.events.add("terminate")
 	}

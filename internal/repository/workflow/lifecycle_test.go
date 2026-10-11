@@ -328,6 +328,7 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 	w.TerminatedAt = time.Now().Format(time.RFC3339Nano)
 	r, l := lifecycleRepository(w)
 	events := &orderedEvents{}
+	targets := &orderedEvents{}
 	notifications := make(chan string, 2)
 	jobNotifications := make(chan string, 8)
 	r.svc.Notifications = testNotificationsClient{createNotification: func(_ context.Context, req *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
@@ -362,7 +363,9 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 		}
 		return &jobspb.CancelJobResponse{Id: req.GetId(), PreviousStatus: state, ContainerId: "container-" + state, RuntimeEndpoint: "runtime"}, nil
 	}}
-	r.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) { return &testContainerSvc{events: events}, nil }
+	r.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) {
+		return &testContainerSvc{events: events, targets: targets}, nil
+	}
 	e := lifecycleEvent(workflowsmodel.ActionTerminate)
 	for range 2 {
 		if err := r.terminateWorkflow(t.Context(), e); err != nil {
@@ -375,6 +378,15 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 		"list-RUNNING", "list-PENDING", "list-QUEUED", "list-CANCELED", "terminate", "remove",
 	}
 	assertEvents(t, events.items(), want)
+	// Each cleanup must act on the container the job reports, never on the job
+	// ID or a stale snapshot, so the target is asserted per operation.
+	assertEvents(t, targets.items(), []string{
+		"terminate:container-RUNNING", "logs:container-RUNNING", "remove:container-RUNNING",
+		"terminate:container-PENDING", "logs:container-PENDING", "remove:container-PENDING",
+		"terminate:container-QUEUED", "logs:container-QUEUED", "remove:container-QUEUED",
+		"terminate:container-retry", "logs:container-retry", "remove:container-retry",
+		"terminate:container-retry", "logs:container-retry", "remove:container-retry",
+	})
 	if !reflect.DeepEqual(l.released, l.keys) || len(l.released) != 2 {
 		t.Fatalf("release=%v", l.released)
 	}
@@ -500,6 +512,7 @@ func TestCleanupJobsWithStatusContinuesAfterErrorAcrossPages(t *testing.T) {
 	r, _ := lifecycleRepository(w)
 	first := status.Error(codes.Unavailable, "first runtime failed")
 	var cursors, endpoints []string
+	targets := &orderedEvents{}
 	r.svc.Jobs = &testJobsClient{listJobs: func(_ context.Context, req *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error) {
 		if req.GetWorkflowId() != w.GetId() || req.GetUserId() != w.GetUserId() || req.GetFilters().GetStatus() != "CANCELED" {
 			t.Fatalf("list=%v", req)
@@ -518,7 +531,7 @@ func TestCleanupJobsWithStatusContinuesAfterErrorAcrossPages(t *testing.T) {
 		if endpoint == "second" {
 			return nil, status.Error(codes.Internal, "second failure")
 		}
-		return &testContainerSvc{}, nil
+		return &testContainerSvc{targets: targets}, nil
 	}
 	if err := r.cleanupJobsWithStatus(t.Context(), w, w.GetUserId(), "CANCELED"); !errors.Is(err, first) {
 		t.Fatalf("error=%v", err)
@@ -526,6 +539,8 @@ func TestCleanupJobsWithStatusContinuesAfterErrorAcrossPages(t *testing.T) {
 	if !reflect.DeepEqual(cursors, []string{"", "next"}) || !reflect.DeepEqual(endpoints, []string{"first", "second", "third"}) {
 		t.Fatalf("cursors=%v endpoints=%v", cursors, endpoints)
 	}
+	// c1 and c2 fail to resolve a runtime, so only c3 is acted on.
+	assertEvents(t, targets.items(), []string{"terminate:c3", "logs:c3", "remove:c3"})
 }
 
 func TestCleanupJobsWithStatusFailuresAndEmptyResult(t *testing.T) {

@@ -106,6 +106,21 @@ const listRequests = () => mocks.fetchApiJson.mock.calls.map((call) => String(ca
 const lastListRequest = () => listRequests().at(-1)
 const lastPush = () => mocks.push.mock.calls.at(-1)?.[0] as string
 
+/**
+ * A router that loses the first search navigation, the way a competing
+ * transition commits first and leaves the pushed update without an address.
+ */
+function loseOneSearchPush() {
+    let lost = false
+    mocks.push.mockImplementation((url: string) => {
+        if (!lost && url.includes("query=")) {
+            lost = true
+            return
+        }
+        mocks.searchStore.set(url.replace(/^[?]/, ""))
+    })
+}
+
 const searchBox = () => screen.getByPlaceholderText("Search workflows...(Ctrl+F)") as HTMLInputElement
 const clearSearch = () => screen.queryByRole("button", { name: "Clear search and filters" })
 /** Exact-name lookup would miss the active-filter badge inside the trigger. */
@@ -121,6 +136,9 @@ const kindSelect = () => screen.getAllByRole("combobox")[1]
 
 /** The search box debounces for 500ms, so the wait has to outlast it. */
 const afterDebounce = { timeout: 5000 } as const
+
+/** These races wait out a debounce around mounted interactions. */
+const slowRace = 20_000
 
 async function openFilters(user: ReturnType<typeof userEvent.setup>) {
     await user.click(filterButton())
@@ -650,4 +668,94 @@ it("preserves newer typing when an earlier search navigation is acknowledged", a
     await act(async () => { mocks.searchStore.set("query=alpha") })
     expect(searchBox()).toHaveProperty("value", "alphabeta")
     await waitFor(() => expect(lastPush()).toBe("?query=alphabeta"), afterDebounce)
+})
+
+it("keeps searching when a filter apply wins the race with a search navigation", async () => {
+    const { user } = renderList()
+    await screen.findByText("Nightly container")
+    loseOneSearchPush()
+
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?query=alpha"), afterDebounce)
+    // The lost navigation leaves the query in the box only.
+    expect(searchBox()).toHaveProperty("value", "alpha")
+    expect(lastListRequest()).toBe("/workflows")
+
+    await openFilters(user)
+    await user.click(statusSelect())
+    await user.click(await screen.findByRole("option", { name: "Failed" }))
+    await user.click(applyButton())
+
+    // The competing navigation commits an address without the query.
+    await waitFor(() => expect(mocks.searchStore.get()).toBe("status=FAILED"))
+
+    await user.type(searchBox(), "beta")
+
+    // Search is not stranded by the lost navigation: the text in the box is
+    // requested again, now on top of the filter that won the race.
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alphabeta&build_status=FAILED"), afterDebounce)
+    expect(lastPush()).toBe("?status=FAILED&query=alphabeta")
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
+}, slowRace)
+
+it("keeps searching when the clear affordance discards a lost navigation", async () => {
+    const { user } = renderList("status=FAILED")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?build_status=FAILED"))
+    loseOneSearchPush()
+
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?status=FAILED&query=alpha"), afterDebounce)
+    expect(mocks.searchStore.get()).toBe("status=FAILED")
+
+    await user.click(clearSearch()!)
+
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    // Clearing asks for the same address once and then goes quiet.
+    expect(mocks.push).toHaveBeenCalledTimes(2)
+    expect(lastPush()).toBe("?status=FAILED")
+
+    await user.type(searchBox(), "beta")
+
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=beta&build_status=FAILED"), afterDebounce)
+    expect(lastPush()).toBe("?status=FAILED&query=beta")
+}, slowRace)
+
+it("keeps searching when an external navigation lands without the pushed query", async () => {
+    const { user } = renderList()
+    await screen.findByText("Nightly container")
+    loseOneSearchPush()
+
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?query=alpha"), afterDebounce)
+    await act(async () => { mocks.searchStore.set("status=FAILED") })
+    expect(searchBox()).toHaveProperty("value", "alpha")
+
+    await user.type(searchBox(), "beta")
+
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alphabeta&build_status=FAILED"), afterDebounce)
+    expect(lastPush()).toBe("?status=FAILED&query=alphabeta")
+}, slowRace)
+
+it("gives up an unacknowledged search so newer typing can still be requested", async () => {
+    // No navigation follows the lost push here, so the only way out is the
+    // pause after which the component stops waiting for that address.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    loseOneSearchPush()
+    renderList()
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(lastPush()).toBe("?query=alpha")
+    expect(mocks.searchStore.get()).toBe("")
+
+    fireEvent.change(searchBox(), { target: { value: "alphabeta" } })
+    // Past the pause, then past the debounce it restarts.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+
+    expect(lastPush()).toBe("?query=alphabeta")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alphabeta"))
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
 })

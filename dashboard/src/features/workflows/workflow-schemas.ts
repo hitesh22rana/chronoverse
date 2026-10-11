@@ -10,7 +10,9 @@ const baseWorkflowSchema = z.object({
         z.number()
     ])
         .transform(val => val === "" ? undefined : Number(val))
-        .refine(val => val !== undefined, { message: "Interval is required" })
+        // A blank interval is missing, not out of range, so the range check below
+        // is skipped instead of reporting a second issue for the same field.
+        .refine(val => val !== undefined, { message: "Interval is required", abort: true })
         .refine(val => Number.isInteger(val) && Number(val) >= 1 && Number(val) <= 10080, {
             message: "Must be a whole number between 1 and 10080 minutes (1 week)"
         }),

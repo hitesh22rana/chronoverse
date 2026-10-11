@@ -49,6 +49,32 @@ import type { Workflow } from "@/features/workflows/types"
 
 import { cn } from "@/lib/utils"
 
+/** Debounce search typing. */
+const searchDebounceDelay = 500
+
+/** Release an unacknowledged search when typing advances. */
+const searchRecoveryDelay = 5_000
+
+type SearchDraft = {
+    /** Query last observed in the address. */
+    query: string
+    /** Text in the search box, which can be newer than the query. */
+    value: string
+    /** Search navigation pushed and not yet seen in the address. */
+    pending: { query: string; address: string } | null
+}
+
+/** Abandon superseded pushes; preserve newer typing on our acknowledgements. */
+function reconcileSearchDraft(draft: SearchDraft, searchQuery: string, navigationKey: string): SearchDraft {
+    const pendingLost =
+        draft.pending !== null && navigationKey !== draft.pending.address && searchQuery !== draft.pending.query
+    if (draft.query === searchQuery && !pendingLost) return draft
+
+    const acknowledged = draft.pending?.query === searchQuery
+    const value = draft.query === searchQuery || acknowledged ? draft.value : searchQuery
+    return { query: searchQuery, value, pending: null }
+}
+
 export function Workflows() {
     return renderWorkflowsView(useWorkflowsModel())
 }
@@ -70,6 +96,7 @@ function useWorkflowsModel() {
         workflows,
         isLoading,
         searchQuery,
+        navigationKey,
         statusFilter,
         kindFilter,
         intervalMin,
@@ -82,31 +109,47 @@ function useWorkflowsModel() {
         refetchLoading,
     } = useWorkflows({ poll: true })
 
-    const [searchDraft, setSearchDraft] = useState({
+    const [searchDraft, setSearchDraft] = useState<SearchDraft>({
         query: searchQuery,
         value: searchQuery,
-        pendingQuery: null as string | null,
+        pending: null,
     })
-    // Preserve newer typing when our earlier URL update arrives.
-    const acknowledgedDraft = searchDraft.pendingQuery === searchQuery
-    const searchInput = searchDraft.query === searchQuery || acknowledgedDraft ? searchDraft.value : searchQuery
-    if (searchDraft.query !== searchQuery) {
-        setSearchDraft({ query: searchQuery, value: searchInput, pendingQuery: null })
+    // Keep newer typing when our earlier URL update arrives.
+    const settledDraft = reconcileSearchDraft(searchDraft, searchQuery, navigationKey)
+    if (settledDraft !== searchDraft) {
+        setSearchDraft(settledDraft)
     }
+    const searchInput = settledDraft.value
     const setSearchInput = (value: string) => setSearchDraft(draft => ({ ...draft, query: searchQuery, value }))
+    const clearSearch = () => {
+        // Clear the draft and its pending navigation.
+        setSearchDraft(draft => ({ ...draft, value: "", pending: null }))
+        updateSearchQuery("")
+    }
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (searchInput !== searchQuery && searchDraft.pendingQuery === null) {
-                setSearchDraft(draft => ({ ...draft, pendingQuery: searchInput }))
+            if (searchInput !== searchQuery && searchDraft.pending === null) {
+                setSearchDraft(draft => ({ ...draft, pending: { query: searchInput, address: navigationKey } }))
                 startSearchTransition(() => {
                     updateSearchQuery(searchInput)
                 })
             }
-        }, 500)
+        }, searchDebounceDelay)
 
         return () => clearTimeout(timer)
-    }, [searchInput, searchQuery, searchDraft.pendingQuery, updateSearchQuery])
+    }, [searchInput, searchQuery, searchDraft.pending, navigationKey, updateSearchQuery])
+
+    useEffect(() => {
+        const pendingQuery = searchDraft.pending?.query
+        if (pendingQuery === undefined || pendingQuery === searchInput) return
+        // Release a dropped navigation so newer typing can be submitted.
+        const timer = setTimeout(() => {
+            setSearchDraft(draft => ({ ...draft, pending: null }))
+        }, searchRecoveryDelay)
+
+        return () => clearTimeout(timer)
+    }, [searchDraft.pending, searchInput])
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -178,7 +221,7 @@ function useWorkflowsModel() {
         setIsSearchFocused,
         isSearchPending,
         activeFiltersCount,
-        updateSearchQuery,
+        clearSearch,
         isFiltersOpen,
         handleFiltersOpenChange,
         filterState,
@@ -216,7 +259,7 @@ function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView
         setIsSearchFocused,
         isSearchPending,
         activeFiltersCount,
-        updateSearchQuery,
+        clearSearch,
         isFiltersOpen,
         handleFiltersOpenChange,
         filterState,
@@ -260,10 +303,7 @@ function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView
                                     "absolute right-2.5 top-2.5 cursor-pointer",
                                     "size-4 text-muted-foreground hover:text-foreground",
                                 )}
-                                onClick={() => {
-                                    setSearchInput("")
-                                    updateSearchQuery("")
-                                }}
+                                onClick={clearSearch}
                                 role="button"
                                 aria-label="Clear search and filters"
                             />

@@ -23,7 +23,10 @@ it.each([createWorkflowSchema, updateWorkflowSchema])("requires an interval befo
     for (const interval of ["", "   "]) {
         const result = schema.safeParse({ ...input, interval })
         expect(result.success).toBe(false)
-        expect(result.error?.issues.find(issue => issue.path[0] === "interval")?.message).toBe("Interval is required")
+        // One issue only: a missing interval is not also an out-of-range one.
+        expect(result.error?.issues).toEqual([
+            expect.objectContaining({ path: ["interval"], message: "Interval is required" }),
+        ])
     }
 })
 

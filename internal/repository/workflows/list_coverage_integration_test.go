@@ -236,6 +236,12 @@ func TestIntegrationListWorkflowsErrors(t *testing.T) {
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 	userID := newListOwner(t)
+	// The owner holds one workflow, so the retry after each interruption has to
+	// return that exact identity. Listing an owner that owns nothing would pass
+	// even if the command returned a wrongly scoped or partially applied page.
+	seededID := seedListedWorkflow(t, repo, userID, listedWorkflowFixture{
+		name: "retry-owner", kind: "CONTAINER", buildStatus: "QUEUED", interval: 60,
+	})
 	t.Run("invalid user", func(t *testing.T) {
 		response, err := repo.ListWorkflows(t.Context(), "not-a-uuid", "", nil)
 		if response != nil || status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), "invalid user ID") {
@@ -275,8 +281,12 @@ func TestIntegrationListWorkflowsErrors(t *testing.T) {
 			if tc.code == codes.Internal && !strings.Contains(status.Convert(err).Message(), "failed to list all workflows") {
 				t.Fatalf("database failure missing operation context: %v", err)
 			}
-			if _, retryErr := repo.ListWorkflows(t.Context(), userID, "", nil); retryErr != nil {
+			retry, retryErr := repo.ListWorkflows(t.Context(), userID, "", nil)
+			if retryErr != nil {
 				t.Fatalf("retry after interruption: %v", retryErr)
+			}
+			if got := listedIDs(retry); !reflect.DeepEqual(got, []string{seededID}) || retry.Cursor != "" {
+				t.Fatalf("retry ids %v cursor %q, want [%s] and no cursor", got, retry.Cursor, seededID)
 			}
 		})
 	}

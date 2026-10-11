@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { format } from "date-fns";
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Notification } from "./types";
@@ -17,10 +18,20 @@ vi.mock("./use-notifications", () => ({ useNotifications: () => state }));
 vi.mock("next/link", () => ({
   default: ({
     prefetch,
+    onClick,
     ...props
   }: ComponentProps<"a"> & { prefetch?: boolean }) => {
     void prefetch;
-    return <a {...props} />;
+    // jsdom cannot navigate a document; suppress it so the row click still lands.
+    return (
+      <a
+        {...props}
+        onClick={(event) => {
+          event.preventDefault();
+          onClick?.(event);
+        }}
+      />
+    );
   },
 }));
 // jsdom has no viewport geometry; render virtual rows explicitly.
@@ -94,6 +105,7 @@ it("renders empty and loading states and disables empty bulk reads", () => {
 it("groups dates and safely highlights quotes without injecting HTML", () => {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
+  const archived = new Date("2020-01-02T12:00:00Z");
   state.notifications = [
     item("today"),
     item("same day", { kind: "UNKNOWN" }),
@@ -102,7 +114,7 @@ it("groups dates and safely highlights quotes without injecting HTML", () => {
       kind: "WEB_WARN",
     }),
     item("old", {
-      created_at: "2020-01-02T12:00:00Z",
+      created_at: archived.toISOString(),
       kind: "WEB_ERROR",
       read_at: "2020-01-02",
       payload: JSON.stringify({
@@ -116,7 +128,8 @@ it("groups dates and safely highlights quotes without injecting HTML", () => {
   mount();
   expect(screen.getAllByText("Today")).toHaveLength(1);
   expect(screen.getByText("Yesterday")).toBeTruthy();
-  expect(screen.getByText("Jan 2, 2020")).toBeTruthy();
+  // Headings print the reader's calendar day, so derive the label the same way.
+  expect(screen.getByText(format(archived, "MMM d, yyyy"))).toBeTruthy();
   const old = screen.getByRole("link", { name: /old/ });
   expect(old.getAttribute("href")).toBe("/");
   expect(old.querySelector("img")).toBeNull();

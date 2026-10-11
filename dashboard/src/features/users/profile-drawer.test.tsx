@@ -30,10 +30,15 @@ const pointerMembers = ["hasPointerCapture", "setPointerCapture", "releasePointe
 const originals = pointerMembers.map((name) => Object.getOwnPropertyDescriptor(Element.prototype, name))
 const clients: QueryClient[] = []
 
+// Routes carry a NEXT_PUBLIC_API_URL prefix, so match the path tail.
+const isRoute = (suffix: string, url: unknown) => String(url).endsWith(suffix)
+const readsOf = (suffix: string) => mocks.fetchApiJson.mock.calls.filter(([url]) => isRoute(suffix, url)).length
+const writesTo = (suffix: string) => mocks.fetchApi.mock.calls.filter(([url]) => isRoute(suffix, url))
+
 beforeEach(() => {
     vi.clearAllMocks()
     mocks.fetchApi.mockResolvedValue({ ok: true })
-    mocks.fetchApiJson.mockImplementation(async (url: string) => url.endsWith("/users") ? { ...account } : { notifications: [], cursor: null })
+    mocks.fetchApiJson.mockImplementation(async (url: string) => isRoute("/users", url) ? { ...account } : { notifications: [], cursor: null })
     Element.prototype.hasPointerCapture = () => false
     Element.prototype.setPointerCapture = () => {}
     Element.prototype.releasePointerCapture = () => {}
@@ -67,7 +72,7 @@ async function changePreference(user: ReturnType<typeof userEvent.setup>, label 
 
 it("waits for the account and displays its email, initials and dates", async () => {
     let release!: (_user: User) => void
-    mocks.fetchApiJson.mockImplementation((url: string) => url.endsWith("/users") ? new Promise<User>((resolve) => { release = resolve }) : Promise.resolve({ notifications: [], cursor: null }))
+    mocks.fetchApiJson.mockImplementation((url: string) => isRoute("/users", url) ? new Promise<User>((resolve) => { release = resolve }) : Promise.resolve({ notifications: [], cursor: null }))
     mount()
     expect(screen.queryByText("Profile")).toBeNull()
 
@@ -123,17 +128,19 @@ it("ignores reselecting the current preference after cancelling", async () => {
 it.each(["Important only", "No notifications"])("confirms %s and refreshes account and notifications", async (label) => {
     const { user } = mount()
     const dialog = await changePreference(user, label)
-    const userReads = mocks.fetchApiJson.mock.calls.filter(([url]) => url === "/users").length
-    const notificationReads = mocks.fetchApiJson.mock.calls.filter(([url]) => url === "/notifications").length
+    const userReads = readsOf("/users")
+    const notificationReads = readsOf("/notifications")
     await user.click(within(dialog).getByRole("button", { name: "Confirm" }))
-    await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledWith("/users", "failed to update user", {
-        method: "PUT", body: JSON.stringify({ notification_preference: label === "Important only" ? "ALERTS" : "NONE" }),
-    }))
+    await waitFor(() => expect(writesTo("/users")).toHaveLength(1))
+    expect(writesTo("/users")[0].slice(1)).toEqual([
+        "failed to update user",
+        { method: "PUT", body: JSON.stringify({ notification_preference: label === "Important only" ? "ALERTS" : "NONE" }) },
+    ])
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Confirm Changes" })).toBeNull())
     expect(mocks.toast.success).toHaveBeenCalledWith("user updated successfully")
     await waitFor(() => {
-        expect(mocks.fetchApiJson.mock.calls.filter(([url]) => url === "/users").length).toBeGreaterThan(userReads)
-        expect(mocks.fetchApiJson.mock.calls.filter(([url]) => url === "/notifications").length).toBeGreaterThan(notificationReads)
+        expect(readsOf("/users")).toBeGreaterThan(userReads)
+        expect(readsOf("/notifications")).toBeGreaterThan(notificationReads)
     })
 })
 
@@ -164,7 +171,7 @@ it("signs out once, disables the pending button and clears private cached data",
     await waitFor(() => expect(screen.getByRole("button", { name: "Signing out..." })).toHaveProperty("disabled", true))
     await user.click(screen.getByRole("button", { name: "Signing out..." }))
     expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
-    expect(mocks.fetchApi).toHaveBeenCalledWith("/auth/logout", "failed to logout", { method: "POST" })
+    expect(writesTo("/auth/logout")[0].slice(1)).toEqual(["failed to logout", { method: "POST" }])
     await act(async () => { release() })
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/login"))
     expect(mocks.refresh).toHaveBeenCalledOnce()

@@ -97,10 +97,14 @@ it.each([undefined, "NONE"])(
     mocks.user = preference
       ? { ...mocks.user!, notification_preference: preference as "NONE" }
       : undefined;
-    const { result } = mount();
+    const { result, client } = mount();
     expect(result.current.notifications).toEqual([]);
     expect(result.current.isLoading).toBe(false);
     expect(mocks.fetchApiJson).not.toHaveBeenCalled();
+    // Polling is opt-in; the default hook must leave the interval off.
+    expect(
+      client.getQueryCache().find({ queryKey: queryKeys.notifications })?.options,
+    ).toMatchObject({ refetchInterval: false });
   },
 );
 

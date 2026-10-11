@@ -165,3 +165,31 @@ func TestIntegrationFailureThresholdCanceledBeforeTransaction(t *testing.T) {
 		t.Fatalf("canceled increment = (%v,%v), want transaction failure", reached, err)
 	}
 }
+
+func TestIntegrationFailureRejectsCompletedJobIdentity(t *testing.T) {
+	ctx := t.Context()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	fixture := seedWorkflowFixture(ctx, t, pg, repo, 1)
+	jobID := uuid.NewString()
+	if err := repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, fixture.WorkflowID, fixture.UserID, jobID); err != nil {
+		t.Fatalf("record completion: %v", err)
+	}
+	before := readWorkflowFailureState(ctx, t, pg, fixture.WorkflowID)
+	effectBefore, exists := readTerminalEffect(ctx, t, pg, jobID)
+	if !exists || effectBefore.Effect != terminalEffectCompleted || effectBefore.ThresholdReached.Valid {
+		t.Fatalf("completed effect = %+v, exists=%v; want COMPLETED with NULL threshold", effectBefore, exists)
+	}
+	eventsBefore := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID)
+	reached, err := repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, fixture.WorkflowID, fixture.UserID, jobID)
+	if reached || status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("failure after completion = (%v, %v), want false and AlreadyExists", reached, err)
+	}
+	assertFailureState(t, "conflicting failure", readWorkflowFailureState(ctx, t, pg, fixture.WorkflowID), before)
+	if effectAfter, exists := readTerminalEffect(ctx, t, pg, jobID); !exists || effectAfter != effectBefore {
+		t.Fatalf("terminal effect = %+v, exists=%v; want unchanged %+v", effectAfter, exists, effectBefore)
+	}
+	if eventsAfter := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID); eventsAfter != eventsBefore {
+		t.Fatalf("outbox events=%d, want unchanged %d", eventsAfter, eventsBefore)
+	}
+}

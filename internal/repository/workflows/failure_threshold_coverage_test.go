@@ -97,7 +97,6 @@ func TestReplayFailurePreservesResultAndRejectsConflictingIdentity(t *testing.T)
 		{name: "MissingEffect", row: terminalReplayRow{err: pgx.ErrNoRows}, wantCode: codes.Internal, message: "failed to fetch workflow terminal effect"},
 		{name: "DifferentWorkflow", row: terminalReplayRow{workflow: testUserID, user: testUserID, effect: terminalEffectFailed}, wantCode: codes.AlreadyExists, message: "different effect"},
 		{name: "DifferentUser", row: terminalReplayRow{workflow: testWorkflowID, user: testWorkflowID, effect: terminalEffectFailed}, wantCode: codes.AlreadyExists, message: "different effect"},
-		{name: "CompletedEffect", row: terminalReplayRow{workflow: testWorkflowID, user: testUserID, effect: terminalEffectCompleted}, wantCode: codes.AlreadyExists, message: "different effect"},
 		{
 			name: "CommitFailure", row: terminalReplayRow{workflow: testWorkflowID, user: testUserID, effect: terminalEffectFailed, threshold: true},
 			commitErr: fault, wantCode: codes.Internal, wantCommits: 1, message: "failed to commit terminal-effect replay",

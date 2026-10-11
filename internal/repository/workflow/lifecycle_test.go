@@ -428,6 +428,17 @@ func assertTerminationNotificationReplay(t *testing.T, notifications <-chan stri
 // pending one.
 const notificationSettleWindow = 100 * time.Millisecond
 
+// assertNoNotification waits out the settle window and fails if anything is
+// delivered, for effects that must not be emitted at all.
+func assertNoNotification(t *testing.T, keys <-chan string) {
+	t.Helper()
+	select {
+	case key := <-keys:
+		t.Fatalf("unexpected notification %q", key)
+	case <-time.After(notificationSettleWindow):
+	}
+}
+
 // assertNotificationKeys waits for every expected delivery and compares the
 // delivered keys as an exact set. Delivery runs on detached goroutines, so each
 // wait is bounded, ordering between goroutines is not asserted, and a settle
@@ -453,6 +464,69 @@ func assertNotificationKeys(t *testing.T, keys <-chan string, want ...string) {
 	case key := <-keys:
 		t.Fatalf("unexpected extra notification %q after %v", key, got)
 	case <-time.After(notificationSettleWindow):
+	}
+}
+
+// A job can reach a terminal state between the list and the cancel, so the
+// snapshot reports a previous status that is no longer active. The cancellation
+// was still requested, but it must notify nobody and destroy no container.
+func TestTerminateWorkflowSkipsInactiveCancelSnapshot(t *testing.T) {
+	t.Parallel()
+	for _, previousStatus := range []string{
+		jobsmodel.JobStatusCompleted.ToString(),
+		jobsmodel.JobStatusFailed.ToString(),
+		"UNKNOWN",
+	} {
+		t.Run(previousStatus, func(t *testing.T) {
+			t.Parallel()
+			w := lifecycleWorkflow()
+			w.Kind = workflowsmodel.KindContainer.ToString()
+			r, l := lifecycleRepository(w)
+			events := &orderedEvents{}
+			targets := &orderedEvents{}
+			jobNotifications := make(chan string, 4)
+			r.svc.Notifications = testNotificationsClient{createNotification: func(_ context.Context, req *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {
+				if notificationTitle(req.GetPayload()) == "Job Canceled" {
+					jobNotifications <- req.GetIdempotencyKey()
+				}
+				return &notificationspb.CreateNotificationResponse{Id: "notification"}, nil
+			}}
+			var canceled []string
+			r.svc.Jobs = &lifecycleJobsClient{
+				testJobsClient: &testJobsClient{listJobs: func(_ context.Context, req *jobspb.ListJobsRequest) (*jobspb.ListJobsResponse, error) {
+					if req.GetFilters().GetStatus() != jobsmodel.JobStatusRunning.ToString() {
+						return &jobspb.ListJobsResponse{}, nil
+					}
+					return &jobspb.ListJobsResponse{Jobs: []*jobspb.JobsResponse{{
+						Id: "job-1", StartedAt: time.Now().Format(time.RFC3339Nano),
+					}}}, nil
+				}},
+				cancel: func(_ context.Context, req *jobspb.CancelJobRequest) (*jobspb.CancelJobResponse, error) {
+					canceled = append(canceled, req.GetId())
+					return &jobspb.CancelJobResponse{
+						Id:              req.GetId(),
+						PreviousStatus:  previousStatus,
+						ContainerId:     "container-1",
+						RuntimeEndpoint: "runtime",
+					}, nil
+				},
+			}
+			r.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) {
+				return &testContainerSvc{events: events, targets: targets}, nil
+			}
+
+			if err := r.terminateWorkflow(t.Context(), lifecycleEvent(workflowsmodel.ActionTerminate)); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(canceled, []string{"job-1"}) {
+				t.Fatalf("canceled=%v", canceled)
+			}
+			assertLockReleased(t, l, 1)
+			assertLockTTLs(t, l, terminateWorkflowExpirationTimeout)
+			assertEvents(t, events.items(), nil)
+			assertEvents(t, targets.items(), nil)
+			assertNoNotification(t, jobNotifications)
+		})
 	}
 }
 

@@ -9,8 +9,32 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
+
+// seedIsolatedRuntimeNode registers a READY runtime node under a fixture-unique
+// identity and removes it afterwards, matching seedPublicQueuedClaim. Nodes are
+// pooled: the claim query picks any READY node within the heartbeat TTL, so a
+// node left behind would keep competing with later fixtures for claims they
+// expect to land on their own node. jobs.runtime_node_id references the node, so
+// the fixture's own jobs release the reference before the row is deleted.
+func seedIsolatedRuntimeNode(ctx context.Context, t *testing.T, pg *postgres.Postgres) {
+	t.Helper()
+
+	nodeID := seedReadyRuntimeNode(ctx, t, pg, "claim-authority-"+fixtureTag())
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+		defer cancel()
+		if _, err := pg.Exec(cleanupCtx, `UPDATE jobs SET runtime_node_id = NULL WHERE runtime_node_id = $1`, nodeID); err != nil {
+			t.Errorf("release claim authority fixture jobs: %v", err)
+			return
+		}
+		if _, err := pg.Exec(cleanupCtx, `DELETE FROM runtime_nodes WHERE id = $1`, nodeID); err != nil {
+			t.Errorf("delete claim authority fixture node: %v", err)
+		}
+	})
+}
 
 //nolint:gocyclo // Each authority mutation shares the same replay assertions.
 func TestIntegrationClaimReplayPreservesExactAuthority(t *testing.T) {
@@ -23,7 +47,7 @@ func TestIntegrationClaimReplayPreservesExactAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	queueJob(ctx, t, pg, jobID)
-	seedReadyRuntimeNode(ctx, t, pg, t.Name())
+	seedIsolatedRuntimeNode(ctx, t, pg)
 	process, command := uuid.NewString(), "claim-"+fixtureTag()
 	first, ok, reason, err := repo.ClaimJob(ctx, jobID, workflowID, "worker", process, command, time.Minute, 1)
 	if err != nil || !ok {
@@ -84,7 +108,7 @@ func TestIntegrationClaimRejectionReplayKeepsOriginalReason(t *testing.T) {
 		t.Fatal(err)
 	}
 	queueJob(ctx, t, pg, jobID)
-	seedReadyRuntimeNode(ctx, t, pg, t.Name())
+	seedIsolatedRuntimeNode(ctx, t, pg)
 	process, command := uuid.NewString(), "claim-"+fixtureTag()
 	got, ok, reason, err := repo.ClaimJob(ctx, jobID, workflowID, "worker", process, command, time.Minute, 2)
 	if err != nil || got != nil || ok || reason != "dispatch attempt mismatch: current 1" {

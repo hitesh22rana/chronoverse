@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -30,19 +31,44 @@ type claimRow struct {
 	err    error
 }
 
+// Scan rejects incomplete or incompatible scripted rows.
 func (r claimRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
+	if len(r.values) != len(dest) {
+		return fmt.Errorf("scripted row holds %d values for %d scan destinations", len(r.values), len(dest))
+	}
 	for i, value := range r.values {
-		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(value))
+		target := reflect.ValueOf(dest[i])
+		if target.Kind() != reflect.Pointer || target.IsNil() {
+			return fmt.Errorf("scan destination %d is not a settable pointer", i)
+		}
+		incoming := reflect.ValueOf(value)
+		if !incoming.IsValid() {
+			target.Elem().Set(reflect.Zero(target.Elem().Type()))
+			continue
+		}
+		if !incoming.Type().AssignableTo(target.Elem().Type()) {
+			return fmt.Errorf("scan destination %d wants %s, scripted value is %T", i, target.Elem().Type(), value)
+		}
+		target.Elem().Set(incoming)
 	}
 	return nil
 }
 
-// claimTx scripts a claim transaction and records the query arguments, writes,
-// and commits a path performed, so replay and rejection outcomes can be asserted
-// without a database.
+// Replay reads must preserve every claim authority predicate.
+var claimReplayAuthorityPredicates = []string{
+	"job.id = $1",
+	"job.status = 'RUNNING'",
+	"job.lease_token = $2",
+	"job.leased_by = $3",
+	"job.lease_process_instance_id = $4",
+	"job.dispatch_attempts = $5",
+	"job.lease_expires_at >",
+}
+
+// claimTx records scripted reads, writes, and commits.
 type claimTx struct {
 	pgx.Tx
 	t          *testing.T
@@ -53,12 +79,15 @@ type claimTx struct {
 	commits    int
 	queries    int
 	execs      int
+	query      string
 	queryArgs  []any
 	response   map[string]any
 }
 
-func (tx *claimTx) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
+// QueryRow records the statement and its arguments.
+func (tx *claimTx) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
 	tx.t.Helper()
+	tx.query = query
 	tx.queryArgs = args
 	if tx.queries >= len(tx.rows) {
 		tx.t.Fatal("unexpected query")
@@ -66,6 +95,26 @@ func (tx *claimTx) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
 	row := tx.rows[tx.queries]
 	tx.queries++
 	return row
+}
+
+// Verify a read-only authority query, ignoring SQL whitespace.
+func assertClaimReplayAuthority(t *testing.T, tx *claimTx) {
+	t.Helper()
+
+	query := strings.Join(strings.Fields(tx.query), " ")
+	for _, write := range []string{"INSERT", "UPDATE", "DELETE"} {
+		if strings.Contains(query, write) {
+			t.Fatalf("replay read wrote %s: %s", write, query)
+		}
+	}
+	if !strings.Contains(query, postgres.TableJobs) {
+		t.Fatalf("replay read left the jobs table: %s", query)
+	}
+	for _, predicate := range claimReplayAuthorityPredicates {
+		if !strings.Contains(query, predicate) {
+			t.Fatalf("replay read dropped %q: %s", predicate, query)
+		}
+	}
 }
 
 // Exec records the completion response by identifying the ledger UPDATE
@@ -141,8 +190,11 @@ func TestClaimReplayTransactionOutcomes(t *testing.T) {
 			if !tc.ok && got != nil {
 				t.Fatalf("returned unauthorized job: %+v", got)
 			}
-			if tx.queries > 0 && !reflect.DeepEqual(tx.queryArgs, []any{claimTestJobID, "token", "worker", "process", int32(3)}) {
-				t.Fatalf("authority arguments = %#v", tx.queryArgs)
+			if tx.queries > 0 {
+				assertClaimReplayAuthority(t, tx)
+				if !reflect.DeepEqual(tx.queryArgs, []any{claimTestJobID, "token", "worker", "process", int32(3)}) {
+					t.Fatalf("authority arguments = %#v", tx.queryArgs)
+				}
 			}
 		})
 	}

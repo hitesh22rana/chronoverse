@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -34,6 +36,14 @@ func TestIntegrationRegistrationInsertCancellationRollsBack(t *testing.T) {
 			pg := testkit.Postgres(t)
 			mockAuth := authmock.NewMockIAuth(gomock.NewController(t))
 			repo := New(mockAuth, pg)
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			t.Cleanup(func() {
+				if err := provider.Shutdown(context.Background()); err != nil {
+					t.Error(err)
+				}
+			})
+			repo.tp = provider.Tracer("registration-query-errors")
 			key := "register-" + uuid.NewString()
 			email := key + "@chronoverse.test"
 			lock, lockErr := pg.BeginTx(ctx)
@@ -83,6 +93,7 @@ func TestIntegrationRegistrationInsertCancellationRollsBack(t *testing.T) {
 			if result.user != nil || result.token != "" || status.Code(result.err) != code {
 				t.Fatalf("registration = %v, %q, %v; want %s", result.user, result.token, result.err, code)
 			}
+			assertUserErrorSpan(t, recorder, "RegisterUser", result.err)
 			rollbackRegistrationLock(ctx, t, lock)
 			assertRegistrationState(ctx, t, pg, email, key, 0, 0)
 			mockAuth.EXPECT().IssueToken(gomock.Any(), gomock.Any(), auth.ServiceNameServer).Return("retry-token", nil)

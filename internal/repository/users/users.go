@@ -67,14 +67,16 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to start registration transaction: %v", err)
+		err = status.Errorf(codes.Internal, "failed to start registration transaction: %v", err)
+		return nil, "", err
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
 	requestHash, err := idempotency.HashCanonical(map[string]string{"email": email})
 	if err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to hash registration request: %v", err)
+		err = status.Errorf(codes.Internal, "failed to hash registration request: %v", err)
+		return nil, "", err
 	}
 	reservation, err := commandidempotency.Reserve(
 		ctx,
@@ -104,16 +106,20 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 			&res.CreatedAt,
 			&res.UpdatedAt,
 		); err != nil {
-			return nil, "", status.Errorf(codes.Internal, "failed to load registration replay: %v", err)
+			err = status.Errorf(codes.Internal, "failed to load registration replay: %v", err)
+			return nil, "", err
 		}
 		if err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password)); err != nil {
 			if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-				return nil, "", status.Error(codes.AlreadyExists, "idempotency key was used with different credentials")
+				err = status.Error(codes.AlreadyExists, "idempotency key was used with different credentials")
+				return nil, "", err
 			}
-			return nil, "", status.Errorf(codes.Internal, "failed to verify registration replay: %v", err)
+			err = status.Errorf(codes.Internal, "failed to verify registration replay: %v", err)
+			return nil, "", err
 		}
 		if err = tx.Commit(ctx); err != nil {
-			return nil, "", status.Errorf(codes.Internal, "failed to commit registration replay: %v", err)
+			err = status.Errorf(codes.Internal, "failed to commit registration replay: %v", err)
+			return nil, "", err
 		}
 		authToken, err = r.auth.IssueToken(ctx, res.ID, auth.ServiceNameServer)
 		return res, authToken, err
@@ -128,9 +134,12 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 
 	rows, err := tx.Query(ctx, query, args...)
 
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	}
 	if isContextError(err) {
-		return nil, "", contextStatusError(err)
+		err = contextStatusError(err)
+		return nil, "", err
 	}
 
 	if err != nil {
@@ -163,7 +172,8 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 		return nil, "", err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to commit registration transaction: %v", err)
+		err = status.Errorf(codes.Internal, "failed to commit registration transaction: %v", err)
+		return nil, "", err
 	}
 
 	// Authentication material is issued only after the account and ledger commit.
@@ -195,9 +205,13 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 
 	rows, err := r.pg.Query(ctx, query, args...)
 
-	loginUserResponse, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
+	var loginUserResponse *usersmodel.LoginUserData
+	if err == nil {
+		loginUserResponse, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
+	}
 	if isContextError(err) {
-		return nil, "", contextStatusError(err)
+		err = contextStatusError(err)
+		return nil, "", err
 	}
 
 	if err != nil {
@@ -205,7 +219,8 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 			// Keep missing-user attempts on the same expensive path as invalid passwords.
 			compareErr := bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(pass))
 			if compareErr != nil && !errors.Is(compareErr, bcrypt.ErrMismatchedHashAndPassword) {
-				return nil, "", status.Errorf(codes.Internal, "failed to verify password: %v", compareErr)
+				err = status.Errorf(codes.Internal, "failed to verify password: %v", compareErr)
+				return nil, "", err
 			}
 			err = invalidCredentialsError()
 			return nil, "", err
@@ -220,7 +235,8 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 
 	if err = bcrypt.CompareHashAndPassword([]byte(loginUserResponse.Password), []byte(pass)); err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			return nil, "", invalidCredentialsError()
+			err = invalidCredentialsError()
+			return nil, "", err
 		}
 
 		err = status.Errorf(codes.Internal, "failed to verify password: %v", err)
@@ -243,9 +259,7 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	return res, authToken, nil
 }
 
-// isContextError reports whether err is a canceled or expired context.
-// pgx surfaces a cancellation from either the Query call or the row scan that
-// follows it, so callers check this where both surfaces converge.
+// isContextError recognizes cancellation from Query or row collection.
 func isContextError(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
@@ -286,9 +300,12 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 
 	rows, err := r.pg.Query(ctx, query, args...)
 
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	}
 	if isContextError(err) {
-		return nil, contextStatusError(err)
+		err = contextStatusError(err)
+		return nil, err
 	}
 
 	if err != nil {
@@ -349,15 +366,18 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 
 	if ct.RowsAffected() == 0 {
 		var exists bool
-		if lookupErr := r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); lookupErr != nil {
-			if isContextError(lookupErr) {
-				return contextStatusError(lookupErr)
+		if err = r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); err != nil {
+			if isContextError(err) {
+				err = contextStatusError(err)
+				return err
 			}
 
-			return status.Errorf(codes.Internal, "failed to check user preference state: %v", lookupErr)
+			err = status.Errorf(codes.Internal, "failed to check user preference state: %v", err)
+			return err
 		}
 		if !exists {
-			return status.Error(codes.NotFound, "user not found")
+			err = status.Error(codes.NotFound, "user not found")
+			return err
 		}
 	}
 

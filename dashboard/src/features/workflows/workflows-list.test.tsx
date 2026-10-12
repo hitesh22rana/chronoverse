@@ -106,6 +106,48 @@ const listRequests = () => mocks.fetchApiJson.mock.calls.map((call) => String(ca
 const lastListRequest = () => listRequests().at(-1)
 const lastPush = () => mocks.push.mock.calls.at(-1)?.[0] as string
 
+/**
+ * A router that loses the first search navigation, the way a competing
+ * transition commits first and leaves the pushed update without an address.
+ */
+function loseOneSearchPush() {
+    let lost = false
+    mocks.push.mockImplementation((url: string) => {
+        if (!lost && url.includes("query=")) {
+            lost = true
+            return
+        }
+        mocks.searchStore.set(url.replace(/^[?]/, ""))
+    })
+}
+
+/** Drop consecutive search navigations. */
+function loseEverySearchPush() {
+    mocks.push.mockImplementation((url: string) => {
+        if (url.includes("query=")) return
+        mocks.searchStore.set(url.replace(/^[?]/, ""))
+    })
+}
+
+/**
+ * A router that keeps every navigation in flight, the way a slow search-param
+ * round trip does: nothing reaches the address until `commitHeldPush` runs.
+ */
+function holdEveryPush() {
+    const held: string[] = []
+    mocks.push.mockImplementation((url: string) => {
+        held.push(url)
+    })
+    return held
+}
+
+/** Deliver a previously held navigation to the address. */
+async function commitHeldPush(held: string[], index: number) {
+    await act(async () => {
+        mocks.searchStore.set(held[index].replace(/^[?]/, ""))
+    })
+}
+
 const searchBox = () => screen.getByPlaceholderText("Search workflows...(Ctrl+F)") as HTMLInputElement
 const clearSearch = () => screen.queryByRole("button", { name: "Clear search and filters" })
 /** Exact-name lookup would miss the active-filter badge inside the trigger. */
@@ -121,6 +163,9 @@ const kindSelect = () => screen.getAllByRole("combobox")[1]
 
 /** The search box debounces for 500ms, so the wait has to outlast it. */
 const afterDebounce = { timeout: 5000 } as const
+
+/** These races wait out a debounce around mounted interactions. */
+const slowRace = 20_000
 
 async function openFilters(user: ReturnType<typeof userEvent.setup>) {
     await user.click(filterButton())
@@ -610,22 +655,255 @@ it("takes focus with the find shortcut and gives it up on escape", async () => {
     expect(document.activeElement).toBe(document.body)
 })
 
-it("documents the stale draft overwriting an address-driven query", async () => {
+it("synchronizes navigation queries without overwriting them with a stale draft", async () => {
     const { user } = renderList()
     await screen.findByText("Nightly container")
-
     await user.type(searchBox(), "local")
     await waitFor(() => expect(lastPush()).toBe("?query=local"), afterDebounce)
+    await act(async () => { mocks.searchStore.set("query=fromlink&status=FAILED") })
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=fromlink&build_status=FAILED"))
+    expect(searchBox()).toHaveProperty("value", "fromlink")
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    await user.clear(searchBox())
+    await user.type(searchBox(), "new")
+    await waitFor(() => expect(lastPush()).toBe("?query=new&status=FAILED"), afterDebounce)
+})
+it("cancels a pending search when navigation clears the query", async () => {
+    const { user } = renderList("query=original")
+    await screen.findByText("Nightly container")
+    await user.clear(searchBox())
+    await user.type(searchBox(), "pending")
+    await act(async () => { mocks.searchStore.set("status=FAILED") })
+    expect(searchBox()).toHaveProperty("value", "")
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(lastListRequest()).toBe("/workflows?build_status=FAILED")
+})
 
-    // Reproduce navigation from a shared link.
-    await act(async () => {
-        mocks.searchStore.set("query=fromlink")
-    })
+it("preserves newer typing when an earlier search navigation is acknowledged", async () => {
+    const { user } = renderList()
+    await screen.findByText("Nightly container")
+    mocks.push.mockImplementation(() => {})
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?query=alpha"), afterDebounce)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    await user.type(searchBox(), "beta")
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    await act(async () => { mocks.searchStore.set("query=alpha") })
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
+    await waitFor(() => expect(lastPush()).toBe("?query=alphabeta"), afterDebounce)
+})
 
-    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=fromlink"))
-    expect(searchBox()).toHaveProperty("value", "local")
+it("keeps searching when a filter apply wins the race with a search navigation", async () => {
+    const { user } = renderList()
+    await screen.findByText("Nightly container")
+    loseOneSearchPush()
 
-    // The stale draft overwrites the link: a documented pre-existing defect.
-    await waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(2), afterDebounce)
-    expect(lastPush()).toBe("?query=local")
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?query=alpha"), afterDebounce)
+    // The lost navigation leaves the query in the box only.
+    expect(searchBox()).toHaveProperty("value", "alpha")
+    expect(lastListRequest()).toBe("/workflows")
+
+    await openFilters(user)
+    await user.click(statusSelect())
+    await user.click(await screen.findByRole("option", { name: "Failed" }))
+    await user.click(applyButton())
+
+    // The competing navigation commits an address without the query.
+    await waitFor(() => expect(mocks.searchStore.get()).toBe("status=FAILED"))
+
+    await user.type(searchBox(), "beta")
+
+    // Search is not stranded by the lost navigation: the text in the box is
+    // requested again, now on top of the filter that won the race.
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alphabeta&build_status=FAILED"), afterDebounce)
+    expect(lastPush()).toBe("?status=FAILED&query=alphabeta")
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
+}, slowRace)
+
+it("keeps the clear control mounted while a search transition completes", async () => {
+    const { user } = renderList("status=FAILED")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?build_status=FAILED"))
+    loseOneSearchPush()
+    const clear = clearSearch()!
+    await user.pointer({ target: clear, keys: "[MouseLeft>]" })
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await waitFor(() => expect(lastPush()).toBe("?status=FAILED&query=alpha"), afterDebounce)
+    expect(clearSearch()).toBe(clear)
+    await user.pointer({ target: clear, keys: "[/MouseLeft]" })
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+})
+
+it("asks once for a clear whose navigation has not reached the address yet", async () => {
+    const { user } = renderList("query=alpha")
+    await screen.findByText("Nightly container")
+    const held = holdEveryPush()
+
+    await user.click(clearSearch()!)
+    expect(searchBox()).toHaveProperty("value", "")
+    // The clear owns the navigation it pushed, so the debounce stays quiet.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(held).toEqual(["?"])
+
+    await commitHeldPush(held, 0)
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows"))
+    expect(searchBox()).toHaveProperty("value", "")
+
+    // Typing still reaches the address once the clear has been acknowledged.
+    await user.type(searchBox(), "beta")
+    await waitFor(() => expect(held).toEqual(["?", "?query=beta"]), afterDebounce)
+    await commitHeldPush(held, 1)
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=beta"))
+}, slowRace)
+
+it("retries a clear that the address never acknowledged", async () => {
+    // Nothing reaches the address, so only the recovery pause can re-ask.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const held = holdEveryPush()
+    renderList("query=alpha")
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", "alpha"))
+
+    fireEvent.click(clearSearch()!)
+    expect(held).toEqual(["?"])
+    expect(searchBox()).toHaveProperty("value", "")
+
+    // Well past the debounce: the clear is not asked for twice up front.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+    expect(held).toEqual(["?"])
+
+    // Past the recovery pause, the debounce restarts and asks once more.
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(held).toEqual(["?", "?"])
+
+    await commitHeldPush(held, 1)
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows"))
+    expect(searchBox()).toHaveProperty("value", "")
+}, slowRace)
+
+it("keeps searching when the clear affordance discards a lost navigation", async () => {
+    const { user } = renderList("status=FAILED")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?build_status=FAILED"))
+    loseOneSearchPush()
+
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?status=FAILED&query=alpha"), afterDebounce)
+    expect(mocks.searchStore.get()).toBe("status=FAILED")
+
+    await user.click(clearSearch()!)
+
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    // Clearing asks for the same address once and then goes quiet.
+    expect(mocks.push).toHaveBeenCalledTimes(2)
+    expect(lastPush()).toBe("?status=FAILED")
+
+    await user.type(searchBox(), "beta")
+
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=beta&build_status=FAILED"), afterDebounce)
+    expect(lastPush()).toBe("?status=FAILED&query=beta")
+}, slowRace)
+
+it("keeps searching when an external navigation lands without the pushed query", async () => {
+    const { user } = renderList()
+    await screen.findByText("Nightly container")
+    loseOneSearchPush()
+
+    await user.type(searchBox(), "alpha")
+    await waitFor(() => expect(lastPush()).toBe("?query=alpha"), afterDebounce)
+    await act(async () => { mocks.searchStore.set("status=FAILED") })
+    expect(searchBox()).toHaveProperty("value", "alpha")
+
+    await user.type(searchBox(), "beta")
+
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alphabeta&build_status=FAILED"), afterDebounce)
+    expect(lastPush()).toBe("?status=FAILED&query=alphabeta")
+}, slowRace)
+
+it("gives up an unacknowledged search so newer typing can still be requested", async () => {
+    // No navigation follows the lost push here, so the only way out is the
+    // pause after which the component stops waiting for that address.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    loseOneSearchPush()
+    renderList()
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(lastPush()).toBe("?query=alpha")
+    expect(mocks.searchStore.get()).toBe("")
+
+    fireEvent.change(searchBox(), { target: { value: "alphabeta" } })
+    // Past the pause, then past the debounce it restarts.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+
+    expect(lastPush()).toBe("?query=alphabeta")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alphabeta"))
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
+})
+
+it("preserves newer typing when a delayed search arrives after recovery", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    loseOneSearchPush()
+    renderList()
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(lastPush()).toBe("?query=alpha")
+    fireEvent.change(searchBox(), { target: { value: "alphabeta" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_050) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    expect(lastPush()).toBe("?query=alpha")
+    act(() => mocks.searchStore.set("query=alpha"))
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(lastPush()).toBe("?query=alphabeta")
+    expect(searchBox()).toHaveProperty("value", "alphabeta")
+})
+
+it("retries a dropped search after the user stops typing", async () => {
+    // Recover without another keystroke or navigation.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    loseOneSearchPush()
+    renderList()
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    expect(mocks.searchStore.get()).toBe("")
+
+    // Typing stops here; the box and the list must not stay mismatched.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+
+    expect(mocks.push).toHaveBeenCalledTimes(2)
+    expect(lastPush()).toBe("?query=alpha")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alpha"))
+    expect(searchBox()).toHaveProperty("value", "alpha")
+})
+
+it("retries again when the retry is dropped too", async () => {
+    // Each dropped retry must remain eligible for recovery.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    loseEverySearchPush()
+    renderList()
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+
+    for (const attempt of [2, 3]) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+        await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+        expect(mocks.push).toHaveBeenCalledTimes(attempt)
+        expect(lastPush()).toBe("?query=alpha")
+    }
+
+    expect(searchBox()).toHaveProperty("value", "alpha")
 })

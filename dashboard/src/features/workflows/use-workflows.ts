@@ -240,6 +240,8 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
         refetch: getWorkflowQuery.refetch,
         refetchLoading: getWorkflowQuery.isRefetching,
         searchQuery,
+        // Distinguish navigation changes even when the query stays unchanged.
+        navigationKey: searchParams.toString(),
         statusFilter,
         kindFilter,
         intervalMin,

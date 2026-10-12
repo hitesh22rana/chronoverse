@@ -49,6 +49,33 @@ import type { Workflow } from "@/features/workflows/types"
 
 import { cn } from "@/lib/utils"
 
+/** Debounce search typing. */
+const searchDebounceDelay = 500
+
+/** Release an unacknowledged search so it is requested again. */
+const searchRecoveryDelay = 5_000
+
+type SearchDraft = {
+    /** Query last observed in the address. */
+    query: string
+    /** Text in the search box, which can be newer than the query. */
+    value: string
+    /** Search navigation pushed and not yet seen in the address. */
+    pending: { query: string; address: string; released: boolean } | null
+}
+
+/** Abandon superseded pushes; preserve newer typing on our acknowledgements. */
+function reconcileSearchDraft(draft: SearchDraft, searchQuery: string, navigationKey: string): SearchDraft {
+    const acknowledged = draft.pending !== null && draft.pending.query === searchQuery
+    const pendingLost =
+        draft.pending !== null && navigationKey !== draft.pending.address && searchQuery !== draft.pending.query
+    // Settle acknowledgements even when the query is unchanged.
+    if (draft.query === searchQuery && !pendingLost && !acknowledged) return draft
+
+    const value = draft.query === searchQuery || acknowledged ? draft.value : searchQuery
+    return { query: searchQuery, value, pending: null }
+}
+
 export function Workflows() {
     return renderWorkflowsView(useWorkflowsModel())
 }
@@ -70,6 +97,7 @@ function useWorkflowsModel() {
         workflows,
         isLoading,
         searchQuery,
+        navigationKey,
         statusFilter,
         kindFilter,
         intervalMin,
@@ -82,19 +110,51 @@ function useWorkflowsModel() {
         refetchLoading,
     } = useWorkflows({ poll: true })
 
-    const [searchInput, setSearchInput] = useState(searchQuery)
+    const [searchDraft, setSearchDraft] = useState<SearchDraft>({
+        query: searchQuery,
+        value: searchQuery,
+        pending: null,
+    })
+    // Keep newer typing when our earlier URL update arrives.
+    const settledDraft = reconcileSearchDraft(searchDraft, searchQuery, navigationKey)
+    if (settledDraft !== searchDraft) {
+        setSearchDraft(settledDraft)
+    }
+    const searchInput = settledDraft.value
+    const setSearchInput = (value: string) => setSearchDraft(draft => ({ ...draft, query: searchQuery, value }))
+    const clearSearch = () => {
+        // Track clearing as pending to prevent a duplicate debounce push.
+        setSearchDraft(draft => ({
+            ...draft,
+            value: "",
+            pending: { query: "", address: navigationKey, released: false },
+        }))
+        updateSearchQuery("")
+    }
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (searchInput !== searchQuery) {
+            if (searchInput !== searchQuery && (searchDraft.pending === null || searchDraft.pending.released)) {
+                setSearchDraft(draft => ({ ...draft, pending: { query: searchInput, address: navigationKey, released: false } }))
                 startSearchTransition(() => {
                     updateSearchQuery(searchInput)
                 })
             }
-        }, 500)
+        }, searchDebounceDelay)
 
         return () => clearTimeout(timer)
-    }, [searchInput, searchQuery, updateSearchQuery])
+    }, [searchInput, searchQuery, searchDraft.pending, navigationKey, updateSearchQuery])
+
+    useEffect(() => {
+        const pending = searchDraft.pending
+        if (pending === null || pending.released) return
+        // Retry dropped pushes; retain their identity for delayed acknowledgements.
+        const timer = setTimeout(() => {
+            setSearchDraft(draft => ({ ...draft, pending: { ...pending, released: true } }))
+        }, searchRecoveryDelay)
+
+        return () => clearTimeout(timer)
+    }, [searchDraft.pending])
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -166,7 +226,7 @@ function useWorkflowsModel() {
         setIsSearchFocused,
         isSearchPending,
         activeFiltersCount,
-        updateSearchQuery,
+        clearSearch,
         isFiltersOpen,
         handleFiltersOpenChange,
         filterState,
@@ -204,7 +264,7 @@ function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView
         setIsSearchFocused,
         isSearchPending,
         activeFiltersCount,
-        updateSearchQuery,
+        clearSearch,
         isFiltersOpen,
         handleFiltersOpenChange,
         filterState,
@@ -230,32 +290,25 @@ function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView
                         onChange={(e) => setSearchInput(e.target.value)}
                         onFocus={() => setIsSearchFocused(true)}
                         onBlur={() => setIsSearchFocused(false)}
-                        className="w-full pl-9 h-9"
+                        // Reserve space for both the spinner and clear button.
+                        className="w-full pl-9 pr-14 h-9"
                     />
-                    {isSearchPending ? (
+                    {isSearchPending && (
                         <Loader2
-                            className={cn(
-                                "absolute right-2.5 top-2.5 cursor-pointer animate-spin",
-                                "size-4 text-muted-foreground hover:text-foreground",
-                            )}
+                            className="absolute right-8 top-2.5 size-4 animate-spin text-muted-foreground"
                             role="progressbar"
                             aria-label="spinner"
                         />
-                    ) : (
-                        (searchInput || activeFiltersCount > 0) && (
-                            <X
-                                className={cn(
-                                    "absolute right-2.5 top-2.5 cursor-pointer",
-                                    "size-4 text-muted-foreground hover:text-foreground",
-                                )}
-                                onClick={() => {
-                                    setSearchInput("")
-                                    updateSearchQuery("")
-                                }}
-                                role="button"
-                                aria-label="Clear search and filters"
-                            />
-                        )
+                    )}
+                    {(searchInput || activeFiltersCount > 0) && (
+                        <button
+                            type="button"
+                            className="absolute right-2.5 top-2.5 size-4 cursor-pointer text-muted-foreground hover:text-foreground"
+                            onClick={clearSearch}
+                            aria-label="Clear search and filters"
+                        >
+                            <X className="size-4" aria-hidden="true" />
+                        </button>
                     )}
                 </div>
 

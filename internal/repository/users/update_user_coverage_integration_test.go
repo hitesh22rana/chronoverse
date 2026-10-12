@@ -135,7 +135,7 @@ func TestIntegrationUpdateUserInterruptsStateLookup(t *testing.T) {
 
 			done := make(chan error, 1)
 			go func() { done <- repo.UpdateUser(commandCtx, id, preference) }()
-			waitForSleepingStateLookup(ctx, t, pg)
+			waitForSleepingUserQuery(ctx, t, pg, "%SELECT EXISTS%")
 			if code == codes.Canceled {
 				cancel()
 			}
@@ -159,20 +159,4 @@ func TestIntegrationUpdateUserInterruptsStateLookup(t *testing.T) {
 			}
 		})
 	}
-}
-
-// waitForSleepingStateLookup synchronizes interruption with the actual lookup.
-func waitForSleepingStateLookup(ctx context.Context, t *testing.T, pg *postgres.Postgres) {
-	t.Helper()
-
-	query := `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-  WHERE datname = current_database() AND wait_event = 'PgSleep' AND query ILIKE '%SELECT EXISTS%')`
-	testkit.Eventually(t, 10*time.Second, 10*time.Millisecond, func() bool {
-		var sleeping bool
-		if err := pg.QueryRow(ctx, query).Scan(&sleeping); err != nil {
-			t.Errorf("probe sleeping state lookup: %v", err)
-			return false
-		}
-		return sleeping
-	})
 }

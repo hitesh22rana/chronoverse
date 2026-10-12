@@ -137,3 +137,20 @@ func readPreference(t *testing.T, pg *postgres.Postgres, id string) (preference 
 
 	return preference, updatedAt
 }
+
+// waitForSleepingUserQuery synchronizes interruption with database execution.
+func waitForSleepingUserQuery(ctx context.Context, t *testing.T, pg *postgres.Postgres, pattern string) {
+	t.Helper()
+
+	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	query := `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+  WHERE datname = current_database() AND wait_event = 'PgSleep' AND query ILIKE $1)`
+	testkit.Eventually(t, 4*time.Second, 10*time.Millisecond, func() bool {
+		var sleeping bool
+		if err := pg.QueryRow(probeCtx, query, pattern).Scan(&sleeping); err != nil {
+			t.Fatalf("probe sleeping user query: %v", err)
+		}
+		return sleeping
+	})
+}

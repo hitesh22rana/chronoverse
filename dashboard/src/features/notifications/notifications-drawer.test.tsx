@@ -90,6 +90,19 @@ afterEach(() => {
 });
 const mount = () => render(<NotificationsDrawer open onClose={close} />);
 
+/** Find the notification row around its link. */
+const rowOf = (name: RegExp) => {
+  const row = screen.getByRole("link", { name }).closest("div.group");
+  if (!row) throw new Error(`no row rendered for ${String(name)}`);
+  return row.className;
+};
+
+/** Extract the row's severity accent. */
+const severityOf = (name: RegExp) =>
+  rowOf(name)
+    .split(" ")
+    .filter((token) => /^border-(red|orange|blue|green)-500$/.test(token));
+
 it("renders empty and loading states and disables empty bulk reads", () => {
   const view = mount();
   expect(screen.getByText("You're all caught up!")).toBeTruthy();
@@ -150,6 +163,24 @@ it("groups dates and safely highlights quotes without injecting HTML", () => {
     'a<b & "quoted"',
   );
   expect(old.textContent).toContain("<img src=x> &");
+});
+it("colours every kind by severity and falls back to info", () => {
+  state.notifications = [
+    item("error", { kind: "WEB_ERROR" }),
+    item("alert", { kind: "WEB_ALERT" }),
+    item("warn", { kind: "WEB_WARN" }),
+    item("info", { kind: "WEB_INFO" }),
+    item("success", { kind: "WEB_SUCCESS" }),
+    item("unmapped", { kind: "SOMETHING_ELSE" }),
+  ];
+  mount();
+  // Assert each kind's accent to catch missing mappings.
+  expect(severityOf(/^error/)).toEqual(["border-orange-500"]);
+  expect(severityOf(/^alert/)).toEqual(["border-red-500"]);
+  expect(severityOf(/^warn/)).toEqual(["border-red-500"]);
+  expect(severityOf(/^info/)).toEqual(["border-blue-500"]);
+  expect(severityOf(/^success/)).toEqual(["border-green-500"]);
+  expect(severityOf(/^unmapped/)).toEqual(["border-blue-500"]);
 });
 it("toggles individual and all selections and reads only visible IDs", () => {
   state.notifications = [item("one"), item("two")];

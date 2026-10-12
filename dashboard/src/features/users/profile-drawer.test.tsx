@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     replace: vi.fn(),
     refresh: vi.fn(),
     toast: { success: vi.fn(), error: vi.fn() },
+    // Account reads reflect writes so opt-out reaches the real query.
+    preference: "ALL" as User["notification_preference"],
 }))
 
 vi.mock("@/lib/api/client", () => ({ fetchApi: mocks.fetchApi, fetchApiJson: mocks.fetchApiJson, createIdempotencyKey: () => "key" }))
@@ -39,8 +41,14 @@ const writesTo = (suffix: string) => mocks.fetchApi.mock.calls.filter(([url]) =>
 
 beforeEach(() => {
     vi.clearAllMocks()
-    mocks.fetchApi.mockResolvedValue({ ok: true })
-    mocks.fetchApiJson.mockImplementation(async (url: string) => isRoute("/users", url) ? { ...account } : { notifications: [], cursor: null })
+    mocks.preference = "ALL"
+    mocks.fetchApi.mockImplementation(async (url: string, _message: string, init?: RequestInit) => {
+        if (isRoute("/users", url) && init?.method === "PUT") {
+            mocks.preference = JSON.parse(String(init.body)).notification_preference
+        }
+        return { ok: true }
+    })
+    mocks.fetchApiJson.mockImplementation(async (url: string) => isRoute("/users", url) ? { ...account, notification_preference: mocks.preference } : { notifications: [], cursor: null })
     Element.prototype.hasPointerCapture = () => false
     Element.prototype.setPointerCapture = () => {}
     Element.prototype.releasePointerCapture = () => {}
@@ -129,8 +137,11 @@ it("ignores reselecting the current preference after cancelling", async () => {
     expect(mocks.fetchApi).not.toHaveBeenCalled()
 })
 
-it.each(["Important only", "No notifications"])("confirms %s and refreshes account and notifications", async (label) => {
-    const { user } = mount()
+it.each([
+    ["Important only", "ALERTS", false],
+    ["No notifications", "NONE", true],
+])("confirms %s and leaves notifications %s", async (label, preference, optedOut) => {
+    const { user, queryClient } = mount()
     const dialog = await changePreference(user, label)
     const userReads = readsOf("/users")
     const notificationReads = readsOf("/notifications")
@@ -138,14 +149,19 @@ it.each(["Important only", "No notifications"])("confirms %s and refreshes accou
     await waitFor(() => expect(writesTo("/users")).toHaveLength(1))
     expect(writesTo("/users")[0].slice(1)).toEqual([
         "failed to update user",
-        { method: "PUT", body: JSON.stringify({ notification_preference: label === "Important only" ? "ALERTS" : "NONE" }) },
+        { method: "PUT", body: JSON.stringify({ notification_preference: preference }) },
     ])
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Confirm Changes" })).toBeNull())
     expect(mocks.toast.success).toHaveBeenCalledWith("user updated successfully")
+    // Confirmed changes refresh the account and notification list.
     await waitFor(() => {
         expect(readsOf("/users")).toBeGreaterThan(userReads)
         expect(readsOf("/notifications")).toBeGreaterThan(notificationReads)
     })
+    // The updated account disables notifications after opting out.
+    await waitFor(() => expect(queryClient.getQueryData<User>(queryKeys.user)?.notification_preference).toBe(preference))
+    const notifications = queryClient.getQueryCache().find({ queryKey: queryKeys.notifications })
+    expect(notifications?.isDisabled()).toBe(optedOut)
 })
 
 it("locks confirmation during an update and retries a rejected preference", async () => {

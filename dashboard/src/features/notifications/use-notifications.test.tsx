@@ -124,6 +124,43 @@ it("configures optional foreground polling and exposes refetch", async () => {
   expect(mocks.fetchApiJson).toHaveBeenCalledTimes(2);
 });
 
+it("polls the list once per configured interval, and not at all without polling", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const reads = () => mocks.fetchApiJson.mock.calls.length;
+    const idle = mount();
+    await waitFor(() => expect(reads()).toBe(1));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(queryRefetchIntervals.notifications * 2);
+    });
+    expect(reads()).toBe(1);
+    idle.unmount();
+
+    const polling = mount({ poll: true });
+    await waitFor(() => expect(reads()).toBe(2));
+
+    // Verify the configured interval actually refetches.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(queryRefetchIntervals.notifications);
+    });
+    expect(reads()).toBe(3);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(queryRefetchIntervals.notifications);
+    });
+    expect(reads()).toBe(4);
+
+    polling.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(queryRefetchIntervals.notifications * 2);
+    });
+    expect(reads()).toBe(4);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("surfaces fetch failures without inventing notifications", async () => {
   mocks.fetchApiJson.mockRejectedValue(new Error("offline"));
   const { result } = mount();
@@ -164,9 +201,13 @@ it("batches reads and removes matching IDs from every cached page", async () => 
     ),
   ).toEqual([100, 1]);
   expect(mocks.fetchApi.mock.calls[0][2].method).toBe("PUT");
-  expect(client.getQueryData(queryKeys.notifications)).toMatchObject({
+  // Preserve page metadata while removing only matching IDs.
+  expect(client.getQueryData(queryKeys.notifications)).toEqual({
     pageParams: [null, "next"],
-    pages: [{ cursor: "next" }, {}],
+    pages: [
+      { cursor: "next", notifications: [notification("keep")] },
+      { notifications: [notification("last")] },
+    ],
   });
 });
 

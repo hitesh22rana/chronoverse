@@ -52,7 +52,7 @@ const parseHighlightedMessage = (message: string, highlightToken?: string) => {
     const tags = getHighlightTags(highlightToken)
     if (!tags) return { rawMessage: message, highlightedSegments: [] }
 
-    const highlightedSegments: string[] = []
+    const highlightedSegments: { start: number; end: number }[] = []
     let currentIndex = 0
     let rawMessage = ""
 
@@ -65,8 +65,8 @@ const parseHighlightedMessage = (message: string, highlightToken?: string) => {
         if (endIndex === -1) break
 
         rawMessage += message.slice(currentIndex, startIndex)
+        highlightedSegments.push({ start: rawMessage.length, end: rawMessage.length + endIndex - matchStartIndex })
         rawMessage += message.slice(matchStartIndex, endIndex)
-        highlightedSegments.push(message.slice(matchStartIndex, endIndex))
         currentIndex = endIndex + tags.endTag.length
     }
 
@@ -74,27 +74,57 @@ const parseHighlightedMessage = (message: string, highlightToken?: string) => {
     return { rawMessage, highlightedSegments }
 }
 
-const renderHighlightedSegments = (message: string, segments: string[]): ReactNode => {
-    if (!segments.length) return message
+type MessagePiece = { text: string; source: number | null }
 
-    let currentIndex = 0
+const formatJson = (message: string, source: number): MessagePiece[] => {
+    JSON.parse(message)
+    const tokens = Array.from(message.matchAll(/"(?:[^"\\]|\\.)*"|[^\s{}\[\],:]+|[{}\[\],:]/g))
+    const pieces: MessagePiece[] = []
+    let depth = 0
+    const newline = () => pieces.push({ text: `\n${"  ".repeat(depth)}`, source: null })
+
+    for (const [index, token] of tokens.entries()) {
+        const value = token[0]
+        if ((value === "}" || value === "]") && tokens[index - 1]?.[0] !== "{" && tokens[index - 1]?.[0] !== "[") {
+            depth--
+            newline()
+        }
+        pieces.push({ text: value, source: source + token.index })
+        if ((value === "{" || value === "[") && tokens[index + 1]?.[0] !== "}" && tokens[index + 1]?.[0] !== "]") {
+            depth++
+            newline()
+        }
+        if (value === ",") newline()
+        if (value === ":") pieces.push({ text: " ", source: null })
+    }
+    return pieces
+}
+
+const renderHighlightedSegments = (pieces: MessagePiece[], segments: { start: number; end: number }[]): ReactNode => {
+    const message = pieces.map((piece) => piece.text).join("")
     const rendered: ReactNode[] = []
+    let currentIndex = 0
 
     for (const segment of segments) {
-        if (!segment) continue
-
-        const segmentIndex = message.indexOf(segment, currentIndex)
-        if (segmentIndex === -1) continue
-
-        rendered.push(message.slice(currentIndex, segmentIndex))
-        rendered.push(
-            <mark key={`${segmentIndex}:${segment.length}`} className={highlightClass}>
-                {segment}
-            </mark>,
-        )
-        currentIndex = segmentIndex + segment.length
+        let offset = 0
+        let start = -1
+        let end = -1
+        for (const piece of pieces) {
+            if (piece.source !== null) {
+                const first = Math.max(segment.start, piece.source)
+                const last = Math.min(segment.end, piece.source + piece.text.length)
+                if (first < last) {
+                    if (start === -1) start = offset + first - piece.source
+                    end = offset + last - piece.source
+                }
+            }
+            offset += piece.text.length
+        }
+        if (start === -1) continue
+        rendered.push(message.slice(currentIndex, start))
+        rendered.push(<mark key={`${start}:${end}`} className={highlightClass}>{message.slice(start, end)}</mark>)
+        currentIndex = end
     }
-
     rendered.push(message.slice(currentIndex))
     return rendered
 }
@@ -103,18 +133,22 @@ export function parseLogMessage(message: string, highlightToken: string | undefi
     if (!parseJson) return renderHighlightedText(message, highlightToken)
 
     const { rawMessage, highlightedSegments } = parseHighlightedMessage(message, highlightToken)
-
+    let pieces: MessagePiece[]
     try {
-        return renderHighlightedSegments(JSON.stringify(JSON.parse(rawMessage), null, 2), highlightedSegments)
+        pieces = formatJson(rawMessage, 0)
     } catch {
-        const formattedMessage = rawMessage.replace(jsonRegex, (match) => {
+        pieces = []
+        let offset = 0
+        for (const match of rawMessage.matchAll(jsonRegex)) {
+            pieces.push({ text: rawMessage.slice(offset, match.index), source: offset })
             try {
-                return JSON.stringify(JSON.parse(match), null, 2)
+                pieces.push(...formatJson(match[0], match.index))
             } catch {
-                return match
+                pieces.push({ text: match[0], source: match.index })
             }
-        })
-
-        return renderHighlightedSegments(formattedMessage, highlightedSegments)
+            offset = match.index + match[0].length
+        }
+        pieces.push({ text: rawMessage.slice(offset), source: offset })
     }
+    return renderHighlightedSegments(pieces, highlightedSegments)
 }

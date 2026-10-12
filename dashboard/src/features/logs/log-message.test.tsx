@@ -81,6 +81,38 @@ describe("log message rendering", () => {
         expect(marks(container)).toEqual(["error"])
     })
 
+    it("highlights the selected occurrence instead of an earlier equal JSON value", () => {
+        const container = renderMessage(`{"first":"error","second":"${highlight("error")}"}`, token, true)
+        expect(container.textContent).toBe(JSON.stringify({ first: "error", second: "error" }, null, 2))
+        expect(marks(container)).toEqual(["error"])
+        expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('{\n  "first": "error",\n  "second": "')
+    })
+
+    it("preserves the selected escaped substring and literal placeholder-like text", () => {
+        const container = renderMessage(`{"first":"a\\nb","second":"a${highlight("\\n")}b","literal":"__CV_PLACEHOLDER_0__"}`, token, true)
+        expect(container.textContent).toBe('{\n  "first": "a\\nb",\n  "second": "a\\nb",\n  "literal": "__CV_PLACEHOLDER_0__"\n}')
+        expect(marks(container)).toEqual(["\\n"])
+        expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('{\n  "first": "a\\nb",\n  "second": "a')
+    })
+
+    it("retains numeric spelling, escaped Unicode and source key order", () => {
+        const container = renderMessage(`{"10":1e2,"2":${highlight("1e2")},"text":"${highlight("\\u0061")}"}`, token, true)
+        expect(container.textContent).toBe('{\n  "10": 1e2,\n  "2": 1e2,\n  "text": "\\u0061"\n}')
+        expect(marks(container)).toEqual(["1e2", "\\u0061"])
+    })
+
+    it("keeps structural selections across inserted indentation", () => {
+        const container = renderMessage(`{"empty":[],"selected":${highlight('[true,{},null,[2]]')}}`, token, true)
+        expect(container.textContent).toBe(JSON.stringify({ empty: [], selected: [true, {}, null, [2]] }, null, 2))
+        expect(marks(container)).toEqual(['[\n    true,\n    {},\n    null,\n    [\n      2\n    ]\n  ]'])
+    })
+
+    it("does not move an embedded JSON match into equal preceding plain text", () => {
+        const container = renderMessage(`error {"first":"error","selected":"${highlight("error")}"}`, token, true)
+        expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('error {\n  "first": "error",\n  "selected": "')
+        expect(marks(container)).toEqual(["error"])
+    })
+
     it.each([
         ['[1,{"ok":true}]', JSON.stringify([1, { ok: true }], null, 2)],
         ['"text"', JSON.stringify("text")],

@@ -66,11 +66,12 @@ type SearchDraft = {
 
 /** Abandon superseded pushes; preserve newer typing on our acknowledgements. */
 function reconcileSearchDraft(draft: SearchDraft, searchQuery: string, navigationKey: string): SearchDraft {
+    const acknowledged = draft.pending !== null && draft.pending.query === searchQuery
     const pendingLost =
         draft.pending !== null && navigationKey !== draft.pending.address && searchQuery !== draft.pending.query
-    if (draft.query === searchQuery && !pendingLost) return draft
+    // Settle acknowledgements even when the query is unchanged.
+    if (draft.query === searchQuery && !pendingLost && !acknowledged) return draft
 
-    const acknowledged = draft.pending?.query === searchQuery
     const value = draft.query === searchQuery || acknowledged ? draft.value : searchQuery
     return { query: searchQuery, value, pending: null }
 }
@@ -122,8 +123,12 @@ function useWorkflowsModel() {
     const searchInput = settledDraft.value
     const setSearchInput = (value: string) => setSearchDraft(draft => ({ ...draft, query: searchQuery, value }))
     const clearSearch = () => {
-        // Clear the draft and its pending navigation.
-        setSearchDraft(draft => ({ ...draft, value: "", pending: null }))
+        // Track clearing as pending to prevent a duplicate debounce push.
+        setSearchDraft(draft => ({
+            ...draft,
+            value: "",
+            pending: { query: "", address: navigationKey, released: false },
+        }))
         updateSearchQuery("")
     }
 
@@ -285,7 +290,8 @@ function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView
                         onChange={(e) => setSearchInput(e.target.value)}
                         onFocus={() => setIsSearchFocused(true)}
                         onBlur={() => setIsSearchFocused(false)}
-                        className="w-full pl-9 h-9"
+                        // Reserve space for both the spinner and clear button.
+                        className="w-full pl-9 pr-14 h-9"
                     />
                     {isSearchPending && (
                         <Loader2
@@ -297,7 +303,7 @@ function renderWorkflowListControls(model: Parameters<typeof renderWorkflowsView
                     {(searchInput || activeFiltersCount > 0) && (
                         <button
                             type="button"
-                            className="absolute right-2.5 top-2.5 size-4 text-muted-foreground hover:text-foreground"
+                            className="absolute right-2.5 top-2.5 size-4 cursor-pointer text-muted-foreground hover:text-foreground"
                             onClick={clearSearch}
                             aria-label="Clear search and filters"
                         >

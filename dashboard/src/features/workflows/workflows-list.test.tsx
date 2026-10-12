@@ -129,6 +129,25 @@ function loseEverySearchPush() {
     })
 }
 
+/**
+ * A router that keeps every navigation in flight, the way a slow search-param
+ * round trip does: nothing reaches the address until `commitHeldPush` runs.
+ */
+function holdEveryPush() {
+    const held: string[] = []
+    mocks.push.mockImplementation((url: string) => {
+        held.push(url)
+    })
+    return held
+}
+
+/** Deliver a previously held navigation to the address. */
+async function commitHeldPush(held: string[], index: number) {
+    await act(async () => {
+        mocks.searchStore.set(held[index].replace(/^[?]/, ""))
+    })
+}
+
 const searchBox = () => screen.getByPlaceholderText("Search workflows...(Ctrl+F)") as HTMLInputElement
 const clearSearch = () => screen.queryByRole("button", { name: "Clear search and filters" })
 /** Exact-name lookup would miss the active-filter badge inside the trigger. */
@@ -718,6 +737,52 @@ it("keeps the clear control mounted while a search transition completes", async 
     await user.pointer({ target: clear, keys: "[/MouseLeft]" })
     await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
 })
+
+it("asks once for a clear whose navigation has not reached the address yet", async () => {
+    const { user } = renderList("query=alpha")
+    await screen.findByText("Nightly container")
+    const held = holdEveryPush()
+
+    await user.click(clearSearch()!)
+    expect(searchBox()).toHaveProperty("value", "")
+    // The clear owns the navigation it pushed, so the debounce stays quiet.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)) })
+    expect(held).toEqual(["?"])
+
+    await commitHeldPush(held, 0)
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows"))
+    expect(searchBox()).toHaveProperty("value", "")
+
+    // Typing still reaches the address once the clear has been acknowledged.
+    await user.type(searchBox(), "beta")
+    await waitFor(() => expect(held).toEqual(["?", "?query=beta"]), afterDebounce)
+    await commitHeldPush(held, 1)
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=beta"))
+}, slowRace)
+
+it("retries a clear that the address never acknowledged", async () => {
+    // Nothing reaches the address, so only the recovery pause can re-ask.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const held = holdEveryPush()
+    renderList("query=alpha")
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", "alpha"))
+
+    fireEvent.click(clearSearch()!)
+    expect(held).toEqual(["?"])
+    expect(searchBox()).toHaveProperty("value", "")
+
+    // Well past the debounce: the clear is not asked for twice up front.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+    expect(held).toEqual(["?"])
+
+    // Past the recovery pause, the debounce restarts and asks once more.
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(held).toEqual(["?", "?"])
+
+    await commitHeldPush(held, 1)
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows"))
+    expect(searchBox()).toHaveProperty("value", "")
+}, slowRace)
 
 it("keeps searching when the clear affordance discards a lost navigation", async () => {
     const { user } = renderList("status=FAILED")

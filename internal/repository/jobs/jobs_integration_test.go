@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -418,6 +419,7 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 	}
 }
 
+//nolint:gocyclo // Verifies filtering and cursor continuity against the same indexed logs.
 func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -433,16 +435,26 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	// Index documents directly with the same fields the joblogs processor
 	// writes (including user_id, which SearchJobLogs filters on); the
 	// meilisearch index is already configured by the testkit.
-	docs := []map[string]any{
-		{
-			"id": "doc-" + t.Name() + "-1", jobLogsEventIDField: "log-1", docJobIDField: jobID, docWorkflowIDField: workflowID,
-			docUserIDField: userID, jobLogsMessageField: "authentication succeeded", jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 1, jobLogsStreamField: "stdout",
-		},
-		{
-			"id": "doc-" + t.Name() + "-2", jobLogsEventIDField: "log-2", docJobIDField: jobID, docWorkflowIDField: workflowID,
-			docUserIDField: userID, jobLogsMessageField: "database connection refused",
-			jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano), jobLogsSequenceNumField: 2, jobLogsStreamField: "stderr",
-		},
+	fixtures := []struct {
+		eventID         string
+		sequence        uint32
+		stream, message string
+	}{
+		{"log-1", 1, "stdout", "authentication succeeded"},
+		{"log-2", 2, "stderr", "database connection refused"},
+		{"log-3", 2, "stdout", "pagination three"},
+		{"log-4", 2, "stdout", "pagination four"},
+		{"log-5", 2, "stdout", "pagination five"},
+		{"log-6", 3, "stdout", "pagination six"},
+	}
+	docs := make([]map[string]any, 0, len(fixtures))
+	for _, log := range fixtures {
+		docs = append(docs, map[string]any{
+			"id": "doc-" + t.Name() + "-" + log.eventID, jobLogsEventIDField: log.eventID,
+			docJobIDField: jobID, docWorkflowIDField: workflowID, docUserIDField: userID,
+			jobLogsMessageField: log.message, jobLogsTimestampField: time.Now().UTC().Format(time.RFC3339Nano),
+			jobLogsSequenceNumField: log.sequence, jobLogsStreamField: log.stream,
+		})
 	}
 	task, err := ms.Index(meilisearchpkg.IndexJobLogs).AddDocuments(docs, nil)
 	if err != nil {
@@ -466,6 +478,42 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	}
 	if search.JobLogs[0].Message != "authentication succeeded" {
 		t.Fatalf("searched message = %q, want %q", search.JobLogs[0].Message, "authentication succeeded")
+	}
+
+	for _, tc := range []struct {
+		name  string
+		order jobsmodel.JobLogsSortOrder
+		want  []string
+	}{
+		{"ascending", jobsmodel.JobLogsSortOrderAsc, []string{"log-1", "log-2", "log-3", "log-4", "log-5", "log-6"}},
+		{"descending", jobsmodel.JobLogsSortOrderDesc, []string{"log-6", "log-2", "log-3", "log-4", "log-5", "log-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			cursor := ""
+			for page := 0; ; page++ {
+				if page >= len(docs) {
+					t.Fatal("search pagination did not terminate")
+				}
+				result, _, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, cursor, &jobsmodel.SearchJobLogsFilters{}, jobsmodel.SearchJobLogsOptions{SortOrder: tc.order, DisableHighlight: true})
+				if err != nil {
+					t.Fatalf("SearchJobLogs(page %d): %v", page, err)
+				}
+				if len(result.JobLogs) == 0 || len(result.JobLogs) > repo.cfg.LogsFetchLimit {
+					t.Fatalf("page %d returned %d logs", page, len(result.JobLogs))
+				}
+				for _, log := range result.JobLogs {
+					got = append(got, log.EventID)
+				}
+				if result.Cursor == "" {
+					break
+				}
+				cursor = result.Cursor
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("paged log IDs = %v, want %v without omissions or duplicates", got, tc.want)
+			}
+		})
 	}
 }
 

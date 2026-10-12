@@ -97,10 +97,23 @@ it("renders empty and loading states and disables empty bulk reads", () => {
     (screen.getByRole("button", { name: "Mark as read" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Select all notifications" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
   state.isLoading = true;
   view.rerender(<NotificationsDrawer open onClose={close} />);
   expect(screen.queryByText("You're all caught up!")).toBeNull();
   expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(30);
+});
+it("keeps existing rows visible while a background load runs", () => {
+  state.notifications = [item("one")];
+  state.isLoading = true;
+  mount();
+  expect(screen.getByRole("link", { name: /one/ })).toBeTruthy();
+  expect(screen.queryByText("You're all caught up!")).toBeNull();
+  expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0);
 });
 it("groups dates and safely highlights quotes without injecting HTML", () => {
   const yesterday = new Date();

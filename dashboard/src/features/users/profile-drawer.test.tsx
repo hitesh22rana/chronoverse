@@ -56,7 +56,8 @@ afterEach(() => {
 })
 
 function mount(open = true) {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } })
+    // Unobserved entries must outlive the test: gcTime 0 collects them before assertions run.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 60_000 }, mutations: { retry: false } } })
     clients.push(queryClient)
     const onClose = vi.fn()
     const user = userEvent.setup()
@@ -172,6 +173,8 @@ it("signs out once, disables the pending button and clears private cached data",
     await user.click(screen.getByRole("button", { name: "Signing out..." }))
     expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
     expect(writesTo("/auth/logout")[0].slice(1)).toEqual(["failed to logout", { method: "POST" }])
+    // Still cached while logout is pending, so only clear() can remove it below.
+    expect(queryClient.getQueryData(["private-workflows"])).toEqual(["private-workflow"])
     await act(async () => { release() })
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/login"))
     expect(mocks.refresh).toHaveBeenCalledOnce()

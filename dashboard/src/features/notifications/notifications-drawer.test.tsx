@@ -227,15 +227,22 @@ it("reads unread links and removes only the clicked selection", () => {
     item("read", { read_at: new Date().toISOString() }),
   ];
   mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "Select all notifications" }),
-  );
+  const unreadSelection = screen.getByRole("checkbox", { name: "Select unread" });
+  const readSelection = screen.getByRole("checkbox", { name: "Select read" });
+  fireEvent.click(readSelection);
+  fireEvent.click(unreadSelection);
+  expect(readSelection.getAttribute("aria-checked")).toBe("true");
+  expect(unreadSelection.getAttribute("aria-checked")).toBe("true");
   fireEvent.click(screen.getByRole("link", { name: /unread/ }));
   expect(state.markAsRead).toHaveBeenCalledWith(["unread"]);
   expect(screen.getByText("1 selected")).toBeTruthy();
+  expect(unreadSelection.getAttribute("aria-checked")).toBe("false");
+  expect(readSelection.getAttribute("aria-checked")).toBe("true");
   fireEvent.click(screen.getByRole("link", { name: /^read/ }));
   expect(state.markAsRead).toHaveBeenCalledTimes(1);
   expect(screen.getByText("0 selected")).toBeTruthy();
+  expect(readSelection.getAttribute("aria-checked")).toBe("false");
+  expect(unreadSelection.getAttribute("aria-checked")).toBe("false");
   fireEvent.click(screen.getByRole("link", { name: /^read/ }));
   expect(close).toHaveBeenCalledTimes(3);
 });

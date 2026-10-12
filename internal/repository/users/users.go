@@ -67,14 +67,20 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to start registration transaction: %v", err)
+		if mapped, statusErr := contextStatusError(err); mapped {
+			err = statusErr
+			return nil, "", err
+		}
+		err = status.Errorf(codes.Internal, "failed to start registration transaction: %v", err)
+		return nil, "", err
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
 	requestHash, err := idempotency.HashCanonical(map[string]string{"email": email})
 	if err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to hash registration request: %v", err)
+		err = status.Errorf(codes.Internal, "failed to hash registration request: %v", err)
+		return nil, "", err
 	}
 	reservation, err := commandidempotency.Reserve(
 		ctx,
@@ -104,16 +110,20 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 			&res.CreatedAt,
 			&res.UpdatedAt,
 		); err != nil {
-			return nil, "", status.Errorf(codes.Internal, "failed to load registration replay: %v", err)
+			err = status.Errorf(codes.Internal, "failed to load registration replay: %v", err)
+			return nil, "", err
 		}
 		if err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password)); err != nil {
 			if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-				return nil, "", status.Error(codes.AlreadyExists, "idempotency key was used with different credentials")
+				err = status.Error(codes.AlreadyExists, "idempotency key was used with different credentials")
+				return nil, "", err
 			}
-			return nil, "", status.Errorf(codes.Internal, "failed to verify registration replay: %v", err)
+			err = status.Errorf(codes.Internal, "failed to verify registration replay: %v", err)
+			return nil, "", err
 		}
 		if err = tx.Commit(ctx); err != nil {
-			return nil, "", status.Errorf(codes.Internal, "failed to commit registration replay: %v", err)
+			err = status.Errorf(codes.Internal, "failed to commit registration replay: %v", err)
+			return nil, "", err
 		}
 		authToken, err = r.auth.IssueToken(ctx, res.ID, auth.ServiceNameServer)
 		return res, authToken, err
@@ -127,15 +137,15 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	args := []any{email, string(hashedPassword)}
 
 	rows, err := tx.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, "", err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
+
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	}
+	if mapped, statusErr := contextStatusError(err); mapped {
+		err = statusErr
 		return nil, "", err
 	}
 
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
 		if r.pg.IsUniqueViolation(err) {
 			err = status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
@@ -166,7 +176,8 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 		return nil, "", err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to commit registration transaction: %v", err)
+		err = status.Errorf(codes.Internal, "failed to commit registration transaction: %v", err)
+		return nil, "", err
 	}
 
 	// Authentication material is issued only after the account and ledger commit.
@@ -197,21 +208,23 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	args := []any{email}
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, "", err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
+
+	var loginUserResponse *usersmodel.LoginUserData
+	if err == nil {
+		loginUserResponse, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
+	}
+	if mapped, statusErr := contextStatusError(err); mapped {
+		err = statusErr
 		return nil, "", err
 	}
 
-	loginUserResponse, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			// Keep missing-user attempts on the same expensive path as invalid passwords.
 			compareErr := bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(pass))
 			if compareErr != nil && !errors.Is(compareErr, bcrypt.ErrMismatchedHashAndPassword) {
-				return nil, "", status.Errorf(codes.Internal, "failed to verify password: %v", compareErr)
+				err = status.Errorf(codes.Internal, "failed to verify password: %v", compareErr)
+				return nil, "", err
 			}
 			err = invalidCredentialsError()
 			return nil, "", err
@@ -226,7 +239,8 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 
 	if err = bcrypt.CompareHashAndPassword([]byte(loginUserResponse.Password), []byte(pass)); err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			return nil, "", invalidCredentialsError()
+			err = invalidCredentialsError()
+			return nil, "", err
 		}
 
 		err = status.Errorf(codes.Internal, "failed to verify password: %v", err)
@@ -247,6 +261,20 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	}
 
 	return res, authToken, nil
+}
+
+// contextStatusError maps a canceled or expired context to its gRPC status.
+// The bool reports whether err described a context failure, so a caller can
+// never mistake an unmapped error for a successful status mapping.
+func contextStatusError(err error) (mapped bool, statusErr error) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return true, status.Error(codes.DeadlineExceeded, err.Error())
+	case errors.Is(err, context.Canceled):
+		return true, status.Error(codes.Canceled, err.Error())
+	default:
+		return false, nil
+	}
 }
 
 func invalidCredentialsError() error {
@@ -272,15 +300,15 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 	args := []any{id}
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
+
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
+	}
+	if mapped, statusErr := contextStatusError(err); mapped {
+		err = statusErr
 		return nil, err
 	}
 
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "user not found: %v", err)
@@ -317,11 +345,8 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 
 	ct, err := r.pg.Exec(ctx, query, args...)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
+		if mapped, statusErr := contextStatusError(err); mapped {
+			err = statusErr
 			return err
 		}
 
@@ -339,11 +364,18 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 
 	if ct.RowsAffected() == 0 {
 		var exists bool
-		if lookupErr := r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); lookupErr != nil {
-			return status.Errorf(codes.Internal, "failed to check user preference state: %v", lookupErr)
+		if err = r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); err != nil {
+			if mapped, statusErr := contextStatusError(err); mapped {
+				err = statusErr
+				return err
+			}
+
+			err = status.Errorf(codes.Internal, "failed to check user preference state: %v", err)
+			return err
 		}
 		if !exists {
-			return status.Error(codes.NotFound, "user not found")
+			err = status.Error(codes.NotFound, "user not found")
+			return err
 		}
 	}
 

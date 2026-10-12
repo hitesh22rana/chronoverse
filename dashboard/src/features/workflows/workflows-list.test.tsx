@@ -121,6 +121,14 @@ function loseOneSearchPush() {
     })
 }
 
+/** Drop consecutive search navigations. */
+function loseEverySearchPush() {
+    mocks.push.mockImplementation((url: string) => {
+        if (url.includes("query=")) return
+        mocks.searchStore.set(url.replace(/^[?]/, ""))
+    })
+}
+
 const searchBox = () => screen.getByPlaceholderText("Search workflows...(Ctrl+F)") as HTMLInputElement
 const clearSearch = () => screen.queryByRole("button", { name: "Clear search and filters" })
 /** Exact-name lookup would miss the active-filter badge inside the trigger. */
@@ -790,4 +798,47 @@ it("preserves newer typing when a delayed search arrives after recovery", async 
     await act(async () => { await vi.advanceTimersByTimeAsync(600) })
     expect(lastPush()).toBe("?query=alphabeta")
     expect(searchBox()).toHaveProperty("value", "alphabeta")
+})
+
+it("retries a dropped search after the user stops typing", async () => {
+    // Recover without another keystroke or navigation.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    loseOneSearchPush()
+    renderList()
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    expect(mocks.searchStore.get()).toBe("")
+
+    // Typing stops here; the box and the list must not stay mismatched.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+
+    expect(mocks.push).toHaveBeenCalledTimes(2)
+    expect(lastPush()).toBe("?query=alpha")
+    await waitFor(() => expect(lastListRequest()).toBe("/workflows?query=alpha"))
+    expect(searchBox()).toHaveProperty("value", "alpha")
+})
+
+it("retries again when the retry is dropped too", async () => {
+    // Each dropped retry must remain eligible for recovery.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    loseEverySearchPush()
+    renderList()
+    await waitFor(() => expect(searchBox()).toHaveProperty("value", ""))
+
+    fireEvent.change(searchBox(), { target: { value: "alpha" } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+
+    for (const attempt of [2, 3]) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_200) })
+        await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+        expect(mocks.push).toHaveBeenCalledTimes(attempt)
+        expect(lastPush()).toBe("?query=alpha")
+    }
+
+    expect(searchBox()).toHaveProperty("value", "alpha")
 })

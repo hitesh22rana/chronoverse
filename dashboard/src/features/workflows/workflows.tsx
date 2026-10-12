@@ -52,7 +52,7 @@ import { cn } from "@/lib/utils"
 /** Debounce search typing. */
 const searchDebounceDelay = 500
 
-/** Release an unacknowledged search when typing advances. */
+/** Release an unacknowledged search so it is requested again. */
 const searchRecoveryDelay = 5_000
 
 type SearchDraft = {
@@ -142,14 +142,14 @@ function useWorkflowsModel() {
 
     useEffect(() => {
         const pending = searchDraft.pending
-        if (pending === null || pending.query === searchInput || pending.released) return
-        // Release the wait, retaining its identity for a delayed acknowledgement.
+        if (pending === null || pending.released) return
+        // Retry dropped pushes; retain their identity for delayed acknowledgements.
         const timer = setTimeout(() => {
             setSearchDraft(draft => ({ ...draft, pending: { ...pending, released: true } }))
         }, searchRecoveryDelay)
 
         return () => clearTimeout(timer)
-    }, [searchDraft.pending, searchInput])
+    }, [searchDraft.pending])
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

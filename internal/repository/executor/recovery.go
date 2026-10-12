@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -232,7 +233,7 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 		return r.completeClaimedJob(ctx, claim, csvc, job.GetContainerId())
 	}
 
-	execErr := status.Errorf(codes.Aborted, "container exited with non-zero code during lease recovery: %d", state.ExitCode)
+	execErr := terminalreason.Wrap(terminalreason.NonZeroExit, status.Errorf(codes.Aborted, "container exited with non-zero code during lease recovery: %d", state.ExitCode))
 	return r.failClaimedJob(ctx, claim, csvc, execErr, job.GetContainerId())
 }
 

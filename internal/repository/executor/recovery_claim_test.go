@@ -12,6 +12,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	containerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -48,14 +49,16 @@ func TestRecoverExpiredLeaseWithClaim(t *testing.T) {
 	unavailable := status.Error(codes.Unavailable, "runtime unavailable")
 	denied := status.Error(codes.PermissionDenied, "runtime denied")
 	tests := []struct {
-		name       string
-		changeJob  func(*jobspb.ExpiredJobLease)
-		container  recoveryContainer
-		factoryErr error
-		attempts   int32
-		settlement jobCommand
-		code       codes.Code
-		calls      []string
+		name        string
+		changeJob   func(*jobspb.ExpiredJobLease)
+		container   recoveryContainer
+		factoryErr  error
+		attempts    int32
+		settlement  jobCommand
+		code        codes.Code
+		calls       []string
+		failureKind string
+		reason      string
 	}{
 		{name: "unavailable runtime retries", changeJob: func(j *jobspb.ExpiredJobLease) { j.RuntimeUnavailable = true }, settlement: commandReleaseRetry},
 		{name: "missing container retries", changeJob: func(j *jobspb.ExpiredJobLease) { j.ContainerId = "" }, settlement: commandReleaseRetry},
@@ -95,13 +98,19 @@ func TestRecoverExpiredLeaseWithClaim(t *testing.T) {
 		{name: "stopped log failure preserves lease", container: recoveryContainer{logsErr: denied}, code: codes.PermissionDenied, calls: []string{"inspect:container-1", "logs:container-1"}},
 		{name: "clean exit completes", settlement: commandCompleteJob, calls: []string{"inspect:container-1", "logs:container-1", "remove:container-1"}},
 		{
-			name:       "nonzero exit fails",
-			container:  recoveryContainer{state: containerpkg.State{ExitCode: 17}},
-			settlement: commandFailJob,
-			code:       codes.Aborted,
-			calls:      []string{"inspect:container-1", "logs:container-1", "remove:container-1"},
+			name:        "nonzero exit fails",
+			container:   recoveryContainer{state: containerpkg.State{ExitCode: 17}},
+			settlement:  commandFailJob,
+			code:        codes.Aborted,
+			failureKind: jobsmodel.FailureKindUser.ToString(),
+			reason:      terminalreason.NonZeroExit.String(),
+			calls:       []string{"inspect:container-1", "logs:container-1", "remove:container-1"},
 		},
-		{name: "exhausted runtime failure fails", changeJob: func(j *jobspb.ExpiredJobLease) { j.RuntimeUnavailable = true }, attempts: 3, settlement: commandFailJob, code: codes.Unavailable},
+		{
+			name: "exhausted runtime failure fails", changeJob: func(j *jobspb.ExpiredJobLease) { j.RuntimeUnavailable = true },
+			attempts: 3, settlement: commandFailJob, code: codes.Unavailable,
+			failureKind: jobsmodel.FailureKindSystem.ToString(), reason: terminalreason.SystemError.String(),
+		},
 	}
 	for i := range tests {
 		tt := &tests[i]
@@ -136,8 +145,13 @@ func TestRecoverExpiredLeaseWithClaim(t *testing.T) {
 			if !reflect.DeepEqual(csvc.calls, tt.calls) {
 				t.Fatalf("runtime operations = %v, want %v", csvc.calls, tt.calls)
 			}
-			if failed, ok := firstOp(fixture.log.snapshot(), commandFailJob); ok && failed.ErrorCode != tt.code.String() {
-				t.Fatalf("failure code = %s, want %s", failed.ErrorCode, tt.code)
+			if failed, ok := firstOp(fixture.log.snapshot(), commandFailJob); ok {
+				if failed.ErrorCode != tt.code.String() {
+					t.Fatalf("failure code = %s, want %s", failed.ErrorCode, tt.code)
+				}
+				if failed.FailureKind != tt.failureKind || failed.TerminalReasonCode != tt.reason {
+					t.Fatalf("failure classification = %s/%s, want %s/%s", failed.FailureKind, failed.TerminalReasonCode, tt.failureKind, tt.reason)
+				}
 			}
 		})
 	}

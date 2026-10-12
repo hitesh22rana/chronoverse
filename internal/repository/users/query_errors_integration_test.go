@@ -10,8 +10,14 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 func TestIntegrationUserContextErrorsAreTraced(t *testing.T) {
@@ -60,6 +66,78 @@ func TestIntegrationUserContextErrorsAreTraced(t *testing.T) {
 					t.Fatalf("error = %v, want %s", err, code)
 				}
 				assertUserErrorSpan(t, recorder, operation.name, err)
+			})
+		}
+	}
+}
+
+//nolint:gocyclo // Keeps interruption, tracing, cleanup, and retry beside each read.
+func TestIntegrationUserReadsInterruptRowConsumption(t *testing.T) {
+	operations := []struct {
+		name, pattern string
+		call          func(context.Context, *Repository, string, string) (*usersmodel.GetUserResponse, string, error)
+	}{
+		{"LoginUser", "%FROM users WHERE email%", func(ctx context.Context, repo *Repository, _, email string) (*usersmodel.GetUserResponse, string, error) {
+			return repo.LoginUser(ctx, email, "password")
+		}},
+		{"GetUser", "%FROM users WHERE id%", func(ctx context.Context, repo *Repository, id, _ string) (*usersmodel.GetUserResponse, string, error) {
+			user, err := repo.GetUser(ctx, id)
+			return user, "", err
+		}},
+	}
+	for _, operation := range operations {
+		for _, code := range []codes.Code{codes.Canceled, codes.DeadlineExceeded} {
+			t.Run(operation.name+"/"+code.String(), func(t *testing.T) {
+				ctx := context.Background()
+				pg := testkit.Postgres(t)
+				email := "interrupted-" + uuid.NewString() + "@chronoverse.test"
+				registered, _, err := newTestRepository(t).RegisterUser(ctx, email, "password", "register-"+uuid.NewString())
+				if err != nil {
+					t.Fatal(err)
+				}
+				issuer := authmock.NewMockIAuth(gomock.NewController(t))
+				repo, recorder := newTracedRepository(t, issuer, pg)
+				remove := installUsersReadFault(t, pg, "PERFORM pg_sleep(30); RETURN now();")
+				commandCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				done := make(chan error, 1)
+				finished := make(chan struct{})
+				go func() {
+					defer close(finished)
+					user, token, callErr := operation.call(commandCtx, repo, registered.ID, email)
+					if user != nil || token != "" {
+						t.Error("interrupted read returned a user or authentication material")
+					}
+					done <- callErr
+				}()
+				defer func() {
+					cancel()
+					select {
+					case <-finished:
+					case <-time.After(5 * time.Second):
+						t.Error("interrupted read did not stop during cleanup")
+					}
+				}()
+				waitForSleepingUserQuery(ctx, t, pg, operation.pattern)
+				if code == codes.Canceled {
+					cancel()
+				}
+				select {
+				case err = <-done:
+				case <-time.After(10 * time.Second):
+					t.Fatal("read did not return after interruption")
+				}
+				if status.Code(err) != code {
+					t.Fatalf("error = %v, want %s", err, code)
+				}
+				assertUserErrorSpan(t, recorder, operation.name, err)
+				remove()
+				if operation.name == "LoginUser" {
+					issuer.EXPECT().IssueToken(gomock.Any(), registered.ID, auth.ServiceNameServer).Return("retry-token", nil)
+				}
+				user, _, err := operation.call(ctx, repo, registered.ID, email)
+				if err != nil || user == nil || user.ID != registered.ID {
+					t.Fatalf("read after restoring table = %v, %v", user, err)
+				}
 			})
 		}
 	}

@@ -67,6 +67,10 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
+		if mapped, statusErr := contextStatusError(err); mapped {
+			err = statusErr
+			return nil, "", err
+		}
 		err = status.Errorf(codes.Internal, "failed to start registration transaction: %v", err)
 		return nil, "", err
 	}

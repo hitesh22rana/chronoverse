@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
@@ -27,13 +28,32 @@ func TestIntegrationRegistrationRejectsLongPassword(t *testing.T) {
 	}
 }
 
-func TestIntegrationRegistrationCanceledBeforeTransaction(t *testing.T) {
-	repo := newTestRepository(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	user, token, err := repo.RegisterUser(ctx, "canceled@chronoverse.test", "password", "canceled-registration")
-	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "start registration transaction") || user != nil || token != "" {
-		t.Fatalf("registration = %v, %q, %v", user, token, err)
+func TestIntegrationRegistrationBeginFailures(t *testing.T) {
+	for _, code := range []codes.Code{codes.Canceled, codes.DeadlineExceeded, codes.Internal} {
+		t.Run(code.String(), func(t *testing.T) {
+			pg := testkit.Postgres(t)
+			mockAuth := authmock.NewMockIAuth(gomock.NewController(t))
+			repo, recorder := newTracedRepository(t, mockAuth, pg)
+			ctx, cancel := context.WithCancel(context.Background())
+			switch code { //nolint:exhaustive // Only the three transaction-start failure cases need setup.
+			case codes.DeadlineExceeded:
+				cancel()
+				ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			case codes.Canceled:
+				cancel()
+			case codes.Internal:
+				repo.pg = closedPostgres(t)
+			}
+			defer cancel()
+			key := "register-" + uuid.NewString()
+			email := key + "@chronoverse.test"
+			user, token, err := repo.RegisterUser(ctx, email, "password", key)
+			if status.Code(err) != code || user != nil || token != "" {
+				t.Fatalf("registration = %v, %q, %v; want %s", user, token, err, code)
+			}
+			assertUserErrorSpan(t, recorder, "RegisterUser", err)
+			assertRegistrationState(context.Background(), t, pg, email, key, 0, 0)
+		})
 	}
 }
 

@@ -4,6 +4,8 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
+import { queryKeys } from "@/lib/api/query-keys"
+
 import { ProfileDrawer } from "./profile-drawer"
 import type { User } from "./types"
 
@@ -15,7 +17,7 @@ const mocks = vi.hoisted(() => ({
     toast: { success: vi.fn(), error: vi.fn() },
 }))
 
-vi.mock("@/lib/api/client", () => ({ ...mocks, createIdempotencyKey: () => "key" }))
+vi.mock("@/lib/api/client", () => ({ fetchApi: mocks.fetchApi, fetchApiJson: mocks.fetchApiJson, createIdempotencyKey: () => "key" }))
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: mocks.replace, refresh: mocks.refresh }) }))
 vi.mock("sonner", () => ({ toast: mocks.toast }))
 
@@ -56,7 +58,7 @@ afterEach(() => {
 })
 
 function mount(open = true) {
-    // Unobserved entries must outlive the test: gcTime 0 collects them before assertions run.
+    // gcTime 0 would collect unobserved entries before assertions run.
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 60_000 }, mutations: { retry: false } } })
     clients.push(queryClient)
     const onClose = vi.fn()
@@ -88,8 +90,9 @@ it("waits for the account and displays its email, initials and dates", async () 
 })
 
 it("does not render profile controls while closed", async () => {
-    mount(false)
-    await waitFor(() => expect(mocks.fetchApiJson).toHaveBeenCalled())
+    const { queryClient } = mount(false)
+    // Wait for the account itself: the drawer also renders nothing while it loads.
+    await waitFor(() => expect(queryClient.getQueryData(queryKeys.user)).toBeDefined())
     expect(screen.queryByRole("combobox")).toBeNull()
 })
 
@@ -173,7 +176,7 @@ it("signs out once, disables the pending button and clears private cached data",
     await user.click(screen.getByRole("button", { name: "Signing out..." }))
     expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
     expect(writesTo("/auth/logout")[0].slice(1)).toEqual(["failed to logout", { method: "POST" }])
-    // Still cached while logout is pending, so only clear() can remove it below.
+    // Still cached while pending; only clear() removes it below.
     expect(queryClient.getQueryData(["private-workflows"])).toEqual(["private-workflow"])
     await act(async () => { release() })
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/login"))

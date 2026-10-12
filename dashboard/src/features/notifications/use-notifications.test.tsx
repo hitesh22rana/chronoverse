@@ -195,12 +195,18 @@ it("batches reads and removes matching IDs from every cached page", async () => 
     ]),
   );
   expect(mocks.fetchApi).toHaveBeenCalledTimes(2);
-  expect(
-    mocks.fetchApi.mock.calls.map(
-      (call) => JSON.parse(call[2].body).ids.length,
-    ),
-  ).toEqual([100, 1]);
-  expect(mocks.fetchApi.mock.calls[0][2].method).toBe("PUT");
+  expect(mocks.fetchApi).toHaveBeenNthCalledWith(
+    1,
+    expect.stringMatching(/\/notifications$/),
+    expect.any(String),
+    { method: "PUT", body: JSON.stringify({ ids: ids.slice(0, 100) }) },
+  );
+  expect(mocks.fetchApi).toHaveBeenNthCalledWith(
+    2,
+    expect.stringMatching(/\/notifications$/),
+    expect.any(String),
+    { method: "PUT", body: JSON.stringify({ ids: ["other-99"] }) },
+  );
   // Preserve page metadata while removing only matching IDs.
   expect(client.getQueryData(queryKeys.notifications)).toEqual({
     pageParams: [null, "next"],

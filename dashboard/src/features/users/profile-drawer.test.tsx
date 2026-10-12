@@ -57,6 +57,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     clients.splice(0).forEach((client) => client.clear())
     pointerMembers.forEach((name, index) => {
         const original = originals[index]
@@ -82,6 +83,7 @@ async function changePreference(user: ReturnType<typeof userEvent.setup>, label 
 }
 
 it("waits for the account and displays its email, initials and dates", async () => {
+    vi.setSystemTime(new Date("2024-02-03T00:00:00Z"))
     let release!: (_user: User) => void
     mocks.fetchApiJson.mockImplementation((url: string) => isRoute("/users", url) ? new Promise<User>((resolve) => { release = resolve }) : Promise.resolve({ notifications: [], cursor: null }))
     mount()
@@ -92,8 +94,8 @@ it("waits for the account and displays its email, initials and dates", async () 
     expect(await screen.findByText(account.email)).toBeTruthy()
     expect(screen.getByText("jane.doe")).toBeTruthy()
     expect(screen.getByText("JD")).toBeTruthy()
-    expect(screen.getByText(/^Joined /)).toBeTruthy()
-    expect(screen.getByText(/Last updated/)).toBeTruthy()
+    expect(screen.getByText("Joined about 1 month ago")).toBeTruthy()
+    expect(screen.getByText("Last updated 2 days ago")).toBeTruthy()
     expect(screen.getByRole("combobox").textContent).toBe("All notifications")
 })
 

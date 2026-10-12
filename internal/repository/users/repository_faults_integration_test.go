@@ -4,9 +4,11 @@ package users
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -60,11 +62,14 @@ func closedPostgres(t *testing.T) *postgres.Postgres {
 }
 
 // installUsersReadFault preserves the updatable table and faults only projected reads.
+// The shadow objects are named per call so overlapping or repeated installs cannot
+// collide on shared names.
 func installUsersReadFault(t *testing.T, pg *postgres.Postgres, body string) func() {
 	t.Helper()
 	ctx := context.Background()
-	const base = "users_read_fault_base"
-	const fn = "users_read_fault"
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")
+	base := "users_read_fault_base_" + suffix
+	fn := "users_read_fault_" + suffix
 	tx, err := pg.BeginTx(ctx)
 	if err != nil {
 		t.Fatal(err)

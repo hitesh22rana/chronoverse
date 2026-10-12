@@ -137,8 +137,8 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	if err == nil {
 		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	}
-	if isContextError(err) {
-		err = contextStatusError(err)
+	if statusErr, ok := contextStatusError(err); ok {
+		err = statusErr
 		return nil, "", err
 	}
 
@@ -209,8 +209,8 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	if err == nil {
 		loginUserResponse, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
 	}
-	if isContextError(err) {
-		err = contextStatusError(err)
+	if statusErr, ok := contextStatusError(err); ok {
+		err = statusErr
 		return nil, "", err
 	}
 
@@ -259,20 +259,17 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	return res, authToken, nil
 }
 
-// isContextError recognizes cancellation from Query or row collection.
-func isContextError(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
-}
-
 // contextStatusError maps a canceled or expired context to its gRPC status.
-func contextStatusError(err error) error {
+// The bool reports whether err described a context failure, so a caller can
+// never mistake an unmapped error for a successful status mapping.
+func contextStatusError(err error) (error, bool) {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		return status.Error(codes.DeadlineExceeded, err.Error())
+		return status.Error(codes.DeadlineExceeded, err.Error()), true
 	case errors.Is(err, context.Canceled):
-		return status.Error(codes.Canceled, err.Error())
+		return status.Error(codes.Canceled, err.Error()), true
 	default:
-		return nil
+		return nil, false
 	}
 }
 
@@ -303,8 +300,8 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 	if err == nil {
 		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	}
-	if isContextError(err) {
-		err = contextStatusError(err)
+	if statusErr, ok := contextStatusError(err); ok {
+		err = statusErr
 		return nil, err
 	}
 
@@ -344,11 +341,8 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 
 	ct, err := r.pg.Exec(ctx, query, args...)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = status.Error(codes.DeadlineExceeded, err.Error())
-			return err
-		} else if errors.Is(err, context.Canceled) {
-			err = status.Error(codes.Canceled, err.Error())
+		if statusErr, ok := contextStatusError(err); ok {
+			err = statusErr
 			return err
 		}
 
@@ -367,8 +361,8 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 	if ct.RowsAffected() == 0 {
 		var exists bool
 		if err = r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); err != nil {
-			if isContextError(err) {
-				err = contextStatusError(err)
+			if statusErr, ok := contextStatusError(err); ok {
+				err = statusErr
 				return err
 			}
 

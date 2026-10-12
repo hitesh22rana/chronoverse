@@ -128,6 +128,9 @@ func (tx *claimTx) Exec(_ context.Context, query string, args ...any) (pgconn.Co
 	i := tx.execs
 	tx.execs++
 	if strings.Contains(query, "UPDATE "+postgres.TableCommandIdempotencyKeys) {
+		if len(args) < 6 {
+			tx.t.Fatal("completion statement takes fewer arguments than the fake expects")
+		}
 		encoded, ok := args[5].([]byte)
 		if !ok {
 			tx.t.Fatal("completion response is not encoded JSON")

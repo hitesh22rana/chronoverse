@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { format } from "date-fns";
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -49,7 +49,9 @@ vi.mock("react-virtuoso", () => ({
   }) => (
     <div>
       {Array.from({ length: totalCount }, (_, index) => (
-        <div key={index}>{itemContent(index)}</div>
+        <div key={index} data-testid="notification-row">
+          {itemContent(index)}
+        </div>
       ))}
       <button onClick={endReached}>Load next page</button>
       <div data-testid="footer">
@@ -152,10 +154,24 @@ it("groups dates and safely highlights quotes without injecting HTML", () => {
     item("success", { kind: "WEB_SUCCESS" }),
   ];
   mount();
-  expect(screen.getAllByText("Today")).toHaveLength(1);
-  expect(screen.getByText("Yesterday")).toBeTruthy();
   // Headings print the reader's calendar day, so derive the label the same way.
-  expect(screen.getByText(format(archived, "MMM d, yyyy"))).toBeTruthy();
+  expect(
+    screen.getAllByTestId("notification-row").map((row) =>
+      within(row).queryByRole("checkbox")?.getAttribute("aria-label") ?? row.textContent,
+    ),
+  ).toEqual([
+    "Today",
+    "Select today",
+    "Select same day",
+    "Select success",
+    "Yesterday",
+    "Select yesterday",
+    format(archived, "MMM d, yyyy"),
+    "Select old",
+  ]);
+  expect(screen.getByRole("link", { name: /^today/ }).getAttribute("href")).toBe(
+    "/jobs/today",
+  );
   const old = screen.getByRole("link", { name: /old/ });
   expect(old.getAttribute("href")).toBe("/");
   expect(old.querySelector("img")).toBeNull();

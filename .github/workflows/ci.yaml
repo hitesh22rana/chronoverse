@@ -83,7 +83,7 @@ jobs:
       # Run every unit suite with the race detector. Docker-backed integration
       # tests skip under -short and are covered by the dedicated `integration`
       # job below, so this gate stays fast and Docker-independent.
-      # COVERPROFILE instruments this run; no test executes twice.
+      # COVERPROFILE records application packages and their cross-package calls.
       - name: Run tests
         run: make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out
 

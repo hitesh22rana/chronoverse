@@ -27,7 +27,13 @@ lint/fix: dependencies
 # invocation, no second run. COVERMODE defaults to atomic because -race needs
 # atomic counters, and both targets must agree for their profiles to merge.
 COVERMODE?=atomic
-COVERFLAGS=$(if $(COVERPROFILE),-covermode=$(COVERMODE) -coverprofile=$(COVERPROFILE))
+# Test and instrument application packages, excluding frontend dependency trees.
+GO_PACKAGES=$(shell go list ./cmd/... ./internal/... ./pkg/... || printf "PACKAGE_DISCOVERY_FAILED")
+empty:=
+space:=$(empty) $(empty)
+comma:=,
+COVERPKG=$(subst $(space),$(comma),$(strip $(GO_PACKAGES)))
+COVERFLAGS=$(if $(COVERPROFILE),-covermode=$(COVERMODE) -coverprofile=$(COVERPROFILE) -coverpkg=$(COVERPKG))
 
 # Where the per-job profiles are staged before they are merged, outside
 # target/coverage, which crap_report.py clears between runs.
@@ -52,8 +58,9 @@ coverage/crap:
 # tests self-skip under -short and are covered by test/integration.
 .PHONY: test/short
 test/short: dependencies
+	@$(if $(filter PACKAGE_DISCOVERY_FAILED,$(GO_PACKAGES)),$(error Go package discovery failed),true)
 	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
-	@go test -race -short $(strip $(COVERFLAGS)) ./...
+	@go test -race -short $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 
 # Runs all Docker-backed suites (Testcontainers and direct-daemon tests) by
 # selecting every TestIntegration* test. Requires a running Docker daemon.
@@ -62,8 +69,9 @@ test/short: dependencies
 # windows.
 .PHONY: test/integration
 test/integration: dependencies
+	@$(if $(filter PACKAGE_DISCOVERY_FAILED,$(GO_PACKAGES)),$(error Go package discovery failed),true)
 	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
-	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' $(strip $(COVERFLAGS)) ./...
+	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 
 .PHONY: k8s/setup
 k8s/setup:

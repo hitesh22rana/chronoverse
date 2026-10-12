@@ -2,7 +2,7 @@
 
 This describes how the coverage reports are produced and how they are turned into CRAP
 scores. Nothing here is a gate: no job fails on a score, no release job depends on the
-report, and no source file is excluded to make a number look better.
+report, and the static site is outside application coverage and CRAP scope.
 
 The sources of truth for this pipeline are [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml),
 [`scripts/coverage/crap_report.py`](../scripts/coverage/crap_report.py), and the `Makefile`
@@ -20,8 +20,8 @@ read the output and decide what to do about it, see
 | `coverage` | `python scripts/coverage/crap_report.py ...` | `crap-report` |
 
 Coverage rides along with the test runs that already gate the build. The `COVERPROFILE`
-variable adds `-covermode=atomic -coverprofile=...` to the same `go test` invocation; there
-is no second run of any suite. `npm run test:coverage` is `vitest run --coverage` with the
+variable adds `-covermode=atomic -coverprofile=... -coverpkg=<application packages>` to the
+same `go test` invocation; there is no second run of any suite. `npm run test:coverage` is `vitest run --coverage` with the
 JSON, LCOV, and text-summary reporters, so it is the existing `npm test` gate plus the LCOV
 report. The `coverage` job needs `test`, `integration`, and `dashboard`; it runs the script's
 own tests, downloads their three artifacts, and scores the profiles without a Go or Node
@@ -96,13 +96,35 @@ formula but hides the difference between "measured 0%" and "never measured". The
 the summary keep them apart.
 
 Intermediate reports land where crapper looks for them by design, so the native
-`crapper --use-existing-coverage` command reads the same files:
+`crapper --use-existing-coverage` command reads the same files. Its default source walk
+includes the static site and generated code; pass the application source list when comparing
+its scores with this pipeline:
 
 ```
 target/coverage/go/coverage.out                      merged Go profile
 target/coverage/typescript/dashboard/lcov.info        dashboard LCOV, rooted at the repository
 target/coverage-inputs/{unit,integration}/           the raw per-job profiles
 ```
+
+To run the native tool with the same source scope, preserve the pipeline snapshot first:
+
+```sh
+cp .metrics/crap.edn /tmp/application-crap.edn
+"$CRAPPER_VENV/bin/python" - <<'PYTHON'
+from pathlib import Path
+import subprocess
+import sys
+sys.path.insert(0, "scripts/coverage")
+from crap_report import handwritten_sources, tracked_files
+root = Path.cwd()
+files = handwritten_sources(root, tracked_files(root))
+crapper = str(Path(sys.executable).parent / "crapper")
+subprocess.run([crapper, "--use-existing-coverage", *map(str, files)], check=True)
+PYTHON
+```
+
+The native tool rewrites `.metrics/crap.edn`; the inventory and text report remain pipeline
+outputs. Compare function identities and values, rather than snapshot ordering.
 
 `target/coverage` and `.metrics` are gitignored. Do not commit them.
 
@@ -152,8 +174,8 @@ regression look identical from the number alone.
 
 ## What the score covers, and what it does not
 
-Scope is the tracked sources crapper can parse, minus tests, minus generated code: files
-carrying Go's generated-code marker (`// Code generated ... DO NOT EDIT.`) and everything
+Scope is the tracked application sources crapper can parse, excluding `static/`, tests, and
+generated code: files carrying Go's generated-code marker (`// Code generated ... DO NOT EDIT.`) and everything
 under `pkg/proto/` are left out. crapper's own skip list removes build output, dependency
 trees, and report directories, and `git ls-files` is the starting set, so untracked output
 never enters. The snapshot and the inventory are built from that one list, so they always
@@ -168,15 +190,14 @@ Limits worth stating plainly:
   scored from a function's branch records when its span has any and from line hits otherwise.
   A matched Go record can hold zero hits, and a file that matched a report can still contain a
   function with no statements in its span, which reads as 0%.
-- Go profiles instrument each package for its own tests by default, so calls from another
-  package's tests can remain unrecorded. Cross-package `-coverpkg=./...` instrumentation is not
-  used here.
+- Both Go jobs test packages under `cmd/`, `internal/`, and `pkg/` and instrument that same
+  package set with `-coverpkg`. Calls from other application packages' tests are recorded;
+  dependency trees under the dashboard or static site are never Go test targets.
+  Broader instrumentation corrects measurement, rather than adding test coverage evidence.
 - crapper recognises named functions and methods, plus top-level arrow functions in
   TypeScript. Other nested callbacks stay inside the enclosing function, so one entry can
   stand for a lot of decisions.
-- The static site has no test suite, so its functions have no coverage record. Their scores
-  are complexity-only and are marked `no` in the inventory. That is an absence of measurement,
-  not a failure.
+- The static site is excluded from coverage collection and CRAP assessment.
 - Not assessed at all: SQL, YAML and Compose/Kubernetes configuration, shell scripts,
   protobuf definitions, MDX content, and CSS.
 - Not assessed: runtime performance. Nothing here measures latency, throughput, memory, or

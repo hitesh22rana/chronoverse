@@ -36,11 +36,10 @@ as untested produce the same number. Before treating any score as a finding, che
 there is a measurement behind it. A function with no record needs a measurement first, not a
 refactor.
 
-Two measurement limits produce a low number with no code problem behind it. Go profiles
-instrument each package for its own tests by default, so calls made from another package's
-tests stay unrecorded; cross-package `-coverpkg=./...` instrumentation is not used here. And a
-source outside every test suite's scope, the static site among them, has no record at all.
-Neither means the behaviour is missing.
+Application Go profiles instrument the same package set in both test jobs, including calls
+from another package's tests. Historical package-local profiles can under-report these
+calls; distinguish instrumentation corrections from additional behaviour tests. The static
+site is outside coverage and CRAP scope.
 
 ## Separate the decisions from the guards
 
@@ -60,8 +59,8 @@ pieces get their own tests, not by the score moving. Complexity that moves into 
 function is not complexity removed.
 
 **Poor targets.** Generated protobuf and MockGen methods, `main` and route-registration
-startup wiring, configuration accessors, declaration-heavy UI primitives, and static page
-rendering can score poorly without revealing a useful behaviour test. Investigate actual
+startup wiring, configuration accessors, and declaration-heavy UI primitives can score
+poorly without revealing a useful behaviour test. Investigate actual
 decisions and risk before treating a score reduction there as progress.
 
 ## Prioritise
@@ -97,10 +96,6 @@ new source file that no test imports enters the denominator at 0%. Treat a perce
 falls because the measured set grew as scope, not regression. Compare like with like before
 drawing any trend.
 
-For the static site, validation of MDX pages, OpenAPI operations, and generated documents is
-the evidence that exists. Behaviour tests for OpenAPI dereferencing including cycles and
-unresolved references, search indexing, and document headings are worth adding when those
-utilities change. Do not duplicate static markup with trivial tests to move the denominator.
 
 ## Claims the report cannot support
 

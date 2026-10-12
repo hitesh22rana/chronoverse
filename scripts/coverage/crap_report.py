@@ -59,6 +59,8 @@ COVER_MODES = ("set", "count", "atomic")
 GENERATED_MARKER = re.compile(r"^// Code generated .* DO NOT EDIT\.$")
 # The project's declared generated-code location, kept as a second net.
 GENERATED_TREES = ("pkg/proto/",)
+# The static site is outside application coverage and CRAP scope.
+EXCLUDED_TREES = ("static/",)
 
 # Enough for that leading comment block, so no source is read in full.
 HEADER_BYTES = 512
@@ -308,11 +310,11 @@ def is_output_path(relative: str) -> bool:
 
 
 def handwritten_sources(root: Path, paths: list[str]) -> list[Path]:
-    """The tracked sources crapper can score and a person wrote.
+    """The tracked application sources crapper can score and a person wrote.
 
     `git ls-files` starts the scope; crapper's extension, skip-directory and test-name
     rules drop what it cannot usefully score, and the generated marker drops protoc-gen-go
-    and MockGen output whose complexity would drown the report.
+    and MockGen output whose complexity would drown the report. The static site is excluded.
     """
 
     found: list[Path] = []
@@ -320,7 +322,7 @@ def handwritten_sources(root: Path, paths: list[str]) -> list[Path]:
         if language_of(relative) is None or is_test_file(relative) or is_output_path(relative):
             continue
         text = Path(relative).as_posix()
-        if any(text.startswith(tree) for tree in GENERATED_TREES):
+        if any(text.startswith(tree) for tree in GENERATED_TREES + EXCLUDED_TREES):
             continue
         path = root / relative
         if not path.is_file():

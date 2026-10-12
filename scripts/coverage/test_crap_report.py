@@ -441,6 +441,16 @@ class HandwrittenSourcesTest(unittest.TestCase):
             ],
         )
 
+    def test_static_sources_are_outside_application_scope(self):
+        path = self.root / "static/src/search.ts"
+        path.parent.mkdir(parents=True)
+        path.write_text("export function search() { return 1; }\n", encoding="utf-8")
+        self.assertEqual(self.select(["static/src/search.ts"]), [])
+        application = self.root / "internal/static/search.go"
+        application.parent.mkdir(parents=True)
+        application.write_text("package static\nfunc Search() int { return 1 }\n", encoding="utf-8")
+        self.assertEqual(self.select(["internal/static/search.go"]), ["internal/static/search.go"])
+
     def test_generated_trees_are_excluded(self):
         self.assertNotIn("pkg/proto/go/users/users.pb.go", self.select())
 

@@ -137,7 +137,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	if err == nil {
 		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	}
-	if statusErr, ok := contextStatusError(err); ok {
+	if mapped, statusErr := contextStatusError(err); mapped {
 		err = statusErr
 		return nil, "", err
 	}
@@ -209,7 +209,7 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	if err == nil {
 		loginUserResponse, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.LoginUserData])
 	}
-	if statusErr, ok := contextStatusError(err); ok {
+	if mapped, statusErr := contextStatusError(err); mapped {
 		err = statusErr
 		return nil, "", err
 	}
@@ -262,14 +262,14 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 // contextStatusError maps a canceled or expired context to its gRPC status.
 // The bool reports whether err described a context failure, so a caller can
 // never mistake an unmapped error for a successful status mapping.
-func contextStatusError(err error) (error, bool) {
+func contextStatusError(err error) (mapped bool, statusErr error) {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		return status.Error(codes.DeadlineExceeded, err.Error()), true
+		return true, status.Error(codes.DeadlineExceeded, err.Error())
 	case errors.Is(err, context.Canceled):
-		return status.Error(codes.Canceled, err.Error()), true
+		return true, status.Error(codes.Canceled, err.Error())
 	default:
-		return nil, false
+		return false, nil
 	}
 }
 
@@ -300,7 +300,7 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 	if err == nil {
 		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[usersmodel.GetUserResponse])
 	}
-	if statusErr, ok := contextStatusError(err); ok {
+	if mapped, statusErr := contextStatusError(err); mapped {
 		err = statusErr
 		return nil, err
 	}
@@ -341,7 +341,7 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 
 	ct, err := r.pg.Exec(ctx, query, args...)
 	if err != nil {
-		if statusErr, ok := contextStatusError(err); ok {
+		if mapped, statusErr := contextStatusError(err); mapped {
 			err = statusErr
 			return err
 		}
@@ -361,7 +361,7 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 	if ct.RowsAffected() == 0 {
 		var exists bool
 		if err = r.pg.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1)`, postgres.TableUsers), id).Scan(&exists); err != nil {
-			if statusErr, ok := contextStatusError(err); ok {
+			if mapped, statusErr := contextStatusError(err); mapped {
 				err = statusErr
 				return err
 			}

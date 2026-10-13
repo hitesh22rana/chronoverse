@@ -81,6 +81,79 @@ describe("log message rendering", () => {
         expect(marks(container)).toEqual(["error"])
     })
 
+    it("highlights the selected occurrence instead of an earlier equal JSON value", () => {
+        const container = renderMessage(`{"first":"error","second":"${highlight("error")}"}`, token, true)
+        expect(container.textContent).toBe(JSON.stringify({ first: "error", second: "error" }, null, 2))
+        expect(marks(container)).toEqual(["error"])
+        expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('{\n  "first": "error",\n  "second": "')
+    })
+
+    it("highlights repeated matches inside a single JSON string", () => {
+        const container = renderMessage(`{"a":"${highlight("x")}${highlight("x")}"}`, token, true)
+        expect(container.textContent).toBe(JSON.stringify({ a: "xx" }, null, 2))
+        expect(marks(container)).toEqual(["x", "x"])
+    })
+
+    it("preserves the selected escaped substring and literal placeholder-like text", () => {
+        const container = renderMessage(`{"first":"a\\nb","second":"a${highlight("\\n")}b","literal":"__CV_PLACEHOLDER_0__"}`, token, true)
+        expect(container.textContent).toBe('{\n  "first": "a\\nb",\n  "second": "a\\nb",\n  "literal": "__CV_PLACEHOLDER_0__"\n}')
+        expect(marks(container)).toEqual(["\\n"])
+        expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('{\n  "first": "a\\nb",\n  "second": "a')
+    })
+
+    it("retains numeric spelling, escaped Unicode and source key order", () => {
+        const container = renderMessage(`{"10":1e2,"2":${highlight("1e2")},"text":"${highlight("\\u0061")}"}`, token, true)
+        expect(container.textContent).toBe('{\n  "10": 1e2,\n  "2": 1e2,\n  "text": "\\u0061"\n}')
+        expect(marks(container)).toEqual(["1e2", "\\u0061"])
+    })
+
+    it("keeps structural selections across inserted indentation", () => {
+        const container = renderMessage(`{"empty":[],"selected":${highlight('[true,{},null,[2]]')}}`, token, true)
+        expect(container.textContent).toBe(JSON.stringify({ empty: [], selected: [true, {}, null, [2]] }, null, 2))
+        expect(marks(container)).toEqual(['[\n    true,\n    {},\n    null,\n    [\n      2\n    ]\n  ]'])
+    })
+
+    it("does not move an embedded JSON match into equal preceding plain text", () => {
+        const container = renderMessage(`error {"first":"error","selected":"${highlight("error")}"}`, token, true)
+        expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('error {\n  "first": "error",\n  "selected": "')
+        expect(marks(container)).toEqual(["error"])
+    })
+
+    it("formats and highlights embedded JSON beyond the spread argument limit", () => {
+        // Exceed spread argument limits while preserving formatting and highlighting.
+        const values = Array.from({ length: 50000 }, (_, index) => index)
+        const selected = String(values.length)
+        const container = renderMessage(`error {"values":[${values.join(",")}],"selected":${highlight(selected)}}`, token, true)
+        expect(container.textContent).toContain('error {\n  "values": [\n    0,\n    1,\n    2,\n')
+        expect(container.textContent?.endsWith(`"selected": ${selected}\n}`)).toBe(true)
+        expect(marks(container)).toEqual([selected])
+        expect(container.querySelector("mark")?.previousSibling?.textContent?.endsWith('"selected": ')).toBe(true)
+    })
+
+    it("falls back instead of overflowing the string limit on deeply nested JSON", () => {
+        // 20k nesting fits the 256 KiB line cap but would indent to ~800 MB, past the string limit.
+        const arrays = `${"[".repeat(20000)}0${"]".repeat(20000)}`
+        const arrayContainer = renderMessage(arrays, token, true)
+        expect(arrayContainer.textContent).toBe(arrays)
+        expect(marks(arrayContainer)).toEqual([])
+
+        // Nested objects keep their text: the fallback regex only indents its one shallow match.
+        const objects = `${'{"a":'.repeat(20000)}1${"}".repeat(20000)}`
+        const objectContainer = renderMessage(objects, token, true)
+        expect(objectContainer.textContent?.startsWith('{"a":{"a":{"a":')).toBe(true)
+        expect(objectContainer.textContent?.length).toBeLessThan(objects.length * 2)
+        expect(marks(objectContainer)).toEqual([])
+    })
+
+    it("keeps string values intact in JSON nested past the depth limit", () => {
+        // The embedded-JSON fallback regex matches braces inside string values; a
+        // depth-limit failure must not route valid JSON through it.
+        const nested = `${"[".repeat(101)}"{ }"${"]".repeat(101)}`
+        const container = renderMessage(nested, token, true)
+        expect(container.textContent).toBe(nested)
+        expect(marks(container)).toEqual([])
+    })
+
     it.each([
         ['[1,{"ok":true}]', JSON.stringify([1, { ok: true }], null, 2)],
         ['"text"', JSON.stringify("text")],

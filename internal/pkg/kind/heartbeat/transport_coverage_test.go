@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,12 +23,23 @@ import (
 const (
 	testSOCKS5Scheme  = "socks5"
 	testSOCKS5HScheme = "socks5h"
+
+	// Fixtures must receive this validated destination, ignoring the caller address.
+	pinnedTarget = "203.0.113.9:443"
+
+	// Bound fixture waits independently of the package timeout.
+	fixtureTimeout = 3 * time.Second
 )
+
+// SOCKS5 CONNECT to pinnedTarget over IPv4, port 443.
+var socks5PinnedCommand = []byte{5, 1, 0, 1, 203, 0, 113, 9, 1, 187}
 
 func TestProxyTunnelConnectResponses(t *testing.T) {
 	for _, tc := range []struct{ name, response, want string }{
 		{"success", "HTTP/1.1 200 Connection established\r\n\r\npinned payload", ""},
 		{"rejected", "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n", "407"},
+		// Preserve the close error when a rejected response is truncated.
+		{"rejected with truncated body", "HTTP/1.1 407 Proxy Authentication Required\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nshort", "close response"},
 		{"malformed", "not HTTP\r\n\r\n", "read proxy CONNECT response"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -40,12 +52,12 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- serveCONNECTResponse(listener, tc.response, request) }()
 
-			proxyURL := &url.URL{Scheme: "http", Host: listener.Addr().String(), User: url.UserPassword("user", "secret")}
-			dial, err := proxyTunnelDialContext(proxyURL, "203.0.113.9:443", &net.Dialer{Timeout: time.Second})
+			proxyURL := &url.URL{Scheme: httpScheme, Host: listener.Addr().String(), User: url.UserPassword("user", "secret")}
+			dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{Timeout: time.Second})
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
 			defer cancel()
 			conn, err := dial(ctx, "tcp", "ignored.example:80")
 			if tc.want != "" {
@@ -65,7 +77,7 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 			var req *http.Request
 			select {
 			case req = <-request:
-			case <-time.After(3 * time.Second):
+			case <-time.After(fixtureTimeout):
 				t.Fatal("proxy did not receive a valid CONNECT request")
 			}
 			assertPinnedCONNECT(t, req)
@@ -78,7 +90,7 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 
 func assertPinnedCONNECT(t *testing.T, req *http.Request) {
 	t.Helper()
-	if req.Method != http.MethodConnect || req.Host != "203.0.113.9:443" || req.Header.Get("Proxy-Authorization") != "Basic dXNlcjpzZWNyZXQ=" {
+	if req.Method != http.MethodConnect || req.Host != pinnedTarget || req.Header.Get("Proxy-Authorization") != "Basic dXNlcjpzZWNyZXQ=" {
 		t.Fatalf("incorrect CONNECT: %#v", req)
 	}
 }
@@ -89,7 +101,7 @@ func serveCONNECTResponse(listener net.Listener, response string, request chan<-
 		return err
 	}
 	defer conn.Close()
-	if deadlineErr := conn.SetDeadline(time.Now().Add(3 * time.Second)); deadlineErr != nil {
+	if deadlineErr := conn.SetDeadline(time.Now().Add(fixtureTimeout)); deadlineErr != nil {
 		return deadlineErr
 	}
 	req, err := http.ReadRequest(bufio.NewReader(conn))
@@ -101,16 +113,32 @@ func serveCONNECTResponse(listener net.Listener, response string, request chan<-
 	return err
 }
 
-func TestProxyTunnelConfigurationAndCancellation(t *testing.T) {
-	for _, proxyURL := range []*url.URL{nil, {Scheme: "http"}, {Scheme: "ftp", Host: "proxy.example"}, {Scheme: "ftp", Host: "proxy.example:21"}} {
-		if _, err := proxyTunnelDialContext(proxyURL, "203.0.113.9:443", &net.Dialer{}); err == nil {
-			t.Fatalf("accepted invalid proxy %v", proxyURL)
-		}
+func TestProxyTunnelRejectsInvalidProxyURLs(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		proxyURL *url.URL
+	}{
+		{"nil url", nil},
+		{"missing host", &url.URL{Scheme: httpScheme}},
+		{"unsupported scheme without port", &url.URL{Scheme: "ftp", Host: "proxy.example"}},
+		{"unsupported scheme with port", &url.URL{Scheme: "ftp", Host: "proxy.example:21"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := proxyTunnelDialContext(tc.proxyURL, pinnedTarget, &net.Dialer{}); err == nil {
+				t.Fatalf("accepted invalid proxy %v", tc.proxyURL)
+			}
+		})
 	}
-	for _, scheme := range []string{"http", "https", testSOCKS5Scheme, testSOCKS5HScheme} {
+}
+
+// TestProxyTunnelDialStopsOnCanceledContext asserts the context error itself.
+// A bare "err != nil" would be satisfied by the refusal that 127.0.0.1:1
+// produces anyway, which would hide a dialer that dropped the request context.
+func TestProxyTunnelDialStopsOnCanceledContext(t *testing.T) {
+	for _, scheme := range []string{httpScheme, httpsScheme, testSOCKS5Scheme, testSOCKS5HScheme} {
 		t.Run(scheme, func(t *testing.T) {
 			proxyURL := &url.URL{Scheme: scheme, Host: "127.0.0.1:1", User: url.UserPassword("user", "secret")}
-			dial, err := proxyTunnelDialContext(proxyURL, "203.0.113.9:443", &net.Dialer{})
+			dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -121,8 +149,8 @@ func TestProxyTunnelConfigurationAndCancellation(t *testing.T) {
 				conn.Close()
 				t.Fatal("canceled dial returned connection")
 			}
-			if err == nil {
-				t.Fatal("canceled dial succeeded")
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("canceled dial error = %v, want context.Canceled", err)
 			}
 		})
 	}
@@ -143,7 +171,7 @@ func TestProxyTunnelWaitingResponseCanceled(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		if deadlineErr := conn.SetDeadline(time.Now().Add(3 * time.Second)); deadlineErr != nil {
+		if deadlineErr := conn.SetDeadline(time.Now().Add(fixtureTimeout)); deadlineErr != nil {
 			done <- deadlineErr
 			return
 		}
@@ -156,8 +184,8 @@ func TestProxyTunnelWaitingResponseCanceled(t *testing.T) {
 		_, e = io.Copy(io.Discard, conn)
 		done <- e
 	}()
-	proxyURL := &url.URL{Scheme: "http", Host: listener.Addr().String()}
-	dial, err := proxyTunnelDialContext(proxyURL, "203.0.113.9:443", &net.Dialer{})
+	proxyURL := &url.URL{Scheme: httpScheme, Host: listener.Addr().String()}
+	dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +201,7 @@ func TestProxyTunnelWaitingResponseCanceled(t *testing.T) {
 	}()
 	select {
 	case <-received:
-	case <-time.After(3 * time.Second):
+	case <-time.After(fixtureTimeout):
 		t.Fatal("CONNECT was not received")
 	}
 	cancel()
@@ -182,7 +210,7 @@ func TestProxyTunnelWaitingResponseCanceled(t *testing.T) {
 		if e == nil {
 			t.Fatal("canceled tunnel succeeded")
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(fixtureTimeout):
 		t.Fatal("cancellation did not stop CONNECT")
 	}
 	if e := <-done; e != nil {
@@ -190,6 +218,67 @@ func TestProxyTunnelWaitingResponseCanceled(t *testing.T) {
 	}
 }
 
+// SOCKS cancellation expires socket I/O. The fixture deadline exceeds the
+// guard so ignoring cancellation cannot pass as an ordinary timeout.
+func TestProxyTunnelSOCKSHandshakeCancellation(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	negotiated := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- serveStalledSOCKSTunnel(listener, negotiated, release) }()
+	// Tear the socket down if an assertion gives up early, so the fixture
+	// goroutine cannot outlive the test.
+	t.Cleanup(func() { close(release) })
+
+	proxyURL := &url.URL{Scheme: testSOCKS5HScheme, Host: listener.Addr().String()}
+	dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		conn, dialErr := dial(ctx, "tcp", "attacker.example:80")
+		if conn != nil {
+			conn.Close()
+		}
+		result <- dialErr
+	}()
+	select {
+	case <-negotiated:
+	case <-time.After(fixtureTimeout):
+		t.Fatal("SOCKS handshake did not reach the CONNECT request")
+	}
+	cancel()
+	select {
+	case dialErr := <-result:
+		// Accept either representation of "the context interrupted the
+		// handshake"; the guard is what distinguishes it from the fixture's
+		// own deadline.
+		if !errors.Is(dialErr, os.ErrDeadlineExceeded) && !errors.Is(dialErr, context.Canceled) {
+			t.Fatalf("SOCKS cancellation error = %v, want the context to interrupt the handshake", dialErr)
+		}
+	case <-time.After(fixtureTimeout):
+		t.Fatal("cancellation did not stop the SOCKS handshake")
+	}
+	if serverErr := <-done; serverErr != nil {
+		t.Fatal(serverErr)
+	}
+}
+
+// Unknown names fail with NXDOMAIN.
+var controlledDNSAnswers = map[string][][4]byte{
+	"safe.test.":   {{8, 8, 8, 8}, {1, 1, 1, 1}},
+	"unsafe.test.": {{8, 8, 8, 8}, {1, 1, 1, 1}, {127, 0, 0, 1}},
+}
+
+// Sequential only: this replaces the global resolver until cleanup.
+// Go defers parallel tests until sequential tests finish.
 func useControlledEndpointDNS(t *testing.T) {
 	t.Helper()
 	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -201,8 +290,8 @@ func useControlledEndpointDNS(t *testing.T) {
 		defer close(done)
 		buffer := make([]byte, 1500)
 		for {
-			n, peer, e := listener.ReadFrom(buffer)
-			if e != nil {
+			n, peer, readErr := listener.ReadFrom(buffer)
+			if readErr != nil {
 				return
 			}
 			var message dnsmessage.Message
@@ -213,12 +302,15 @@ func useControlledEndpointDNS(t *testing.T) {
 			message.Header.RecursionAvailable = true
 			for i := range message.Questions {
 				q := &message.Questions[i]
-				if q.Type != dnsmessage.TypeA {
+				ips, known := controlledDNSAnswers[q.Name.String()]
+				if !known {
+					message.Header.RCode = dnsmessage.RCodeNameError
 					continue
 				}
-				ips := [][4]byte{{8, 8, 8, 8}, {1, 1, 1, 1}}
-				if q.Name.String() == "unsafe.test." {
-					ips = append(ips, [4]byte{127, 0, 0, 1})
+				// A known name with no IPv6 answer is NOERROR with no records,
+				// which is how a dual-stack client learns to use the A records.
+				if q.Type != dnsmessage.TypeA {
+					continue
 				}
 				for _, ip := range ips {
 					message.Answers = append(message.Answers, dnsmessage.Resource{
@@ -227,19 +319,26 @@ func useControlledEndpointDNS(t *testing.T) {
 					})
 				}
 			}
-			response, e := message.Pack()
-			if e == nil {
-				if _, writeErr := listener.WriteTo(response, peer); writeErr != nil {
-					return
-				}
+			response, packErr := message.Pack()
+			if packErr != nil {
+				continue
+			}
+			if _, writeErr := listener.WriteTo(response, peer); writeErr != nil {
+				return
 			}
 		}
 	}()
 	original := net.DefaultResolver
+	// Pin the old resolver: canceled lookups can leave background dial goroutines
+	// that would otherwise race with restoring net.DefaultResolver.
 	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{Resolver: original}).DialContext(ctx, "udp", listener.LocalAddr().String())
 	}}
-	t.Cleanup(func() { net.DefaultResolver = original; listener.Close(); <-done })
+	t.Cleanup(func() {
+		net.DefaultResolver = original
+		listener.Close()
+		<-done
+	})
 }
 
 func TestResolveEndpointHostWithControlledDNS(t *testing.T) {
@@ -297,11 +396,11 @@ func TestProxyTunnelSOCKSPinsTarget(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- serveSOCKSTunnel(listener) }()
 	proxyURL := &url.URL{Scheme: testSOCKS5HScheme, Host: listener.Addr().String()}
-	dial, err := proxyTunnelDialContext(proxyURL, "203.0.113.9:443", &net.Dialer{})
+	dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
 	defer cancel()
 	conn, err := dial(ctx, "tcp", "attacker.example:80")
 	if err != nil {
@@ -313,6 +412,37 @@ func TestProxyTunnelSOCKSPinsTarget(t *testing.T) {
 	}
 }
 
+// serveStalledSOCKSTunnel completes authentication and the CONNECT request,
+// signals negotiated, then never answers. Its socket deadline is deliberately
+// twice fixtureTimeout so that TestProxyTunnelSOCKSHandshakeCancellation's
+// guard, not the fixture, is what decides whether the context reached the
+// dialer. release lets the test drop the socket so this goroutine cannot
+// outlive it.
+func serveStalledSOCKSTunnel(listener net.Listener, negotiated chan<- struct{}, release <-chan struct{}) error {
+	conn, err := acceptSOCKS5Handshake(listener, 2*fixtureTimeout)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	stalled := make(chan struct{})
+	defer close(stalled)
+	go func() {
+		select {
+		case <-release:
+			conn.Close()
+		case <-stalled:
+		}
+	}()
+	close(negotiated)
+	_, err = io.Copy(io.Discard, conn)
+	// The fixture's own deadline and the test's teardown both end this read.
+	// Neither carries information about the code under test.
+	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
+}
+
 func TestProxyTunnelConnectionRefused(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -322,8 +452,8 @@ func TestProxyTunnelConnectionRefused(t *testing.T) {
 	if err = listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	proxyURL := &url.URL{Scheme: "http", Host: address}
-	dial, err := proxyTunnelDialContext(proxyURL, "203.0.113.9:443", &net.Dialer{Timeout: time.Second})
+	proxyURL := &url.URL{Scheme: httpScheme, Host: address}
+	dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,11 +471,11 @@ func TestProxyTunnelConnectionRefused(t *testing.T) {
 func TestCanonicalProxyAddressDefaults(t *testing.T) {
 	for _, tc := range []struct{ scheme, host, want string }{
 		{"", "proxy.example", "proxy.example:80"},
-		{"http", "proxy.example", "proxy.example:80"},
+		{httpScheme, "proxy.example", "proxy.example:80"},
 		{"HTTPS", "proxy.example", "proxy.example:443"},
 		{testSOCKS5Scheme, "proxy.example", "proxy.example:1080"},
 		{testSOCKS5HScheme, "proxy.example", "proxy.example:1080"},
-		{"https", "[2001:db8::1]:8443", "[2001:db8::1]:8443"},
+		{httpsScheme, "[2001:db8::1]:8443", "[2001:db8::1]:8443"},
 	} {
 		t.Run(tc.scheme+tc.host, func(t *testing.T) {
 			got, err := canonicalProxyAddress(&url.URL{Scheme: tc.scheme, Host: tc.host})
@@ -363,11 +493,11 @@ func TestPinnedTargetAddress(t *testing.T) {
 		want         string
 		fail         bool
 	}{
-		{scheme: "http", address: net.IPAddr{IP: net.ParseIP("8.8.8.8")}, want: "8.8.8.8:80"},
-		{scheme: "https", address: net.IPAddr{IP: net.ParseIP("2606:4700:4700::1111")}, want: "[2606:4700:4700::1111]:443"},
-		{scheme: "http", port: "8080", address: net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "test0"}, want: "[fe80::1%test0]:8080"},
+		{scheme: httpScheme, address: net.IPAddr{IP: net.ParseIP("8.8.8.8")}, want: "8.8.8.8:80"},
+		{scheme: httpsScheme, address: net.IPAddr{IP: net.ParseIP("2606:4700:4700::1111")}, want: "[2606:4700:4700::1111]:443"},
+		{scheme: httpScheme, port: "8080", address: net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "test0"}, want: "[fe80::1%test0]:8080"},
 		{scheme: "ftp", address: net.IPAddr{IP: net.ParseIP("8.8.8.8")}, fail: true},
-		{scheme: "https", fail: true},
+		{scheme: httpsScheme, fail: true},
 	} {
 		t.Run(tc.scheme+tc.port+tc.want, func(t *testing.T) {
 			host := "original.example"
@@ -395,11 +525,11 @@ func TestHTTPSProxyRequiresTrustedCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dial, err := proxyTunnelDialContext(proxyURL, "203.0.113.9:443", &net.Dialer{Timeout: time.Second})
+	dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
 	defer cancel()
 	conn, err := dial(ctx, "tcp", "ignored.example:80")
 	if conn != nil {
@@ -413,32 +543,46 @@ func TestHTTPSProxyRequiresTrustedCertificate(t *testing.T) {
 }
 
 func serveSOCKSTunnel(listener net.Listener) error {
-	conn, e := listener.Accept()
-	if e != nil {
-		return e
+	conn, err := acceptSOCKS5Handshake(listener, fixtureTimeout)
+	if err != nil {
+		return err
 	}
 	defer conn.Close()
-	if deadlineErr := conn.SetDeadline(time.Now().Add(3 * time.Second)); deadlineErr != nil {
-		return deadlineErr
+	_, err = conn.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0})
+	return err
+}
+
+// acceptSOCKS5Handshake accepts one client, completes method negotiation, and
+// reads the CONNECT request, failing unless the client asked for pinnedTarget
+// rather than the address it handed to the dialer.
+func acceptSOCKS5Handshake(listener net.Listener, timeout time.Duration) (net.Conn, error) {
+	conn, err := listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	fail := func(err error) (net.Conn, error) {
+		conn.Close()
+		return nil, err
+	}
+	if deadlineErr := conn.SetDeadline(time.Now().Add(timeout)); deadlineErr != nil {
+		return fail(deadlineErr)
 	}
 	greeting := make([]byte, 3)
-	if _, e = io.ReadFull(conn, greeting); e != nil {
-		return e
+	if _, err = io.ReadFull(conn, greeting); err != nil {
+		return fail(err)
 	}
 	if greeting[0] != 5 || greeting[1] != 1 || greeting[2] != 0 {
-		return errors.New("unexpected SOCKS greeting")
+		return fail(errors.New("unexpected SOCKS greeting"))
 	}
-	if _, e = conn.Write([]byte{5, 0}); e != nil {
-		return e
+	if _, err = conn.Write([]byte{5, 0}); err != nil {
+		return fail(err)
 	}
-	command := make([]byte, 10)
-	if _, e = io.ReadFull(conn, command); e != nil {
-		return e
+	command := make([]byte, len(socks5PinnedCommand))
+	if _, err = io.ReadFull(conn, command); err != nil {
+		return fail(err)
 	}
-	want := []byte{5, 1, 0, 1, 203, 0, 113, 9, 1, 187}
-	if !bytes.Equal(command, want) {
-		return errors.New("SOCKS target is not pinned IP and port")
+	if !bytes.Equal(command, socks5PinnedCommand) {
+		return fail(errors.New("SOCKS target is not pinned IP and port"))
 	}
-	_, e = conn.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0})
-	return e
+	return conn, nil
 }

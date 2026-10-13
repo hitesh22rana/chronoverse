@@ -683,8 +683,6 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the consecutive failures counter.
-//
-//nolint:gocyclo // Terminal completion validates identities and classifies transactional replay outcomes.
 func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, workflowID, userID, jobID string) (err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.ResetWorkflowConsecutiveJobFailuresCount")
 	defer func() {
@@ -740,19 +738,11 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 	}
 
 	if ct.RowsAffected() == 0 {
-		var storedWorkflowID, storedUserID, effect string
-		query = fmt.Sprintf(`SELECT workflow_id::text, user_id::text, effect FROM %s WHERE job_id = $1`, postgres.TableWorkflowTerminalEffects)
-		if err = tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return status.Error(codes.NotFound, "workflow not found or not owned by user")
-			}
-			return status.Errorf(codes.Internal, "failed to load completed terminal-effect replay: %v", err)
+		err = verifyCompletedTerminalEffect(ctx, tx, workflowID, userID, jobID)
+		if err != nil {
+			return err
 		}
-		if storedWorkflowID != workflowID || storedUserID != userID || effect != "COMPLETED" {
-			return status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
-		}
-	}
-	if ct.RowsAffected() != 0 {
+	} else {
 		query = fmt.Sprintf(`
 			UPDATE %s
 			SET consecutive_job_failures_count = 0
@@ -1231,6 +1221,25 @@ func (r *Repository) loadWorkflowUpdateState(ctx context.Context, tx pgx.Tx, wor
 	}
 
 	return state, nil
+}
+
+// verifyCompletedTerminalEffect proves an already-recorded COMPLETED effect
+// belongs to this workflow and user, so a replay can commit without touching the
+// failure counter a later job may have moved.
+func verifyCompletedTerminalEffect(ctx context.Context, tx pgx.Tx, workflowID, userID, jobID string) error {
+	query := fmt.Sprintf(`SELECT workflow_id::text, user_id::text, effect FROM %s WHERE job_id = $1`, postgres.TableWorkflowTerminalEffects)
+
+	var storedWorkflowID, storedUserID, effect string
+	if err := tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return status.Error(codes.NotFound, "workflow not found or not owned by user")
+		}
+		return status.Errorf(codes.Internal, "failed to load completed terminal-effect replay: %v", err)
+	}
+	if storedWorkflowID != workflowID || storedUserID != userID || effect != "COMPLETED" {
+		return status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
+	}
+	return nil
 }
 
 func replayWorkflowFailureEffect(ctx context.Context, tx pgx.Tx, workflowID, userID, jobID string) (bool, error) {

@@ -17,12 +17,18 @@ import (
 )
 
 // installFailureEffectFault scopes a database fault to one fixture's row.
-func installFailureEffectFault(ctx context.Context, t *testing.T, pg *postgres.Postgres, table, event, condition string, deferred, skip bool) {
+// An errcode raises the fault under that SQLSTATE, which is how the
+// invalid-text-representation classifiers are reached.
+func installFailureEffectFault(ctx context.Context, t *testing.T, pg *postgres.Postgres, table, event, condition, errcode string, deferred, skip bool) {
 	t.Helper()
 	name := "cv_failure_" + fixtureTag()
-	body := "RAISE EXCEPTION 'injected failure effect fault';"
-	if skip {
-		body = "RETURN NULL;"
+	body := "RETURN NULL;"
+	if !skip {
+		body = "RAISE EXCEPTION 'injected failure effect fault'"
+		if errcode != "" {
+			body += fmt.Sprintf(" USING ERRCODE = '%s'", errcode)
+		}
+		body += ";"
 	}
 	if _, err := pg.Exec(ctx, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $body$ BEGIN %s END; $body$`, name, body)); err != nil {
 		t.Fatalf("create fault function: %v", err)
@@ -99,7 +105,7 @@ func TestIntegrationFailureThresholdFaultsRollBackAllEffects(t *testing.T) {
 					fixture.WorkflowID, workflowsmodel.ActionTerminate.ToString(),
 				)
 			}
-			installFailureEffectFault(ctx, t, pg, tc.table, tc.event, condition, tc.deferred, tc.skip)
+			installFailureEffectFault(ctx, t, pg, tc.table, tc.event, condition, "", tc.deferred, tc.skip)
 			reached, err := repo.IncrementWorkflowConsecutiveJobFailuresCount(ctx, fixture.WorkflowID, fixture.UserID, jobID)
 			if reached || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), tc.message) {
 				t.Fatalf("increment = (%v, %v), want Internal containing %q", reached, err, tc.message)

@@ -68,7 +68,9 @@ func (r terminalReplayRow) Scan(dest ...any) error {
 	*dest[0].(*string) = r.workflow
 	*dest[1].(*string) = r.user
 	*dest[2].(*string) = r.effect
-	*dest[3].(*bool) = r.threshold
+	if len(dest) > 3 {
+		*dest[3].(*bool) = r.threshold
+	}
 	return nil
 }
 
@@ -128,6 +130,38 @@ func TestReplayFailurePreservesResultAndRejectsConflictingIdentity(t *testing.T)
 			reached, err := replayWorkflowFailureEffect(context.Background(), tx, testWorkflowID, testUserID, jobID)
 			if reached != tc.wantThreshold || status.Code(err) != tc.wantCode || tx.commits != tc.wantCommits || !strings.Contains(status.Convert(err).Message(), tc.message) {
 				t.Fatalf("replay = (%v, %v), commits=%d; want threshold=%v code=%v commits=%d message containing %q", reached, err, tx.commits, tc.wantThreshold, tc.wantCode, tc.wantCommits, tc.message)
+			}
+		})
+	}
+}
+
+// TestVerifyCompletedTerminalEffectReportsEveryOutcome proves the completion
+// replay guard separates the caller's own missing row from a database failure
+// and from an identity that belongs to somebody else, so a caller who fixed its
+// request is not told to fix it again.
+func TestVerifyCompletedTerminalEffectReportsEveryOutcome(t *testing.T) {
+	t.Parallel()
+	const jobID = "f972f8b6-3b12-4bcc-a730-ed546be37916"
+	fault := errors.New("connection lost")
+	cases := []struct {
+		name, message string
+		row           terminalReplayRow
+		wantCode      codes.Code
+	}{
+		{name: "OwnCompletion", row: terminalReplayRow{workflow: testWorkflowID, user: testUserID, effect: terminalEffectCompleted}},
+		{name: "MissingEffect", row: terminalReplayRow{err: pgx.ErrNoRows}, wantCode: codes.NotFound, message: "workflow not found or not owned by user"},
+		{name: "ReadFailure", row: terminalReplayRow{err: fault}, wantCode: codes.Internal, message: "failed to load completed terminal-effect replay"},
+		{name: "DifferentWorkflow", row: terminalReplayRow{workflow: testUserID, user: testUserID, effect: terminalEffectCompleted}, wantCode: codes.AlreadyExists, message: "different effect"},
+		{name: "DifferentUser", row: terminalReplayRow{workflow: testWorkflowID, user: testWorkflowID, effect: terminalEffectCompleted}, wantCode: codes.AlreadyExists, message: "different effect"},
+		{name: "DifferentEffect", row: terminalReplayRow{workflow: testWorkflowID, user: testUserID, effect: terminalEffectFailed}, wantCode: codes.AlreadyExists, message: "different effect"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tx := &terminalReplayTx{t: t, row: tc.row, job: jobID}
+			err := verifyCompletedTerminalEffect(context.Background(), tx, testWorkflowID, testUserID, jobID)
+			if status.Code(err) != tc.wantCode || !strings.Contains(status.Convert(err).Message(), tc.message) || tx.commits != 0 {
+				t.Fatalf("verify = (%v), commits=%d; want code=%v message containing %q and no commit", err, tx.commits, tc.wantCode, tc.message)
 			}
 		})
 	}

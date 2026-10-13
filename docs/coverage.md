@@ -2,7 +2,8 @@
 
 This describes how the coverage reports are produced and how they are turned into CRAP
 scores. Nothing here is a gate: no job fails on a score, no release job depends on the
-report, and no source file is excluded to make a number look better.
+report. The scope is application code; other parts of the repository are outside it by
+choice, and each exclusion below says why.
 
 The sources of truth for this pipeline are [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml),
 [`scripts/coverage/crap_report.py`](../scripts/coverage/crap_report.py), and the `Makefile`
@@ -20,12 +21,12 @@ read the output and decide what to do about it, see
 | `coverage` | `python scripts/coverage/crap_report.py ...` | `crap-report` |
 
 Coverage rides along with the test runs that already gate the build. The `COVERPROFILE`
-variable adds `-covermode=atomic -coverprofile=...` to the same `go test` invocation; there
-is no second run of any suite. `npm run test:coverage` is `vitest run --coverage` with the
-JSON, LCOV, and text-summary reporters, so it is the existing `npm test` gate plus the LCOV
-report. The `coverage` job needs `test`, `integration`, and `dashboard`; it runs the script's
-own tests, downloads their three artifacts, and scores the profiles without a Go or Node
-toolchain.
+variable adds `-covermode=atomic -coverprofile=... -coverpkg=<application packages>` to the
+same `go test` invocation; there is no second run of any suite. `npm run test:coverage` is
+`vitest run --coverage` with the JSON, LCOV, and text-summary reporters, so it is the
+existing `npm test` gate plus the LCOV report. The `coverage` job needs `test`,
+`integration`, and `dashboard`; it runs the script's own tests, downloads their three
+artifacts, and scores the profiles without a Go or Node toolchain.
 
 Both Go jobs must use the same `-covermode`: the Makefile defaults `COVERMODE` to `atomic`
 because the race detector needs atomic counters, and summing atomic hit counts is what the
@@ -96,13 +97,38 @@ formula but hides the difference between "measured 0%" and "never measured". The
 the summary keep them apart.
 
 Intermediate reports land where crapper looks for them by design, so the native
-`crapper --use-existing-coverage` command reads the same files:
+`crapper --use-existing-coverage` command reads the same files. Its default source walk
+includes the static site and generated code; pass the application source list when comparing
+its scores with this pipeline:
 
 ```
 target/coverage/go/coverage.out                      merged Go profile
 target/coverage/typescript/dashboard/lcov.info        dashboard LCOV, rooted at the repository
 target/coverage-inputs/{unit,integration}/           the raw per-job profiles
 ```
+
+To run the native tool with the same source scope, copy the pipeline snapshot aside
+first, because the native run overwrites it:
+
+```sh
+cp .metrics/crap.edn .metrics/application-crap.edn
+"$CRAPPER_VENV/bin/python" - <<'PYTHON'
+from pathlib import Path
+import subprocess
+import sys
+sys.path.insert(0, "scripts/coverage")
+from crap_report import handwritten_sources, tracked_files
+root = Path.cwd()
+files = handwritten_sources(root, tracked_files(root))
+crapper = str(Path(sys.executable).parent / "crapper")
+subprocess.run([crapper, "--use-existing-coverage", *map(str, files)], check=True)
+PYTHON
+```
+
+`make coverage/crap` is what puts the pipeline snapshot back in `.metrics/crap.edn`, so
+run it again before repeating the comparison. The native tool rewrites only
+`.metrics/crap.edn`; the inventory and text report remain pipeline outputs. Compare
+function identities and values, rather than snapshot ordering.
 
 `target/coverage` and `.metrics` are gitignored. Do not commit them.
 
@@ -152,12 +178,12 @@ regression look identical from the number alone.
 
 ## What the score covers, and what it does not
 
-Scope is the tracked sources crapper can parse, minus tests, minus generated code: files
-carrying Go's generated-code marker (`// Code generated ... DO NOT EDIT.`) and everything
-under `pkg/proto/` are left out. crapper's own skip list removes build output, dependency
-trees, and report directories, and `git ls-files` is the starting set, so untracked output
-never enters. The snapshot and the inventory are built from that one list, so they always
-describe the same scope.
+Scope is the tracked application sources crapper can parse, minus the static site, tests,
+and generated code: files carrying Go's generated-code marker (`// Code generated ... DO NOT
+EDIT.`) and everything under `pkg/proto/` are left out. crapper's own skip list removes
+build output, dependency trees, and report directories, and `git ls-files` is the starting
+set, so untracked output never enters. The snapshot and the inventory are built from that
+one list, so they always describe the same scope.
 
 Limits worth stating plainly:
 
@@ -168,15 +194,19 @@ Limits worth stating plainly:
   scored from a function's branch records when its span has any and from line hits otherwise.
   A matched Go record can hold zero hits, and a file that matched a report can still contain a
   function with no statements in its span, which reads as 0%.
-- Go profiles instrument each package for its own tests by default, so calls from another
-  package's tests can remain unrecorded. Cross-package `-coverpkg=./...` instrumentation is not
-  used here.
+- Both Go jobs test and instrument the same package set: `cmd/`, `internal/`, and `pkg/`. A
+  call made from another package's tests is recorded. Broader instrumentation corrects
+  measurement rather than adding tests, so a percentage that rises here is not new coverage
+  evidence. Discovery stops the build when `go list ./...` reports a package no required tree
+  covers, so a new top-level tree cannot land untested; the Go files under `node_modules` are
+  the known exception and stay out.
 - crapper recognises named functions and methods, plus top-level arrow functions in
   TypeScript. Other nested callbacks stay inside the enclosing function, so one entry can
   stand for a lot of decisions.
-- The static site has no test suite, so its functions have no coverage record. Their scores
-  are complexity-only and are marked `no` in the inventory. That is an absence of measurement,
-  not a failure.
+- The static site is outside this scope by choice: it is published documentation, not
+  application code. Its own evidence is the `static-site` job, where `npm run check`
+  validates MDX pages, OpenAPI operations, and generated documents. Do not add tests there
+  to move a denominator this report no longer contains.
 - Not assessed at all: SQL, YAML and Compose/Kubernetes configuration, shell scripts,
   protobuf definitions, MDX content, and CSS.
 - Not assessed: runtime performance. Nothing here measures latency, throughput, memory, or

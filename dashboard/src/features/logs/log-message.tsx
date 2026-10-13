@@ -76,6 +76,10 @@ const parseHighlightedMessage = (message: string, highlightToken?: string) => {
 
 type MessagePiece = { text: string; source: number | null }
 
+// Indentation grows linearly with nesting, so a 40 KB line nested 20k deep would
+// format to ~800 MB and exhaust the string limit. Deeper JSON falls back unformatted.
+const maxJsonDepth = 100
+
 const formatJson = (message: string, source: number): MessagePiece[] => {
     JSON.parse(message)
     const tokens = Array.from(message.matchAll(/"(?:[^"\\]|\\.)*"|[^\s{}\[\],:]+|[{}\[\],:]/g))
@@ -91,6 +95,7 @@ const formatJson = (message: string, source: number): MessagePiece[] => {
         }
         pieces.push({ text: value, source: source + token.index })
         if ((value === "{" || value === "[") && tokens[index + 1]?.[0] !== "}" && tokens[index + 1]?.[0] !== "]") {
+            if (depth >= maxJsonDepth) throw new Error("JSON nested too deeply to format")
             depth++
             newline()
         }

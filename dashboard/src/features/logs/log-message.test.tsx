@@ -130,6 +130,21 @@ describe("log message rendering", () => {
         expect(container.querySelector("mark")?.previousSibling?.textContent?.endsWith('"selected": ')).toBe(true)
     })
 
+    it("falls back instead of overflowing the string limit on deeply nested JSON", () => {
+        // 20k nesting fits the 256 KiB line cap but would indent to ~800 MB, past the string limit.
+        const arrays = `${"[".repeat(20000)}0${"]".repeat(20000)}`
+        const arrayContainer = renderMessage(arrays, token, true)
+        expect(arrayContainer.textContent).toBe(arrays)
+        expect(marks(arrayContainer)).toEqual([])
+
+        // Nested objects keep their text: the fallback regex only indents its one shallow match.
+        const objects = `${'{"a":'.repeat(20000)}1${"}".repeat(20000)}`
+        const objectContainer = renderMessage(objects, token, true)
+        expect(objectContainer.textContent?.startsWith('{"a":{"a":{"a":')).toBe(true)
+        expect(objectContainer.textContent?.length).toBeLessThan(objects.length * 2)
+        expect(marks(objectContainer)).toEqual([])
+    })
+
     it.each([
         ['[1,{"ok":true}]', JSON.stringify([1, { ok: true }], null, 2)],
         ['"text"', JSON.stringify("text")],

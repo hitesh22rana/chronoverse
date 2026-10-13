@@ -44,25 +44,29 @@ func TestIntegrationStreamJobLogsRejections(t *testing.T) {
 			}
 		})
 	}
-	for _, expired := range []bool{false, true} {
-		name := "canceled"
-		code := codes.Canceled
-		caller, cancel := context.WithCancel(ctx)
-		if expired {
+	for _, tc := range []struct {
+		name    string
+		expired bool
+		code    codes.Code
+	}{
+		{name: "canceled", code: codes.Canceled},
+		{name: "expired", expired: true, code: codes.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var caller context.Context
+			var cancel context.CancelFunc
+			if tc.expired {
+				caller, cancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
+			} else {
+				caller, cancel = context.WithCancel(ctx)
+			}
 			cancel()
-			name = "expired"
-			code = codes.DeadlineExceeded
-			caller, cancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
-		} else {
-			cancel()
-		}
-		t.Run(name, func(t *testing.T) {
+
 			sub, err := repo.StreamJobLogs(caller, jobID, workflowID, userID)
-			if sub != nil || status.Code(err) != code {
-				t.Fatalf("subscription=%v error=%v, want %v", sub, err, code)
+			if sub != nil || status.Code(err) != tc.code {
+				t.Fatalf("subscription=%v error=%v, want %v", sub, err, tc.code)
 			}
 		})
-		cancel()
 	}
 }
 
@@ -197,8 +201,11 @@ func TestIntegrationJobLogUnavailableClients(t *testing.T) {
 	if err := isolatedCH.Close(); err != nil {
 		t.Fatal(err)
 	}
+	originalCH := repo.ch
 	t.Run("clickhouse unavailable", func(t *testing.T) {
 		repo.ch = isolatedCH
+		defer func() { repo.ch = originalCH }()
+
 		result, state, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
 		if result != nil || state != "" || status.Code(err) != codes.Internal {
 			t.Fatalf("result=%v status=%q error=%v", result, state, err)
@@ -222,12 +229,15 @@ func TestIntegrationGetJobLogsContextFailures(t *testing.T) {
 		{"canceled", false, codes.Canceled}, {"expired", true, codes.DeadlineExceeded},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			caller, cancel := context.WithCancel(ctx)
+			var caller context.Context
+			var cancel context.CancelFunc
 			if tc.expired {
-				cancel()
 				caller, cancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
+			} else {
+				caller, cancel = context.WithCancel(ctx)
 			}
 			cancel()
+
 			result, state, err := repo.GetJobLogs(caller, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
 			if result != nil || state != "" || status.Code(err) != tc.code {
 				t.Fatalf("result=%v status=%q error=%v want %v", result, state, err, tc.code)

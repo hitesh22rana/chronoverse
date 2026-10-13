@@ -547,7 +547,13 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamJobLogs: %v", err)
 	}
-	defer sub.Close()
+	// Retain cleanup on early failure without closing the subscription twice.
+	closed := false
+	defer func() {
+		if !closed {
+			_ = sub.Close()
+		}
+	}()
 
 	// Publish a live log event the way the joblogs processor does.
 	event := &jobsmodel.JobLogEvent{
@@ -597,7 +603,9 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 	if received.EventKey != event.EventKey || received.SequenceNum != 2 || received.Stream != "stderr" || received.Message != event.Message {
 		t.Fatalf("next live event = %+v, want %+v", received, event)
 	}
-	if closeErr := sub.Close(); closeErr != nil {
+	closeErr := sub.Close()
+	closed = true
+	if closeErr != nil {
 		t.Fatalf("close subscription: %v", closeErr)
 	}
 	if _, receiveErr = sub.ReceiveMessage(ctx); receiveErr == nil {

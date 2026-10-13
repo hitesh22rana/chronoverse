@@ -726,7 +726,7 @@ func (r *Repository) GetJobLogs(
 			} else if errors.Is(qErr, context.Canceled) {
 				return status.Error(codes.Canceled, qErr.Error())
 			}
-			return status.Errorf(codes.NotFound, "no logs found for job: %v", qErr)
+			return status.Errorf(codes.Internal, "failed to fetch logs: %v", qErr)
 		}
 		defer rows.Close()
 

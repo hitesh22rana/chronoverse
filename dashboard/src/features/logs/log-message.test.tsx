@@ -145,6 +145,15 @@ describe("log message rendering", () => {
         expect(marks(objectContainer)).toEqual([])
     })
 
+    it("keeps string values intact in JSON nested past the depth limit", () => {
+        // The embedded-JSON fallback regex matches braces inside string values; a
+        // depth-limit failure must not route valid JSON through it.
+        const nested = `${"[".repeat(101)}"{ }"${"]".repeat(101)}`
+        const container = renderMessage(nested, token, true)
+        expect(container.textContent).toBe(nested)
+        expect(marks(container)).toEqual([])
+    })
+
     it.each([
         ['[1,{"ok":true}]', JSON.stringify([1, { ok: true }], null, 2)],
         ['"text"', JSON.stringify("text")],

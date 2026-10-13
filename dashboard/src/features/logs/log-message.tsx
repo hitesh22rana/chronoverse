@@ -77,8 +77,12 @@ const parseHighlightedMessage = (message: string, highlightToken?: string) => {
 type MessagePiece = { text: string; source: number | null }
 
 // Indentation grows linearly with nesting, so a 40 KB line nested 20k deep would
-// format to ~800 MB and exhaust the string limit. Deeper JSON falls back unformatted.
+// format to ~800 MB and exhaust the string limit.
 const maxJsonDepth = 100
+
+// Distinguishes "valid JSON, too deep to format" from "invalid JSON", which needs
+// the embedded-JSON fallback.
+class JsonDepthLimitError extends Error {}
 
 const formatJson = (message: string, source: number): MessagePiece[] => {
     JSON.parse(message)
@@ -95,7 +99,7 @@ const formatJson = (message: string, source: number): MessagePiece[] => {
         }
         pieces.push({ text: value, source: source + token.index })
         if ((value === "{" || value === "[") && tokens[index + 1]?.[0] !== "}" && tokens[index + 1]?.[0] !== "]") {
-            if (depth >= maxJsonDepth) throw new Error("JSON nested too deeply to format")
+            if (depth >= maxJsonDepth) throw new JsonDepthLimitError()
             depth++
             newline()
         }
@@ -158,20 +162,26 @@ export function parseLogMessage(message: string, highlightToken: string | undefi
     let pieces: MessagePiece[]
     try {
         pieces = formatJson(rawMessage, 0)
-    } catch {
-        pieces = []
-        let offset = 0
-        for (const match of rawMessage.matchAll(jsonRegex)) {
-            pieces.push({ text: rawMessage.slice(offset, match.index), source: offset })
-            try {
-                // Avoid spread argument limits for large JSON objects.
-                for (const piece of formatJson(match[0], match.index)) pieces.push(piece)
-            } catch {
-                pieces.push({ text: match[0], source: match.index })
+    } catch (error) {
+        if (error instanceof JsonDepthLimitError) {
+            // The line is valid JSON, so keep it verbatim: the fallback regex matches
+            // braces inside string values and would rewrite their contents.
+            pieces = [{ text: rawMessage, source: 0 }]
+        } else {
+            pieces = []
+            let offset = 0
+            for (const match of rawMessage.matchAll(jsonRegex)) {
+                pieces.push({ text: rawMessage.slice(offset, match.index), source: offset })
+                try {
+                    // Avoid spread argument limits for large JSON objects.
+                    for (const piece of formatJson(match[0], match.index)) pieces.push(piece)
+                } catch {
+                    pieces.push({ text: match[0], source: match.index })
+                }
+                offset = match.index + match[0].length
             }
-            offset = match.index + match[0].length
+            pieces.push({ text: rawMessage.slice(offset), source: offset })
         }
-        pieces.push({ text: rawMessage.slice(offset), source: offset })
     }
     return renderHighlightedSegments(pieces, highlightedSegments)
 }

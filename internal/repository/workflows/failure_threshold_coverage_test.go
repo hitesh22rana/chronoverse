@@ -32,6 +32,25 @@ func TestIncrementFailureRejectsInvalidIdentities(t *testing.T) {
 	}
 }
 
+func TestResetRejectsInvalidIdentities(t *testing.T) {
+	t.Parallel()
+	const jobID = "f972f8b6-3b12-4bcc-a730-ed546be37916"
+	cases := []struct{ name, workflow, user, job, message string }{
+		{"Workflow", "invalid", testUserID, jobID, "workflow ID"},
+		{"User", testWorkflowID, "invalid", jobID, "user ID"},
+		{"Job", testWorkflowID, testUserID, "invalid", "job ID"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := New(&Config{}, nil).ResetWorkflowConsecutiveJobFailuresCount(context.Background(), tc.workflow, tc.user, tc.job)
+			if status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), tc.message) {
+				t.Fatalf("reset = %v, want InvalidArgument naming %s", err, tc.message)
+			}
+		})
+	}
+}
+
 // terminalReplayRow supplies one stored terminal effect or a scan failure.
 type terminalReplayRow struct {
 	workflow, user, effect string

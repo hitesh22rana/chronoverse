@@ -15,26 +15,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
-func TestResetRejectsInvalidIdentities(t *testing.T) {
-	for _, field := range []string{"workflow", "user", "job"} {
-		t.Run(field, func(t *testing.T) {
-			workflowID, userID, jobID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-			switch field {
-			case "workflow":
-				workflowID = "invalid"
-			case "user":
-				userID = "invalid"
-			case "job":
-				jobID = "invalid"
-			}
-			repo := New(&Config{FetchLimit: 20}, nil)
-			if err := repo.ResetWorkflowConsecutiveJobFailuresCount(t.Context(), workflowID, userID, jobID); status.Code(err) != codes.InvalidArgument {
-				t.Fatalf("error=%v, want InvalidArgument", err)
-			}
-		})
-	}
-}
-
 func TestIntegrationResetFaultsRollBack(t *testing.T) {
 	cases := []struct {
 		name, table, event, message string
@@ -42,7 +22,7 @@ func TestIntegrationResetFaultsRollBack(t *testing.T) {
 	}{
 		{name: "record completion", table: postgres.TableWorkflowTerminalEffects, event: "INSERT", message: "failed to reset consecutive job failures count"},
 		{name: "reset counter", table: postgres.TableWorkflows, event: "UPDATE", message: "failed to reset workflow failures"},
-		{name: "commit completion", table: postgres.TableWorkflowTerminalEffects, event: "INSERT", deferred: true},
+		{name: "commit completion", table: postgres.TableWorkflowTerminalEffects, event: "INSERT", deferred: true, message: "failed to commit completed terminal-effect reset"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,8 +44,8 @@ func TestIntegrationResetFaultsRollBack(t *testing.T) {
 			}
 			installFailureEffectFault(ctx, t, pg, tc.table, tc.event, condition, tc.deferred, false)
 			err := repo.ResetWorkflowConsecutiveJobFailuresCount(ctx, fixture.WorkflowID, fixture.UserID, jobID)
-			if err == nil || !strings.Contains(err.Error(), "injected failure effect fault") || (tc.message != "" && (status.Code(err) != codes.Internal || !strings.Contains(err.Error(), tc.message))) {
-				t.Fatalf("error=%v, want reset failure %q", err, tc.message)
+			if status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "injected failure effect fault") || !strings.Contains(status.Convert(err).Message(), tc.message) {
+				t.Fatalf("reset = %v, want Internal containing %q and %q", err, "injected failure effect fault", tc.message)
 			}
 			assertFailureState(t, "failed reset", readWorkflowFailureState(ctx, t, pg, fixture.WorkflowID), before)
 			if got := countTerminalEffects(ctx, t, pg, jobID); got != 0 {

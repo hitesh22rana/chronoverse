@@ -751,17 +751,21 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		if storedWorkflowID != workflowID || storedUserID != userID || effect != "COMPLETED" {
 			return status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
 		}
-		return tx.Commit(ctx)
 	}
-	query = fmt.Sprintf(`
-		UPDATE %s
-		SET consecutive_job_failures_count = 0
-		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
-	`, postgres.TableWorkflows)
-	if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
-		return status.Errorf(codes.Internal, "failed to reset workflow failures: %v", err)
+	if ct.RowsAffected() != 0 {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET consecutive_job_failures_count = 0
+			WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
+		`, postgres.TableWorkflows)
+		if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
+			return status.Errorf(codes.Internal, "failed to reset workflow failures: %v", err)
+		}
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return status.Errorf(codes.Internal, "failed to commit completed terminal-effect reset: %v", err)
+	}
+	return nil
 }
 
 // TerminateWorkflow terminates a workflow.

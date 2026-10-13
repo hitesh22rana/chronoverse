@@ -737,11 +737,6 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		return err
 	}
 
-	// One error exit for both branches, so the recorded completion and the
-	// counter reset are equally accountable. Assigning to the named err and
-	// testing it below, rather than an if-init, is deliberate: this function
-	// has a named err, so `err :=` in an if-init trips govet's shadow check
-	// and `if err = ...; err != nil` trips gocritic's sloppyReassign.
 	if ct.RowsAffected() == 0 {
 		err = verifyCompletedTerminalEffect(ctx, tx, workflowID, userID, jobID)
 	} else {

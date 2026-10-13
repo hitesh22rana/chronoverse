@@ -6,13 +6,25 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
 
 import { apiEndpoints } from "@/lib/api/endpoints"
+import { queryKeys } from "@/lib/api/query-keys"
+import type { User } from "@/features/users/types"
 import { useAuth } from "./use-auth"
 
 const mocks = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), error: vi.fn() }))
-vi.mock("next/navigation", () => ({ useRouter: () => mocks }))
+// Preserve other navigation exports.
+vi.mock("next/navigation", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("next/navigation")>()),
+    useRouter: () => mocks,
+}))
 vi.mock("sonner", () => ({ toast: { error: mocks.error } }))
 
 const credentials = { email: "person@example.com", password: "Orchid!River!Lighthouse!9" }
+const user: User = {
+    email: "previous@example.com",
+    notification_preference: "ALL",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-02T00:00:00Z",
+}
 const clients: QueryClient[] = []
 const fetchMock = vi.fn<typeof fetch>()
 
@@ -34,7 +46,7 @@ afterEach(() => {
 function mount() {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false, gcTime: Infinity } } })
     clients.push(client)
-    client.setQueryData(["account"], { email: "previous@example.com" })
+    client.setQueryData(queryKeys.user, user)
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
     return { ...renderHook(() => useAuth(), { wrapper }), client }
 }
@@ -61,7 +73,7 @@ it("keeps the account and route on login rejection without exposing credentials"
     const { result, client } = mount()
     act(() => result.current.login(credentials))
     await waitFor(() => expect(mocks.error).toHaveBeenCalledWith("failed to login: credentials rejected"))
-    expect(client.getQueryData(["account"])).toEqual({ email: "previous@example.com" })
+    expect(client.getQueryData(queryKeys.user)).toEqual(user)
     expect(mocks.push).not.toHaveBeenCalled()
     expect(JSON.stringify(mocks.error.mock.calls)).not.toContain(credentials.password)
 })
@@ -75,7 +87,8 @@ it.each([true, false])("logout redirects and refreshes even when the request suc
     expect(mocks.push).not.toHaveBeenCalled()
     expect(request()).toMatchObject({ url: apiEndpoints.auth.logout, method: "POST", credentials: "include" })
     expect(request().body).toBeUndefined()
-    expect(client.getQueryData(["account"])).toEqual(success ? undefined : { email: "previous@example.com" })
+    if (success) expect(client.getQueryCache().getAll()).toEqual([])
+    else expect(client.getQueryData(queryKeys.user)).toEqual(user)
     if (success) expect(mocks.error).not.toHaveBeenCalled()
     else expect(mocks.error).toHaveBeenCalledExactlyOnceWith("failed to logout: session expired")
 })
@@ -88,7 +101,7 @@ it("reuses failed signup identity, rotates changed credentials, and resets after
     const firstKey = request().headers.get("Idempotency-Key")
     expect(firstKey).toBeTruthy()
     expect(request()).toMatchObject({ url: apiEndpoints.auth.signup, method: "POST", credentials: "include", body: JSON.stringify(credentials) })
-    expect(client.getQueryData(["account"])).toBeDefined()
+    expect(client.getQueryData(queryKeys.user)).toEqual(user)
     act(() => result.current.signup(credentials))
     await waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(1))
     expect(request(1).headers.get("Idempotency-Key")).toBe(firstKey)
@@ -112,7 +125,7 @@ it.each([new Error("digest unavailable"), "digest unavailable"])("does not submi
     act(() => result.current.signup(credentials))
     await waitFor(() => expect(mocks.error).toHaveBeenCalledExactlyOnceWith(failure instanceof Error ? failure.message : "failed to prepare signup"))
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(client.getQueryData(["account"])).toBeDefined()
+    expect(client.getQueryData(queryKeys.user)).toEqual(user)
     expect(mocks.push).not.toHaveBeenCalled()
     expect(JSON.stringify(mocks.error.mock.calls)).not.toContain(credentials.password)
 })
@@ -142,11 +155,27 @@ it("keeps login pending and account data intact until the server responds", asyn
     const { result, client } = mount()
     act(() => result.current.login(credentials))
     await waitFor(() => expect(result.current.isLoginLoading).toBe(true))
-    expect(client.getQueryData(["account"])).toBeDefined()
+    expect(client.getQueryData(queryKeys.user)).toEqual(user)
     expect(mocks.push).not.toHaveBeenCalled()
     await act(async () => respond(new Response(null, { status: 204 })))
     await waitFor(() => expect(result.current.isLoginLoading).toBe(false))
     expect(mocks.push).toHaveBeenCalledExactlyOnceWith("/")
+})
+
+it("keeps logout pending and the cached user until the server responds", async () => {
+    let respond!: (_response: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { respond = resolve }))
+    const { result, client } = mount()
+    act(() => result.current.logout())
+    await waitFor(() => expect(result.current.isLogoutLoading).toBe(true))
+    expect(client.getQueryData(queryKeys.user)).toEqual(user)
+    expect(mocks.replace).not.toHaveBeenCalled()
+    expect(mocks.refresh).not.toHaveBeenCalled()
+    await act(async () => respond(new Response(null, { status: 204 })))
+    await waitFor(() => expect(result.current.isLogoutLoading).toBe(false))
+    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith("/login")
+    expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    expect(client.getQueryCache().getAll()).toEqual([])
 })
 
 it.each([

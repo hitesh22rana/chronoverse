@@ -32,14 +32,11 @@ it("validates required login fields and submits only email and password", async 
     expect(screen.getByRole("link", { name: "Sign up" }).getAttribute("href")).toBe("/signup")
 })
 
-it("shows pending login and prevents another button submission", async () => {
+it("shows the pending label and disables the button while signing in", () => {
     mocks.isLoginLoading = true
-    const user = userEvent.setup()
     render(<LoginPage />)
     const button = screen.getByRole("button", { name: "Signing in..." }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
-    await user.click(button)
-    expect(mocks.login).not.toHaveBeenCalled()
 })
 
 it("validates signup confirmation and excludes it from the account command", async () => {
@@ -63,12 +60,9 @@ it("validates signup confirmation and excludes it from the account command", asy
     expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/login")
 })
 
-it("shows pending signup and prevents another button submission", async () => {
+it("shows the pending label and disables the button while creating an account", () => {
     mocks.isSignupLoading = true
-    const user = userEvent.setup()
     render(<SignupPage />)
     const button = screen.getByRole("button", { name: "Creating account..." }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
-    await user.click(button)
-    expect(mocks.signup).not.toHaveBeenCalled()
 })

@@ -29,6 +29,7 @@ func TestGetUserAnalytics(t *testing.T) {
 	var (
 		singleflightRepoCalls   int32
 		singleflightReleaseChan chan struct{}
+		singleflightLeaderRan   chan struct{}
 	)
 
 	tests := []struct {
@@ -66,24 +67,34 @@ func TestGetUserAnalytics(t *testing.T) {
 		{
 			name: "success: singleflight deduplicates concurrent request",
 			req: &analyticspb.GetUserAnalyticsRequest{
-				UserId: "user1",
+				// Own user ID, so this case's expectation cannot answer another's.
+				UserId: "singleflight_user",
 			},
 			mock: func(req *analyticspb.GetUserAnalyticsRequest) {
 				singleflightRepoCalls = 0
 				singleflightReleaseChan = make(chan struct{})
+				// Closed by the leader as it parks, so the wait below cannot be
+				// satisfied by a call that already returned.
+				singleflightLeaderRan = make(chan struct{})
+				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
+				// t.Fatalf on the leader goroutine, which Goexits it before
+				// singleflight publishes its result and hangs the package. The dedupe
+				// is asserted on singleflightRepoCalls.
 				repo.EXPECT().GetUserAnalytics(
 					gomock.Any(),
 					req.GetUserId(),
 				).DoAndReturn(func(_ any, _ string) (*analyticsmodel.GetUserAnalyticsResponse, error) {
-					atomic.AddInt32(&singleflightRepoCalls, 1)
-					<-singleflightReleaseChan
+					if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
+						close(singleflightLeaderRan)
+						<-singleflightReleaseChan
+					}
 					return &analyticsmodel.GetUserAnalyticsResponse{
 						TotalWorkflows:            10,
 						TotalJobs:                 200,
 						TotalJoblogs:              5000,
 						TotalJobExecutionDuration: 1000000,
 					}, nil
-				}).Times(1)
+				}).AnyTimes()
 			},
 			execute: func(t *testing.T, req *analyticspb.GetUserAnalyticsRequest, want *analyticsmodel.GetUserAnalyticsResponse) {
 				t.Helper()
@@ -99,12 +110,14 @@ func TestGetUserAnalytics(t *testing.T) {
 					})
 				}
 
-				for range 50 {
-					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
-						break
-					}
-					time.Sleep(10 * time.Millisecond)
+				// Wait for the leader to park, then hold it long enough for the
+				// second caller to join the flight instead of opening a second.
+				select {
+				case <-singleflightLeaderRan:
+				case <-time.After(30 * time.Second):
+					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
 				}
+				time.Sleep(100 * time.Millisecond)
 				close(singleflightReleaseChan)
 				wg.Wait()
 

@@ -737,20 +737,18 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		return err
 	}
 
+	// One error exit for both branches, so the recorded completion and the
+	// counter reset are equally accountable. Assigning to the named err and
+	// testing it below, rather than an if-init, is deliberate: this function
+	// has a named err, so `err :=` in an if-init trips govet's shadow check
+	// and `if err = ...; err != nil` trips gocritic's sloppyReassign.
 	if ct.RowsAffected() == 0 {
 		err = verifyCompletedTerminalEffect(ctx, tx, workflowID, userID, jobID)
-		if err != nil {
-			return err
-		}
 	} else {
-		query = fmt.Sprintf(`
-			UPDATE %s
-			SET consecutive_job_failures_count = 0
-			WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
-		`, postgres.TableWorkflows)
-		if _, err = tx.Exec(ctx, query, workflowID, userID); err != nil {
-			return status.Errorf(codes.Internal, "failed to reset workflow failures: %v", err)
-		}
+		err = resetWorkflowFailureCount(ctx, tx, workflowID, userID)
+	}
+	if err != nil {
+		return err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return status.Errorf(codes.Internal, "failed to commit completed terminal-effect reset: %v", err)
@@ -1221,6 +1219,21 @@ func (r *Repository) loadWorkflowUpdateState(ctx context.Context, tx pgx.Tx, wor
 	}
 
 	return state, nil
+}
+
+// resetWorkflowFailureCount clears the counter the completion this call
+// recorded earned, and leaves a workflow this command no longer owns alone.
+func resetWorkflowFailureCount(ctx context.Context, tx pgx.Tx, workflowID, userID string) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET consecutive_job_failures_count = 0
+		WHERE id = $1 AND user_id = $2 AND terminated_at IS NULL;
+	`, postgres.TableWorkflows)
+
+	if _, err := tx.Exec(ctx, query, workflowID, userID); err != nil {
+		return status.Errorf(codes.Internal, "failed to reset workflow failures: %v", err)
+	}
+	return nil
 }
 
 // verifyCompletedTerminalEffect proves an already-recorded COMPLETED effect

@@ -4,6 +4,7 @@ package jobs
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -517,6 +518,7 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	}
 }
 
+//nolint:gocyclo // Keeps subscription ordering and payload checks in one lifecycle.
 func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -545,7 +547,13 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamJobLogs: %v", err)
 	}
-	defer sub.Close()
+	// Retain cleanup on early failure without closing the subscription twice.
+	closed := false
+	defer func() {
+		if !closed {
+			_ = sub.Close()
+		}
+	}()
 
 	// Publish a live log event the way the joblogs processor does.
 	event := &jobsmodel.JobLogEvent{
@@ -559,8 +567,8 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 		Stream:      "stdout",
 		Retention:   true,
 	}
-	if _, err := joblogevents.PublishLive(ctx, testkit.Redis(t), event); err != nil {
-		t.Fatalf("PublishLive: %v", err)
+	if published, publishErr := joblogevents.PublishLive(ctx, testkit.Redis(t), event); publishErr != nil || !published {
+		t.Fatalf("PublishLive: published=%v error=%v", published, publishErr)
 	}
 
 	msg, receiveErr := sub.ReceiveMessage(ctx)
@@ -570,8 +578,38 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 	if got := msg.Channel; got != "job_logs:"+jobID {
 		t.Fatalf("channel = %q, want %q", got, "job_logs:"+jobID)
 	}
-	if msg.Payload == "" {
-		t.Fatal("expected a non-empty payload")
+	var received jobsmodel.JobLogEvent
+	if decodeErr := json.Unmarshal([]byte(msg.Payload), &received); decodeErr != nil {
+		t.Fatalf("decode live event: %v", decodeErr)
+	}
+	if received.EventKey != event.EventKey || received.JobID != jobID || received.WorkflowID != workflowID ||
+		received.UserID != userID || received.Message != event.Message || received.SequenceNum != 1 || received.Stream != "stdout" {
+		t.Fatalf("live event = %+v, want %+v", received, event)
+	}
+	event.EventKey = "log:" + jobID + ":stderr:2"
+	event.SequenceNum = 2
+	event.Stream = "stderr"
+	event.Message = "next live event"
+	if published, publishErr := joblogevents.PublishLive(ctx, testkit.Redis(t), event); publishErr != nil || !published {
+		t.Fatalf("publish next event: published=%v error=%v", published, publishErr)
+	}
+	msg, err = sub.ReceiveMessage(ctx)
+	if err != nil {
+		t.Fatalf("receive next event: %v", err)
+	}
+	if decodeErr := json.Unmarshal([]byte(msg.Payload), &received); decodeErr != nil {
+		t.Fatalf("decode next event: %v", decodeErr)
+	}
+	if received.EventKey != event.EventKey || received.SequenceNum != 2 || received.Stream != "stderr" || received.Message != event.Message {
+		t.Fatalf("next live event = %+v, want %+v", received, event)
+	}
+	closeErr := sub.Close()
+	closed = true
+	if closeErr != nil {
+		t.Fatalf("close subscription: %v", closeErr)
+	}
+	if _, receiveErr = sub.ReceiveMessage(ctx); receiveErr == nil {
+		t.Fatal("closed subscription still accepts messages")
 	}
 }
 

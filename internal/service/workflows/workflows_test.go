@@ -784,6 +784,7 @@ func TestGetWorkflow(t *testing.T) {
 		updatedAt               = time.Now()
 		singleflightRepoCalls   int32
 		singleflightReleaseChan chan struct{}
+		singleflightLeaderRan   chan struct{}
 		terminatedAt            = sql.NullTime{
 			Time:  time.Now(),
 			Valid: true,
@@ -907,7 +908,8 @@ func TestGetWorkflow(t *testing.T) {
 		{
 			name: "success: singleflight deduplicates cache miss",
 			req: &workflowspb.GetWorkflowRequest{
-				Id:     "workflow_id",
+				// Own ID, so this case's expectation cannot answer another's.
+				Id:     "singleflight_workflow_id",
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
@@ -931,13 +933,22 @@ func TestGetWorkflow(t *testing.T) {
 
 				singleflightRepoCalls = 0
 				singleflightReleaseChan = make(chan struct{})
+				// Closed by the leader as it parks, so the wait below cannot be
+				// satisfied by a call that already returned.
+				singleflightLeaderRan = make(chan struct{})
+				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
+				// t.Fatalf on the leader goroutine, which Goexits it before
+				// singleflight publishes its result and hangs the package. The dedupe
+				// is asserted on singleflightRepoCalls.
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
 					req.GetUserId(),
 				).DoAndReturn(func(_ any, _, _ string) (*workflowsmodel.GetWorkflowResponse, error) {
-					atomic.AddInt32(&singleflightRepoCalls, 1)
-					<-singleflightReleaseChan
+					if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
+						close(singleflightLeaderRan)
+						<-singleflightReleaseChan
+					}
 					return &workflowsmodel.GetWorkflowResponse{
 						ID:                               "workflow_id",
 						Name:                             "workflow1",
@@ -952,7 +963,7 @@ func TestGetWorkflow(t *testing.T) {
 						TerminatedAt:                     terminatedAt,
 						LogRetention:                     true,
 					}, nil
-				}).Times(1)
+				}).AnyTimes()
 			},
 			execute: func(t *testing.T, req *workflowspb.GetWorkflowRequest, want want) {
 				t.Helper()
@@ -968,12 +979,14 @@ func TestGetWorkflow(t *testing.T) {
 					})
 				}
 
-				for range 50 {
-					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
-						break
-					}
-					time.Sleep(10 * time.Millisecond)
+				// Wait for the leader to park, then hold it long enough for the
+				// second caller to join the flight instead of opening a second.
+				select {
+				case <-singleflightLeaderRan:
+				case <-time.After(30 * time.Second):
+					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
 				}
+				time.Sleep(100 * time.Millisecond)
 				close(singleflightReleaseChan)
 				wg.Wait()
 

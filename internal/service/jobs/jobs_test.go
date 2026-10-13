@@ -717,13 +717,6 @@ func TestGetJobByID(t *testing.T) {
 }
 
 func TestGetJobLogs(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
-
-	s := jobs.New(validator.New(), repo, cache)
-
 	type want struct {
 		*jobsmodel.GetJobLogsResponse
 	}
@@ -738,8 +731,8 @@ func TestGetJobLogs(t *testing.T) {
 	tests := []struct {
 		name    string
 		req     *jobspb.GetJobLogsRequest
-		mock    func(req *jobspb.GetJobLogsRequest)
-		execute func(t *testing.T, req *jobspb.GetJobLogsRequest, want want)
+		mock    func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache)
+		execute func(t *testing.T, s *jobs.Service, req *jobspb.GetJobLogsRequest, want want)
 		want    want
 		isErr   bool
 	}{
@@ -754,7 +747,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				data := &jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
 					WorkflowID: "workflow_id",
@@ -836,7 +829,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				cache.EXPECT().Get(
 					gomock.Any(),
 					getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc),
@@ -895,7 +888,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				data := &jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
 					WorkflowID: "workflow_id",
@@ -979,7 +972,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				data := &jobsmodel.GetJobLogsResponse{
 					ID:         req.GetId(),
 					WorkflowID: req.GetWorkflowId(),
@@ -1030,14 +1023,11 @@ func TestGetJobLogs(t *testing.T) {
 				WorkflowId: "workflow_id",
 				UserId:     "user_id",
 				Filters: &jobspb.GetJobLogsFilters{
-					// Its own stream, so the repository expectation below is
-					// distinguishable from every other case in this table. The
-					// shared LOG_STREAM_ALL would match a later case's call and
-					// answer it with this case's response.
+					// Own stream, so this case's expectation cannot answer another's.
 					Stream: jobspb.LogStream_LOG_STREAM_STDERR,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
 
@@ -1052,18 +1042,13 @@ func TestGetJobLogs(t *testing.T) {
 
 				singleflightRepoCalls = 0
 				singleflightReleaseChan = make(chan struct{})
-				// Closed by the leader as it parks below, so the wait in
-				// execute cannot be satisfied by a repository call that has
-				// already come and gone.
+				// Closed by the leader as it parks, so the wait below cannot be
+				// satisfied by a call that already returned.
 				singleflightLeaderRan = make(chan struct{})
-				// AnyTimes, not Times(1): a caller that arrives after the leader completes
-				// opens a second flight, and a second call under Times(1) makes
-				// gomock call t.Fatalf on the singleflight leader goroutine.
-				// That Goexits the leader before it can hand its result to
-				// anyone waiting on the result channel, so the caller blocks
-				// forever and takes the whole package down with it. The dedupe
-				// itself is asserted on singleflightRepoCalls below, where a lost
-				// race fails fast and legibly.
+				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
+				// t.Fatalf on the leader goroutine, which Goexits it before
+				// singleflight publishes its result and hangs the package. The dedupe
+				// is asserted on singleflightRepoCalls.
 				repo.EXPECT().
 					GetJobLogs(gomock.Any(), req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor(), jobsmodel.JobLogsSortOrderDesc, filters).
 					DoAndReturn(func(_ any, _, _, _, _ string, _ jobsmodel.JobLogsSortOrder, _ *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error) {
@@ -1085,7 +1070,7 @@ func TestGetJobLogs(t *testing.T) {
 						}, "COMPLETED", nil
 					}).AnyTimes()
 			},
-			execute: func(t *testing.T, req *jobspb.GetJobLogsRequest, want want) {
+			execute: func(t *testing.T, s *jobs.Service, req *jobspb.GetJobLogsRequest, want want) {
 				t.Helper()
 
 				var wg sync.WaitGroup
@@ -1099,13 +1084,8 @@ func TestGetJobLogs(t *testing.T) {
 					})
 				}
 
-				// Wait for the leader to park inside the repository call, then hold it there
-				// long enough for the second caller to reach DoChan. The flight
-				// cannot finish while the leader is parked, so a caller that
-				// arrives in this window joins it instead of opening a second
-				// one. Polling the call counter released the leader the instant
-				// it was observed, which on a scheduler that had already parked
-				// the leader gave the second caller no window at all.
+				// Wait for the leader to park, then hold it long enough for the
+				// second caller to join the flight instead of opening a second.
 				select {
 				case <-singleflightLeaderRan:
 				case <-time.After(30 * time.Second):
@@ -1145,7 +1125,7 @@ func TestGetJobLogs(t *testing.T) {
 				UserId:     "",
 				Cursor:     "",
 			},
-			mock:  func(_ *jobspb.GetJobLogsRequest) {},
+			mock:  func(_ *jobspb.GetJobLogsRequest, _ *jobsmock.MockRepository, _ *jobsmock.MockCache) {},
 			want:  want{},
 			isErr: true,
 		},
@@ -1160,7 +1140,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
@@ -1199,7 +1179,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
@@ -1229,13 +1209,20 @@ func TestGetJobLogs(t *testing.T) {
 		},
 	}
 
-	defer ctrl.Finish()
-
+	// A controller per subtest, so one case's expectations can never answer
+	// another case's call and a mock failure is attributed to the case that
+	// made it rather than to the whole table.
 	for _, tt := range tests {
-		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			repo := jobsmock.NewMockRepository(ctrl)
+			cache := jobsmock.NewMockCache(ctrl)
+			s := jobs.New(validator.New(), repo, cache)
+
+			tt.mock(tt.req, repo, cache)
+
 			if tt.execute != nil {
-				tt.execute(t, tt.req, tt.want)
+				tt.execute(t, s, tt.req, tt.want)
 				return
 			}
 

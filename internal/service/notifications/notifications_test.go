@@ -285,6 +285,7 @@ func TestService_ListNotifications(t *testing.T) {
 		readAt                  = sql.NullTime{}
 		singleflightRepoCalls   int32
 		singleflightReleaseChan chan struct{}
+		singleflightLeaderRan   chan struct{}
 	)
 
 	tests := []struct {
@@ -356,19 +357,29 @@ func TestService_ListNotifications(t *testing.T) {
 		{
 			name: "success: singleflight deduplicates concurrent request",
 			req: &notificationspb.ListNotificationsRequest{
-				UserId: "user1",
+				// Own user ID, so this case's expectation cannot answer another's.
+				UserId: "singleflight_user",
 				Cursor: "",
 			},
 			mock: func(req *notificationspb.ListNotificationsRequest) {
 				singleflightRepoCalls = 0
 				singleflightReleaseChan = make(chan struct{})
+				// Closed by the leader as it parks, so the wait below cannot be
+				// satisfied by a call that already returned.
+				singleflightLeaderRan = make(chan struct{})
+				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
+				// t.Fatalf on the leader goroutine, which Goexits it before
+				// singleflight publishes its result and hangs the package. The dedupe
+				// is asserted on singleflightRepoCalls.
 				repo.EXPECT().ListNotifications(
 					gomock.Any(),
 					req.GetUserId(),
 					req.GetCursor(),
 				).DoAndReturn(func(_ any, _, _ string) (*notificationsmodel.ListNotificationsResponse, error) {
-					atomic.AddInt32(&singleflightRepoCalls, 1)
-					<-singleflightReleaseChan
+					if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
+						close(singleflightLeaderRan)
+						<-singleflightReleaseChan
+					}
 					return &notificationsmodel.ListNotificationsResponse{
 						Notifications: []*notificationsmodel.NotificationResponse{
 							{
@@ -382,7 +393,7 @@ func TestService_ListNotifications(t *testing.T) {
 						},
 						Cursor: "",
 					}, nil
-				}).Times(1)
+				}).AnyTimes()
 			},
 			execute: func(t *testing.T, req *notificationspb.ListNotificationsRequest, want want) {
 				t.Helper()
@@ -398,12 +409,14 @@ func TestService_ListNotifications(t *testing.T) {
 					})
 				}
 
-				for range 50 {
-					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
-						break
-					}
-					time.Sleep(10 * time.Millisecond)
+				// Wait for the leader to park, then hold it long enough for the
+				// second caller to join the flight instead of opening a second.
+				select {
+				case <-singleflightLeaderRan:
+				case <-time.After(30 * time.Second):
+					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
 				}
+				time.Sleep(100 * time.Millisecond)
 				close(singleflightReleaseChan)
 				wg.Wait()
 

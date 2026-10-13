@@ -27,8 +27,16 @@ lint/fix: dependencies
 # invocation, no second run. COVERMODE defaults to atomic because -race needs
 # atomic counters, and both targets must agree for their profiles to merge.
 COVERMODE?=atomic
-# Test and instrument application packages, excluding frontend dependency trees.
-GO_PACKAGES=$(shell go list ./cmd/... ./internal/... ./pkg/... || printf "PACKAGE_DISCOVERY_FAILED")
+# Discover each application tree after dependencies regenerate pkg/proto.
+GO_PACKAGES_REQUIRES=cmd internal pkg
+# go list can succeed without matching packages; reject empty trees too.
+# One line lets $(eval) capture the entire package snapshot.
+GO_PACKAGES_DISCOVER=packages=''; for tree in $(GO_PACKAGES_REQUIRES); do found=$$(go list ./$$tree/...) || exit 1; if [ -z "$$found" ]; then printf 'make: Go package discovery failed: ./%s/... resolved no packages\n' "$$tree" >&2; exit 1; fi; packages="$$packages $$found"; done; printf '%s' "$$packages"
+# Capture once per recipe for both package arguments and COVERPKG.
+define discover-go-packages
+$(eval GO_PACKAGES := $(shell $(GO_PACKAGES_DISCOVER)))
+endef
+GO_PACKAGES_REQUIRED=$(if $(strip $(GO_PACKAGES)),true,$(error Go package discovery failed))
 empty:=
 space:=$(empty) $(empty)
 comma:=,
@@ -58,7 +66,7 @@ coverage/crap:
 # tests self-skip under -short and are covered by test/integration.
 .PHONY: test/short
 test/short: dependencies
-	@$(if $(filter PACKAGE_DISCOVERY_FAILED,$(GO_PACKAGES)),$(error Go package discovery failed),true)
+	@$(call discover-go-packages)$(GO_PACKAGES_REQUIRED)
 	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
 	@go test -race -short $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 
@@ -69,7 +77,7 @@ test/short: dependencies
 # windows.
 .PHONY: test/integration
 test/integration: dependencies
-	@$(if $(filter PACKAGE_DISCOVERY_FAILED,$(GO_PACKAGES)),$(error Go package discovery failed),true)
+	@$(call discover-go-packages)$(GO_PACKAGES_REQUIRED)
 	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
 	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 

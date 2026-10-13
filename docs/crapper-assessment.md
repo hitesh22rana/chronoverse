@@ -36,10 +36,10 @@ as untested produce the same number. Before treating any score as a finding, che
 there is a measurement behind it. A function with no record needs a measurement first, not a
 refactor.
 
-Application Go profiles instrument the same package set in both test jobs, including calls
-from another package's tests. Historical package-local profiles can under-report these
-calls; distinguish instrumentation corrections from additional behaviour tests. The static
-site is outside coverage and CRAP scope.
+Application Go profiles instrument the same package set in both test jobs, so a call from
+another package's tests is recorded. Historical package-local profiles under-report those
+calls: distinguish a corrected measurement from a new behaviour test. Coverage scope, and
+what sits deliberately outside it, is set out in [coverage.md](coverage.md).
 
 ## Separate the decisions from the guards
 
@@ -95,7 +95,6 @@ Changing the measured source set can change the numbers without any behaviour ch
 new source file that no test imports enters the denominator at 0%. Treat a percentage that
 falls because the measured set grew as scope, not regression. Compare like with like before
 drawing any trend.
-
 
 ## Claims the report cannot support
 

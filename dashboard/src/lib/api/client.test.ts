@@ -104,4 +104,78 @@ describe("fetchApi", () => {
             vi.unstubAllGlobals()
         }
     })
+
+    it("keeps a caller-supplied Content-Type instead of defaulting it", async () => {
+        const seen = new Headers()
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (_url: string, opts: RequestInit = {}) => {
+                new Headers(opts.headers).forEach((v, k) => seen.set(k, v))
+                return new Response("{}", { status: 200 })
+            }),
+        )
+        try {
+            await fetchApi("http://x/", "boom", { headers: { "Content-Type": "text/plain" } })
+            expect(seen.get("Content-Type")).toBe("text/plain")
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it("sends HEAD without fetching a csrf token", async () => {
+        vi.stubGlobal("document", { cookie: "" })
+        const urls: string[] = []
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string) => {
+                urls.push(url)
+                return new Response(null, { status: 200 })
+            }),
+        )
+        try {
+            await fetchApi("http://x/", "boom", { method: "HEAD" })
+            expect(urls).toEqual(["http://x/"])
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    // This suite runs in the node environment, so there is no document here.
+    it("still sends the request when there is no document to read a cookie from", async () => {
+        const urls: string[] = []
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string) => {
+                urls.push(url)
+                return new Response("{}", { status: 200 })
+            }),
+        )
+        try {
+            await fetchApi("http://x/", "boom", { method: "POST" })
+            expect(urls).toEqual(["http://x/"])
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it("sends the request untokenized when the csrf endpoint is unreachable", async () => {
+        vi.stubGlobal("document", { cookie: "" })
+        let token: string | null | undefined
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string, opts: RequestInit = {}) => {
+                if (url.endsWith("/auth/csrf")) {
+                    throw new TypeError("network down")
+                }
+                token = new Headers(opts.headers).get("X-CSRF-Token")
+                return new Response("{}", { status: 200 })
+            }),
+        )
+        try {
+            await fetchApi("http://x/", "boom", { method: "POST" })
+            expect(token).toBeNull()
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
 })

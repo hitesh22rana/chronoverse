@@ -829,7 +829,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
+			mock: func(req *jobspb.GetJobLogsRequest, _ *jobsmock.MockRepository, cache *jobsmock.MockCache) {
 				cache.EXPECT().Get(
 					gomock.Any(),
 					getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc),

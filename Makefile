@@ -27,11 +27,14 @@ lint/fix: dependencies
 # invocation, no second run. COVERMODE defaults to atomic because -race needs
 # atomic counters, and both targets must agree for their profiles to merge.
 COVERMODE?=atomic
-# Discover each application tree after dependencies regenerate pkg/proto.
+# Discover each application tree after dependencies regenerate pkg/proto. A
+# package outside these trees is a stop, not a skip: otherwise a new tree lands
+# untested and CI stays green.
 GO_PACKAGES_REQUIRES=cmd internal pkg
-# go list can succeed without matching packages; reject empty trees too.
-# One line lets $(eval) capture the entire package snapshot.
-GO_PACKAGES_DISCOVER=packages=''; for tree in $(GO_PACKAGES_REQUIRES); do found=$$(go list ./$$tree/...) || exit 1; if [ -z "$$found" ]; then printf 'make: Go package discovery failed: ./%s/... resolved no packages\n' "$$tree" >&2; exit 1; fi; packages="$$packages $$found"; done; printf '%s' "$$packages"
+# go list can succeed without matching packages; reject empty trees too, then
+# reject any package ./... reports that no required tree covers, ignoring the
+# Go files node_modules carries. One line lets $(eval) capture the whole snapshot.
+GO_PACKAGES_DISCOVER=packages=''; for tree in $(GO_PACKAGES_REQUIRES); do found=$$(go list ./$$tree/...) || exit 1; if [ -z "$$found" ]; then printf 'make: Go package discovery failed: ./%s/... resolved no packages\n' "$$tree" >&2; exit 1; fi; packages="$$packages $$found"; done; packages=$$(printf '%s' "$$packages" | tr '\n' ' '); all=$$(go list ./...) || exit 1; for stray in $$(printf '%s\n' "$$all" | grep -v /node_modules/); do case " $$packages " in *" $$stray "*) ;; *) printf 'make: Go package discovery missed %s: add its tree to GO_PACKAGES_REQUIRES in the Makefile\n' "$$stray" >&2; exit 1 ;; esac; done; printf '%s' "$$packages"
 # Capture once per recipe for both package arguments and COVERPKG.
 define discover-go-packages
 $(eval GO_PACKAGES := $(shell $(GO_PACKAGES_DISCOVER)))

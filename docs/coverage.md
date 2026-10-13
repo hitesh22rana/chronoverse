@@ -107,10 +107,11 @@ target/coverage/typescript/dashboard/lcov.info        dashboard LCOV, rooted at 
 target/coverage-inputs/{unit,integration}/           the raw per-job profiles
 ```
 
-To run the native tool with the same source scope, preserve the pipeline snapshot first:
+To run the native tool with the same source scope, copy the pipeline snapshot aside
+first, because the native run overwrites it:
 
 ```sh
-cp .metrics/crap.edn /tmp/application-crap.edn
+cp .metrics/crap.edn .metrics/application-crap.edn
 "$CRAPPER_VENV/bin/python" - <<'PYTHON'
 from pathlib import Path
 import subprocess
@@ -124,8 +125,10 @@ subprocess.run([crapper, "--use-existing-coverage", *map(str, files)], check=Tru
 PYTHON
 ```
 
-The native tool rewrites `.metrics/crap.edn`; the inventory and text report remain pipeline
-outputs. Compare function identities and values, rather than snapshot ordering.
+`make coverage/crap` is what puts the pipeline snapshot back in `.metrics/crap.edn`, so
+run it again before repeating the comparison. The native tool rewrites only
+`.metrics/crap.edn`; the inventory and text report remain pipeline outputs. Compare
+function identities and values, rather than snapshot ordering.
 
 `target/coverage` and `.metrics` are gitignored. Do not commit them.
 
@@ -194,7 +197,9 @@ Limits worth stating plainly:
 - Both Go jobs test and instrument the same package set: `cmd/`, `internal/`, and `pkg/`. A
   call made from another package's tests is recorded. Broader instrumentation corrects
   measurement rather than adding tests, so a percentage that rises here is not new coverage
-  evidence.
+  evidence. Discovery stops the build when `go list ./...` reports a package no required tree
+  covers, so a new top-level tree cannot land untested; the Go files under `node_modules` are
+  the known exception and stay out.
 - crapper recognises named functions and methods, plus top-level arrow functions in
   TypeScript. Other nested callbacks stay inside the enclosing function, so one entry can
   stand for a lot of decisions.

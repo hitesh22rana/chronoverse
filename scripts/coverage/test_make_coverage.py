@@ -19,21 +19,38 @@ import unittest
 # does on a partial discovery.
 # FAKEGO_DRIFT answers any tree a second time with a different package, so a
 # Makefile that discovers more than once mixes two snapshots into one command.
+# FAKEGO_STRAY adds a package no required tree covers, the way a new top-level
+# tree would. FAKEGO_EMPTY_TREE and FAKEGO_FAIL_TREE accept `all` for ./...
 FAKE_GO = """#!/bin/sh
 log="$(dirname "$0")/go-list.log"
 seen=no
 if [ -f "$log" ] && grep -q -x -F "$*" "$log" 2>/dev/null; then seen=yes; fi
 printf '%s\\n' "$*" >>"$log"
 
+# The whole module, one package per line the way go list prints them, carrying a
+# node_modules package discovery has to ignore. $stray leads with a newline so it
+# appends as a line of its own.
+all='example/app/cmd/server
+example/app/internal/postgres
+example/app/pkg/proto
+example/app/dashboard/node_modules/flatted/golang/pkg/flatted'
+stray='
+example/app/tools/thing'
+
 case "$*" in
 'list ./cmd/...') tree=cmd; pkg=example/app/cmd/server ;;
 'list ./internal/...') tree=internal; pkg=example/app/internal/postgres ;;
 'list ./pkg/...') tree=pkg; pkg=example/app/pkg/proto ;;
+'list ./...') tree=all; pkg="$all" ;;
 *) printf 'fake go: unexpected command: %s\\n' "$*" >&2; exit 1 ;;
 esac
 
 if [ "$seen" = yes ] && [ -n "${FAKEGO_DRIFT:-}" ]; then
 \tpkg="example/app/$tree/drifted"
+fi
+
+if [ "$tree" = all ] && [ -n "${FAKEGO_STRAY:-}" ]; then
+	pkg="$pkg$stray"
 fi
 
 case "$tree" in
@@ -110,9 +127,22 @@ class MakeCoverageTests(unittest.TestCase):
                 self.assertNotIn("go test", result.stdout)
 
     def test_failed_discovery_cannot_run_partial_package_list(self):
-        result = self.run_make("test/short", FAKEGO_FAIL_TREE="internal")
+        # `all` is the ./... listing the stray check reads; a failure there must
+        # stop the run just like a failure in one required tree.
+        for tree in ("internal", "all"):
+            with self.subTest(tree=tree):
+                result = self.run_make("test/short", FAKEGO_FAIL_TREE=tree)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Go package discovery failed", result.stderr)
+                self.assertNotIn("go test", result.stdout)
+
+    def test_a_package_outside_the_required_trees_stops_the_run(self):
+        # A new top-level tree would otherwise be listed by ./... and tested by
+        # nobody, with a green build.
+        result = self.run_make("test/short", FAKEGO_STRAY="1")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Go package discovery failed", result.stderr)
+        self.assertIn("Go package discovery missed example/app/tools/thing", result.stderr)
+        self.assertIn("add its tree to GO_PACKAGES_REQUIRES", result.stderr)
         self.assertNotIn("go test", result.stdout)
 
     def test_recipe_discovers_each_tree_once_and_reuses_the_snapshot(self):
@@ -125,6 +155,11 @@ class MakeCoverageTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(
                     self.discoveries(),
-                    ["list ./cmd/...", "list ./internal/...", "list ./pkg/..."],
+                    [
+                        "list ./cmd/...",
+                        "list ./internal/...",
+                        "list ./pkg/...",
+                        "list ./...",
+                    ],
                 )
                 self.assertNotIn("drifted", result.stdout)

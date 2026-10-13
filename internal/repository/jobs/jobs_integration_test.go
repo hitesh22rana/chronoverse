@@ -567,8 +567,8 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 		Stream:      "stdout",
 		Retention:   true,
 	}
-	if _, publishErr := joblogevents.PublishLive(ctx, testkit.Redis(t), event); publishErr != nil {
-		t.Fatalf("PublishLive: %v", publishErr)
+	if published, publishErr := joblogevents.PublishLive(ctx, testkit.Redis(t), event); publishErr != nil || !published {
+		t.Fatalf("PublishLive: published=%v error=%v", published, publishErr)
 	}
 
 	msg, receiveErr := sub.ReceiveMessage(ctx)

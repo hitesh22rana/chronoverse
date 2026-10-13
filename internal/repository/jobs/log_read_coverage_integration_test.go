@@ -113,8 +113,8 @@ func TestIntegrationGetJobLogsOrderingAndStatus(t *testing.T) {
 				if err != nil || state != "PENDING" {
 					t.Fatalf("status=%q error=%v", state, err)
 				}
-				if len(result.JobLogs) == 0 || len(result.JobLogs) > 2 {
-					t.Fatalf("page size=%d", len(result.JobLogs))
+				if len(result.JobLogs) == 0 || len(result.JobLogs) > repo.cfg.LogsFetchLimit {
+					t.Fatalf("page size=%d, limit %d", len(result.JobLogs), repo.cfg.LogsFetchLimit)
 				}
 				for _, log := range result.JobLogs {
 					got = append(got, log.Message)

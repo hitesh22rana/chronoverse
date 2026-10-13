@@ -732,6 +732,7 @@ func TestGetJobLogs(t *testing.T) {
 		timestamp               = time.Now()
 		singleflightRepoCalls   int32
 		singleflightReleaseChan chan struct{}
+		singleflightLeaderRan   chan struct{}
 	)
 
 	tests := []struct {
@@ -1029,7 +1030,11 @@ func TestGetJobLogs(t *testing.T) {
 				WorkflowId: "workflow_id",
 				UserId:     "user_id",
 				Filters: &jobspb.GetJobLogsFilters{
-					Stream: jobspb.LogStream_LOG_STREAM_ALL,
+					// Its own stream, so the repository expectation below is
+					// distinguishable from every other case in this table. The
+					// shared LOG_STREAM_ALL would match a later case's call and
+					// answer it with this case's response.
+					Stream: jobspb.LogStream_LOG_STREAM_STDERR,
 				},
 			},
 			mock: func(req *jobspb.GetJobLogsRequest) {
@@ -1047,11 +1052,25 @@ func TestGetJobLogs(t *testing.T) {
 
 				singleflightRepoCalls = 0
 				singleflightReleaseChan = make(chan struct{})
+				// Closed by the leader as it parks below, so the wait in
+				// execute cannot be satisfied by a repository call that has
+				// already come and gone.
+				singleflightLeaderRan = make(chan struct{})
+				// AnyTimes, not Times(1): a caller that arrives after the leader completes
+				// opens a second flight, and a second call under Times(1) makes
+				// gomock call t.Fatalf on the singleflight leader goroutine.
+				// That Goexits the leader before it can hand its result to
+				// anyone waiting on the result channel, so the caller blocks
+				// forever and takes the whole package down with it. The dedupe
+				// itself is asserted on singleflightRepoCalls below, where a lost
+				// race fails fast and legibly.
 				repo.EXPECT().
 					GetJobLogs(gomock.Any(), req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor(), jobsmodel.JobLogsSortOrderDesc, filters).
 					DoAndReturn(func(_ any, _, _, _, _ string, _ jobsmodel.JobLogsSortOrder, _ *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error) {
-						atomic.AddInt32(&singleflightRepoCalls, 1)
-						<-singleflightReleaseChan
+						if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
+							close(singleflightLeaderRan)
+							<-singleflightReleaseChan
+						}
 						return &jobsmodel.GetJobLogsResponse{
 							ID:         "job_id",
 							WorkflowID: "workflow_id",
@@ -1064,7 +1083,7 @@ func TestGetJobLogs(t *testing.T) {
 								},
 							},
 						}, "COMPLETED", nil
-					}).Times(1)
+					}).AnyTimes()
 			},
 			execute: func(t *testing.T, req *jobspb.GetJobLogsRequest, want want) {
 				t.Helper()
@@ -1080,12 +1099,19 @@ func TestGetJobLogs(t *testing.T) {
 					})
 				}
 
-				for range 50 {
-					if atomic.LoadInt32(&singleflightRepoCalls) == 1 {
-						break
-					}
-					time.Sleep(10 * time.Millisecond)
+				// Wait for the leader to park inside the repository call, then hold it there
+				// long enough for the second caller to reach DoChan. The flight
+				// cannot finish while the leader is parked, so a caller that
+				// arrives in this window joins it instead of opening a second
+				// one. Polling the call counter released the leader the instant
+				// it was observed, which on a scheduler that had already parked
+				// the leader gave the second caller no window at all.
+				select {
+				case <-singleflightLeaderRan:
+				case <-time.After(30 * time.Second):
+					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
 				}
+				time.Sleep(100 * time.Millisecond)
 				close(singleflightReleaseChan)
 				wg.Wait()
 

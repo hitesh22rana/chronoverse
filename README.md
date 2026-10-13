@@ -234,6 +234,9 @@ make build/all
 
 `make dependencies` regenerates protobuf stubs and runs `go mod tidy`; use
 `make mockgen` after changing an interface with a `//go:generate` directive.
+`make lint` runs the pinned `./.bin/golangci-lint`; use that binary rather than
+one from `PATH`, which may fail to load the config at all (see
+[development](./static/content/docs/contributing/development.mdx)).
 Kubernetes changes should also pass all four `make k8s/render/*` and
 `make k8s/dry-run/*` targets plus both setup-script dry runs documented in the
 [Kubernetes guide](https://hitesh22rana.github.io/chronoverse/docs/deployment/kubernetes/#validation).

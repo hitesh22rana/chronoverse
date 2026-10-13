@@ -30,6 +30,8 @@ const fetchMock = vi.fn<typeof fetch>()
 
 beforeEach(() => {
     vi.clearAllMocks()
+    // clearAllMocks leaves queued mockImplementationOnce entries in place.
+    fetchMock.mockReset()
     vi.stubGlobal("crypto", webcrypto)
     vi.stubGlobal("fetch", fetchMock)
     document.cookie = "csrf=csrf-token"
@@ -175,6 +177,22 @@ it("keeps logout pending and the cached user until the server responds", async (
     await waitFor(() => expect(result.current.isLogoutLoading).toBe(false))
     expect(mocks.replace).toHaveBeenCalledExactlyOnceWith("/login")
     expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    expect(client.getQueryCache().getAll()).toEqual([])
+})
+
+it("keeps signup pending and the cached user until the server responds", async () => {
+    let respond!: (_response: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { respond = resolve }))
+    const { result, client } = mount()
+    // Fingerprinting resolves before mutate, so pending starts once the request is in flight.
+    act(() => result.current.signup(credentials))
+    expect(result.current.isSignupLoading).toBe(false)
+    await waitFor(() => expect(result.current.isSignupLoading).toBe(true))
+    expect(client.getQueryData(queryKeys.user)).toEqual(user)
+    expect(mocks.push).not.toHaveBeenCalled()
+    await act(async () => respond(new Response(null, { status: 204 })))
+    await waitFor(() => expect(result.current.isSignupLoading).toBe(false))
+    expect(mocks.push).toHaveBeenCalledExactlyOnceWith("/")
     expect(client.getQueryCache().getAll()).toEqual([])
 })
 

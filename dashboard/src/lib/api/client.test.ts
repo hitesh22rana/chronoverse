@@ -82,4 +82,26 @@ describe("fetchApi", () => {
             vi.unstubAllGlobals()
         }
     })
+
+    // Single argument: also covers the default message and default options.
+    it("uses the default message when the error body is blank", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => new Response("   ", { status: 500 })))
+        try {
+            await expect(fetchApi("http://x/")).rejects.toThrow(new Error("API request failed"))
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it("uses the given message when the error body cannot be read", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => ({ ok: false, text: () => Promise.reject(new Error("stream closed")) })),
+        )
+        try {
+            await expect(fetchApi("http://x/", "boom")).rejects.toThrow(new Error("boom"))
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
 })

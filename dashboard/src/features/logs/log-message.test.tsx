@@ -88,6 +88,12 @@ describe("log message rendering", () => {
         expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('{\n  "first": "error",\n  "second": "')
     })
 
+    it("highlights repeated matches inside a single JSON string", () => {
+        const container = renderMessage(`{"a":"${highlight("x")}${highlight("x")}"}`, token, true)
+        expect(container.textContent).toBe(JSON.stringify({ a: "xx" }, null, 2))
+        expect(marks(container)).toEqual(["x", "x"])
+    })
+
     it("preserves the selected escaped substring and literal placeholder-like text", () => {
         const container = renderMessage(`{"first":"a\\nb","second":"a${highlight("\\n")}b","literal":"__CV_PLACEHOLDER_0__"}`, token, true)
         expect(container.textContent).toBe('{\n  "first": "a\\nb",\n  "second": "a\\nb",\n  "literal": "__CV_PLACEHOLDER_0__"\n}')
@@ -111,6 +117,17 @@ describe("log message rendering", () => {
         const container = renderMessage(`error {"first":"error","selected":"${highlight("error")}"}`, token, true)
         expect(container.querySelector("mark")?.previousSibling?.textContent).toBe('error {\n  "first": "error",\n  "selected": "')
         expect(marks(container)).toEqual(["error"])
+    })
+
+    it("formats and highlights embedded JSON beyond the spread argument limit", () => {
+        // Exceed spread argument limits while preserving formatting and highlighting.
+        const values = Array.from({ length: 50000 }, (_, index) => index)
+        const selected = String(values.length)
+        const container = renderMessage(`error {"values":[${values.join(",")}],"selected":${highlight(selected)}}`, token, true)
+        expect(container.textContent).toContain('error {\n  "values": [\n    0,\n    1,\n    2,\n')
+        expect(container.textContent?.endsWith(`"selected": ${selected}\n}`)).toBe(true)
+        expect(marks(container)).toEqual([selected])
+        expect(container.querySelector("mark")?.previousSibling?.textContent?.endsWith('"selected": ')).toBe(true)
     })
 
     it.each([

@@ -104,22 +104,39 @@ const renderHighlightedSegments = (pieces: MessagePiece[], segments: { start: nu
     const message = pieces.map((piece) => piece.text).join("")
     const rendered: ReactNode[] = []
     let currentIndex = 0
+    let pieceIndex = 0
+    let pieceOffset = 0
 
     for (const segment of segments) {
-        let offset = 0
         let start = -1
         let end = -1
-        for (const piece of pieces) {
+        let resumeIndex = -1
+        let resumeOffset = 0
+
+        // Resume at the piece that extends beyond this segment.
+        while (pieceIndex < pieces.length) {
+            const piece = pieces[pieceIndex]
             if (piece.source !== null) {
+                if (piece.source >= segment.end) break
                 const first = Math.max(segment.start, piece.source)
                 const last = Math.min(segment.end, piece.source + piece.text.length)
                 if (first < last) {
-                    if (start === -1) start = offset + first - piece.source
-                    end = offset + last - piece.source
+                    if (start === -1) start = pieceOffset + first - piece.source
+                    end = pieceOffset + last - piece.source
+                }
+                if (piece.source + piece.text.length > segment.end) {
+                    resumeIndex = pieceIndex
+                    resumeOffset = pieceOffset
                 }
             }
-            offset += piece.text.length
+            pieceOffset += piece.text.length
+            pieceIndex++
         }
+        if (resumeIndex !== -1) {
+            pieceIndex = resumeIndex
+            pieceOffset = resumeOffset
+        }
+
         if (start === -1) continue
         rendered.push(message.slice(currentIndex, start))
         rendered.push(<mark key={`${start}:${end}`} className={highlightClass}>{message.slice(start, end)}</mark>)
@@ -142,7 +159,8 @@ export function parseLogMessage(message: string, highlightToken: string | undefi
         for (const match of rawMessage.matchAll(jsonRegex)) {
             pieces.push({ text: rawMessage.slice(offset, match.index), source: offset })
             try {
-                pieces.push(...formatJson(match[0], match.index))
+                // Avoid spread argument limits for large JSON objects.
+                for (const piece of formatJson(match[0], match.index)) pieces.push(piece)
             } catch {
                 pieces.push({ text: match[0], source: match.index })
             }

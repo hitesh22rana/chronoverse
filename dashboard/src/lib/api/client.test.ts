@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { createIdempotencyKey, fetchApi } from "./client"
+import { createIdempotencyKey, fetchApi, fetchApiJson } from "./client"
 
 describe("createIdempotencyKey", () => {
     it("creates cryptographically secure UUID command identities", () => {
@@ -158,14 +158,20 @@ describe("fetchApi", () => {
         }
     })
 
-    it("sends the request untokenized when the csrf endpoint is unreachable", async () => {
+    // The non-OK body carries a token on purpose: the client must not take one
+    // from a failed response, and a body that parses would mask that.
+    it.each([
+        ["is unreachable", () => Promise.reject(new TypeError("network down"))],
+        ["answers non-OK", () => Promise.resolve(new Response(JSON.stringify({ csrfToken: "must-not-be-used" }), { status: 500 }))],
+        ["answers without a token", () => Promise.resolve(new Response("{}", { status: 200 }))],
+    ])("sends the request untokenized when the csrf endpoint %s", async (_case, csrfResponse) => {
         vi.stubGlobal("document", { cookie: "" })
         let token: string | null | undefined
         vi.stubGlobal(
             "fetch",
             vi.fn(async (url: string, opts: RequestInit = {}) => {
                 if (url.endsWith("/auth/csrf")) {
-                    throw new TypeError("network down")
+                    return await csrfResponse()
                 }
                 token = new Headers(opts.headers).get("X-CSRF-Token")
                 return new Response("{}", { status: 200 })
@@ -174,6 +180,50 @@ describe("fetchApi", () => {
         try {
             await fetchApi("http://x/", "boom", { method: "POST" })
             expect(token).toBeNull()
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+})
+
+describe("fetchApiJson", () => {
+    // Single argument: also covers the default message and default options.
+    it("returns the parsed body", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => new Response(JSON.stringify({ id: "w1", total: 2 }), { status: 200 })),
+        )
+        try {
+            await expect(fetchApiJson("http://x/")).resolves.toEqual({ id: "w1", total: 2 })
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    // Delegates to fetchApi, so a failed request must reject with the same
+    // message rather than surfacing a JSON parse failure.
+    it("rejects with the fetchApi message instead of a parse error", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => new Response("not json", { status: 500 })))
+        try {
+            await expect(fetchApiJson("http://x/", "boom")).rejects.toThrow(new Error("boom: not json"))
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it("sends csrf with the body request like any other mutation", async () => {
+        vi.stubGlobal("document", { cookie: "csrf=tok123" })
+        let token: string | null = null
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (_url: string, opts: RequestInit = {}) => {
+                token = new Headers(opts.headers).get("X-CSRF-Token")
+                return new Response("{}", { status: 200 })
+            }),
+        )
+        try {
+            await fetchApiJson("http://x/", "boom", { method: "POST" })
+            expect(token).toBe("tok123")
         } finally {
             vi.unstubAllGlobals()
         }

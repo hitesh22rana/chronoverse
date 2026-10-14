@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
+	xproxy "golang.org/x/net/proxy"
 )
 
 const (
@@ -457,6 +458,210 @@ func TestProxyTunnelConnectionRefused(t *testing.T) {
 	var networkErr *net.OpError
 	if !errors.As(err, &networkErr) || !strings.Contains(err.Error(), "dial proxy") {
 		t.Fatalf("network error = %v", err)
+	}
+}
+
+// A SOCKS constructor that cannot fail, or that hands back a dialer without
+// context support, is what the two guards in proxyTunnelDialContext are for.
+// The pinned x/net never does either, so the constructor is replaced here.
+func TestProxyTunnelRejectsUnusableSOCKSDialers(t *testing.T) {
+	original := socks5Dialer
+	t.Cleanup(func() { socks5Dialer = original })
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "construction fails", err: errors.New("proxy address rejected"), want: "configure SOCKS proxy: proxy address rejected"},
+		{name: "no context support", want: "does not support context cancellation"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			socks5Dialer = func(string, string, *xproxy.Auth, xproxy.Dialer) (xproxy.Dialer, error) {
+				if tc.err != nil {
+					return nil, tc.err
+				}
+				return dialerWithoutContext{}, nil
+			}
+			proxyURL := &url.URL{Scheme: testSOCKS5Scheme, Host: "127.0.0.1:1"}
+			dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{})
+			if dial != nil || err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("dial returned = %v, error = %v; want %q", dial != nil, err, tc.want)
+			}
+		})
+	}
+}
+
+// dialerWithoutContext is an xproxy.Dialer that predates the ContextDialer
+// interface; the assertion on it must reject it rather than dial.
+type dialerWithoutContext struct{}
+
+func (dialerWithoutContext) Dial(string, string) (net.Conn, error) {
+	return nil, errors.New("dialed")
+}
+
+// The three SetDeadline failures and the CONNECT write failure in
+// dialHTTPProxyTunnel cannot happen on a TCP connection, so the proxy dial is
+// replaced with one that hands back a connection that fails on demand. Each
+// test also asserts the socket is closed, because that is what the tunnel's
+// succeeded flag is for.
+func TestDialHTTPProxyTunnelSocketFailures(t *testing.T) {
+	original := dialProxyConn
+	t.Cleanup(func() { dialProxyConn = original })
+	proxyURL := &url.URL{Scheme: httpScheme, Host: "proxy.example:3128"}
+
+	t.Run("caller deadline cannot be set", func(t *testing.T) {
+		socket := &fakeProxyConn{deadlineErr: errFakeDeadline}
+		useFakeProxyConn(t, original, socket)
+		ctx, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
+		defer cancel()
+		conn, err := dialHTTPProxyTunnel(ctx, "tcp", proxyURL, "proxy.example:3128", pinnedTarget, &net.Dialer{})
+		assertFailedTunnel(t, conn, err, socket, errFakeDeadline)
+	})
+
+	t.Run("CONNECT cannot be written", func(t *testing.T) {
+		socket := &fakeProxyConn{writeErr: errFakeWrite}
+		useFakeProxyConn(t, original, socket)
+		conn, err := dialHTTPProxyTunnel(context.Background(), "tcp", proxyURL, "proxy.example:3128", pinnedTarget, &net.Dialer{})
+		assertFailedTunnel(t, conn, err, socket, errFakeWrite)
+	})
+
+	// Cancellation expires the socket, and the tunnel then clears the
+	// deadline it set; both SetDeadline calls fail here, and the guard that
+	// discards the AfterFunc's error is only visible as the call not
+	// blocking the cancellation.
+	t.Run("cancellation and reset cannot set a deadline", func(t *testing.T) {
+		release := make(chan struct{})
+		socket := &fakeProxyConn{
+			deadlineErr: errFakeDeadline,
+			reader:      strings.NewReader(connectEstablished),
+			blocked:     release,
+			deadlines:   make(chan struct{}, 2),
+		}
+		useFakeProxyConn(t, original, socket)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		result := make(chan error, 1)
+		go func() {
+			conn, err := dialHTTPProxyTunnel(ctx, "tcp", proxyURL, "proxy.example:3128", pinnedTarget, &net.Dialer{})
+			if conn != nil {
+				conn.Close()
+			}
+			result <- err
+		}()
+		cancel()
+		select {
+		case <-socket.deadlines:
+		case <-time.After(fixtureTimeout):
+			t.Fatal("cancellation did not reach the proxy socket")
+		}
+		close(release)
+		select {
+		case err := <-result:
+			if !errors.Is(err, errFakeDeadline) {
+				t.Fatalf("error = %v, want %v", err, errFakeDeadline)
+			}
+		case <-time.After(fixtureTimeout):
+			t.Fatal("tunnel did not finish")
+		}
+		if !socket.closed {
+			t.Fatal("failed tunnel left the proxy socket open")
+		}
+	})
+}
+
+// net.Resolver reports an answer with no records as "no such host", so the
+// empty-answer guard in resolveEndpointHost only sees a resolver that returns
+// none without complaining.
+func TestResolveEndpointHostRejectsEmptyAnswer(t *testing.T) {
+	original := lookupIPAddr
+	t.Cleanup(func() { lookupIPAddr = original })
+	lookupIPAddr = func(context.Context, string) ([]net.IPAddr, error) { return nil, nil }
+	addresses, err := resolveEndpointHost(context.Background(), "empty.test")
+	if !errors.Is(err, ErrDisallowedTarget) || len(addresses) != 0 {
+		t.Fatalf("addresses = %v, error = %v", addresses, err)
+	}
+}
+
+const connectEstablished = "HTTP/1.1 200 Connection established\r\n\r\n"
+
+var (
+	errFakeDeadline = errors.New("socket deadline rejected")
+	errFakeWrite    = errors.New("socket write rejected")
+)
+
+// fakeProxyConn is the connection dialProxyConn hands back: every deadline
+// fails, writes and reads fail on demand, and SetDeadline reports the attempt
+// so a caller can wait for cancellation to reach the socket.
+type fakeProxyConn struct {
+	reader      io.Reader
+	blocked     <-chan struct{}
+	writeErr    error
+	deadlineErr error
+	deadlines   chan struct{}
+	closed      bool
+}
+
+func (c *fakeProxyConn) Read(p []byte) (int, error) {
+	if c.blocked != nil {
+		<-c.blocked
+	}
+	if c.reader == nil {
+		return 0, io.EOF
+	}
+	return c.reader.Read(p)
+}
+
+func (c *fakeProxyConn) Write(p []byte) (int, error) {
+	if c.writeErr != nil {
+		return 0, c.writeErr
+	}
+	return len(p), nil
+}
+
+func (c *fakeProxyConn) Close() error {
+	c.closed = true
+	return nil
+}
+
+func (c *fakeProxyConn) LocalAddr() net.Addr             { return fakeProxyAddr{} }
+func (c *fakeProxyConn) RemoteAddr() net.Addr            { return fakeProxyAddr{} }
+func (c *fakeProxyConn) SetDeadline(time.Time) error     { return c.setDeadline() }
+func (c *fakeProxyConn) SetReadDeadline(time.Time) error { return c.setDeadline() }
+
+func (c *fakeProxyConn) SetWriteDeadline(time.Time) error { return c.setDeadline() }
+
+func (c *fakeProxyConn) setDeadline() error {
+	if c.deadlines != nil {
+		select {
+		case c.deadlines <- struct{}{}:
+		default:
+		}
+	}
+	return c.deadlineErr
+}
+
+type fakeProxyAddr struct{}
+
+func (fakeProxyAddr) Network() string { return "tcp" }
+func (fakeProxyAddr) String() string  { return "127.0.0.1:0" }
+
+func useFakeProxyConn(t *testing.T, original func(context.Context, *net.Dialer, string, string) (net.Conn, error), socket net.Conn) {
+	t.Helper()
+	dialProxyConn = func(context.Context, *net.Dialer, string, string) (net.Conn, error) { return socket, nil }
+	t.Cleanup(func() { dialProxyConn = original })
+}
+
+func assertFailedTunnel(t *testing.T, conn net.Conn, err error, socket *fakeProxyConn, want error) {
+	t.Helper()
+	if conn != nil {
+		conn.Close()
+		t.Fatal("failed CONNECT returned a connection")
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want %v", err, want)
+	}
+	if !socket.closed {
+		t.Fatal("failed tunnel left the proxy socket open")
 	}
 }
 

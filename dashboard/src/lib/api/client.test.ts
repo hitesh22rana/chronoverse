@@ -140,8 +140,8 @@ describe("fetchApi", () => {
         }
     })
 
-    // This suite runs in the node environment, so there is no document here.
     it("still sends the request when there is no document to read a cookie from", async () => {
+        vi.stubGlobal("document", undefined)
         const urls: string[] = []
         vi.stubGlobal(
             "fetch",

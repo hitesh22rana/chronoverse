@@ -12,8 +12,7 @@ import { useAuth } from "./use-auth"
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }))
 const toastMock = vi.hoisted(() => ({ error: vi.fn() }))
-// Nothing in useAuth's import graph needs another next/navigation export, so the
-// module is replaced outright like every other navigation mock in the suite.
+// useAuth only needs useRouter from next/navigation.
 vi.mock("next/navigation", () => ({ useRouter: () => router }))
 vi.mock("sonner", () => ({ toast: toastMock }))
 
@@ -34,7 +33,7 @@ beforeEach(() => {
     vi.stubGlobal("crypto", webcrypto)
     vi.stubGlobal("fetch", fetchMock)
     document.cookie = "csrf=csrf-token"
-    fetchMock.mockResolvedValue(new Response(null, { status: 204 }))
+    fetchMock.mockImplementation(async () => new Response(null, { status: 204 }))
 })
 
 afterEach(() => {
@@ -70,7 +69,7 @@ it("posts login credentials with CSRF and cookies, then clears account data and 
 })
 
 it("keeps the account and route on login rejection without exposing credentials", async () => {
-    fetchMock.mockResolvedValue(new Response("credentials rejected", { status: 401 }))
+    fetchMock.mockImplementation(async () => new Response("credentials rejected", { status: 401 }))
     const { result, client } = mount()
     act(() => result.current.login(credentials))
     await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("failed to login: credentials rejected"))
@@ -80,7 +79,7 @@ it("keeps the account and route on login rejection without exposing credentials"
 })
 
 it.each([true, false])("logout redirects and refreshes even when the request succeeds=%s", async (success) => {
-    fetchMock.mockResolvedValue(new Response(success ? null : "session expired", { status: success ? 204 : 401 }))
+    fetchMock.mockImplementation(async () => new Response(success ? null : "session expired", { status: success ? 204 : 401 }))
     const { result, client } = mount()
     act(() => result.current.logout())
     await waitFor(() => expect(router.refresh).toHaveBeenCalledTimes(1))

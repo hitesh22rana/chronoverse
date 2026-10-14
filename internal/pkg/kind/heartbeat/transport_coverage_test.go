@@ -38,7 +38,7 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 	for _, tc := range []struct{ name, response, want string }{
 		{"success", "HTTP/1.1 200 Connection established\r\n\r\npinned payload", ""},
 		{"rejected", "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n", "407"},
-		// Preserve the close error when a rejected response is truncated.
+		// Preserve status and close errors for truncated rejection bodies.
 		{"rejected with truncated body", "HTTP/1.1 407 Proxy Authentication Required\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nshort", "close response"},
 		{"malformed", "not HTTP\r\n\r\n", "read proxy CONNECT response"},
 	} {
@@ -73,6 +73,9 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 				if readErr != nil || string(payload) != "pinned payload" {
 					t.Fatalf("payload %q, error %v", payload, readErr)
 				}
+			}
+			if tc.name == "rejected with truncated body" && !strings.Contains(err.Error(), "407") {
+				t.Fatalf("missing proxy status: %v", err)
 			}
 			var req *http.Request
 			select {
@@ -109,6 +112,7 @@ func serveCONNECTResponse(listener net.Listener, response string, request chan<-
 		return err
 	}
 	request <- req
+	// A single write includes payload bytes in the CONNECT response buffer.
 	_, err = io.WriteString(conn, response)
 	return err
 }
@@ -277,7 +281,7 @@ var controlledDNSAnswers = map[string][][4]byte{
 	"unsafe.test.": {{8, 8, 8, 8}, {1, 1, 1, 1}, {127, 0, 0, 1}},
 }
 
-// Sequential only: this replaces the global resolver until cleanup.
+// Sequential only: replaces net.DefaultResolver until cleanup.
 // Go defers parallel tests until sequential tests finish.
 func useControlledEndpointDNS(t *testing.T) {
 	t.Helper()

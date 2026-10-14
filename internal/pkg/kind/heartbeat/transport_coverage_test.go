@@ -35,12 +35,12 @@ const (
 var socks5PinnedCommand = []byte{5, 1, 0, 1, 203, 0, 113, 9, 1, 187}
 
 func TestProxyTunnelConnectResponses(t *testing.T) {
-	for _, tc := range []struct{ name, response, want string }{
-		{"success", "HTTP/1.1 200 Connection established\r\n\r\npinned payload", ""},
-		{"rejected", "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n", "407"},
+	for _, tc := range []struct{ name, response, want, status string }{
+		{"success", "HTTP/1.1 200 Connection established\r\n\r\npinned payload", "", ""},
+		{"rejected", "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n", "407", ""},
 		// Preserve status and close errors for truncated rejection bodies.
-		{"rejected with truncated body", "HTTP/1.1 407 Proxy Authentication Required\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nshort", "close response"},
-		{"malformed", "not HTTP\r\n\r\n", "read proxy CONNECT response"},
+		{"rejected with truncated body", "HTTP/1.1 407 Proxy Authentication Required\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nshort", "close response", "407"},
+		{"malformed", "not HTTP\r\n\r\n", "read proxy CONNECT response", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -61,9 +61,7 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 			defer cancel()
 			conn, err := dial(ctx, "tcp", "ignored.example:80")
 			if tc.want != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.want) {
-					t.Fatalf("error = %v, want %s", err, tc.want)
-				}
+				assertProxyConnectError(t, err, tc.want, tc.status)
 			} else {
 				if err != nil {
 					t.Fatal(err)
@@ -74,9 +72,6 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 					t.Fatalf("payload %q, error %v", payload, readErr)
 				}
 			}
-			if tc.name == "rejected with truncated body" && !strings.Contains(err.Error(), "407") {
-				t.Fatalf("missing proxy status: %v", err)
-			}
 			var req *http.Request
 			select {
 			case req = <-request:
@@ -84,9 +79,7 @@ func TestProxyTunnelConnectResponses(t *testing.T) {
 				t.Fatal("proxy did not receive a valid CONNECT request")
 			}
 			assertPinnedCONNECT(t, req)
-			if serverErr := <-done; serverErr != nil {
-				t.Fatal(serverErr)
-			}
+			awaitTransportFixture(t, done)
 		})
 	}
 }
@@ -104,7 +97,7 @@ func serveCONNECTResponse(listener net.Listener, response string, request chan<-
 		return err
 	}
 	defer conn.Close()
-	if deadlineErr := conn.SetDeadline(time.Now().Add(fixtureTimeout)); deadlineErr != nil {
+	if deadlineErr := conn.SetDeadline(time.Now().Add(2 * fixtureTimeout)); deadlineErr != nil {
 		return deadlineErr
 	}
 	req, err := http.ReadRequest(bufio.NewReader(conn))
@@ -217,9 +210,7 @@ func TestProxyTunnelWaitingResponseCanceled(t *testing.T) {
 	case <-time.After(fixtureTimeout):
 		t.Fatal("cancellation did not stop CONNECT")
 	}
-	if e := <-done; e != nil {
-		t.Fatal(e)
-	}
+	awaitTransportFixture(t, done)
 }
 
 // SOCKS cancellation expires socket I/O. The fixture deadline exceeds the
@@ -270,9 +261,7 @@ func TestProxyTunnelSOCKSHandshakeCancellation(t *testing.T) {
 	case <-time.After(fixtureTimeout):
 		t.Fatal("cancellation did not stop the SOCKS handshake")
 	}
-	if serverErr := <-done; serverErr != nil {
-		t.Fatal(serverErr)
-	}
+	awaitTransportFixture(t, done)
 }
 
 // Unknown names fail with NXDOMAIN.
@@ -345,6 +334,7 @@ func useControlledEndpointDNS(t *testing.T) {
 	})
 }
 
+// Stay sequential while replacing net.DefaultResolver.
 func TestResolveEndpointHostWithControlledDNS(t *testing.T) {
 	useControlledEndpointDNS(t)
 	for _, tc := range []struct {
@@ -411,9 +401,7 @@ func TestProxyTunnelSOCKSPinsTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	conn.Close()
-	if e := <-done; e != nil {
-		t.Fatal(e)
-	}
+	awaitTransportFixture(t, done)
 }
 
 // serveStalledSOCKSTunnel completes authentication and the CONNECT request,
@@ -547,7 +535,7 @@ func TestHTTPSProxyRequiresTrustedCertificate(t *testing.T) {
 }
 
 func serveSOCKSTunnel(listener net.Listener) error {
-	conn, err := acceptSOCKS5Handshake(listener, fixtureTimeout)
+	conn, err := acceptSOCKS5Handshake(listener, 2*fixtureTimeout)
 	if err != nil {
 		return err
 	}
@@ -589,4 +577,28 @@ func acceptSOCKS5Handshake(listener net.Listener, timeout time.Duration) (net.Co
 		return fail(errors.New("SOCKS target is not pinned IP and port"))
 	}
 	return conn, nil
+}
+
+func assertProxyConnectError(t *testing.T, err error, fragments ...string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected CONNECT error")
+	}
+	for _, fragment := range fragments {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Fatalf("error = %v, want %q", err, fragment)
+		}
+	}
+}
+
+func awaitTransportFixture(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(fixtureTimeout):
+		t.Fatal("transport fixture did not finish")
+	}
 }
